@@ -117,13 +117,21 @@ class ShortcutManager {
         pressedRegularKeys.remove(keyCode)
     }
 
-    /// Check if a key is actually pressed using CGEventSource
+    /// Check if a non-modifier key is actually pressed using CGEventSource.
+    /// Must use .hidSystemState here: our event tap consumes shortcut key events
+    /// (returns nil), which removes them from .combinedSessionState. This caused
+    /// recheckPressedKeys to see held-but-consumed keys as "not pressed", emitting
+    /// false keyUp events that stopped PTT recording mid-speech.
     private func isKeyActuallyPressed(_ keyCode: CGKeyCode) -> Bool {
-        return CGEventSource.keyState(.combinedSessionState, key: keyCode)
+        return CGEventSource.keyState(.hidSystemState, key: keyCode)
     }
 
     /// Check provided key codes against OS truth and return any stale entries.
     func getStalePressedKeyCodes(_ keyCodes: [Int]) -> [Int] {
+        // Modifiers use .combinedSessionState: they pass through the event tap
+        // unconsumed (via flagsChanged), so .combinedSessionState is accurate for
+        // them and is more compatible with key remapping software (e.g. Karabiner).
+        // Non-modifier keys use isKeyActuallyPressed (.hidSystemState) above.
         let flags = CGEventSource.flagsState(.combinedSessionState)
         var stale: [Int] = []
         for keyCode in keyCodes {
