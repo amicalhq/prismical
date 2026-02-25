@@ -195,6 +195,20 @@ html.vibrancy [data-slot="sidebar"][data-mobile="true"] {
   }
 }
 
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 2s linear infinite;
+  background-size: 200% 100%;
+}
+
 /* Lexical Checklist - shadcn-style checkboxes */
 .listitemChecked,
 .listitemUnchecked {
