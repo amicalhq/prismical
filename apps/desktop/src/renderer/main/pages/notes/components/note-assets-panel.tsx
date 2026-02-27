@@ -100,14 +100,14 @@ export function NoteAssetsPanel({
               scrollBarClassName={SCROLLBAR_WHILE_SCROLLING_CLASS}
             >
               <div
-                className={`space-y-6 px-4 pt-3 pb-4 transition-[opacity,transform] duration-120 md:px-5 md:pt-4 md:pb-5 ${
+                className={`space-y-4 px-4 pt-4 pb-2 transition-[opacity,transform] duration-120 ${
                   isContentVisible
                     ? "translate-x-0 opacity-100"
                     : "translate-x-2 opacity-0"
                 }`}
               >
                 {MOCK_TRANSCRIPTION_SEGMENTS.map((segment) => (
-                  <section key={segment.time} className="space-y-2">
+                  <section key={segment.time} className="space-y-1">
                     <div className="text-[11px] font-medium tracking-[0.14em] text-muted-foreground uppercase">
                       {segment.time}
                     </div>
