@@ -120,7 +120,7 @@ export default function HomePage() {
             </Link>
           </div>
 
-          <div className="bg-accent/40 rounded-xl overflow-hidden">
+          <div className="bg-accent/60 dark:bg-accent/40 rounded-xl overflow-hidden py-1">
             {UPCOMING_MEETINGS.map((meeting) => (
               <div
                 key={meeting.id}
