@@ -744,8 +744,10 @@
         "titlePlaceholder": "Título de la nota...",
         "bodyPlaceholder": "Comienza a escribir tu nota...",
         "edited": "Editado {{date}}",
+        "transcription": "Transcripción",
         "actions": {
           "openInNotesWindow": "Abrir en ventana de notas",
+          "closeTranscription": "Cerrar transcripción",
           "delete": "Eliminar",
           "addToFavorites": "Agregar a favoritos",
           "removeFromFavorites": "Quitar de favoritos",

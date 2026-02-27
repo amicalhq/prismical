@@ -18,3 +18,5 @@ export interface Note {
     calendarColor: string;
   };
 }
+
+export type NoteAssetKind = "transcription";

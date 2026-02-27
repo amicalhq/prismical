@@ -1,22 +1,22 @@
-import { useState, useEffect } from "react";
 import {
-  Sparkles,
-  Share,
-  Mic,
-  MoreHorizontal,
-  Copy,
-  FileText,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import {
   FolderOpen,
-  Trash2,
-  Check,
+  MoreHorizontal,
+  PanelRight,
+  PanelRightOpen,
   Star,
+  Trash2,
   FileTextIcon,
   Loader2,
 } from "lucide-react";
 import EmojiPicker, { Theme } from "emoji-picker-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   Popover,
   PopoverContent,
@@ -41,34 +41,28 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Toggle } from "@/components/ui/toggle";
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@/components/ui/resizable";
 import { useTranslation } from "react-i18next";
 import { NoteRecordingDock } from "./note-recording-dock";
+import { NoteAssetsPanel } from "./note-assets-panel";
 import { CreateFolderDialog } from "@/renderer/main/components/create-folder-dialog";
 import { FolderPickerDialog } from "@/renderer/main/components/folder-picker-dialog";
-
-type InvitedUser = {
-  id: number;
-  name: string;
-  avatar?: string;
-  email: string;
-  access: string;
-  status: "active" | "invited";
-};
+import type { NoteAssetKind } from "../types";
+import type { ImperativePanelGroupHandle } from "react-resizable-panels";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 export type NotePageUIProps = {
-  noteId: string;
   noteTitle: string;
   noteEmoji: string | null;
   noteStarred: boolean;
@@ -77,15 +71,23 @@ export type NotePageUIProps = {
   isLoading: boolean;
   isSyncing: boolean;
   lastEditDate: Date;
+  activeAsset: NoteAssetKind | null;
+  panelLayout: [number, number];
+  onPanelLayoutChange: (layout: [number, number]) => void;
+  onToggleAsset: (asset: NoteAssetKind) => void;
   onTitleChange: (value: string) => void;
   onDelete: () => void;
   onEmojiChange: (emoji: string | null) => void;
   onStarredChange: (starred: boolean) => void;
   onFolderChange: (folder: string | null) => void;
-  onBack?: () => void;
   isDeleting?: boolean;
-  children?: React.ReactNode;
+  children?: ReactNode;
 };
+
+const SCROLLBAR_WHILE_SCROLLING_CLASS =
+  "data-[state=hidden]:opacity-0 data-[state=visible]:opacity-100 transition-opacity duration-150";
+const PANEL_LAYOUT_TRANSITION_CLASS =
+  "transition-[flex-grow] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]";
 
 function formatRelativeTime(date: Date, locale: string): string {
   const now = new Date();
@@ -132,6 +134,10 @@ export default function Note({
   isLoading,
   isSyncing,
   lastEditDate,
+  activeAsset,
+  panelLayout,
+  onPanelLayoutChange,
+  onToggleAsset,
   onTitleChange,
   onDelete,
   onEmojiChange,
@@ -141,82 +147,44 @@ export default function Note({
   children,
 }: NotePageUIProps) {
   const { t, i18n } = useTranslation();
-  // Local UI state
-  const [shareEmail, setShareEmail] = useState("");
-  const [accessLevel, setAccessLevel] = useState("can-read");
-  const [showConfirmation, setShowConfirmation] = useState(false);
-  const [invitedUsers, setInvitedUsers] = useState<Array<InvitedUser>>([]);
+  const isMobile = useIsMobile();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showCreateFolderDialog, setShowCreateFolderDialog] = useState(false);
   const [showFolderPicker, setShowFolderPicker] = useState(false);
   const [, setTick] = useState(0);
   const [localEditTime, setLocalEditTime] = useState<Date | null>(null);
+  const panelGroupRef = useRef<ImperativePanelGroupHandle | null>(null);
 
-  // Update relative time every 1 minute
   useEffect(() => {
     const interval = setInterval(() => {
-      setTick((t) => t + 1);
+      setTick((tick) => tick + 1);
     }, 60000);
     return () => clearInterval(interval);
   }, []);
 
-  // Update local edit time when syncing starts (user just edited)
   useEffect(() => {
     if (isSyncing) {
       setLocalEditTime(new Date());
     }
   }, [isSyncing]);
 
-  // Mock shared users data
-  /* const sharedUsers = [
-    {
-      id: 1,
-      name: "Alice Johnson",
-      avatar:
-        "https://images.unsplash.com/photo-1588516903720-8ceb67f9ef84?q=80&w=1344&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
-      email: "alice@example.com",
-      access: "can-write",
-      status: "active" as const,
-    },
-    {
-      id: 2,
-      name: "Bob Smith",
-      avatar:
-        "https://images.unsplash.com/photo-1564564321837-a57b7070ac4f?q=80&w=2676&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
-      email: "bob@example.com",
-      access: "can-write",
-      status: "active" as const,
-    },
-    {
-      id: 3,
-      name: "Carol Davis",
-      avatar:
-        "https://images.unsplash.com/photo-1560087637-bf797bc7796a?q=80&w=1287&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
-      email: "carol@example.com",
-      access: "can-read",
-      status: "active" as const,
-    },
-  ]; */
-
-  // TODO: implement actual share functionality
-  /* const handleShare = () => {
-    if (shareEmail) {
-      const newInvite = {
-        id: Date.now(),
-        name: shareEmail.split("@")[0],
-        email: shareEmail,
-        access: accessLevel,
-        status: "invited" as const,
-      };
-      setInvitedUsers((prev) => [...prev, newInvite]);
-      setShowConfirmation(true);
-      setShareEmail("");
-
-      // Hide confirmation after 3 seconds
-      setTimeout(() => setShowConfirmation(false), 3000);
+  useEffect(() => {
+    if (!panelGroupRef.current) {
+      return;
     }
-  }; */
+
+    if (isMobile) {
+      panelGroupRef.current.setLayout(activeAsset ? [0, 100] : [100, 0]);
+      return;
+    }
+
+    if (activeAsset) {
+      panelGroupRef.current.setLayout(panelLayout);
+    } else {
+      panelGroupRef.current.setLayout([100, 0]);
+    }
+  }, [activeAsset, isMobile, panelLayout]);
 
   const handleDeleteClick = () => {
     setShowDeleteDialog(false);
@@ -228,10 +196,6 @@ export default function Note({
     setShowEmojiPicker(false);
   };
 
-  const handleEmojiRemove = () => {
-    onEmojiChange(null);
-  };
-
   const handleToggleStar = () => {
     onStarredChange(!noteStarred);
   };
@@ -240,25 +204,34 @@ export default function Note({
     setShowCreateFolderDialog(true);
   };
 
-  /* const allUsers = [...sharedUsers, ...invitedUsers]; */
+  const handleResizableLayoutChange = (sizes: number[]) => {
+    if (sizes.length !== 2) return;
+    if (isMobile) return;
+    if (sizes[1] <= 0.5) return;
+    onPanelLayoutChange([sizes[0], sizes[1]]);
+  };
 
-  // Loading state
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-full">
+      <div className="flex h-full items-center justify-center">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
-  return (
-    <TooltipProvider>
-      <div className="max-w-4xl mx-auto w-full">
-        {/* Note Content */}
-        <div className="mt-0 space-y-2">
-          {/* Note Title with Emoji Picker */}
-          <div className="flex items-center">
-            {/* Emoji Picker */}
+  const displayEditDate =
+    localEditTime && localEditTime > lastEditDate ? localEditTime : lastEditDate;
+  const isTranscriptionOpen = activeAsset === "transcription";
+
+  const notePane = (
+    <div className="relative h-full min-h-0 bg-background">
+      <ScrollArea
+        className="h-full"
+        type="scroll"
+        scrollBarClassName={SCROLLBAR_WHILE_SCROLLING_CLASS}
+      >
+        <div className="mx-auto flex w-full max-w-4xl flex-col gap-2 px-6 pb-32 pt-6">
+          <div className="flex min-w-0 items-center">
             <Popover open={showEmojiPicker} onOpenChange={setShowEmojiPicker}>
               <PopoverTrigger asChild>
                 <Button
@@ -276,11 +249,11 @@ export default function Note({
               <PopoverContent className="w-auto p-0" align="start">
                 <div>
                   {noteEmoji && (
-                    <div className="flex justify-end p-2 border-b">
+                    <div className="flex justify-end border-b p-2">
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={handleEmojiRemove}
+                        onClick={() => onEmojiChange(null)}
                         className="text-xs"
                       >
                         {t("settings.notes.note.removeEmoji")}
@@ -299,271 +272,149 @@ export default function Note({
               </PopoverContent>
             </Popover>
 
-            {/* Note Title Input */}
             <Input
               value={noteTitle}
-              onChange={(e) => onTitleChange(e.target.value)}
-              className="!text-4xl font-semibold !border-0 !shadow-none px-4 py-2 focus-visible:!ring-0 focus-visible:!border-0 placeholder:text-muted-foreground flex-1"
+              onChange={(event) => onTitleChange(event.target.value)}
+              className="flex-1 px-4 py-2 !text-4xl font-semibold !border-0 !shadow-none placeholder:text-muted-foreground focus-visible:!border-0 focus-visible:!ring-0"
               style={{ backgroundColor: "transparent" }}
               placeholder={t("settings.notes.note.titlePlaceholder")}
             />
           </div>
 
-          {/* Top Bar */}
-          <div className="flex items-center justify-start pl-4 pb-0.5 bg-card">
-            {/* Right side - Actions */}
-            <div className="flex items-center ">
-              {/* Last edited date */}
-              <span className="text-sm text-muted-foreground">
-                {t("settings.notes.note.edited", {
-                  date: formatRelativeTime(
-                    localEditTime && localEditTime > lastEditDate
-                      ? localEditTime
-                      : lastEditDate,
-                    i18n.language,
-                  ),
-                })}
-              </span>
+          <div className="flex flex-wrap items-center gap-1 bg-card pb-0.5 pl-4">
+            <span className="mr-1 text-sm text-muted-foreground">
+              {t("settings.notes.note.edited", {
+                date: formatRelativeTime(displayEditDate, i18n.language),
+              })}
+            </span>
 
-              {/* {console.log("[v0] Note ID:", noteId)} */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="gap-2"
+                  onClick={handleToggleStar}
+                >
+                  <Star
+                    className={`h-4 w-4 ${
+                      noteStarred ? "fill-yellow-400 text-yellow-400" : ""
+                    }`}
+                  />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {noteStarred
+                  ? t("settings.notes.note.actions.removeFromFavorites")
+                  : t("settings.notes.note.actions.addToFavorites")}
+              </TooltipContent>
+            </Tooltip>
 
-              {/* <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled
-                    className="gap-1 mx-1.5"
-                  >
-                    <Sparkles className="h-4 w-4" />
-                    AI Notes
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>AI Notes coming soon</TooltipContent>
-              </Tooltip> */}
+            <Toggle
+              pressed={isTranscriptionOpen}
+              onPressedChange={() => onToggleAsset("transcription")}
+              variant="outline"
+              size="sm"
+              aria-label={t("settings.notes.note.transcription")}
+            >
+              {isTranscriptionOpen ? (
+                <PanelRightOpen className="h-3.5 w-3.5" />
+              ) : (
+                <PanelRight className="h-3.5 w-3.5" />
+              )}
+              {t("settings.notes.note.transcription")}
+            </Toggle>
 
-              {/* Shared users avatars */}
-              {/* <div className="flex -space-x-2">
-                {sharedUsers.map((user) => (
-                  <Tooltip key={user.id}>
-                    <TooltipTrigger asChild>
-                      <Avatar className="h-8 w-8 border-2 border-background cursor-pointer">
-                        <AvatarImage
-                          className="object-cover"
-                          src={user.avatar || "/placeholder.svg"}
-                          alt={user.name}
-                        />
-                        <AvatarFallback className="text-xs">
-                          {user.name
-                            .split(" ")
-                            .map((n) => n[0])
-                            .join("")}
-                        </AvatarFallback>
-                      </Avatar>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <div className="text-center">
-                        <p className="font-medium">{user.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {user.email}
-                        </p>
-                      </div>
-                    </TooltipContent>
-                  </Tooltip>
-                ))}
-              </div> */}
-
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="gap-2"
-                    onClick={handleToggleStar}
-                  >
-                    <Star
-                      className={`h-4 w-4 ${noteStarred ? "fill-yellow-400 text-yellow-400" : ""}`}
-                    />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  {noteStarred
-                    ? t("settings.notes.note.actions.removeFromFavorites")
-                    : t("settings.notes.note.actions.addToFavorites")}
-                </TooltipContent>
-              </Tooltip>
-
-              {/* Share button with popover */}
-              {/* <Popover>
-                <PopoverTrigger asChild>
-                  <Button size="sm" variant="ghost">
-                    <Share className="h-4 w-4" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-80" align="end">
-                  <div className="space-y-4">
-                    {showConfirmation ? (
-                      <div className="flex items-center gap-2 p-3 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200 dark:border-green-800">
-                        <Check className="h-4 w-4 text-green-600 dark:text-green-400" />
-                        <span className="text-sm text-green-700 dark:text-green-300">
-                          Invitation sent successfully!
-                        </span>
-                      </div>
-                    ) : (
-                      <>
-                        <div>
-                          <h4 className="font-medium text-sm mb-2">
-                            Share this note
-                          </h4>
-                          <p className="text-xs text-muted-foreground mb-3">
-                            Invite others to collaborate on this note
-                          </p>
-                        </div>
-
-                        <div className="space-y-3">
-                          <Input
-                            placeholder="Enter email address"
-                            value={shareEmail}
-                            onChange={(e) => setShareEmail(e.target.value)}
-                          />
-
-                          <Select
-                            value={accessLevel}
-                            onValueChange={setAccessLevel}
-                          >
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="full-access">
-                                Full access
-                              </SelectItem>
-                              <SelectItem value="can-write">
-                                Can write
-                              </SelectItem>
-                              <SelectItem value="can-read">Can read</SelectItem>
-                            </SelectContent>
-                          </Select>
-
-                          <Button
-                            onClick={handleShare}
-                            className="w-full"
-                            size="sm"
-                          >
-                            Send invitation
-                          </Button>
-                        </div>
-                      </>
-                    )}
-
-                    {allUsers.length > 0 && (
-                      <div className="pt-3 border-t border-border">
-                        <h5 className="text-xs font-medium mb-2 text-muted-foreground">
-                          People with access
-                        </h5>
-                        <div className="space-y-2">
-                          {allUsers.map((user) => (
-                            <div
-                              key={user.id}
-                              className="flex items-center gap-2"
-                            >
-                              <Avatar className="h-6 w-6">
-                                <AvatarImage
-                                  src={user.avatar || "/placeholder.svg"}
-                                  alt={user.name}
-                                />
-                                <AvatarFallback className="text-xs">
-                                  {user.name
-                                    .split(" ")
-                                    .map((n) => n[0])
-                                    .join("")}
-                                </AvatarFallback>
-                              </Avatar>
-                              <div className="flex-1">
-                                <span className="text-xs">{user.name}</span>
-                                {user.status === "invited" && (
-                                  <span className="text-xs text-muted-foreground ml-1">
-                                    (invited)
-                                  </span>
-                                )}
-                              </div>
-                              <span className="text-xs text-muted-foreground capitalize">
-                                {user.access.replace("-", " ")}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </PopoverContent>
-              </Popover> */}
-
-              {/* <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="ghost" size="sm" disabled>
-                    <Mic className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Transcription coming soon</TooltipContent>
-              </Tooltip> */}
-
-              {/* More actions dropdown */}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="sm">
-                    <MoreHorizontal className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem
-                    className="gap-2"
-                    onSelect={() => setShowFolderPicker(true)}
-                  >
-                    <FolderOpen className="h-4 w-4" />
-                    {t("settings.notes.note.actions.moveToFolder")}
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  {/* <DropdownMenuItem className="gap-2">
-                    <Copy className="h-4 w-4" />
-                    Copy
-                  </DropdownMenuItem>
-                  <DropdownMenuItem className="gap-2">
-                    <FileText className="h-4 w-4" />
-                    Duplicate
-                  </DropdownMenuItem>
-                  <DropdownMenuItem className="gap-2">
-                    <FolderOpen className="h-4 w-4" />
-                    Move to
-                  </DropdownMenuItem> */}
-                  <AlertDialog
-                    open={showDeleteDialog}
-                    onOpenChange={setShowDeleteDialog}
-                  >
-                    <AlertDialogTrigger asChild>
-                      <DropdownMenuItem
-                        className="gap-2"
-                        onSelect={(e) => e.preventDefault()}
-                        variant="destructive"
-                      >
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                        {t("settings.notes.note.actions.delete")}
-                      </DropdownMenuItem>
-                    </AlertDialogTrigger>
-                  </AlertDialog>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm">
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  className="gap-2"
+                  onSelect={() => setShowFolderPicker(true)}
+                >
+                  <FolderOpen className="h-4 w-4" />
+                  {t("settings.notes.note.actions.moveToFolder")}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <AlertDialog
+                  open={showDeleteDialog}
+                  onOpenChange={setShowDeleteDialog}
+                >
+                  <AlertDialogTrigger asChild>
+                    <DropdownMenuItem
+                      className="gap-2"
+                      onSelect={(event) => event.preventDefault()}
+                      variant="destructive"
+                    >
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                      {t("settings.notes.note.actions.delete")}
+                    </DropdownMenuItem>
+                  </AlertDialogTrigger>
+                </AlertDialog>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
 
-          {/* Note Body - Lexical Editor */}
           {children}
-
-          {/* Floating Recording Dock */}
-          <NoteRecordingDock />
         </div>
+      </ScrollArea>
 
-        {/* Delete Confirmation Dialog */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-4 z-10">
+        <div className="mx-auto flex w-full max-w-4xl justify-center px-6">
+          <div className="pointer-events-auto">
+            <NoteRecordingDock />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <TooltipProvider>
+      <div className="h-full w-full min-h-0">
+        <ResizablePanelGroup
+          ref={panelGroupRef}
+          direction="horizontal"
+          className="h-full w-full"
+          onLayout={handleResizableLayoutChange}
+        >
+          <ResizablePanel
+            defaultSize={isMobile ? (activeAsset ? 0 : 100) : activeAsset ? panelLayout[0] : 100}
+            minSize={isMobile ? 0 : 45}
+            collapsible={isMobile}
+            collapsedSize={0}
+            className={`min-w-0 ${PANEL_LAYOUT_TRANSITION_CLASS}`}
+          >
+            {notePane}
+          </ResizablePanel>
+          <ResizableHandle
+            withHandle
+            disabled={!isTranscriptionOpen || isMobile}
+            className={`z-20 bg-transparent hover:bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 [&>div]:transition-opacity [&>div]:duration-150 ${
+              isTranscriptionOpen && !isMobile
+                ? "[&>div]:opacity-0 hover:[&>div]:opacity-100 focus:[&>div]:opacity-100 active:[&>div]:opacity-100"
+                : "pointer-events-none [&>div]:opacity-0"
+            }`}
+          />
+          <ResizablePanel
+            defaultSize={isMobile ? (activeAsset ? 100 : 0) : activeAsset ? panelLayout[1] : 0}
+            minSize={isMobile ? 0 : 28}
+            collapsible
+            collapsedSize={0}
+            className={`min-w-0 overflow-hidden bg-background ${PANEL_LAYOUT_TRANSITION_CLASS}`}
+          >
+            <NoteAssetsPanel
+              activeAsset="transcription"
+              isOpen={isTranscriptionOpen}
+              onClose={() => onToggleAsset("transcription")}
+            />
+          </ResizablePanel>
+        </ResizablePanelGroup>
+
         <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
           <AlertDialogContent>
             <AlertDialogHeader>
@@ -587,7 +438,7 @@ export default function Note({
               >
                 {isDeleting ? (
                   <>
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     {t("settings.notes.note.deleteDialog.deleting")}
                   </>
                 ) : (
@@ -598,7 +449,6 @@ export default function Note({
           </AlertDialogContent>
         </AlertDialog>
 
-        {/* Folder Picker Dialog */}
         <FolderPickerDialog
           open={showFolderPicker}
           onOpenChange={setShowFolderPicker}
@@ -608,7 +458,6 @@ export default function Note({
           onCreateFolder={handleCreateFolder}
         />
 
-        {/* Create Folder Dialog */}
         <CreateFolderDialog
           open={showCreateFolderDialog}
           onOpenChange={setShowCreateFolderDialog}

@@ -752,8 +752,10 @@
         "titlePlaceholder": "Note title...",
         "bodyPlaceholder": "Start writing your note...",
         "edited": "Edited {{date}}",
+        "transcription": "Transcription",
         "actions": {
           "openInNotesWindow": "Open in notes window",
+          "closeTranscription": "Close transcription",
           "delete": "Delete",
           "addToFavorites": "Add to favorites",
           "removeFromFavorites": "Remove from favorites",

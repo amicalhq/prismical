@@ -8,6 +8,7 @@ import { NoteEditor } from "./note-editor";
 import { FileTextIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTranslation } from "react-i18next";
+import type { NoteAssetKind } from "../types";
 
 type NotePageProps = {
   noteId: string;
@@ -33,6 +34,9 @@ export default function NotePage({
   const [noteStarred, setNoteStarred] = useState(false);
   const [noteFolder, setNoteFolder] = useState<string | null>(null);
   const [editorReady, setEditorReady] = useState(false);
+  const [activeAsset, setActiveAsset] =
+    useState<NoteAssetKind | null>("transcription");
+  const [panelLayout, setPanelLayout] = useState<[number, number]>([64, 36]);
 
   // Refs
   const noteRef = useRef<typeof note>(null);
@@ -209,6 +213,16 @@ export default function NotePage({
     [noteIdNumber, updateNoteIconMutation],
   );
 
+  const handleToggleAsset = useCallback((asset: NoteAssetKind) => {
+    setActiveAsset((currentAsset) =>
+      currentAsset === asset ? null : asset,
+    );
+  }, []);
+
+  const handlePanelLayoutChange = useCallback((layout: [number, number]) => {
+    setPanelLayout(layout);
+  }, []);
+
   // Note not found state
   if (!isLoading && !note) {
     return (
@@ -236,7 +250,6 @@ export default function NotePage({
   // Use the presentational component
   return (
     <Note
-      noteId={noteId}
       noteTitle={noteTitle}
       noteEmoji={noteIcon}
       noteStarred={noteStarred}
@@ -245,12 +258,15 @@ export default function NotePage({
       isLoading={isLoading}
       isSyncing={isSyncing}
       lastEditDate={lastEditDate}
+      activeAsset={activeAsset}
+      onToggleAsset={handleToggleAsset}
+      panelLayout={panelLayout}
+      onPanelLayoutChange={handlePanelLayoutChange}
       onTitleChange={handleTitleChange}
       onDelete={handleDelete}
       onEmojiChange={handleEmojiChange}
       onStarredChange={handleStarredChange}
       onFolderChange={handleFolderChange}
-      onBack={onBack}
       isDeleting={deleteMutation.isPending}
     >
       <NoteEditor

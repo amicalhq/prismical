@@ -4,6 +4,7 @@ import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { SettingsSidebar } from "../../components/settings-sidebar";
 import { SiteHeader } from "@/components/site-header";
 import { useLocation, useNavigate } from "@tanstack/react-router";
+import { cn } from "@/lib/utils";
 import {
   SettingsHeaderProvider,
   useSettingsHeaderActions,
@@ -28,6 +29,7 @@ function SettingsLayoutContent() {
   const sentinelRef = useRef<HTMLDivElement>(null);
   const [isScrolled, setIsScrolled] = useState(false);
   const { actions: headerActions } = useSettingsHeaderActions();
+  const isNoteDetailRoute = location.pathname.startsWith("/settings/notes/");
 
   // Keyboard shortcut: Cmd+H (Mac) / Ctrl+H (Windows/Linux) to navigate home
   const goHome = useCallback(() => {
@@ -53,6 +55,11 @@ function SettingsLayoutContent() {
 
   // IntersectionObserver to detect title scrolling out of view
   useEffect(() => {
+    if (isNoteDetailRoute) {
+      setIsScrolled(false);
+      return;
+    }
+
     const sentinel = sentinelRef.current;
     const root = scrollRef.current;
     if (!sentinel || !root) return;
@@ -63,7 +70,7 @@ function SettingsLayoutContent() {
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [location.pathname]);
+  }, [isNoteDetailRoute, location.pathname]);
 
   const getSettingsPageTitle = (pathname: string): string => {
     if (pathname.startsWith("/settings/home")) {
@@ -111,13 +118,30 @@ function SettingsLayoutContent() {
           />
           <div className="flex flex-1 flex-col min-h-0">
             <div className="@container/settings flex flex-1 flex-col min-h-0 overflow-hidden">
-              <div ref={scrollRef} className="flex-1 overflow-y-auto">
+              <div
+                ref={scrollRef}
+                className={cn(
+                  "flex-1",
+                  isNoteDetailRoute ? "overflow-hidden" : "overflow-y-auto",
+                )}
+              >
                 <div
-                  className="mx-auto w-full flex flex-col gap-4 md:gap-6 relative"
-                  style={{
-                    maxWidth: "var(--content-max-width)",
-                    paddingInline: "var(--content-padding)",
-                  }}
+                  className={cn(
+                    "relative w-full",
+                    isNoteDetailRoute
+                      ? "flex h-full min-h-0 flex-col"
+                      : "mx-auto flex flex-col gap-4 md:gap-6",
+                  )}
+                  style={
+                    isNoteDetailRoute
+                      ? {
+                          paddingInline: "0px",
+                        }
+                      : {
+                          maxWidth: "var(--content-max-width)",
+                          paddingInline: "var(--content-padding)",
+                        }
+                  }
                 >
                   <div
                     ref={sentinelRef}

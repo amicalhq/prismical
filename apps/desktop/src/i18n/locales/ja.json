@@ -744,8 +744,10 @@
         "titlePlaceholder": "ノートのタイトル...",
         "bodyPlaceholder": "ノートを書き始めましょう...",
         "edited": "{{date}}に編集",
+        "transcription": "文字起こし",
         "actions": {
           "openInNotesWindow": "ノートウィンドウで開く",
+          "closeTranscription": "文字起こしを閉じる",
           "delete": "削除",
           "addToFavorites": "お気に入りに追加",
           "removeFromFavorites": "お気に入りから削除",
