@@ -291,15 +291,16 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
                   </span>
                 </SidebarMenuAction>
                 <CollapsibleContent>
-                  <SidebarMenuSub>
+                  <SidebarMenuSub className="mr-0 pr-0">
                     {folderNotes.map((note) => (
                       <SidebarMenuSubItem
                         key={`folder-${folderName}-${note.id}`}
-                        className="group/sub-item"
+                        className="group/sub-item relative"
                       >
                         <SidebarMenuSubButton
                           asChild
                           isActive={isNoteActive(note.id)}
+                          className="pr-6"
                         >
                           <Link
                             to="/settings/notes/$noteId"
