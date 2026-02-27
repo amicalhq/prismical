@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { IconSearch } from "@tabler/icons-react";
+import { IconNotes, IconSearch } from "@tabler/icons-react";
 import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import {
@@ -16,10 +16,20 @@ import { SidebarMenuButton } from "@/components/ui/sidebar";
 import { api } from "@/trpc/react";
 import { FileTextIcon } from "lucide-react";
 import { formatDate } from "@/lib/utils";
-import { SETTINGS_NAV_ITEMS } from "../lib/settings-navigation";
+import {
+  SETTINGS_NAV_ITEMS,
+  type SettingsNavItem,
+} from "../lib/settings-navigation";
 
 // Detect platform for keyboard shortcuts
 const isMac = window.electronAPI.platform === "darwin";
+const NOTES_SEARCH_ITEM: SettingsNavItem = {
+  titleKey: "settings.nav.notes.title",
+  url: "/settings/notes",
+  descriptionKey: "settings.nav.notes.description",
+  icon: IconNotes,
+  type: "settings",
+};
 
 export function CommandSearchButton() {
   const { t, i18n } = useTranslation();
@@ -29,7 +39,7 @@ export function CommandSearchButton() {
 
   const localizedSettings = React.useMemo(
     () =>
-      SETTINGS_NAV_ITEMS.map((page) => ({
+      [NOTES_SEARCH_ITEM, ...SETTINGS_NAV_ITEMS].map((page) => ({
         ...page,
         title: t(page.titleKey),
         description: t(page.descriptionKey),
