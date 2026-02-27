@@ -771,7 +771,8 @@
           "description": "Conecta tu calendario para comenzar",
           "button": "Conectar calendario"
         }
-      }
+      },
+      "sidebarButtonLabel": "Nota"
     },
     "vocabulary": {
       "title": "Vocabulario",

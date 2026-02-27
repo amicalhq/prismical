@@ -60,8 +60,21 @@ export function SettingsSidebar({
 
   const isMac =
     typeof window !== "undefined" && window.electronAPI?.platform === "darwin";
-  const navMainItems = isHomeSidebar ? HOME_NAV_ITEMS : SETTINGS_NAV_ITEMS;
-  const navMain = navMainItems.map(({ titleKey, url, icon, shortcutKey }) => ({
+  const homeHeaderNav = HOME_NAV_ITEMS.map(({ titleKey, url, icon, shortcutKey }) => ({
+    title: t(titleKey),
+    url,
+    icon: typeof icon === "string" ? undefined : icon,
+    shortcut: shortcutKey
+      ? isMac
+        ? `⌘ ${shortcutKey}`
+        : `Ctrl+${shortcutKey}`
+      : undefined,
+  }));
+  const homeNavItem = homeHeaderNav.find((item) => item.url === "/settings/home");
+  const settingsNavItem = homeHeaderNav.find(
+    (item) => item.url === "/settings/preferences",
+  );
+  const navMain = SETTINGS_NAV_ITEMS.map(({ titleKey, url, icon, shortcutKey }) => ({
     title: t(titleKey),
     url,
     icon: typeof icon === "string" ? undefined : icon,
@@ -134,9 +147,53 @@ export function SettingsSidebar({
             <SidebarMenuItem>
               <CreateNoteButton />
             </SidebarMenuItem>
+            {homeNavItem ? (
+              <SidebarMenuItem key={homeNavItem.url}>
+                <SidebarMenuButton
+                  asChild
+                  isActive={location.pathname.startsWith(homeNavItem.url)}
+                >
+                  <Link
+                    to={homeNavItem.url}
+                    aria-label={homeNavItem.title}
+                    activeProps={{ className: "active" }}
+                  >
+                    {homeNavItem.icon && <homeNavItem.icon />}{" "}
+                    <span>{homeNavItem.title}</span>
+                    {homeNavItem.shortcut && (
+                      <kbd className="pointer-events-none inline-flex h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground ml-auto">
+                        {homeNavItem.shortcut}
+                      </kbd>
+                    )}
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            ) : null}
             <SidebarMenuItem>
               <CommandSearchButton />
             </SidebarMenuItem>
+            {settingsNavItem ? (
+              <SidebarMenuItem key={settingsNavItem.url}>
+                <SidebarMenuButton
+                  asChild
+                  isActive={location.pathname.startsWith(settingsNavItem.url)}
+                >
+                  <Link
+                    to={settingsNavItem.url}
+                    aria-label={settingsNavItem.title}
+                    activeProps={{ className: "active" }}
+                  >
+                    {settingsNavItem.icon && <settingsNavItem.icon />}{" "}
+                    <span>{settingsNavItem.title}</span>
+                    {settingsNavItem.shortcut && (
+                      <kbd className="pointer-events-none inline-flex h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground ml-auto">
+                        {settingsNavItem.shortcut}
+                      </kbd>
+                    )}
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            ) : null}
           </SidebarMenu>
         </SidebarHeader>
       ) : (
@@ -165,7 +222,7 @@ export function SettingsSidebar({
         </SidebarHeader>
       )}
       <SidebarContent>
-        <NavMain items={navMain} />
+        {!isHomeSidebar ? <NavMain items={navMain} /> : null}
         {isHomeSidebar ? <NavNotesGroups notes={notesForGroups} /> : null}
         <NavSecondary items={navSecondary} className="mt-auto" />
       </SidebarContent>

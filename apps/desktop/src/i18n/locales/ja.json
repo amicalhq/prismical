@@ -771,7 +771,8 @@
           "description": "カレンダーを接続して始めましょう",
           "button": "カレンダーを接続"
         }
-      }
+      },
+      "sidebarButtonLabel": "ノート"
     },
     "vocabulary": {
       "title": "カスタム辞書",

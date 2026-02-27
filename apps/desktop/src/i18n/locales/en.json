@@ -779,7 +779,8 @@
           "description": "Connect your calendar to get started",
           "button": "Connect calendar"
         }
-      }
+      },
+      "sidebarButtonLabel": "Note"
     },
     "vocabulary": {
       "title": "Vocabulary",
