@@ -58,6 +58,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useTranslation } from "react-i18next";
+import { NoteRecordingDock } from "./note-recording-dock";
 
 type InvitedUser = {
   id: number;
@@ -591,6 +592,9 @@ export default function Note({
 
           {/* Note Body - Lexical Editor */}
           {children}
+
+          {/* Floating Recording Dock */}
+          <NoteRecordingDock />
         </div>
 
         {/* Delete Confirmation Dialog */}
