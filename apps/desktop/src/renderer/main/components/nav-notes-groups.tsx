@@ -43,6 +43,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { api } from "@/trpc/react";
+import { CreateFolderDialog } from "./create-folder-dialog";
 
 type NoteNavigationItem = {
   id: number;
@@ -167,12 +168,12 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
     updateOrganization.mutate({ id: noteId, folder });
   };
 
+  const [createFolderForNoteId, setCreateFolderForNoteId] = React.useState<
+    number | null
+  >(null);
+
   const handleCreateFolder = (noteId: number) => {
-    const nextFolder = window
-      .prompt(t("settings.notes.note.actions.newFolderPrompt"))
-      ?.trim();
-    if (!nextFolder) return;
-    updateOrganization.mutate({ id: noteId, folder: nextFolder });
+    setCreateFolderForNoteId(noteId);
   };
 
   const favorites = React.useMemo(
@@ -349,6 +350,21 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
           ) : null}
         </SidebarMenu>
       </SidebarGroup>
+
+      <CreateFolderDialog
+        open={createFolderForNoteId !== null}
+        onOpenChange={(open) => {
+          if (!open) setCreateFolderForNoteId(null);
+        }}
+        onConfirm={(folderName) => {
+          if (createFolderForNoteId !== null) {
+            updateOrganization.mutate({
+              id: createFolderForNoteId,
+              folder: folderName,
+            });
+          }
+        }}
+      />
     </>
   );
 }

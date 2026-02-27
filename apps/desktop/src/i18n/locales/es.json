@@ -752,7 +752,8 @@
           "moveToFolder": "Mover a carpeta",
           "noFolder": "Sin carpeta",
           "newFolder": "Nueva carpeta...",
-          "newFolderPrompt": "Nombre de la carpeta"
+          "newFolderPrompt": "Nombre de la carpeta",
+          "createFolder": "Crear"
         },
         "deleteDialog": {
           "title": "Eliminar nota",

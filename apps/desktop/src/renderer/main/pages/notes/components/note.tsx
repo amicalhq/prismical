@@ -59,6 +59,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useTranslation } from "react-i18next";
 import { NoteRecordingDock } from "./note-recording-dock";
+import { CreateFolderDialog } from "@/renderer/main/components/create-folder-dialog";
 
 type InvitedUser = {
   id: number;
@@ -150,6 +151,7 @@ export default function Note({
   const [invitedUsers, setInvitedUsers] = useState<Array<InvitedUser>>([]);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [showCreateFolderDialog, setShowCreateFolderDialog] = useState(false);
   const [, setTick] = useState(0);
   const [localEditTime, setLocalEditTime] = useState<Date | null>(null);
 
@@ -237,11 +239,7 @@ export default function Note({
   };
 
   const handleCreateFolder = () => {
-    const nextFolder = window
-      .prompt(t("settings.notes.note.actions.newFolderPrompt"))
-      ?.trim();
-    if (!nextFolder) return;
-    onFolderChange(nextFolder);
+    setShowCreateFolderDialog(true);
   };
 
   /* const allUsers = [...sharedUsers, ...invitedUsers]; */
@@ -631,6 +629,13 @@ export default function Note({
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {/* Create Folder Dialog */}
+        <CreateFolderDialog
+          open={showCreateFolderDialog}
+          onOpenChange={setShowCreateFolderDialog}
+          onConfirm={(folderName) => onFolderChange(folderName)}
+        />
       </div>
     </TooltipProvider>
   );

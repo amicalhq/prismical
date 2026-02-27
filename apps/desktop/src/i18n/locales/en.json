@@ -760,7 +760,8 @@
           "moveToFolder": "Move to folder",
           "noFolder": "No folder",
           "newFolder": "New folder...",
-          "newFolderPrompt": "Folder name"
+          "newFolderPrompt": "Folder name",
+          "createFolder": "Create"
         },
         "deleteDialog": {
           "title": "Delete Note",
