@@ -47,7 +47,7 @@ export function NoteRecordingDock() {
         className={`
           pointer-events-auto group
           transition-all duration-150 ease-out overflow-hidden
-          h-[48px]
+          h-[42px]
           ${isRecording ? "w-[160px]" : "w-[56px] hover:w-[64px]"}
           bg-black/70 rounded-[28px] backdrop-blur-md
           ring-[1px] ring-black/60 shadow-[0px_0px_15px_0px_rgba(0,0,0,0.40)]
