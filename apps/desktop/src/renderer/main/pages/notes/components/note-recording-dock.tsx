@@ -49,7 +49,7 @@ export function NoteRecordingDock() {
           transition-all duration-150 ease-out overflow-hidden
           h-[42px]
           ${isRecording ? "w-[160px]" : "w-[56px] hover:w-[64px]"}
-          bg-black/70 rounded-[28px] backdrop-blur-md
+          bg-black/80 dark:bg-black/70 rounded-[28px] backdrop-blur-md
           ring-[1px] ring-black/60 shadow-[0px_0px_15px_0px_rgba(0,0,0,0.40)]
           before:content-[''] before:absolute before:inset-[1px] before:rounded-[27px] before:outline before:outline-white/15 before:pointer-events-none
           relative cursor-pointer select-none
