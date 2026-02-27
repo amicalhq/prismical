@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createFileRoute, Outlet } from "@tanstack/react-router";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { SettingsSidebar } from "../../components/settings-sidebar";
 import { SiteHeader } from "@/components/site-header";
-import { useLocation } from "@tanstack/react-router";
+import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
   SettingsHeaderProvider,
   useSettingsHeaderActions,
@@ -23,10 +23,28 @@ function SettingsLayout() {
 
 function SettingsLayoutContent() {
   const location = useLocation();
+  const navigate = useNavigate();
   const scrollRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const [isScrolled, setIsScrolled] = useState(false);
   const { actions: headerActions } = useSettingsHeaderActions();
+
+  // Keyboard shortcut: Cmd+H (Mac) / Ctrl+H (Windows/Linux) to navigate home
+  const goHome = useCallback(() => {
+    navigate({ to: "/settings/home" });
+  }, [navigate]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "h" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        goHome();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [goHome]);
 
   // Reset scroll state on page change
   useEffect(() => {

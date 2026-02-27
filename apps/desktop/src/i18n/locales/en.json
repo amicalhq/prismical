@@ -726,7 +726,7 @@
       }
     },
     "notes": {
-      "create": "Create note",
+      "create": "New note",
       "defaultTitleWithDate": "Note - {{date}}",
       "untitledTitle": "Untitled Note",
       "empty": {

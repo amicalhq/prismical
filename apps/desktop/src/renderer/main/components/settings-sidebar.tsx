@@ -58,11 +58,18 @@ export function SettingsSidebar({
     },
   );
 
+  const isMac =
+    typeof window !== "undefined" && window.electronAPI?.platform === "darwin";
   const navMainItems = isHomeSidebar ? HOME_NAV_ITEMS : SETTINGS_NAV_ITEMS;
-  const navMain = navMainItems.map(({ titleKey, url, icon }) => ({
+  const navMain = navMainItems.map(({ titleKey, url, icon, shortcutKey }) => ({
     title: t(titleKey),
     url,
     icon: typeof icon === "string" ? undefined : icon,
+    shortcut: shortcutKey
+      ? isMac
+        ? `⌘ ${shortcutKey}`
+        : `Ctrl+${shortcutKey}`
+      : undefined,
   }));
 
   const baseNavSecondary: NavSecondaryItem[] = [

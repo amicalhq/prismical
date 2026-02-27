@@ -67,7 +67,6 @@ export function CreateNoteButton() {
 
   return (
     <SidebarMenuButton
-      className="border border-sidebar-border"
       onClick={onCreateNote}
       disabled={createNoteMutation.isPending}
     >
