@@ -392,7 +392,11 @@
       "subtitle": "Esto es lo que viene y lo que puedes capturar a continuación.",
       "upcoming": {
         "title": "Próximos eventos",
-        "participants": "{{count}} participantes"
+
+        "today": "Hoy",
+        "tomorrow": "Mañana",
+        "notes": "Notas",
+        "join": "Unirse"
       },
       "notes": {
         "today": "Hoy",

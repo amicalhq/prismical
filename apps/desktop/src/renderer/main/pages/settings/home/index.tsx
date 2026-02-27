@@ -1,4 +1,3 @@
-import { CalendarDays } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { NotesList } from "../../notes/components/notes-list";
@@ -9,44 +8,70 @@ type GreetingPeriod = "morning" | "afternoon" | "evening";
 interface UpcomingMeeting {
   id: string;
   calendarColor: string;
+  date: Date;
   startTime: string;
   endTime: string;
   title: string;
-  participantCount: number;
-  meetingLabel: string;
   meetingUrl: string;
+  calendarEventUrl: string;
 }
+
+function getMeetingDateLabel(date: Date, t: (key: string) => string): string {
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const diffDays = Math.round(
+    (startOfDate.getTime() - startOfToday.getTime()) / (1000 * 60 * 60 * 24),
+  );
+
+  if (diffDays === 0) return t("settings.home.upcoming.today");
+  if (diffDays === 1) return t("settings.home.upcoming.tomorrow");
+
+  return new Intl.DateTimeFormat(
+    typeof navigator !== "undefined"
+      ? navigator.language
+      : Intl.DateTimeFormat().resolvedOptions().locale,
+    { month: "short", day: "numeric" },
+  ).format(date);
+}
+
+const today = new Date();
+const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+const dayAfter = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 2);
 
 const UPCOMING_MEETINGS: UpcomingMeeting[] = [
   {
     id: "standup",
     calendarColor: "#34C759",
+    date: today,
     startTime: "9:30 AM",
     endTime: "10:00 AM",
     title: "Product & Engineering Daily Standup",
-    participantCount: 8,
-    meetingLabel: "Google Meet",
+
     meetingUrl: "https://meet.google.com/abc-defg-hij",
+    calendarEventUrl: "https://calendar.google.com/calendar/event?eid=abc123",
   },
   {
     id: "design-review",
     calendarColor: "#0A84FF",
+    date: tomorrow,
     startTime: "11:00 AM",
     endTime: "11:45 AM",
     title: "Desktop Home Experience Design Review",
-    participantCount: 5,
-    meetingLabel: "Zoom",
+
     meetingUrl: "https://zoom.us/j/123456789",
+    calendarEventUrl: "https://calendar.google.com/calendar/event?eid=def456",
   },
   {
     id: "customer-sync",
     calendarColor: "#FF9F0A",
+    date: dayAfter,
     startTime: "3:00 PM",
     endTime: "3:30 PM",
     title: "Customer Notes Workflow Sync",
-    participantCount: 4,
-    meetingLabel: "Microsoft Teams",
+
     meetingUrl: "https://teams.microsoft.com/l/meetup-join/123",
+    calendarEventUrl: "https://outlook.office365.com/calendar/item/ghi789",
   },
 ];
 
@@ -85,12 +110,9 @@ export default function HomePage() {
 
       <div className="space-y-8 pb-8">
         <section className="space-y-4">
-          <div className="flex items-center gap-2 text-muted-foreground">
-            <CalendarDays className="w-4 h-4" />
-            <h2 className="text-sm font-medium">
-              {t("settings.home.upcoming.title")}
-            </h2>
-          </div>
+          <h2 className="text-sm font-medium text-muted-foreground">
+            {t("settings.home.upcoming.title")}
+          </h2>
 
           <div className="bg-accent/40 rounded-xl overflow-hidden">
             {UPCOMING_MEETINGS.map((meeting) => (
@@ -105,32 +127,42 @@ export default function HomePage() {
 
                 <div className="min-w-0 flex-1">
                   <p className="text-xs text-muted-foreground">
-                    {meeting.startTime} - {meeting.endTime}
+                    {getMeetingDateLabel(meeting.date, t)} <span aria-hidden="true">•</span> {meeting.startTime} - {meeting.endTime}
                   </p>
-                  <p className="text-sm font-medium leading-tight">
-                    {meeting.title}
-                  </p>
-                  <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-                    <span>
-                      {t("settings.home.upcoming.participants", {
-                        count: meeting.participantCount,
-                      })}
-                    </span>
-                    <span aria-hidden="true">•</span>
-                    <Button
+                  <div className="flex items-center gap-2">
+                    <button
                       type="button"
-                      variant="link"
-                      className="h-auto p-0 text-xs text-muted-foreground hover:text-foreground"
-                      onClick={() => handleOpenMeeting(meeting.meetingUrl)}
+                      className="text-sm font-medium leading-tight text-left hover:underline cursor-pointer"
+                      onClick={() => handleOpenMeeting(meeting.calendarEventUrl)}
                     >
-                      <span className="inline-flex items-center gap-1.5">
-                        {getMeetingIcon(meeting.meetingUrl, {
-                          className: "h-3.5 w-3.5",
-                        })}
-                        <span>{meeting.meetingLabel}</span>
-                      </span>
-                    </Button>
+                      {meeting.title}
+                    </button>
+                    {getMeetingIcon(meeting.meetingUrl, {
+                      className: "h-3.5 w-3.5 text-muted-foreground shrink-0",
+                    })}
                   </div>
+                </div>
+
+                <div className="hidden group-hover:flex items-center gap-1.5 shrink-0 self-center">
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-7 text-xs px-2.5 bg-indigo-500 text-white hover:bg-indigo-600 hover:text-white cursor-pointer"
+                    onClick={() => {
+                      // TODO: Create or open a note attached to this meeting
+                      // Title format: "{meeting.title} - {meeting date}"
+                    }}
+                  >
+                    {t("settings.home.upcoming.notes")}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-7 text-xs px-2.5 bg-primary text-primary-foreground hover:bg-primary/80 cursor-pointer"
+                    onClick={() => handleOpenMeeting(meeting.meetingUrl)}
+                  >
+                    {t("settings.home.upcoming.join")}
+                  </Button>
                 </div>
               </div>
             ))}

@@ -392,7 +392,11 @@
       "subtitle": "今日の予定と次に記録する内容です。",
       "upcoming": {
         "title": "予定",
-        "participants": "{{count}}人が参加"
+
+        "today": "今日",
+        "tomorrow": "明日",
+        "notes": "ノート",
+        "join": "参加"
       },
       "notes": {
         "today": "今日",
