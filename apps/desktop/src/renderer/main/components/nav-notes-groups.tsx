@@ -8,11 +8,13 @@ import {
   FolderOpen,
   FolderPlus,
   MoreHorizontal,
+  Plus,
   Star,
   StarOff,
   Trash2,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { useCallback } from "react";
 import { toast } from "sonner";
 
 import {
@@ -133,7 +135,7 @@ function NoteDropdownContent({
 }
 
 export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const location = useLocation();
   const navigate = useNavigate();
   const { isMobile } = useSidebar();
@@ -159,6 +161,41 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
       utils.notes.getNotes.invalidate();
     },
   });
+
+  const createNoteMutation = api.notes.createNote.useMutation({
+    onSuccess: async (newNote, _variables, context) => {
+      utils.notes.getNotes.invalidate();
+      navigate({
+        to: "/settings/notes/$noteId",
+        params: { noteId: String(newNote.id) },
+        search: {},
+      });
+    },
+    onError: (error) => {
+      toast.error(
+        t("settings.notes.toast.createFailed", { message: error.message }),
+      );
+    },
+  });
+
+  const handleCreateNoteInFolder = useCallback(
+    (folderName: string) => {
+      if (createNoteMutation.isPending) return;
+      const dateStr = new Date().toLocaleDateString(i18n.language, {
+        day: "numeric",
+        month: "short",
+      });
+      createNoteMutation.mutate(
+        { title: t("settings.notes.defaultTitleWithDate", { date: dateStr }) },
+        {
+          onSuccess: (newNote) => {
+            updateOrganization.mutate({ id: newNote.id, folder: folderName });
+          },
+        },
+      );
+    },
+    [createNoteMutation, i18n.language, t, updateOrganization],
+  );
 
   const handleDelete = (noteId: number) => {
     deleteMutation.mutate({ id: noteId });
@@ -266,21 +303,24 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
             <Collapsible
               key={folderName}
               defaultOpen={folderNotes.some((note) => isNoteActive(note.id))}
+              className="group/collapsible"
             >
               <SidebarMenuItem>
-                <SidebarMenuButton>
-                  <Folder className="size-4" />
-                  <span>{folderName}</span>
-                </SidebarMenuButton>
                 <CollapsibleTrigger asChild>
-                  <SidebarMenuAction
-                    className="bg-sidebar-accent text-sidebar-accent-foreground data-[state=open]:rotate-90"
-                    showOnHover
-                  >
-                    <ChevronRight />
-                    <span className="sr-only">{folderName}</span>
-                  </SidebarMenuAction>
+                  <SidebarMenuButton>
+                    <ChevronRight className="size-4 transition-transform group-data-[state=open]/collapsible:rotate-90" />
+                    <span>{folderName}</span>
+                  </SidebarMenuButton>
                 </CollapsibleTrigger>
+                <SidebarMenuAction
+                  showOnHover
+                  onClick={() => handleCreateNoteInFolder(folderName)}
+                >
+                  <Plus />
+                  <span className="sr-only">
+                    {t("settings.notes.create")}
+                  </span>
+                </SidebarMenuAction>
                 <CollapsibleContent>
                   <SidebarMenuSub>
                     {folderNotes.map((note) => (
