@@ -761,7 +761,9 @@
           "noFolder": "No folder",
           "newFolder": "New folder...",
           "newFolderPrompt": "Folder name",
-          "createFolder": "Create"
+          "createFolder": "Create",
+          "searchFolders": "Search folders...",
+          "noFoldersFound": "No folders found."
         },
         "deleteDialog": {
           "title": "Delete Note",

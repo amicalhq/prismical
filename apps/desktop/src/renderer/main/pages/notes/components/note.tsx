@@ -12,7 +12,6 @@ import {
   Star,
   FileTextIcon,
   Loader2,
-  FolderPlus,
 } from "lucide-react";
 import EmojiPicker, { Theme } from "emoji-picker-react";
 import { Button } from "@/components/ui/button";
@@ -28,9 +27,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -60,6 +56,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { NoteRecordingDock } from "./note-recording-dock";
 import { CreateFolderDialog } from "@/renderer/main/components/create-folder-dialog";
+import { FolderPickerDialog } from "@/renderer/main/components/folder-picker-dialog";
 
 type InvitedUser = {
   id: number;
@@ -152,6 +149,7 @@ export default function Note({
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showCreateFolderDialog, setShowCreateFolderDialog] = useState(false);
+  const [showFolderPicker, setShowFolderPicker] = useState(false);
   const [, setTick] = useState(0);
   const [localEditTime, setLocalEditTime] = useState<Date | null>(null);
 
@@ -518,43 +516,13 @@ export default function Note({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuSub>
-                    <DropdownMenuSubTrigger className="gap-2">
-                      <FolderOpen className="h-4 w-4" />
-                      {t("settings.notes.note.actions.moveToFolder")}
-                    </DropdownMenuSubTrigger>
-                    <DropdownMenuSubContent>
-                      <DropdownMenuItem
-                        className="gap-2"
-                        onSelect={() => onFolderChange(null)}
-                      >
-                        <Check
-                          className={`h-4 w-4 ${noteFolder ? "opacity-0" : "opacity-100"}`}
-                        />
-                        {t("settings.notes.note.actions.noFolder")}
-                      </DropdownMenuItem>
-                      {folderOptions.map((folderName) => (
-                        <DropdownMenuItem
-                          key={folderName}
-                          className="gap-2"
-                          onSelect={() => onFolderChange(folderName)}
-                        >
-                          <Check
-                            className={`h-4 w-4 ${noteFolder === folderName ? "opacity-100" : "opacity-0"}`}
-                          />
-                          {folderName}
-                        </DropdownMenuItem>
-                      ))}
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        className="gap-2"
-                        onSelect={handleCreateFolder}
-                      >
-                        <FolderPlus className="h-4 w-4" />
-                        {t("settings.notes.note.actions.newFolder")}
-                      </DropdownMenuItem>
-                    </DropdownMenuSubContent>
-                  </DropdownMenuSub>
+                  <DropdownMenuItem
+                    className="gap-2"
+                    onSelect={() => setShowFolderPicker(true)}
+                  >
+                    <FolderOpen className="h-4 w-4" />
+                    {t("settings.notes.note.actions.moveToFolder")}
+                  </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   {/* <DropdownMenuItem className="gap-2">
                     <Copy className="h-4 w-4" />
@@ -629,6 +597,16 @@ export default function Note({
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {/* Folder Picker Dialog */}
+        <FolderPickerDialog
+          open={showFolderPicker}
+          onOpenChange={setShowFolderPicker}
+          currentFolder={noteFolder}
+          folderNames={folderOptions}
+          onFolderChange={onFolderChange}
+          onCreateFolder={handleCreateFolder}
+        />
 
         {/* Create Folder Dialog */}
         <CreateFolderDialog

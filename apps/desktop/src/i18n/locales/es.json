@@ -753,7 +753,9 @@
           "noFolder": "Sin carpeta",
           "newFolder": "Nueva carpeta...",
           "newFolderPrompt": "Nombre de la carpeta",
-          "createFolder": "Crear"
+          "createFolder": "Crear",
+          "searchFolders": "Buscar carpetas...",
+          "noFoldersFound": "No se encontraron carpetas."
         },
         "deleteDialog": {
           "title": "Eliminar nota",

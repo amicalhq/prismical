@@ -1,12 +1,10 @@
 import * as React from "react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import {
-  Check,
   ChevronRight,
   FileText,
   Folder,
   FolderOpen,
-  FolderPlus,
   MoreHorizontal,
   Plus,
   Star,
@@ -27,9 +25,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -46,6 +41,7 @@ import {
 } from "@/components/ui/sidebar";
 import { api } from "@/trpc/react";
 import { CreateFolderDialog } from "./create-folder-dialog";
+import { FolderPickerDialog } from "./folder-picker-dialog";
 
 type NoteNavigationItem = {
   id: number;
@@ -64,21 +60,17 @@ function NoteLeadingIcon({ icon }: { icon: string | null }) {
 
 function NoteDropdownContent({
   note,
-  folderNames,
   isMobile,
   t,
   onStarredChange,
-  onFolderChange,
-  onCreateFolder,
+  onMoveTo,
   onDelete,
 }: {
   note: NoteNavigationItem;
-  folderNames: string[];
   isMobile: boolean;
   t: (key: string) => string;
   onStarredChange: (starred: boolean) => void;
-  onFolderChange: (folder: string | null) => void;
-  onCreateFolder: () => void;
+  onMoveTo: () => void;
   onDelete: () => void;
 }) {
   return (
@@ -98,33 +90,10 @@ function NoteDropdownContent({
           <span>{t("settings.notes.note.actions.addToFavorites")}</span>
         </DropdownMenuItem>
       )}
-      <DropdownMenuSub>
-        <DropdownMenuSubTrigger className="gap-2">
-          <FolderOpen className="h-4 w-4 text-muted-foreground" />
-          <span>{t("settings.notes.note.actions.moveToFolder")}</span>
-        </DropdownMenuSubTrigger>
-        <DropdownMenuSubContent>
-          <DropdownMenuItem onSelect={() => onFolderChange(null)}>
-            <Check
-              className={`h-4 w-4 ${note.folder ? "opacity-0" : "opacity-100"}`}
-            />
-            <span>{t("settings.notes.note.actions.noFolder")}</span>
-          </DropdownMenuItem>
-          {folderNames.map((name) => (
-            <DropdownMenuItem key={name} onSelect={() => onFolderChange(name)}>
-              <Check
-                className={`h-4 w-4 ${note.folder === name ? "opacity-100" : "opacity-0"}`}
-              />
-              <span>{name}</span>
-            </DropdownMenuItem>
-          ))}
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={onCreateFolder}>
-            <FolderPlus />
-            <span>{t("settings.notes.note.actions.newFolder")}</span>
-          </DropdownMenuItem>
-        </DropdownMenuSubContent>
-      </DropdownMenuSub>
+      <DropdownMenuItem onSelect={onMoveTo}>
+        <FolderOpen className="h-4 w-4" />
+        <span>{t("settings.notes.note.actions.moveToFolder")}</span>
+      </DropdownMenuItem>
       <DropdownMenuSeparator />
       <DropdownMenuItem variant="destructive" onSelect={onDelete}>
         <Trash2 />
@@ -209,6 +178,10 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
     number | null
   >(null);
 
+  const [folderPickerForNoteId, setFolderPickerForNoteId] = React.useState<
+    number | null
+  >(null);
+
   const handleCreateFolder = (noteId: number) => {
     setCreateFolderForNoteId(noteId);
   };
@@ -267,16 +240,12 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
                 </DropdownMenuTrigger>
                 <NoteDropdownContent
                   note={note}
-                  folderNames={folderNames}
                   isMobile={isMobile}
                   t={t}
                   onStarredChange={(starred) =>
                     updateOrganization.mutate({ id: note.id, starred })
                   }
-                  onFolderChange={(folder) =>
-                    handleFolderChange(note.id, folder)
-                  }
-                  onCreateFolder={() => handleCreateFolder(note.id)}
+                  onMoveTo={() => setFolderPickerForNoteId(note.id)}
                   onDelete={() => handleDelete(note.id)}
                 />
               </DropdownMenu>
@@ -354,7 +323,6 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
                           </DropdownMenuTrigger>
                           <NoteDropdownContent
                             note={note}
-                            folderNames={folderNames}
                             isMobile={isMobile}
                             t={t}
                             onStarredChange={(starred) =>
@@ -363,10 +331,7 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
                                 starred,
                               })
                             }
-                            onFolderChange={(folder) =>
-                              handleFolderChange(note.id, folder)
-                            }
-                            onCreateFolder={() => handleCreateFolder(note.id)}
+                            onMoveTo={() => setFolderPickerForNoteId(note.id)}
                             onDelete={() => handleDelete(note.id)}
                           />
                         </DropdownMenu>
@@ -390,6 +355,27 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
           ) : null}
         </SidebarMenu>
       </SidebarGroup>
+
+      <FolderPickerDialog
+        open={folderPickerForNoteId !== null}
+        onOpenChange={(open) => {
+          if (!open) setFolderPickerForNoteId(null);
+        }}
+        currentFolder={
+          notes.find((n) => n.id === folderPickerForNoteId)?.folder ?? null
+        }
+        folderNames={folderNames}
+        onFolderChange={(folder) => {
+          if (folderPickerForNoteId !== null) {
+            handleFolderChange(folderPickerForNoteId, folder);
+          }
+        }}
+        onCreateFolder={() => {
+          if (folderPickerForNoteId !== null) {
+            handleCreateFolder(folderPickerForNoteId);
+          }
+        }}
+      />
 
       <CreateFolderDialog
         open={createFolderForNoteId !== null}
