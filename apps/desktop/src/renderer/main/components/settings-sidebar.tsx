@@ -125,7 +125,7 @@ export function SettingsSidebar({
         style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
       />
       {isHomeSidebar ? (
-        <SidebarHeader className="py-0 -mb-1">
+        <SidebarHeader className="py-0 mb-2">
           <SidebarMenu>
             <SidebarMenuItem>
               <SidebarMenuButton

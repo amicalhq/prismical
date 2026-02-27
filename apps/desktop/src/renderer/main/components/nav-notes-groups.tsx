@@ -204,7 +204,7 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
 
   return (
     <>
-      <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+      <SidebarGroup className="pb-0 group-data-[collapsible=icon]:hidden">
         <SidebarGroupLabel>{t("settings.sidebar.favorites")}</SidebarGroupLabel>
         <SidebarMenu>
           {favorites.map((note) => (
@@ -258,7 +258,7 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
         </SidebarMenu>
       </SidebarGroup>
 
-      <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+      <SidebarGroup className="pt-0 group-data-[collapsible=icon]:hidden">
         <SidebarGroupLabel>{t("settings.sidebar.folders")}</SidebarGroupLabel>
         <SidebarMenu>
           {folders.map(([folderName, folderNotes]) => (
