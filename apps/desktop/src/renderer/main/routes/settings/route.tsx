@@ -48,6 +48,10 @@ function SettingsLayoutContent() {
   }, [location.pathname]);
 
   const getSettingsPageTitle = (pathname: string): string => {
+    if (pathname.startsWith("/settings/home")) {
+      return "Home";
+    }
+
     // Check for dynamic routes first
     if (pathname.startsWith("/settings/notes")) {
       return "Notes";

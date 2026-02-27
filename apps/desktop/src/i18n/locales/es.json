@@ -322,6 +322,10 @@
   },
   "settings": {
     "nav": {
+      "home": {
+        "title": "Inicio",
+        "description": "Mira tu día de un vistazo"
+      },
       "notes": {
         "title": "Notas",
         "description": "Administra tus notas"
@@ -378,6 +382,18 @@
       "noResults": "No se encontraron resultados.",
       "settingsHeading": "Configuración",
       "notesHeading": "Notas"
+    },
+    "home": {
+      "greeting": {
+        "morning": "Buenos días",
+        "afternoon": "Buenas tardes",
+        "evening": "Buenas noches"
+      },
+      "subtitle": "Esto es lo que viene y lo que puedes capturar a continuación.",
+      "upcoming": {
+        "title": "Próximos eventos",
+        "participants": "{{count}} participantes"
+      }
     },
     "preferences": {
       "title": "Preferencias",

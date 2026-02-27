@@ -38,7 +38,9 @@ export function SettingsSidebar({
   const { t } = useTranslation();
   const location = useLocation();
   const sidebarCtaFlag = useFeatureFlag(SIDEBAR_CTA_FEATURE_FLAG);
-  const isHomeSidebar = location.pathname.startsWith("/settings/notes");
+  const isHomeSidebar =
+    location.pathname.startsWith("/settings/home") ||
+    location.pathname.startsWith("/settings/notes");
 
   const sidebarCtaPayload = sidebarCtaFlag.enabled
     ? parseSidebarCtaPayload(sidebarCtaFlag.payload)
@@ -138,7 +140,7 @@ export function SettingsSidebar({
                 className="data-[slot=sidebar-menu-button]:!p-1.5"
               >
                 <Link
-                  to="/settings/notes"
+                  to="/settings/home"
                   aria-label={t("settings.sidebar.backToHome")}
                 >
                   <IconChevronLeft />

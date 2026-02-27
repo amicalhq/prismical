@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { IconNotes, IconSearch } from "@tabler/icons-react";
+import { IconHome, IconNotes, IconSearch } from "@tabler/icons-react";
 import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import {
@@ -23,6 +23,13 @@ import {
 
 // Detect platform for keyboard shortcuts
 const isMac = window.electronAPI.platform === "darwin";
+const HOME_SEARCH_ITEM: SettingsNavItem = {
+  titleKey: "settings.nav.home.title",
+  url: "/settings/home",
+  descriptionKey: "settings.nav.home.description",
+  icon: IconHome,
+  type: "settings",
+};
 const NOTES_SEARCH_ITEM: SettingsNavItem = {
   titleKey: "settings.nav.notes.title",
   url: "/settings/notes",
@@ -39,11 +46,13 @@ export function CommandSearchButton() {
 
   const localizedSettings = React.useMemo(
     () =>
-      [NOTES_SEARCH_ITEM, ...SETTINGS_NAV_ITEMS].map((page) => ({
-        ...page,
-        title: t(page.titleKey),
-        description: t(page.descriptionKey),
-      })),
+      [HOME_SEARCH_ITEM, NOTES_SEARCH_ITEM, ...SETTINGS_NAV_ITEMS].map(
+        (page) => ({
+          ...page,
+          title: t(page.titleKey),
+          description: t(page.descriptionKey),
+        }),
+      ),
     [t, i18n.language],
   );
 

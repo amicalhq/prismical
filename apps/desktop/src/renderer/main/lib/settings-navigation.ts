@@ -7,6 +7,7 @@ import {
   IconInfoCircle,
   IconKeyboard,
   IconAdjustments,
+  IconHome,
   IconNotes,
   type Icon,
 } from "@tabler/icons-react";
@@ -23,6 +24,11 @@ export interface SettingsNavItem extends SidebarNavItem {
 }
 
 export const HOME_NAV_ITEMS: SidebarNavItem[] = [
+  {
+    titleKey: "settings.nav.home.title",
+    url: "/settings/home",
+    icon: IconHome,
+  },
   {
     titleKey: "settings.nav.notes.title",
     url: "/settings/notes",

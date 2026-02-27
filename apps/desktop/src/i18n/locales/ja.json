@@ -322,6 +322,10 @@
   },
   "settings": {
     "nav": {
+      "home": {
+        "title": "ホーム",
+        "description": "今日の情報を一目で確認"
+      },
       "notes": {
         "title": "ノート",
         "description": "ノートを管理"
@@ -378,6 +382,18 @@
       "noResults": "結果が見つかりません。",
       "settingsHeading": "設定",
       "notesHeading": "ノート"
+    },
+    "home": {
+      "greeting": {
+        "morning": "おはようございます",
+        "afternoon": "こんにちは",
+        "evening": "こんばんは"
+      },
+      "subtitle": "今日の予定と次に記録する内容です。",
+      "upcoming": {
+        "title": "予定",
+        "participants": "{{count}}人が参加"
+      }
     },
     "preferences": {
       "title": "環境設定",

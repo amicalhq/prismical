@@ -322,6 +322,10 @@
   },
   "settings": {
     "nav": {
+      "home": {
+        "title": "Home",
+        "description": "View your day at a glance"
+      },
       "notes": {
         "title": "Notes",
         "description": "Manage your notes"
@@ -378,6 +382,18 @@
       "noResults": "No results found.",
       "settingsHeading": "Settings",
       "notesHeading": "Notes"
+    },
+    "home": {
+      "greeting": {
+        "morning": "Good morning",
+        "afternoon": "Good afternoon",
+        "evening": "Good evening"
+      },
+      "subtitle": "Here is what is coming up and what to capture next.",
+      "upcoming": {
+        "title": "Upcoming",
+        "participants": "{{count}} participants"
+      }
     },
     "preferences": {
       "title": "Preferences",

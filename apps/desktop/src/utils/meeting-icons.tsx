@@ -1,5 +1,6 @@
 import React from "react";
 import { Calendar } from "lucide-react";
+import { IconBrandTeams } from "@tabler/icons-react";
 
 interface MeetingIconProps {
   className?: string;
@@ -74,6 +75,13 @@ export function getMeetingIcon(
 
     // Add more platforms as needed when you have their icons
     case "microsoft-teams":
+      return (
+        <IconBrandTeams
+          aria-label="Microsoft Teams"
+          className={className}
+          style={{ color: "#6264A7" }}
+        />
+      );
     case "webex":
     case "gotomeeting":
     case "bluejeans":

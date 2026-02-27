@@ -5,7 +5,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 
-export function NotesList() {
+interface NotesListProps {
+  showPageHeader?: boolean;
+}
+
+export function NotesList({ showPageHeader = true }: NotesListProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
 
@@ -29,9 +33,13 @@ export function NotesList() {
   if (isLoading) {
     return (
       <div>
-        <div className="mb-8">
-          <h1 className="text-xl font-bold">{t("settings.nav.notes.title")}</h1>
-        </div>
+        {showPageHeader ? (
+          <div className="mb-8">
+            <h1 className="text-xl font-bold">
+              {t("settings.nav.notes.title")}
+            </h1>
+          </div>
+        ) : null}
         <div className="space-y-2">
           {[1, 2, 3].map((i) => (
             <div key={i} className="flex items-start gap-3 py-2 px-3">
@@ -49,10 +57,11 @@ export function NotesList() {
 
   return (
     <div>
-      {/* Header Section */}
-      <div className="mb-8">
-        <h1 className="text-xl font-bold">{t("settings.nav.notes.title")}</h1>
-      </div>
+      {showPageHeader ? (
+        <div className="mb-8">
+          <h1 className="text-xl font-bold">{t("settings.nav.notes.title")}</h1>
+        </div>
+      ) : null}
 
       {formattedNotes.length > 0 && (
         <div>
