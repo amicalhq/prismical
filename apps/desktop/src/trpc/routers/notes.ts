@@ -33,6 +33,16 @@ const UpdateNoteIconSchema = z.object({
   icon: z.string().nullish(),
 });
 
+const UpdateNoteOrganizationSchema = z
+  .object({
+    id: z.number(),
+    starred: z.boolean().optional(),
+    folder: z.string().trim().min(1).nullable().optional(),
+  })
+  .refine((input) => input.starred !== undefined || input.folder !== undefined, {
+    message: "At least one organization field must be provided",
+  });
+
 export const notesRouter = createRouter({
   // Get all notes
   getNotes: procedure.input(GetNotesSchema).query(async ({ input }) => {
@@ -97,6 +107,19 @@ export const notesRouter = createRouter({
       });
       if (!updated) {
         throw new Error("Failed to update note");
+      }
+      return updated;
+    }),
+
+  updateNoteOrganization: procedure
+    .input(UpdateNoteOrganizationSchema)
+    .mutation(async ({ input }) => {
+      const updated = await notesService.updateNote(input.id, {
+        starred: input.starred,
+        folder: input.folder,
+      });
+      if (!updated) {
+        throw new Error("Failed to update note organization");
       }
       return updated;
     }),

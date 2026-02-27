@@ -365,7 +365,11 @@
       "discordAlt": "Discord",
       "logoAlt": "Amical ロゴ",
       "brand": "Amical",
-      "backToHome": "ホームに戻る"
+      "backToHome": "ホームに戻る",
+      "favorites": "お気に入り",
+      "folders": "フォルダー",
+      "noFavorites": "お気に入りはまだありません",
+      "noFolders": "フォルダーはまだありません"
     },
     "search": {
       "buttonLabel": "検索",
@@ -704,6 +708,7 @@
         "createFailed": "ノートの作成に失敗しました: {{message}}",
         "emojiUpdated": "絵文字を更新しました",
         "emojiUpdateFailed": "絵文字の更新に失敗しました: {{message}}",
+        "organizationUpdateFailed": "ノートの更新に失敗しました: {{message}}",
         "deleted": "ノートを削除しました",
         "deleteFailed": "ノートの削除に失敗しました: {{message}}",
         "saveFailed": "変更の保存に失敗しました",
@@ -717,7 +722,13 @@
         "edited": "{{date}}に編集",
         "actions": {
           "openInNotesWindow": "ノートウィンドウで開く",
-          "delete": "削除"
+          "delete": "削除",
+          "addToFavorites": "お気に入りに追加",
+          "removeFromFavorites": "お気に入りから削除",
+          "moveToFolder": "フォルダーに移動",
+          "noFolder": "フォルダーなし",
+          "newFolder": "新しいフォルダー...",
+          "newFolderPrompt": "フォルダー名"
         },
         "deleteDialog": {
           "title": "ノートを削除",

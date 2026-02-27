@@ -26,8 +26,10 @@ import {
   parseSidebarCtaPayload,
   SIDEBAR_CTA_FEATURE_FLAG,
 } from "@/utils/feature-flags";
+import { api } from "@/trpc/react";
 import { CommandSearchButton } from "./command-search-button";
 import { CreateNoteButton } from "./create-note-button";
+import { NavNotesGroups } from "./nav-notes-groups";
 import { HOME_NAV_ITEMS, SETTINGS_NAV_ITEMS } from "../lib/settings-navigation";
 
 export function SettingsSidebar({
@@ -41,6 +43,17 @@ export function SettingsSidebar({
   const sidebarCtaPayload = sidebarCtaFlag.enabled
     ? parseSidebarCtaPayload(sidebarCtaFlag.payload)
     : null;
+
+  const { data: notesForGroups = [] } = api.notes.getNotes.useQuery(
+    {
+      limit: 500,
+      sortBy: "updatedAt",
+      sortOrder: "desc",
+    },
+    {
+      enabled: isHomeSidebar,
+    },
+  );
 
   const navMainItems = isHomeSidebar ? HOME_NAV_ITEMS : SETTINGS_NAV_ITEMS;
   const navMain = navMainItems.map(({ titleKey, url, icon }) => ({
@@ -143,6 +156,7 @@ export function SettingsSidebar({
       )}
       <SidebarContent>
         <NavMain items={navMain} />
+        {isHomeSidebar ? <NavNotesGroups notes={notesForGroups} /> : null}
         <NavSecondary items={navSecondary} className="mt-auto" />
       </SidebarContent>
     </Sidebar>

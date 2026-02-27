@@ -18,12 +18,16 @@ import { logger } from "../main/logger";
 export interface NoteCreateOptions {
   title: string;
   icon?: string | null;
+  starred?: boolean;
+  folder?: string | null;
 }
 
 export interface NoteUpdateOptions {
   title?: string;
   transcriptionId?: number | null;
   icon?: string | null;
+  starred?: boolean;
+  folder?: string | null;
 }
 
 class NotesService {
@@ -80,6 +84,8 @@ class NotesService {
     const note = await createNote({
       title: options.title,
       icon: options.icon,
+      starred: options.starred,
+      folder: options.folder,
     });
 
     return note;

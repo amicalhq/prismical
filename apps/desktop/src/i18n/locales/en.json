@@ -365,7 +365,11 @@
       "discordAlt": "Discord",
       "logoAlt": "Amical Logo",
       "brand": "Amical",
-      "backToHome": "Back to home"
+      "backToHome": "Back to home",
+      "favorites": "Favorites",
+      "folders": "Folders",
+      "noFavorites": "No favorites yet",
+      "noFolders": "No folders yet"
     },
     "search": {
       "buttonLabel": "Search",
@@ -704,6 +708,7 @@
         "createFailed": "Failed to create note: {{message}}",
         "emojiUpdated": "Emoji updated",
         "emojiUpdateFailed": "Failed to update emoji: {{message}}",
+        "organizationUpdateFailed": "Failed to update note: {{message}}",
         "deleted": "Note deleted",
         "deleteFailed": "Failed to delete note: {{message}}",
         "saveFailed": "Failed to save changes",
@@ -717,7 +722,13 @@
         "edited": "Edited {{date}}",
         "actions": {
           "openInNotesWindow": "Open in notes window",
-          "delete": "Delete"
+          "delete": "Delete",
+          "addToFavorites": "Add to favorites",
+          "removeFromFavorites": "Remove from favorites",
+          "moveToFolder": "Move to folder",
+          "noFolder": "No folder",
+          "newFolder": "New folder...",
+          "newFolderPrompt": "Folder name"
         },
         "deleteDialog": {
           "title": "Delete Note",

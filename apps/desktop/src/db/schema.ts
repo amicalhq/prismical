@@ -218,6 +218,8 @@ export const notes = sqliteTable("notes", {
   title: text("title").notNull(),
   content: text("content").default(""), // Store the actual text content
   icon: text("icon"), // Store the icon (emoji) associated with the note
+  starred: integer("starred", { mode: "boolean" }).notNull().default(false),
+  folder: text("folder"),
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()
     .default(sql`(unixepoch())`),

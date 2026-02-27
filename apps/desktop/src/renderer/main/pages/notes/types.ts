@@ -10,6 +10,8 @@ export interface Note {
   id: number;
   title: string;
   icon?: string | null;
+  starred?: boolean;
+  folder?: string | null;
   updatedAt: Date;
   meetingEvent?: {
     title: string;

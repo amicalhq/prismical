@@ -24,11 +24,14 @@ export default function NotePage({
   const navigate = useNavigate();
   const utils = api.useUtils();
   const startRecordingMutation = api.recording.signalStart.useMutation();
+  const noteIdNumber = Number.parseInt(noteId, 10);
 
   // State
   const [noteTitle, setNoteTitle] = useState("");
   const [isSyncing, setIsSyncing] = useState(false);
   const [noteIcon, setNoteIcon] = useState<string | null>(null);
+  const [noteStarred, setNoteStarred] = useState(false);
+  const [noteFolder, setNoteFolder] = useState<string | null>(null);
   const [editorReady, setEditorReady] = useState(false);
 
   // Refs
@@ -37,17 +40,23 @@ export default function NotePage({
 
   // Fetch note data
   const { data: note, isLoading } = api.notes.getNoteById.useQuery(
-    { id: parseInt(noteId) },
+    { id: noteIdNumber },
     {
       enabled: !!noteId,
     },
   );
 
+  const { data: allNotes = [] } = api.notes.getNotes.useQuery({
+    limit: 500,
+    sortBy: "updatedAt",
+    sortOrder: "desc",
+  });
+
   // Update title mutation
   const updateTitleMutation = api.notes.updateNoteTitle.useMutation({
     onSuccess: () => {
       utils.notes.getNotes.invalidate();
-      utils.notes.getNoteById.invalidate({ id: parseInt(noteId) });
+      utils.notes.getNoteById.invalidate({ id: noteIdNumber });
     },
   });
 
@@ -55,7 +64,7 @@ export default function NotePage({
   const updateNoteIconMutation = api.notes.updateNoteIcon.useMutation({
     onSuccess: () => {
       utils.notes.getNotes.invalidate();
-      utils.notes.getNoteById.invalidate({ id: parseInt(noteId) });
+      utils.notes.getNoteById.invalidate({ id: noteIdNumber });
       toast.success(t("settings.notes.toast.emojiUpdated"));
     },
     onError: (error) => {
@@ -64,6 +73,21 @@ export default function NotePage({
       );
     },
   });
+
+  const updateNoteOrganizationMutation =
+    api.notes.updateNoteOrganization.useMutation({
+      onSuccess: () => {
+        utils.notes.getNotes.invalidate();
+        utils.notes.getNoteById.invalidate({ id: noteIdNumber });
+      },
+      onError: (error) => {
+        toast.error(
+          t("settings.notes.toast.organizationUpdateFailed", {
+            message: error.message,
+          }),
+        );
+      },
+    });
 
   // Delete mutation
   const deleteMutation = api.notes.deleteNote.useMutation({
@@ -102,6 +126,8 @@ export default function NotePage({
     if (note) {
       setNoteTitle(note.title);
       setNoteIcon(note.icon || null);
+      setNoteStarred(note.starred ?? false);
+      setNoteFolder(note.folder ?? null);
     }
   }, [note]);
 
@@ -142,16 +168,45 @@ export default function NotePage({
 
   // Handle delete
   const handleDelete = useCallback(() => {
-    deleteMutation.mutate({ id: parseInt(noteId) });
-  }, [noteId, deleteMutation]);
+    deleteMutation.mutate({ id: noteIdNumber });
+  }, [noteIdNumber, deleteMutation]);
+
+  const handleStarredChange = useCallback(
+    (starred: boolean) => {
+      setNoteStarred(starred);
+      updateNoteOrganizationMutation.mutate({
+        id: noteIdNumber,
+        starred,
+      });
+    },
+    [noteIdNumber, updateNoteOrganizationMutation],
+  );
+
+  const handleFolderChange = useCallback(
+    (folder: string | null) => {
+      setNoteFolder(folder);
+      updateNoteOrganizationMutation.mutate({
+        id: noteIdNumber,
+        folder,
+      });
+    },
+    [noteIdNumber, updateNoteOrganizationMutation],
+  );
+
+  const folderOptions = useMemo(() => {
+    const names = allNotes
+      .map((entry) => entry.folder?.trim())
+      .filter((name): name is string => Boolean(name));
+    return Array.from(new Set(names)).sort((a, b) => a.localeCompare(b));
+  }, [allNotes]);
 
   // Handle emoji change
   const handleEmojiChange = useCallback(
     (emoji: string | null) => {
       setNoteIcon(emoji);
-      updateNoteIconMutation.mutate({ id: parseInt(noteId), icon: emoji });
+      updateNoteIconMutation.mutate({ id: noteIdNumber, icon: emoji });
     },
-    [noteId, updateNoteIconMutation],
+    [noteIdNumber, updateNoteIconMutation],
   );
 
   // Note not found state
@@ -184,17 +239,22 @@ export default function NotePage({
       noteId={noteId}
       noteTitle={noteTitle}
       noteEmoji={noteIcon}
+      noteStarred={noteStarred}
+      noteFolder={noteFolder}
+      folderOptions={folderOptions}
       isLoading={isLoading}
       isSyncing={isSyncing}
       lastEditDate={lastEditDate}
       onTitleChange={handleTitleChange}
       onDelete={handleDelete}
       onEmojiChange={handleEmojiChange}
+      onStarredChange={handleStarredChange}
+      onFolderChange={handleFolderChange}
       onBack={onBack}
       isDeleting={deleteMutation.isPending}
     >
       <NoteEditor
-        noteId={parseInt(noteId)}
+        noteId={noteIdNumber}
         onSyncStatusChange={handleSyncStatusChange}
         onReady={handleEditorReady}
       />

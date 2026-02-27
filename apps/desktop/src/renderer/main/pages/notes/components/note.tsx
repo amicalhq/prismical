@@ -12,6 +12,7 @@ import {
   Star,
   FileTextIcon,
   Loader2,
+  FolderPlus,
 } from "lucide-react";
 import EmojiPicker, { Theme } from "emoji-picker-react";
 import { Button } from "@/components/ui/button";
@@ -26,6 +27,10 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -67,12 +72,17 @@ export type NotePageUIProps = {
   noteId: string;
   noteTitle: string;
   noteEmoji: string | null;
+  noteStarred: boolean;
+  noteFolder: string | null;
+  folderOptions: string[];
   isLoading: boolean;
   isSyncing: boolean;
   lastEditDate: Date;
   onTitleChange: (value: string) => void;
   onDelete: () => void;
   onEmojiChange: (emoji: string | null) => void;
+  onStarredChange: (starred: boolean) => void;
+  onFolderChange: (folder: string | null) => void;
   onBack?: () => void;
   isDeleting?: boolean;
   children?: React.ReactNode;
@@ -117,12 +127,17 @@ function formatRelativeTime(date: Date, locale: string): string {
 export default function Note({
   noteTitle,
   noteEmoji,
+  noteStarred,
+  noteFolder,
+  folderOptions,
   isLoading,
   isSyncing,
   lastEditDate,
   onTitleChange,
   onDelete,
   onEmojiChange,
+  onStarredChange,
+  onFolderChange,
   isDeleting = false,
   children,
 }: NotePageUIProps) {
@@ -132,7 +147,6 @@ export default function Note({
   const [accessLevel, setAccessLevel] = useState("can-read");
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [invitedUsers, setInvitedUsers] = useState<Array<InvitedUser>>([]);
-  const [starred, setStarred] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [, setTick] = useState(0);
@@ -215,6 +229,18 @@ export default function Note({
 
   const handleEmojiRemove = () => {
     onEmojiChange(null);
+  };
+
+  const handleToggleStar = () => {
+    onStarredChange(!noteStarred);
+  };
+
+  const handleCreateFolder = () => {
+    const nextFolder = window
+      .prompt(t("settings.notes.note.actions.newFolderPrompt"))
+      ?.trim();
+    if (!nextFolder) return;
+    onFolderChange(nextFolder);
   };
 
   /* const allUsers = [...sharedUsers, ...invitedUsers]; */
@@ -350,19 +376,25 @@ export default function Note({
                 ))}
               </div> */}
 
-              {/* Star the note */}
-              {/* <Button
-                size="sm"
-                variant="ghost"
-                className="gap-2"
-                onClick={() => setStarred(!starred)}
-              >
-                <Star
-                  fill={starred ? "orange" : "none"}
-                  stroke={starred ? "orange" : "currentColor"}
-                  className="h-4 w-4"
-                />
-              </Button> */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="gap-2"
+                    onClick={handleToggleStar}
+                  >
+                    <Star
+                      className={`h-4 w-4 ${noteStarred ? "fill-yellow-400 text-yellow-400" : ""}`}
+                    />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {noteStarred
+                    ? t("settings.notes.note.actions.removeFromFavorites")
+                    : t("settings.notes.note.actions.addToFavorites")}
+                </TooltipContent>
+              </Tooltip>
 
               {/* Share button with popover */}
               {/* <Popover>
@@ -487,6 +519,44 @@ export default function Note({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger className="gap-2">
+                      <FolderOpen className="h-4 w-4" />
+                      {t("settings.notes.note.actions.moveToFolder")}
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent>
+                      <DropdownMenuItem
+                        className="gap-2"
+                        onSelect={() => onFolderChange(null)}
+                      >
+                        <Check
+                          className={`h-4 w-4 ${noteFolder ? "opacity-0" : "opacity-100"}`}
+                        />
+                        {t("settings.notes.note.actions.noFolder")}
+                      </DropdownMenuItem>
+                      {folderOptions.map((folderName) => (
+                        <DropdownMenuItem
+                          key={folderName}
+                          className="gap-2"
+                          onSelect={() => onFolderChange(folderName)}
+                        >
+                          <Check
+                            className={`h-4 w-4 ${noteFolder === folderName ? "opacity-100" : "opacity-0"}`}
+                          />
+                          {folderName}
+                        </DropdownMenuItem>
+                      ))}
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        className="gap-2"
+                        onSelect={handleCreateFolder}
+                      >
+                        <FolderPlus className="h-4 w-4" />
+                        {t("settings.notes.note.actions.newFolder")}
+                      </DropdownMenuItem>
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                  <DropdownMenuSeparator />
                   {/* <DropdownMenuItem className="gap-2">
                     <Copy className="h-4 w-4" />
                     Copy

@@ -365,7 +365,11 @@
       "discordAlt": "Discord",
       "logoAlt": "Logo de Amical",
       "brand": "Amical",
-      "backToHome": "Volver al inicio"
+      "backToHome": "Volver al inicio",
+      "favorites": "Favoritos",
+      "folders": "Carpetas",
+      "noFavorites": "Aún no hay favoritos",
+      "noFolders": "Aún no hay carpetas"
     },
     "search": {
       "buttonLabel": "Buscar",
@@ -704,6 +708,7 @@
         "createFailed": "No se pudo crear la nota: {{message}}",
         "emojiUpdated": "Emoji actualizado",
         "emojiUpdateFailed": "No se pudo actualizar el emoji: {{message}}",
+        "organizationUpdateFailed": "No se pudo actualizar la nota: {{message}}",
         "deleted": "Nota eliminada",
         "deleteFailed": "No se pudo eliminar la nota: {{message}}",
         "saveFailed": "No se pudieron guardar los cambios",
@@ -717,7 +722,13 @@
         "edited": "Editado {{date}}",
         "actions": {
           "openInNotesWindow": "Abrir en ventana de notas",
-          "delete": "Eliminar"
+          "delete": "Eliminar",
+          "addToFavorites": "Agregar a favoritos",
+          "removeFromFavorites": "Quitar de favoritos",
+          "moveToFolder": "Mover a carpeta",
+          "noFolder": "Sin carpeta",
+          "newFolder": "Nueva carpeta...",
+          "newFolderPrompt": "Nombre de la carpeta"
         },
         "deleteDialog": {
           "title": "Eliminar nota",
