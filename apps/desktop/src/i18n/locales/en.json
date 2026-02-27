@@ -396,7 +396,8 @@
         "today": "Today",
         "tomorrow": "Tomorrow",
         "notes": "Notes",
-        "join": "Join"
+        "join": "Join",
+        "allEvents": "All Events"
       },
       "notes": {
         "today": "Today",
@@ -715,6 +716,13 @@
       },
       "input": {
         "pressKeys": "Press keys..."
+      }
+    },
+    "events": {
+      "title": "All Events",
+      "empty": {
+        "title": "No upcoming events",
+        "description": "Your calendar events will appear here"
       }
     },
     "notes": {

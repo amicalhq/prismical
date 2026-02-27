@@ -52,6 +52,10 @@ function SettingsLayoutContent() {
       return "Home";
     }
 
+    if (pathname.startsWith("/settings/events")) {
+      return "Events";
+    }
+
     // Check for dynamic routes first
     if (pathname.startsWith("/settings/notes")) {
       return "Notes";

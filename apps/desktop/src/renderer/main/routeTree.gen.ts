@@ -18,6 +18,7 @@ import { Route as SettingsPreferencesRouteImport } from './routes/settings/prefe
 import { Route as SettingsNotesRouteImport } from './routes/settings/notes'
 import { Route as SettingsHomeRouteImport } from './routes/settings/home'
 import { Route as SettingsHistoryRouteImport } from './routes/settings/history'
+import { Route as SettingsEventsRouteImport } from './routes/settings/events'
 import { Route as SettingsDictationRouteImport } from './routes/settings/dictation'
 import { Route as SettingsAiModelsRouteImport } from './routes/settings/ai-models'
 import { Route as SettingsAdvancedRouteImport } from './routes/settings/advanced'
@@ -70,6 +71,11 @@ const SettingsHistoryRoute = SettingsHistoryRouteImport.update({
   path: '/history',
   getParentRoute: () => SettingsRouteRoute,
 } as any)
+const SettingsEventsRoute = SettingsEventsRouteImport.update({
+  id: '/events',
+  path: '/events',
+  getParentRoute: () => SettingsRouteRoute,
+} as any)
 const SettingsDictationRoute = SettingsDictationRouteImport.update({
   id: '/dictation',
   path: '/dictation',
@@ -108,6 +114,7 @@ export interface FileRoutesByFullPath {
   '/settings/advanced': typeof SettingsAdvancedRoute
   '/settings/ai-models': typeof SettingsAiModelsRoute
   '/settings/dictation': typeof SettingsDictationRoute
+  '/settings/events': typeof SettingsEventsRoute
   '/settings/history': typeof SettingsHistoryRoute
   '/settings/home': typeof SettingsHomeRoute
   '/settings/notes': typeof SettingsNotesRouteWithChildren
@@ -124,6 +131,7 @@ export interface FileRoutesByTo {
   '/settings/advanced': typeof SettingsAdvancedRoute
   '/settings/ai-models': typeof SettingsAiModelsRoute
   '/settings/dictation': typeof SettingsDictationRoute
+  '/settings/events': typeof SettingsEventsRoute
   '/settings/history': typeof SettingsHistoryRoute
   '/settings/home': typeof SettingsHomeRoute
   '/settings/preferences': typeof SettingsPreferencesRoute
@@ -141,6 +149,7 @@ export interface FileRoutesById {
   '/settings/advanced': typeof SettingsAdvancedRoute
   '/settings/ai-models': typeof SettingsAiModelsRoute
   '/settings/dictation': typeof SettingsDictationRoute
+  '/settings/events': typeof SettingsEventsRoute
   '/settings/history': typeof SettingsHistoryRoute
   '/settings/home': typeof SettingsHomeRoute
   '/settings/notes': typeof SettingsNotesRouteWithChildren
@@ -160,6 +169,7 @@ export interface FileRouteTypes {
     | '/settings/advanced'
     | '/settings/ai-models'
     | '/settings/dictation'
+    | '/settings/events'
     | '/settings/history'
     | '/settings/home'
     | '/settings/notes'
@@ -176,6 +186,7 @@ export interface FileRouteTypes {
     | '/settings/advanced'
     | '/settings/ai-models'
     | '/settings/dictation'
+    | '/settings/events'
     | '/settings/history'
     | '/settings/home'
     | '/settings/preferences'
@@ -192,6 +203,7 @@ export interface FileRouteTypes {
     | '/settings/advanced'
     | '/settings/ai-models'
     | '/settings/dictation'
+    | '/settings/events'
     | '/settings/history'
     | '/settings/home'
     | '/settings/notes'
@@ -273,6 +285,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsHistoryRouteImport
       parentRoute: typeof SettingsRouteRoute
     }
+    '/settings/events': {
+      id: '/settings/events'
+      path: '/events'
+      fullPath: '/settings/events'
+      preLoaderRoute: typeof SettingsEventsRouteImport
+      parentRoute: typeof SettingsRouteRoute
+    }
     '/settings/dictation': {
       id: '/settings/dictation'
       path: '/dictation'
@@ -337,6 +356,7 @@ interface SettingsRouteRouteChildren {
   SettingsAdvancedRoute: typeof SettingsAdvancedRoute
   SettingsAiModelsRoute: typeof SettingsAiModelsRoute
   SettingsDictationRoute: typeof SettingsDictationRoute
+  SettingsEventsRoute: typeof SettingsEventsRoute
   SettingsHistoryRoute: typeof SettingsHistoryRoute
   SettingsHomeRoute: typeof SettingsHomeRoute
   SettingsNotesRoute: typeof SettingsNotesRouteWithChildren
@@ -351,6 +371,7 @@ const SettingsRouteRouteChildren: SettingsRouteRouteChildren = {
   SettingsAdvancedRoute: SettingsAdvancedRoute,
   SettingsAiModelsRoute: SettingsAiModelsRoute,
   SettingsDictationRoute: SettingsDictationRoute,
+  SettingsEventsRoute: SettingsEventsRoute,
   SettingsHistoryRoute: SettingsHistoryRoute,
   SettingsHomeRoute: SettingsHomeRoute,
   SettingsNotesRoute: SettingsNotesRouteWithChildren,

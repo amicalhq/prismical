@@ -40,7 +40,8 @@ export function SettingsSidebar({
   const sidebarCtaFlag = useFeatureFlag(SIDEBAR_CTA_FEATURE_FLAG);
   const isHomeSidebar =
     location.pathname.startsWith("/settings/home") ||
-    location.pathname.startsWith("/settings/notes");
+    location.pathname.startsWith("/settings/notes") ||
+    location.pathname.startsWith("/settings/events");
 
   const sidebarCtaPayload = sidebarCtaFlag.enabled
     ? parseSidebarCtaPayload(sidebarCtaFlag.payload)

@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { Link } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { NotesList } from "../../notes/components/notes-list";
 import { getMeetingIcon } from "@/utils/meeting-icons";
@@ -101,18 +102,23 @@ export default function HomePage() {
     <div className="w-full max-w-4xl">
       <div className="mb-8">
         <h1 className="text-xl font-bold">
-          {t(`settings.home.greeting.${greetingPeriod}`)}
+          👋 {t(`settings.home.greeting.${greetingPeriod}`)}
         </h1>
-        <p className="text-muted-foreground mt-1 text-sm">
-          {t("settings.home.subtitle")}
-        </p>
       </div>
 
       <div className="space-y-8 pb-8">
         <section className="space-y-4">
-          <h2 className="text-sm font-medium text-muted-foreground">
-            {t("settings.home.upcoming.title")}
-          </h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-medium text-muted-foreground">
+              {t("settings.home.upcoming.title")}
+            </h2>
+            <Link
+              to="/settings/events"
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {t("settings.home.upcoming.allEvents")} &rsaquo;
+            </Link>
+          </div>
 
           <div className="bg-accent/40 rounded-xl overflow-hidden">
             {UPCOMING_MEETINGS.map((meeting) => (
