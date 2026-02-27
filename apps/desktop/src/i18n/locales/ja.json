@@ -393,6 +393,10 @@
       "upcoming": {
         "title": "予定",
         "participants": "{{count}}人が参加"
+      },
+      "notes": {
+        "today": "今日",
+        "earlier": "以前"
       }
     },
     "preferences": {

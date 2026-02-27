@@ -4,12 +4,27 @@ import { api } from "@/trpc/react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
+import { useMemo } from "react";
+import type { Note } from "../types";
 
 interface NotesListProps {
   showPageHeader?: boolean;
+  groupByDate?: boolean;
 }
 
-export function NotesList({ showPageHeader = true }: NotesListProps) {
+function isToday(date: Date): boolean {
+  const now = new Date();
+  return (
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate()
+  );
+}
+
+export function NotesList({
+  showPageHeader = true,
+  groupByDate = false,
+}: NotesListProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
 
@@ -27,7 +42,21 @@ export function NotesList({ showPageHeader = true }: NotesListProps) {
   };
 
   // Convert database notes to UI format
-  const formattedNotes = notes || [];
+  const formattedNotes = useMemo(() => notes || [], [notes]);
+
+  const { todayNotes, earlierNotes } = useMemo(() => {
+    if (!groupByDate) return { todayNotes: [], earlierNotes: [] };
+    const today: Note[] = [];
+    const earlier: Note[] = [];
+    for (const note of formattedNotes) {
+      if (isToday(new Date(note.updatedAt))) {
+        today.push(note);
+      } else {
+        earlier.push(note);
+      }
+    }
+    return { todayNotes: today, earlierNotes: earlier };
+  }, [formattedNotes, groupByDate]);
 
   // Loading state
   if (isLoading) {
@@ -51,6 +80,62 @@ export function NotesList({ showPageHeader = true }: NotesListProps) {
             </div>
           ))}
         </div>
+      </div>
+    );
+  }
+
+  if (groupByDate) {
+    if (formattedNotes.length === 0) {
+      return (
+        <div className="border border-dashed rounded-lg p-6 text-center space-y-4">
+          <NotebookText className="w-8 h-8 text-muted-foreground mx-auto" />
+          <div className="space-y-2">
+            <p className="text-sm text-muted-foreground">
+              {t("settings.notes.empty.title")}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {t("settings.notes.empty.description")}
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-6">
+        {todayNotes.length > 0 && (
+          <section className="space-y-2">
+            <h2 className="text-sm font-medium text-muted-foreground px-3">
+              {t("settings.home.notes.today")}
+            </h2>
+            <div>
+              {todayNotes.map((note) => (
+                <NoteCard
+                  key={note.id}
+                  note={note}
+                  onNoteClick={onNoteClick}
+                  showTimeOnly
+                />
+              ))}
+            </div>
+          </section>
+        )}
+        {earlierNotes.length > 0 && (
+          <section className="space-y-2">
+            <h2 className="text-sm font-medium text-muted-foreground px-3">
+              {t("settings.home.notes.earlier")}
+            </h2>
+            <div>
+              {earlierNotes.map((note) => (
+                <NoteCard
+                  key={note.id}
+                  note={note}
+                  onNoteClick={onNoteClick}
+                />
+              ))}
+            </div>
+          </section>
+        )}
       </div>
     );
   }

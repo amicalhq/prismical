@@ -393,6 +393,10 @@
       "upcoming": {
         "title": "Upcoming",
         "participants": "{{count}} participants"
+      },
+      "notes": {
+        "today": "Today",
+        "earlier": "Earlier"
       }
     },
     "preferences": {

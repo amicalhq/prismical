@@ -1,15 +1,16 @@
 "use client";
 
-import { FileText, Calendar } from "lucide-react";
-import { cn, formatDate } from "@/lib/utils";
+import { File, Calendar } from "lucide-react";
+import { cn, formatDate, formatTime24 } from "@/lib/utils";
 import { Note } from "../types";
 
 interface RecentNoteCardProps {
   note: Note;
   onNoteClick: (noteId: number) => void;
+  showTimeOnly?: boolean;
 }
 
-export function NoteCard({ note, onNoteClick }: RecentNoteCardProps) {
+export function NoteCard({ note, onNoteClick, showTimeOnly = false }: RecentNoteCardProps) {
   return (
     <div
       onClick={() => onNoteClick(note.id)}
@@ -31,7 +32,7 @@ export function NoteCard({ note, onNoteClick }: RecentNoteCardProps) {
         {note.icon ? (
           <span className="text-lg">{note.icon}</span>
         ) : (
-          <FileText className="w-5 h-5 text-muted-foreground" />
+          <File className="w-5 h-5 text-muted-foreground" />
         )}
       </div>
 
@@ -44,7 +45,7 @@ export function NoteCard({ note, onNoteClick }: RecentNoteCardProps) {
 
         {/* Date and Meeting Info */}
         <div className="flex items-center gap-1.5 mt-1 text-xs text-muted-foreground">
-          <span>{formatDate(note.updatedAt)}</span>
+          <span>{showTimeOnly ? formatTime24(new Date(note.updatedAt)) : formatDate(new Date(note.updatedAt))}</span>
 
           {note.meetingEvent && (
             <>

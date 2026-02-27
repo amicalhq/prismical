@@ -1,4 +1,4 @@
-import { CalendarDays, NotebookText } from "lucide-react";
+import { CalendarDays } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { NotesList } from "../../notes/components/notes-list";
@@ -137,13 +137,7 @@ export default function HomePage() {
           </div>
         </section>
 
-        <section className="space-y-4">
-          <div className="flex items-center gap-2 text-muted-foreground">
-            <NotebookText className="w-4 h-4" />
-            <h2 className="text-sm font-medium">{t("settings.nav.notes.title")}</h2>
-          </div>
-          <NotesList showPageHeader={false} />
-        </section>
+        <NotesList showPageHeader={false} groupByDate />
       </div>
     </div>
   );

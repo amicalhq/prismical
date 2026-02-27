@@ -5,6 +5,15 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+export function formatTime24(date: Date): string {
+  return new Intl.DateTimeFormat(
+    typeof navigator !== "undefined"
+      ? navigator.language
+      : Intl.DateTimeFormat().resolvedOptions().locale,
+    { hour: "2-digit", minute: "2-digit", hour12: false },
+  ).format(date);
+}
+
 export function formatDate(date: Date): string {
   const now = new Date();
   const resolvedLocale =
