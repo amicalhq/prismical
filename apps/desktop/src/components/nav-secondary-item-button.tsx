@@ -140,6 +140,7 @@ export function NavSecondaryItemButton({
   if (!isInternalUrl(item.url)) {
     return (
       <SidebarMenuButton
+        size="sm"
         className={buttonClassName}
         onClick={async () => {
           await window.electronAPI.openExternal(item.url);
@@ -153,6 +154,7 @@ export function NavSecondaryItemButton({
   return (
     <SidebarMenuButton
       asChild
+      size="sm"
       className={buttonClassName}
       tooltip={item.title}
       isActive={isActive}

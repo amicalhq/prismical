@@ -11,7 +11,7 @@ export function FeedbackButton() {
 
   return (
     <SidebarMenuItem>
-      <SidebarMenuButton onClick={showFeedbackSurvey}>
+      <SidebarMenuButton size="sm" onClick={showFeedbackSurvey}>
         <IconMessageHeart />
         <span>Feedback</span>
       </SidebarMenuButton>
