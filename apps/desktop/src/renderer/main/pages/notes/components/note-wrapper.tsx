@@ -258,6 +258,7 @@ export default function NotePage({
       isLoading={isLoading}
       isSyncing={isSyncing}
       lastEditDate={lastEditDate}
+      eventData={note?.eventData}
       activeAsset={activeAsset}
       onToggleAsset={handleToggleAsset}
       panelLayout={panelLayout}

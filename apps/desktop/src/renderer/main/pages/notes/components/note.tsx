@@ -5,6 +5,7 @@ import {
   type ReactNode,
 } from "react";
 import {
+  Calendar,
   FolderOpen,
   MoreHorizontal,
   PanelRight,
@@ -72,6 +73,16 @@ export type NotePageUIProps = {
   isLoading: boolean;
   isSyncing: boolean;
   lastEditDate: Date;
+  eventData?: {
+    eventId: string;
+    title: string;
+    calendarColor: string;
+    meetingUrl?: string;
+    calendarEventUrl?: string;
+    startTime?: string;
+    endTime?: string;
+    date?: string;
+  } | null;
   activeAsset: NoteAssetKind | null;
   panelLayout: [number, number];
   onPanelLayoutChange: (layout: [number, number]) => void;
@@ -135,6 +146,7 @@ export default function Note({
   isLoading,
   isSyncing,
   lastEditDate,
+  eventData,
   activeAsset,
   panelLayout,
   onPanelLayoutChange,
@@ -370,82 +382,104 @@ export default function Note({
             />
           </div>
 
-          <div className="flex flex-wrap items-center gap-1 bg-card pb-0.5 pl-4">
-            <span className="mr-1 text-sm text-muted-foreground">
-              {t("settings.notes.note.edited", {
-                date: formatRelativeTime(displayEditDate, i18n.language),
-              })}
-            </span>
+          <div className="flex flex-col gap-0.5 bg-card pl-4">
+            <div className="flex flex-wrap items-center gap-1">
+              <span className="mr-1 text-sm text-muted-foreground">
+                {t("settings.notes.note.edited", {
+                  date: formatRelativeTime(displayEditDate, i18n.language),
+                })}
+              </span>
 
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="gap-2"
-                  onClick={handleToggleStar}
-                >
-                  <Star
-                    className={`h-4 w-4 ${
-                      noteStarred ? "fill-yellow-400 text-yellow-400" : ""
-                    }`}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="gap-2"
+                    onClick={handleToggleStar}
+                  >
+                    <Star
+                      className={`h-4 w-4 ${
+                        noteStarred ? "fill-yellow-400 text-yellow-400" : ""
+                      }`}
+                    />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {noteStarred
+                    ? t("settings.notes.note.actions.removeFromFavorites")
+                    : t("settings.notes.note.actions.addToFavorites")}
+                </TooltipContent>
+              </Tooltip>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="sm">
+                    <MoreHorizontal className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    className="gap-2"
+                    onSelect={() => setShowFolderPicker(true)}
+                  >
+                    <FolderOpen className="h-4 w-4" />
+                    {t("settings.notes.note.actions.moveToFolder")}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <AlertDialog
+                    open={showDeleteDialog}
+                    onOpenChange={setShowDeleteDialog}
+                  >
+                    <AlertDialogTrigger asChild>
+                      <DropdownMenuItem
+                        className="gap-2"
+                        onSelect={(event) => event.preventDefault()}
+                        variant="destructive"
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                        {t("settings.notes.note.actions.delete")}
+                      </DropdownMenuItem>
+                    </AlertDialogTrigger>
+                  </AlertDialog>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {eventData && (
+                <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                  <Calendar
+                    className="h-3.5 w-3.5"
+                    style={{ color: eventData.calendarColor }}
                   />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                {noteStarred
-                  ? t("settings.notes.note.actions.removeFromFavorites")
-                  : t("settings.notes.note.actions.addToFavorites")}
-              </TooltipContent>
-            </Tooltip>
-
-            <Toggle
-              pressed={isTranscriptionOpen}
-              onPressedChange={() => onToggleAsset("transcription")}
-              variant="outline"
-              size="sm"
-              aria-label={t("settings.notes.note.transcription")}
-            >
-              {isTranscriptionOpen ? (
-                <PanelRightOpen className="h-3.5 w-3.5" />
-              ) : (
-                <PanelRight className="h-3.5 w-3.5" />
+                  <span>{eventData.title}</span>
+                  {eventData.startTime && eventData.endTime && (
+                    <>
+                      <span className="w-1 h-1 bg-muted-foreground rounded-full" />
+                      <span className="text-xs">
+                        {eventData.startTime} – {eventData.endTime}
+                      </span>
+                    </>
+                  )}
+                </div>
               )}
-              {t("settings.notes.note.transcription")}
-            </Toggle>
 
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm">
-                  <MoreHorizontal className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem
-                  className="gap-2"
-                  onSelect={() => setShowFolderPicker(true)}
-                >
-                  <FolderOpen className="h-4 w-4" />
-                  {t("settings.notes.note.actions.moveToFolder")}
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <AlertDialog
-                  open={showDeleteDialog}
-                  onOpenChange={setShowDeleteDialog}
-                >
-                  <AlertDialogTrigger asChild>
-                    <DropdownMenuItem
-                      className="gap-2"
-                      onSelect={(event) => event.preventDefault()}
-                      variant="destructive"
-                    >
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                      {t("settings.notes.note.actions.delete")}
-                    </DropdownMenuItem>
-                  </AlertDialogTrigger>
-                </AlertDialog>
-              </DropdownMenuContent>
-            </DropdownMenu>
+              <Toggle
+                pressed={isTranscriptionOpen}
+                onPressedChange={() => onToggleAsset("transcription")}
+                variant="outline"
+                size="sm"
+                aria-label={t("settings.notes.note.transcription")}
+              >
+                {isTranscriptionOpen ? (
+                  <PanelRightOpen className="h-3.5 w-3.5" />
+                ) : (
+                  <PanelRight className="h-3.5 w-3.5" />
+                )}
+                {t("settings.notes.note.transcription")}
+              </Toggle>
+            </div>
           </div>
 
           {children}
