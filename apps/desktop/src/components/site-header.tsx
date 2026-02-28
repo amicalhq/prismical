@@ -7,7 +7,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
 
 interface SiteHeaderProps {
-  currentView?: string;
+  currentView?: ReactNode;
   showTitle?: boolean;
   actions?: ReactNode;
 }
@@ -181,16 +181,17 @@ export function SiteHeader({
           </div>
         ) : null}
       </div>
-      <header className="flex h-[var(--header-height)] shrink-0 items-center gap-2 backdrop-blur supports-[backdrop-filter]:bg-background sticky top-0 z-40 w-full">
+      <header className="flex h-[var(--header-height)] shrink-0 items-center gap-2 backdrop-blur supports-[backdrop-filter]:bg-background sticky top-0 z-50 w-full">
         <div className="flex w-full items-center gap-1">
           <div
             className={`flex items-center gap-1 py-1.5 transition-[padding] duration-200 ${sidebarState === "expanded" ? "px-4" : "px-0"}`}
           />
           <div
-            className={`flex items-center pointer-events-none select-none transition-opacity duration-200 ${showTitle ? "opacity-100" : "opacity-0"}`}
+            className={`flex items-center select-none transition-opacity duration-200 ${showTitle ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
+            style={noDragRegion}
           >
             <Separator orientation="vertical" className="h-4" />
-            <h1 className="text-sm font-medium">{currentView || "Amical"}</h1>
+            <div className="text-sm font-medium">{currentView || "Amical"}</div>
           </div>
         </div>
       </header>

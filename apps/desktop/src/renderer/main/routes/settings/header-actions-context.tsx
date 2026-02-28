@@ -9,6 +9,10 @@ import {
 type SettingsHeaderActionsContextValue = {
   actions: ReactNode | null;
   setActions: (actions: ReactNode | null) => void;
+  headerContent: ReactNode | null;
+  setHeaderContent: (content: ReactNode | null) => void;
+  isScrolled: boolean;
+  setIsScrolled: (scrolled: boolean) => void;
 };
 
 const SettingsHeaderActionsContext =
@@ -16,13 +20,19 @@ const SettingsHeaderActionsContext =
 
 export function SettingsHeaderProvider({ children }: { children: ReactNode }) {
   const [actions, setActions] = useState<ReactNode | null>(null);
+  const [headerContent, setHeaderContent] = useState<ReactNode | null>(null);
+  const [isScrolled, setIsScrolled] = useState(false);
 
   const value = useMemo(
     () => ({
       actions,
       setActions,
+      headerContent,
+      setHeaderContent,
+      isScrolled,
+      setIsScrolled,
     }),
-    [actions],
+    [actions, headerContent, isScrolled],
   );
 
   return (
@@ -42,3 +52,4 @@ export function useSettingsHeaderActions(): SettingsHeaderActionsContextValue {
 
   return context;
 }
+

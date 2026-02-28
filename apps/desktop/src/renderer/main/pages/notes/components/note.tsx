@@ -61,6 +61,7 @@ import { FolderPickerDialog } from "@/renderer/main/components/folder-picker-dia
 import type { NoteAssetKind } from "../types";
 import type { ImperativePanelGroupHandle } from "react-resizable-panels";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useSettingsHeaderActions } from "@/renderer/main/routes/settings/header-actions-context";
 
 export type NotePageUIProps = {
   noteTitle: string;
@@ -148,6 +149,7 @@ export default function Note({
 }: NotePageUIProps) {
   const { t, i18n } = useTranslation();
   const isMobile = useIsMobile();
+  const { setIsScrolled, setHeaderContent } = useSettingsHeaderActions();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showCreateFolderDialog, setShowCreateFolderDialog] = useState(false);
@@ -155,6 +157,8 @@ export default function Note({
   const [, setTick] = useState(0);
   const [localEditTime, setLocalEditTime] = useState<Date | null>(null);
   const panelGroupRef = useRef<ImperativePanelGroupHandle | null>(null);
+  const notePaneRef = useRef<HTMLDivElement>(null);
+  const scrollSentinelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -185,6 +189,90 @@ export default function Note({
       panelGroupRef.current.setLayout([100, 0]);
     }
   }, [activeAsset, isMobile, panelLayout]);
+
+  // Detect scroll in the note's own ScrollArea to show/hide the header title
+  useEffect(() => {
+    const pane = notePaneRef.current;
+    const sentinel = scrollSentinelRef.current;
+    if (!pane || !sentinel) return;
+
+    const viewport = pane.querySelector<HTMLElement>(
+      '[data-slot="scroll-area-viewport"]',
+    );
+    if (!viewport) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => setIsScrolled(!entry.isIntersecting),
+      { root: viewport, threshold: 0 },
+    );
+    observer.observe(sentinel);
+
+    return () => {
+      observer.disconnect();
+      setIsScrolled(false);
+    };
+  }, [setIsScrolled, noteTitle]);
+
+  // Stable ref for the starred callback so the header useEffect doesn't loop
+  const onStarredChangeRef = useRef(onStarredChange);
+  onStarredChangeRef.current = onStarredChange;
+
+  // Set rich header content (emoji + title + star + menu) for the site header
+  useEffect(() => {
+    setHeaderContent(
+      <div className="flex items-center gap-1">
+        <span className="flex h-5 w-5 items-center justify-center">
+          {noteEmoji ? (
+            <span className="text-sm">{noteEmoji}</span>
+          ) : (
+            <FileTextIcon className="h-3.5 w-3.5 text-muted-foreground" />
+          )}
+        </span>
+        <span className="max-w-[200px] truncate text-sm font-medium">
+          {noteTitle || t("settings.notes.note.titlePlaceholder")}
+        </span>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 w-6 p-0"
+          onClick={() => onStarredChangeRef.current(!noteStarred)}
+        >
+          <Star
+            className={`h-3.5 w-3.5 ${
+              noteStarred ? "fill-yellow-400 text-yellow-400" : ""
+            }`}
+          />
+        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+              <MoreHorizontal className="h-3.5 w-3.5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              className="gap-2"
+              onSelect={() => setShowFolderPicker(true)}
+            >
+              <FolderOpen className="h-4 w-4" />
+              {t("settings.notes.note.actions.moveToFolder")}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="gap-2"
+              variant="destructive"
+              onSelect={() => setShowDeleteDialog(true)}
+            >
+              <Trash2 className="h-4 w-4 text-destructive" />
+              {t("settings.notes.note.actions.delete")}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>,
+    );
+
+    return () => setHeaderContent(null);
+  }, [noteTitle, noteEmoji, noteStarred, setHeaderContent, t]);
 
   const handleDeleteClick = () => {
     setShowDeleteDialog(false);
@@ -224,13 +312,14 @@ export default function Note({
   const isTranscriptionOpen = activeAsset === "transcription";
 
   const notePane = (
-    <div className="relative h-full min-h-0 bg-background">
+    <div ref={notePaneRef} className="relative h-full min-h-0 bg-background">
       <ScrollArea
         className="h-full"
         type="scroll"
         scrollBarClassName={SCROLLBAR_WHILE_SCROLLING_CLASS}
       >
-        <div className="mx-auto flex w-full max-w-4xl flex-col gap-2 px-6 pb-32 pt-6">
+        <div className="relative mx-auto flex w-full max-w-4xl flex-col gap-2 px-6 pb-32 pt-6">
+          <div ref={scrollSentinelRef} className="absolute top-0 h-px w-px" />
           <div className="flex min-w-0 items-center">
             <Popover open={showEmojiPicker} onOpenChange={setShowEmojiPicker}>
               <PopoverTrigger asChild>
