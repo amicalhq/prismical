@@ -5,6 +5,17 @@ import { ServiceManager } from "../../main/managers/service-manager";
 
 const notesService = NotesService.getInstance();
 
+const NoteEventDataSchema = z.object({
+  eventId: z.string(),
+  title: z.string(),
+  calendarColor: z.string(),
+  meetingUrl: z.string().optional(),
+  calendarEventUrl: z.string().optional(),
+  startTime: z.string().optional(),
+  endTime: z.string().optional(),
+  date: z.string().optional(),
+});
+
 // Input schemas
 const GetNotesSchema = z.object({
   limit: z.number().optional().default(50),
@@ -85,6 +96,67 @@ export const notesRouter = createRouter({
 
     return note;
   }),
+
+  // Create or find a note linked to a calendar event (idempotent)
+  createNoteFromEvent: procedure
+    .input(
+      z.object({
+        eventData: NoteEventDataSchema,
+        title: z.string().min(1),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      // Upsert the event into the events table
+      await notesService.ensureEvent({
+        id: input.eventData.eventId,
+        title: input.eventData.title,
+        calendarColor: input.eventData.calendarColor,
+        meetingUrl: input.eventData.meetingUrl ?? null,
+        calendarEventUrl: input.eventData.calendarEventUrl ?? null,
+        startTime: input.eventData.startTime ?? null,
+        endTime: input.eventData.endTime ?? null,
+        date: input.eventData.date ?? null,
+      });
+
+      // Check if a note already exists for this event
+      const existing = await notesService.findNoteByEventId(
+        input.eventData.eventId,
+      );
+      if (existing) {
+        return { note: existing, created: false };
+      }
+
+      // Create a new note linked to the event.
+      // Try/catch handles the race where a concurrent request creates
+      // the note between findNoteByEventId and createNote — the unique
+      // constraint on event_id will reject the duplicate.
+      try {
+        const note = await notesService.createNote({
+          title: input.title,
+          eventId: input.eventData.eventId,
+        });
+
+        // Track telemetry
+        const telemetryService =
+          ServiceManager.getInstance().getService("telemetryService");
+        telemetryService.trackNoteCreated({
+          note_id: note.id,
+          has_initial_content: false,
+          has_icon: false,
+        });
+
+        return { note, created: true };
+      } catch {
+        // Unique constraint violation — note was created by concurrent request
+        const concurrent = await notesService.findNoteByEventId(
+          input.eventData.eventId,
+        );
+        if (concurrent) {
+          return { note: concurrent, created: false };
+        }
+        throw new Error("Failed to create note for event");
+      }
+    }),
 
   // Update note title
   updateNoteTitle: procedure

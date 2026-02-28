@@ -1,8 +1,10 @@
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { getMeetingIcon } from "@/utils/meeting-icons";
 import { CalendarDays } from "lucide-react";
 import { useMemo } from "react";
+import { api } from "@/trpc/react";
 
 interface UpcomingMeeting {
   id: string;
@@ -141,9 +143,38 @@ interface DateGroup {
 
 export default function EventsPage() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
+  const utils = api.useUtils();
+
+  const createNoteFromEvent = api.notes.createNoteFromEvent.useMutation({
+    onSuccess: (data) => {
+      utils.notes.getNotes.invalidate();
+      navigate({
+        to: "/settings/notes/$noteId",
+        params: { noteId: String(data.note.id) },
+      });
+    },
+  });
 
   const handleOpenMeeting = (url: string) => {
     window.electronAPI.openExternal(url);
+  };
+
+  const handleNotesForMeeting = (meeting: UpcomingMeeting) => {
+    if (createNoteFromEvent.isPending) return;
+    createNoteFromEvent.mutate({
+      title: meeting.title,
+      eventData: {
+        eventId: meeting.id,
+        title: meeting.title,
+        calendarColor: meeting.calendarColor,
+        meetingUrl: meeting.meetingUrl,
+        calendarEventUrl: meeting.calendarEventUrl,
+        startTime: meeting.startTime,
+        endTime: meeting.endTime,
+        date: meeting.date.toISOString(),
+      },
+    });
   };
 
   const dateGroups = useMemo<DateGroup[]>(() => {
@@ -231,9 +262,7 @@ export default function EventsPage() {
                         type="button"
                         size="sm"
                         className="h-7 text-xs px-2.5 bg-indigo-500 text-white hover:bg-indigo-600 hover:text-white cursor-pointer"
-                        onClick={() => {
-                          // TODO: Create or open a note attached to this meeting
-                        }}
+                        onClick={() => handleNotesForMeeting(meeting)}
                       >
                         {t("settings.home.upcoming.notes")}
                       </Button>

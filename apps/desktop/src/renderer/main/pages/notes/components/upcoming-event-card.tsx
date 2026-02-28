@@ -7,13 +7,7 @@ import {
 } from "@/components/ui/tooltip";
 import { getMeetingIcon } from "@/utils/meeting-icons";
 import { useTranslation } from "react-i18next";
-
-interface UpcomingEvent {
-  title: string;
-  time: string;
-  url: string;
-  date?: string;
-}
+import type { UpcomingEvent } from "../types";
 
 interface UpcomingEventCardProps {
   event: UpcomingEvent;
@@ -23,9 +17,8 @@ interface UpcomingEventCardProps {
 const UpcomingEventCard = ({ event, onTakeNotes }: UpcomingEventCardProps) => {
   const { t } = useTranslation();
   const handleLinkClick = () => {
-    if (event.url) {
-      // Open external link - adjust this based on your Electron setup
-      window.electronAPI.openExternal(event.url);
+    if (event.meetingUrl) {
+      window.electronAPI.openExternal(event.meetingUrl);
     }
   };
 
@@ -38,7 +31,7 @@ const UpcomingEventCard = ({ event, onTakeNotes }: UpcomingEventCardProps) => {
       <div className="flex items-start gap-4">
         {/* Leading icon */}
         <div className="flex-shrink-0 mt-0.5">
-          {getMeetingIcon(event.url, {
+          {getMeetingIcon(event.meetingUrl, {
             className: "w-5 h-5 text-muted-foreground",
           })}
         </div>
@@ -52,7 +45,7 @@ const UpcomingEventCard = ({ event, onTakeNotes }: UpcomingEventCardProps) => {
           {/* Time and meeting url */}
           <div className="flex items-center gap-2 text-muted-foreground text-xs">
             <span className="whitespace-nowrap">
-              {event.date} {event.time}
+              {event.startTime} - {event.endTime}
             </span>
             |{" "}
             {
@@ -60,7 +53,7 @@ const UpcomingEventCard = ({ event, onTakeNotes }: UpcomingEventCardProps) => {
                 onClick={handleLinkClick}
                 className="text-muted-foreground text-xs line-clamp-1 hover:text-foreground cursor-pointer transition-colors"
               >
-                {event.url}
+                {event.meetingUrl}
               </a>
             }
           </div>

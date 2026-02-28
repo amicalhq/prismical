@@ -1,5 +1,6 @@
 import { app, dialog, ipcMain, shell } from "electron";
 import { initializeDatabase } from "../../db";
+import { seedEventsAndNotes } from "../../db/events";
 import { logger } from "../logger";
 import { WindowManager } from "./window-manager";
 import { setupApplicationMenu } from "../menu";
@@ -140,6 +141,7 @@ export class AppManager {
   private async initializeDatabase(): Promise<void> {
     await initializeDatabase();
     await runDataMigrations();
+    await seedEventsAndNotes();
     logger.db.info(
       "Database initialized and migrations completed successfully",
     );

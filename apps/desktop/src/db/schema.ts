@@ -212,6 +212,24 @@ export interface AppSettingsData {
   };
 }
 
+// Events table for calendar events linked to notes
+export const events = sqliteTable("events", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  calendarColor: text("calendar_color").notNull(),
+  meetingUrl: text("meeting_url"),
+  calendarEventUrl: text("calendar_event_url"),
+  startTime: text("start_time"),
+  endTime: text("end_time"),
+  date: text("date"), // ISO 8601 date string
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+  updatedAt: integer("updated_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
 // Notes table
 export const notes = sqliteTable("notes", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -220,6 +238,9 @@ export const notes = sqliteTable("notes", {
   icon: text("icon"), // Store the icon (emoji) associated with the note
   starred: integer("starred", { mode: "boolean" }).notNull().default(false),
   folder: text("folder"),
+  eventId: text("event_id")
+    .references(() => events.id) // No onDelete cascade — events outlive notes so re-linking is possible
+    .unique(),
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()
     .default(sql`(unixepoch())`),
@@ -256,6 +277,8 @@ export type Model = typeof models.$inferSelect;
 export type NewModel = typeof models.$inferInsert;
 export type AppSettings = typeof appSettings.$inferSelect;
 export type NewAppSettings = typeof appSettings.$inferInsert;
+export type Event = typeof events.$inferSelect;
+export type NewEvent = typeof events.$inferInsert;
 export type Note = typeof notes.$inferSelect;
 export type NewNote = typeof notes.$inferInsert;
 export type YjsUpdate = typeof yjsUpdates.$inferSelect;

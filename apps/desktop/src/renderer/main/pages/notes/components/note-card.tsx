@@ -47,15 +47,15 @@ export function NoteCard({ note, onNoteClick, showTimeOnly = false }: RecentNote
         <div className="flex items-center gap-1.5 mt-1 text-xs text-muted-foreground">
           <span>{showTimeOnly ? formatTime24(new Date(note.updatedAt)) : formatDate(new Date(note.updatedAt))}</span>
 
-          {note.meetingEvent && (
+          {note.eventData && (
             <>
               <span className="w-1 h-1 bg-muted-foreground rounded-full"></span>
               <div className="flex items-center gap-1">
                 <Calendar
                   className="w-3 h-3"
-                  style={{ color: note.meetingEvent.calendarColor }}
+                  style={{ color: note.eventData.calendarColor }}
                 />
-                <span className="">{note.meetingEvent.title}</span>
+                <span className="">{note.eventData.title}</span>
               </div>
             </>
           )}

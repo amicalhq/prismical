@@ -1,8 +1,11 @@
 export type UpcomingEvent = {
+  id: string;
   title: string;
-  time: string;
-  url: string;
-  date?: string;
+  startTime: string;
+  endTime: string;
+  meetingUrl: string;
+  calendarEventUrl?: string;
+  date: Date;
   calendarColor?: string;
 };
 
@@ -13,10 +16,16 @@ export interface Note {
   starred?: boolean;
   folder?: string | null;
   updatedAt: Date;
-  meetingEvent?: {
+  eventData?: {
+    eventId: string;
     title: string;
     calendarColor: string;
-  };
+    meetingUrl?: string;
+    calendarEventUrl?: string;
+    startTime?: string;
+    endTime?: string;
+    date?: string;
+  } | null;
 }
 
 export type NoteAssetKind = "transcription";

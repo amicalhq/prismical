@@ -1,7 +1,8 @@
-import { eq, desc, asc, like, and, isNull } from "drizzle-orm";
+import { eq, desc, asc, like, and } from "drizzle-orm";
 import { db } from "./index";
 import {
   notes,
+  events,
   yjsUpdates,
   type Note,
   type NewNote,
@@ -24,6 +25,42 @@ export async function createNote(
   return result[0];
 }
 
+// Shape returned from queries that JOIN notes with events
+export interface NoteWithEvent extends Note {
+  eventData?: {
+    eventId: string;
+    title: string;
+    calendarColor: string;
+    meetingUrl?: string;
+    calendarEventUrl?: string;
+    startTime?: string;
+    endTime?: string;
+    date?: string;
+  } | null;
+}
+
+function toNoteWithEvent(row: {
+  notes: Note;
+  events: typeof events.$inferSelect | null;
+}): NoteWithEvent {
+  const { notes: note, events: event } = row;
+  return {
+    ...note,
+    eventData: event
+      ? {
+          eventId: event.id,
+          title: event.title,
+          calendarColor: event.calendarColor,
+          meetingUrl: event.meetingUrl ?? undefined,
+          calendarEventUrl: event.calendarEventUrl ?? undefined,
+          startTime: event.startTime ?? undefined,
+          endTime: event.endTime ?? undefined,
+          date: event.date ?? undefined,
+        }
+      : null,
+  };
+}
+
 // Get all notes with optional filtering and sorting
 export async function getNotes(
   options: {
@@ -33,7 +70,7 @@ export async function getNotes(
     sortOrder?: "asc" | "desc";
     search?: string;
   } = {},
-) {
+): Promise<NoteWithEvent[]> {
   const {
     limit = 50,
     offset = 0,
@@ -42,8 +79,11 @@ export async function getNotes(
     search,
   } = options;
 
-  // Build query
-  let query = db.select().from(notes);
+  // Build query with LEFT JOIN
+  let query = db
+    .select()
+    .from(notes)
+    .leftJoin(events, eq(notes.eventId, events.id));
 
   // Apply filters
   const conditions = [];
@@ -63,13 +103,32 @@ export async function getNotes(
   // Apply pagination
   query = query.limit(limit).offset(offset) as any;
 
-  return await query;
+  const rows = await query;
+  return rows.map(toNoteWithEvent);
 }
 
 // Get note by ID
-export async function getNoteById(id: number) {
-  const result = await db.select().from(notes).where(eq(notes.id, id));
-  return result[0] || null;
+export async function getNoteById(id: number): Promise<NoteWithEvent | null> {
+  const result = await db
+    .select()
+    .from(notes)
+    .leftJoin(events, eq(notes.eventId, events.id))
+    .where(eq(notes.id, id));
+  if (!result[0]) return null;
+  return toNoteWithEvent(result[0]);
+}
+
+// Get note by event ID (FK column)
+export async function getNoteByEventId(
+  eventId: string,
+): Promise<NoteWithEvent | null> {
+  const result = await db
+    .select()
+    .from(notes)
+    .leftJoin(events, eq(notes.eventId, events.id))
+    .where(eq(notes.eventId, eventId));
+  if (!result[0]) return null;
+  return toNoteWithEvent(result[0]);
 }
 
 // Update note

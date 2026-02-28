@@ -3,6 +3,7 @@ import {
   createNote,
   getNotes,
   getNoteById,
+  getNoteByEventId,
   updateNote,
   deleteNote,
   saveYjsUpdate as saveYjsUpdateToDB,
@@ -11,6 +12,8 @@ import {
   getYjsUpdatesByNoteId,
   replaceYjsUpdates,
 } from "../db/notes";
+import { upsertEvent } from "../db/events";
+import type { NewEvent } from "../db/schema";
 import * as Y from "yjs";
 import { ipcMain } from "electron";
 import { logger } from "../main/logger";
@@ -20,6 +23,7 @@ export interface NoteCreateOptions {
   icon?: string | null;
   starred?: boolean;
   folder?: string | null;
+  eventId?: string | null;
 }
 
 export interface NoteUpdateOptions {
@@ -86,9 +90,18 @@ class NotesService {
       icon: options.icon,
       starred: options.starred,
       folder: options.folder,
+      eventId: options.eventId,
     });
 
     return note;
+  }
+
+  async findNoteByEventId(eventId: string) {
+    return await getNoteByEventId(eventId);
+  }
+
+  async ensureEvent(data: Omit<NewEvent, "createdAt" | "updatedAt">) {
+    await upsertEvent(data);
   }
 
   async getNote(id: number) {
