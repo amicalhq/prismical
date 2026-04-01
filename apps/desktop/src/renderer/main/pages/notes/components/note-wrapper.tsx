@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { api } from "@/trpc/react";
 import { toast } from "sonner";
+import { debounce } from "@/renderer/main/utils/debounce";
 import Note from "./note";
 import { NoteEditor } from "./note-editor";
 import { FileTextIcon } from "lucide-react";
@@ -28,11 +29,13 @@ export default function NotePage({
 
   // State
   const [noteTitle, setNoteTitle] = useState("");
+  const [noteIcon, setNoteIcon] = useState<string | null>(null);
   const [noteStarred, setNoteStarred] = useState(false);
   const [noteFolder, setNoteFolder] = useState<string | null>(null);
   const [editorReady, setEditorReady] = useState(false);
   const [activeAsset, setActiveAsset] = useState<NoteAssetKind | null>(null);
 
+  const noteRef = useRef<typeof note>(null);
   const autoRecordTriggeredRef = useRef(false);
 
   // Fetch note data
@@ -47,6 +50,26 @@ export default function NotePage({
     limit: 500,
     sortBy: "updatedAt",
     sortOrder: "desc",
+  });
+
+  const updateTitleMutation = api.notes.updateNoteTitle.useMutation({
+    onSuccess: () => {
+      utils.notes.getNotes.invalidate();
+      utils.notes.getNoteById.invalidate({ id: noteIdNumber });
+    },
+  });
+
+  const updateNoteIconMutation = api.notes.updateNoteIcon.useMutation({
+    onSuccess: () => {
+      utils.notes.getNotes.invalidate();
+      utils.notes.getNoteById.invalidate({ id: noteIdNumber });
+      toast.success(t("settings.notes.toast.emojiUpdated"));
+    },
+    onError: (error) => {
+      toast.error(
+        t("settings.notes.toast.emojiUpdateFailed", { message: error.message }),
+      );
+    },
   });
 
   const updateNoteOrganizationMutation =
@@ -83,10 +106,23 @@ export default function NotePage({
     },
   });
 
+  const debouncedUpdateTitle = useMemo(
+    () =>
+      debounce((title: string) => {
+        const currentNote = noteRef.current;
+        if (currentNote && title !== currentNote.title) {
+          updateTitleMutation.mutate({ id: currentNote.id, title });
+        }
+      }, 500),
+    [updateTitleMutation],
+  );
+
   // Update note-derived state
   useEffect(() => {
+    noteRef.current = note;
     if (note) {
       setNoteTitle(note.title);
+      setNoteIcon(note.icon || null);
       setNoteStarred(note.starred ?? false);
       setNoteFolder(note.folder ?? null);
     }
@@ -112,6 +148,14 @@ export default function NotePage({
       });
     }
   }, [editorReady, autoRecord, startRecordingMutation]);
+
+  const handleTitleChange = useCallback(
+    (newTitle: string) => {
+      setNoteTitle(newTitle);
+      debouncedUpdateTitle(newTitle);
+    },
+    [debouncedUpdateTitle],
+  );
 
   // Handle delete
   const handleDelete = useCallback(() => {
@@ -151,6 +195,14 @@ export default function NotePage({
     setActiveAsset((currentAsset) => (currentAsset === asset ? null : asset));
   }, []);
 
+  const handleEmojiChange = useCallback(
+    (emoji: string | null) => {
+      setNoteIcon(emoji);
+      updateNoteIconMutation.mutate({ id: noteIdNumber, icon: emoji });
+    },
+    [noteIdNumber, updateNoteIconMutation],
+  );
+
   // Note not found state
   if (!isLoading && !note) {
     return (
@@ -177,13 +229,16 @@ export default function NotePage({
     <Note
       noteId={noteIdNumber}
       noteTitle={noteTitle}
+      noteEmoji={noteIcon}
       noteStarred={noteStarred}
       noteFolder={noteFolder}
       folderOptions={folderOptions}
       isLoading={isLoading}
       activeAsset={activeAsset}
       onToggleAsset={handleToggleAsset}
+      onTitleChange={handleTitleChange}
       onDelete={handleDelete}
+      onEmojiChange={handleEmojiChange}
       onStarredChange={handleStarredChange}
       onFolderChange={handleFolderChange}
       isDeleting={deleteMutation.isPending}

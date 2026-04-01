@@ -1,14 +1,17 @@
 import { useEffect, useState, type ReactNode } from "react";
 import {
+  FileTextIcon,
   FolderOpen,
   Loader2,
   MoreHorizontal,
   Star,
   Trash2,
 } from "lucide-react";
+import EmojiPicker, { Theme } from "emoji-picker-react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,6 +29,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { CreateFolderDialog } from "@/renderer/main/components/create-folder-dialog";
 import { FolderPickerDialog } from "@/renderer/main/components/folder-picker-dialog";
@@ -39,13 +47,16 @@ import type { NoteAssetKind } from "../types";
 export type NotePageUIProps = {
   noteId: number;
   noteTitle: string;
+  noteEmoji: string | null;
   noteStarred: boolean;
   noteFolder: string | null;
   folderOptions: string[];
   isLoading: boolean;
   activeAsset: NoteAssetKind | null;
   onToggleAsset: (asset: NoteAssetKind) => void;
+  onTitleChange: (value: string) => void;
   onDelete: () => void;
+  onEmojiChange: (emoji: string | null) => void;
   onStarredChange: (starred: boolean) => void;
   onFolderChange: (folder: string | null) => void;
   isDeleting?: boolean;
@@ -58,13 +69,16 @@ const SCROLLBAR_WHILE_SCROLLING_CLASS =
 export default function Note({
   noteId,
   noteTitle,
+  noteEmoji,
   noteStarred,
   noteFolder,
   folderOptions,
   isLoading,
   activeAsset,
   onToggleAsset,
+  onTitleChange,
   onDelete,
+  onEmojiChange,
   onStarredChange,
   onFolderChange,
   isDeleting = false,
@@ -73,6 +87,7 @@ export default function Note({
   const { t } = useTranslation();
   const { setActions, setHeaderContent } = useSettingsHeaderActions();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showCreateFolderDialog, setShowCreateFolderDialog] = useState(false);
   const [showFolderPicker, setShowFolderPicker] = useState(false);
 
@@ -167,6 +182,57 @@ export default function Note({
         scrollBarClassName={SCROLLBAR_WHILE_SCROLLING_CLASS}
       >
         <div className="mx-auto flex w-full max-w-4xl flex-col px-6 pb-32 pt-6">
+          <div className="mb-4 flex items-center">
+            <Popover open={showEmojiPicker} onOpenChange={setShowEmojiPicker}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-12 w-12 shrink-0 p-0 hover:bg-muted/50"
+                >
+                  {noteEmoji ? (
+                    <span className="text-2xl">{noteEmoji}</span>
+                  ) : (
+                    <FileTextIcon className="h-6 w-6 text-muted-foreground" />
+                  )}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <div>
+                  {noteEmoji ? (
+                    <div className="flex justify-end border-b p-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => onEmojiChange(null)}
+                        className="text-xs"
+                      >
+                        {t("settings.notes.note.removeEmoji")}
+                      </Button>
+                    </div>
+                  ) : null}
+                  <EmojiPicker
+                    onEmojiClick={(emojiData) => {
+                      onEmojiChange(emojiData.emoji);
+                      setShowEmojiPicker(false);
+                    }}
+                    autoFocusSearch={false}
+                    theme={Theme.DARK}
+                    lazyLoadEmojis={false}
+                    height={400}
+                    width={400}
+                  />
+                </div>
+              </PopoverContent>
+            </Popover>
+
+            <Input
+              value={noteTitle}
+              onChange={(event) => onTitleChange(event.target.value)}
+              className="flex-1 border-0 bg-transparent px-4 py-2 text-4xl font-semibold shadow-none placeholder:text-muted-foreground focus-visible:ring-0"
+              placeholder={t("settings.notes.note.titlePlaceholder")}
+            />
+          </div>
           {children}
         </div>
       </ScrollArea>
