@@ -17,7 +17,7 @@ interface SubscriptionFormProps {
 export function SubscriptionForm({
   variant = 'blog',
   formName = 'subscription',
-  redirectUrl = 'https://amical.ai/blog?submission=true&form_type=subscribe',
+  redirectUrl = 'https://prismical.ai/blog?submission=true&form_type=subscribe',
   showHeader = true
 }: SubscriptionFormProps) {
   const [showSuccess, setShowSuccess] = useState(false);
@@ -35,10 +35,10 @@ export function SubscriptionForm({
             Latest Updates
           </Badge>
           <h2 className="mb-3 text-pretty text-3xl font-semibold md:mb-4 md:text-4xl lg:mb-6 lg:max-w-3xl lg:text-5xl">
-            Amical <span className="animate-text-gradient inline-flex bg-gradient-to-r from-neutral-900 via-slate-500 to-neutral-500 bg-[200%_auto] bg-clip-text leading-tight text-transparent dark:from-neutral-100 dark:via-slate-400 dark:to-neutral-400">Blog</span>
+            Prismical <span className="animate-text-gradient inline-flex bg-gradient-to-r from-neutral-900 via-slate-500 to-neutral-500 bg-[200%_auto] bg-clip-text leading-tight text-transparent dark:from-neutral-100 dark:via-slate-400 dark:to-neutral-400">Blog</span>
           </h2>
           <p className="mb-8 text-muted-foreground md:text-base lg:max-w-2xl lg:text-lg">
-            Discover the latest news and updates from Amical.
+            Discover the latest news and updates from Prismical.
           </p>
         </>
       )}
@@ -67,7 +67,7 @@ export function SubscriptionForm({
             </div>
             <div className="flex flex-col gap-2">
               <h3 className="text-lg font-semibold">Successfully Subscribed!</h3>
-              <p className="text-muted-foreground">We&apos;ll send you updates about Amical at most once a month.</p>
+              <p className="text-muted-foreground">We&apos;ll send you updates about Prismical at most once a month.</p>
             </div>
             <Button onClick={() => setShowSuccess(false)} className="mt-2">Close</Button>
           </div>

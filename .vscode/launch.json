@@ -4,18 +4,18 @@
       "type": "swift",
       "request": "launch",
       "args": [],
-      "cwd": "${workspaceFolder:amical}/packages/native-helpers/swift-helper",
+      "cwd": "${workspaceFolder:prismical}/packages/native-helpers/swift-helper",
       "name": "Debug SwiftHelper (packages/native-helpers/swift-helper)",
-      "program": "${workspaceFolder:amical}/packages/native-helpers/swift-helper/.build/debug/SwiftHelper",
+      "program": "${workspaceFolder:prismical}/packages/native-helpers/swift-helper/.build/debug/SwiftHelper",
       "preLaunchTask": "swift: Build Debug SwiftHelper (packages/native-helpers/swift-helper)"
     },
     {
       "type": "swift",
       "request": "launch",
       "args": [],
-      "cwd": "${workspaceFolder:amical}/packages/native-helpers/swift-helper",
+      "cwd": "${workspaceFolder:prismical}/packages/native-helpers/swift-helper",
       "name": "Release SwiftHelper (packages/native-helpers/swift-helper)",
-      "program": "${workspaceFolder:amical}/packages/native-helpers/swift-helper/.build/release/SwiftHelper",
+      "program": "${workspaceFolder:prismical}/packages/native-helpers/swift-helper/.build/release/SwiftHelper",
       "preLaunchTask": "swift: Build Release SwiftHelper (packages/native-helpers/swift-helper)"
     }
   ]

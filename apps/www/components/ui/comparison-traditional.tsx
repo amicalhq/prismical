@@ -62,7 +62,7 @@ export default function ComparisonTraditional() {
             {/* Header Row */}
             <div className="p-8 flex items-center gap-2 bg-gradient-to-r from-emerald-950/50 to-emerald-900/30 border-b border-emerald-500/20">
               <Check className="w-5 h-5 text-emerald-400" />
-              <span className="text-xl md:text-2xl font-bold bg-gradient-to-r from-emerald-400 to-emerald-300 bg-clip-text text-transparent">Amical Dictation</span>
+              <span className="text-xl md:text-2xl font-bold bg-gradient-to-r from-emerald-400 to-emerald-300 bg-clip-text text-transparent">Prismical Dictation</span>
             </div>
             <div className="p-8 flex items-center gap-2 bg-gradient-to-r from-gray-900/50 to-gray-800/30 border-b border-gray-600/20">
               <X className="w-5 h-5 text-gray-400" />
@@ -93,10 +93,10 @@ export default function ComparisonTraditional() {
 
           {/* Mobile Layout */}
           <div className="md:hidden">
-            {/* First Column - Amical Dictation */}
+            {/* First Column - Prismical Dictation */}
             <div className="p-6 flex items-center gap-2 bg-gradient-to-r from-emerald-950/60 to-emerald-900/40 border-b-2 border-emerald-500/30">
               <Check className="w-5 h-5 text-emerald-400" />
-              <span className="text-xl font-bold bg-gradient-to-r from-emerald-400 to-emerald-300 bg-clip-text text-transparent">Amical Dictation</span>
+              <span className="text-xl font-bold bg-gradient-to-r from-emerald-400 to-emerald-300 bg-clip-text text-transparent">Prismical Dictation</span>
             </div>
             {features.map((f, i) => (
               <div key={`positive-${i}`} className="p-6 flex items-start gap-3 border-b border-[#232329]">

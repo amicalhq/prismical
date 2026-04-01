@@ -2,7 +2,7 @@ import Foundation
 
 enum StdoutWriter {
     private static let queue = DispatchQueue(
-        label: "com.amical.swifthelper.stdout",
+        label: "com.prismical.swifthelper.stdout",
         qos: .userInteractive
     )
 

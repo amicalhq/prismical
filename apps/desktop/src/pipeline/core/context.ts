@@ -9,7 +9,7 @@ export interface PipelineContext {
   metadata: Map<string, any>;
 }
 
-import { GetAccessibilityContextResult } from "@amical/types";
+import { GetAccessibilityContextResult } from "@prismical/types";
 
 export interface SharedPipelineData {
   vocabulary: string[]; // Custom vocab

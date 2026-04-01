@@ -1,13 +1,13 @@
 {
-  "name": "@amical/swift-helper",
+  "name": "@prismical/swift-helper",
   "version": "1.0.0",
   "description": "Swift native helper for accessibility APIs and system integration",
   "private": true,
   "scripts": {
-    "build": "pnpm --filter @amical/types generate:all && turbo run build:native",
+    "build": "pnpm --filter @prismical/types generate:all && turbo run build:native",
     "build:native": "mkdir -p .build && swift build --configuration release && mkdir -p bin && cp .build/release/SwiftHelper bin/SwiftHelper",
     "clean": "rm -rf .build bin .turbo",
-    "dev": "pnpm --filter @amical/types generate:all && swift build --configuration debug && mkdir -p bin && cp .build/debug/SwiftHelper bin/SwiftHelper"
+    "dev": "pnpm --filter @prismical/types generate:all && swift build --configuration debug && mkdir -p bin && cp .build/debug/SwiftHelper bin/SwiftHelper"
   },
   "files": [
     "bin/*"

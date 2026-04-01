@@ -3,13 +3,13 @@ import { Mic } from "lucide-react"
 
 // App logos with their URLs
 const appLogos = [
-  { name: "Slack", icon: "https://amical.ai/integrations/slack.svg" },
+  { name: "Slack", icon: "https://prismical.ai/integrations/slack.svg" },
   { name: "Notion", icon: "integrations/notion.svg" },
   { name: "Gmail", icon: "integrations/gmail.svg" },
-  { name: "Discord", icon: "https://amical.ai/integrations/discord.svg" },
-  { name: "Cursor", icon: "https://amical.ai/integrations/cursor.svg" },
-  { name: "Instagram", icon: "https://amical.ai/integrations/instagram.svg" },
-  { name: "WhatsApp", icon: "https://amical.ai/integrations/whatsapp.svg" },
+  { name: "Discord", icon: "https://prismical.ai/integrations/discord.svg" },
+  { name: "Cursor", icon: "https://prismical.ai/integrations/cursor.svg" },
+  { name: "Instagram", icon: "https://prismical.ai/integrations/instagram.svg" },
+  { name: "WhatsApp", icon: "https://prismical.ai/integrations/whatsapp.svg" },
 ]
 
 interface MicrophoneWithAppsProps {

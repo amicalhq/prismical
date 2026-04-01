@@ -7,7 +7,7 @@ const config = {
   output: "export",
   reactStrictMode: true,
   images: {
-    domains: ["amical.ai"],
+    domains: ["prismical.ai"],
     unoptimized: true,
   },
 };

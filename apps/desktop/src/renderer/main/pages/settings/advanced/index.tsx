@@ -130,7 +130,7 @@ export default function AdvancedSettingsPage() {
   };
 
   const handleOpenTelemetryDocs = () => {
-    window.electronAPI.openExternal("https://amical.ai/docs/telemetry");
+    window.electronAPI.openExternal("https://prismical.ai/docs/telemetry");
   };
 
   const handleCopyMachineId = async () => {

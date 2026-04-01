@@ -191,7 +191,7 @@ export function SiteHeader({
             style={noDragRegion}
           >
             <Separator orientation="vertical" className="h-4" />
-            <div className="text-sm font-medium">{currentView || "Amical"}</div>
+            <div className="text-sm font-medium">{currentView || "Prismical"}</div>
           </div>
         </div>
       </header>

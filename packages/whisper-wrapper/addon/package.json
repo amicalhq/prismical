@@ -1,5 +1,5 @@
 {
-  "name": "@amical/whisper-node-addon",
+  "name": "@prismical/whisper-node-addon",
   "private": true,
   "binary": {
     "napi_versions": [

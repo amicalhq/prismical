@@ -177,7 +177,7 @@ export default function SpeechTab() {
   const setSelectedModelMutation = api.models.setSelectedModel.useMutation({
     onSuccess: (_data, variables) => {
       utils.models.getSelectedModel.invalidate();
-      if (variables.modelId === "amical-cloud") {
+      if (variables.modelId === "prismical-cloud") {
         toast.success(t("settings.aiModels.speech.toast.cloudSelected"));
       }
     },
@@ -353,7 +353,7 @@ export default function SpeechTab() {
   const handleSelectModel = async (modelId: string) => {
     // Check if this is a cloud model
     const model = availableModels.find((m) => m.id === modelId);
-    const isCloudModel = model?.provider === "Amical Cloud";
+    const isCloudModel = model?.provider === "Prismical Cloud";
 
     // If cloud model and not authenticated, show login dialog
     if (isCloudModel && !isAuthenticated) {
@@ -446,7 +446,7 @@ export default function SpeechTab() {
                         const progress = downloadProgress[model.id];
                         const isDownloading =
                           progress?.status === "downloading";
-                        const isCloudModel = model.provider === "Amical Cloud";
+                        const isCloudModel = model.provider === "Prismical Cloud";
 
                         // Cloud models can be selected if authenticated, local models need to be downloaded
                         const canSelect = isCloudModel

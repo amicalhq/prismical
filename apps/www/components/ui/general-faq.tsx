@@ -10,20 +10,20 @@ import Link from "next/link";
 
 const faqItems = [
   {
-    question: "What is Amical?",
-    answer: "Amical is an open-source speech-to-text application powered by Gen AI. It allows you to type 10x faster without using a keyboard, offering fast, accurate, context-aware, and private transcription."
+    question: "What is Prismical?",
+    answer: "Prismical is an open-source speech-to-text application powered by Gen AI. It allows you to type 10x faster without using a keyboard, offering fast, accurate, context-aware, and private transcription."
   },
   {
-    question: "How does Amical work?",
-    answer: "Amical combines advanced speech-to-text AI models, such as Whisper, with a context-aware approach to deliver accurate real-time transcriptions. By processing your voice input and analyzing the context of the application you're using through local desktop APIs, it generates precise transcriptions that are seamlessly integrated across various applications."
+    question: "How does Prismical work?",
+    answer: "Prismical combines advanced speech-to-text AI models, such as Whisper, with a context-aware approach to deliver accurate real-time transcriptions. By processing your voice input and analyzing the context of the application you're using through local desktop APIs, it generates precise transcriptions that are seamlessly integrated across various applications."
   },
   {
-    question: "Is Amical free to use?",
+    question: "Is Prismical free to use?",
     answer: (
       <>
-        Yes, Amical is completely free and open-source. You can find the source code on{" "}
+        Yes, Prismical is completely free and open-source. You can find the source code on{" "}
         <Link
-          href="https://github.com/amicalhq/amical"
+          href="https://github.com/prismicalhq/prismical"
           target="_blank"
           rel="noopener noreferrer"
           className="text-indigo-500 hover:underline"
@@ -36,15 +36,15 @@ const faqItems = [
   },
   {
     question: "How accurate is the transcription?",
-    answer: "Amical uses state-of-the-art AI models to provide highly accurate transcriptions. The accuracy is enhanced by context awareness and continuous learning from user interactions."
+    answer: "Prismical uses state-of-the-art AI models to provide highly accurate transcriptions. The accuracy is enhanced by context awareness and continuous learning from user interactions."
   },
   {
     question: "Is my data private?",
     answer: (
       <>
-        Yes, Amical is 100% open-source and you can build and use the app directly from our{" "}
+        Yes, Prismical is 100% open-source and you can build and use the app directly from our{" "}
         <Link
-          href="https://github.com/amicalhq/amical"
+          href="https://github.com/prismicalhq/prismical"
           target="_blank"
           rel="noopener noreferrer"
           className="text-indigo-500 hover:underline"

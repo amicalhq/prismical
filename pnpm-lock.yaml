@@ -28,16 +28,16 @@ importers:
       '@ai-sdk/openai':
         specifier: ^1.3.22
         version: 1.3.24(zod@3.25.76)
-      '@amical/eslint-config':
+      '@prismical/eslint-config':
         specifier: workspace:*
         version: link:../../packages/eslint-config
-      '@amical/types':
+      '@prismical/types':
         specifier: workspace:*
         version: link:../../packages/types
-      '@amical/whisper-wrapper':
+      '@prismical/whisper-wrapper':
         specifier: workspace:*
         version: link:../../packages/whisper-wrapper
-      '@amical/y-libsql':
+      '@prismical/y-libsql':
         specifier: workspace:*
         version: link:../../packages/y-libsql
       '@dnd-kit/core':
@@ -487,10 +487,10 @@ importers:
         specifier: ^3.24.4
         version: 3.25.76
     devDependencies:
-      '@amical/eslint-config':
+      '@prismical/eslint-config':
         specifier: workspace:*
         version: link:../eslint-config
-      '@amical/typescript-config':
+      '@prismical/typescript-config':
         specifier: workspace:*
         version: link:../typescript-config
       eslint:
@@ -520,10 +520,10 @@ importers:
         specifier: ^19.1.1
         version: 19.1.1(react@19.1.1)
     devDependencies:
-      '@amical/eslint-config':
+      '@prismical/eslint-config':
         specifier: workspace:*
         version: link:../eslint-config
-      '@amical/typescript-config':
+      '@prismical/typescript-config':
         specifier: workspace:*
         version: link:../typescript-config
       '@turbo/gen':
@@ -557,7 +557,7 @@ importers:
         specifier: ^1.5.0
         version: 1.5.0
     devDependencies:
-      '@amical/typescript-config':
+      '@prismical/typescript-config':
         specifier: workspace:*
         version: link:../typescript-config
       typescript:

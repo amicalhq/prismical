@@ -45,7 +45,7 @@ import {
   RecheckPressedKeysResult,
   RecheckPressedKeysResultSchema,
   AppContext,
-} from "@amical/types";
+} from "@prismical/types";
 
 // Define the interface for RPC methods
 interface RPCMethods {

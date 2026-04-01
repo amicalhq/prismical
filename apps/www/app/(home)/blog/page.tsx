@@ -11,7 +11,7 @@ import { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Blog",
-  description: "A blog about Amical, Productivity and AI",
+  description: "A blog about Prismical, Productivity and AI",
 };
 
 export default function Page(): React.ReactElement {
@@ -34,7 +34,7 @@ export default function Page(): React.ReactElement {
           <SubscriptionForm
             variant="blog"
             formName="blog_subscription"
-            redirectUrl="https://amical.ai/blog?submission=true&form_type=subscribe"
+            redirectUrl="https://prismical.ai/blog?submission=true&form_type=subscribe"
             showHeader={true}
           />
         </div>

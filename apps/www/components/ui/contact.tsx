@@ -26,7 +26,7 @@ const Contact = () => {
             Contact Us
           </h1>
           <p className="text-lg text-muted-foreground">
-            Get in touch with the authors of Amical for any questions or support.
+            Get in touch with the authors of Prismical for any questions or support.
           </p>
         </div>
         <div className="flex justify-center">
@@ -36,7 +36,7 @@ const Contact = () => {
           )}>
             <form action="https://submit-form.com/nItcloafD">
               <input type="hidden" name="form_name" value="contact_form" />
-              <input type="hidden" name="_redirect" value="https://amical.ai/contact?submission=true" />
+              <input type="hidden" name="_redirect" value="https://prismical.ai/contact?submission=true" />
               <input
                 type="checkbox"
                 name="_is_valid_email"

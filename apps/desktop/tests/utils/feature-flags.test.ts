@@ -34,14 +34,14 @@ describe("parseSidebarCtaPayload", () => {
     expect(
       parseSidebarCtaPayload({
         text: "Vote on Product Hunt",
-        url: "https://www.producthunt.com/posts/amical",
+        url: "https://www.producthunt.com/posts/prismical",
         palette: "purple",
         style: "solid",
         emoji: "🚀",
       }),
     ).toEqual({
       text: "Vote on Product Hunt",
-      url: "https://www.producthunt.com/posts/amical",
+      url: "https://www.producthunt.com/posts/prismical",
       palette: "purple",
       style: "solid",
       emoji: "🚀",
@@ -68,7 +68,7 @@ describe("parseSidebarCtaPayload", () => {
     expect(
       parseSidebarCtaPayload({
         text: "Bad Link",
-        url: "file:///tmp/amical.txt",
+        url: "file:///tmp/prismical.txt",
       }),
     ).toBeNull();
   });
@@ -102,7 +102,7 @@ describe("parseSidebarCtaPayload", () => {
     expect(
       parseSidebarCtaPayload({
         text: "Read changelog",
-        url: "//amical.ai/changelog",
+        url: "//prismical.ai/changelog",
       }),
     ).toBeNull();
   });
@@ -110,7 +110,7 @@ describe("parseSidebarCtaPayload", () => {
   it("rejects payloads missing required fields", () => {
     expect(
       parseSidebarCtaPayload({
-        url: "https://amical.ai/changelog",
+        url: "https://prismical.ai/changelog",
       }),
     ).toBeNull();
   });

@@ -1,5 +1,5 @@
 {
-  "name": "@amical/y-libsql",
+  "name": "@prismical/y-libsql",
   "version": "0.1.0",
   "description": "LibSQL persistence provider for Yjs",
   "main": "dist/index.js",

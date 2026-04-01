@@ -6,7 +6,7 @@ import { readFileSync } from "fs";
 export const runtime = "nodejs";
 export const dynamic = "force-static";
 
-export const alt = "Amical - Open Source AI Dictation App";
+export const alt = "Prismical - Open Source AI Dictation App";
 export const size = {
   width: 1200,
   height: 630,
@@ -19,7 +19,7 @@ const geist = Geist({
 });
 
 export default async function Image() {
-  const logoPath = join(process.cwd(), "public", "amical-icon@2x.png");
+  const logoPath = join(process.cwd(), "public", "prismical-icon@2x.png");
   const logoData = readFileSync(logoPath);
   const logoBase64 = `data:image/png;base64,${logoData.toString("base64")}`;
 
@@ -39,7 +39,7 @@ export default async function Image() {
       >
         <img
           src={logoBase64}
-          alt="Amical Logo"
+          alt="Prismical Logo"
           style={{
             width: "400px",
             marginBottom: "32px",

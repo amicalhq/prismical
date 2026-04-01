@@ -39,7 +39,7 @@ export class AppManager {
       const parsedUrl = new URL(url);
 
       // Handle auth callback
-      // For custom scheme URLs like amical://oauth/callback
+      // For custom scheme URLs like prismical://oauth/callback
       // parsedUrl.host = "oauth" and parsedUrl.pathname = "/callback"
       if (parsedUrl.host === "oauth" && parsedUrl.pathname === "/callback") {
         const code = parsedUrl.searchParams.get("code");
@@ -375,6 +375,9 @@ export class AppManager {
     }
 
     this.windowManager.createOrShowMainWindow();
+
+    // DEV: Auto-open notes window for UI development
+    this.windowManager.openNotesWindow();
 
     // Apply dock visibility based on user preference (macOS only)
     if (app.dock) {

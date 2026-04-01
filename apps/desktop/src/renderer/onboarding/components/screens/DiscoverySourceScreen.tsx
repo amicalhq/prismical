@@ -16,7 +16,7 @@ interface DiscoverySourceScreenProps {
 }
 
 /**
- * Discovery source screen - asks how users found Amical
+ * Discovery source screen - asks how users found Prismical
  */
 export function DiscoverySourceScreen({
   onNext,

@@ -117,7 +117,7 @@ export function useFormattingSettings(): UseFormattingSettingsReturn {
   // Derived values
   const languageModels = languageModelsQuery.data || [];
   const hasLanguageModels = languageModels.length > 0;
-  const isCloudSpeechSelected = speechModelQuery.data === "amical-cloud";
+  const isCloudSpeechSelected = speechModelQuery.data === "prismical-cloud";
   const canUseCloudFormatting =
     isCloudSpeechSelected && (isAuthenticated ?? false);
   const hasFormattingOptions = hasLanguageModels || canUseCloudFormatting;
@@ -140,7 +140,7 @@ export function useFormattingSettings(): UseFormattingSettingsReturn {
 
     const options: ComboboxOption[] = [
       {
-        value: "amical-cloud",
+        value: "prismical-cloud",
         label: t("settings.dictation.formatting.cloudOptionLabel"),
         disabled: !canUseCloudFormatting,
         disabledReason: getCloudDisabledReason(),
@@ -174,17 +174,17 @@ export function useFormattingSettings(): UseFormattingSettingsReturn {
 
   // Inline state conditions
   const showCloudRequiresSpeech =
-    selectedModelId === "amical-cloud" && !isCloudSpeechSelected;
+    selectedModelId === "prismical-cloud" && !isCloudSpeechSelected;
   const showCloudRequiresAuth =
-    selectedModelId === "amical-cloud" &&
+    selectedModelId === "prismical-cloud" &&
     isCloudSpeechSelected &&
     !isAuthenticated;
   const showCloudReady =
-    selectedModelId === "amical-cloud" && canUseCloudFormatting;
+    selectedModelId === "prismical-cloud" && canUseCloudFormatting;
   const showNoLanguageModels =
     !hasLanguageModels &&
     !canUseCloudFormatting &&
-    selectedModelId !== "amical-cloud";
+    selectedModelId !== "prismical-cloud";
 
   // Handlers
   const handleFormattingEnabledChange = useCallback(
@@ -218,12 +218,12 @@ export function useFormattingSettings(): UseFormattingSettingsReturn {
         fallbackModelId: formatterConfig?.fallbackModelId,
       };
 
-      if (modelId !== "amical-cloud") {
+      if (modelId !== "prismical-cloud") {
         nextConfig.fallbackModelId = modelId;
       } else if (
         !nextConfig.fallbackModelId &&
         currentModelId &&
-        currentModelId !== "amical-cloud"
+        currentModelId !== "prismical-cloud"
       ) {
         nextConfig.fallbackModelId = currentModelId;
       }

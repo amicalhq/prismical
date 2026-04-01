@@ -681,15 +681,15 @@ class ModelService extends EventEmitter {
       (await this.settingsService.getFormatterConfig()) || { enabled: false };
     const currentModelId = formatterConfig.modelId;
     const fallbackModelId = formatterConfig.fallbackModelId;
-    const movedToCloud = newModelId === "amical-cloud";
-    const movedFromCloud = oldModelId === "amical-cloud";
-    const usingCloudFormatting = currentModelId === "amical-cloud";
+    const movedToCloud = newModelId === "prismical-cloud";
+    const movedFromCloud = oldModelId === "prismical-cloud";
+    const usingCloudFormatting = currentModelId === "prismical-cloud";
 
     let nextConfig = { ...formatterConfig };
     let updated = false;
 
     if (movedToCloud && !usingCloudFormatting) {
-      if (currentModelId && currentModelId !== "amical-cloud") {
+      if (currentModelId && currentModelId !== "prismical-cloud") {
         nextConfig.fallbackModelId = currentModelId;
       } else if (!fallbackModelId) {
         const defaultLanguageModel =
@@ -699,7 +699,7 @@ class ModelService extends EventEmitter {
         }
       }
 
-      nextConfig.modelId = "amical-cloud";
+      nextConfig.modelId = "prismical-cloud";
       nextConfig.enabled = true;
       updated = true;
     } else if (movedFromCloud && usingCloudFormatting) {
@@ -708,7 +708,7 @@ class ModelService extends EventEmitter {
         (await this.settingsService.getDefaultLanguageModel());
 
       nextConfig.modelId =
-        fallback && fallback !== "amical-cloud" ? fallback : undefined;
+        fallback && fallback !== "prismical-cloud" ? fallback : undefined;
       updated = true;
     }
 
@@ -1130,11 +1130,11 @@ class ModelService extends EventEmitter {
       const availableModel = AVAILABLE_MODELS.find(
         (m) => m.id === defaultSpeechModel,
       );
-      const isAmicalModel = availableModel?.provider === "Amical Cloud";
+      const isPrismicalModel = availableModel?.provider === "Prismical Cloud";
       const existsInDb = await modelExists("local-whisper", defaultSpeechModel);
 
-      // Amical cloud models are always valid; local models must exist in DB
-      if (!isAmicalModel && !existsInDb) {
+      // Prismical cloud models are always valid; local models must exist in DB
+      if (!isPrismicalModel && !existsInDb) {
         logger.main.info("Clearing invalid default speech model", {
           modelId: defaultSpeechModel,
         });

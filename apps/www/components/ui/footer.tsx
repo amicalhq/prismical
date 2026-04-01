@@ -39,12 +39,12 @@ export function Footer() {
           <div className="md:col-span-4">
             <Link href="/" className="flex items-center gap-2">
               <Image
-                src="/amical-icon.svg"
+                src="/prismical-icon.svg"
                 width={32}
                 height={32}
-                alt="Amical Logo"
+                alt="Prismical Logo"
               />
-              <span className="font-medium">Amical</span>
+              <span className="font-medium">Prismical</span>
             </Link>
             <p className="mt-2 text-sm text-muted-foreground">
               Open source Speech-to-Text App
@@ -72,13 +72,13 @@ export function Footer() {
           {/* Subscribe section */}
           <div className="md:col-span-4">
             <div className="flex gap-4 mb-4">
-              <Link href="https://www.linkedin.com/company/amicalhq" className="text-muted-foreground hover:text-foreground">
+              <Link href="https://www.linkedin.com/company/prismicalhq" className="text-muted-foreground hover:text-foreground">
                 <LinkedInIcon />
               </Link>
-              <Link href="https://x.com/amicalhq" className="text-muted-foreground hover:text-foreground">
+              <Link href="https://x.com/prismicalhq" className="text-muted-foreground hover:text-foreground">
                 <TwitterIcon />
               </Link>
-              <Link href="https://github.com/amicalhq/amical" className="text-muted-foreground hover:text-foreground">
+              <Link href="https://github.com/prismicalhq/prismical" className="text-muted-foreground hover:text-foreground">
                 <GithubIcon />
               </Link>
               <Link href="/community" className="text-muted-foreground hover:text-foreground">
@@ -88,7 +88,7 @@ export function Footer() {
             <SubscriptionForm
               variant="footer"
               formName="footer_subscription"
-              redirectUrl="https://amical.ai/?submission=true&form_type=subscribe"
+              redirectUrl="https://prismical.ai/?submission=true&form_type=subscribe"
               showHeader={false}
             />
           </div>

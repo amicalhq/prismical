@@ -5,7 +5,7 @@ import { getUserAgent } from "../../utils/http-client";
 import type { SettingsService } from "../../services/settings-service";
 import type { TelemetryService } from "../../services/telemetry-service";
 
-const UPDATE_SERVER = "https://update.amical.ai";
+const UPDATE_SERVER = "https://update.prismical.ai";
 const CHECK_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 
 export type UpdateAction = "none" | "silent" | "prompt" | "force";

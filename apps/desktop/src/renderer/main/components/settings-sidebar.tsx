@@ -89,13 +89,13 @@ export function SettingsSidebar({
     {
       id: "docs",
       title: t("settings.sidebar.docs"),
-      url: "https://amical.ai/docs",
+      url: "https://prismical.ai/docs",
       icon: IconBookFilled,
     },
     {
       id: "community",
       title: t("settings.sidebar.community"),
-      url: "https://amical.ai/community",
+      url: "https://prismical.ai/community",
       icon: IconBrandDiscordFilled,
     },
   ];

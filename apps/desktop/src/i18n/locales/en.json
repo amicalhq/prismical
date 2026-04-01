@@ -1,6 +1,6 @@
 {
   "app": {
-    "loading": "Loading Amical..."
+    "loading": "Loading Prismical..."
   },
   "errors": {
     "generic": "Something went wrong. Please try again."
@@ -19,7 +19,7 @@
     "version": "Version {{version}}"
   },
   "tray": {
-    "tooltip": "Amical",
+    "tooltip": "Prismical",
     "openConsole": "Open Console",
     "about": "About",
     "quit": "Quit"
@@ -64,7 +64,7 @@
       "supportNote": "If this problem persists, please contact support or check the documentation for help."
     },
     "welcome": {
-      "title": "Welcome to Amical",
+      "title": "Welcome to Prismical",
       "subtitle": "Select the features you're interested in to personalize your experience",
       "skip": "Skip onboarding",
       "comingSoon": "Coming Soon",
@@ -99,7 +99,7 @@
     },
     "permissions": {
       "title": "Setup Permissions",
-      "subtitle": "Amical needs a few permissions to work properly",
+      "subtitle": "Prismical needs a few permissions to work properly",
       "waiting": "Waiting for permissions...",
       "polling": "Checking for permission changes...",
       "allGranted": {
@@ -125,11 +125,11 @@
       "accessibility": {
         "title": "Accessibility Access",
         "description": "Required for pasting transcription and global keyboard shortcuts (macOS only)",
-        "deniedHelp": "Add Amical to Accessibility in System Settings"
+        "deniedHelp": "Add Prismical to Accessibility in System Settings"
       }
     },
     "discovery": {
-      "title": "How did you discover Amical?",
+      "title": "How did you discover Prismical?",
       "subtitle": "This helps us understand where our users come from",
       "sources": {
         "searchEngine": "Search engine (Google, Bing, etc.)",
@@ -141,7 +141,7 @@
         "other": "Other"
       },
       "toast": {
-        "selectSource": "Please select how you discovered Amical",
+        "selectSource": "Please select how you discovered Prismical",
         "otherDetailsRequired": "Please provide details for \"Other\""
       },
       "other": {
@@ -152,7 +152,7 @@
     },
     "modelSelection": {
       "title": "Choose Your AI Model",
-      "subtitle": "Select how you want Amical to process your audio",
+      "subtitle": "Select how you want Prismical to process your audio",
       "completeSetupToContinue": "Complete setup to continue",
       "recommended": "Recommended",
       "prosLabel": "Pros:",
@@ -168,7 +168,7 @@
       },
       "models": {
         "cloud": {
-          "title": "Amical Cloud",
+          "title": "Prismical Cloud",
           "subtitle": "Fast, more accurate, and free - no setup needed",
           "description": "Ideal if you want the best accuracy or your device can't run local models.\\nSecure processing; audio is never stored.",
           "pros": {
@@ -227,7 +227,7 @@
     },
     "completion": {
       "title": "Setup Complete!",
-      "start": "Start Using Amical",
+      "start": "Start Using Prismical",
       "quickConfig": {
         "title": "Quick Configuration"
       },
@@ -360,15 +360,15 @@
       },
       "about": {
         "title": "About",
-        "description": "About Amical and version information"
+        "description": "About Prismical and version information"
       }
     },
     "sidebar": {
       "docs": "Docs",
       "community": "Community",
       "discordAlt": "Discord",
-      "logoAlt": "Amical Logo",
-      "brand": "Amical",
+      "logoAlt": "Prismical Logo",
+      "brand": "Prismical",
       "backToHome": "Back to home",
       "favorites": "Favorites",
       "folders": "Folders",
@@ -446,7 +446,7 @@
         },
         "restartDialog": {
           "title": "Restart required",
-          "description": "Restart Amical to apply language changes. You can also apply on next start.",
+          "description": "Restart Prismical to apply language changes. You can also apply on next start.",
           "restartNow": "Restart now",
           "later": "Apply on next start"
         },
@@ -487,7 +487,7 @@
       },
       "telemetry": {
         "label": "Anonymous Telemetry",
-        "description": "Help improve Amical by sharing anonymous usage data.",
+        "description": "Help improve Prismical by sharing anonymous usage data.",
         "learnMore": "Learn more"
       },
       "dataLocation": {
@@ -654,22 +654,22 @@
         "label": "Formatting",
         "badge": "Alpha",
         "description": "Apply punctuation and structure to your transcriptions.",
-        "cloudOptionLabel": "Amical Cloud (Amical)",
-        "disabledTooltip": "Sync a language model or select Amical Cloud transcription to enable formatting.",
+        "cloudOptionLabel": "Prismical Cloud (Prismical)",
+        "disabledTooltip": "Sync a language model or select Prismical Cloud transcription to enable formatting.",
         "disabledReason": {
-          "cloudAndSignIn": "Requires Amical Cloud transcription and sign in",
-          "cloud": "Requires Amical Cloud transcription",
+          "cloudAndSignIn": "Requires Prismical Cloud transcription and sign in",
+          "cloud": "Requires Prismical Cloud transcription",
           "signIn": "Requires sign in"
         },
         "manageLanguageModels": "Manage language models",
         "modelLabel": "Formatting model",
         "modelDescription": "Choose the model used to format your transcription.",
         "modelPlaceholder": "Select a model...",
-        "requiresCloudSpeech": "Requires Amical Cloud transcription.",
+        "requiresCloudSpeech": "Requires Prismical Cloud transcription.",
         "switchSpeechModel": "Switch speech model",
-        "signInCloud": "Sign in to use Amical Cloud formatting.",
+        "signInCloud": "Sign in to use Prismical Cloud formatting.",
         "signIn": "Sign in",
-        "cloudReady": "Using Amical Cloud formatting.",
+        "cloudReady": "Using Prismical Cloud formatting.",
         "noLanguageModels": "Formatting won't run - no language model available.",
         "syncLanguageModels": "Sync language models",
         "toast": {
@@ -976,7 +976,7 @@
         },
         "loginDialog": {
           "title": "Sign In Required",
-          "description": "To use Amical Cloud transcription, you need to sign in with your Amical account. This enables secure cloud-based transcription with high accuracy.",
+          "description": "To use Prismical Cloud transcription, you need to sign in with your Prismical account. This enables secure cloud-based transcription with high accuracy.",
           "browserNotice": "After clicking \"Sign In\", you'll be redirected to your browser to complete the login process.",
           "cloudBenefit": "Fast, accurate cloud transcription",
           "cancel": "Cancel",
@@ -987,7 +987,7 @@
           "downloadStartFailed": "Failed to start download",
           "downloadCancelFailed": "Failed to cancel download",
           "deleteFailed": "Failed to delete model",
-          "cloudSelected": "Amical Cloud selected. Cloud formatting enabled.",
+          "cloudSelected": "Prismical Cloud selected. Cloud formatting enabled.",
           "selectFailed": "Failed to select model",
           "loginInBrowser": "Please complete login in your browser",
           "loginStartFailed": "Failed to start login process",

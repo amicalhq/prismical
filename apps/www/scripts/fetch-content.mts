@@ -26,7 +26,7 @@ console.log("AWS Credentials:", {
 });
 
 // Configuration
-const BUCKET_NAME = process.env.S3_BUCKET_NAME || "amical-www";
+const BUCKET_NAME = process.env.S3_BUCKET_NAME || "prismical-www";
 const ENDPOINT = process.env.S3_ENDPOINT || "https://s3.wasabisys.com";
 const BLOG_PREFIX = process.env.BLOG_PREFIX || "blog/";
 const BLOG_IMAGES_PREFIX = process.env.BLOG_IMAGES_PREFIX || "blog-images/";

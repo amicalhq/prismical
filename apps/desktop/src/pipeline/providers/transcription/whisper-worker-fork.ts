@@ -1,5 +1,5 @@
 // Worker process entry point for fork
-import { Whisper, getLoadedBindingInfo } from "@amical/whisper-wrapper";
+import { Whisper, getLoadedBindingInfo } from "@prismical/whisper-wrapper";
 import { shouldDropSegment } from "../../utils/segment-filter";
 
 // Type definitions for IPC communication

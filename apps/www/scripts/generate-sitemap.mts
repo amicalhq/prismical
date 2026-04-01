@@ -36,7 +36,7 @@ async function generate() {
       .filter((page) => !page.includes("/_") && !page.includes("/blog/index")),
   );
 
-  const baseUrl = "https://amical.ai";
+  const baseUrl = "https://prismical.ai";
 
   const sitemap = `
     <?xml version="1.0" encoding="UTF-8"?>

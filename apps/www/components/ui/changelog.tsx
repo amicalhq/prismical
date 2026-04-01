@@ -18,7 +18,7 @@ export interface ChangelogProps {
 
 const Changelog = ({
   title = "Changelog",
-  description = "Get the latest product updates and changes to Amical.",
+  description = "Get the latest product updates and changes to Prismical.",
   entries = defaultChangelogData,
 }: ChangelogProps) => {
   return (
@@ -35,7 +35,7 @@ const Changelog = ({
         <SubscriptionForm
         variant="blog"
         formName="changelog_subscription"
-        redirectUrl="https://amical.ai/changelog?submission=true&form_type=subscribe"
+        redirectUrl="https://prismical.ai/changelog?submission=true&form_type=subscribe"
         showHeader={false}
       />
         <div className="mx-auto mt-16 max-w-3xl space-y-16 md:mt-24 md:space-y-24">
@@ -90,14 +90,14 @@ export const defaultChangelogData: ChangelogEntry[] = [
   {
     version: "Version 0.1.0",
     date: "28 April 2025",
-    title: "Amical 0.1 coming soon!",
+    title: "Prismical 0.1 coming soon!",
     description:
-      "First version of Amical is coming soon by end of May 2025! What to expect:",
+      "First version of Prismical is coming soon by end of May 2025! What to expect:",
     items: [
       "Mac",
       "Speech-to-Text",
       "Context-aware"
     ],
-    image: "https://placehold.co/1200x600/6b46c1/ffffff?text=Announcing+Amical+0.1",
+    image: "https://placehold.co/1200x600/6b46c1/ffffff?text=Announcing+Prismical+0.1",
   }
 ];

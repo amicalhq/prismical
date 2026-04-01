@@ -4,7 +4,7 @@
 
 // Re-export context types from dedicated file
 import { PipelineContext } from "./context";
-import { GetAccessibilityContextResult } from "@amical/types";
+import { GetAccessibilityContextResult } from "@prismical/types";
 export { PipelineContext, SharedPipelineData } from "./context";
 
 // Context for transcription operations (shared between transcribe and flush)

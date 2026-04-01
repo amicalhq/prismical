@@ -25,7 +25,7 @@ export const mockOnnxRuntime = {
   },
 };
 
-// Mock @amical/whisper-wrapper
+// Mock @prismical/whisper-wrapper
 export const mockWhisperWrapper = {
   WhisperModel: vi.fn().mockImplementation(() => ({
     transcribe: vi.fn(() =>
@@ -156,11 +156,11 @@ export const mockPostHog = {
 export function createNativeMocks() {
   return {
     "onnxruntime-node": mockOnnxRuntime,
-    "@amical/whisper-wrapper": mockWhisperWrapper,
+    "@prismical/whisper-wrapper": mockWhisperWrapper,
     keytar: mockKeytar,
     libsql: mockLibsql,
-    "@amical/swift-helper": mockSwiftHelper,
-    "@amical/windows-helper": mockWindowsHelper,
+    "@prismical/swift-helper": mockSwiftHelper,
+    "@prismical/windows-helper": mockWindowsHelper,
     "node-machine-id": mockMachineId,
     systeminformation: mockSystemInformation,
     "posthog-node": mockPostHog,

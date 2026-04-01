@@ -1,4 +1,4 @@
-# @amical/whisper-wrapper
+# @prismical/whisper-wrapper
 
 This package wraps the `whisper.cpp` Node addon so the desktop app can call into
 Whisper from a forked worker process. The build and runtime layers are tuned for
@@ -9,9 +9,9 @@ reasoning behind them.
 
 - `pnpm install` (postinstall) runs `bin/build-addon.js` via CMake.js and drops
   the resulting `whisper.node` into `native/<platform-arch(-tag)>/`.
-- `pnpm --filter @amical/whisper-wrapper build:native` rebuilds the default
+- `pnpm --filter @prismical/whisper-wrapper build:native` rebuilds the default
   variants for this platform (Metal + CPU on macOS, CPU elsewhere).
-- `pnpm --filter @amical/whisper-wrapper build:native:cuda` builds an extra
+- `pnpm --filter @prismical/whisper-wrapper build:native:cuda` builds an extra
   `win32-x64-cuda` binary alongside the regular `win32-x64` fallback. Install
   the CUDA toolkit (12.x tested) before running it.
 - Every macOS build is ad-hoc signed (`codesign -s -`) so Electron/Node can load
@@ -48,7 +48,7 @@ calling the build scripts. Locally you can flip it back on if your toolchain
 supports those instructions:
 
 ```bash
-GGML_NATIVE=ON pnpm --filter @amical/whisper-wrapper build:native
+GGML_NATIVE=ON pnpm --filter @prismical/whisper-wrapper build:native
 ```
 
 Leave it off in CI unless you control the runner.
@@ -60,8 +60,8 @@ comma-separated list of directory names that should map to `native/<name>`.
 Examples:
 
 ```bash
-WHISPER_TARGETS="linux-x64-gnu" pnpm --filter @amical/whisper-wrapper build:native
-WHISPER_TARGETS="win32-x64-cuda,win32-x64" pnpm --filter @amical/whisper-wrapper build:native
+WHISPER_TARGETS="linux-x64-gnu" pnpm --filter @prismical/whisper-wrapper build:native
+WHISPER_TARGETS="win32-x64-cuda,win32-x64" pnpm --filter @prismical/whisper-wrapper build:native
 ```
 
 Absent overrides the script builds the Metal variant (on macOS) followed by the

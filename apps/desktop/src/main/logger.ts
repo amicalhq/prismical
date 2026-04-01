@@ -36,8 +36,8 @@ log.transports.file.format =
 
 // Set custom log file path
 const logPath = isDev
-  ? path.join(app.getPath("userData"), "logs", "amical-dev.log")
-  : path.join(app.getPath("logs"), "amical.log");
+  ? path.join(app.getPath("userData"), "logs", "prismical-dev.log")
+  : path.join(app.getPath("logs"), "prismical.log");
 
 log.transports.file.resolvePathFn = () => logPath;
 

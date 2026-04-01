@@ -18,7 +18,7 @@ export default function Layout({ children }: { children: ReactNode }) {
     <html lang="en" className={inter.className} suppressHydrationWarning>
       <head>
         <PlausibleProvider
-          domain="amical.ai"
+          domain="prismical.ai"
           trackOutboundLinks={true}
           trackFileDownloads={true}
           taggedEvents={true}

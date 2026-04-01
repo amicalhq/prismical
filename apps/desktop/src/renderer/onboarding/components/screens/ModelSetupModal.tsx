@@ -108,12 +108,12 @@ export function ModelSetupModal({
     enabled: modelType === ModelType.Local && isOpen,
   });
 
-  // Handle Amical authentication
-  const handleAmicalLogin = async () => {
+  // Handle Prismical authentication
+  const handlePrismicalLogin = async () => {
     setIsLoading(true);
     setError(null);
 
-    // The login mutation triggers Amical OAuth flow via the main process
+    // The login mutation triggers Prismical OAuth flow via the main process
     loginMutation.mutate();
   };
 
@@ -179,7 +179,7 @@ export function ModelSetupModal({
             <Button variant="outline" onClick={() => onClose(false)}>
               {t("onboarding.modelSetup.actions.cancel")}
             </Button>
-            <Button onClick={handleAmicalLogin} disabled={isLoading}>
+            <Button onClick={handlePrismicalLogin} disabled={isLoading}>
               {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {t("onboarding.modelSetup.actions.signIn")}
             </Button>

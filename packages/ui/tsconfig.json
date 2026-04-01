@@ -1,5 +1,5 @@
 {
-  "extends": "@amical/typescript-config/react-library.json",
+  "extends": "@prismical/typescript-config/react-library.json",
   "compilerOptions": {
     "outDir": "dist"
   },

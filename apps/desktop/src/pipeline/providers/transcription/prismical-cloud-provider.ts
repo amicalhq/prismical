@@ -7,7 +7,7 @@ import { logger } from "../../../main/logger";
 import { AuthService } from "../../../services/auth-service";
 import { getUserAgent } from "../../../utils/http-client";
 import { detectApplicationType } from "../formatting/formatter-prompt";
-import type { GetAccessibilityContextResult } from "@amical/types";
+import type { GetAccessibilityContextResult } from "@prismical/types";
 import {
   AppError,
   ErrorCodes,
@@ -37,8 +37,8 @@ type CloudTranscriptionResponse =
   | CloudTranscriptionSuccess
   | CloudTranscriptionError;
 
-export class AmicalCloudProvider implements TranscriptionProvider {
-  readonly name = "amical-cloud";
+export class PrismicalCloudProvider implements TranscriptionProvider {
+  readonly name = "prismical-cloud";
 
   private authService: AuthService;
   private apiEndpoint: string;
@@ -68,7 +68,7 @@ export class AmicalCloudProvider implements TranscriptionProvider {
     // Configure endpoint based on environment
     this.apiEndpoint = process.env.API_ENDPOINT || __BUNDLED_API_ENDPOINT;
 
-    logger.transcription.info("AmicalCloudProvider initialized", {
+    logger.transcription.info("PrismicalCloudProvider initialized", {
       endpoint: this.apiEndpoint,
     });
   }

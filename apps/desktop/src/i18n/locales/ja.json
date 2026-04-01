@@ -1,6 +1,6 @@
 {
   "app": {
-    "loading": "Amicalを読み込み中..."
+    "loading": "Prismicalを読み込み中..."
   },
   "errors": {
     "generic": "問題が発生しました。もう一度お試しください。"
@@ -19,9 +19,9 @@
     "version": "バージョン {{version}}"
   },
   "tray": {
-    "tooltip": "Amical",
+    "tooltip": "Prismical",
     "openConsole": "コンソールを開く",
-    "about": "Amicalについて",
+    "about": "Prismicalについて",
     "quit": "終了"
   },
   "updater": {
@@ -64,7 +64,7 @@
       "supportNote": "この問題が続く場合は、サポートに連絡するか、ドキュメントを確認してください。"
     },
     "welcome": {
-      "title": "Amicalへようこそ",
+      "title": "Prismicalへようこそ",
       "subtitle": "興味のある機能を選択して、体験をカスタマイズしましょう",
       "skip": "オンボーディングをスキップ",
       "comingSoon": "近日公開",
@@ -99,7 +99,7 @@
     },
     "permissions": {
       "title": "権限の設定",
-      "subtitle": "Amicalが正しく動作するためにいくつかの権限が必要です",
+      "subtitle": "Prismicalが正しく動作するためにいくつかの権限が必要です",
       "waiting": "権限を待っています...",
       "polling": "権限の変更を確認中...",
       "allGranted": {
@@ -125,11 +125,11 @@
       "accessibility": {
         "title": "アクセシビリティへのアクセス",
         "description": "文字起こしの貼り付けとグローバルキーボードショートカットに必要です（macOSのみ）",
-        "deniedHelp": "システム設定のアクセシビリティにAmicalを追加してください"
+        "deniedHelp": "システム設定のアクセシビリティにPrismicalを追加してください"
       }
     },
     "discovery": {
-      "title": "Amicalをどこで知りましたか？",
+      "title": "Prismicalをどこで知りましたか？",
       "subtitle": "ユーザーの方々がどこから来ているか理解するのに役立ちます",
       "sources": {
         "searchEngine": "検索エンジン（Google、Bingなど）",
@@ -141,7 +141,7 @@
         "other": "その他"
       },
       "toast": {
-        "selectSource": "Amicalをどこで知ったか選択してください",
+        "selectSource": "Prismicalをどこで知ったか選択してください",
         "otherDetailsRequired": "「その他」の詳細を入力してください"
       },
       "other": {
@@ -152,7 +152,7 @@
     },
     "modelSelection": {
       "title": "AIモデルを選択",
-      "subtitle": "Amicalがオーディオを処理する方法を選択してください",
+      "subtitle": "Prismicalがオーディオを処理する方法を選択してください",
       "completeSetupToContinue": "続行するにはセットアップを完了してください",
       "recommended": "おすすめ",
       "prosLabel": "メリット：",
@@ -168,7 +168,7 @@
       },
       "models": {
         "cloud": {
-          "title": "Amical Cloud",
+          "title": "Prismical Cloud",
           "subtitle": "高速・高精度・無料 - セットアップ不要",
           "description": "最高の精度が必要な場合や、デバイスでローカルモデルを実行できない場合に最適です。\\n安全な処理で、音声データは保存されません。",
           "pros": {
@@ -227,7 +227,7 @@
     },
     "completion": {
       "title": "セットアップ完了！",
-      "start": "Amicalを使い始める",
+      "start": "Prismicalを使い始める",
       "quickConfig": {
         "title": "クイック設定"
       },
@@ -359,16 +359,16 @@
         "description": "高度な設定オプション"
       },
       "about": {
-        "title": "Amicalについて",
-        "description": "Amicalとバージョン情報"
+        "title": "Prismicalについて",
+        "description": "Prismicalとバージョン情報"
       }
     },
     "sidebar": {
       "docs": "ドキュメント",
       "community": "コミュニティ",
       "discordAlt": "Discord",
-      "logoAlt": "Amical ロゴ",
-      "brand": "Amical",
+      "logoAlt": "Prismical ロゴ",
+      "brand": "Prismical",
       "backToHome": "ホームに戻る",
       "favorites": "お気に入り",
       "folders": "フォルダー",
@@ -445,7 +445,7 @@
         },
         "restartDialog": {
           "title": "再起動が必要です",
-          "description": "言語の変更を適用するにはAmicalを再起動してください。次回起動時に適用することもできます。",
+          "description": "言語の変更を適用するにはPrismicalを再起動してください。次回起動時に適用することもできます。",
           "restartNow": "今すぐ再起動",
           "later": "次回起動時に適用"
         },
@@ -486,7 +486,7 @@
       },
       "telemetry": {
         "label": "匿名テレメトリー",
-        "description": "匿名の使用データを共有してAmicalの改善にご協力ください。",
+        "description": "匿名の使用データを共有してPrismicalの改善にご協力ください。",
         "learnMore": "詳しく見る"
       },
       "dataLocation": {
@@ -538,7 +538,7 @@
       }
     },
     "about": {
-      "title": "Amicalについて",
+      "title": "Prismicalについて",
       "description": "バージョン情報、リソース、サポートリンク",
       "toast": {
         "upToDate": "最新バージョンです"
@@ -653,22 +653,22 @@
         "label": "フォーマット",
         "badge": "アルファ",
         "description": "文字起こしに句読点と構造を適用します。",
-        "cloudOptionLabel": "Amical Cloud（Amical）",
-        "disabledTooltip": "フォーマットを有効にするには、言語モデルを同期するか、Amical Cloud文字起こしを選択してください。",
+        "cloudOptionLabel": "Prismical Cloud（Prismical）",
+        "disabledTooltip": "フォーマットを有効にするには、言語モデルを同期するか、Prismical Cloud文字起こしを選択してください。",
         "disabledReason": {
-          "cloudAndSignIn": "Amical Cloud文字起こしとサインインが必要です",
-          "cloud": "Amical Cloud文字起こしが必要です",
+          "cloudAndSignIn": "Prismical Cloud文字起こしとサインインが必要です",
+          "cloud": "Prismical Cloud文字起こしが必要です",
           "signIn": "サインインが必要です"
         },
         "manageLanguageModels": "言語モデルを管理",
         "modelLabel": "フォーマットモデル",
         "modelDescription": "文字起こしのフォーマットに使用するモデルを選択してください。",
         "modelPlaceholder": "モデルを選択...",
-        "requiresCloudSpeech": "Amical Cloud文字起こしが必要です。",
+        "requiresCloudSpeech": "Prismical Cloud文字起こしが必要です。",
         "switchSpeechModel": "音声モデルを切り替え",
-        "signInCloud": "Amical Cloudフォーマットを使用するにはサインインしてください。",
+        "signInCloud": "Prismical Cloudフォーマットを使用するにはサインインしてください。",
         "signIn": "サインイン",
-        "cloudReady": "Amical Cloudフォーマットを使用中。",
+        "cloudReady": "Prismical Cloudフォーマットを使用中。",
         "noLanguageModels": "フォーマットは実行されません - 言語モデルがありません。",
         "syncLanguageModels": "言語モデルを同期",
         "toast": {
@@ -968,7 +968,7 @@
         },
         "loginDialog": {
           "title": "サインインが必要です",
-          "description": "Amical Cloudの文字起こしを使用するには、Amicalアカウントでサインインする必要があります。これにより、安全で高精度なクラウドベースの文字起こしが利用できます。",
+          "description": "Prismical Cloudの文字起こしを使用するには、Prismicalアカウントでサインインする必要があります。これにより、安全で高精度なクラウドベースの文字起こしが利用できます。",
           "browserNotice": "「サインイン」をクリックすると、ブラウザにリダイレクトされてログインプロセスを完了します。",
           "cloudBenefit": "高速で高精度なクラウド文字起こし",
           "cancel": "キャンセル",
@@ -979,7 +979,7 @@
           "downloadStartFailed": "ダウンロードの開始に失敗しました",
           "downloadCancelFailed": "ダウンロードのキャンセルに失敗しました",
           "deleteFailed": "モデルの削除に失敗しました",
-          "cloudSelected": "Amical Cloudを選択しました。クラウドフォーマットが有効です。",
+          "cloudSelected": "Prismical Cloudを選択しました。クラウドフォーマットが有効です。",
           "selectFailed": "モデルの選択に失敗しました",
           "loginInBrowser": "ブラウザでログインを完了してください",
           "loginStartFailed": "ログインプロセスの開始に失敗しました",

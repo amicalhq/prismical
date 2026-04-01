@@ -7,7 +7,7 @@ import {
 } from "../pipeline/core/pipeline-types";
 import { createDefaultContext } from "../pipeline/core/context";
 import { WhisperProvider } from "../pipeline/providers/transcription/whisper-provider";
-import { AmicalCloudProvider } from "../pipeline/providers/transcription/amical-cloud-provider";
+import { PrismicalCloudProvider } from "../pipeline/providers/transcription/prismical-cloud-provider";
 import { OpenRouterProvider } from "../pipeline/providers/formatting/openrouter-formatter";
 import { OllamaFormatter } from "../pipeline/providers/formatting/ollama-formatter";
 import { ModelService } from "../services/model-service";
@@ -36,7 +36,7 @@ import * as fs from "node:fs";
  */
 export class TranscriptionService {
   private whisperProvider: WhisperProvider;
-  private cloudProvider: AmicalCloudProvider;
+  private cloudProvider: PrismicalCloudProvider;
   private currentProvider: TranscriptionProvider | null = null;
   private streamingSessions = new Map<string, StreamingSession>();
   private vadService: VADService | null;
@@ -58,7 +58,7 @@ export class TranscriptionService {
     private onboardingService: OnboardingService | null,
   ) {
     this.whisperProvider = new WhisperProvider(modelService);
-    this.cloudProvider = new AmicalCloudProvider();
+    this.cloudProvider = new PrismicalCloudProvider();
     this.vadService = vadService;
     this.settingsService = settingsService;
     this.vadMutex = new Mutex();
@@ -83,8 +83,8 @@ export class TranscriptionService {
     // Find the model in AVAILABLE_MODELS
     const model = AVAILABLE_MODELS.find((m) => m.id === selectedModelId);
 
-    // Use cloud provider for Amical Cloud models
-    if (model?.provider === "Amical Cloud") {
+    // Use cloud provider for Prismical Cloud models
+    if (model?.provider === "Prismical Cloud") {
       this.currentProvider = this.cloudProvider;
       return this.cloudProvider;
     }
@@ -100,7 +100,7 @@ export class TranscriptionService {
     const model = selectedModelId
       ? AVAILABLE_MODELS.find((m) => m.id === selectedModelId)
       : null;
-    const isCloudModel = model?.provider === "Amical Cloud";
+    const isCloudModel = model?.provider === "Prismical Cloud";
 
     // Only preload for local models
     if (!isCloudModel) {
@@ -172,7 +172,7 @@ export class TranscriptionService {
       const selectedModelId = await this.modelService.getSelectedModel();
       if (selectedModelId) {
         const model = AVAILABLE_MODELS.find((m) => m.id === selectedModelId);
-        if (model?.provider === "Amical Cloud") {
+        if (model?.provider === "Prismical Cloud") {
           return true;
         }
       }
@@ -332,7 +332,7 @@ export class TranscriptionService {
       this.accumulateTranscriptionResult(
         session.transcriptionResults,
         chunkTranscription,
-        provider.name === "amical-cloud",
+        provider.name === "prismical-cloud",
       );
       if (chunkTranscription.trim()) {
         logger.transcription.info("Whisper returned transcription", {
@@ -404,7 +404,7 @@ export class TranscriptionService {
 
       const formatterConfig = await this.settingsService.getFormatterConfig();
       const shouldUseCloudFormatting =
-        formatterConfig?.enabled && formatterConfig.modelId === "amical-cloud";
+        formatterConfig?.enabled && formatterConfig.modelId === "prismical-cloud";
       let usedCloudProvider = false;
 
       // Flush provider to get any remaining buffered audio
@@ -419,7 +419,7 @@ export class TranscriptionService {
         const aggregatedTranscription = session.transcriptionResults.join("");
 
         const provider = await this.selectProvider();
-        usedCloudProvider = provider.name === "amical-cloud";
+        usedCloudProvider = provider.name === "prismical-cloud";
         const finalTranscription = await provider.flush({
           sessionId,
           vocabulary: session.context.sharedData.vocabulary,
@@ -488,7 +488,7 @@ export class TranscriptionService {
 
       const selectedModelId = await this.modelService.getSelectedModel();
       const speechModelId = usedCloudProvider
-        ? "amical-cloud"
+        ? "prismical-cloud"
         : selectedModelId || "whisper-local";
 
       await createTranscription({
@@ -718,14 +718,14 @@ export class TranscriptionService {
       logger.transcription.debug("Formatting skipped: disabled in config");
     } else if (!text.trim().length) {
       logger.transcription.debug("Formatting skipped: empty transcription");
-    } else if (formatterConfig.modelId === "amical-cloud") {
+    } else if (formatterConfig.modelId === "prismical-cloud") {
       if (!options.usedCloudProvider) {
         logger.transcription.warn(
-          "Formatting skipped: Amical Cloud formatting requires cloud transcription",
+          "Formatting skipped: Prismical Cloud formatting requires cloud transcription",
         );
       } else {
         formattingUsed = true;
-        formattingModel = "amical-cloud";
+        formattingModel = "prismical-cloud";
       }
     } else {
       const modelId =
@@ -874,7 +874,7 @@ export class TranscriptionService {
     const selectedModelId = await this.modelService.getSelectedModel();
     const formatterConfig = await this.settingsService.getFormatterConfig();
     const shouldUseCloudFormatting =
-      formatterConfig?.enabled && formatterConfig.modelId === "amical-cloud";
+      formatterConfig?.enabled && formatterConfig.modelId === "prismical-cloud";
 
     // Split audio into 512-sample frames for per-frame VAD
     const FRAME_SIZE = 512;
@@ -917,7 +917,7 @@ export class TranscriptionService {
     await this.transcriptionMutex.acquire();
     try {
       const provider = await this.selectProvider();
-      usedCloudProvider = provider.name === "amical-cloud";
+      usedCloudProvider = provider.name === "prismical-cloud";
       provider.reset();
 
       // Feed each frame with its computed VAD probability
@@ -985,7 +985,7 @@ export class TranscriptionService {
     });
 
     const speechModelId = usedCloudProvider
-      ? "amical-cloud"
+      ? "prismical-cloud"
       : selectedModelId || "whisper-local";
 
     // Update the existing record in-place

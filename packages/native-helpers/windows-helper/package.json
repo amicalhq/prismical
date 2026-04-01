@@ -1,9 +1,9 @@
 {
-  "name": "@amical/windows-helper",
+  "name": "@prismical/windows-helper",
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "build": "pnpm --filter @amical/types generate:all && dotnet publish -c Release -r win-x64 --self-contained true -o bin",
+    "build": "pnpm --filter @prismical/types generate:all && dotnet publish -c Release -r win-x64 --self-contained true -o bin",
     "build:native": "dotnet publish -c Release -r win-x64 --self-contained true -o bin",
     "clean": "rm -rf bin obj"
   },

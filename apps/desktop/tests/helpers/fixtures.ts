@@ -128,7 +128,7 @@ export const sampleTranscriptions: NewTranscription[] = [
  */
 export const sampleVocabulary: NewVocabulary[] = [
   {
-    word: "Amical",
+    word: "Prismical",
     replacementWord: null,
     isReplacement: false,
     usageCount: 5,

@@ -5,7 +5,7 @@
 //   node scripts/test-addon.js [--model /path/to/model.bin] [--audio /path/to/audio.wav]
 //
 // If no flags are provided the script will grab the first *.bin model from
-// "~/Library/Application Support/amical/models" and the bundled jfk sample.
+// "~/Library/Application Support/prismical/models" and the bundled jfk sample.
 
 const fs = require("node:fs");
 const os = require("node:os");
@@ -40,7 +40,7 @@ function defaultModelPath() {
     os.homedir(),
     "Library",
     "Application Support",
-    "amical",
+    "prismical",
     "models",
   );
 

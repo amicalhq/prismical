@@ -40,6 +40,7 @@ export function NotesWindowPanel({
   const autoRecordPendingNoteIdRef = useRef<number | null>(null);
   const autoRecordStartedNoteIdRef = useRef<number | null>(null);
   const updateNoteTitleMutateRef = useRef(updateNoteTitleMutation.mutate);
+  const didInitialOpenRef = useRef(false);
 
   const createAndSwitchToNewNote = useCallback(async () => {
     if (createNoteMutation.isPending) {
@@ -136,6 +137,9 @@ export function NotesWindowPanel({
   }, [updateNoteTitleMutation.mutate]);
 
   useEffect(() => {
+    if (didInitialOpenRef.current) return;
+    didInitialOpenRef.current = true;
+
     if (typeof initialNoteId === "number" && initialNoteId > 0) {
       handleOpenRequest(initialNoteId);
       return;
@@ -143,7 +147,8 @@ export function NotesWindowPanel({
     if (shouldCreateInitialNote) {
       handleOpenRequest(undefined);
     }
-  }, [handleOpenRequest, initialNoteId, shouldCreateInitialNote]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const debouncedUpdateTitle = useMemo(
     () =>

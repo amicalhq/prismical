@@ -16,7 +16,7 @@ export function Hero() {
           </h2>
           <div className="pt-4">
             <a
-              href="https://github.com/amicalhq/amical"
+              href="https://github.com/prismicalhq/prismical"
               target="_blank"
               rel="noopener noreferrer"
               className="inline-block px-8 py-3 bg-white text-black font-semibold rounded-lg hover:bg-gray-100 transition-colors"

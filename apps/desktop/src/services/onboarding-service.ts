@@ -229,8 +229,8 @@ export class OnboardingService extends EventEmitter {
 
         // Set the actual model in ModelService
         if (preferences.selectedModelType === "cloud") {
-          await this.modelService.setSelectedModel("amical-cloud");
-          logger.main.info("Set default speech model to amical-cloud");
+          await this.modelService.setSelectedModel("prismical-cloud");
+          logger.main.info("Set default speech model to prismical-cloud");
         } else if (preferences.selectedModelType === "local") {
           // Keep existing selection if any, otherwise use first downloaded model
           const currentModel = await this.modelService.getSelectedModel();

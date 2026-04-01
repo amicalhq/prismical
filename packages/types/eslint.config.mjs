@@ -1,4 +1,4 @@
-import { config } from "@amical/eslint-config/base";
+import { config } from "@prismical/eslint-config/base";
 
 /** @type {import("eslint").Linter.Config} */
 export default config;

@@ -11,7 +11,7 @@ export function FeatureContext() {
               Smart Context, Perfect Format, Incredible Accuracy
             </h2>
             <p className="text-lg text-gray-300 leading-relaxed max-w-3xl mx-auto">
-              Amical understands the context of your applications, automatically formatting your dictation into the perfect format - whether it's a professional email in Gmail or a casual post on Instagram.
+              Prismical understands the context of your applications, automatically formatting your dictation into the perfect format - whether it's a professional email in Gmail or a casual post on Instagram.
             </p>
           </div>
 

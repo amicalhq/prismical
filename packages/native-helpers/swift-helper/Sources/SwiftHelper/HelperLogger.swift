@@ -1,7 +1,7 @@
 import Foundation
 
 enum HelperLogger {
-    private static let queue = DispatchQueue(label: "com.amical.swifthelper.log", qos: .utility)
+    private static let queue = DispatchQueue(label: "com.prismical.swifthelper.log", qos: .utility)
     private static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"

@@ -2,7 +2,7 @@ import { EventEmitter } from "events";
 import { globalShortcut } from "electron";
 import { SettingsService } from "@/services/settings-service";
 import { NativeBridge } from "@/services/platform/native-bridge-service";
-import { KeyEventPayload, HelperEvent } from "@amical/types";
+import { KeyEventPayload, HelperEvent } from "@prismical/types";
 import { logger } from "@/main/logger";
 import { getKeyFromKeycode } from "@/utils/keycode-map";
 import {

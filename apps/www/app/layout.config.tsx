@@ -9,18 +9,18 @@ import Image from "next/image";
  * Docs Layout: app/docs/layout.tsx
  */
 export const baseOptions: BaseLayoutProps = {
-  githubUrl: "https://github.com/amicalhq/amical",
+  githubUrl: "https://github.com/prismicalhq/prismical",
   disableThemeSwitch: true,
   nav: {
     title: (
       <>
         <Image
-          src="/amical-icon.svg"
+          src="/prismical-icon.svg"
           width={32}
           height={32}
-          alt="Amical Logo"
+          alt="Prismical Logo"
         />
-        Amical
+        Prismical
       </>
     ),
   },

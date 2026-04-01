@@ -11,7 +11,7 @@ import { FeatureInterest, ModelType } from "../../../../types/onboarding";
 import { useTranslation } from "react-i18next";
 import { api } from "@/trpc/react";
 
-const DISCORD_URL = "https://amical.ai/community";
+const DISCORD_URL = "https://prismical.ai/community";
 
 interface CompletionScreenProps {
   onComplete: () => void;

@@ -1,5 +1,5 @@
 import { FormatParams } from "../../core/pipeline-types";
-import { GetAccessibilityContextResult } from "@amical/types";
+import { GetAccessibilityContextResult } from "@prismical/types";
 
 // Kept in sync with Axis backend repo (~/exa9/axis), packages/prompts/src/formatting.ts.
 // Note: Prompts are intentionally treated as "code" and should be updated with care.
@@ -7,7 +7,7 @@ import { GetAccessibilityContextResult } from "@amical/types";
 /**
  * Application type for formatting context
  */
-export type AppType = "email" | "chat" | "notes" | "amical-notes" | "default";
+export type AppType = "email" | "chat" | "notes" | "prismical-notes" | "default";
 
 /**
  * App-type specific formatting rules inserted into the system prompt
@@ -25,7 +25,7 @@ const APP_TYPE_RULES: Record<AppType, string> = {
 - Format action items and tasks clearly
 - Use concise phrasing - notes should be scannable, not prose-heavy
 - Preserve hierarchical relationships (e.g., main topics vs sub-items)`,
-  "amical-notes": `- Format output as clean Markdown
+  "prismical-notes": `- Format output as clean Markdown
 - Adapt formatting to content length and complexity:
   - For short, simple content (1-2 sentences): use a single paragraph, no special formatting
   - For medium content with distinct points: use bullet points or numbered lists
@@ -91,7 +91,7 @@ Action Items:
 - Respond to emails
 - Review pull requests
 - Update documentation</formatted_text>`,
-  "amical-notes": `### Markdown structure for multi-point notes:
+  "prismical-notes": `### Markdown structure for multi-point notes:
 <input>quick recap we decided to ship friday risks are perf and we need to update docs next steps benchmark and write docs</input>
 <formatted_text>## Recap
 
@@ -343,9 +343,9 @@ export function detectApplicationType(
 
   const bundleId = accessibilityContext.context.application.bundleIdentifier;
 
-  // Amical's own app: align to Axis prompt format but preserve appType value.
-  if (bundleId === "com.amical.desktop") {
-    return "amical-notes";
+  // Prismical's own app: align to Axis prompt format but preserve appType value.
+  if (bundleId === "com.prismical.desktop") {
+    return "prismical-notes";
   }
 
   // Check if it's a browser

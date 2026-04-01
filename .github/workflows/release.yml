@@ -93,18 +93,18 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build whisper wrapper JS
-        run: pnpm --filter @amical/whisper-wrapper build
+        run: pnpm --filter @prismical/whisper-wrapper build
 
       - name: Build whisper native binaries
         env:
           GGML_NATIVE: OFF # CI mac runners lack i8mm support; keep CPU features conservative here
-        run: pnpm --filter @amical/whisper-wrapper build:native
+        run: pnpm --filter @prismical/whisper-wrapper build:native
 
       - name: Build whisper native binaries (vulkan)
         if: matrix.os == 'windows'
         env:
           GGML_NATIVE: OFF
-        run: pnpm --filter @amical/whisper-wrapper build:native:vulkan
+        run: pnpm --filter @prismical/whisper-wrapper build:native:vulkan
 
       - name: Download Node.js binaries
         working-directory: apps/desktop
@@ -173,8 +173,8 @@ jobs:
         run: |
           cd apps/desktop/out/make
           for dmg in *.dmg; do
-            mv "$dmg" "Amical-macos-${{ matrix.arch }}.dmg"
-            echo "Renamed $dmg → Amical-macos-${{ matrix.arch }}.dmg"
+            mv "$dmg" "Prismical-macos-${{ matrix.arch }}.dmg"
+            echo "Renamed $dmg → Prismical-macos-${{ matrix.arch }}.dmg"
           done
 
       - name: Rename artifacts (Windows)
@@ -183,8 +183,8 @@ jobs:
         run: |
           cd apps/desktop/out/make/squirrel.windows/${{ matrix.arch }}
           for exe in *.exe; do
-            mv "$exe" "Amical-windows-${{ matrix.arch }}.exe"
-            echo "Renamed $exe → Amical-windows-${{ matrix.arch }}.exe"
+            mv "$exe" "Prismical-windows-${{ matrix.arch }}.exe"
+            echo "Renamed $exe → Prismical-windows-${{ matrix.arch }}.exe"
           done
 
       - name: Upload artifacts (macOS)
@@ -193,7 +193,7 @@ jobs:
         with:
           name: macos-${{ matrix.arch }}
           path: |
-            apps/desktop/out/make/Amical-macos-${{ matrix.arch }}.dmg
+            apps/desktop/out/make/Prismical-macos-${{ matrix.arch }}.dmg
             apps/desktop/out/make/zip/darwin/${{ matrix.arch }}/*.zip
 
       - name: Upload artifacts (Windows)
@@ -202,7 +202,7 @@ jobs:
         with:
           name: windows-${{ matrix.arch }}
           path: |
-            apps/desktop/out/make/squirrel.windows/${{ matrix.arch }}/Amical-windows-${{ matrix.arch }}.exe
+            apps/desktop/out/make/squirrel.windows/${{ matrix.arch }}/Prismical-windows-${{ matrix.arch }}.exe
             apps/desktop/out/make/squirrel.windows/${{ matrix.arch }}/*.nupkg
             apps/desktop/out/make/squirrel.windows/${{ matrix.arch }}/RELEASES
 
@@ -241,9 +241,9 @@ jobs:
           draft: true
           prerelease: true
           tag_name: ${{ github.event.inputs.tag || github.ref_name }}
-          name: Amical Desktop v${{ steps.package_version.outputs.version }}
+          name: Prismical Desktop v${{ steps.package_version.outputs.version }}
           body: |
-            ## Amical Desktop v${{ steps.package_version.outputs.version }}
+            ## Prismical Desktop v${{ steps.package_version.outputs.version }}
 
             ### What's New
             - Please update this section with actual changes
@@ -260,8 +260,8 @@ jobs:
             ### Installation
 
             **macOS**: 
-            - **DMG**: Download and open the DMG file, then drag Amical to your Applications folder
-            - **ZIP**: Download and extract the ZIP file, then drag Amical to your Applications folder
+            - **DMG**: Download and open the DMG file, then drag Prismical to your Applications folder
+            - **ZIP**: Download and extract the ZIP file, then drag Prismical to your Applications folder
 
             **Windows**:
             - Download and run the .exe installer
