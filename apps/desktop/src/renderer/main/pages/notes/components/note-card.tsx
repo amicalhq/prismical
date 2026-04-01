@@ -10,7 +10,11 @@ interface RecentNoteCardProps {
   showTimeOnly?: boolean;
 }
 
-export function NoteCard({ note, onNoteClick, showTimeOnly = false }: RecentNoteCardProps) {
+export function NoteCard({
+  note,
+  onNoteClick,
+  showTimeOnly = false,
+}: RecentNoteCardProps) {
   return (
     <div
       onClick={() => onNoteClick(note.id)}
@@ -45,7 +49,11 @@ export function NoteCard({ note, onNoteClick, showTimeOnly = false }: RecentNote
 
         {/* Date and Meeting Info */}
         <div className="flex items-center gap-1.5 mt-1 text-xs text-muted-foreground">
-          <span>{showTimeOnly ? formatTime24(new Date(note.updatedAt)) : formatDate(new Date(note.updatedAt))}</span>
+          <span>
+            {showTimeOnly
+              ? formatTime24(new Date(note.updatedAt))
+              : formatDate(new Date(note.updatedAt))}
+          </span>
 
           {note.eventData && (
             <>

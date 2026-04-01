@@ -2,7 +2,6 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { api } from "@/trpc/react";
 import { toast } from "sonner";
-import { debounce } from "@/renderer/main/utils/debounce";
 import Note from "./note";
 import { NoteEditor } from "./note-editor";
 import { FileTextIcon } from "lucide-react";
@@ -29,17 +28,11 @@ export default function NotePage({
 
   // State
   const [noteTitle, setNoteTitle] = useState("");
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [noteIcon, setNoteIcon] = useState<string | null>(null);
   const [noteStarred, setNoteStarred] = useState(false);
   const [noteFolder, setNoteFolder] = useState<string | null>(null);
   const [editorReady, setEditorReady] = useState(false);
-  const [activeAsset, setActiveAsset] =
-    useState<NoteAssetKind | null>("transcription");
-  const [panelLayout, setPanelLayout] = useState<[number, number]>([64, 36]);
+  const [activeAsset, setActiveAsset] = useState<NoteAssetKind | null>(null);
 
-  // Refs
-  const noteRef = useRef<typeof note>(null);
   const autoRecordTriggeredRef = useRef(false);
 
   // Fetch note data
@@ -54,28 +47,6 @@ export default function NotePage({
     limit: 500,
     sortBy: "updatedAt",
     sortOrder: "desc",
-  });
-
-  // Update title mutation
-  const updateTitleMutation = api.notes.updateNoteTitle.useMutation({
-    onSuccess: () => {
-      utils.notes.getNotes.invalidate();
-      utils.notes.getNoteById.invalidate({ id: noteIdNumber });
-    },
-  });
-
-  // Update emoji mutation
-  const updateNoteIconMutation = api.notes.updateNoteIcon.useMutation({
-    onSuccess: () => {
-      utils.notes.getNotes.invalidate();
-      utils.notes.getNoteById.invalidate({ id: noteIdNumber });
-      toast.success(t("settings.notes.toast.emojiUpdated"));
-    },
-    onError: (error) => {
-      toast.error(
-        t("settings.notes.toast.emojiUpdateFailed", { message: error.message }),
-      );
-    },
   });
 
   const updateNoteOrganizationMutation =
@@ -112,33 +83,14 @@ export default function NotePage({
     },
   });
 
-  // Debounced title update
-  const debouncedUpdateTitle = useMemo(
-    () =>
-      debounce((title: string) => {
-        const currentNote = noteRef.current;
-        if (currentNote && title !== currentNote.title) {
-          updateTitleMutation.mutate({ id: currentNote.id, title });
-        }
-      }, 500),
-    [], // No dependencies - function should remain stable
-  );
-
-  // Update note ref and set initial title and emoji
+  // Update note-derived state
   useEffect(() => {
-    noteRef.current = note;
     if (note) {
       setNoteTitle(note.title);
-      setNoteIcon(note.icon || null);
       setNoteStarred(note.starred ?? false);
       setNoteFolder(note.folder ?? null);
     }
   }, [note]);
-
-  // Handle sync status change from NoteEditor
-  const handleSyncStatusChange = useCallback((syncing: boolean) => {
-    setIsSyncing(syncing);
-  }, []);
 
   // Reset state when noteId changes
   useEffect(() => {
@@ -160,15 +112,6 @@ export default function NotePage({
       });
     }
   }, [editorReady, autoRecord, startRecordingMutation]);
-
-  // Handle title change
-  const handleTitleChange = useCallback(
-    (newTitle: string) => {
-      setNoteTitle(newTitle);
-      debouncedUpdateTitle(newTitle);
-    },
-    [debouncedUpdateTitle],
-  );
 
   // Handle delete
   const handleDelete = useCallback(() => {
@@ -204,23 +147,8 @@ export default function NotePage({
     return Array.from(new Set(names)).sort((a, b) => a.localeCompare(b));
   }, [allNotes]);
 
-  // Handle emoji change
-  const handleEmojiChange = useCallback(
-    (emoji: string | null) => {
-      setNoteIcon(emoji);
-      updateNoteIconMutation.mutate({ id: noteIdNumber, icon: emoji });
-    },
-    [noteIdNumber, updateNoteIconMutation],
-  );
-
   const handleToggleAsset = useCallback((asset: NoteAssetKind) => {
-    setActiveAsset((currentAsset) =>
-      currentAsset === asset ? null : asset,
-    );
-  }, []);
-
-  const handlePanelLayoutChange = useCallback((layout: [number, number]) => {
-    setPanelLayout(layout);
+    setActiveAsset((currentAsset) => (currentAsset === asset ? null : asset));
   }, []);
 
   // Note not found state
@@ -244,37 +172,23 @@ export default function NotePage({
       </div>
     );
   }
-
-  const lastEditDate = note ? new Date(note.updatedAt) : new Date();
-
   // Use the presentational component
   return (
     <Note
+      noteId={noteIdNumber}
       noteTitle={noteTitle}
-      noteEmoji={noteIcon}
       noteStarred={noteStarred}
       noteFolder={noteFolder}
       folderOptions={folderOptions}
       isLoading={isLoading}
-      isSyncing={isSyncing}
-      lastEditDate={lastEditDate}
-      eventData={note?.eventData}
       activeAsset={activeAsset}
       onToggleAsset={handleToggleAsset}
-      panelLayout={panelLayout}
-      onPanelLayoutChange={handlePanelLayoutChange}
-      onTitleChange={handleTitleChange}
       onDelete={handleDelete}
-      onEmojiChange={handleEmojiChange}
       onStarredChange={handleStarredChange}
       onFolderChange={handleFolderChange}
       isDeleting={deleteMutation.isPending}
     >
-      <NoteEditor
-        noteId={noteIdNumber}
-        onSyncStatusChange={handleSyncStatusChange}
-        onReady={handleEditorReady}
-      />
+      <NoteEditor noteId={noteIdNumber} onReady={handleEditorReady} />
     </Note>
   );
 }

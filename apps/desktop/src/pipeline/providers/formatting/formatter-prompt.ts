@@ -7,7 +7,12 @@ import { GetAccessibilityContextResult } from "@prismical/types";
 /**
  * Application type for formatting context
  */
-export type AppType = "email" | "chat" | "notes" | "prismical-notes" | "default";
+export type AppType =
+  | "email"
+  | "chat"
+  | "notes"
+  | "prismical-notes"
+  | "default";
 
 /**
  * App-type specific formatting rules inserted into the system prompt

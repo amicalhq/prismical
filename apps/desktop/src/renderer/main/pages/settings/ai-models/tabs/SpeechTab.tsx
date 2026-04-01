@@ -446,7 +446,8 @@ export default function SpeechTab() {
                         const progress = downloadProgress[model.id];
                         const isDownloading =
                           progress?.status === "downloading";
-                        const isCloudModel = model.provider === "Prismical Cloud";
+                        const isCloudModel =
+                          model.provider === "Prismical Cloud";
 
                         // Cloud models can be selected if authenticated, local models need to be downloaded
                         const canSelect = isCloudModel

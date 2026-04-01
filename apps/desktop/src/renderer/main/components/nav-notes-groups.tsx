@@ -286,9 +286,7 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
                   onClick={() => handleCreateNoteInFolder(folderName)}
                 >
                   <Plus />
-                  <span className="sr-only">
-                    {t("settings.notes.create")}
-                  </span>
+                  <span className="sr-only">{t("settings.notes.create")}</span>
                 </SidebarMenuAction>
                 <CollapsibleContent>
                   <SidebarMenuSub className="mr-0 pr-0">

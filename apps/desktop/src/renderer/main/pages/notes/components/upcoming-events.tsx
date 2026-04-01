@@ -23,7 +23,11 @@ export function UpcomingEvents() {
 
   // TODO: replace mock data with actual data from backend
   const today = new Date();
-  const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+  const tomorrow = new Date(
+    today.getFullYear(),
+    today.getMonth(),
+    today.getDate() + 1,
+  );
   const mockEvents: UpcomingEvent[] = [
     {
       id: "product-review-q3",

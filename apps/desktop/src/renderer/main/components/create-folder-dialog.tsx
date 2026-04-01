@@ -60,10 +60,7 @@ export function CreateFolderDialog({
           placeholder={t("settings.notes.note.actions.newFolderPrompt")}
         />
         <DialogFooter>
-          <Button
-            onClick={handleSubmit}
-            disabled={!folderName.trim()}
-          >
+          <Button onClick={handleSubmit} disabled={!folderName.trim()}>
             {t("settings.notes.note.actions.createFolder")}
           </Button>
         </DialogFooter>

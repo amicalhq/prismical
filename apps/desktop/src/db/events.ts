@@ -47,8 +47,7 @@ export async function seedEventsAndNotes() {
       title: "Product & Engineering Daily Standup",
       calendarColor: "#34C759",
       meetingUrl: "https://meet.google.com/abc-defg-hij",
-      calendarEventUrl:
-        "https://calendar.google.com/calendar/event?eid=abc123",
+      calendarEventUrl: "https://calendar.google.com/calendar/event?eid=abc123",
       startTime: "9:30 AM",
       endTime: "10:00 AM",
       date: today.toISOString(),
@@ -58,8 +57,7 @@ export async function seedEventsAndNotes() {
       title: "1:1 with Manager",
       calendarColor: "#34C759",
       meetingUrl: "https://meet.google.com/xyz-uvwx-yz",
-      calendarEventUrl:
-        "https://calendar.google.com/calendar/event?eid=xyz789",
+      calendarEventUrl: "https://calendar.google.com/calendar/event?eid=xyz789",
       startTime: "2:00 PM",
       endTime: "2:30 PM",
       date: today.toISOString(),
@@ -69,8 +67,7 @@ export async function seedEventsAndNotes() {
       title: "Desktop Home Experience Design Review",
       calendarColor: "#0A84FF",
       meetingUrl: "https://zoom.us/j/123456789",
-      calendarEventUrl:
-        "https://calendar.google.com/calendar/event?eid=def456",
+      calendarEventUrl: "https://calendar.google.com/calendar/event?eid=def456",
       startTime: "11:00 AM",
       endTime: "11:45 AM",
       date: tomorrow.toISOString(),
@@ -80,8 +77,7 @@ export async function seedEventsAndNotes() {
       title: "Customer Notes Workflow Sync",
       calendarColor: "#FF9F0A",
       meetingUrl: "https://teams.microsoft.com/l/meetup-join/123",
-      calendarEventUrl:
-        "https://outlook.office365.com/calendar/item/ghi789",
+      calendarEventUrl: "https://outlook.office365.com/calendar/item/ghi789",
       startTime: "3:00 PM",
       endTime: "3:30 PM",
       date: dayAfter.toISOString(),
@@ -91,8 +87,7 @@ export async function seedEventsAndNotes() {
       title: "Sprint Planning",
       calendarColor: "#0A84FF",
       meetingUrl: "https://meet.google.com/spr-plan-ing",
-      calendarEventUrl:
-        "https://calendar.google.com/calendar/event?eid=spr123",
+      calendarEventUrl: "https://calendar.google.com/calendar/event?eid=spr123",
       startTime: "10:00 AM",
       endTime: "11:00 AM",
       date: new Date(today.getTime() + 3 * 86_400_000).toISOString(),
@@ -102,8 +97,7 @@ export async function seedEventsAndNotes() {
       title: "Company All-Hands",
       calendarColor: "#AF52DE",
       meetingUrl: "https://zoom.us/j/987654321",
-      calendarEventUrl:
-        "https://calendar.google.com/calendar/event?eid=ah456",
+      calendarEventUrl: "https://calendar.google.com/calendar/event?eid=ah456",
       startTime: "4:00 PM",
       endTime: "5:00 PM",
       date: new Date(today.getTime() + 5 * 86_400_000).toISOString(),

@@ -20,6 +20,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  useSidebar,
 } from "@/components/ui/sidebar";
 import { useFeatureFlag } from "@/hooks/useFeatureFlag";
 import {
@@ -30,13 +31,18 @@ import { api } from "@/trpc/react";
 import { CommandSearchButton } from "./command-search-button";
 import { CreateNoteButton } from "./create-note-button";
 import { NavNotesGroups } from "./nav-notes-groups";
+import { SettingsNavigationControls } from "./settings-navigation-controls";
 import { HOME_NAV_ITEMS, SETTINGS_NAV_ITEMS } from "../lib/settings-navigation";
+
+const dragRegion = { WebkitAppRegion: "drag" } as React.CSSProperties;
+const noDragRegion = { WebkitAppRegion: "no-drag" } as React.CSSProperties;
 
 export function SettingsSidebar({
   ...props
 }: React.ComponentProps<typeof Sidebar>) {
   const { t } = useTranslation();
   const location = useLocation();
+  const { isMobile } = useSidebar();
   const sidebarCtaFlag = useFeatureFlag(SIDEBAR_CTA_FEATURE_FLAG);
   const isHomeSidebar =
     location.pathname.startsWith("/settings/home") ||
@@ -60,30 +66,36 @@ export function SettingsSidebar({
 
   const isMac =
     typeof window !== "undefined" && window.electronAPI?.platform === "darwin";
-  const homeHeaderNav = HOME_NAV_ITEMS.map(({ titleKey, url, icon, shortcutKey }) => ({
-    title: t(titleKey),
-    url,
-    icon: typeof icon === "string" ? undefined : icon,
-    shortcut: shortcutKey
-      ? isMac
-        ? `⌘ ${shortcutKey}`
-        : `Ctrl+${shortcutKey}`
-      : undefined,
-  }));
-  const homeNavItem = homeHeaderNav.find((item) => item.url === "/settings/home");
+  const homeHeaderNav = HOME_NAV_ITEMS.map(
+    ({ titleKey, url, icon, shortcutKey }) => ({
+      title: t(titleKey),
+      url,
+      icon: typeof icon === "string" ? undefined : icon,
+      shortcut: shortcutKey
+        ? isMac
+          ? `⌘ ${shortcutKey}`
+          : `Ctrl+${shortcutKey}`
+        : undefined,
+    }),
+  );
+  const homeNavItem = homeHeaderNav.find(
+    (item) => item.url === "/settings/home",
+  );
   const settingsNavItem = homeHeaderNav.find(
     (item) => item.url === "/settings/preferences",
   );
-  const navMain = SETTINGS_NAV_ITEMS.map(({ titleKey, url, icon, shortcutKey }) => ({
-    title: t(titleKey),
-    url,
-    icon: typeof icon === "string" ? undefined : icon,
-    shortcut: shortcutKey
-      ? isMac
-        ? `⌘ ${shortcutKey}`
-        : `Ctrl+${shortcutKey}`
-      : undefined,
-  }));
+  const navMain = SETTINGS_NAV_ITEMS.map(
+    ({ titleKey, url, icon, shortcutKey }) => ({
+      title: t(titleKey),
+      url,
+      icon: typeof icon === "string" ? undefined : icon,
+      shortcut: shortcutKey
+        ? isMac
+          ? `⌘ ${shortcutKey}`
+          : `Ctrl+${shortcutKey}`
+        : undefined,
+    }),
+  );
 
   const baseNavSecondary: NavSecondaryItem[] = [
     {
@@ -121,9 +133,17 @@ export function SettingsSidebar({
   return (
     <Sidebar collapsible="offcanvas" {...props}>
       <div
-        className="h-[var(--titlebar-height)] shrink-0"
-        style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
-      />
+        className="relative h-[var(--titlebar-height)] shrink-0"
+        style={dragRegion}
+      >
+        {isMobile ? (
+          <SettingsNavigationControls
+            className="absolute top-2.5"
+            interactiveStyle={noDragRegion}
+            style={{ ...noDragRegion, left: "var(--toolbar-left)" }}
+          />
+        ) : null}
+      </div>
       {isHomeSidebar ? (
         <SidebarHeader className="py-0 mb-2">
           <SidebarMenu>

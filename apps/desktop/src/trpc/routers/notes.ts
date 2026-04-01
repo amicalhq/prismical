@@ -50,9 +50,12 @@ const UpdateNoteOrganizationSchema = z
     starred: z.boolean().optional(),
     folder: z.string().trim().min(1).nullable().optional(),
   })
-  .refine((input) => input.starred !== undefined || input.folder !== undefined, {
-    message: "At least one organization field must be provided",
-  });
+  .refine(
+    (input) => input.starred !== undefined || input.folder !== undefined,
+    {
+      message: "At least one organization field must be provided",
+    },
+  );
 
 export const notesRouter = createRouter({
   // Get all notes

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createFileRoute, Outlet } from "@tanstack/react-router";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { SettingsSidebar } from "../../components/settings-sidebar";
@@ -27,7 +27,12 @@ function SettingsLayoutContent() {
   const navigate = useNavigate();
   const scrollRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
-  const { actions: headerActions, headerContent, setHeaderContent, isScrolled, setIsScrolled } = useSettingsHeaderActions();
+  const {
+    actions: headerActions,
+    headerContent,
+    setHeaderContent,
+  } = useSettingsHeaderActions();
+  const [isScrolled, setIsScrolled] = useState(false);
   const isNoteDetailRoute = location.pathname.startsWith("/settings/notes/");
 
   // Keyboard shortcut: Cmd+H (Mac) / Ctrl+H (Windows/Linux) to navigate home
@@ -53,7 +58,7 @@ function SettingsLayoutContent() {
     if (!isNoteDetailRoute) {
       setHeaderContent(null);
     }
-  }, [location.pathname]);
+  }, [isNoteDetailRoute, location.pathname, setHeaderContent]);
 
   // IntersectionObserver to detect title scrolling out of view
   useEffect(() => {
@@ -113,7 +118,9 @@ function SettingsLayoutContent() {
         <SettingsSidebar variant="inset" />
         <SidebarInset className="!mt-0">
           <SiteHeader
-            currentView={headerContent ?? getSettingsPageTitle(location.pathname)}
+            currentView={
+              headerContent ?? getSettingsPageTitle(location.pathname)
+            }
             showTitle={isScrolled}
             actions={headerActions ?? undefined}
           />

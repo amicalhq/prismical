@@ -127,11 +127,7 @@ export function NotesList({
             </h2>
             <div>
               {earlierNotes.map((note) => (
-                <NoteCard
-                  key={note.id}
-                  note={note}
-                  onNoteClick={onNoteClick}
-                />
+                <NoteCard key={note.id} note={note} onNoteClick={onNoteClick} />
               ))}
             </div>
           </section>

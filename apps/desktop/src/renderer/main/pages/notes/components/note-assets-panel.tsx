@@ -62,11 +62,7 @@ export function NoteAssetsPanel({
   switch (activeAsset) {
     case "transcription":
       return (
-        <div
-          className={`flex h-full min-h-0 items-start px-2 py-2 transition-colors duration-100 md:py-6 md:pr-4 md:pl-0 ${
-            isOpen ? "bg-background" : "bg-transparent"
-          }`}
-        >
+        <div className="flex h-full min-h-0">
           <div
             className={`flex h-full min-h-0 w-full flex-col overflow-hidden rounded-2xl border bg-card transition-[opacity,transform,border-color,box-shadow] duration-120 ease-out ${
               isOpen

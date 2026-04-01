@@ -1,10 +1,18 @@
 import { useState, useEffect, useRef } from "react";
-import { Mic, Square } from "lucide-react";
+import { Mic, Square, ChevronUp } from "lucide-react";
 import { Waveform } from "@/components/Waveform";
 
 const NUM_WAVEFORM_BARS = 6;
 
-export function NoteRecordingDock() {
+type NoteRecordingDockProps = {
+  isTranscriptionOpen?: boolean;
+  onToggleTranscription?: () => void;
+};
+
+export function NoteRecordingDock({
+  isTranscriptionOpen = false,
+  onToggleTranscription,
+}: NoteRecordingDockProps) {
   const [isRecording, setIsRecording] = useState(false);
   const [voiceDetected, setVoiceDetected] = useState(false);
   const voiceIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -42,29 +50,49 @@ export function NoteRecordingDock() {
 
   return (
     <div
-      onClick={!isRecording ? handleMicClick : undefined}
       className={`
         group
         transition-all duration-150 ease-out overflow-hidden
         h-[42px]
-        ${isRecording ? "w-[160px]" : "w-[56px] hover:w-[64px]"}
+        ${isRecording ? "w-[160px]" : onToggleTranscription ? "w-[78px] hover:w-[86px]" : "w-[56px] hover:w-[64px]"}
         bg-black/80 dark:bg-black/70 rounded-[28px] backdrop-blur-md
         ring-[1px] ring-black/60 shadow-[0px_0px_15px_0px_rgba(0,0,0,0.40)]
         before:content-[''] before:absolute before:inset-[1px] before:rounded-[27px] before:outline before:outline-white/15 before:pointer-events-none
-        relative cursor-pointer select-none
+        relative select-none
         flex items-center justify-center
-        ${!isRecording ? "active:scale-95" : ""}
       `}
     >
-      {/* Mic icon — visible when idle, delays showing when closing */}
+      {/* Idle state — Mic + Chevron, delays showing when closing */}
       <div
         className={`
-          absolute inset-0 flex items-center justify-center
+          absolute inset-0 flex items-center
           transition-opacity
           ${isRecording ? "opacity-0 duration-75 delay-0 pointer-events-none" : "opacity-100 duration-100 delay-100"}
         `}
       >
-        <Mic className="w-[18px] h-[18px] text-white/70 group-hover:text-white transition-all duration-300" />
+        <button
+          onClick={handleMicClick}
+          className="flex flex-1 items-center justify-center h-full cursor-pointer active:scale-95"
+          aria-label="Start recording"
+        >
+          <Mic className="w-[18px] h-[18px] text-white/70 group-hover:text-white transition-all duration-300" />
+        </button>
+        {onToggleTranscription && (
+          <>
+            <div className="h-[18px] w-px bg-white/15 shrink-0" />
+            <button
+              onClick={onToggleTranscription}
+              className="flex items-center justify-center h-full w-[26px] shrink-0 cursor-pointer"
+              aria-label="Toggle transcription"
+            >
+              <ChevronUp
+                className={`w-3.5 h-3.5 text-white/50 group-hover:text-white/80 transition-all duration-200 ${
+                  isTranscriptionOpen ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+          </>
+        )}
       </div>
 
       {/* Recording controls — visible when recording, hides fast when closing */}

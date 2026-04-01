@@ -404,7 +404,8 @@ export class TranscriptionService {
 
       const formatterConfig = await this.settingsService.getFormatterConfig();
       const shouldUseCloudFormatting =
-        formatterConfig?.enabled && formatterConfig.modelId === "prismical-cloud";
+        formatterConfig?.enabled &&
+        formatterConfig.modelId === "prismical-cloud";
       let usedCloudProvider = false;
 
       // Flush provider to get any remaining buffered audio

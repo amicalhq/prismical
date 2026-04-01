@@ -201,9 +201,7 @@ export default function EventsPage() {
   return (
     <div className="w-full max-w-4xl">
       <div className="mb-8">
-        <h1 className="text-xl font-bold">
-          {t("settings.events.title")}
-        </h1>
+        <h1 className="text-xl font-bold">{t("settings.events.title")}</h1>
       </div>
 
       {dateGroups.length === 0 ? (

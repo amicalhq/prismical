@@ -20,8 +20,16 @@ interface UpcomingMeeting {
 
 function getMeetingDateLabel(date: Date, t: (key: string) => string): string {
   const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const startOfDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const startOfToday = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+  );
+  const startOfDate = new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+  );
   const diffDays = Math.round(
     (startOfDate.getTime() - startOfToday.getTime()) / (1000 * 60 * 60 * 24),
   );
@@ -38,8 +46,16 @@ function getMeetingDateLabel(date: Date, t: (key: string) => string): string {
 }
 
 const today = new Date();
-const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
-const dayAfter = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 2);
+const tomorrow = new Date(
+  today.getFullYear(),
+  today.getMonth(),
+  today.getDate() + 1,
+);
+const dayAfter = new Date(
+  today.getFullYear(),
+  today.getMonth(),
+  today.getDate() + 2,
+);
 
 const UPCOMING_MEETINGS: UpcomingMeeting[] = [
   {
@@ -163,13 +179,17 @@ export default function HomePage() {
 
                 <div className="min-w-0 flex-1">
                   <p className="text-xs text-muted-foreground">
-                    {getMeetingDateLabel(meeting.date, t)} <span aria-hidden="true">•</span> {meeting.startTime} - {meeting.endTime}
+                    {getMeetingDateLabel(meeting.date, t)}{" "}
+                    <span aria-hidden="true">•</span> {meeting.startTime} -{" "}
+                    {meeting.endTime}
                   </p>
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
                       className="text-sm font-medium leading-tight text-left hover:underline cursor-pointer"
-                      onClick={() => handleOpenMeeting(meeting.calendarEventUrl)}
+                      onClick={() =>
+                        handleOpenMeeting(meeting.calendarEventUrl)
+                      }
                     >
                       {meeting.title}
                     </button>
