@@ -300,16 +300,23 @@ export class RecordingManager extends EventEmitter {
       );
       await transcriptionService.resetVadForNewSession();
 
-      // Refresh accessibility context (TextMarker API for Electron support)
-      // Fire and forget - context will be ready by the time first audio chunk arrives
-      const nativeBridge = this.serviceManager.getService("nativeBridge");
-      nativeBridge.refreshAccessibilityContext();
-
-      // Always call startRecording, conditionally mute system audio and play sounds
       const settingsService = this.serviceManager.getService("settingsService");
       const preferences = await settingsService.getPreferences();
       const shouldMute = preferences?.muteSystemAudio ?? true;
       this.soundsMuted = preferences?.muteDictationSounds ?? false;
+
+      const nativeBridge = this.serviceManager.getService("nativeBridge");
+      if (!nativeBridge) {
+        logger.audio.info(
+          "Native bridge unavailable, skipping helper-backed recording setup",
+        );
+        this.systemAudioMuted = false;
+        return;
+      }
+
+      // Refresh accessibility context (TextMarker API for Electron support)
+      // Fire and forget - context will be ready by the time first audio chunk arrives
+      nativeBridge.refreshAccessibilityContext();
 
       const result = await nativeBridge.call("startRecording", {
         muteSystemAudio: shouldMute,
@@ -357,13 +364,15 @@ export class RecordingManager extends EventEmitter {
       this.recordingInitiatedAt = null;
       this.setMode("idle");
 
-      // Always call stopRecording, conditionally restore system audio and play sounds
+      // Stop helper-backed recording state when the native bridge is available.
       try {
         const nativeBridge = this.serviceManager.getService("nativeBridge");
-        await nativeBridge.call("stopRecording", {
-          wasMuted: this.systemAudioMuted,
-          muteSounds: this.soundsMuted,
-        });
+        if (nativeBridge) {
+          await nativeBridge.call("stopRecording", {
+            wasMuted: this.systemAudioMuted,
+            muteSounds: this.soundsMuted,
+          });
+        }
         this.systemAudioMuted = false;
       } catch (error) {
         this.systemAudioMuted = false;
@@ -776,13 +785,15 @@ export class RecordingManager extends EventEmitter {
       }
     }
 
-    // Always call stopRecording, conditionally restore system audio and play sounds
+    // Stop helper-backed recording state when the native bridge is available.
     try {
       const nativeBridge = this.serviceManager.getService("nativeBridge");
-      await nativeBridge.call("stopRecording", {
-        wasMuted: this.systemAudioMuted,
-        muteSounds: this.soundsMuted,
-      });
+      if (nativeBridge) {
+        await nativeBridge.call("stopRecording", {
+          wasMuted: this.systemAudioMuted,
+          muteSounds: this.soundsMuted,
+        });
+      }
     } catch (error) {
       logger.main.warn(
         "Failed to stop recording via native bridge in forceIdle",

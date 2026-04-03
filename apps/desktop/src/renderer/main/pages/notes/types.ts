@@ -29,3 +29,22 @@ export interface Note {
 }
 
 export type NoteAssetKind = "transcription";
+
+export type TranscriptionSpeaker = {
+  index: number;
+  name?: string;
+  email?: string;
+  isUser?: boolean;
+};
+
+export type TranscriptionSegment = {
+  speaker: number;
+  start: number;
+  end: number;
+  text: string;
+};
+
+export type TranscriptionData = {
+  speakers: TranscriptionSpeaker[];
+  segments: TranscriptionSegment[];
+};

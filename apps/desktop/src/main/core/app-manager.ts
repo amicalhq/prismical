@@ -102,7 +102,13 @@ export class AppManager {
     const recordingManager = this.serviceManager.getService("recordingManager");
     this.setupRecordingEventListeners(recordingManager);
     const shortcutManager = this.serviceManager.getService("shortcutManager");
-    this.setupShortcutEventListeners(shortcutManager);
+    if (shortcutManager) {
+      this.setupShortcutEventListeners(shortcutManager);
+    } else {
+      logger.main.info(
+        "Shortcut manager unavailable, skipping shortcut listeners",
+      );
+    }
 
     // Check if onboarding is needed using OnboardingService (single source of truth)
     const onboardingCheck = await onboardingService.checkNeedsOnboarding();
@@ -375,9 +381,6 @@ export class AppManager {
     }
 
     this.windowManager.createOrShowMainWindow();
-
-    // DEV: Auto-open notes window for UI development
-    this.windowManager.openNotesWindow();
 
     // Apply dock visibility based on user preference (macOS only)
     if (app.dock) {

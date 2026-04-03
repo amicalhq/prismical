@@ -8,7 +8,6 @@ import { RecordingManager } from "./recording-manager";
 import { VADService } from "../../services/vad-service";
 import { ShortcutManager } from "./shortcut-manager";
 import { WindowManager } from "../core/window-manager";
-import { isMacOS, isWindows } from "../../utils/platform";
 import { PostHogClient } from "../../services/posthog-client";
 import { TelemetryService } from "../../services/telemetry-service";
 import { AuthService } from "../../services/auth-service";
@@ -198,10 +197,9 @@ export class ServiceManager {
   }
 
   private initializePlatformServices(): void {
-    // Initialize platform-specific bridge
-    if (isMacOS() || isWindows()) {
-      this.nativeBridge = new NativeBridge(this.telemetryService ?? undefined);
-    }
+    logger.main.info(
+      "Native helpers are disabled in Prismical; skipping native bridge initialization",
+    );
   }
 
   private initializeRecordingManager(): void {
@@ -210,11 +208,19 @@ export class ServiceManager {
   }
 
   private async initializeShortcutManager(): Promise<void> {
-    if (!this.settingsService || !this.nativeBridge || !this.recordingManager) {
+    if (!this.settingsService || !this.recordingManager) {
       throw new Error(
-        "SettingsService, NativeBridge and RecordingManager must be initialized first",
+        "SettingsService and RecordingManager must be initialized first",
       );
     }
+
+    if (!this.nativeBridge) {
+      logger.main.info(
+        "Native bridge unavailable, skipping shortcut manager initialization",
+      );
+      return;
+    }
+
     this.shortcutManager = new ShortcutManager(
       this.settingsService,
       this.nativeBridge,
