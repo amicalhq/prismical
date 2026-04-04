@@ -1,19 +1,30 @@
 import { useState, useEffect, useRef } from "react";
 import { Mic, Square, ChevronUp } from "lucide-react";
 import { Waveform } from "@/components/Waveform";
+import type { MeetingRuntimeState } from "@/types/meeting";
 
 const NUM_WAVEFORM_BARS = 6;
 
 type NoteRecordingDockProps = {
   isTranscriptionOpen?: boolean;
   onToggleTranscription?: () => void;
+  meetingState: MeetingRuntimeState;
+  onStartMeeting: () => void;
+  onStopMeeting: () => void;
 };
 
 export function NoteRecordingDock({
   isTranscriptionOpen = false,
   onToggleTranscription,
+  meetingState,
+  onStartMeeting,
+  onStopMeeting,
 }: NoteRecordingDockProps) {
-  const [isRecording, setIsRecording] = useState(false);
+  const isRecording =
+    meetingState === "recording" ||
+    meetingState === "starting" ||
+    meetingState === "stopping";
+  const isBusy = meetingState === "starting" || meetingState === "stopping";
   const [voiceDetected, setVoiceDetected] = useState(false);
   const voiceIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -39,13 +50,17 @@ export function NoteRecordingDock({
   }, [isRecording]);
 
   const handleMicClick = () => {
-    setIsRecording(true);
+    if (!isBusy) {
+      onStartMeeting();
+    }
   };
 
   const handleStopClick = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    setIsRecording(false);
+    if (!isBusy) {
+      onStopMeeting();
+    }
   };
 
   return (
@@ -72,8 +87,9 @@ export function NoteRecordingDock({
       >
         <button
           onClick={handleMicClick}
-          className="flex flex-1 items-center justify-center h-full cursor-pointer active:scale-95"
-          aria-label="Start recording"
+          className="flex flex-1 items-center justify-center h-full cursor-pointer active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
+          aria-label="Start meeting transcription"
+          disabled={isBusy}
         >
           <Mic className="w-[18px] h-[18px] text-white/70 group-hover:text-white transition-all duration-300" />
         </button>
@@ -117,8 +133,9 @@ export function NoteRecordingDock({
         </div>
         <button
           onClick={handleStopClick}
-          className="flex-shrink-0 flex items-center justify-center p-1.5 rounded-full hover:bg-white/15 transition-colors cursor-pointer"
-          aria-label="Stop recording"
+          className="flex-shrink-0 flex items-center justify-center p-1.5 rounded-full hover:bg-white/15 transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
+          aria-label="Stop meeting transcription"
+          disabled={isBusy}
         >
           <Square className="w-[18px] h-[18px] text-red-500 fill-red-500" />
         </button>

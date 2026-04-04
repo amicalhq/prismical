@@ -412,12 +412,15 @@ const config: ForgeConfig = {
       `./node-binaries/${process.platform}-${process.arch}/node${
         process.platform === "win32" ? ".exe" : ""
       }`,
+      "../../packages/native-helpers/audio-capture/bin/prismical-audio-capture",
       "./models",
       "./assets",
     ],
     extendInfo: {
       NSMicrophoneUsageDescription:
         "This app needs access to your microphone to record audio for transcription.",
+      NSScreenCaptureUsageDescription:
+        "This app needs screen recording permission to capture meeting audio for transcription.",
       CFBundleURLTypes: [
         {
           CFBundleURLSchemes: ["prismical"],

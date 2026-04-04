@@ -31,6 +31,83 @@ export const transcriptions = sqliteTable("transcriptions", {
     .default(sql`(unixepoch())`),
 });
 
+// Meetings table
+export const meetings = sqliteTable(
+  "meetings",
+  {
+    id: text("id").primaryKey(),
+    noteId: integer("note_id").references(() => notes.id, {
+      onDelete: "cascade",
+    }),
+    title: text("title").notNull(),
+    startedAt: integer("started_at", { mode: "timestamp" }).notNull(),
+    endedAt: integer("ended_at", { mode: "timestamp" }),
+    durationMs: integer("duration_ms"),
+    captureMode: text("capture_mode").notNull(), // "mic" | "system" | "dual"
+    state: text("state").notNull(), // "recording" | "completed" | "failed" | "cancelled"
+    transcriptionModel: text("transcription_model"),
+    metadata: text("metadata", { mode: "json" }),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (table) => [
+    index("meetings_note_id_started_at_idx").on(table.noteId, table.startedAt),
+    index("meetings_started_at_idx").on(table.startedAt),
+    index("meetings_state_idx").on(table.state),
+  ],
+);
+
+// Transcript segments table
+export const transcriptSegments = sqliteTable(
+  "transcript_segments",
+  {
+    id: text("id").primaryKey(),
+    meetingId: text("meeting_id")
+      .notNull()
+      .references(() => meetings.id, { onDelete: "cascade" }),
+    source: text("source").notNull(), // "mic" | "system"
+    speaker: text("speaker").notNull(), // "you" | "them"
+    text: text("text").notNull(),
+    startTimeMs: integer("start_time_ms").notNull(),
+    endTimeMs: integer("end_time_ms").notNull(),
+    segmentOrder: integer("segment_order").notNull().default(0),
+    isFinal: integer("is_final", { mode: "boolean" }).notNull().default(true),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (table) => [
+    index("transcript_segments_meeting_id_idx").on(table.meetingId),
+    index("transcript_segments_meeting_id_segment_order_idx").on(
+      table.meetingId,
+      table.segmentOrder,
+    ),
+    index("transcript_segments_start_time_ms_idx").on(table.startTimeMs),
+  ],
+);
+
+// Meeting artifacts table
+export const meetingArtifacts = sqliteTable(
+  "meeting_artifacts",
+  {
+    id: text("id").primaryKey(),
+    meetingId: text("meeting_id")
+      .notNull()
+      .references(() => meetings.id, { onDelete: "cascade" }),
+    artifactType: text("artifact_type").notNull(), // "mic_wav" | "system_wav" | "debug_json"
+    path: text("path").notNull(),
+    sizeBytes: integer("size_bytes"),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (table) => [index("meeting_artifacts_meeting_id_idx").on(table.meetingId)],
+);
+
 // Vocabulary table
 export const vocabulary = sqliteTable("vocabulary", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -271,6 +348,12 @@ export const yjsUpdates = sqliteTable(
 // Export types for TypeScript
 export type Transcription = typeof transcriptions.$inferSelect;
 export type NewTranscription = typeof transcriptions.$inferInsert;
+export type Meeting = typeof meetings.$inferSelect;
+export type NewMeeting = typeof meetings.$inferInsert;
+export type TranscriptSegment = typeof transcriptSegments.$inferSelect;
+export type NewTranscriptSegment = typeof transcriptSegments.$inferInsert;
+export type MeetingArtifact = typeof meetingArtifacts.$inferSelect;
+export type NewMeetingArtifact = typeof meetingArtifacts.$inferInsert;
 export type Vocabulary = typeof vocabulary.$inferSelect;
 export type NewVocabulary = typeof vocabulary.$inferInsert;
 export type Model = typeof models.$inferSelect;

@@ -3,93 +3,38 @@ import { X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import type {
-  NoteAssetKind,
-  TranscriptionData,
-  TranscriptionSpeaker,
-} from "../types";
+import type { MeetingRuntimeState, TranscriptEvent } from "@/types/meeting";
+import type { NoteAssetKind } from "../types";
 
 const SCROLLBAR_WHILE_SCROLLING_CLASS =
   "data-[state=hidden]:opacity-0 data-[state=visible]:opacity-100 transition-opacity duration-150";
 const TRANSCRIPTION_CONTENT_SHOW_DELAY_MS = 120;
 
-const SPEAKER_COLORS = [
-  "text-blue-400",
-  "text-emerald-400",
-  "text-amber-400",
-  "text-purple-400",
-  "text-rose-400",
-  "text-cyan-400",
-];
-
-function formatTimestamp(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
+function formatTimestamp(milliseconds: number): string {
+  const totalSeconds = Math.floor(milliseconds / 1000);
+  const m = Math.floor(totalSeconds / 60);
+  const s = Math.floor(totalSeconds % 60);
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-function getSpeakerLabel(speaker: TranscriptionSpeaker): string {
-  if (speaker.name) return speaker.name;
-  if (speaker.isUser) return "You";
-  return `Speaker ${speaker.index + 1}`;
+function getSpeakerLabel(event: TranscriptEvent): string {
+  return event.speaker === "you" ? "You" : "Them";
 }
-
-const MOCK_TRANSCRIPTION: TranscriptionData = {
-  speakers: [
-    { index: 0, name: "You", isUser: true },
-    { index: 1, name: "Sarah" },
-    { index: 2 },
-  ],
-  segments: [
-    {
-      speaker: 0,
-      start: 0,
-      end: 6.2,
-      text: "Welcome back. Today I want to walk through the customer interview notes and pull out the themes that kept repeating.",
-    },
-    {
-      speaker: 1,
-      start: 7.0,
-      end: 14.8,
-      text: "Sure. The biggest friction point was handoff. People could capture ideas quickly, but once they had to organize or share them, the workflow broke down.",
-    },
-    {
-      speaker: 0,
-      start: 15.2,
-      end: 16.1,
-      text: "Right.",
-    },
-    {
-      speaker: 1,
-      start: 16.5,
-      end: 24.3,
-      text: "A split view could help because the source material stays visible while the final note remains editable on the other side.",
-    },
-    {
-      speaker: 2,
-      start: 25.0,
-      end: 33.1,
-      text: "I'd add that we should keep the transcript readable and easy to scan. If it turns into a dense utility panel, people won't use it.",
-    },
-    {
-      speaker: 0,
-      start: 33.8,
-      end: 42.5,
-      text: "Agreed. For this first pass the goal is layout. We can hardcode the content now and wire it to real data later.",
-    },
-  ],
-};
 
 type NoteAssetsPanelProps = {
   activeAsset: NoteAssetKind;
   isOpen: boolean;
   onClose: () => void;
+  transcript: TranscriptEvent[];
+  meetingState: MeetingRuntimeState;
 };
 
 export function NoteAssetsPanel({
   activeAsset,
   isOpen,
   onClose,
+  transcript,
+  meetingState,
 }: NoteAssetsPanelProps) {
   const { t } = useTranslation();
   const [isContentVisible, setIsContentVisible] = useState(isOpen);
@@ -109,8 +54,10 @@ export function NoteAssetsPanel({
 
   switch (activeAsset) {
     case "transcription": {
-      const { speakers, segments } = MOCK_TRANSCRIPTION;
-      const speakerMap = new Map(speakers.map((s) => [s.index, s]));
+      const isProcessing =
+        meetingState === "starting" ||
+        meetingState === "recording" ||
+        meetingState === "stopping";
 
       return (
         <div className="flex h-full min-h-0">
@@ -153,18 +100,22 @@ export function NoteAssetsPanel({
                     : "translate-x-2 opacity-0"
                 }`}
               >
-                {segments.map((segment, i) => {
-                  const speaker = speakerMap.get(segment.speaker);
-                  const isUser = speaker?.isUser ?? false;
-                  const colorClass =
-                    SPEAKER_COLORS[segment.speaker % SPEAKER_COLORS.length];
-                  const prevSegment = i > 0 ? segments[i - 1] : null;
+                {transcript.length === 0 ? (
+                  <div className="px-2 py-6 text-center text-sm text-muted-foreground">
+                    {isProcessing
+                      ? "Meeting transcription will appear here."
+                      : "Start a meeting from the dock to capture transcript here."}
+                  </div>
+                ) : null}
+                {transcript.map((segment, i) => {
+                  const isUser = segment.speaker === "you";
+                  const prevSegment = i > 0 ? transcript[i - 1] : null;
                   const sameSpeakerAsPrev =
                     prevSegment?.speaker === segment.speaker;
 
                   return (
                     <div
-                      key={i}
+                      key={segment.id}
                       className={`flex ${isUser ? "justify-end" : "justify-start"} ${sameSpeakerAsPrev ? "" : "mt-1"}`}
                     >
                       <div
@@ -175,14 +126,12 @@ export function NoteAssetsPanel({
                             className={`mb-0.5 flex items-center gap-1.5 px-1 ${isUser ? "flex-row-reverse" : "flex-row"}`}
                           >
                             <span
-                              className={`text-[11px] font-medium ${isUser ? "text-muted-foreground" : colorClass}`}
+                              className={`text-[11px] font-medium ${isUser ? "text-muted-foreground" : "text-emerald-400"}`}
                             >
-                              {speaker
-                                ? getSpeakerLabel(speaker)
-                                : `Speaker ${segment.speaker + 1}`}
+                              {getSpeakerLabel(segment)}
                             </span>
                             <span className="text-[10px] tabular-nums text-muted-foreground/60">
-                              {formatTimestamp(segment.start)}
+                              {formatTimestamp(segment.startTimeMs)}
                             </span>
                           </div>
                         )}

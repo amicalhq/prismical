@@ -29,6 +29,20 @@
       "when": 1772313832685,
       "tag": "0003_old_exiles",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1775248662421,
+      "tag": "0004_fantastic_longshot",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1775284200558,
+      "tag": "0005_wide_colossus",
+      "breakpoints": true
     }
   ]
 }

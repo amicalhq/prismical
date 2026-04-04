@@ -1,0 +1,21 @@
+{
+  "name": "@prismical/audio-capture",
+  "version": "1.0.0",
+  "description": "Dedicated macOS native audio capture binary for Prismical meetings",
+  "private": true,
+  "scripts": {
+    "build": "swift build --configuration release && mkdir -p bin && cp .build/release/prismical-audio-capture bin/prismical-audio-capture",
+    "clean": "rm -rf .build bin .turbo",
+    "dev": "swift build --configuration debug && mkdir -p bin && cp .build/debug/prismical-audio-capture bin/prismical-audio-capture"
+  },
+  "files": [
+    "bin/*"
+  ],
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ]
+}

@@ -43,6 +43,7 @@ import { NotesPopoutHeaderAction } from "@/renderer/main/routes/settings/notes-p
 import { NoteAssetsPanel } from "./note-assets-panel";
 import { NoteRecordingDock } from "./note-recording-dock";
 import type { NoteAssetKind } from "../types";
+import type { MeetingRuntimeState, TranscriptEvent } from "@/types/meeting";
 
 export type NotePageUIProps = {
   noteId: number;
@@ -59,6 +60,10 @@ export type NotePageUIProps = {
   onEmojiChange: (emoji: string | null) => void;
   onStarredChange: (starred: boolean) => void;
   onFolderChange: (folder: string | null) => void;
+  meetingState: MeetingRuntimeState;
+  transcript: TranscriptEvent[];
+  onStartMeeting: () => void;
+  onStopMeeting: () => void;
   isDeleting?: boolean;
   children?: ReactNode;
 };
@@ -81,6 +86,10 @@ export default function Note({
   onEmojiChange,
   onStarredChange,
   onFolderChange,
+  meetingState,
+  transcript,
+  onStartMeeting,
+  onStopMeeting,
   isDeleting = false,
   children,
 }: NotePageUIProps) {
@@ -250,12 +259,17 @@ export default function Note({
               activeAsset="transcription"
               isOpen={isTranscriptionOpen}
               onClose={() => onToggleAsset("transcription")}
+              transcript={transcript}
+              meetingState={meetingState}
             />
           </div>
           <div className="pointer-events-auto">
             <NoteRecordingDock
               isTranscriptionOpen={isTranscriptionOpen}
               onToggleTranscription={() => onToggleAsset("transcription")}
+              meetingState={meetingState}
+              onStartMeeting={onStartMeeting}
+              onStopMeeting={onStopMeeting}
             />
           </div>
         </div>

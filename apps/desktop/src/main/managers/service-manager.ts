@@ -13,6 +13,7 @@ import { TelemetryService } from "../../services/telemetry-service";
 import { AuthService } from "../../services/auth-service";
 import { OnboardingService } from "../../services/onboarding-service";
 import { FeatureFlagService } from "../../services/feature-flag-service";
+import { MeetingManager } from "./meeting-manager";
 
 /**
  * Service map for type-safe service access
@@ -29,6 +30,7 @@ export interface ServiceMap {
   nativeBridge: NativeBridge;
   autoUpdaterService: AutoUpdaterService;
   recordingManager: RecordingManager;
+  meetingManager: MeetingManager;
   shortcutManager: ShortcutManager;
   windowManager: WindowManager;
   onboardingService: OnboardingService;
@@ -54,6 +56,7 @@ export class ServiceManager {
   private nativeBridge: NativeBridge | null = null;
   private autoUpdaterService: AutoUpdaterService | null = null;
   private recordingManager: RecordingManager | null = null;
+  private meetingManager: MeetingManager | null = null;
   private shortcutManager: ShortcutManager | null = null;
   private windowManager: WindowManager | null = null;
 
@@ -75,6 +78,7 @@ export class ServiceManager {
     this.initializePlatformServices();
     await this.initializeVADService();
     await this.initializeAIServices();
+    this.initializeMeetingManager();
     this.initializeRecordingManager();
     await this.initializeShortcutManager();
     await this.initializeAutoUpdater();
@@ -207,6 +211,17 @@ export class ServiceManager {
     logger.main.info("Recording manager initialized");
   }
 
+  private initializeMeetingManager(): void {
+    if (!this.modelService) {
+      throw new Error(
+        "Model service must be initialized before MeetingManager",
+      );
+    }
+
+    this.meetingManager = new MeetingManager(this.modelService);
+    logger.main.info("Meeting manager initialized");
+  }
+
   private async initializeShortcutManager(): Promise<void> {
     if (!this.settingsService || !this.recordingManager) {
       throw new Error(
@@ -264,6 +279,7 @@ export class ServiceManager {
       nativeBridge: this.nativeBridge!,
       autoUpdaterService: this.autoUpdaterService!,
       recordingManager: this.recordingManager!,
+      meetingManager: this.meetingManager!,
       shortcutManager: this.shortcutManager!,
       windowManager: this.windowManager!,
       onboardingService: this.onboardingService!,
@@ -280,6 +296,10 @@ export class ServiceManager {
     if (this.recordingManager) {
       logger.main.info("Cleaning up recording manager...");
       await this.recordingManager.cleanup();
+    }
+    if (this.meetingManager) {
+      logger.main.info("Cleaning up meeting manager...");
+      await this.meetingManager.cleanup();
     }
     if (this.modelService) {
       logger.main.info("Cleaning up model downloads...");

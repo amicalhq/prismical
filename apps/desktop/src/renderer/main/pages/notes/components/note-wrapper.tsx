@@ -9,6 +9,11 @@ import { FileTextIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTranslation } from "react-i18next";
 import type { NoteAssetKind } from "../types";
+import type {
+  MeetingRuntimeSnapshot,
+  MeetingRuntimeState,
+  TranscriptEvent,
+} from "@/types/meeting";
 
 type NotePageProps = {
   noteId: string;
@@ -24,8 +29,15 @@ export default function NotePage({
   const { t } = useTranslation();
   const navigate = useNavigate();
   const utils = api.useUtils();
-  const startRecordingMutation = api.recording.signalStart.useMutation();
+  const startMeetingMutation = api.meetings.startMeeting.useMutation();
+  const stopMeetingMutation = api.meetings.stopMeeting.useMutation();
   const noteIdNumber = Number.parseInt(noteId, 10);
+  const noteTranscriptQuery = api.meetings.getNoteTranscript.useQuery(
+    { noteId: noteIdNumber },
+    {
+      enabled: Number.isFinite(noteIdNumber) && noteIdNumber > 0,
+    },
+  );
 
   // State
   const [noteTitle, setNoteTitle] = useState("");
@@ -34,6 +46,8 @@ export default function NotePage({
   const [noteFolder, setNoteFolder] = useState<string | null>(null);
   const [editorReady, setEditorReady] = useState(false);
   const [activeAsset, setActiveAsset] = useState<NoteAssetKind | null>(null);
+  const [meetingState, setMeetingState] = useState<MeetingRuntimeState>("idle");
+  const [transcript, setTranscript] = useState<TranscriptEvent[]>([]);
 
   const noteRef = useRef<typeof note>(null);
   const autoRecordTriggeredRef = useRef(false);
@@ -132,7 +146,68 @@ export default function NotePage({
   useEffect(() => {
     setEditorReady(false);
     autoRecordTriggeredRef.current = false;
+    setMeetingState("idle");
+    setTranscript([]);
   }, [noteId]);
+
+  useEffect(() => {
+    if (noteTranscriptQuery.data) {
+      setTranscript(noteTranscriptQuery.data);
+    }
+  }, [noteTranscriptQuery.data]);
+
+  const refreshNoteTranscript = useCallback(async () => {
+    if (!Number.isFinite(noteIdNumber) || noteIdNumber <= 0) {
+      setTranscript([]);
+      return [];
+    }
+
+    const aggregatedTranscript = await utils.meetings.getNoteTranscript.fetch({
+      noteId: noteIdNumber,
+    });
+    setTranscript(aggregatedTranscript);
+    return aggregatedTranscript;
+  }, [noteIdNumber, utils.meetings.getNoteTranscript]);
+
+  const debouncedRefreshNoteTranscript = useMemo(
+    () =>
+      debounce(() => {
+        void refreshNoteTranscript();
+      }, 100),
+    [refreshNoteTranscript],
+  );
+
+  useEffect(
+    () => () => {
+      debouncedRefreshNoteTranscript.cancel();
+    },
+    [debouncedRefreshNoteTranscript],
+  );
+
+  api.meetings.stateUpdates.useSubscription(undefined, {
+    onData: (snapshot: MeetingRuntimeSnapshot) => {
+      const isCurrentNoteSession = snapshot.noteId === noteIdNumber;
+      setMeetingState(isCurrentNoteSession ? snapshot.state : "idle");
+
+      if (isCurrentNoteSession && snapshot.state !== "idle") {
+        setActiveAsset("transcription");
+      }
+    },
+    onError: (error) => {
+      console.error("Failed to subscribe to meeting state:", error);
+    },
+  });
+
+  api.meetings.transcriptUpdates.useSubscription(undefined, {
+    onData: (event) => {
+      if (event.noteId === noteIdNumber) {
+        debouncedRefreshNoteTranscript();
+      }
+    },
+    onError: (error) => {
+      console.error("Failed to subscribe to meeting transcript:", error);
+    },
+  });
 
   // Handle editor ready
   const handleEditorReady = useCallback(() => {
@@ -143,11 +218,47 @@ export default function NotePage({
   useEffect(() => {
     if (editorReady && autoRecord && !autoRecordTriggeredRef.current) {
       autoRecordTriggeredRef.current = true;
-      startRecordingMutation.mutateAsync().catch((error) => {
-        console.error("Failed to auto-start recording:", error);
-      });
+      startMeetingMutation
+        .mutateAsync({ noteId: noteIdNumber, mode: "dual" })
+        .then(() => {
+          setActiveAsset("transcription");
+        })
+        .catch((error) => {
+          console.error("Failed to auto-start meeting capture:", error);
+        });
     }
-  }, [editorReady, autoRecord, startRecordingMutation]);
+  }, [autoRecord, editorReady, noteIdNumber, startMeetingMutation]);
+
+  const handleStartMeeting = useCallback(() => {
+    if (meetingState !== "idle") {
+      return;
+    }
+
+    startMeetingMutation
+      .mutateAsync({ noteId: noteIdNumber, mode: "dual" })
+      .then(() => {
+        setActiveAsset("transcription");
+      })
+      .catch((error) => {
+        toast.error(`Failed to start meeting transcription: ${error.message}`);
+      });
+  }, [meetingState, noteIdNumber, startMeetingMutation]);
+
+  const handleStopMeeting = useCallback(() => {
+    if (meetingState !== "recording" && meetingState !== "error") {
+      return;
+    }
+
+    stopMeetingMutation
+      .mutateAsync()
+      .then(async () => {
+        setActiveAsset("transcription");
+        await refreshNoteTranscript();
+      })
+      .catch((error) => {
+        toast.error(`Failed to stop meeting transcription: ${error.message}`);
+      });
+  }, [meetingState, refreshNoteTranscript, stopMeetingMutation]);
 
   const handleTitleChange = useCallback(
     (newTitle: string) => {
@@ -241,6 +352,10 @@ export default function NotePage({
       onEmojiChange={handleEmojiChange}
       onStarredChange={handleStarredChange}
       onFolderChange={handleFolderChange}
+      meetingState={meetingState}
+      transcript={transcript}
+      onStartMeeting={handleStartMeeting}
+      onStopMeeting={handleStopMeeting}
       isDeleting={deleteMutation.isPending}
     >
       <NoteEditor noteId={noteIdNumber} onReady={handleEditorReady} />
