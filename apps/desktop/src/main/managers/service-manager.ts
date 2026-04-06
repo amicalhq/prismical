@@ -14,6 +14,8 @@ import { AuthService } from "../../services/auth-service";
 import { OnboardingService } from "../../services/onboarding-service";
 import { FeatureFlagService } from "../../services/feature-flag-service";
 import { MeetingManager } from "./meeting-manager";
+import { MeetingStartNotificationManager } from "./meeting-start-notification-manager";
+import { NoteGenerationService } from "../../services/note-generation-service";
 
 /**
  * Service map for type-safe service access
@@ -31,6 +33,8 @@ export interface ServiceMap {
   autoUpdaterService: AutoUpdaterService;
   recordingManager: RecordingManager;
   meetingManager: MeetingManager;
+  meetingStartNotificationManager: MeetingStartNotificationManager;
+  noteGenerationService: NoteGenerationService;
   shortcutManager: ShortcutManager;
   windowManager: WindowManager;
   onboardingService: OnboardingService;
@@ -57,6 +61,9 @@ export class ServiceManager {
   private autoUpdaterService: AutoUpdaterService | null = null;
   private recordingManager: RecordingManager | null = null;
   private meetingManager: MeetingManager | null = null;
+  private meetingStartNotificationManager: MeetingStartNotificationManager | null =
+    null;
+  private noteGenerationService: NoteGenerationService | null = null;
   private shortcutManager: ShortcutManager | null = null;
   private windowManager: WindowManager | null = null;
 
@@ -162,15 +169,21 @@ export class ServiceManager {
   }
 
   private async initializeAIServices(): Promise<void> {
+    if (!this.modelService) {
+      throw new Error("Model manager service not initialized");
+    }
+
+    if (!this.settingsService) {
+      throw new Error("Settings service not initialized");
+    }
+
+    this.noteGenerationService = new NoteGenerationService(
+      this.modelService,
+      this.settingsService,
+    );
+    logger.pipeline.info("Note generation service initialized");
+
     try {
-      if (!this.modelService) {
-        throw new Error("Model manager service not initialized");
-      }
-
-      if (!this.settingsService) {
-        throw new Error("Settings service not initialized");
-      }
-
       this.transcriptionService = new TranscriptionService(
         this.modelService,
         this.vadService!,
@@ -220,6 +233,28 @@ export class ServiceManager {
 
     this.meetingManager = new MeetingManager(this.modelService);
     logger.main.info("Meeting manager initialized");
+  }
+
+  private initializeMeetingStartNotificationManager(): void {
+    if (
+      !this.settingsService ||
+      !this.windowManager ||
+      !this.meetingManager ||
+      !this.onboardingService
+    ) {
+      throw new Error(
+        "Settings, window, meeting, and onboarding services must be initialized before MeetingStartNotificationManager",
+      );
+    }
+
+    this.meetingStartNotificationManager = new MeetingStartNotificationManager({
+      settingsService: this.settingsService,
+      windowManager: this.windowManager,
+      meetingManager: this.meetingManager,
+      onboardingService: this.onboardingService,
+      telemetryService: this.telemetryService,
+    });
+    logger.main.info("Meeting start notification manager initialized");
   }
 
   private async initializeShortcutManager(): Promise<void> {
@@ -280,6 +315,8 @@ export class ServiceManager {
       autoUpdaterService: this.autoUpdaterService!,
       recordingManager: this.recordingManager!,
       meetingManager: this.meetingManager!,
+      meetingStartNotificationManager: this.meetingStartNotificationManager!,
+      noteGenerationService: this.noteGenerationService!,
       shortcutManager: this.shortcutManager!,
       windowManager: this.windowManager!,
       onboardingService: this.onboardingService!,
@@ -300,6 +337,10 @@ export class ServiceManager {
     if (this.meetingManager) {
       logger.main.info("Cleaning up meeting manager...");
       await this.meetingManager.cleanup();
+    }
+    if (this.meetingStartNotificationManager) {
+      logger.main.info("Cleaning up meeting start notification manager...");
+      await this.meetingStartNotificationManager.cleanup();
     }
     if (this.modelService) {
       logger.main.info("Cleaning up model downloads...");
@@ -354,6 +395,9 @@ export class ServiceManager {
 
   setWindowManager(windowManager: WindowManager): void {
     this.windowManager = windowManager;
+    if (this.isInitialized && !this.meetingStartNotificationManager) {
+      this.initializeMeetingStartNotificationManager();
+    }
     logger.main.info("Window manager registered with ServiceManager");
   }
 }

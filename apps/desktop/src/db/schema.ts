@@ -231,8 +231,13 @@ export interface AppSettingsData {
     ollama?: {
       url: string;
     };
+    openAICompatible?: {
+      apiKey: string;
+      baseURL: string;
+    };
     defaultSpeechModel?: string; // Model ID for default speech model (Whisper)
     defaultLanguageModel?: string; // Model ID for default language model
+    defaultLanguageModelSelection?: string; // Composite selection key for the default language model
     defaultEmbeddingModel?: string; // Model ID for default embedding model
   };
 
@@ -248,6 +253,13 @@ export interface AppSettingsData {
     muteSystemAudio?: boolean;
     muteDictationSounds?: boolean;
     autoDictateOnNewNote?: boolean;
+  };
+  meetingNotifications?: {
+    enabled?: boolean;
+    impromptuEnabled?: boolean;
+    detectionDelayMs?: number;
+    cooldownMs?: number;
+    blockedBundleIds?: string[];
   };
   telemetry?: {
     enabled?: boolean;

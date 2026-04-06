@@ -28,15 +28,52 @@ import {
   OllamaResponse,
   OpenRouterModel,
   OllamaModel,
+  OpenAICompatibleModel,
+  OpenAICompatibleResponse,
 } from "../types/providers";
 import { SettingsService } from "./settings-service";
 import { AuthService } from "./auth-service";
 import { logger } from "../main/logger";
 import { getUserAgent } from "../utils/http-client";
+import {
+  getProviderTypeFromModelProviderName,
+  getSystemProviderInstanceId,
+} from "../constants/provider-types";
+import { REMOTE_PROVIDERS } from "../constants/remote-providers";
+import {
+  isOllamaEmbeddingModelName,
+  normalizeOllamaUrl,
+  normalizeOpenAICompatibleBaseURL,
+} from "../utils/provider-utils";
+import {
+  findModelBySelectionValue,
+  parseModelSelectionKey,
+  resolveStoredModelSelectionValue,
+} from "../utils/model-selection";
 
 // Type for models fetched from external APIs
 type FetchedModel = Pick<DBModel, "id" | "name" | "provider"> &
   Partial<DBModel>;
+
+type SelectableModelRecord = DBModel & {
+  providerInstanceId: string;
+};
+
+function isOpenAICompatibleChatModel(model: OpenAICompatibleModel): boolean {
+  const id = model.id.toLowerCase();
+
+  if (!id) {
+    return false;
+  }
+
+  return !(
+    id.includes("embed") ||
+    id.includes("rerank") ||
+    id.includes("tts") ||
+    id.includes("whisper") ||
+    id.includes("audio")
+  );
+}
 
 interface ModelManagerEvents {
   "download-progress": (modelId: string, progress: DownloadProgress) => void;
@@ -867,7 +904,7 @@ class ModelService extends EventEmitter {
    */
   async validateOllamaConnection(url: string): Promise<ValidationResult> {
     try {
-      const cleanUrl = url.replace(/\/$/, "");
+      const cleanUrl = normalizeOllamaUrl(url);
       const versionUrl = `${cleanUrl}/api/version`;
 
       const response = await fetch(versionUrl, {
@@ -893,6 +930,45 @@ class ModelService extends EventEmitter {
           error instanceof Error
             ? error.message
             : "Failed to connect to Ollama. Make sure Ollama is running.",
+      };
+    }
+  }
+
+  /**
+   * Validate OpenAI-compatible connection by testing the configured base URL.
+   */
+  async validateOpenAICompatibleConnection(
+    baseURL: string,
+    apiKey: string,
+  ): Promise<ValidationResult> {
+    const normalizedBaseURL = normalizeOpenAICompatibleBaseURL(baseURL);
+
+    try {
+      const response = await fetch(`${normalizedBaseURL}/models`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          "User-Agent": getUserAgent(),
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage =
+          (errorData as any)?.error?.message ||
+          `HTTP ${response.status}: ${response.statusText}`;
+        return {
+          success: false,
+          error: errorMessage,
+        };
+      }
+
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Connection failed",
       };
     }
   }
@@ -938,7 +1014,7 @@ class ModelService extends EventEmitter {
         return {
           id: model.id,
           name: model.name,
-          provider: "OpenRouter",
+          provider: REMOTE_PROVIDERS.openRouter,
           size,
           context: contextLength,
           description: model.description,
@@ -959,7 +1035,7 @@ class ModelService extends EventEmitter {
    */
   async fetchOllamaModels(url: string): Promise<FetchedModel[]> {
     try {
-      const cleanUrl = url.replace(/\/$/, "");
+      const cleanUrl = normalizeOllamaUrl(url);
       const modelsUrl = `${cleanUrl}/api/tags`;
 
       const response = await fetch(modelsUrl, {
@@ -1005,7 +1081,7 @@ class ModelService extends EventEmitter {
         return {
           id: model.name,
           name: displayName,
-          provider: "Ollama",
+          provider: REMOTE_PROVIDERS.ollama,
           size,
           context: contextLength,
           description: model.details?.family || undefined,
@@ -1017,6 +1093,59 @@ class ModelService extends EventEmitter {
         error instanceof Error
           ? error.message
           : "Failed to fetch Ollama models",
+      );
+    }
+  }
+
+  /**
+   * Fetch available models from an OpenAI-compatible endpoint.
+   */
+  async fetchOpenAICompatibleModels(
+    baseURL: string,
+    apiKey: string,
+  ): Promise<FetchedModel[]> {
+    const normalizedBaseURL = normalizeOpenAICompatibleBaseURL(baseURL);
+
+    try {
+      const response = await fetch(`${normalizedBaseURL}/models`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          "User-Agent": getUserAgent(),
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data: OpenAICompatibleResponse = await response.json();
+
+      return data.data.filter(isOpenAICompatibleChatModel).map(
+        (model: OpenAICompatibleModel): FetchedModel => ({
+          id: model.id,
+          name: model.id,
+          provider: REMOTE_PROVIDERS.openAICompatible,
+          size: "Unknown",
+          context:
+            typeof model.context_length === "number"
+              ? `${Math.floor(model.context_length / 1000)}k`
+              : typeof model.context_window === "number"
+                ? `${Math.floor(model.context_window / 1000)}k`
+                : "Unknown",
+          description:
+            typeof model.description === "string"
+              ? model.description
+              : undefined,
+          originalModel: model,
+        }),
+      );
+    } catch (error) {
+      throw new Error(
+        error instanceof Error
+          ? error.message
+          : "Failed to fetch OpenAI-compatible models",
       );
     }
   }
@@ -1051,7 +1180,9 @@ class ModelService extends EventEmitter {
       provider: provider,
       name: m.name!,
       type:
-        provider === "Ollama" && m.name && m.name.includes("embed")
+        provider === REMOTE_PROVIDERS.ollama &&
+        m.name &&
+        isOllamaEmbeddingModelName(m.name)
           ? "embedding"
           : "language",
       size: m.size || null,
@@ -1091,6 +1222,14 @@ class ModelService extends EventEmitter {
    * Get default language model
    */
   async getDefaultLanguageModel(): Promise<string | null> {
+    const selection = await this.getDefaultLanguageModelSelection();
+    if (selection) {
+      const parsed = parseModelSelectionKey(selection);
+      if (parsed?.type === "language") {
+        return parsed.id;
+      }
+    }
+
     const modelId = await this.settingsService.getDefaultLanguageModel();
     return modelId || null;
   }
@@ -1099,7 +1238,54 @@ class ModelService extends EventEmitter {
    * Set default language model
    */
   async setDefaultLanguageModel(modelId: string | null): Promise<void> {
-    await this.settingsService.setDefaultLanguageModel(modelId || undefined);
+    const previousModelId = await this.getDefaultLanguageModel();
+
+    if (!modelId) {
+      await this.settingsService.setDefaultLanguageModel(undefined);
+      await this.settingsService.setDefaultLanguageModelSelection(undefined);
+
+      if (previousModelId !== null) {
+        this.emit(
+          "selection-changed",
+          previousModelId,
+          null,
+          "manual",
+          "language",
+        );
+      }
+      return;
+    }
+
+    const availableModels = await this.getSelectableLanguageModels();
+    const resolvedSelection = resolveStoredModelSelectionValue(
+      availableModels,
+      modelId,
+      "language",
+    );
+
+    if (!resolvedSelection) {
+      throw new Error(`Language model not found: ${modelId}`);
+    }
+
+    const parsed = parseModelSelectionKey(resolvedSelection);
+    if (!parsed) {
+      throw new Error(`Invalid language model selection: ${resolvedSelection}`);
+    }
+
+    await this.settingsService.setDefaultLanguageModel(parsed.id);
+    await this.settingsService.setDefaultLanguageModelSelection(
+      resolvedSelection,
+    );
+
+    if (previousModelId !== parsed.id) {
+      this.emit(
+        "selection-changed",
+        previousModelId,
+        parsed.id,
+        "manual",
+        "language",
+      );
+    }
   }
 
   /**
@@ -1115,6 +1301,57 @@ class ModelService extends EventEmitter {
    */
   async setDefaultEmbeddingModel(modelId: string | null): Promise<void> {
     await this.settingsService.setDefaultEmbeddingModel(modelId || undefined);
+  }
+
+  async getDefaultLanguageModelSelection(): Promise<string | null> {
+    const availableModels = await this.getSelectableLanguageModels();
+    const storedSelection =
+      await this.settingsService.getDefaultLanguageModelSelection();
+    const storedModelId = await this.settingsService.getDefaultLanguageModel();
+
+    const resolvedSelection =
+      resolveStoredModelSelectionValue(
+        availableModels,
+        storedSelection,
+        "language",
+      ) ??
+      resolveStoredModelSelectionValue(
+        availableModels,
+        storedModelId,
+        "language",
+      );
+
+    if (!resolvedSelection) {
+      return null;
+    }
+
+    const parsed = parseModelSelectionKey(resolvedSelection);
+    if (!parsed) {
+      return null;
+    }
+
+    if (storedSelection !== resolvedSelection) {
+      await this.settingsService.setDefaultLanguageModelSelection(
+        resolvedSelection,
+      );
+    }
+
+    if (storedModelId !== parsed.id) {
+      await this.settingsService.setDefaultLanguageModel(parsed.id);
+    }
+
+    return resolvedSelection;
+  }
+
+  async getDefaultLanguageModelRecord(): Promise<SelectableModelRecord | null> {
+    const availableModels = await this.getSelectableLanguageModels();
+    const selection = await this.getDefaultLanguageModelSelection();
+
+    if (!selection) {
+      return null;
+    }
+
+    return findModelBySelectionValue(availableModels, selection) ?? null;
   }
 
   /**
@@ -1147,23 +1384,20 @@ class ModelService extends EventEmitter {
     }
 
     // Check default language model
-    const defaultLanguageModel =
-      await this.settingsService.getDefaultLanguageModel();
-    if (defaultLanguageModel) {
-      // Check all models to find if this ID exists with any provider
-      const allModels = await getAllModels();
-      const modelExists = allModels.some(
-        (m) => m.id === defaultLanguageModel && m.type === "language",
-      );
+    const defaultLanguageModel = await this.getDefaultLanguageModelSelection();
+    if (!defaultLanguageModel) {
+      const legacyLanguageModel =
+        await this.settingsService.getDefaultLanguageModel();
 
-      if (!modelExists) {
+      if (legacyLanguageModel) {
         logger.main.info("Clearing invalid default language model", {
-          modelId: defaultLanguageModel,
+          modelId: legacyLanguageModel,
         });
         await this.settingsService.setDefaultLanguageModel(undefined);
+        await this.settingsService.setDefaultLanguageModelSelection(undefined);
         this.emit(
           "selection-changed",
-          defaultLanguageModel,
+          legacyLanguageModel,
           null,
           "auto-after-deletion",
           "language",
@@ -1195,6 +1429,31 @@ class ModelService extends EventEmitter {
         );
       }
     }
+  }
+
+  private async getSelectableLanguageModels(): Promise<
+    SelectableModelRecord[]
+  > {
+    const allModels = await getAllModels();
+
+    return allModels
+      .filter((model) => model.type === "language")
+      .map((model) => {
+        const providerType = getProviderTypeFromModelProviderName(
+          model.provider,
+        );
+
+        if (!providerType) {
+          throw new Error(
+            `Unsupported provider for language model selection: ${model.provider}`,
+          );
+        }
+
+        return {
+          ...model,
+          providerInstanceId: getSystemProviderInstanceId(providerType),
+        };
+      });
   }
 }
 

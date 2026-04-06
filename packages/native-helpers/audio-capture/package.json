@@ -4,9 +4,9 @@
   "description": "Dedicated macOS native audio capture binary for Prismical meetings",
   "private": true,
   "scripts": {
-    "build": "swift build --configuration release && mkdir -p bin && cp .build/release/prismical-audio-capture bin/prismical-audio-capture",
+    "build": "swift build --configuration release && mkdir -p bin && cp .build/release/prismical-audio-capture bin/prismical-audio-capture && codesign --force --sign - bin/prismical-audio-capture",
     "clean": "rm -rf .build bin .turbo",
-    "dev": "swift build --configuration debug && mkdir -p bin && cp .build/debug/prismical-audio-capture bin/prismical-audio-capture"
+    "dev": "swift build --configuration debug && mkdir -p bin && cp .build/debug/prismical-audio-capture bin/prismical-audio-capture && codesign --force --sign - bin/prismical-audio-capture"
   },
   "files": [
     "bin/*"

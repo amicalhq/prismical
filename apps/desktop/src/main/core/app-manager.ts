@@ -380,7 +380,12 @@ export class AppManager {
       this.windowManager.showWidget();
     }
 
-    this.windowManager.createOrShowMainWindow();
+    await this.windowManager.createOrShowMainWindow();
+
+    const meetingStartNotificationManager = this.serviceManager.getService(
+      "meetingStartNotificationManager",
+    );
+    await meetingStartNotificationManager.start();
 
     // Apply dock visibility based on user preference (macOS only)
     if (app.dock) {

@@ -12,12 +12,13 @@ import {
   updateMeeting,
 } from "@/db/meetings";
 import { StreamingWavWriter } from "@/utils/streaming-wav-writer";
-import {
-  segmentAudioByEnergy,
-  type SegmentedAudioChunk,
-} from "../meetings/energy-segmenter";
 import { NativeAudioCaptureClient } from "../meetings/native-audio-capture-client";
-import { WhisperSessionTranscriber } from "../meetings/whisper-session-transcriber";
+import {
+  MeetingTranscriptionService,
+  type MeetingSourceTranscriptionRuntime,
+  type MeetingTranscriptionChunk,
+} from "../meetings/meeting-transcription-service";
+import type { MeetingTranscriptionSelection } from "../meetings/meeting-transcription-provider-registry";
 import type {
   AudioFrame,
   AudioSource,
@@ -47,19 +48,25 @@ export class MeetingManager extends EventEmitter {
   private activeNoteId: number | null = null;
   private startedAtEpochMs: number | null = null;
   private captureClient: NativeAudioCaptureClient | null = null;
-  private transcriber: WhisperSessionTranscriber;
+  private transcriptionService: MeetingTranscriptionService;
   private writers: Partial<Record<AudioSource, StreamingWavWriter>> = {};
-  private frameBuffers: Record<AudioSource, Float32Array[]> = {
-    mic: [],
-    system: [],
+  private transcriptionRuntimes: Partial<
+    Record<AudioSource, MeetingSourceTranscriptionRuntime>
+  > = {};
+  private transcriptionChains: Record<AudioSource, Promise<void>> = {
+    mic: Promise.resolve(),
+    system: Promise.resolve(),
   };
   private levels: { mic?: number; system?: number } = {};
   private lastTranscript: TranscriptEvent[] = [];
   private frameWriteChain: Promise<void> = Promise.resolve();
+  private nextSegmentOrder = 0;
+  private activeTranscriptionSelection: MeetingTranscriptionSelection | null =
+    null;
 
-  constructor(private readonly modelService: ModelService) {
+  constructor(modelService: ModelService) {
     super();
-    this.transcriber = new WhisperSessionTranscriber(modelService);
+    this.transcriptionService = new MeetingTranscriptionService(modelService);
   }
 
   on<U extends keyof MeetingManagerEvents>(
@@ -134,12 +141,15 @@ export class MeetingManager extends EventEmitter {
     this.mode = mode;
     this.startedAtEpochMs = startedAt.getTime();
     this.lastTranscript = [];
-    this.frameBuffers = {
-      mic: [],
-      system: [],
-    };
     this.levels = {};
     this.writers = {};
+    this.transcriptionRuntimes = {};
+    this.transcriptionChains = {
+      mic: Promise.resolve(),
+      system: Promise.resolve(),
+    };
+    this.nextSegmentOrder = 0;
+    this.activeTranscriptionSelection = null;
 
     if (mode === "mic" || mode === "dual") {
       this.writers.mic = new StreamingWavWriter(
@@ -151,6 +161,18 @@ export class MeetingManager extends EventEmitter {
       this.writers.system = new StreamingWavWriter(
         path.join(artifactsDir, "system.wav"),
       );
+    }
+
+    for (const source of orderedSourcesForMode(mode)) {
+      const runtime = await this.transcriptionService.createSourceRuntime({
+        meetingId,
+        source,
+        speaker: SOURCE_TO_SPEAKER[source],
+      });
+      this.transcriptionRuntimes[source] = runtime;
+      if (!this.activeTranscriptionSelection) {
+        this.activeTranscriptionSelection = runtime.getMetadata();
+      }
     }
 
     this.captureClient = new NativeAudioCaptureClient();
@@ -172,6 +194,7 @@ export class MeetingManager extends EventEmitter {
         endedAt: new Date(),
       });
       await this.abortArtifacts();
+      await this.disposeTranscriptionRuntimes();
       this.resetRuntime();
       throw error;
     }
@@ -200,39 +223,36 @@ export class MeetingManager extends EventEmitter {
     try {
       await this.captureClient?.stop();
       await this.frameWriteChain;
+      await Promise.all(Object.values(this.transcriptionChains));
+      await this.flushTranscriptionRuntimes();
       await this.finalizeArtifacts();
-      const transcript = await this.transcribeRecordedAudio(meetingId);
       await this.persistArtifacts(meetingId);
       await updateMeeting(meetingId, {
         state: "completed",
         endedAt: new Date(),
         durationMs: this.getState().durationMs,
         transcriptionModel:
-          transcript.modelPath === null
-            ? null
-            : path.basename(transcript.modelPath),
+          this.activeTranscriptionSelection?.modelName ?? null,
         metadata: {
           sourceLayout: "merged",
           rawAudioRetained: true,
-          transcriptSegmentCount: transcript.events.length,
+          transcriptSegmentCount: this.lastTranscript.length,
+          transcriptionProvider:
+            this.activeTranscriptionSelection?.providerType ?? null,
         },
       });
 
-      this.lastTranscript = transcript.events;
-      for (const event of transcript.events) {
-        this.emit("transcript-event", event);
-      }
-
       logger.audio.info("Meeting capture finalized", {
         meetingId,
-        transcriptSegmentCount: transcript.events.length,
+        transcriptSegmentCount: this.lastTranscript.length,
       });
 
+      await this.disposeTranscriptionRuntimes();
       this.resetRuntime();
 
       return {
         meetingId,
-        transcriptSegmentCount: transcript.events.length,
+        transcriptSegmentCount: this.lastTranscript.length,
       };
     } catch (error) {
       logger.audio.error("Meeting capture finalization failed", error);
@@ -250,6 +270,7 @@ export class MeetingManager extends EventEmitter {
         "error",
         error instanceof Error ? error : new Error(String(error)),
       );
+      await this.disposeTranscriptionRuntimes();
       this.resetRuntime();
       throw error;
     }
@@ -266,16 +287,16 @@ export class MeetingManager extends EventEmitter {
       }
 
       await this.abortArtifacts();
+      await this.disposeTranscriptionRuntimes();
       this.resetRuntime();
     }
 
-    await this.transcriber.dispose();
+    await this.disposeTranscriptionRuntimes();
   }
 
   private handleFrame = (frame: AudioFrame): void => {
     this.frameWriteChain = this.frameWriteChain
       .then(async () => {
-        this.frameBuffers[frame.source].push(frame.samples);
         const writer = this.writers[frame.source];
         if (writer) {
           await writer.appendAudio(frame.samples);
@@ -288,6 +309,29 @@ export class MeetingManager extends EventEmitter {
         const normalizedError =
           error instanceof Error ? error : new Error(String(error));
         logger.audio.error("Failed to persist meeting frame", normalizedError);
+        this.emit("error", normalizedError);
+      });
+
+    const runtime = this.transcriptionRuntimes[frame.source];
+    if (!runtime) {
+      return;
+    }
+
+    this.transcriptionChains[frame.source] = this.transcriptionChains[
+      frame.source
+    ]
+      .then(async () => {
+        const chunks = await runtime.ingestFrame(frame);
+        await this.persistTranscriptionChunks(chunks);
+      })
+      .catch((error) => {
+        const normalizedError =
+          error instanceof Error ? error : new Error(String(error));
+        logger.audio.error(
+          "Failed to transcribe meeting frame",
+          normalizedError,
+        );
+        this.setState("error");
         this.emit("error", normalizedError);
       });
   };
@@ -311,79 +355,45 @@ export class MeetingManager extends EventEmitter {
     }
   };
 
-  private async transcribeRecordedAudio(meetingId: string): Promise<{
-    events: TranscriptEvent[];
-    modelPath: string | null;
-  }> {
-    if (this.activeNoteId === null) {
-      throw new Error("Active note ID is missing.");
-    }
-
-    const pendingSegments: Array<Omit<TranscriptEvent, "createdAt">> = [];
-    let modelPath: string | null = null;
-
+  private async flushTranscriptionRuntimes(): Promise<void> {
     for (const source of orderedSourcesForMode(this.mode)) {
-      const audio = concatenateAudio(this.frameBuffers[source]);
-      if (audio.length === 0) {
+      const runtime = this.transcriptionRuntimes[source];
+      if (!runtime) {
         continue;
       }
 
-      const sourceSegments = buildSourceSegments(audio);
-      for (const [segmentOrder, sourceSegment] of sourceSegments.entries()) {
-        const { text, modelPath: usedModelPath } =
-          await this.transcriber.transcribeAudio(sourceSegment.audio);
+      const chunks = await runtime.flush();
+      await this.persistTranscriptionChunks(chunks);
+    }
+  }
 
-        if (!modelPath) {
-          modelPath = usedModelPath;
-        }
-
-        const normalizedText = text.trim();
-        if (!normalizedText) {
-          continue;
-        }
-
-        pendingSegments.push({
-          id: uuid(),
-          meetingId,
-          noteId: this.activeNoteId,
-          source,
-          speaker: SOURCE_TO_SPEAKER[source],
-          text: normalizedText,
-          startTimeMs: sourceSegment.startTimeMs,
-          endTimeMs: sourceSegment.endTimeMs,
-          segmentOrder,
-          isFinal: true,
-        });
-      }
+  private async persistTranscriptionChunks(
+    chunks: MeetingTranscriptionChunk[],
+  ): Promise<void> {
+    if (
+      !this.activeMeetingId ||
+      this.activeNoteId === null ||
+      chunks.length === 0
+    ) {
+      return;
     }
 
-    pendingSegments.sort((left, right) => {
-      if (left.startTimeMs === right.startTimeMs) {
-        return left.endTimeMs - right.endTimeMs;
-      }
-      return left.startTimeMs - right.startTimeMs;
-    });
-
-    pendingSegments.forEach((segment, index) => {
-      segment.segmentOrder = index;
-    });
-
     const storedSegments = await createTranscriptSegments(
-      pendingSegments.map((segment) => ({
-        id: segment.id,
-        meetingId: segment.meetingId,
-        source: segment.source,
-        speaker: segment.speaker,
-        text: segment.text,
-        startTimeMs: segment.startTimeMs,
-        endTimeMs: segment.endTimeMs,
-        segmentOrder: segment.segmentOrder,
-        isFinal: segment.isFinal,
+      chunks.map((chunk) => ({
+        id: uuid(),
+        meetingId: this.activeMeetingId!,
+        source: chunk.source,
+        speaker: chunk.speaker,
+        text: chunk.text,
+        startTimeMs: chunk.startTimeMs,
+        endTimeMs: chunk.endTimeMs,
+        segmentOrder: this.nextSegmentOrder++,
+        isFinal: chunk.isFinal,
       })),
     );
 
-    return {
-      events: storedSegments.map((segment) => ({
+    for (const segment of storedSegments) {
+      const event: TranscriptEvent = {
         id: segment.id,
         meetingId: segment.meetingId,
         noteId: this.activeNoteId,
@@ -395,9 +405,24 @@ export class MeetingManager extends EventEmitter {
         segmentOrder: segment.segmentOrder,
         isFinal: segment.isFinal,
         createdAt: segment.createdAt,
-      })),
-      modelPath,
-    };
+      };
+
+      this.lastTranscript.push(event);
+      this.emit("transcript-event", event);
+    }
+  }
+
+  private async disposeTranscriptionRuntimes(): Promise<void> {
+    await Promise.all(
+      Object.values(this.transcriptionRuntimes).map(async (runtime) => {
+        if (!runtime) {
+          return;
+        }
+
+        await runtime.dispose();
+      }),
+    );
+    this.transcriptionRuntimes = {};
   }
 
   private async persistArtifacts(meetingId: string): Promise<void> {
@@ -464,9 +489,10 @@ export class MeetingManager extends EventEmitter {
     }
 
     this.writers = {};
-    this.frameBuffers = {
-      mic: [],
-      system: [],
+    this.transcriptionRuntimes = {};
+    this.transcriptionChains = {
+      mic: Promise.resolve(),
+      system: Promise.resolve(),
     };
     this.levels = {};
     this.activeMeetingId = null;
@@ -474,6 +500,8 @@ export class MeetingManager extends EventEmitter {
     this.startedAtEpochMs = null;
     this.mode = null;
     this.frameWriteChain = Promise.resolve();
+    this.nextSegmentOrder = 0;
+    this.activeTranscriptionSelection = null;
     this.setState("idle");
   }
 }
@@ -486,40 +514,6 @@ function buildMeetingTitle(startedAt: Date): string {
     hour: "2-digit",
     minute: "2-digit",
   })}`;
-}
-
-function concatenateAudio(chunks: Float32Array[]): Float32Array {
-  const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
-  const combined = new Float32Array(totalLength);
-
-  let offset = 0;
-  for (const chunk of chunks) {
-    combined.set(chunk, offset);
-    offset += chunk.length;
-  }
-
-  return combined;
-}
-
-function buildSourceSegments(audio: Float32Array): SegmentedAudioChunk[] {
-  const segments = segmentAudioByEnergy(audio);
-  if (segments.length > 0) {
-    return segments;
-  }
-
-  if (audio.length === 0) {
-    return [];
-  }
-
-  return [
-    {
-      startSample: 0,
-      endSample: audio.length,
-      startTimeMs: 0,
-      endTimeMs: Math.round((audio.length / 16000) * 1000),
-      audio,
-    },
-  ];
 }
 
 function normalizeLevel(audio: Float32Array): number {

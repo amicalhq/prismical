@@ -250,6 +250,19 @@ export const modelsRouter = createRouter({
       return await modelService.validateOllamaConnection(input.url);
     }),
 
+  validateOpenAICompatibleConnection: procedure
+    .input(z.object({ apiKey: z.string(), baseURL: z.string() }))
+    .mutation(async ({ input, ctx }): Promise<ValidationResult> => {
+      const modelService = ctx.serviceManager.getService("modelService");
+      if (!modelService) {
+        throw new Error("Model manager service not initialized");
+      }
+      return await modelService.validateOpenAICompatibleConnection(
+        input.baseURL,
+        input.apiKey,
+      );
+    }),
+
   // Provider model fetching
   fetchOpenRouterModels: procedure
     .input(z.object({ apiKey: z.string() }))
@@ -269,6 +282,19 @@ export const modelsRouter = createRouter({
         throw new Error("Model manager service not initialized");
       }
       return await modelService.fetchOllamaModels(input.url);
+    }),
+
+  fetchOpenAICompatibleModels: procedure
+    .input(z.object({ apiKey: z.string(), baseURL: z.string() }))
+    .query(async ({ input, ctx }) => {
+      const modelService = ctx.serviceManager.getService("modelService");
+      if (!modelService) {
+        throw new Error("Model manager service not initialized");
+      }
+      return await modelService.fetchOpenAICompatibleModels(
+        input.baseURL,
+        input.apiKey,
+      );
     }),
 
   // Provider model database sync
@@ -493,6 +519,25 @@ export const modelsRouter = createRouter({
         updatedConfig.defaultEmbeddingModel = undefined;
       }
 
+      await settingsService.setModelProvidersConfig(updatedConfig);
+    }
+
+    return true;
+  }),
+
+  removeOpenAICompatibleProvider: procedure.mutation(async ({ ctx }) => {
+    const modelService = ctx.serviceManager.getService("modelService");
+    if (!modelService) {
+      throw new Error("Model manager service not initialized");
+    }
+
+    await modelService.removeProviderModels("OpenAI Compatible");
+
+    const settingsService = ctx.serviceManager.getService("settingsService");
+    if (settingsService) {
+      const currentConfig = await settingsService.getModelProvidersConfig();
+      const updatedConfig = { ...currentConfig };
+      delete updatedConfig.openAICompatible;
       await settingsService.setModelProvidersConfig(updatedConfig);
     }
 

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "tasks": {
+    "build": {
+      "outputs": [".build/**", "bin/prismical-mic-detector"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": false,
+      "outputs": [".build/**", "bin/prismical-mic-detector"]
+    },
+    "clean": {
+      "cache": false
+    }
+  }
+}

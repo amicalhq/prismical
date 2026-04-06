@@ -8,6 +8,10 @@ import {
   updateAppSettings,
 } from "../db/app-settings";
 import type { AppSettingsData } from "../db/schema";
+import {
+  normalizeOllamaUrl,
+  normalizeOpenAICompatibleBaseURL,
+} from "../utils/provider-utils";
 
 /**
  * Database-backed settings service with typed configuration
@@ -27,6 +31,14 @@ export interface AppPreferences {
   muteSystemAudio: boolean;
   muteDictationSounds: boolean;
   autoDictateOnNewNote: boolean;
+}
+
+export interface MeetingNotificationSettings {
+  enabled: boolean;
+  impromptuEnabled: boolean;
+  detectionDelayMs: number;
+  cooldownMs: number;
+  blockedBundleIds: string[];
 }
 
 export class SettingsService extends EventEmitter {
@@ -228,18 +240,46 @@ export class SettingsService extends EventEmitter {
    */
   async setOllamaConfig(config: { url: string }): Promise<void> {
     const currentConfig = await this.getModelProvidersConfig();
+    const normalizedUrl = normalizeOllamaUrl(config.url);
 
     // If URL is empty, remove the ollama config entirely
-    if (config.url === "") {
+    if (normalizedUrl === "") {
       const updatedConfig = { ...currentConfig };
       delete updatedConfig.ollama;
       await this.setModelProvidersConfig(updatedConfig);
     } else {
       await this.setModelProvidersConfig({
         ...currentConfig,
-        ollama: config,
+        ollama: { url: normalizedUrl },
       });
     }
+  }
+
+  /**
+   * Get OpenAI-compatible configuration
+   */
+  async getOpenAICompatibleConfig(): Promise<
+    { apiKey: string; baseURL: string } | undefined
+  > {
+    const config = await this.getModelProvidersConfig();
+    return config?.openAICompatible;
+  }
+
+  /**
+   * Update OpenAI-compatible configuration
+   */
+  async setOpenAICompatibleConfig(config: {
+    apiKey: string;
+    baseURL: string;
+  }): Promise<void> {
+    const currentConfig = await this.getModelProvidersConfig();
+    await this.setModelProvidersConfig({
+      ...currentConfig,
+      openAICompatible: {
+        apiKey: config.apiKey.trim(),
+        baseURL: normalizeOpenAICompatibleBaseURL(config.baseURL),
+      },
+    });
   }
 
   /**
@@ -270,6 +310,14 @@ export class SettingsService extends EventEmitter {
   }
 
   /**
+   * Get default language model selection value.
+   */
+  async getDefaultLanguageModelSelection(): Promise<string | undefined> {
+    const config = await this.getModelProvidersConfig();
+    return config?.defaultLanguageModelSelection;
+  }
+
+  /**
    * Set default language model
    */
   async setDefaultLanguageModel(modelId: string | undefined): Promise<void> {
@@ -277,6 +325,19 @@ export class SettingsService extends EventEmitter {
     await this.setModelProvidersConfig({
       ...currentConfig,
       defaultLanguageModel: modelId,
+    });
+  }
+
+  /**
+   * Set default language model selection value.
+   */
+  async setDefaultLanguageModelSelection(
+    selectionValue: string | undefined,
+  ): Promise<void> {
+    const currentConfig = await this.getModelProvidersConfig();
+    await this.setModelProvidersConfig({
+      ...currentConfig,
+      defaultLanguageModelSelection: selectionValue,
     });
   }
 
@@ -341,6 +402,38 @@ export class SettingsService extends EventEmitter {
       showInDockChanged: preferences.showInDock !== undefined,
       muteSystemAudioChanged: preferences.muteSystemAudio !== undefined,
     });
+  }
+
+  /**
+   * Get meeting notification settings used by impromptu meeting detection.
+   */
+  async getMeetingNotificationSettings(): Promise<MeetingNotificationSettings> {
+    const meetingNotifications = await getSettingsSection(
+      "meetingNotifications",
+    );
+
+    return {
+      enabled: meetingNotifications?.enabled ?? true,
+      impromptuEnabled: meetingNotifications?.impromptuEnabled ?? true,
+      detectionDelayMs: meetingNotifications?.detectionDelayMs ?? 4000,
+      cooldownMs: meetingNotifications?.cooldownMs ?? 300000,
+      blockedBundleIds: meetingNotifications?.blockedBundleIds ?? [],
+    };
+  }
+
+  /**
+   * Update meeting notification settings.
+   */
+  async setMeetingNotificationSettings(
+    meetingNotificationSettings: Partial<MeetingNotificationSettings>,
+  ): Promise<void> {
+    const current = await this.getMeetingNotificationSettings();
+    const next = {
+      ...current,
+      ...meetingNotificationSettings,
+    };
+
+    await updateSettingsSection("meetingNotifications", next);
   }
 
   /**

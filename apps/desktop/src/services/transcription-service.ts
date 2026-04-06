@@ -10,6 +10,7 @@ import { WhisperProvider } from "../pipeline/providers/transcription/whisper-pro
 import { PrismicalCloudProvider } from "../pipeline/providers/transcription/prismical-cloud-provider";
 import { OpenRouterProvider } from "../pipeline/providers/formatting/openrouter-formatter";
 import { OllamaFormatter } from "../pipeline/providers/formatting/ollama-formatter";
+import { OpenAICompatibleFormatter } from "../pipeline/providers/formatting/openai-compatible-formatter";
 import { ModelService } from "../services/model-service";
 import { SettingsService } from "../services/settings-service";
 import { TelemetryService } from "../services/telemetry-service";
@@ -780,6 +781,34 @@ export class TranscriptionService {
               model: modelId,
             });
             const provider = new OllamaFormatter(config.url, modelId);
+            const result = await this.formatWithProvider(provider, text, {
+              style: options.formattingStyle,
+              vocabulary: options.vocabulary,
+              accessibilityContext: options.accessibilityContext,
+            });
+            if (result) {
+              text = result.text;
+              formattingDuration = result.duration;
+              formattingUsed = true;
+              formattingModel = modelId;
+            }
+          }
+        } else if (model.provider === "OpenAI Compatible") {
+          const config = await this.settingsService.getOpenAICompatibleConfig();
+          if (!config?.apiKey || !config?.baseURL) {
+            logger.transcription.warn(
+              "Formatting skipped: OpenAI-compatible config missing",
+            );
+          } else {
+            logger.transcription.info("Starting formatting", {
+              provider: model.provider,
+              model: modelId,
+            });
+            const provider = new OpenAICompatibleFormatter(
+              config.apiKey,
+              config.baseURL,
+              modelId,
+            );
             const result = await this.formatWithProvider(provider, text, {
               style: options.formattingStyle,
               vocabulary: options.vocabulary,

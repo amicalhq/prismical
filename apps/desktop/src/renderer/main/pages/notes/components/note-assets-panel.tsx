@@ -27,6 +27,9 @@ type NoteAssetsPanelProps = {
   onClose: () => void;
   transcript: TranscriptEvent[];
   meetingState: MeetingRuntimeState;
+  onGenerateNotes: () => void;
+  canGenerateNotes: boolean;
+  isGeneratingNotes: boolean;
 };
 
 export function NoteAssetsPanel({
@@ -35,6 +38,9 @@ export function NoteAssetsPanel({
   onClose,
   transcript,
   meetingState,
+  onGenerateNotes,
+  canGenerateNotes,
+  isGeneratingNotes,
 }: NoteAssetsPanelProps) {
   const { t } = useTranslation();
   const [isContentVisible, setIsContentVisible] = useState(isOpen);
@@ -73,9 +79,27 @@ export function NoteAssetsPanel({
                 isContentVisible ? "opacity-100" : "opacity-0"
               }`}
             >
-              <h2 className="min-w-0 truncate text-sm font-semibold">
-                {t("settings.notes.note.transcription")}
-              </h2>
+              <div className="flex min-w-0 items-center gap-2">
+                <h2 className="min-w-0 truncate text-sm font-semibold">
+                  {t("settings.notes.note.transcription")}
+                </h2>
+                {transcript.length > 0 && meetingState === "idle" ? (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="h-7 shrink-0 rounded-full px-3 text-xs"
+                    onClick={onGenerateNotes}
+                    disabled={!canGenerateNotes || isGeneratingNotes}
+                    title={
+                      canGenerateNotes
+                        ? "Generate notes from transcript"
+                        : "Configure a language model to generate notes"
+                    }
+                  >
+                    {isGeneratingNotes ? "Generating..." : "Generate notes"}
+                  </Button>
+                ) : null}
+              </div>
               <Button
                 variant="ghost"
                 size="icon"

@@ -17,14 +17,19 @@ declare const MAIN_WINDOW_VITE_NAME: string;
 declare const WIDGET_WINDOW_VITE_NAME: string;
 declare const NOTES_WIDGET_WINDOW_VITE_NAME: string;
 declare const ONBOARDING_WINDOW_VITE_NAME: string;
+declare const NOTIFICATION_WINDOW_VITE_NAME: string;
 
 export class WindowManager {
   private static readonly WIDGET_MAX_WIDTH = 640 as const;
   private static readonly WIDGET_MAX_HEIGHT = 320 as const;
+  private static readonly NOTIFICATION_WINDOW_WIDTH = 380 as const;
+  private static readonly NOTIFICATION_WINDOW_HEIGHT = 120 as const;
+  private static readonly NOTIFICATION_WINDOW_MARGIN = 16 as const;
   private mainWindow: BrowserWindow | null = null;
   private widgetWindow: BrowserWindow | null = null;
   private notesWindowController: NotesWindowController;
   private onboardingWindow: BrowserWindow | null = null;
+  private notificationWindow: BrowserWindow | null = null;
   private widgetDisplayId: number | null = null;
   private cursorPollingInterval: NodeJS.Timeout | null = null;
   private themeListenerSetup: boolean = false;
@@ -88,6 +93,29 @@ export class WindowManager {
     );
     this.widgetDisplayId = cursorDisplay.id;
     return cursorDisplay.workArea;
+  }
+
+  private getNotificationWindowBounds(): Electron.Rectangle {
+    const display = screen.getDisplayNearestPoint(
+      screen.getCursorScreenPoint(),
+    );
+    const workArea = display.workArea;
+    const width = Math.min(
+      WindowManager.NOTIFICATION_WINDOW_WIDTH,
+      workArea.width,
+    );
+    const height = Math.min(
+      WindowManager.NOTIFICATION_WINDOW_HEIGHT,
+      workArea.height,
+    );
+    const margin = WindowManager.NOTIFICATION_WINDOW_MARGIN;
+
+    return {
+      x: workArea.x + workArea.width - width - margin,
+      y: workArea.y + margin,
+      width,
+      height,
+    };
   }
 
   constructor(
@@ -469,6 +497,99 @@ export class WindowManager {
     logger.main.info("Onboarding window created");
   }
 
+  async createOrShowNotificationWindow(): Promise<void> {
+    if (this.notificationWindow && !this.notificationWindow.isDestroyed()) {
+      this.notificationWindow.setBounds(this.getNotificationWindowBounds());
+      this.notificationWindow.showInactive();
+      return;
+    }
+
+    const bounds = this.getNotificationWindowBounds();
+
+    this.notificationWindow = new BrowserWindow({
+      ...bounds,
+      show: false,
+      frame: false,
+      transparent: true,
+      backgroundColor: "#00000000",
+      resizable: false,
+      minimizable: false,
+      maximizable: false,
+      fullscreenable: false,
+      skipTaskbar: true,
+      hasShadow: false,
+      alwaysOnTop: true,
+      ...(process.platform === "darwin" && {
+        type: "panel" as const,
+      }),
+      webPreferences: {
+        preload: path.join(__dirname, "preload.js"),
+        nodeIntegration: false,
+        contextIsolation: true,
+      },
+    });
+
+    if (process.platform === "darwin") {
+      this.notificationWindow.setAlwaysOnTop(true, "floating", 2);
+      this.notificationWindow.setVisibleOnAllWorkspaces(true, {
+        visibleOnFullScreen: true,
+      });
+      this.notificationWindow.setHiddenInMissionControl(true);
+    }
+
+    this.notificationWindow.once("ready-to-show", () => {
+      this.notificationWindow?.showInactive();
+    });
+
+    if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
+      const devUrl = new URL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
+      devUrl.pathname = "notification.html";
+      this.notificationWindow.loadURL(devUrl.toString());
+    } else {
+      this.notificationWindow.loadFile(
+        path.join(
+          __dirname,
+          `../renderer/${NOTIFICATION_WINDOW_VITE_NAME}/notification.html`,
+        ),
+      );
+    }
+
+    this.notificationWindow.on("close", () => {
+      this.trpcHandler.detachWindow(this.notificationWindow!);
+    });
+
+    this.notificationWindow.on("closed", () => {
+      this.notificationWindow = null;
+    });
+
+    this.trpcHandler.attachWindow(this.notificationWindow);
+
+    logger.main.info("Notification window created", {
+      bounds,
+    });
+  }
+
+  hideNotificationWindow(): void {
+    if (!this.notificationWindow || this.notificationWindow.isDestroyed()) {
+      return;
+    }
+
+    this.notificationWindow.hide();
+  }
+
+  async navigateMainWindow(route: string): Promise<void> {
+    const windowExisted = this.getMainWindow() !== null;
+
+    await this.createOrShowMainWindow(route);
+
+    if (windowExisted) {
+      const mainWindow = this.getMainWindow();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send("navigate", route);
+      }
+    }
+  }
+
   closeOnboardingWindow(): void {
     if (this.onboardingWindow && !this.onboardingWindow.isDestroyed()) {
       this.onboardingWindow.close();
@@ -649,12 +770,17 @@ export class WindowManager {
     return this.onboardingWindow;
   }
 
+  getNotificationWindow(): BrowserWindow | null {
+    return this.notificationWindow;
+  }
+
   getAllWindows(): (BrowserWindow | null)[] {
     return [
       this.mainWindow,
       this.widgetWindow,
       this.notesWindowController.getWindow(),
       this.onboardingWindow,
+      this.notificationWindow,
     ];
   }
 

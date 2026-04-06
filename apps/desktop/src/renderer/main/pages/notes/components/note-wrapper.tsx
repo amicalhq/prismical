@@ -4,7 +4,7 @@ import { api } from "@/trpc/react";
 import { toast } from "sonner";
 import { debounce } from "@/renderer/main/utils/debounce";
 import Note from "./note";
-import { NoteEditor } from "./note-editor";
+import { NoteEditor, type NoteEditorHandle } from "./note-editor";
 import { FileTextIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTranslation } from "react-i18next";
@@ -31,7 +31,12 @@ export default function NotePage({
   const utils = api.useUtils();
   const startMeetingMutation = api.meetings.startMeeting.useMutation();
   const stopMeetingMutation = api.meetings.stopMeeting.useMutation();
+  const generateNotesMutation =
+    api.notes.generateNotesFromTranscript.useMutation();
   const noteIdNumber = Number.parseInt(noteId, 10);
+  const defaultLanguageModelQuery = api.models.getDefaultModel.useQuery({
+    type: "language",
+  });
   const noteTranscriptQuery = api.meetings.getNoteTranscript.useQuery(
     { noteId: noteIdNumber },
     {
@@ -50,6 +55,7 @@ export default function NotePage({
   const [transcript, setTranscript] = useState<TranscriptEvent[]>([]);
 
   const noteRef = useRef<typeof note>(null);
+  const noteEditorRef = useRef<NoteEditorHandle | null>(null);
   const autoRecordTriggeredRef = useRef(false);
 
   // Fetch note data
@@ -260,6 +266,23 @@ export default function NotePage({
       });
   }, [meetingState, refreshNoteTranscript, stopMeetingMutation]);
 
+  const handleGenerateNotes = useCallback(() => {
+    if (!defaultLanguageModelQuery.data) {
+      toast.error("Configure a language model before generating notes.");
+      return;
+    }
+
+    generateNotesMutation
+      .mutateAsync({ noteId: noteIdNumber })
+      .then((result) => {
+        noteEditorRef.current?.applyGeneratedMarkdown(result.markdown);
+        toast.success("Generated notes inserted into the note.");
+      })
+      .catch((error) => {
+        toast.error(`Failed to generate notes: ${error.message}`);
+      });
+  }, [defaultLanguageModelQuery.data, generateNotesMutation, noteIdNumber]);
+
   const handleTitleChange = useCallback(
     (newTitle: string) => {
       setNoteTitle(newTitle);
@@ -356,9 +379,16 @@ export default function NotePage({
       transcript={transcript}
       onStartMeeting={handleStartMeeting}
       onStopMeeting={handleStopMeeting}
+      onGenerateNotes={handleGenerateNotes}
+      canGenerateNotes={Boolean(defaultLanguageModelQuery.data)}
+      isGeneratingNotes={generateNotesMutation.isPending}
       isDeleting={deleteMutation.isPending}
     >
-      <NoteEditor noteId={noteIdNumber} onReady={handleEditorReady} />
+      <NoteEditor
+        ref={noteEditorRef}
+        noteId={noteIdNumber}
+        onReady={handleEditorReady}
+      />
     </Note>
   );
 }

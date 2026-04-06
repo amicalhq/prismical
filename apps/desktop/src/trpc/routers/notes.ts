@@ -230,4 +230,15 @@ export const notesRouter = createRouter({
         icon: note.icon || "file-text",
       }));
     }),
+
+  generateNotesFromTranscript: procedure
+    .input(z.object({ noteId: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      const noteGenerationService = ctx.serviceManager.getService(
+        "noteGenerationService",
+      );
+      return await noteGenerationService.generateNotesFromTranscript(
+        input.noteId,
+      );
+    }),
 });

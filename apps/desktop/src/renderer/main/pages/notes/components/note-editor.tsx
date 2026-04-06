@@ -1,4 +1,13 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+  forwardRef,
+  useImperativeHandle,
+  type MutableRefObject,
+} from "react";
 import { LexicalComposer } from "@lexical/react/LexicalComposer";
 import { RichTextPlugin } from "@lexical/react/LexicalRichTextPlugin";
 import { ContentEditable } from "@lexical/react/LexicalContentEditable";
@@ -21,7 +30,12 @@ import {
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
 import { LinkNode, AutoLinkNode } from "@lexical/link";
 import { HorizontalRuleNode } from "@lexical/react/LexicalHorizontalRuleNode";
-import { TRANSFORMERS } from "@lexical/markdown";
+import {
+  $convertFromMarkdownString,
+  $convertToMarkdownString,
+  TRANSFORMERS,
+} from "@lexical/markdown";
+import { $getRoot } from "lexical";
 import { Loader2 } from "lucide-react";
 import { NoteSyncProvider } from "@/renderer/main/providers/sync-provider";
 import { YjsSyncPlugin } from "@/renderer/main/components/editor/yjs-sync-plugin";
@@ -29,11 +43,16 @@ import { CodeBlockShortcutPlugin } from "@/renderer/main/components/editor/code-
 import { ChecklistShortcutPlugin } from "@/renderer/main/components/editor/checklist-shortcut-plugin";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
+import { upsertGeneratedNotesSection } from "../utils/generated-notes-markdown";
 
 interface NoteEditorProps {
   noteId: number;
   onSyncStatusChange?: (isSyncing: boolean) => void;
   onReady?: () => void;
+}
+
+export interface NoteEditorHandle {
+  applyGeneratedMarkdown: (markdown: string) => void;
 }
 
 const theme = {
@@ -172,171 +191,217 @@ const MATCHERS = [
   },
 ];
 
-export function NoteEditor({
-  noteId,
-  onSyncStatusChange,
-  onReady,
-}: NoteEditorProps): React.ReactNode {
-  const { t } = useTranslation();
-  const [isLoading, setIsLoading] = useState(true);
-  const [syncProvider, setSyncProvider] = useState<NoteSyncProvider | null>(
-    null,
-  );
-  const providerRef = useRef<NoteSyncProvider | null>(null);
-  const destroyQueueRef = useRef<Array<NoteSyncProvider>>([]);
-  const onReadyCalledRef = useRef(false);
-  const onSaveErrorRef = useRef(() =>
-    toast.error(t("settings.notes.toast.saveFailed")),
-  );
-
-  // Handle sync status changes and propagate to parent
-  const handleSyncStatusChange = useCallback(
-    (isSyncing: boolean) => {
-      onSyncStatusChange?.(isSyncing);
-    },
-    [onSyncStatusChange],
-  );
-
-  // Reset onReady tracking when noteId changes
-  useEffect(() => {
-    onReadyCalledRef.current = false;
-  }, [noteId]);
+function GeneratedNotesControllerPlugin({
+  controllerRef,
+}: {
+  controllerRef: MutableRefObject<NoteEditorHandle | null>;
+}): null {
+  const [editor] = useLexicalComposerContext();
 
   useEffect(() => {
-    onSaveErrorRef.current = () =>
-      toast.error(t("settings.notes.toast.saveFailed"));
-  }, [t]);
+    controllerRef.current = {
+      applyGeneratedMarkdown(markdown: string) {
+        const currentMarkdown = editor
+          .getEditorState()
+          .read(() => $convertToMarkdownString(TRANSFORMERS, $getRoot()));
 
-  // Notify parent when editor is ready
-  useEffect(() => {
-    if (!isLoading && syncProvider && !onReadyCalledRef.current) {
-      onReadyCalledRef.current = true;
-      onReady?.();
-    }
-  }, [isLoading, syncProvider, onReady]);
+        const nextMarkdown = upsertGeneratedNotesSection(
+          currentMarkdown,
+          markdown,
+        );
 
-  // After `syncProvider` changes (either unmounting or swapping to a new
-  // provider), it is safe to destroy the previous provider(s). This ensures
-  // YjsSyncPlugin can flush any pending debounced writes during its cleanup
-  // while the persistence listener is still attached.
-  useEffect(() => {
-    if (destroyQueueRef.current.length === 0) return;
-
-    const providersToDestroy = destroyQueueRef.current;
-    destroyQueueRef.current = [];
-
-    providersToDestroy.forEach((provider) => {
-      provider.destroy();
-    });
-  }, [syncProvider]);
-
-  useEffect(() => {
-    let mounted = true;
-
-    const initProvider = async () => {
-      // Reset loading state to unmount editor when switching notes
-      setIsLoading(true);
-      setSyncProvider(null);
-
-      // Queue the previous provider for destruction after unmount. This avoids
-      // dropping any pending debounced flushes when switching notes quickly.
-      if (providerRef.current) {
-        destroyQueueRef.current.push(providerRef.current);
-        providerRef.current = null;
-      }
-
-      const provider = new NoteSyncProvider({
-        noteId,
-        onSaveError: () => onSaveErrorRef.current(),
-      });
-
-      providerRef.current = provider;
-
-      try {
-        await provider.loadFromLocal();
-      } catch (error) {
-        console.error("Failed to load note content:", error);
-      }
-
-      if (mounted) {
-        setSyncProvider(provider);
-        setIsLoading(false);
-      }
+        editor.update(() => {
+          $convertFromMarkdownString(nextMarkdown, TRANSFORMERS, $getRoot());
+        });
+      },
     };
 
-    initProvider();
-
     return () => {
-      mounted = false;
+      controllerRef.current = null;
     };
-  }, [noteId]);
+  }, [controllerRef, editor]);
 
-  // Clean up providers on unmount.
-  useEffect(() => {
-    return () => {
-      if (providerRef.current) {
-        providerRef.current.destroy();
-        providerRef.current = null;
+  return null;
+}
+
+export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(
+  function NoteEditor(
+    { noteId, onSyncStatusChange, onReady }: NoteEditorProps,
+    ref,
+  ): React.ReactNode {
+    const { t } = useTranslation();
+    const [isLoading, setIsLoading] = useState(true);
+    const [syncProvider, setSyncProvider] = useState<NoteSyncProvider | null>(
+      null,
+    );
+    const providerRef = useRef<NoteSyncProvider | null>(null);
+    const destroyQueueRef = useRef<Array<NoteSyncProvider>>([]);
+    const onReadyCalledRef = useRef(false);
+    const onSaveErrorRef = useRef(() =>
+      toast.error(t("settings.notes.toast.saveFailed")),
+    );
+    const controllerRef = useRef<NoteEditorHandle | null>(null);
+
+    useImperativeHandle(
+      ref,
+      () => ({
+        applyGeneratedMarkdown(markdown: string) {
+          controllerRef.current?.applyGeneratedMarkdown(markdown);
+        },
+      }),
+      [],
+    );
+
+    // Handle sync status changes and propagate to parent
+    const handleSyncStatusChange = useCallback(
+      (isSyncing: boolean) => {
+        onSyncStatusChange?.(isSyncing);
+      },
+      [onSyncStatusChange],
+    );
+
+    // Reset onReady tracking when noteId changes
+    useEffect(() => {
+      onReadyCalledRef.current = false;
+    }, [noteId]);
+
+    useEffect(() => {
+      onSaveErrorRef.current = () =>
+        toast.error(t("settings.notes.toast.saveFailed"));
+    }, [t]);
+
+    // Notify parent when editor is ready
+    useEffect(() => {
+      if (!isLoading && syncProvider && !onReadyCalledRef.current) {
+        onReadyCalledRef.current = true;
+        onReady?.();
       }
+    }, [isLoading, syncProvider, onReady]);
 
-      destroyQueueRef.current.forEach((provider) => {
+    // After `syncProvider` changes (either unmounting or swapping to a new
+    // provider), it is safe to destroy the previous provider(s). This ensures
+    // YjsSyncPlugin can flush any pending debounced writes during its cleanup
+    // while the persistence listener is still attached.
+    useEffect(() => {
+      if (destroyQueueRef.current.length === 0) return;
+
+      const providersToDestroy = destroyQueueRef.current;
+      destroyQueueRef.current = [];
+
+      providersToDestroy.forEach((provider) => {
         provider.destroy();
       });
-      destroyQueueRef.current = [];
-    };
-  }, []);
+    }, [syncProvider]);
 
-  const initialConfig = useMemo(
-    () => ({
-      namespace: `note-${noteId}`,
-      theme,
-      onError,
-      nodes: EDITOR_NODES,
-    }),
-    [noteId],
-  );
+    useEffect(() => {
+      let mounted = true;
 
-  if (isLoading || !syncProvider) {
-    return (
-      <div className="flex items-center justify-center min-h-[200px]">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-      </div>
+      const initProvider = async () => {
+        // Reset loading state to unmount editor when switching notes
+        setIsLoading(true);
+        setSyncProvider(null);
+
+        // Queue the previous provider for destruction after unmount. This avoids
+        // dropping any pending debounced flushes when switching notes quickly.
+        if (providerRef.current) {
+          destroyQueueRef.current.push(providerRef.current);
+          providerRef.current = null;
+        }
+
+        const provider = new NoteSyncProvider({
+          noteId,
+          onSaveError: () => onSaveErrorRef.current(),
+        });
+
+        providerRef.current = provider;
+
+        try {
+          await provider.loadFromLocal();
+        } catch (error) {
+          console.error("Failed to load note content:", error);
+        }
+
+        if (mounted) {
+          setSyncProvider(provider);
+          setIsLoading(false);
+        }
+      };
+
+      initProvider();
+
+      return () => {
+        mounted = false;
+      };
+    }, [noteId]);
+
+    // Clean up providers on unmount.
+    useEffect(() => {
+      return () => {
+        if (providerRef.current) {
+          providerRef.current.destroy();
+          providerRef.current = null;
+        }
+
+        destroyQueueRef.current.forEach((provider) => {
+          provider.destroy();
+        });
+        destroyQueueRef.current = [];
+      };
+    }, []);
+
+    const initialConfig = useMemo(
+      () => ({
+        namespace: `note-${noteId}`,
+        theme,
+        onError,
+        nodes: EDITOR_NODES,
+      }),
+      [noteId],
     );
-  }
 
-  return (
-    <LexicalComposer initialConfig={initialConfig}>
-      <div className="relative">
-        <RichTextPlugin
-          contentEditable={
-            <ContentEditable
-              className="min-h-[500px] px-4 py-2 outline-none text-base leading-relaxed"
-              aria-placeholder={t("settings.notes.note.bodyPlaceholder")}
-              placeholder={
-                <div className="absolute top-2 left-4 text-muted-foreground pointer-events-none">
-                  {t("settings.notes.note.bodyPlaceholder")}
-                </div>
-              }
-            />
-          }
-          ErrorBoundary={LexicalErrorBoundary}
-        />
-        <HistoryPlugin />
-        <AutoFocusPlugin />
-        <ListPlugin />
-        <CheckListPlugin />
-        <TabIndentationPlugin />
-        <ClickableLinkPlugin />
-        <AutoLinkPlugin matchers={MATCHERS} />
-        <CodeHighlightPlugin />
-        <CodeBlockShortcutPlugin />
-        <ChecklistShortcutPlugin />
-        <MarkdownShortcutPlugin transformers={TRANSFORMERS} />
-        <YjsSyncPlugin
-          yText={syncProvider.getText()}
-          onSyncStatusChange={handleSyncStatusChange}
-        />
-      </div>
-    </LexicalComposer>
-  );
-}
+    if (isLoading || !syncProvider) {
+      return (
+        <div className="flex items-center justify-center min-h-[200px]">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      );
+    }
+
+    return (
+      <LexicalComposer initialConfig={initialConfig}>
+        <div className="relative">
+          <RichTextPlugin
+            contentEditable={
+              <ContentEditable
+                className="min-h-[500px] px-4 py-2 outline-none text-base leading-relaxed"
+                aria-placeholder={t("settings.notes.note.bodyPlaceholder")}
+                placeholder={
+                  <div className="absolute top-2 left-4 text-muted-foreground pointer-events-none">
+                    {t("settings.notes.note.bodyPlaceholder")}
+                  </div>
+                }
+              />
+            }
+            ErrorBoundary={LexicalErrorBoundary}
+          />
+          <HistoryPlugin />
+          <AutoFocusPlugin />
+          <ListPlugin />
+          <CheckListPlugin />
+          <TabIndentationPlugin />
+          <ClickableLinkPlugin />
+          <AutoLinkPlugin matchers={MATCHERS} />
+          <CodeHighlightPlugin />
+          <CodeBlockShortcutPlugin />
+          <ChecklistShortcutPlugin />
+          <MarkdownShortcutPlugin transformers={TRANSFORMERS} />
+          <YjsSyncPlugin
+            yText={syncProvider.getText()}
+            onSyncStatusChange={handleSyncStatusChange}
+          />
+          <GeneratedNotesControllerPlugin controllerRef={controllerRef} />
+        </div>
+      </LexicalComposer>
+    );
+  },
+);

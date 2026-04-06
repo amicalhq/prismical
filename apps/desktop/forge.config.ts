@@ -413,6 +413,7 @@ const config: ForgeConfig = {
         process.platform === "win32" ? ".exe" : ""
       }`,
       "../../packages/native-helpers/audio-capture/bin/prismical-audio-capture",
+      "../../packages/native-helpers/mic-detector/bin/prismical-mic-detector",
       "./models",
       "./assets",
     ],
@@ -608,6 +609,10 @@ const config: ForgeConfig = {
         {
           name: "onboarding_window",
           config: "vite.onboarding.config.mts",
+        },
+        {
+          name: "notification_window",
+          config: "vite.notification.config.mts",
         },
       ],
     }),

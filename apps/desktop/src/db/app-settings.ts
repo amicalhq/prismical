@@ -81,6 +81,13 @@ const defaultSettings: AppSettingsData = {
     muteDictationSounds: false,
     autoDictateOnNewNote: false,
   },
+  meetingNotifications: {
+    enabled: true,
+    impromptuEnabled: true,
+    detectionDelayMs: 4000,
+    cooldownMs: 300000,
+    blockedBundleIds: [],
+  },
   transcription: {
     language: "en",
     autoTranscribe: true,
@@ -103,6 +110,7 @@ const defaultSettings: AppSettingsData = {
   modelProvidersConfig: {
     defaultSpeechModel: "",
     defaultLanguageModel: "",
+    defaultLanguageModelSelection: "",
     defaultEmbeddingModel: "",
   },
 };

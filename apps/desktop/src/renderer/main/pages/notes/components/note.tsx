@@ -64,6 +64,9 @@ export type NotePageUIProps = {
   transcript: TranscriptEvent[];
   onStartMeeting: () => void;
   onStopMeeting: () => void;
+  onGenerateNotes: () => void;
+  canGenerateNotes: boolean;
+  isGeneratingNotes: boolean;
   isDeleting?: boolean;
   children?: ReactNode;
 };
@@ -90,6 +93,9 @@ export default function Note({
   transcript,
   onStartMeeting,
   onStopMeeting,
+  onGenerateNotes,
+  canGenerateNotes,
+  isGeneratingNotes,
   isDeleting = false,
   children,
 }: NotePageUIProps) {
@@ -261,6 +267,9 @@ export default function Note({
               onClose={() => onToggleAsset("transcription")}
               transcript={transcript}
               meetingState={meetingState}
+              onGenerateNotes={onGenerateNotes}
+              canGenerateNotes={canGenerateNotes}
+              isGeneratingNotes={isGeneratingNotes}
             />
           </div>
           <div className="pointer-events-auto">

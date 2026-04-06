@@ -209,9 +209,9 @@ export async function getNoteTranscript(
     .where(inArray(transcriptSegments.meetingId, sessionIds))
     .orderBy(
       asc(transcriptSegments.meetingId),
-      asc(transcriptSegments.segmentOrder),
       asc(transcriptSegments.startTimeMs),
       asc(transcriptSegments.createdAt),
+      asc(transcriptSegments.segmentOrder),
     );
 
   const segmentsBySession = new Map<string, TranscriptSegment[]>();
@@ -265,9 +265,9 @@ export async function getMeetingTranscript(
     .from(transcriptSegments)
     .where(eq(transcriptSegments.meetingId, meetingId))
     .orderBy(
-      asc(transcriptSegments.segmentOrder),
       asc(transcriptSegments.startTimeMs),
       asc(transcriptSegments.createdAt),
+      asc(transcriptSegments.segmentOrder),
     );
 
   return segments.map((segment) =>

@@ -855,7 +855,8 @@
       },
       "providers": {
         "openRouter": "OpenRouter",
-        "ollama": "Ollama"
+        "ollama": "Ollama",
+        "openAICompatible": "OpenAI Compatible"
       },
       "provider": {
         "status": {
@@ -864,7 +865,9 @@
         },
         "placeholders": {
           "openRouter": "API Key",
-          "ollama": "Ollama URL (e.g., http://localhost:11434)"
+          "ollama": "Ollama URL (e.g., http://localhost:11434)",
+          "openAICompatibleApiKey": "API Key",
+          "openAICompatibleBaseURL": "Base URL (e.g., https://api.example.com/v1)"
         },
         "buttons": {
           "connect": "Connect",
