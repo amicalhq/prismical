@@ -371,7 +371,6 @@ export class NotesWindowController {
       ...initialBounds,
       frame: false,
       transparent: true,
-      alwaysOnTop: true,
       resizable: true,
       maximizable: false,
       skipTaskbar: true,
@@ -424,12 +423,6 @@ export class NotesWindowController {
     this.notesWindow.on("resized", () => {
       this.handleNotesWindowBoundsChanged();
     });
-
-    if (process.platform === "darwin") {
-      this.notesWindow.setAlwaysOnTop(true, "floating");
-    } else if (process.platform === "win32") {
-      this.notesWindow.setAlwaysOnTop(true, "screen-saver");
-    }
 
     this.options.trpcHandler.attachWindow(this.notesWindow);
     return this.notesWindow;
