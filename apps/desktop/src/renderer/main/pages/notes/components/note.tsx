@@ -38,7 +38,6 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { CreateFolderDialog } from "@/renderer/main/components/create-folder-dialog";
 import { FolderPickerDialog } from "@/renderer/main/components/folder-picker-dialog";
 import { useSettingsHeaderActions } from "@/renderer/main/routes/settings/header-actions-context";
-import { NotesPopoutHeaderAction } from "@/renderer/main/routes/settings/notes-popout-header-action";
 
 import { NoteAssetsPanel } from "./note-assets-panel";
 import { NoteRecordingDock } from "./note-recording-dock";
@@ -114,8 +113,6 @@ export default function Note({
   useEffect(() => {
     setActions(
       <div className="flex items-center gap-1">
-        <NotesPopoutHeaderAction noteId={noteId} />
-
         <Button
           variant="ghost"
           size="sm"

@@ -2,7 +2,6 @@ import { z } from "zod";
 
 import { isInternalUrl } from "@/utils/url";
 
-export const NOTE_WINDOW_FEATURE_FLAG = "note-window";
 export const SIDEBAR_CTA_FEATURE_FLAG = "sidebar-cta";
 
 export const SidebarCtaPaletteSchema = z.enum(["purple", "green"]);

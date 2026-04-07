@@ -138,9 +138,23 @@ export class WhisperProvider implements TranscriptionProvider {
       // Clear buffers immediately after aggregation
       this.reset();
 
-      // Apply VAD filtering to extract speech-only portions
+      const shouldBypassVad =
+        vadProbs.length > 0 &&
+        vadProbs.every((probability) => probability >= 1);
+
+      // Meeting transcription currently feeds variable-sized chunks. When every
+      // frame is explicitly marked as speech, bypass the frame-based VAD
+      // extraction so we do not truncate audio assuming fixed 512-sample frames.
       const { audio: aggregatedAudio, segments: speechSegments } =
-        extractSpeechFromVad(rawAudio, vadProbs);
+        shouldBypassVad
+          ? {
+              audio: rawAudio,
+              segments:
+                rawAudio.length > 0
+                  ? [{ start: 0, end: Math.max(0, vadProbs.length - 1) }]
+                  : [],
+            }
+          : extractSpeechFromVad(rawAudio, vadProbs);
 
       if (aggregatedAudio.length === 0) {
         logger.transcription.debug(

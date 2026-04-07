@@ -5,7 +5,6 @@ import { modelsRouter } from "./routers/models";
 import { settingsRouter } from "./routers/settings";
 import { updaterRouter } from "./routers/updater";
 import { recordingRouter } from "./routers/recording";
-import { widgetRouter } from "./routers/widget";
 import { notesRouter } from "./routers/notes";
 import { authRouter } from "./routers/auth";
 import { onboardingRouter } from "./routers/onboarding";
@@ -56,9 +55,6 @@ export const router = createRouter({
 
   // Recording router
   recording: recordingRouter,
-
-  // Widget router
-  widget: widgetRouter,
 
   // Notes router
   notes: notesRouter,

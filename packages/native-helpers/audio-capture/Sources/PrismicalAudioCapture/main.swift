@@ -1,7 +1,7 @@
 import AVFoundation
 import CoreMedia
+import CoreAudio
 import Foundation
-import ScreenCaptureKit
 
 enum CaptureMode: String {
     case mic
@@ -20,20 +20,27 @@ enum PacketFormat: UInt8 {
 
 enum CaptureError: Error, LocalizedError {
     case invalidArguments
-    case missingDisplay
     case microphoneUnavailable
+    case unsupportedSystemAudioCapture
     case unsupportedSystemAudioBuffer
+    case unsupportedSystemAudioOSVersion
+    case coreAudioOperationFailed(String, OSStatus)
 
     var errorDescription: String? {
         switch self {
         case .invalidArguments:
             return "Invalid arguments. Use --mode mic|system|dual."
-        case .missingDisplay:
-            return "No display available for ScreenCaptureKit audio capture."
         case .microphoneUnavailable:
             return "Microphone input is unavailable."
+        case .unsupportedSystemAudioCapture:
+            return "System audio capture is unavailable with the current Core Audio tap configuration."
         case .unsupportedSystemAudioBuffer:
             return "Unsupported system audio buffer format."
+        case .unsupportedSystemAudioOSVersion:
+            return "System audio capture via Core Audio taps requires macOS 14.2 or newer."
+        case .coreAudioOperationFailed(let operation, let status):
+            let description = SecCopyErrorMessageString(status, nil) as String? ?? "OSStatus \(status)"
+            return "\(operation) failed: \(description)"
         }
     }
 }
@@ -51,6 +58,472 @@ final class Logger {
         guard let data = value.data(using: .utf8) else { return }
         FileHandle.standardError.write(data)
     }
+}
+
+func makePropertyAddress(
+    selector: AudioObjectPropertySelector,
+    scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal,
+    element: AudioObjectPropertyElement = kAudioObjectPropertyElementMain
+) -> AudioObjectPropertyAddress {
+    AudioObjectPropertyAddress(
+        mSelector: selector,
+        mScope: scope,
+        mElement: element
+    )
+}
+
+func coreAudioCheck(_ status: OSStatus, operation: String) throws {
+    guard status == noErr else {
+        throw CaptureError.coreAudioOperationFailed(operation, status)
+    }
+}
+
+func getAudioObjectProperty<T>(
+    objectID: AudioObjectID,
+    selector: AudioObjectPropertySelector,
+    scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal,
+    element: AudioObjectPropertyElement = kAudioObjectPropertyElementMain,
+    type: T.Type = T.self
+) throws -> T {
+    var address = makePropertyAddress(selector: selector, scope: scope, element: element)
+    var dataSize = UInt32(MemoryLayout<T>.size)
+    let rawPointer = UnsafeMutableRawPointer.allocate(
+        byteCount: Int(dataSize),
+        alignment: max(MemoryLayout<T>.alignment, 8)
+    )
+    defer { rawPointer.deallocate() }
+
+    rawPointer.initializeMemory(as: UInt8.self, repeating: 0, count: Int(dataSize))
+
+    try coreAudioCheck(
+        AudioObjectGetPropertyData(
+            objectID,
+            &address,
+            0,
+            nil,
+            &dataSize,
+            rawPointer
+        ),
+        operation: "AudioObjectGetPropertyData(\(selector))"
+    )
+
+    guard Int(dataSize) == MemoryLayout<T>.size else {
+        throw CaptureError.unsupportedSystemAudioCapture
+    }
+
+    return rawPointer.load(as: T.self)
+}
+
+func getAudioObjectArrayProperty<T>(
+    objectID: AudioObjectID,
+    selector: AudioObjectPropertySelector,
+    scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal,
+    element: AudioObjectPropertyElement = kAudioObjectPropertyElementMain,
+    type: T.Type = T.self
+) throws -> [T] {
+    var address = makePropertyAddress(selector: selector, scope: scope, element: element)
+    var dataSize: UInt32 = 0
+
+    try coreAudioCheck(
+        AudioObjectGetPropertyDataSize(objectID, &address, 0, nil, &dataSize),
+        operation: "AudioObjectGetPropertyDataSize(\(selector))"
+    )
+
+    let count = Int(dataSize) / MemoryLayout<T>.stride
+    guard count > 0 else { return [] }
+
+    let pointer = UnsafeMutablePointer<T>.allocate(capacity: count)
+    defer { pointer.deallocate() }
+
+    try coreAudioCheck(
+        AudioObjectGetPropertyData(
+            objectID,
+            &address,
+            0,
+            nil,
+            &dataSize,
+            pointer
+        ),
+        operation: "AudioObjectGetPropertyData(\(selector))"
+    )
+
+    return Array(UnsafeBufferPointer(start: pointer, count: count))
+}
+
+func getAudioObjectStringProperty(
+    objectID: AudioObjectID,
+    selector: AudioObjectPropertySelector
+) throws -> String {
+    var rawValue: CFString = "" as CFString
+    var address = makePropertyAddress(selector: selector)
+    var dataSize = UInt32(MemoryLayout<CFString>.size)
+
+    try withUnsafeMutablePointer(to: &rawValue) { pointer in
+        try coreAudioCheck(
+            AudioObjectGetPropertyData(
+                objectID,
+                &address,
+                0,
+                nil,
+                &dataSize,
+                pointer
+            ),
+            operation: "AudioObjectGetPropertyData(\(selector))"
+        )
+    }
+
+    return rawValue as String
+}
+
+func getCurrentProcessObjectID() -> AudioObjectID? {
+    let processID = Int32(getpid())
+    guard let processObjects = try? getAudioObjectArrayProperty(
+        objectID: AudioObjectID(kAudioObjectSystemObject),
+        selector: kAudioHardwarePropertyProcessObjectList,
+        type: AudioObjectID.self
+    ) else {
+        return nil
+    }
+
+    for processObjectID in processObjects {
+        guard let activePID: pid_t = try? getAudioObjectProperty(
+            objectID: processObjectID,
+            selector: kAudioProcessPropertyPID,
+            type: pid_t.self
+        ) else {
+            continue
+        }
+
+        if activePID == processID {
+            return processObjectID
+        }
+    }
+
+    return nil
+}
+
+func getDefaultOutputDeviceUID() throws -> String {
+    let outputDeviceID: AudioObjectID = try getAudioObjectProperty(
+        objectID: AudioObjectID(kAudioObjectSystemObject),
+        selector: kAudioHardwarePropertyDefaultOutputDevice,
+        type: AudioObjectID.self
+    )
+
+    guard outputDeviceID != kAudioObjectUnknown else {
+        throw CaptureError.unsupportedSystemAudioCapture
+    }
+
+    return try getAudioObjectStringProperty(
+        objectID: outputDeviceID,
+        selector: kAudioDevicePropertyDeviceUID
+    )
+}
+
+func attachTapToAggregateDevice(
+    aggregateDeviceID: AudioObjectID,
+    tapUID: String
+) throws {
+    var address = makePropertyAddress(selector: kAudioAggregateDevicePropertyTapList)
+    var propertySize: UInt32 = 0
+    let sizeStatus = AudioObjectGetPropertyDataSize(
+        aggregateDeviceID,
+        &address,
+        0,
+        nil,
+        &propertySize
+    )
+
+    if sizeStatus != noErr && sizeStatus != kAudioHardwareUnknownPropertyError {
+        throw CaptureError.coreAudioOperationFailed(
+            "AudioObjectGetPropertyDataSize(\(kAudioAggregateDevicePropertyTapList))",
+            sizeStatus
+        )
+    }
+
+    var tapList: CFArray? = nil
+    if propertySize > 0 {
+        try withUnsafeMutablePointer(to: &tapList) { pointer in
+            try coreAudioCheck(
+                AudioObjectGetPropertyData(
+                    aggregateDeviceID,
+                    &address,
+                    0,
+                    nil,
+                    &propertySize,
+                    pointer
+                ),
+                operation: "AudioObjectGetPropertyData(\(kAudioAggregateDevicePropertyTapList))"
+            )
+        }
+    }
+
+    var tapUIDs = (tapList as? [CFString]) ?? []
+    let targetUID = tapUID as CFString
+    if !tapUIDs.contains(targetUID) {
+        tapUIDs.append(targetUID)
+    }
+
+    var updatedTapList: CFArray = tapUIDs as CFArray
+    propertySize = UInt32(MemoryLayout<CFString>.stride * tapUIDs.count)
+    try withUnsafeMutablePointer(to: &updatedTapList) { pointer in
+        try coreAudioCheck(
+            AudioObjectSetPropertyData(
+                aggregateDeviceID,
+                &address,
+                0,
+                nil,
+                propertySize,
+                pointer
+            ),
+            operation: "AudioObjectSetPropertyData(\(kAudioAggregateDevicePropertyTapList))"
+        )
+    }
+}
+
+func totalAudioBufferListBytes(_ bufferList: UnsafePointer<AudioBufferList>?) -> Int {
+    guard let bufferList else { return 0 }
+    let buffers = UnsafeMutableAudioBufferListPointer(
+        UnsafeMutablePointer(mutating: bufferList)
+    )
+    return buffers.reduce(0) { total, buffer in
+        total + Int(buffer.mDataByteSize)
+    }
+}
+
+final class CopiedAudioBufferList {
+    let pointer: UnsafeMutablePointer<AudioBufferList>
+
+    init?(source: UnsafePointer<AudioBufferList>) {
+        let sourceBuffers = UnsafeMutableAudioBufferListPointer(
+            UnsafeMutablePointer(mutating: source)
+        )
+        guard !sourceBuffers.isEmpty else { return nil }
+
+        let rawSize =
+            MemoryLayout<AudioBufferList>.size +
+            max(0, sourceBuffers.count - 1) * MemoryLayout<AudioBuffer>.stride
+        let rawPointer = UnsafeMutableRawPointer.allocate(
+            byteCount: rawSize,
+            alignment: MemoryLayout<AudioBufferList>.alignment
+        )
+        rawPointer.initializeMemory(as: UInt8.self, repeating: 0, count: rawSize)
+
+        let pointer = rawPointer.bindMemory(to: AudioBufferList.self, capacity: 1)
+        pointer.pointee.mNumberBuffers = UInt32(sourceBuffers.count)
+        let destinationBuffers = UnsafeMutableAudioBufferListPointer(pointer)
+
+        for (index, sourceBuffer) in sourceBuffers.enumerated() {
+            let byteCount = Int(sourceBuffer.mDataByteSize)
+            let destinationData = UnsafeMutableRawPointer.allocate(
+                byteCount: max(byteCount, 1),
+                alignment: 16
+            )
+
+            if let sourceData = sourceBuffer.mData, byteCount > 0 {
+                destinationData.copyMemory(from: sourceData, byteCount: byteCount)
+            } else if byteCount > 0 {
+                destinationData.initializeMemory(as: UInt8.self, repeating: 0, count: byteCount)
+            }
+
+            destinationBuffers[index] = AudioBuffer(
+                mNumberChannels: sourceBuffer.mNumberChannels,
+                mDataByteSize: sourceBuffer.mDataByteSize,
+                mData: destinationData
+            )
+        }
+
+        self.pointer = pointer
+    }
+
+    deinit {
+        let buffers = UnsafeMutableAudioBufferListPointer(pointer)
+        for buffer in buffers where buffer.mData != nil {
+            buffer.mData?.deallocate()
+        }
+        pointer.deallocate()
+    }
+}
+
+func commonFormat(from streamDescription: AudioStreamBasicDescription) -> AVAudioCommonFormat? {
+    guard streamDescription.mFormatID == kAudioFormatLinearPCM else {
+        return nil
+    }
+
+    if streamDescription.mFormatFlags & kAudioFormatFlagIsFloat != 0 {
+        return streamDescription.mBitsPerChannel == 64 ? .pcmFormatFloat64 : .pcmFormatFloat32
+    }
+
+    switch streamDescription.mBitsPerChannel {
+    case 16:
+        return .pcmFormatInt16
+    case 32:
+        return .pcmFormatInt32
+    default:
+        return nil
+    }
+}
+
+func commonFormatName(_ format: AVAudioCommonFormat) -> String {
+    switch format {
+    case .pcmFormatFloat32:
+        return "float32"
+    case .pcmFormatFloat64:
+        return "float64"
+    case .pcmFormatInt16:
+        return "int16"
+    case .pcmFormatInt32:
+        return "int32"
+    default:
+        return "other"
+    }
+}
+
+func normalizeInt16(_ value: Int16) -> Float {
+    Float(value) / 32768.0
+}
+
+func normalizeInt32(_ value: Int32) -> Float {
+    Float(value) / 2147483648.0
+}
+
+func extractMonoSamples(
+    from bufferList: UnsafeMutableAudioBufferListPointer,
+    commonFormat: AVAudioCommonFormat,
+    channelCount: Int,
+    interleaved: Bool
+) -> [Float]? {
+    guard channelCount > 0 else { return nil }
+    guard let firstBuffer = bufferList.first else { return nil }
+
+    let bytesPerSample: Int
+    switch commonFormat {
+    case .pcmFormatFloat32:
+        bytesPerSample = MemoryLayout<Float>.size
+    case .pcmFormatFloat64:
+        bytesPerSample = MemoryLayout<Double>.size
+    case .pcmFormatInt16:
+        bytesPerSample = MemoryLayout<Int16>.size
+    case .pcmFormatInt32:
+        bytesPerSample = MemoryLayout<Int32>.size
+    default:
+        return nil
+    }
+
+    let frameCount: Int
+    if interleaved {
+        frameCount = Int(firstBuffer.mDataByteSize) / max(bytesPerSample * channelCount, 1)
+    } else {
+        frameCount = Int(firstBuffer.mDataByteSize) / bytesPerSample
+    }
+
+    guard frameCount > 0 else { return nil }
+    var output = Array(repeating: Float.zero, count: frameCount)
+
+    switch commonFormat {
+    case .pcmFormatFloat32:
+        if interleaved {
+            guard let data = firstBuffer.mData?.assumingMemoryBound(to: Float.self) else {
+                return nil
+            }
+            for frameIndex in 0..<frameCount {
+                let baseIndex = frameIndex * channelCount
+                output[frameIndex] = data[baseIndex]
+            }
+        } else {
+            guard let data = bufferList[0].mData?.assumingMemoryBound(to: Float.self) else {
+                return nil
+            }
+            for frameIndex in 0..<frameCount {
+                output[frameIndex] = data[frameIndex]
+            }
+        }
+    case .pcmFormatFloat64:
+        if interleaved {
+            guard let data = firstBuffer.mData?.assumingMemoryBound(to: Double.self) else {
+                return nil
+            }
+            for frameIndex in 0..<frameCount {
+                let baseIndex = frameIndex * channelCount
+                output[frameIndex] = Float(data[baseIndex])
+            }
+        } else {
+            guard let data = bufferList[0].mData?.assumingMemoryBound(to: Double.self) else {
+                return nil
+            }
+            for frameIndex in 0..<frameCount {
+                output[frameIndex] = Float(data[frameIndex])
+            }
+        }
+    case .pcmFormatInt16:
+        if interleaved {
+            guard let data = firstBuffer.mData?.assumingMemoryBound(to: Int16.self) else {
+                return nil
+            }
+            for frameIndex in 0..<frameCount {
+                let baseIndex = frameIndex * channelCount
+                output[frameIndex] = normalizeInt16(data[baseIndex])
+            }
+        } else {
+            guard let data = bufferList[0].mData?.assumingMemoryBound(to: Int16.self) else {
+                return nil
+            }
+            for frameIndex in 0..<frameCount {
+                output[frameIndex] = normalizeInt16(data[frameIndex])
+            }
+        }
+    case .pcmFormatInt32:
+        if interleaved {
+            guard let data = firstBuffer.mData?.assumingMemoryBound(to: Int32.self) else {
+                return nil
+            }
+            for frameIndex in 0..<frameCount {
+                let baseIndex = frameIndex * channelCount
+                output[frameIndex] = normalizeInt32(data[baseIndex])
+            }
+        } else {
+            guard let data = bufferList[0].mData?.assumingMemoryBound(to: Int32.self) else {
+                return nil
+            }
+            for frameIndex in 0..<frameCount {
+                output[frameIndex] = normalizeInt32(data[frameIndex])
+            }
+        }
+    default:
+        return nil
+    }
+
+    return output
+}
+
+func resampleLinear(
+    samples: [Float],
+    from inputSampleRate: Double,
+    to outputSampleRate: Double
+) -> [Float] {
+    guard !samples.isEmpty else { return [] }
+    guard inputSampleRate > 0, outputSampleRate > 0 else { return samples }
+    if abs(inputSampleRate - outputSampleRate) < 0.5 {
+        return samples
+    }
+
+    let outputCount = max(
+        1,
+        Int((Double(samples.count) * outputSampleRate / inputSampleRate).rounded(.toNearestOrAwayFromZero))
+    )
+    var output = Array(repeating: Float.zero, count: outputCount)
+    let step = inputSampleRate / outputSampleRate
+
+    for outputIndex in 0..<outputCount {
+        let sourcePosition = Double(outputIndex) * step
+        let lowerIndex = min(Int(sourcePosition), samples.count - 1)
+        let upperIndex = min(lowerIndex + 1, samples.count - 1)
+        let fraction = Float(sourcePosition - Double(lowerIndex))
+        let lowerValue = samples[lowerIndex]
+        let upperValue = samples[upperIndex]
+        output[outputIndex] = lowerValue + (upperValue - lowerValue) * fraction
+    }
+
+    return output
 }
 
 final class PacketWriter {
@@ -191,76 +664,228 @@ final class MicrophoneCapture {
     }
 }
 
-final class SystemAudioCapture: NSObject, SCStreamOutput {
+final class SystemAudioCapture {
     private let writer: PacketWriter
-    private let queue = DispatchQueue(label: "ai.prismical.audio-capture.system")
-    private var stream: SCStream?
+    private let processingQueue = DispatchQueue(label: "ai.prismical.audio-capture.system.processing")
+    private let targetFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false)!
+    private var sourceFormat: AVAudioFormat?
+    private var tapID: AudioObjectID = kAudioObjectUnknown
+    private var aggregateDeviceID: AudioObjectID = kAudioObjectUnknown
+    private var ioProcID: AudioDeviceIOProcID?
+    private var callbackLogCount = 0
 
     init(writer: PacketWriter) {
         self.writer = writer
     }
 
     func start() async throws {
-        let shareableContent = try await SCShareableContent.current
-        guard let display = shareableContent.displays.first else {
-            throw CaptureError.missingDisplay
+        guard #available(macOS 14.2, *) else {
+            throw CaptureError.unsupportedSystemAudioOSVersion
         }
 
-        let filter = SCContentFilter(
-            display: display,
-            excludingApplications: [],
-            exceptingWindows: []
+        let excludedProcesses = getCurrentProcessObjectID().map { [$0] } ?? []
+        let tapDescription = CATapDescription(monoGlobalTapButExcludeProcesses: excludedProcesses)
+        tapDescription.name = "Prismical System Audio Capture"
+        tapDescription.isPrivate = true
+        let tapUUID = UUID()
+        tapDescription.uuid = tapUUID
+
+        var tapID: AudioObjectID = kAudioObjectUnknown
+        try coreAudioCheck(
+            AudioHardwareCreateProcessTap(tapDescription, &tapID),
+            operation: "AudioHardwareCreateProcessTap"
+        )
+        self.tapID = tapID
+
+        let outputDeviceUID = try getDefaultOutputDeviceUID()
+        let aggregateDeviceDescription = makeAggregateDeviceDescription(
+            outputDeviceUID: outputDeviceUID
         )
 
-        let configuration = SCStreamConfiguration()
-        configuration.capturesAudio = true
-        configuration.excludesCurrentProcessAudio = true
-        configuration.sampleRate = 16_000
-        configuration.channelCount = 1
+        var aggregateDeviceID: AudioObjectID = kAudioObjectUnknown
+        try coreAudioCheck(
+            AudioHardwareCreateAggregateDevice(aggregateDeviceDescription as CFDictionary, &aggregateDeviceID),
+            operation: "AudioHardwareCreateAggregateDevice"
+        )
+        self.aggregateDeviceID = aggregateDeviceID
 
-        let stream = SCStream(filter: filter, configuration: configuration, delegate: nil)
-        self.stream = stream
+        try attachTapToAggregateDevice(
+            aggregateDeviceID: aggregateDeviceID,
+            tapUID: tapUUID.uuidString
+        )
 
-        try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: queue)
-        try await stream.startCapture()
+        var tapFormatDescription: AudioStreamBasicDescription = try getAudioObjectProperty(
+            objectID: tapID,
+            selector: kAudioTapPropertyFormat,
+            type: AudioStreamBasicDescription.self
+        )
+
+        guard let sourceFormat = AVAudioFormat(streamDescription: &tapFormatDescription) else {
+            throw CaptureError.unsupportedSystemAudioBuffer
+        }
+
+        guard commonFormat(from: tapFormatDescription) != nil else {
+            throw CaptureError.unsupportedSystemAudioCapture
+        }
+
+        self.sourceFormat = sourceFormat
+        callbackLogCount = 0
+
+        Logger.info(
+            "System audio tap format ready: sampleRate=\(Int(sourceFormat.sampleRate)) channels=\(sourceFormat.channelCount) interleaved=\(sourceFormat.isInterleaved)"
+        )
+
+        var ioProcID: AudioDeviceIOProcID?
+        try coreAudioCheck(
+            AudioDeviceCreateIOProcIDWithBlock(
+                &ioProcID,
+                aggregateDeviceID,
+                nil
+            ) { [weak self] _, inputData, _, outputData, _ in
+                self?.handle(inputData: inputData, outputData: outputData)
+            },
+            operation: "AudioDeviceCreateIOProcIDWithBlock"
+        )
+
+        guard let ioProcID else {
+            throw CaptureError.unsupportedSystemAudioCapture
+        }
+
+        self.ioProcID = ioProcID
+        try coreAudioCheck(
+            AudioDeviceStart(aggregateDeviceID, ioProcID),
+            operation: "AudioDeviceStart"
+        )
         Logger.info("System audio capture started")
     }
 
     func stop() async {
-        do {
-            try await stream?.stopCapture()
-        } catch {
-            Logger.error("System audio stop failed: \(error.localizedDescription)")
+        if aggregateDeviceID != kAudioObjectUnknown, let ioProcID {
+            let stopStatus = AudioDeviceStop(aggregateDeviceID, ioProcID)
+            if stopStatus != noErr {
+                Logger.error("AudioDeviceStop failed: \(stopStatus)")
+            }
         }
-        stream = nil
+
+        if aggregateDeviceID != kAudioObjectUnknown, let ioProcID {
+            let destroyIOStatus = AudioDeviceDestroyIOProcID(aggregateDeviceID, ioProcID)
+            if destroyIOStatus != noErr {
+                Logger.error("AudioDeviceDestroyIOProcID failed: \(destroyIOStatus)")
+            }
+        }
+
+        if aggregateDeviceID != kAudioObjectUnknown {
+            let destroyAggregateStatus = AudioHardwareDestroyAggregateDevice(aggregateDeviceID)
+            if destroyAggregateStatus != noErr {
+                Logger.error("AudioHardwareDestroyAggregateDevice failed: \(destroyAggregateStatus)")
+            }
+        }
+
+        if tapID != kAudioObjectUnknown {
+            if #available(macOS 14.2, *) {
+                let destroyTapStatus = AudioHardwareDestroyProcessTap(tapID)
+                if destroyTapStatus != noErr {
+                    Logger.error("AudioHardwareDestroyProcessTap failed: \(destroyTapStatus)")
+                }
+            }
+        }
+
+        ioProcID = nil
+        aggregateDeviceID = kAudioObjectUnknown
+        tapID = kAudioObjectUnknown
+        sourceFormat = nil
         Logger.info("System audio capture stopped")
     }
 
-    func stream(
-        _ stream: SCStream,
-        didOutputSampleBuffer sampleBuffer: CMSampleBuffer,
-        of type: SCStreamOutputType
-    ) {
-        guard type == .audio else { return }
-        guard let blockBuffer = CMSampleBufferGetDataBuffer(sampleBuffer) else { return }
+    @available(macOS 14.2, *)
+    private func makeAggregateDeviceDescription(
+        outputDeviceUID: String
+    ) -> [String: Any] {
+        [
+            kAudioAggregateDeviceNameKey: "Prismical System Audio Capture",
+            kAudioAggregateDeviceUIDKey: "ai.prismical.audio-capture.aggregate.\(UUID().uuidString)",
+            kAudioAggregateDeviceIsPrivateKey: 1,
+            kAudioAggregateDeviceTapAutoStartKey: 1,
+            kAudioAggregateDeviceSubDeviceListKey: [
+                [kAudioSubDeviceUIDKey: outputDeviceUID]
+            ],
+            kAudioAggregateDeviceMainSubDeviceKey: outputDeviceUID
+        ]
+    }
 
-        var length = 0
-        var dataPointer: UnsafeMutablePointer<Int8>?
-        let status = CMBlockBufferGetDataPointer(
-            blockBuffer,
-            atOffset: 0,
-            lengthAtOffsetOut: nil,
-            totalLengthOut: &length,
-            dataPointerOut: &dataPointer
+    private func handle(
+        inputData: UnsafePointer<AudioBufferList>?,
+        outputData: UnsafeMutablePointer<AudioBufferList>?
+    ) {
+        let inputBytes = totalAudioBufferListBytes(inputData)
+        let outputBytes = totalAudioBufferListBytes(
+            outputData.map { UnsafePointer<AudioBufferList>($0) }
         )
 
-        guard status == kCMBlockBufferNoErr, let dataPointer else { return }
-        guard length > 0, length % MemoryLayout<Float>.size == 0 else { return }
+        let selectedBufferList: UnsafePointer<AudioBufferList>? =
+            inputBytes > 0
+            ? inputData
+            : outputData.map { UnsafePointer<AudioBufferList>($0) }
+        let selectedSource =
+            inputBytes > 0 ? "input" : (outputBytes > 0 ? "output" : "none")
 
-        let sampleCount = length / MemoryLayout<Float>.size
-        let typedPointer = dataPointer.withMemoryRebound(to: Float.self, capacity: sampleCount) { $0 }
-        let samples = Array(UnsafeBufferPointer(start: typedPointer, count: sampleCount))
-        writer.write(source: .system, samples: samples)
+        if callbackLogCount < 4 {
+            callbackLogCount += 1
+            Logger.info(
+                "System audio callback: inputBytes=\(inputBytes) outputBytes=\(outputBytes) selected=\(selectedSource)"
+            )
+        }
+
+        guard
+            let selectedBufferList,
+            let copiedBufferList = CopiedAudioBufferList(source: selectedBufferList)
+        else {
+            return
+        }
+
+        processingQueue.async { [weak self] in
+            self?.process(copiedBufferList, selectedSource: selectedSource)
+        }
+    }
+
+    private func process(
+        _ copiedBufferList: CopiedAudioBufferList,
+        selectedSource: String
+    ) {
+        guard let tapFormat = sourceFormat else { return }
+
+        let sourceBuffers = UnsafeMutableAudioBufferListPointer(copiedBufferList.pointer)
+        guard let firstBuffer = sourceBuffers.first else { return }
+        guard let baseCommonFormat = commonFormat(from: tapFormat.streamDescription.pointee) else {
+            Logger.error(CaptureError.unsupportedSystemAudioBuffer.localizedDescription)
+            return
+        }
+
+        let isInterleaved = sourceBuffers.count == 1
+        let callbackChannelCount = AVAudioChannelCount(
+            max(1, Int(isInterleaved ? firstBuffer.mNumberChannels : UInt32(sourceBuffers.count)))
+        )
+        let monoSamples = extractMonoSamples(
+            from: sourceBuffers,
+            commonFormat: baseCommonFormat,
+            channelCount: Int(callbackChannelCount),
+            interleaved: isInterleaved
+        )
+
+        guard let monoSamples else {
+            Logger.error(
+                "System audio sample extraction failed: selected=\(selectedSource) sampleRate=\(Int(tapFormat.sampleRate)) channels=\(callbackChannelCount) interleaved=\(isInterleaved) commonFormat=\(commonFormatName(baseCommonFormat))"
+            )
+            return
+        }
+
+        let resampledSamples = resampleLinear(
+            samples: monoSamples,
+            from: tapFormat.sampleRate,
+            to: targetFormat.sampleRate
+        )
+
+        writer.write(source: .system, samples: resampledSamples)
     }
 }
 

@@ -194,12 +194,6 @@ export interface AppSettingsData {
   ui?: {
     theme: "light" | "dark" | "system";
     locale?: string;
-    notesWindow?: {
-      xRatio: number;
-      yRatio: number;
-      widthRatio: number;
-      heightRatio: number;
-    };
   };
   transcription?: {
     language: string;
@@ -248,7 +242,6 @@ export interface AppSettingsData {
   preferences?: {
     launchAtLogin?: boolean;
     minimizeToTray?: boolean;
-    showWidgetWhileInactive?: boolean;
     showInDock?: boolean;
     muteSystemAudio?: boolean;
     muteDictationSounds?: boolean;

@@ -73,7 +73,7 @@ export class MeetingSourceTranscriptionRuntime {
 
       const providerText = await this.provider.transcribe({
         audioData: frame.samples,
-        speechProbability: estimateSpeechProbability(frame.samples),
+        speechProbability: 1,
         context: {
           sessionId: this.options.meetingId,
           language: this.options.language ?? "auto",
@@ -160,26 +160,4 @@ export class MeetingSourceTranscriptionRuntime {
     this.aggregatedText += providerText;
     return providerText;
   }
-}
-
-function estimateSpeechProbability(audio: Float32Array): number {
-  if (audio.length === 0) {
-    return 0;
-  }
-
-  let total = 0;
-  for (let index = 0; index < audio.length; index += 1) {
-    total += audio[index] * audio[index];
-  }
-
-  const rms = Math.sqrt(total / audio.length);
-  if (rms <= 0.008) {
-    return 0;
-  }
-
-  if (rms >= 0.05) {
-    return 1;
-  }
-
-  return (rms - 0.008) / (0.05 - 0.008);
 }

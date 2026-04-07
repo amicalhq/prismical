@@ -26,7 +26,6 @@ export interface ShortcutsConfig {
 export interface AppPreferences {
   launchAtLogin: boolean;
   minimizeToTray: boolean;
-  showWidgetWhileInactive: boolean;
   showInDock: boolean;
   muteSystemAudio: boolean;
   muteDictationSounds: boolean;
@@ -368,7 +367,6 @@ export class SettingsService extends EventEmitter {
     return {
       launchAtLogin: preferences?.launchAtLogin ?? true,
       minimizeToTray: preferences?.minimizeToTray ?? true,
-      showWidgetWhileInactive: preferences?.showWidgetWhileInactive ?? true,
       showInDock: preferences?.showInDock ?? true,
       muteSystemAudio: preferences?.muteSystemAudio ?? true,
       muteDictationSounds: preferences?.muteDictationSounds ?? false,
@@ -397,8 +395,6 @@ export class SettingsService extends EventEmitter {
     // Emit event for listeners (AppManager will handle window updates)
     this.emit("preferences-changed", {
       changes: preferences,
-      showWidgetWhileInactiveChanged:
-        preferences.showWidgetWhileInactive !== undefined,
       showInDockChanged: preferences.showInDock !== undefined,
       muteSystemAudioChanged: preferences.muteSystemAudio !== undefined,
     });

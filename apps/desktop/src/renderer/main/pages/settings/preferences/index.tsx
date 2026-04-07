@@ -71,12 +71,6 @@ export default function PreferencesSettingsPage() {
     });
   };
 
-  const handleShowWidgetWhileInactiveChange = (checked: boolean) => {
-    updatePreferencesMutation.mutate({
-      showWidgetWhileInactive: checked,
-    });
-  };
-
   const handleMinimizeToTrayChange = (checked: boolean) => {
     updatePreferencesMutation.mutate({
       minimizeToTray: checked,
@@ -119,8 +113,6 @@ export default function PreferencesSettingsPage() {
     });
   };
 
-  const showWidgetWhileInactive =
-    preferencesQuery.data?.showWidgetWhileInactive ?? true;
   const minimizeToTray = preferencesQuery.data?.minimizeToTray ?? false;
   const launchAtLogin = preferencesQuery.data?.launchAtLogin ?? true;
   const showInDock = preferencesQuery.data?.showInDock ?? true;
@@ -183,27 +175,6 @@ export default function PreferencesSettingsPage() {
             </div>
 
             <Separator /> */}
-
-            {/* Show Widget While Inactive Section */}
-            <div className="flex items-center justify-between">
-              <div className="space-y-1">
-                <Label className="text-base font-medium text-foreground">
-                  {t("settings.preferences.showWidgetWhileInactive.label")}
-                </Label>
-                <p className="text-xs text-muted-foreground">
-                  {t(
-                    "settings.preferences.showWidgetWhileInactive.description",
-                  )}
-                </p>
-              </div>
-              <Switch
-                checked={showWidgetWhileInactive}
-                onCheckedChange={handleShowWidgetWhileInactiveChange}
-                disabled={updatePreferencesMutation.isPending}
-              />
-            </div>
-
-            <Separator />
 
             {/* Show in Dock Section (macOS only) */}
             {isMac && (

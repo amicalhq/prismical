@@ -1,41 +1,22 @@
-import {
-  BrowserWindow,
-  screen,
-  systemPreferences,
-  app,
-  nativeTheme,
-  shell,
-} from "electron";
+import { BrowserWindow, screen, nativeTheme, shell } from "electron";
 import path from "node:path";
 import { logger } from "../logger";
 import type { SettingsService } from "../../services/settings-service";
 import type { createIPCHandler } from "electron-trpc-experimental/main";
-import { NotesWindowController } from "./windows/notes-window-controller";
 
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string;
 declare const MAIN_WINDOW_VITE_NAME: string;
-declare const WIDGET_WINDOW_VITE_NAME: string;
-declare const NOTES_WIDGET_WINDOW_VITE_NAME: string;
 declare const ONBOARDING_WINDOW_VITE_NAME: string;
 declare const NOTIFICATION_WINDOW_VITE_NAME: string;
 
 export class WindowManager {
-  private static readonly WIDGET_MAX_WIDTH = 640 as const;
-  private static readonly WIDGET_MAX_HEIGHT = 320 as const;
   private static readonly NOTIFICATION_WINDOW_WIDTH = 380 as const;
   private static readonly NOTIFICATION_WINDOW_HEIGHT = 120 as const;
   private static readonly NOTIFICATION_WINDOW_MARGIN = 16 as const;
   private mainWindow: BrowserWindow | null = null;
-  private widgetWindow: BrowserWindow | null = null;
-  private notesWindowController: NotesWindowController;
   private onboardingWindow: BrowserWindow | null = null;
   private notificationWindow: BrowserWindow | null = null;
-  private widgetDisplayId: number | null = null;
-  private cursorPollingInterval: NodeJS.Timeout | null = null;
   private themeListenerSetup: boolean = false;
-
-  // On Windows, inset from all edges to allow taskbar auto-hide detection
-  private readonly widgetEdgeInset = process.platform === "win32" ? 4 : 0;
 
   /**
    * Get the correct traffic light position based on macOS version.
@@ -56,43 +37,6 @@ export class WindowManager {
     const isTahoeOrLater = majorVersion >= 26;
 
     return { x: 16, y: 16 };
-  }
-
-  /** Calculate widget default bounds with edge inset applied for taskbar auto-hide */
-  private getWidgetDefaultBounds(
-    workArea: Electron.Rectangle,
-  ): Electron.Rectangle {
-    const inset = this.widgetEdgeInset;
-    const maxWidth = Math.max(0, workArea.width - inset * 2);
-    const maxHeight = Math.max(0, workArea.height - inset * 2);
-    const width = Math.min(WindowManager.WIDGET_MAX_WIDTH, maxWidth);
-    const height = Math.min(WindowManager.WIDGET_MAX_HEIGHT, maxHeight);
-    const x = workArea.x + Math.round((workArea.width - width) / 2);
-    const y = workArea.y + workArea.height - height - inset;
-
-    return {
-      x,
-      y,
-      width,
-      height,
-    };
-  }
-
-  private getActiveWidgetDisplayWorkArea(): Electron.Rectangle {
-    const allDisplays = screen.getAllDisplays();
-    const trackedDisplay = this.widgetDisplayId
-      ? allDisplays.find((display) => display.id === this.widgetDisplayId)
-      : null;
-
-    if (trackedDisplay) {
-      return trackedDisplay.workArea;
-    }
-
-    const cursorDisplay = screen.getDisplayNearestPoint(
-      screen.getCursorScreenPoint(),
-    );
-    this.widgetDisplayId = cursorDisplay.id;
-    return cursorDisplay.workArea;
   }
 
   private getNotificationWindowBounds(): Electron.Rectangle {
@@ -122,26 +66,6 @@ export class WindowManager {
     private settingsService: SettingsService,
     private trpcHandler: ReturnType<typeof createIPCHandler>,
   ) {
-    this.notesWindowController = new NotesWindowController({
-      settingsService: this.settingsService,
-      trpcHandler: this.trpcHandler,
-      getWidgetWindow: () => this.widgetWindow,
-      getActiveWidgetDisplayWorkArea: () =>
-        this.getActiveWidgetDisplayWorkArea(),
-      setWidgetIgnoreMouseEvents: (ignore) =>
-        this.setWidgetIgnoreMouseEvents(ignore),
-      getWidgetEdgeInset: () => this.widgetEdgeInset,
-      setWidgetDisplayId: (displayId) => {
-        this.widgetDisplayId = displayId;
-      },
-      preloadPath: path.join(__dirname, "preload.js"),
-      notesWidgetFilePath: path.join(
-        __dirname,
-        `../renderer/${NOTES_WIDGET_WINDOW_VITE_NAME}/notes-widget.html`,
-      ),
-      mainWindowViteDevServerUrl: MAIN_WINDOW_VITE_DEV_SERVER_URL || undefined,
-    });
-
     logger.main.info("WindowManager created with dependencies");
   }
 
@@ -330,104 +254,6 @@ export class WindowManager {
     this.trpcHandler.attachWindow(this.mainWindow!);
   }
 
-  async createWidgetWindow(): Promise<void> {
-    const mainScreen = screen.getPrimaryDisplay();
-    const widgetBounds = this.getWidgetDefaultBounds(mainScreen.workArea);
-
-    logger.main.info("Creating widget window", {
-      display: mainScreen.id,
-      workArea: mainScreen.workArea,
-      widgetBounds,
-      edgeInset: this.widgetEdgeInset,
-    });
-
-    this.widgetWindow = new BrowserWindow({
-      show: false,
-      ...widgetBounds,
-      frame: false,
-      transparent: true,
-      alwaysOnTop: true,
-      resizable: false,
-      maximizable: false,
-      skipTaskbar: true,
-      focusable: false,
-      hasShadow: false,
-      // prevent main window from gaining focus upon clicks on widget
-      ...(process.platform === "darwin" && { type: "panel" }),
-      webPreferences: {
-        preload: path.join(__dirname, "preload.js"),
-        nodeIntegration: false,
-        contextIsolation: true,
-      },
-    });
-
-    this.widgetDisplayId = mainScreen.id;
-
-    // Set pass-through mode in normal widget state
-    this.setWidgetIgnoreMouseEvents(true);
-
-    logger.main.info("Widget window created", {
-      bounds: this.widgetWindow.getBounds(),
-      isVisible: this.widgetWindow.isVisible(),
-    });
-
-    if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
-      const devUrl = new URL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
-      devUrl.pathname = "widget.html";
-      logger.main.info("Loading widget from dev server", devUrl.toString());
-      this.widgetWindow.loadURL(devUrl.toString());
-    } else {
-      const widgetPath = path.join(
-        __dirname,
-        `../renderer/${WIDGET_WINDOW_VITE_NAME}/widget.html`,
-      );
-      logger.main.info("Loading widget from file", widgetPath);
-      this.widgetWindow.loadFile(widgetPath);
-    }
-
-    this.widgetWindow.on("close", () => {
-      // Detach window before it's destroyed
-      this.trpcHandler.detachWindow(this.widgetWindow!);
-    });
-
-    this.widgetWindow.on("closed", () => {
-      // Window is already destroyed, just clean up reference
-      this.widgetWindow = null;
-    });
-
-    this.widgetWindow.on("moved", () => {
-      if (!this.widgetWindow || this.widgetWindow.isDestroyed()) {
-        return;
-      }
-      const display = screen.getDisplayMatching(this.widgetWindow.getBounds());
-      this.widgetDisplayId = display.id;
-    });
-
-    if (process.platform === "darwin") {
-      this.widgetWindow.setAlwaysOnTop(true, "floating", 1);
-      this.widgetWindow.setVisibleOnAllWorkspaces(true, {
-        visibleOnFullScreen: true,
-      });
-      this.widgetWindow.setHiddenInMissionControl(true);
-    } else if (process.platform === "win32") {
-      // On Windows, use "screen-saver" level for maximum z-order priority
-      // to stay above other app toolbars/menus. The widget window is inset
-      // from screen edges to allow taskbar auto-hide detection.
-      // See: https://github.com/electron/electron/issues/11830
-      this.widgetWindow.setAlwaysOnTop(true, "screen-saver");
-    }
-
-    // Set up display change notifications for all platforms
-    this.setupDisplayChangeNotifications();
-
-    // Update tRPC handler with new window
-    this.trpcHandler.attachWindow(this.widgetWindow!);
-
-    logger.main.info(
-      "Widget window created (visibility controlled by AppManager)",
-    );
-  }
-
   async createOrShowOnboardingWindow(): Promise<void> {
     if (this.onboardingWindow && !this.onboardingWindow.isDestroyed()) {
       this.onboardingWindow.show();
@@ -603,167 +429,8 @@ export class WindowManager {
     }
   }
 
-  showWidget(): void {
-    if (this.widgetWindow && !this.widgetWindow.isDestroyed()) {
-      this.widgetWindow.showInactive();
-    }
-  }
-
-  hideWidget(): void {
-    if (this.widgetWindow && !this.widgetWindow.isDestroyed()) {
-      this.widgetWindow.hide();
-    }
-  }
-
-  private setupDisplayChangeNotifications(): void {
-    // Set up comprehensive display event listeners
-    screen.on("display-added", () => this.handleDisplayChange("display-added"));
-    screen.on("display-removed", () =>
-      this.handleDisplayChange("display-removed"),
-    );
-    screen.on("display-metrics-changed", () =>
-      this.handleDisplayChange("display-metrics-changed"),
-    );
-
-    // Set up focus-based display detection
-    this.setupFocusBasedDisplayDetection();
-
-    // Set up cursor polling to detect when user moves to different display
-    // we want to avoid polling mechanisms, we will get back to this if current soln doesn't work
-    // this.startCursorPolling();
-
-    // macOS-specific workspace change notifications
-    if (process.platform === "darwin") {
-      try {
-        systemPreferences.subscribeWorkspaceNotification(
-          "NSWorkspaceActiveDisplayDidChangeNotification",
-          () => {
-            this.handleDisplayChange("workspace-change");
-          },
-        );
-      } catch (error) {
-        logger.main.warn(
-          "Failed to subscribe to workspace notifications:",
-          error,
-        );
-      }
-    }
-
-    logger.main.info("Set up display change event listeners");
-  }
-
-  private setupFocusBasedDisplayDetection(): void {
-    // Listen for any window focus events to detect active display changes
-    app.on("browser-window-focus", (_event, window) => {
-      if (!window || window.isDestroyed()) return;
-
-      // Get the display where the focused window is located
-      const focusedWindowDisplay = screen.getDisplayMatching(
-        window.getBounds(),
-      );
-
-      if (focusedWindowDisplay.id === this.widgetDisplayId) {
-        return;
-      }
-
-      // If the focused window is on a different display than our current one
-      logger.main.info("Active display changed due to window focus", {
-        previousDisplayId: this.widgetDisplayId,
-        newDisplayId: focusedWindowDisplay.id,
-      });
-
-      this.widgetDisplayId = focusedWindowDisplay.id;
-
-      // Update widget window bounds to new display
-      if (this.widgetWindow && !this.widgetWindow.isDestroyed()) {
-        this.widgetWindow.setBounds(
-          this.getWidgetDefaultBounds(focusedWindowDisplay.workArea),
-        );
-      }
-    });
-  }
-
-  private startCursorPolling(): void {
-    // Poll cursor position every 500ms to detect display changes
-    this.cursorPollingInterval = setInterval(() => {
-      if (!this.widgetWindow || this.widgetWindow.isDestroyed()) return;
-
-      const cursorPoint = screen.getCursorScreenPoint();
-      const cursorDisplay = screen.getDisplayNearestPoint(cursorPoint);
-
-      if (cursorDisplay.id === this.widgetDisplayId) {
-        return;
-      }
-
-      // If cursor moved to a different display
-      logger.main.info("Active display changed due to cursor movement", {
-        previousDisplayId: this.widgetDisplayId,
-        newDisplayId: cursorDisplay.id,
-        cursorPoint,
-      });
-
-      this.widgetDisplayId = cursorDisplay.id;
-
-      // Update widget window bounds to new display
-      this.widgetWindow.setBounds(
-        this.getWidgetDefaultBounds(cursorDisplay.workArea),
-      );
-    }, 500); // Poll every 500ms
-
-    logger.main.info("Started cursor polling for display detection");
-  }
-
-  private handleDisplayChange(event: string): void {
-    logger.main.debug("handleDisplayChange", { event });
-
-    if (!this.widgetWindow || this.widgetWindow.isDestroyed()) return;
-
-    // Get the current display based on cursor position
-    const cursorPoint = screen.getCursorScreenPoint();
-    const currentDisplay = screen.getDisplayNearestPoint(cursorPoint);
-
-    // Update window bounds to match new display's work area
-    this.widgetWindow.setBounds(
-      this.getWidgetDefaultBounds(currentDisplay.workArea),
-    );
-    this.widgetDisplayId = currentDisplay.id;
-    logger.main.info("Display configuration changed", {
-      displayId: currentDisplay.id,
-      workArea: currentDisplay.workArea,
-      event,
-    });
-  }
-
-  setWidgetIgnoreMouseEvents(ignore: boolean): void {
-    if (!this.widgetWindow || this.widgetWindow.isDestroyed()) {
-      return;
-    }
-
-    this.widgetWindow.setIgnoreMouseEvents(ignore, { forward: true });
-  }
-
-  isNotesWindowVisible(): boolean {
-    return this.notesWindowController.isVisible();
-  }
-
-  closeNotesWindow(): void {
-    this.notesWindowController.close();
-  }
-
-  openNotesWindow(noteId?: number): void {
-    this.notesWindowController.open(noteId);
-  }
-
   getMainWindow(): BrowserWindow | null {
     return this.mainWindow;
-  }
-
-  getWidgetWindow(): BrowserWindow | null {
-    return this.widgetWindow;
-  }
-
-  getNotesWindow(): BrowserWindow | null {
-    return this.notesWindowController.getWindow();
   }
 
   getOnboardingWindow(): BrowserWindow | null {
@@ -775,13 +442,7 @@ export class WindowManager {
   }
 
   getAllWindows(): (BrowserWindow | null)[] {
-    return [
-      this.mainWindow,
-      this.widgetWindow,
-      this.notesWindowController.getWindow(),
-      this.onboardingWindow,
-      this.notificationWindow,
-    ];
+    return [this.mainWindow, this.onboardingWindow, this.notificationWindow];
   }
 
   openAllDevTools(): void {
@@ -800,23 +461,6 @@ export class WindowManager {
   }
 
   cleanup(): void {
-    this.notesWindowController.cleanup();
-
-    // Stop cursor polling
-    if (this.cursorPollingInterval) {
-      clearInterval(this.cursorPollingInterval);
-      this.cursorPollingInterval = null;
-      logger.main.info("Stopped cursor polling");
-    }
-
-    // Remove display event listeners
-    screen.removeAllListeners("display-added");
-    screen.removeAllListeners("display-removed");
-    screen.removeAllListeners("display-metrics-changed");
-
-    // Remove focus event listener
-    app.removeAllListeners("browser-window-focus");
-
-    logger.main.info("Cleaned up display and focus event listeners");
+    logger.main.info("Window manager cleanup complete");
   }
 }

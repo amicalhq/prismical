@@ -50,7 +50,6 @@ if (isDev) {
     transcription: colors.magenta.bold,
     swift: colors.yellow.bold,
     pipeline: colors.red.bold,
-    widget: colors.cyan.bold,
     mainWindow: colors.greenBright.bold,
     renderer: colors.gray.bold,
     ui: colors.magentaBright.bold,
@@ -173,7 +172,6 @@ export const logger = {
   db: createLoggerForScope("db"),
   updater: createLoggerForScope("updater"),
   transcription: createLoggerForScope("transcription"),
-  widget: createLoggerForScope("widget"),
   mainWindow: createLoggerForScope("mainWindow"),
 };
 

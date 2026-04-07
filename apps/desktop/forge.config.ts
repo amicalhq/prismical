@@ -420,8 +420,8 @@ const config: ForgeConfig = {
     extendInfo: {
       NSMicrophoneUsageDescription:
         "This app needs access to your microphone to record audio for transcription.",
-      NSScreenCaptureUsageDescription:
-        "This app needs screen recording permission to capture meeting audio for transcription.",
+      NSAudioCaptureUsageDescription:
+        "This app needs system audio recording permission to capture meeting audio for transcription.",
       CFBundleURLTypes: [
         {
           CFBundleURLSchemes: ["prismical"],
@@ -597,14 +597,6 @@ const config: ForgeConfig = {
         {
           name: "main_window",
           config: "vite.renderer.config.mts",
-        },
-        {
-          name: "widget_window",
-          config: "vite.widget.config.mts",
-        },
-        {
-          name: "notes_widget_window",
-          config: "vite.notes-widget.config.mts",
         },
         {
           name: "onboarding_window",

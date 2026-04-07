@@ -414,10 +414,6 @@
         "label": "Iniciar al iniciar sesión",
         "description": "Iniciar la aplicación automáticamente al iniciar sesión"
       },
-      "showWidgetWhileInactive": {
-        "label": "Mostrar widget mientras está inactivo",
-        "description": "Mantener el widget visible en pantalla cuando no se está grabando"
-      },
       "showInDock": {
         "label": "Mostrar app en el dock",
         "description": "Mostrar el ícono de la aplicación en el dock de macOS"
@@ -746,7 +742,6 @@
         "edited": "Editado {{date}}",
         "transcription": "Transcripción",
         "actions": {
-          "openInNotesWindow": "Abrir en ventana de notas",
           "closeTranscription": "Cerrar transcripción",
           "delete": "Eliminar",
           "addToFavorites": "Agregar a favoritos",

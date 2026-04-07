@@ -415,10 +415,6 @@
         "label": "Launch at login",
         "description": "Automatically start the application when you log in"
       },
-      "showWidgetWhileInactive": {
-        "label": "Show widget while inactive",
-        "description": "Keep the widget visible on screen when not recording"
-      },
       "showInDock": {
         "label": "Show app in dock",
         "description": "Display the application icon in the macOS dock"
@@ -754,7 +750,6 @@
         "edited": "Edited {{date}}",
         "transcription": "Transcription",
         "actions": {
-          "openInNotesWindow": "Open in notes window",
           "closeTranscription": "Close transcription",
           "delete": "Delete",
           "addToFavorites": "Add to favorites",

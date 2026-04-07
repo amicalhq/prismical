@@ -79,7 +79,6 @@ export const defaultAppSettings: AppSettingsData = {
   preferences: {
     launchAtLogin: false,
     minimizeToTray: true,
-    showWidgetWhileInactive: true,
     muteSystemAudio: true,
   },
   telemetry: {

@@ -414,10 +414,6 @@
         "label": "ログイン時に起動",
         "description": "ログイン時にアプリケーションを自動的に起動"
       },
-      "showWidgetWhileInactive": {
-        "label": "非アクティブ時もウィジェットを表示",
-        "description": "録音していない時も画面上にウィジェットを表示し続ける"
-      },
       "showInDock": {
         "label": "Dockにアプリを表示",
         "description": "macOSのDockにアプリケーションアイコンを表示"
@@ -746,7 +742,6 @@
         "edited": "{{date}}に編集",
         "transcription": "文字起こし",
         "actions": {
-          "openInNotesWindow": "ノートウィンドウで開く",
           "closeTranscription": "文字起こしを閉じる",
           "delete": "削除",
           "addToFavorites": "お気に入りに追加",

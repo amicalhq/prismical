@@ -10,13 +10,9 @@ import { createIPCHandler } from "electron-trpc-experimental/main";
 import { router } from "../../trpc/router";
 import { createContext } from "../../trpc/context";
 import type { OnboardingService } from "../../services/onboarding-service";
-import type { RecordingManager } from "../managers/recording-manager";
 import type { ShortcutManager } from "../managers/shortcut-manager";
-import type { RecordingState } from "../../types/recording";
 import type { SettingsService } from "../../services/settings-service";
 import { runDataMigrations } from "../migrations/data-migrations";
-import { getMainFeatureFlagState } from "@/main/utils/feature-flags";
-import { NOTE_WINDOW_FEATURE_FLAG } from "@/utils/feature-flags";
 import { initMainI18n } from "../../i18n/main";
 
 export class AppManager {
@@ -98,9 +94,6 @@ export class AppManager {
       this.serviceManager.getService("onboardingService");
     this.setupOnboardingEventListeners(onboardingService);
 
-    // Subscribe to recording state changes for widget visibility
-    const recordingManager = this.serviceManager.getService("recordingManager");
-    this.setupRecordingEventListeners(recordingManager);
     const shortcutManager = this.serviceManager.getService("shortcutManager");
     if (shortcutManager) {
       this.setupShortcutEventListeners(shortcutManager);
@@ -187,23 +180,7 @@ export class AppManager {
     logger.main.info("Onboarding event listeners set up");
   }
 
-  private setupRecordingEventListeners(
-    recordingManager: RecordingManager,
-  ): void {
-    recordingManager.on("state-changed", (state: RecordingState) => {
-      this.updateWidgetVisibility(state === "idle").catch((error) => {
-        logger.main.error("Failed to update widget visibility", error);
-      });
-    });
-
-    logger.main.info("Recording state listener connected in AppManager");
-  }
-
   private setupShortcutEventListeners(shortcutManager: ShortcutManager): void {
-    shortcutManager.on("open-notes-window-triggered", () => {
-      void this.handleOpenNotesWindowShortcut();
-    });
-
     logger.main.info("Shortcut listeners connected in AppManager");
   }
 
@@ -300,51 +277,11 @@ export class AppManager {
     logger.main.info("Auto-updater event listeners set up");
   }
 
-  private async handleOpenNotesWindowShortcut(): Promise<void> {
-    try {
-      const featureFlagService =
-        this.serviceManager.getService("featureFlagService");
-      const noteWindowFlag = await getMainFeatureFlagState(
-        featureFlagService,
-        NOTE_WINDOW_FEATURE_FLAG,
-      );
-
-      if (!noteWindowFlag.enabled) {
-        logger.main.debug(
-          "Ignored notes window shortcut: feature flag is disabled",
-          {
-            flagKey: NOTE_WINDOW_FEATURE_FLAG,
-            flagValue: noteWindowFlag.value,
-          },
-        );
-        return;
-      }
-
-      this.windowManager.openNotesWindow();
-    } catch (error) {
-      logger.main.error("Failed to open notes window from shortcut", {
-        error,
-      });
-    }
-  }
-
   private setupSettingsEventListeners(settingsService: SettingsService): void {
-    // Handle preference changes (widget visibility, dock visibility)
+    // Handle preference changes (dock visibility)
     settingsService.on(
       "preferences-changed",
-      async ({
-        showWidgetWhileInactiveChanged,
-        showInDockChanged,
-      }: {
-        showWidgetWhileInactiveChanged: boolean;
-        showInDockChanged: boolean;
-      }) => {
-        if (showWidgetWhileInactiveChanged) {
-          const recordingManager =
-            this.serviceManager.getService("recordingManager");
-          const isIdle = recordingManager.getState() === "idle";
-          await this.updateWidgetVisibility(isIdle);
-        }
+      async ({ showInDockChanged }: { showInDockChanged: boolean }) => {
         if (showInDockChanged) {
           settingsService.syncDockVisibility();
         }
@@ -359,26 +296,9 @@ export class AppManager {
     logger.main.info("Settings event listeners set up");
   }
 
-  private async updateWidgetVisibility(isIdle: boolean): Promise<void> {
-    const settingsService = this.serviceManager.getService("settingsService");
-    const preferences = await settingsService.getPreferences();
-
-    if (preferences.showWidgetWhileInactive || !isIdle) {
-      this.windowManager.showWidget();
-    } else {
-      this.windowManager.hideWidget();
-    }
-  }
-
   private async setupWindows(): Promise<void> {
-    await this.windowManager.createWidgetWindow();
-
-    // AppManager decides initial widget visibility based on settings
     const settingsService = this.serviceManager.getService("settingsService");
     const preferences = await settingsService.getPreferences();
-    if (preferences.showWidgetWhileInactive) {
-      this.windowManager.showWidget();
-    }
 
     await this.windowManager.createOrShowMainWindow();
 
@@ -448,8 +368,6 @@ export class AppManager {
 
     // When a second instance tries to start, focus our existing window
     const mainWindow = this.windowManager.getMainWindow();
-    const notesWindow = this.windowManager.getNotesWindow();
-    const widgetWindow = this.windowManager.getWidgetWindow();
 
     // Try to show and focus the main window first
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -458,15 +376,7 @@ export class AppManager {
       }
       mainWindow.focus();
       mainWindow.show();
-    } else if (notesWindow && !notesWindow.isDestroyed()) {
-      notesWindow.focus();
-      notesWindow.show();
-    } else if (widgetWindow && !widgetWindow.isDestroyed()) {
-      // If no main window, focus the widget window
-      widgetWindow.focus();
-      widgetWindow.show();
     } else {
-      // If no windows are open, create them
       this.windowManager.createOrShowMainWindow();
     }
 
@@ -487,27 +397,8 @@ export class AppManager {
     const allWindows = this.windowManager.getAllWindows();
 
     if (allWindows.every((w) => !w || w.isDestroyed())) {
-      // All windows destroyed - recreate widget with proper visibility
-      await this.windowManager.createWidgetWindow();
-      const settingsService = this.serviceManager.getService("settingsService");
-      const preferences = await settingsService.getPreferences();
-      if (preferences.showWidgetWhileInactive) {
-        this.windowManager.showWidget();
-      }
+      await this.windowManager.createOrShowMainWindow();
     } else {
-      const widgetWindow = this.windowManager.getWidgetWindow();
-      if (!widgetWindow || widgetWindow.isDestroyed()) {
-        // Widget destroyed - recreate with proper visibility
-        await this.windowManager.createWidgetWindow();
-        const settingsService =
-          this.serviceManager.getService("settingsService");
-        const preferences = await settingsService.getPreferences();
-        if (preferences.showWidgetWhileInactive) {
-          this.windowManager.showWidget();
-        }
-      } else {
-        widgetWindow.show();
-      }
       this.windowManager.createOrShowMainWindow();
     }
   }
