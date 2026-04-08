@@ -722,6 +722,21 @@
       "create": "Crear nota",
       "defaultTitleWithDate": "Nota - {{date}}",
       "untitledTitle": "Nota sin título",
+      "recordingBanner": {
+        "status": {
+          "starting": "Iniciando",
+          "recording": "Grabando",
+          "stopping": "Finalizando",
+          "error": "Requiere atención"
+        },
+        "message": {
+          "starting": "Iniciando la grabación de la reunión en {{title}}",
+          "recording": "La grabación de la reunión sigue activa en {{title}}",
+          "stopping": "Finalizando la grabación de la reunión en {{title}}",
+          "error": "La grabación de la reunión en {{title}} requiere atención"
+        },
+        "returnToNote": "Volver a la nota"
+      },
       "empty": {
         "title": "Aún no hay notas",
         "description": "Crea tu primera nota para comenzar"

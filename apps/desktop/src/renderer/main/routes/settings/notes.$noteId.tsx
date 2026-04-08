@@ -20,5 +20,5 @@ function NotePageWrapper() {
   const { noteId } = Route.useParams();
   const { autoRecord } = Route.useSearch();
 
-  return <NotePage noteId={noteId} autoRecord={autoRecord} />;
+  return <NotePage key={noteId} noteId={noteId} autoRecord={autoRecord} />;
 }
