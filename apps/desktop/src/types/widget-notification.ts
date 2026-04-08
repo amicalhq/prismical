@@ -113,7 +113,7 @@ export const ERROR_CODE_CONFIG: Record<ErrorCode, WidgetNotificationConfig> = {
     },
     secondaryAction: {
       label: { key: "widget.notifications.action.viewHistory" },
-      navigateTo: "/settings/history",
+      navigateTo: "/settings/notes",
     },
   },
   [ErrorCodes.UNKNOWN]: {
@@ -122,7 +122,7 @@ export const ERROR_CODE_CONFIG: Record<ErrorCode, WidgetNotificationConfig> = {
     subDescription: { key: "widget.notifications.recordingSaved" },
     primaryAction: {
       label: { key: "widget.notifications.action.viewHistory" },
-      navigateTo: "/settings/history",
+      navigateTo: "/settings/notes",
     },
     secondaryAction: {
       label: { key: "widget.notifications.action.support" },
@@ -197,7 +197,7 @@ export const ERROR_CODE_CONFIG: Record<ErrorCode, WidgetNotificationConfig> = {
     subDescription: { key: "widget.notifications.recordingSaved" },
     primaryAction: {
       label: { key: "widget.notifications.action.viewHistory" },
-      navigateTo: "/settings/history",
+      navigateTo: "/settings/notes",
     },
     secondaryAction: {
       label: { key: "widget.notifications.action.support" },

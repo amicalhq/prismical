@@ -7,8 +7,8 @@ import { toast } from "sonner";
 import { api } from "@/trpc/react";
 import { useTranslation } from "react-i18next";
 
-const CHANGELOG_URL = "https://github.com/prismicalhq/prismical/releases";
-const GITHUB_URL = "https://github.com/prismicalhq/prismical";
+const CHANGELOG_URL = "https://github.com/amicalhq/prismical/releases";
+const GITHUB_URL = "https://github.com/amicalhq/prismical";
 const DISCORD_URL = "https://prismical.ai/community";
 const CONTACT_EMAIL = "contact@prismical.ai";
 

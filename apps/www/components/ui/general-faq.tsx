@@ -23,7 +23,7 @@ const faqItems = [
       <>
         Yes, Prismical is completely free and open-source. You can find the source code on{" "}
         <Link
-          href="https://github.com/prismicalhq/prismical"
+          href="https://github.com/amicalhq/prismical"
           target="_blank"
           rel="noopener noreferrer"
           className="text-indigo-500 hover:underline"
@@ -44,7 +44,7 @@ const faqItems = [
       <>
         Yes, Prismical is 100% open-source and you can build and use the app directly from our{" "}
         <Link
-          href="https://github.com/prismicalhq/prismical"
+          href="https://github.com/amicalhq/prismical"
           target="_blank"
           rel="noopener noreferrer"
           className="text-indigo-500 hover:underline"

@@ -1,0 +1,12 @@
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# Built executables
+bin/
+*.dSYM
+*.dSYM.zip
+
+# macOS
+.DS_Store

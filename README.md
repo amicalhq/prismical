@@ -12,7 +12,7 @@
     <img alt='PRs Welcome' src='https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=shields'/>
   </a>
   <a href="https://opensource.org/license/MIT/">
-    <img src="https://img.shields.io/github/license/prismicalhq/prismical?logo=opensourceinitiative&logoColor=white&label=License&color=8A2BE2" alt="license">
+    <img src="https://img.shields.io/github/license/amicalhq/prismical?logo=opensourceinitiative&logoColor=white&label=License&color=8A2BE2" alt="license">
   </a>
   <br>
   <a href="https://prismical.ai/community">
@@ -21,7 +21,7 @@
 </p>
 
 <p align="center">
-  <a href="https://prismical.ai">Website</a> - <a href="https://prismical.ai/docs">Docs</a> - <a href="https://prismical.ai/community">Community</a> - <a href="https://github.com/prismicalhq/prismical/issues/new?assignees=&labels=bug&template=bug_report.md">Bug reports</a>
+  <a href="https://prismical.ai">Website</a> - <a href="https://prismical.ai/docs">Docs</a> - <a href="https://prismical.ai/community">Community</a> - <a href="https://github.com/amicalhq/prismical/issues/new?assignees=&labels=bug&template=bug_report.md">Bug reports</a>
 </p>
 
 ## Table of Contents
@@ -36,10 +36,10 @@
 ## ⬇️ Download
 
 <p>
-  <a href="https://github.com/prismicalhq/prismical/releases/latest">
+  <a href="https://github.com/amicalhq/prismical/releases/latest">
     <img src="https://prismical.ai/download_button_macos.png" alt="Download for macOS" height="60">
   </a>
-  <a href="https://github.com/prismicalhq/prismical/releases/latest">
+  <a href="https://github.com/amicalhq/prismical/releases/latest">
     <img src="https://prismical.ai/download_button_windows.png" alt="Download for Windows" height="60">
   </a>
   <a href="https://prismical.ai/beta">
@@ -114,7 +114,7 @@ Released under [MIT][license].
 
 <!-- REFERENCE LINKS -->
 
-[license]: https://github.com/prismicalhq/prismical/blob/main/LICENSE
+[license]: https://github.com/amicalhq/prismical/blob/main/LICENSE
 [discussions]: https://prismical.ai/community
-[issues]: https://github.com/prismicalhq/prismical/issues
-[pulls]: https://github.com/prismicalhq/prismical/pulls "submit a pull request"
+[issues]: https://github.com/amicalhq/prismical/issues
+[pulls]: https://github.com/amicalhq/prismical/pulls "submit a pull request"

@@ -17,7 +17,6 @@ import { Route as SettingsShortcutsRouteImport } from './routes/settings/shortcu
 import { Route as SettingsPreferencesRouteImport } from './routes/settings/preferences'
 import { Route as SettingsNotesRouteImport } from './routes/settings/notes'
 import { Route as SettingsHomeRouteImport } from './routes/settings/home'
-import { Route as SettingsHistoryRouteImport } from './routes/settings/history'
 import { Route as SettingsEventsRouteImport } from './routes/settings/events'
 import { Route as SettingsDictationRouteImport } from './routes/settings/dictation'
 import { Route as SettingsAiModelsRouteImport } from './routes/settings/ai-models'
@@ -66,11 +65,6 @@ const SettingsHomeRoute = SettingsHomeRouteImport.update({
   path: '/home',
   getParentRoute: () => SettingsRouteRoute,
 } as any)
-const SettingsHistoryRoute = SettingsHistoryRouteImport.update({
-  id: '/history',
-  path: '/history',
-  getParentRoute: () => SettingsRouteRoute,
-} as any)
 const SettingsEventsRoute = SettingsEventsRouteImport.update({
   id: '/events',
   path: '/events',
@@ -115,7 +109,6 @@ export interface FileRoutesByFullPath {
   '/settings/ai-models': typeof SettingsAiModelsRoute
   '/settings/dictation': typeof SettingsDictationRoute
   '/settings/events': typeof SettingsEventsRoute
-  '/settings/history': typeof SettingsHistoryRoute
   '/settings/home': typeof SettingsHomeRoute
   '/settings/notes': typeof SettingsNotesRouteWithChildren
   '/settings/preferences': typeof SettingsPreferencesRoute
@@ -132,7 +125,6 @@ export interface FileRoutesByTo {
   '/settings/ai-models': typeof SettingsAiModelsRoute
   '/settings/dictation': typeof SettingsDictationRoute
   '/settings/events': typeof SettingsEventsRoute
-  '/settings/history': typeof SettingsHistoryRoute
   '/settings/home': typeof SettingsHomeRoute
   '/settings/preferences': typeof SettingsPreferencesRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
@@ -150,7 +142,6 @@ export interface FileRoutesById {
   '/settings/ai-models': typeof SettingsAiModelsRoute
   '/settings/dictation': typeof SettingsDictationRoute
   '/settings/events': typeof SettingsEventsRoute
-  '/settings/history': typeof SettingsHistoryRoute
   '/settings/home': typeof SettingsHomeRoute
   '/settings/notes': typeof SettingsNotesRouteWithChildren
   '/settings/preferences': typeof SettingsPreferencesRoute
@@ -170,7 +161,6 @@ export interface FileRouteTypes {
     | '/settings/ai-models'
     | '/settings/dictation'
     | '/settings/events'
-    | '/settings/history'
     | '/settings/home'
     | '/settings/notes'
     | '/settings/preferences'
@@ -187,7 +177,6 @@ export interface FileRouteTypes {
     | '/settings/ai-models'
     | '/settings/dictation'
     | '/settings/events'
-    | '/settings/history'
     | '/settings/home'
     | '/settings/preferences'
     | '/settings/shortcuts'
@@ -204,7 +193,6 @@ export interface FileRouteTypes {
     | '/settings/ai-models'
     | '/settings/dictation'
     | '/settings/events'
-    | '/settings/history'
     | '/settings/home'
     | '/settings/notes'
     | '/settings/preferences'
@@ -276,13 +264,6 @@ declare module '@tanstack/react-router' {
       path: '/home'
       fullPath: '/settings/home'
       preLoaderRoute: typeof SettingsHomeRouteImport
-      parentRoute: typeof SettingsRouteRoute
-    }
-    '/settings/history': {
-      id: '/settings/history'
-      path: '/history'
-      fullPath: '/settings/history'
-      preLoaderRoute: typeof SettingsHistoryRouteImport
       parentRoute: typeof SettingsRouteRoute
     }
     '/settings/events': {
@@ -357,7 +338,6 @@ interface SettingsRouteRouteChildren {
   SettingsAiModelsRoute: typeof SettingsAiModelsRoute
   SettingsDictationRoute: typeof SettingsDictationRoute
   SettingsEventsRoute: typeof SettingsEventsRoute
-  SettingsHistoryRoute: typeof SettingsHistoryRoute
   SettingsHomeRoute: typeof SettingsHomeRoute
   SettingsNotesRoute: typeof SettingsNotesRouteWithChildren
   SettingsPreferencesRoute: typeof SettingsPreferencesRoute
@@ -372,7 +352,6 @@ const SettingsRouteRouteChildren: SettingsRouteRouteChildren = {
   SettingsAiModelsRoute: SettingsAiModelsRoute,
   SettingsDictationRoute: SettingsDictationRoute,
   SettingsEventsRoute: SettingsEventsRoute,
-  SettingsHistoryRoute: SettingsHistoryRoute,
   SettingsHomeRoute: SettingsHomeRoute,
   SettingsNotesRoute: SettingsNotesRouteWithChildren,
   SettingsPreferencesRoute: SettingsPreferencesRoute,

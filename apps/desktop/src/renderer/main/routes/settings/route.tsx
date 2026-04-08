@@ -98,7 +98,6 @@ function SettingsLayoutContent() {
       "/settings/vocabulary": "Vocabulary",
       "/settings/shortcuts": "Shortcuts",
       "/settings/ai-models": "AI Models",
-      "/settings/history": "History",
       "/settings/advanced": "Advanced",
       "/settings/about": "About",
     };

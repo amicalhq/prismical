@@ -3,7 +3,6 @@ import {
   IconMicrophone,
   IconBook,
   IconBrain,
-  IconHistory,
   IconInfoCircle,
   IconKeyboard,
   IconAdjustments,
@@ -71,13 +70,6 @@ export const SETTINGS_NAV_ITEMS: SettingsNavItem[] = [
     url: "/settings/ai-models",
     descriptionKey: "settings.nav.aiModels.description",
     icon: IconBrain,
-    type: "settings",
-  },
-  {
-    titleKey: "settings.nav.history.title",
-    url: "/settings/history",
-    descriptionKey: "settings.nav.history.description",
-    icon: IconHistory,
     type: "settings",
   },
   {

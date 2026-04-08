@@ -9,7 +9,7 @@ import Image from "next/image";
  * Docs Layout: app/docs/layout.tsx
  */
 export const baseOptions: BaseLayoutProps = {
-  githubUrl: "https://github.com/prismicalhq/prismical",
+  githubUrl: "https://github.com/amicalhq/prismical",
   disableThemeSwitch: true,
   nav: {
     title: (

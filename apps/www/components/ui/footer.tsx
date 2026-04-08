@@ -78,7 +78,7 @@ export function Footer() {
               <Link href="https://x.com/prismicalhq" className="text-muted-foreground hover:text-foreground">
                 <TwitterIcon />
               </Link>
-              <Link href="https://github.com/prismicalhq/prismical" className="text-muted-foreground hover:text-foreground">
+              <Link href="https://github.com/amicalhq/prismical" className="text-muted-foreground hover:text-foreground">
                 <GithubIcon />
               </Link>
               <Link href="/community" className="text-muted-foreground hover:text-foreground">
