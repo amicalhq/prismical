@@ -4,14 +4,14 @@ import { v4 as uuid } from "uuid";
 import type { RecordingState } from "../../types/recording";
 import type { RecordingMode } from "../../main/managers/recording-manager";
 import type {
-  WidgetNotification,
-  WidgetNotificationType,
-  WidgetNotificationConfig,
-} from "../../types/widget-notification";
+  RecordingNotification,
+  RecordingNotificationType,
+  RecordingNotificationConfig,
+} from "../../types/recording-notification";
 import {
-  WIDGET_NOTIFICATION_CONFIG,
-  ERROR_CODE_CONFIG,
-} from "../../types/widget-notification";
+  RECORDING_NOTIFICATION_CONFIG,
+  RECORDING_NOTIFICATION_ERROR_CODE_CONFIG,
+} from "../../types/recording-notification";
 import { ErrorCodes, type ErrorCode } from "../../types/error";
 
 interface RecordingStateUpdate {
@@ -114,9 +114,9 @@ export const recordingRouter = createRouter({
     });
   }),
 
-  // Widget notification subscription
-  widgetNotifications: procedure.subscription(({ ctx }) => {
-    return observable<WidgetNotification>((emit) => {
+  // Recording notification subscription
+  recordingNotifications: procedure.subscription(({ ctx }) => {
+    return observable<RecordingNotification>((emit) => {
       const recordingManager =
         ctx.serviceManager.getService("recordingManager");
       if (!recordingManager) {
@@ -124,20 +124,20 @@ export const recordingRouter = createRouter({
       }
 
       const handleNotification = (data: {
-        type: WidgetNotificationType;
+        type: RecordingNotificationType;
         errorCode?: ErrorCode;
         uiTitle?: string;
         uiMessage?: string;
         traceId?: string;
       }) => {
-        let config: WidgetNotificationConfig;
+        let config: RecordingNotificationConfig;
 
         if (data.type === "transcription_failed" && data.errorCode) {
           config =
-            ERROR_CODE_CONFIG[data.errorCode] ??
-            ERROR_CODE_CONFIG[ErrorCodes.UNKNOWN];
+            RECORDING_NOTIFICATION_ERROR_CODE_CONFIG[data.errorCode] ??
+            RECORDING_NOTIFICATION_ERROR_CODE_CONFIG[ErrorCodes.UNKNOWN];
         } else {
-          config = WIDGET_NOTIFICATION_CONFIG[data.type];
+          config = RECORDING_NOTIFICATION_CONFIG[data.type];
         }
 
         emit.next({
@@ -159,11 +159,11 @@ export const recordingRouter = createRouter({
         });
       };
 
-      recordingManager.on("widget-notification", handleNotification);
+      recordingManager.on("recording-notification", handleNotification);
 
       // Cleanup function
       return () => {
-        recordingManager.off("widget-notification", handleNotification);
+        recordingManager.off("recording-notification", handleNotification);
       };
     });
   }),

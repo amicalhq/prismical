@@ -302,6 +302,11 @@ export class AppManager {
 
     await this.windowManager.createOrShowMainWindow();
 
+    const meetingRecordingWidgetManager = this.serviceManager.getService(
+      "meetingRecordingWidgetManager",
+    );
+    await meetingRecordingWidgetManager.start();
+
     const meetingStartNotificationManager = this.serviceManager.getService(
       "meetingStartNotificationManager",
     );

@@ -211,6 +211,10 @@ export interface AppSettingsData {
     maxRecordingDuration: number;
     preferredMicrophoneName?: string;
   };
+  meetingWidget?: {
+    enabled?: boolean;
+    normalizedY?: number;
+  };
   shortcuts?: {
     pushToTalk?: number[];
     toggleRecording?: number[];

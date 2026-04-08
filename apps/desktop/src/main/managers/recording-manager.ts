@@ -601,14 +601,14 @@ export class RecordingManager extends EventEmitter {
       }
 
       // Notify user with error code and optional UI overrides
-      this.emit("widget-notification", {
+      this.emit("recording-notification", {
         type: "transcription_failed",
         errorCode,
         uiTitle,
         uiMessage,
         traceId,
       });
-      logger.audio.info("Emitted widget notification", {
+      logger.audio.info("Emitted recording notification", {
         type: "transcription_failed",
         errorCode,
         hasUiTitle: !!uiTitle,
@@ -635,8 +635,8 @@ export class RecordingManager extends EventEmitter {
           ? this.recordingStoppedAt - this.recordingStartedAt
           : 0;
       if (sessionDurationMs > 5000) {
-        this.emit("widget-notification", { type: "empty_transcript" });
-        logger.audio.info("Emitted widget notification", {
+        this.emit("recording-notification", { type: "empty_transcript" });
+        logger.audio.info("Emitted recording notification", {
           type: "empty_transcript",
         });
       }
@@ -679,11 +679,11 @@ export class RecordingManager extends EventEmitter {
     }
 
     logger.audio.warn("Cannot start recording - no speech model selected");
-    this.emit("widget-notification", {
+    this.emit("recording-notification", {
       type: "transcription_failed",
       errorCode: ErrorCodes.MODEL_MISSING,
     });
-    logger.audio.info("Emitted widget notification", {
+    logger.audio.info("Emitted recording notification", {
       type: "transcription_failed",
       errorCode: ErrorCodes.MODEL_MISSING,
       reason: "no_speech_model_selected",
@@ -761,8 +761,10 @@ export class RecordingManager extends EventEmitter {
       if (this.recordingState === "recording" && !this.firstChunkReceived) {
         logger.audio.warn("No audio detected for 5 seconds");
         this.emit("no-audio-detected");
-        this.emit("widget-notification", { type: "no_audio" });
-        logger.audio.info("Emitted widget notification", { type: "no_audio" });
+        this.emit("recording-notification", { type: "no_audio" });
+        logger.audio.info("Emitted recording notification", {
+          type: "no_audio",
+        });
         this.endRecording("no_audio");
       }
     }, NO_AUDIO_TIMEOUT);

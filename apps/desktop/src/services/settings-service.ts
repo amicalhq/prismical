@@ -40,6 +40,11 @@ export interface MeetingNotificationSettings {
   blockedBundleIds: string[];
 }
 
+export interface MeetingWidgetSettings {
+  enabled: boolean;
+  normalizedY: number;
+}
+
 export class SettingsService extends EventEmitter {
   constructor() {
     super();
@@ -131,6 +136,37 @@ export class SettingsService extends EventEmitter {
     recordingSettings: AppSettingsData["recording"],
   ): Promise<void> {
     await updateSettingsSection("recording", recordingSettings);
+  }
+
+  /**
+   * Get meeting recording widget settings.
+   */
+  async getMeetingWidgetSettings(): Promise<MeetingWidgetSettings> {
+    const meetingWidget = await getSettingsSection("meetingWidget");
+
+    return {
+      enabled: meetingWidget?.enabled ?? true,
+      normalizedY: clampNormalizedY(meetingWidget?.normalizedY ?? 1),
+    };
+  }
+
+  /**
+   * Update meeting recording widget settings.
+   */
+  async setMeetingWidgetSettings(
+    meetingWidgetSettings: Partial<MeetingWidgetSettings>,
+  ): Promise<void> {
+    const current = await this.getMeetingWidgetSettings();
+    const next = {
+      ...current,
+      ...meetingWidgetSettings,
+      normalizedY: clampNormalizedY(
+        meetingWidgetSettings.normalizedY ?? current.normalizedY,
+      ),
+    };
+
+    await updateSettingsSection("meetingWidget", next);
+    this.emit("meeting-widget-settings-changed", next);
   }
 
   /**
@@ -514,4 +550,12 @@ export class SettingsService extends EventEmitter {
   ): Promise<void> {
     await updateSettingsSection("featureFlags", featureFlags);
   }
+}
+
+function clampNormalizedY(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 1;
+  }
+
+  return Math.min(1, Math.max(0, value));
 }

@@ -103,7 +103,7 @@ export function CompletionScreen({
             <div className="flex items-start gap-2">
               <span className="text-sm font-medium text-primary">•</span>
               <p className="text-sm">
-                {t("onboarding.completion.next.items.widget")}
+                {t("onboarding.completion.next.items.recordingWidget")}
               </p>
             </div>
             <div className="flex items-start gap-2">

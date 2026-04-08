@@ -58,6 +58,18 @@ export default function PreferencesSettingsPage() {
       setSelectedLocale(persisted ?? "system");
     },
   });
+  const meetingWidgetSettingsQuery =
+    api.settings.getMeetingWidgetSettings.useQuery();
+  const updateMeetingWidgetSettingsMutation =
+    api.settings.updateMeetingWidgetSettings.useMutation({
+      onSuccess: () => {
+        toast.success(t("settings.preferences.toast.updated"));
+        utils.settings.getMeetingWidgetSettings.invalidate();
+      },
+      onError: () => {
+        toast.error(t("settings.preferences.toast.updateFailed"));
+      },
+    });
   const restartAppMutation = api.settings.restartApp.useMutation();
 
   useEffect(() => {
@@ -113,6 +125,12 @@ export default function PreferencesSettingsPage() {
     });
   };
 
+  const handleMeetingWidgetEnabledChange = (checked: boolean) => {
+    updateMeetingWidgetSettingsMutation.mutate({
+      enabled: checked,
+    });
+  };
+
   const minimizeToTray = preferencesQuery.data?.minimizeToTray ?? false;
   const launchAtLogin = preferencesQuery.data?.launchAtLogin ?? true;
   const showInDock = preferencesQuery.data?.showInDock ?? true;
@@ -121,6 +139,7 @@ export default function PreferencesSettingsPage() {
     preferencesQuery.data?.muteDictationSounds ?? false;
   const autoDictateOnNewNote =
     preferencesQuery.data?.autoDictateOnNewNote ?? false;
+  const meetingWidgetEnabled = meetingWidgetSettingsQuery.data?.enabled ?? true;
   const isMac = window.electronAPI.platform === "darwin";
   const localeDisabled =
     uiSettingsQuery.isLoading || updateUILocaleMutation.isPending;
@@ -256,6 +275,27 @@ export default function PreferencesSettingsPage() {
                 checked={autoDictateOnNewNote}
                 onCheckedChange={handleAutoDictateOnNewNoteChange}
                 disabled={updatePreferencesMutation.isPending}
+              />
+            </div>
+
+            <Separator />
+
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <Label className="text-base font-medium text-foreground">
+                  {t("settings.preferences.meetingWidget.label")}
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  {t("settings.preferences.meetingWidget.description")}
+                </p>
+              </div>
+              <Switch
+                checked={meetingWidgetEnabled}
+                onCheckedChange={handleMeetingWidgetEnabledChange}
+                disabled={
+                  updateMeetingWidgetSettingsMutation.isPending ||
+                  meetingWidgetSettingsQuery.isLoading
+                }
               />
             </div>
 

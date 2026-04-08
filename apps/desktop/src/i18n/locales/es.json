@@ -242,7 +242,7 @@
         "title": "¡Todo listo!",
         "items": {
           "pushToTalk": "Usa tu atajo de pulsar para hablar para comenzar a transcribir",
-          "widget": "Haz clic en el widget flotante para acceso rápido",
+          "recordingWidget": "Haz clic en el widget de grabación flotante para acceder rápidamente",
           "settings": "Explora Configuración para más opciones de personalización"
         }
       },
@@ -250,7 +250,7 @@
       "infoLocalModel": "Tu modelo local seleccionado está listo para usar sin conexión."
     }
   },
-  "widget": {
+  "recordingNotifications": {
     "notifications": {
       "micFallback": "tu micrófono",
       "discordAlt": "Discord",
@@ -430,6 +430,10 @@
       "autoDictateOnNewNote": {
         "label": "Dictar automáticamente en nota nueva",
         "description": "Iniciar el dictado automáticamente al crear una nueva nota"
+      },
+      "meetingWidget": {
+        "label": "Mostrar widget de grabación",
+        "description": "Mostrar un widget flotante mientras una reunión se está grabando y Prismical está en segundo plano"
       },
       "language": {
         "label": "Idioma",

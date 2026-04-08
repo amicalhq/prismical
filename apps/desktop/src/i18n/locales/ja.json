@@ -242,7 +242,7 @@
         "title": "準備完了！",
         "items": {
           "pushToTalk": "プッシュトゥトークのショートカットで文字起こしを開始",
-          "widget": "フローティングウィジェットをクリックしてクイックアクセスできます",
+          "recordingWidget": "フローティング録音ウィジェットをクリックするとすぐにアクセスできます",
           "settings": "設定でさらにカスタマイズオプションを確認できます"
         }
       },
@@ -250,7 +250,7 @@
       "infoLocalModel": "選択したローカルモデルはオフラインで使用できます。"
     }
   },
-  "widget": {
+  "recordingNotifications": {
     "notifications": {
       "micFallback": "お使いのマイク",
       "discordAlt": "Discord",
@@ -430,6 +430,10 @@
       "autoDictateOnNewNote": {
         "label": "新しいノートで自動音声入力",
         "description": "新しいノートを作成した時に自動的に音声入力を開始"
+      },
+      "meetingWidget": {
+        "label": "録音ウィジェットを表示",
+        "description": "会議を録音中でPrismicalがバックグラウンドにあるとき、フローティングウィジェットを表示します"
       },
       "language": {
         "label": "言語",

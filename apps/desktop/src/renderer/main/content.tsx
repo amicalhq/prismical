@@ -24,7 +24,7 @@ declare module "@tanstack/react-router" {
 
 // Root App component with routing
 const App: React.FC = () => {
-  // Listen for navigation events from main process (e.g., from widget)
+  // Listen for navigation events from the main process (e.g., overlays)
   useEffect(() => {
     const handleNavigate = (route: string) => {
       router.navigate({ to: route });

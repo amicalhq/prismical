@@ -16,6 +16,7 @@ import { FeatureFlagService } from "../../services/feature-flag-service";
 import { MeetingManager } from "./meeting-manager";
 import { MeetingStartNotificationManager } from "./meeting-start-notification-manager";
 import { NoteGenerationService } from "../../services/note-generation-service";
+import { MeetingRecordingWidgetManager } from "./meeting-recording-widget-manager";
 
 /**
  * Service map for type-safe service access
@@ -33,6 +34,7 @@ export interface ServiceMap {
   autoUpdaterService: AutoUpdaterService;
   recordingManager: RecordingManager;
   meetingManager: MeetingManager;
+  meetingRecordingWidgetManager: MeetingRecordingWidgetManager;
   meetingStartNotificationManager: MeetingStartNotificationManager;
   noteGenerationService: NoteGenerationService;
   shortcutManager: ShortcutManager;
@@ -61,6 +63,8 @@ export class ServiceManager {
   private autoUpdaterService: AutoUpdaterService | null = null;
   private recordingManager: RecordingManager | null = null;
   private meetingManager: MeetingManager | null = null;
+  private meetingRecordingWidgetManager: MeetingRecordingWidgetManager | null =
+    null;
   private meetingStartNotificationManager: MeetingStartNotificationManager | null =
     null;
   private noteGenerationService: NoteGenerationService | null = null;
@@ -257,6 +261,21 @@ export class ServiceManager {
     logger.main.info("Meeting start notification manager initialized");
   }
 
+  private initializeMeetingRecordingWidgetManager(): void {
+    if (!this.settingsService || !this.windowManager || !this.meetingManager) {
+      throw new Error(
+        "Settings, window, and meeting services must be initialized before MeetingRecordingWidgetManager",
+      );
+    }
+
+    this.meetingRecordingWidgetManager = new MeetingRecordingWidgetManager({
+      settingsService: this.settingsService,
+      windowManager: this.windowManager,
+      meetingManager: this.meetingManager,
+    });
+    logger.main.info("Meeting recording widget manager initialized");
+  }
+
   private async initializeShortcutManager(): Promise<void> {
     if (!this.settingsService || !this.recordingManager) {
       throw new Error(
@@ -315,6 +334,7 @@ export class ServiceManager {
       autoUpdaterService: this.autoUpdaterService!,
       recordingManager: this.recordingManager!,
       meetingManager: this.meetingManager!,
+      meetingRecordingWidgetManager: this.meetingRecordingWidgetManager!,
       meetingStartNotificationManager: this.meetingStartNotificationManager!,
       noteGenerationService: this.noteGenerationService!,
       shortcutManager: this.shortcutManager!,
@@ -337,6 +357,10 @@ export class ServiceManager {
     if (this.meetingManager) {
       logger.main.info("Cleaning up meeting manager...");
       await this.meetingManager.cleanup();
+    }
+    if (this.meetingRecordingWidgetManager) {
+      logger.main.info("Cleaning up meeting recording widget manager...");
+      await this.meetingRecordingWidgetManager.cleanup();
     }
     if (this.meetingStartNotificationManager) {
       logger.main.info("Cleaning up meeting start notification manager...");
@@ -395,6 +419,9 @@ export class ServiceManager {
 
   setWindowManager(windowManager: WindowManager): void {
     this.windowManager = windowManager;
+    if (this.isInitialized && !this.meetingRecordingWidgetManager) {
+      this.initializeMeetingRecordingWidgetManager();
+    }
     if (this.isInitialized && !this.meetingStartNotificationManager) {
       this.initializeMeetingStartNotificationManager();
     }

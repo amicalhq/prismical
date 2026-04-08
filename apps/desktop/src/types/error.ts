@@ -35,7 +35,7 @@ export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];
  * Application error with error code for UI mapping.
  *
  * - `message`: Technical details for logging (not user-facing)
- * - `errorCode`: Used to look up user-facing strings from ERROR_CODE_CONFIG
+ * - `errorCode`: Used to look up user-facing strings from recording notification config
  * - `uiTitle`/`uiMessage`: Optional overrides for user-facing display
  */
 export class AppError extends Error {

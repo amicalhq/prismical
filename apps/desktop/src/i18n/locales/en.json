@@ -242,7 +242,7 @@
         "title": "You're All Set!",
         "items": {
           "pushToTalk": "Use your push-to-talk shortcut to start transcribing",
-          "widget": "Click the floating widget for quick access",
+          "recordingWidget": "Click the floating recording widget for quick access",
           "settings": "Explore Settings for more customization options"
         }
       },
@@ -250,7 +250,7 @@
       "infoLocalModel": "Your selected local model is ready to use offline."
     }
   },
-  "widget": {
+  "recordingNotifications": {
     "notifications": {
       "micFallback": "your microphone",
       "discordAlt": "Discord",
@@ -431,6 +431,10 @@
       "autoDictateOnNewNote": {
         "label": "Auto-dictate on new note",
         "description": "Automatically start dictation when creating a new note"
+      },
+      "meetingWidget": {
+        "label": "Show recording widget",
+        "description": "Display a floating widget while a meeting is recording and Prismical is in the background"
       },
       "language": {
         "label": "Language",

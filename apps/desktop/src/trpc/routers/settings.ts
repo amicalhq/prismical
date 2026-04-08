@@ -90,6 +90,11 @@ const RecordingSettingsSchema = z.object({
   preferredMicrophoneName: z.string().optional(),
 });
 
+const MeetingWidgetSettingsSchema = z.object({
+  enabled: z.boolean().optional(),
+  normalizedY: z.number().min(0).max(1).optional(),
+});
+
 export const settingsRouter = createRouter({
   // Get all settings
   getSettings: procedure.query(async ({ ctx }) => {
@@ -210,6 +215,27 @@ export const settingsRouter = createRouter({
         }
         throw error;
       }
+    }),
+
+  getMeetingWidgetSettings: procedure.query(async ({ ctx }) => {
+    const settingsService = ctx.serviceManager.getService("settingsService");
+    if (!settingsService) {
+      throw new Error("SettingsService not available");
+    }
+
+    return await settingsService.getMeetingWidgetSettings();
+  }),
+
+  updateMeetingWidgetSettings: procedure
+    .input(MeetingWidgetSettingsSchema)
+    .mutation(async ({ input, ctx }) => {
+      const settingsService = ctx.serviceManager.getService("settingsService");
+      if (!settingsService) {
+        throw new Error("SettingsService not available");
+      }
+
+      await settingsService.setMeetingWidgetSettings(input);
+      return true;
     }),
 
   // Get formatter configuration

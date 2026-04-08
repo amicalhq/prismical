@@ -124,6 +124,16 @@ const api: ElectronAPI = {
     loadYjsUpdates: (noteId: number) =>
       ipcRenderer.invoke("notes:loadYjsUpdates", noteId),
   },
+
+  recordingWidget: {
+    setInteractive: (interactive: boolean) =>
+      ipcRenderer.invoke("meeting-widget:set-interactive", interactive),
+    dragMove: (screenY: number, pointerOffsetY: number) =>
+      ipcRenderer.invoke("meeting-widget:drag-move", screenY, pointerOffsetY),
+    dragEnd: (screenY: number, pointerOffsetY: number) =>
+      ipcRenderer.invoke("meeting-widget:drag-end", screenY, pointerOffsetY),
+    openNote: () => ipcRenderer.invoke("meeting-widget:open-note"),
+  },
 };
 
 contextBridge.exposeInMainWorld("electronAPI", api);

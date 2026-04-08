@@ -606,6 +606,10 @@ const config: ForgeConfig = {
           name: "notification_window",
           config: "vite.notification.config.mts",
         },
+        {
+          name: "recording_widget_window",
+          config: "vite.recording-widget.config.mts",
+        },
       ],
     }),
     // Fuses are used to enable/disable various Electron functionality

@@ -46,4 +46,11 @@ export interface ElectronAPI {
     saveYjsUpdate: (noteId: number, update: ArrayBuffer) => Promise<void>;
     loadYjsUpdates: (noteId: number) => Promise<ArrayBuffer[]>;
   };
+
+  recordingWidget: {
+    setInteractive: (interactive: boolean) => Promise<void>;
+    dragMove: (screenY: number, pointerOffsetY: number) => Promise<void>;
+    dragEnd: (screenY: number, pointerOffsetY: number) => Promise<void>;
+    openNote: () => Promise<void>;
+  };
 }

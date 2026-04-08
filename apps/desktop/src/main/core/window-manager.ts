@@ -8,14 +8,20 @@ declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string;
 declare const MAIN_WINDOW_VITE_NAME: string;
 declare const ONBOARDING_WINDOW_VITE_NAME: string;
 declare const NOTIFICATION_WINDOW_VITE_NAME: string;
+declare const RECORDING_WIDGET_WINDOW_VITE_NAME: string;
 
 export class WindowManager {
   private static readonly NOTIFICATION_WINDOW_WIDTH = 380 as const;
   private static readonly NOTIFICATION_WINDOW_HEIGHT = 120 as const;
   private static readonly NOTIFICATION_WINDOW_MARGIN = 16 as const;
+  private static readonly MEETING_WIDGET_WINDOW_WIDTH = 92 as const;
+  private static readonly MEETING_WIDGET_WINDOW_HEIGHT = 124 as const;
+  private static readonly MEETING_WIDGET_EDGE_MARGIN = 12 as const;
+  private static readonly MEETING_WIDGET_VERTICAL_MARGIN = 24 as const;
   private mainWindow: BrowserWindow | null = null;
   private onboardingWindow: BrowserWindow | null = null;
   private notificationWindow: BrowserWindow | null = null;
+  private meetingWidgetWindow: BrowserWindow | null = null;
   private themeListenerSetup: boolean = false;
 
   /**
@@ -57,6 +63,38 @@ export class WindowManager {
     return {
       x: workArea.x + workArea.width - width - margin,
       y: workArea.y + margin,
+      width,
+      height,
+    };
+  }
+
+  private getMeetingWidgetWindowBounds(
+    normalizedY: number = 1,
+    displayPoint: Electron.Point = screen.getCursorScreenPoint(),
+  ): Electron.Rectangle {
+    const display = screen.getDisplayNearestPoint(displayPoint);
+    const workArea = display.workArea;
+    const width = Math.min(
+      WindowManager.MEETING_WIDGET_WINDOW_WIDTH,
+      workArea.width,
+    );
+    const height = Math.min(
+      WindowManager.MEETING_WIDGET_WINDOW_HEIGHT,
+      workArea.height,
+    );
+    const edgeMargin = WindowManager.MEETING_WIDGET_EDGE_MARGIN;
+    const verticalMargin = WindowManager.MEETING_WIDGET_VERTICAL_MARGIN;
+    const minY = workArea.y + verticalMargin;
+    const maxY = workArea.y + workArea.height - height - verticalMargin;
+    const clampedNormalizedY = clampNormalizedY(normalizedY);
+    const y =
+      maxY <= minY
+        ? minY
+        : Math.round(minY + (maxY - minY) * clampedNormalizedY);
+
+    return {
+      x: workArea.x + workArea.width - width - edgeMargin,
+      y,
       width,
       height,
     };
@@ -395,12 +433,148 @@ export class WindowManager {
     });
   }
 
+  async createOrShowMeetingWidgetWindow(
+    normalizedY: number = 1,
+  ): Promise<void> {
+    const bounds = this.getMeetingWidgetWindowBounds(normalizedY);
+
+    if (this.meetingWidgetWindow && !this.meetingWidgetWindow.isDestroyed()) {
+      this.meetingWidgetWindow.setBounds(bounds);
+      this.meetingWidgetWindow.showInactive();
+      return;
+    }
+
+    this.meetingWidgetWindow = new BrowserWindow({
+      ...bounds,
+      show: false,
+      frame: false,
+      transparent: true,
+      backgroundColor: "#00000000",
+      resizable: false,
+      minimizable: false,
+      maximizable: false,
+      fullscreenable: false,
+      skipTaskbar: true,
+      hasShadow: false,
+      alwaysOnTop: true,
+      acceptFirstMouse: true,
+      ...(process.platform === "darwin" && {
+        type: "panel" as const,
+      }),
+      webPreferences: {
+        preload: path.join(__dirname, "preload.js"),
+        nodeIntegration: false,
+        contextIsolation: true,
+      },
+    });
+
+    if (process.platform === "darwin") {
+      this.meetingWidgetWindow.setAlwaysOnTop(true, "floating", 2);
+      this.meetingWidgetWindow.setVisibleOnAllWorkspaces(true, {
+        visibleOnFullScreen: true,
+      });
+      this.meetingWidgetWindow.setHiddenInMissionControl(true);
+    }
+
+    this.meetingWidgetWindow.setIgnoreMouseEvents(true, { forward: true });
+
+    this.meetingWidgetWindow.once("ready-to-show", () => {
+      this.meetingWidgetWindow?.showInactive();
+    });
+
+    if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
+      const devUrl = new URL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
+      devUrl.pathname = "recording-widget.html";
+      this.meetingWidgetWindow.loadURL(devUrl.toString());
+    } else {
+      this.meetingWidgetWindow.loadFile(
+        path.join(
+          __dirname,
+          `../renderer/${RECORDING_WIDGET_WINDOW_VITE_NAME}/recording-widget.html`,
+        ),
+      );
+    }
+
+    this.meetingWidgetWindow.on("close", () => {
+      this.trpcHandler.detachWindow(this.meetingWidgetWindow!);
+    });
+
+    this.meetingWidgetWindow.on("closed", () => {
+      this.meetingWidgetWindow = null;
+    });
+
+    this.trpcHandler.attachWindow(this.meetingWidgetWindow);
+
+    logger.main.info("Meeting recording widget window created", {
+      bounds,
+    });
+  }
+
   hideNotificationWindow(): void {
     if (!this.notificationWindow || this.notificationWindow.isDestroyed()) {
       return;
     }
 
     this.notificationWindow.hide();
+  }
+
+  hideMeetingWidgetWindow(): void {
+    if (!this.meetingWidgetWindow || this.meetingWidgetWindow.isDestroyed()) {
+      return;
+    }
+
+    this.meetingWidgetWindow.setIgnoreMouseEvents(true, { forward: true });
+    this.meetingWidgetWindow.hide();
+  }
+
+  setMeetingWidgetWindowIgnoreMouseEvents(ignore: boolean): void {
+    if (!this.meetingWidgetWindow || this.meetingWidgetWindow.isDestroyed()) {
+      return;
+    }
+
+    this.meetingWidgetWindow.setIgnoreMouseEvents(
+      ignore,
+      ignore ? { forward: true } : undefined,
+    );
+  }
+
+  updateMeetingWidgetWindowPosition(
+    screenY: number,
+    pointerOffsetY: number,
+  ): number | null {
+    if (!this.meetingWidgetWindow || this.meetingWidgetWindow.isDestroyed()) {
+      return null;
+    }
+
+    const currentBounds = this.meetingWidgetWindow.getBounds();
+    const display = screen.getDisplayNearestPoint({
+      x: currentBounds.x + currentBounds.width - 1,
+      y: screenY,
+    });
+    const workArea = display.workArea;
+    const edgeMargin = WindowManager.MEETING_WIDGET_EDGE_MARGIN;
+    const verticalMargin = WindowManager.MEETING_WIDGET_VERTICAL_MARGIN;
+    const minY = workArea.y + verticalMargin;
+    const maxY =
+      workArea.y + workArea.height - currentBounds.height - verticalMargin;
+    const y = clamp(
+      Math.round(screenY - pointerOffsetY),
+      minY,
+      Math.max(minY, maxY),
+    );
+    const x = workArea.x + workArea.width - currentBounds.width - edgeMargin;
+
+    this.meetingWidgetWindow.setBounds({
+      ...currentBounds,
+      x,
+      y,
+    });
+
+    if (maxY <= minY) {
+      return 1;
+    }
+
+    return clampNormalizedY((y - minY) / (maxY - minY));
   }
 
   async navigateMainWindow(route: string): Promise<void> {
@@ -441,8 +615,17 @@ export class WindowManager {
     return this.notificationWindow;
   }
 
+  getMeetingWidgetWindow(): BrowserWindow | null {
+    return this.meetingWidgetWindow;
+  }
+
   getAllWindows(): (BrowserWindow | null)[] {
-    return [this.mainWindow, this.onboardingWindow, this.notificationWindow];
+    return [
+      this.mainWindow,
+      this.onboardingWindow,
+      this.notificationWindow,
+      this.meetingWidgetWindow,
+    ];
   }
 
   openAllDevTools(): void {
@@ -463,4 +646,16 @@ export class WindowManager {
   cleanup(): void {
     logger.main.info("Window manager cleanup complete");
   }
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function clampNormalizedY(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 1;
+  }
+
+  return Math.min(1, Math.max(0, value));
 }

@@ -105,6 +105,10 @@ const defaultSettings: AppSettingsData = {
     silenceThreshold: 3,
     maxRecordingDuration: 60,
   },
+  meetingWidget: {
+    enabled: true,
+    normalizedY: 1,
+  },
   shortcuts: getDefaultShortcuts(),
   modelProvidersConfig: {
     defaultSpeechModel: "",
