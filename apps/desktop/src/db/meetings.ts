@@ -195,7 +195,18 @@ export async function getNoteTranscript(
       state: meetings.state,
     })
     .from(meetings)
-    .where(and(eq(meetings.noteId, noteId), eq(meetings.state, "completed")))
+    .where(
+      and(
+        eq(meetings.noteId, noteId),
+        inArray(meetings.state, [
+          "recording",
+          "starting",
+          "stopping",
+          "error",
+          "completed",
+        ]),
+      ),
+    )
     .orderBy(asc(meetings.startedAt), asc(meetings.createdAt));
 
   if (sessions.length === 0) {

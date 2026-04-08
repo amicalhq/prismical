@@ -54,9 +54,10 @@ export class WhisperProvider implements TranscriptionProvider {
   // Configuration
   private readonly FRAME_SIZE = 512; // 32ms at 16kHz
   private readonly MIN_AUDIO_DURATION_MS = 500; // Minimum buffered audio duration before silence-based transcription
-  private readonly MAX_SILENCE_DURATION_MS = 3000; // Max silence before cutting
+  private readonly MAX_SILENCE_DURATION_MS = 1500; // Max silence before cutting
+  private readonly MAX_BUFFER_DURATION_MS = 7000; // Force a flush even without silence so meetings feel responsive
   private readonly SAMPLE_RATE = 16000;
-  private readonly SPEECH_PROBABILITY_THRESHOLD = 0.2; // Threshold for speech detection
+  private readonly SPEECH_PROBABILITY_THRESHOLD = 0.4; // Threshold for speech detection
 
   constructor(modelService: ModelService) {
     this.modelService = modelService;
@@ -317,8 +318,9 @@ export class WhisperProvider implements TranscriptionProvider {
       return true;
     }
 
-    // If buffer is too large (e.g., 30 seconds), transcribe anyway
-    if (audioDurationMs > 30000) {
+    // If buffer is too large, transcribe anyway even without silence.
+    // This keeps meeting transcription responsive during long uninterrupted speech.
+    if (audioDurationMs > this.MAX_BUFFER_DURATION_MS) {
       logger.transcription.debug(
         `Transcribing due to buffer size: ${audioDurationMs}ms`,
       );
