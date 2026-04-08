@@ -6,28 +6,28 @@ import {
   CheckCircle,
   AlertCircle,
   Mic,
-  Monitor,
+  Headphones,
   ExternalLink,
   RefreshCw,
 } from "lucide-react";
 import { OnboardingLayout } from "../shared/OnboardingLayout";
 import { NavigationButtons } from "../shared/NavigationButtons";
 import { useTranslation } from "react-i18next";
+import type { SystemAudioPermissionStatus } from "../../../../types/onboarding";
 
 interface PermissionsScreenProps {
   onNext: () => void;
   onBack: () => void;
   permissions: {
     microphone: "granted" | "denied" | "not-determined";
-    screenRecording: boolean;
+    systemAudio: SystemAudioPermissionStatus;
   };
   platform: string;
   checkPermissions: () => Promise<void>;
 }
 
 /**
- * Permissions screen - handles microphone and screen recording permissions
- * Based on the existing UnifiedPermissionsStep component
+ * Permissions screen - handles microphone and system-audio permissions.
  */
 export function PermissionsScreen({
   onNext,
@@ -38,25 +38,24 @@ export function PermissionsScreen({
 }: PermissionsScreenProps) {
   const { t } = useTranslation();
   const [isRequestingMic, setIsRequestingMic] = useState(false);
+  const [isRequestingSystemAudio, setIsRequestingSystemAudio] = useState(false);
   const [isPolling, setIsPolling] = useState(false);
 
-  // tRPC mutations
   const requestMicPermission =
     api.onboarding.requestMicrophonePermission.useMutation();
+  const requestSystemAudioPermission =
+    api.onboarding.requestSystemAudioPermission.useMutation();
   const openExternal = api.onboarding.openExternal.useMutation();
 
   const allPermissionsGranted =
     permissions.microphone === "granted" &&
-    (permissions.screenRecording || platform !== "darwin");
+    (platform !== "darwin" || permissions.systemAudio === "granted");
 
-  // Poll for permission changes continuously to keep UI in sync
   useEffect(() => {
-    // Always poll to detect permission changes in real-time
     const interval = setInterval(async () => {
       await checkPermissions();
     }, 2000);
 
-    // Show polling indicator only when permissions are not all granted
     setIsPolling(!allPermissionsGranted);
 
     return () => {
@@ -74,20 +73,22 @@ export function PermissionsScreen({
     }
   };
 
-  const handleOpenScreenRecording = async () => {
-    // Open System Preferences > Security & Privacy > Privacy > Screen Recording
-    await openExternal.mutateAsync({
-      url: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
-    });
-  };
-
   const handleOpenMicrophoneSettings = async () => {
-    // Open platform-specific microphone privacy settings
     const url =
       platform === "darwin"
         ? "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
         : "ms-settings:privacy-microphone";
     await openExternal.mutateAsync({ url });
+  };
+
+  const handleOpenSystemAudioSettings = async () => {
+    setIsRequestingSystemAudio(true);
+    try {
+      await requestSystemAudioPermission.mutateAsync();
+      await checkPermissions();
+    } finally {
+      setIsRequestingSystemAudio(false);
+    }
   };
 
   const getMicrophoneStatus = () => {
@@ -113,26 +114,26 @@ export function PermissionsScreen({
     }
   };
 
-  const getScreenRecordingStatus = () => {
-    if (permissions.screenRecording) {
+  const getSystemAudioStatus = () => {
+    if (permissions.systemAudio === "granted") {
       return {
         icon: CheckCircle,
         color: "text-green-500",
         bg: "bg-green-500/10",
       };
-    } else {
-      return {
-        icon: AlertCircle,
-        color: "text-yellow-500",
-        bg: "bg-yellow-500/10",
-      };
     }
+
+    return {
+      icon: AlertCircle,
+      color: "text-yellow-500",
+      bg: "bg-yellow-500/10",
+    };
   };
 
   const micStatus = getMicrophoneStatus();
-  const scrStatus = getScreenRecordingStatus();
+  const systemAudioStatus = getSystemAudioStatus();
   const MicIcon = micStatus.icon;
-  const ScrIcon = scrStatus.icon;
+  const SystemAudioIcon = systemAudioStatus.icon;
 
   return (
     <OnboardingLayout
@@ -152,7 +153,6 @@ export function PermissionsScreen({
       }
     >
       <div className="space-y-6">
-        {/* Status Summary */}
         {allPermissionsGranted && (
           <Card className="border-green-500 bg-green-500/10 p-4">
             <div className="flex items-center gap-3">
@@ -169,7 +169,6 @@ export function PermissionsScreen({
           </Card>
         )}
 
-        {/* Polling Status */}
         {isPolling && !allPermissionsGranted && (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <RefreshCw className="h-4 w-4 animate-spin" />
@@ -177,9 +176,7 @@ export function PermissionsScreen({
           </div>
         )}
 
-        {/* Permission Cards */}
         <div className="space-y-4">
-          {/* Microphone Permission */}
           <Card className="p-6">
             <div className="flex items-start justify-between">
               <div className="flex items-start gap-3">
@@ -259,56 +256,65 @@ export function PermissionsScreen({
             </div>
           </Card>
 
-          {/* Screen Recording Permission (macOS only) */}
           {platform === "darwin" && (
             <Card className="p-6">
               <div className="flex items-start justify-between">
                 <div className="flex items-start gap-3">
-                  <div className={`mt-1 rounded-lg p-2 ${scrStatus.bg}`}>
-                    <Monitor className={`h-5 w-5 ${scrStatus.color}`} />
+                  <div
+                    className={`mt-1 rounded-lg p-2 ${systemAudioStatus.bg}`}
+                  >
+                    <Headphones
+                      className={`h-5 w-5 ${systemAudioStatus.color}`}
+                    />
                   </div>
                   <div>
                     <h3 className="font-medium">
-                      {t("onboarding.permissions.screenRecording.title")}
+                      {t("onboarding.permissions.systemAudio.title")}
                     </h3>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      {t("onboarding.permissions.screenRecording.description")}
+                      {t("onboarding.permissions.systemAudio.description")}
                     </p>
 
-                    {permissions.screenRecording ? (
+                    {permissions.systemAudio === "granted" ? (
                       <div className="mt-2 flex items-center gap-2">
-                        <ScrIcon className={`h-4 w-4 ${scrStatus.color}`} />
+                        <SystemAudioIcon
+                          className={`h-4 w-4 ${systemAudioStatus.color}`}
+                        />
                         <span className="text-sm font-medium text-green-600 dark:text-green-400">
                           {t("onboarding.permissions.status.granted")}
                         </span>
                       </div>
                     ) : (
-                      <div className="mt-2 space-y-2">
+                      <div className="mt-2">
                         <div className="flex items-center gap-2">
-                          <ScrIcon className={`h-4 w-4 ${scrStatus.color}`} />
+                          <SystemAudioIcon
+                            className={`h-4 w-4 ${systemAudioStatus.color}`}
+                          />
                           <span className="text-sm font-medium text-yellow-600 dark:text-yellow-400">
-                            {t("onboarding.permissions.status.required")}
+                            {permissions.systemAudio === "unknown"
+                              ? t("onboarding.permissions.status.notRequested")
+                              : t("onboarding.permissions.status.required")}
                           </span>
                         </div>
-                        <p className="text-sm text-muted-foreground">
-                          {t(
-                            "onboarding.permissions.screenRecording.deniedHelp",
-                          )}
-                        </p>
                       </div>
                     )}
                   </div>
                 </div>
 
-                {!permissions.screenRecording && (
+                {permissions.systemAudio !== "granted" && (
                   <Button
-                    onClick={handleOpenScreenRecording}
+                    onClick={handleOpenSystemAudioSettings}
+                    disabled={isRequestingSystemAudio}
                     size="sm"
                     variant="outline"
                     className="gap-2"
                   >
                     <ExternalLink className="h-4 w-4" />
-                    {t("onboarding.permissions.actions.openSettings")}
+                    {isRequestingSystemAudio
+                      ? t("onboarding.permissions.actions.requesting")
+                      : permissions.systemAudio === "unknown"
+                        ? t("onboarding.permissions.actions.request")
+                        : t("onboarding.permissions.actions.openSettings")}
                   </Button>
                 )}
               </div>

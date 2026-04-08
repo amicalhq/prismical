@@ -99,7 +99,7 @@
     },
     "permissions": {
       "title": "Configurar permisos",
-      "subtitle": "Prismical necesita algunos permisos para funcionar correctamente",
+      "subtitle": "Prismical necesita acceso al micrófono y al audio del sistema para funcionar correctamente",
       "waiting": "Esperando permisos...",
       "polling": "Verificando cambios de permisos...",
       "allGranted": {
@@ -122,10 +122,10 @@
         "description": "Requerido para grabar y transcribir audio",
         "deniedHelp": "Por favor concede acceso al micrófono en Configuración del Sistema"
       },
-      "screenRecording": {
-        "title": "Acceso a grabación de pantalla",
-        "description": "Requerido para capturar audio del sistema durante reuniones (solo macOS)",
-        "deniedHelp": "Agrega Prismical a Grabación de Pantalla en Configuración del Sistema"
+      "systemAudio": {
+        "title": "Acceso al audio del sistema",
+        "description": "Requerido para capturar el audio de las reuniones desde tu Mac",
+        "deniedHelp": "Permite que Prismical capture el audio del sistema en Configuración del Sistema"
       }
     },
     "discovery": {

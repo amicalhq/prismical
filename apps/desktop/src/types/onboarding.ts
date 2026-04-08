@@ -40,6 +40,16 @@ export enum ModelType {
   Local = "local",
 }
 
+/**
+ * System-audio permission is special on macOS:
+ * there is no safe public "read-only" status API for Core Audio taps.
+ *
+ * A real native probe can trigger the OS permission dialog, so passive UI
+ * should use a cached status and only run the real probe on explicit user
+ * action or when starting actual capture.
+ */
+export type SystemAudioPermissionStatus = "unknown" | "granted" | "required";
+
 // ============================================================================
 // Data Types
 // ============================================================================

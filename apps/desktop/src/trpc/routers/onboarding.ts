@@ -4,10 +4,12 @@ import { createRouter, procedure } from "../trpc";
 import {
   OnboardingPreferencesSchema,
   OnboardingStateSchema,
+  type SystemAudioPermissionStatus,
   type ModelRecommendation,
   type OnboardingFeatureFlags,
 } from "../../types/onboarding";
 import { logger } from "../../main/logger";
+import { checkSystemAudioPermission as checkNativeSystemAudioPermission } from "../../main/meetings/system-audio-permission";
 
 export const onboardingRouter = createRouter({
   // --------------------------------------------------------------------------
@@ -328,26 +330,32 @@ export const onboardingRouter = createRouter({
   }),
 
   /**
-   * Check screen recording permission status
+   * Check system audio capture permission status
    */
-  checkScreenRecordingPermission: procedure.query(
-    async (): Promise<boolean> => {
+  checkSystemAudioPermission: procedure.query(
+    async ({ ctx }): Promise<SystemAudioPermissionStatus> => {
       try {
-        // For non-macOS platforms, screen recording permission is not required
         if (process.platform !== "darwin") {
-          return true;
+          return "granted";
         }
 
-        const status = systemPreferences.getMediaAccessStatus("screen");
-        const hasPermission = status === "granted";
-        logger.main.debug("Screen recording permission status:", status);
-        return hasPermission;
+        const { serviceManager } = ctx;
+        if (!serviceManager) {
+          return "unknown";
+        }
+
+        const onboardingService = serviceManager.getOnboardingService();
+        if (!onboardingService) {
+          return "unknown";
+        }
+
+        const status =
+          await onboardingService.getCachedSystemAudioPermissionStatus();
+        logger.main.debug("Cached system audio permission status:", { status });
+        return status;
       } catch (error) {
-        logger.main.error(
-          "Failed to check screen recording permission:",
-          error,
-        );
-        return false;
+        logger.main.error("Failed to check system audio permission:", error);
+        return "unknown";
       }
     },
   ),
@@ -376,26 +384,45 @@ export const onboardingRouter = createRouter({
   ),
 
   /**
-   * Request screen recording permission (opens System Preferences)
+   * Request system audio permission (opens System Settings)
    */
-  requestScreenRecordingPermission: procedure.mutation(
-    async (): Promise<void> => {
+  requestSystemAudioPermission: procedure.mutation(
+    async ({ ctx }): Promise<SystemAudioPermissionStatus> => {
       try {
-        if (process.platform === "darwin") {
-          // Open System Preferences to Privacy & Security > Screen Recording
-          await shell.openExternal(
-            "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
-          );
-
-          logger.main.info(
-            "Opened System Preferences for screen recording permission",
-          );
+        if (process.platform !== "darwin") {
+          return "granted";
         }
+
+        const { serviceManager } = ctx;
+        if (!serviceManager) {
+          throw new Error("ServiceManager not available");
+        }
+
+        const onboardingService = serviceManager.getOnboardingService();
+        if (!onboardingService) {
+          throw new Error("OnboardingService not available");
+        }
+
+        const result = await checkNativeSystemAudioPermission();
+        const status: SystemAudioPermissionStatus = result.granted
+          ? "granted"
+          : "required";
+        await onboardingService.setCachedSystemAudioPermissionStatus(status);
+
+        if (!result.granted) {
+          await shell.openExternal(
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_AudioCapture",
+          );
+          logger.main.info(
+            "System audio permission not yet granted; opened System Settings",
+          );
+        } else {
+          logger.main.info("System audio permission granted via native probe");
+        }
+
+        return status;
       } catch (error) {
-        logger.main.error(
-          "Failed to request screen recording permission:",
-          error,
-        );
+        logger.main.error("Failed to request system audio permission:", error);
         throw error;
       }
     },

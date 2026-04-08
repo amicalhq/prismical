@@ -16,6 +16,7 @@ import { CompletionScreen } from "./components/screens/CompletionScreen";
 import {
   OnboardingScreen,
   ModelType,
+  type SystemAudioPermissionStatus,
   type OnboardingState,
   type OnboardingPreferences,
   type FeatureInterest,
@@ -24,7 +25,7 @@ import {
 
 interface PermissionStatus {
   microphone: "granted" | "denied" | "not-determined";
-  screenRecording: boolean;
+  systemAudio: SystemAudioPermissionStatus;
 }
 
 /**
@@ -39,7 +40,7 @@ export function App() {
   );
   const [permissions, setPermissions] = useState<PermissionStatus>({
     microphone: "not-determined",
-    screenRecording: false,
+    systemAudio: "unknown",
   });
   const [platform, setPlatform] = useState<string>("");
   const [preferences, setPreferences] = useState<
@@ -108,17 +109,17 @@ export function App() {
 
   // Check permissions and return fresh values (for internal use during initialization)
   const checkPermissionsWithResult = useCallback(async () => {
-    const [micStatus, screenRecordingStatus] = await Promise.all([
+    const [micStatus, systemAudioStatus] = await Promise.all([
       utils.onboarding.checkMicrophonePermission.fetch(),
-      utils.onboarding.checkScreenRecordingPermission.fetch(),
+      utils.onboarding.checkSystemAudioPermission.fetch(),
     ]);
 
     setPermissions({
       microphone: micStatus as "granted" | "denied" | "not-determined",
-      screenRecording: screenRecordingStatus,
+      systemAudio: systemAudioStatus,
     });
 
-    return { micStatus, screenRecordingStatus };
+    return { micStatus, systemAudioStatus };
   }, [utils]);
 
   // Check permissions (public API for components)
@@ -138,7 +139,7 @@ export function App() {
     const initialize = async () => {
       // Check initial permissions and platform
       // Use fresh results directly to avoid race condition
-      const [{ micStatus, screenRecordingStatus }, platformResult] =
+      const [{ micStatus, systemAudioStatus }, platformResult] =
         await Promise.all([
           checkPermissionsWithResult(),
           utils.onboarding.getPlatform.fetch(),
@@ -147,7 +148,7 @@ export function App() {
 
       const hasMissingPermissions =
         micStatus !== "granted" ||
-        (platformResult === "darwin" && !screenRecordingStatus);
+        (platformResult === "darwin" && systemAudioStatus !== "granted");
       const hasCompletedOnboarding = !!state?.completedVersion;
 
       // If onboarding is being re-opened due to permission loss after completion,
@@ -164,7 +165,7 @@ export function App() {
         if (
           state.lastVisitedScreen === OnboardingScreen.Permissions &&
           micStatus === "granted" &&
-          (screenRecordingStatus || platformResult !== "darwin")
+          (systemAudioStatus === "granted" || platformResult !== "darwin")
         ) {
           // Permissions granted, skip to next screen
           const activeScreens = getActiveScreens();

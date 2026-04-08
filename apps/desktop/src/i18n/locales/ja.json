@@ -99,7 +99,7 @@
     },
     "permissions": {
       "title": "権限の設定",
-      "subtitle": "Prismicalが正しく動作するためにいくつかの権限が必要です",
+      "subtitle": "Prismicalが正しく動作するには、マイクとシステム音声へのアクセスが必要です",
       "waiting": "権限を待っています...",
       "polling": "権限の変更を確認中...",
       "allGranted": {
@@ -122,10 +122,10 @@
         "description": "オーディオの録音と文字起こしに必要です",
         "deniedHelp": "システム設定でマイクへのアクセスを許可してください"
       },
-      "screenRecording": {
-        "title": "画面収録へのアクセス",
-        "description": "会議中のシステム音声をキャプチャするために必要です（macOSのみ）",
-        "deniedHelp": "システム設定の画面収録にPrismicalを追加してください"
+      "systemAudio": {
+        "title": "システム音声へのアクセス",
+        "description": "Mac から会議音声を取り込むために必要です",
+        "deniedHelp": "システム設定でPrismicalによるシステム音声の取得を許可してください"
       }
     },
     "discovery": {

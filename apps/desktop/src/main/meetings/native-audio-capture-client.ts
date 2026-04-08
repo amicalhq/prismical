@@ -1,15 +1,13 @@
 import { EventEmitter } from "node:events";
 import { spawn, type ChildProcessByStdio } from "node:child_process";
 import type { Readable } from "node:stream";
-import * as fs from "node:fs";
-import * as path from "node:path";
-import { app } from "electron";
 import { logger } from "../logger";
 import type {
   AudioFrame,
   AudioSource,
   MeetingCaptureMode,
 } from "@/types/meeting";
+import { assertAudioCaptureBinaryExists } from "./audio-capture-binary";
 
 const PACKET_HEADER_SIZE = 32;
 const PACKET_VERSION = 1;
@@ -56,12 +54,7 @@ export class NativeAudioCaptureClient extends EventEmitter {
       throw new Error("Native audio capture is already running.");
     }
 
-    const binaryPath = this.resolveBinaryPath();
-    if (!fs.existsSync(binaryPath)) {
-      throw new Error(
-        `Native capture binary not found at ${binaryPath}. Run the desktop build dependencies first.`,
-      );
-    }
+    const binaryPath = assertAudioCaptureBinaryExists();
 
     logger.audio.info("Starting native audio capture", {
       binaryPath,
@@ -179,27 +172,5 @@ export class NativeAudioCaptureClient extends EventEmitter {
       payload.byteOffset + payload.byteLength,
     );
     return new Float32Array(arrayBuffer);
-  }
-
-  private resolveBinaryPath(): string {
-    const binaryName =
-      process.platform === "win32"
-        ? "prismical-audio-capture.exe"
-        : "prismical-audio-capture";
-
-    if (app.isPackaged) {
-      return path.join(process.resourcesPath, binaryName);
-    }
-
-    return path.join(
-      process.cwd(),
-      "..",
-      "..",
-      "packages",
-      "native-helpers",
-      "audio-capture",
-      "bin",
-      binaryName,
-    );
   }
 }

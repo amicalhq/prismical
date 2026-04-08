@@ -1087,12 +1087,14 @@ final class CaptureCoordinator {
 struct ParsedArguments {
     let mode: CaptureMode
     let debugArtifactsDirectory: String?
+    let checkSystemAudioPermission: Bool
 }
 
 func parseArguments() throws -> ParsedArguments {
     let arguments = CommandLine.arguments
     var mode: CaptureMode?
     var debugArtifactsDirectory: String?
+    let checkSystemAudioPermission = arguments.contains("--check-system-audio-permission")
 
     if let modeIndex = arguments.firstIndex(of: "--mode"), modeIndex + 1 < arguments.count {
         guard let parsedMode = CaptureMode(rawValue: arguments[modeIndex + 1]) else {
@@ -1115,7 +1117,8 @@ func parseArguments() throws -> ParsedArguments {
 
     return ParsedArguments(
         mode: mode,
-        debugArtifactsDirectory: debugArtifactsDirectory
+        debugArtifactsDirectory: debugArtifactsDirectory,
+        checkSystemAudioPermission: checkSystemAudioPermission
     )
 }
 
@@ -1123,6 +1126,7 @@ func parseArguments() throws -> ParsedArguments {
 struct PrismicalAudioCaptureApp {
     static func main() {
         let coordinator: CaptureCoordinator
+        let checkSystemAudioPermission: Bool
 
         do {
             let parsedArguments = try parseArguments()
@@ -1130,6 +1134,7 @@ struct PrismicalAudioCaptureApp {
                 mode: parsedArguments.mode,
                 debugArtifactsDirectory: parsedArguments.debugArtifactsDirectory
             )
+            checkSystemAudioPermission = parsedArguments.checkSystemAudioPermission
         } catch {
             Logger.error(error.localizedDescription)
             exit(1)
@@ -1159,6 +1164,10 @@ struct PrismicalAudioCaptureApp {
         Task { @MainActor in
             do {
                 try await coordinator.start()
+                if checkSystemAudioPermission {
+                    await coordinator.stop()
+                    exit(0)
+                }
                 Logger.info("Capture binary ready")
             } catch {
                 Logger.error(error.localizedDescription)

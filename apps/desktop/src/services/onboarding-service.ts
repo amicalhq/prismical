@@ -8,6 +8,7 @@ import type { AppSettingsData } from "../db/schema";
 import {
   OnboardingScreen,
   FeatureInterest,
+  type SystemAudioPermissionStatus,
   type OnboardingState,
   type OnboardingPreferences,
   type ModelRecommendation,
@@ -321,21 +322,57 @@ export class OnboardingService extends EventEmitter {
 
   /**
    * Check system permissions (can be called anytime)
-   * Returns current microphone and screen recording permission status
+   * Returns current microphone and system-audio permission status.
    */
-  checkSystemPermissions(): {
+  async checkSystemPermissions(): Promise<{
     microphone: boolean;
-    screenRecording: boolean;
-  } {
+    systemAudio: boolean;
+  }> {
     const microphone =
       systemPreferences.getMediaAccessStatus("microphone") === "granted";
+    const systemAudio =
+      (await this.getCachedSystemAudioPermissionStatus()) === "granted";
 
-    const screenRecording =
-      process.platform === "darwin"
-        ? systemPreferences.getMediaAccessStatus("screen") === "granted"
-        : true; // Non-macOS platforms don't need screen recording permission
+    return { microphone, systemAudio };
+  }
 
-    return { microphone, screenRecording };
+  /**
+   * Passive onboarding rendering must never run the real native tap probe.
+   * On macOS that probe can itself trigger the system permission dialog.
+   *
+   * We therefore keep a cached status for UI/boot decisions and only refresh it
+   * from the real native probe on explicit user action (or when actual capture
+   * starts elsewhere in the app).
+   */
+  async getCachedSystemAudioPermissionStatus(): Promise<SystemAudioPermissionStatus> {
+    if (process.platform !== "darwin") {
+      return "granted";
+    }
+
+    const settings = await this.settingsService.getAllSettings();
+    const cachedStatus = settings.onboarding?.systemAudioPermissionStatus;
+
+    if (
+      cachedStatus === "unknown" ||
+      cachedStatus === "granted" ||
+      cachedStatus === "required"
+    ) {
+      return cachedStatus;
+    }
+
+    return "unknown";
+  }
+
+  async setCachedSystemAudioPermissionStatus(
+    status: SystemAudioPermissionStatus,
+  ): Promise<void> {
+    const settings = await this.settingsService.getAllSettings();
+    await this.settingsService.updateSettings({
+      onboarding: {
+        ...settings.onboarding,
+        systemAudioPermissionStatus: status,
+      } as AppSettingsData["onboarding"],
+    });
   }
 
   /**
@@ -351,7 +388,7 @@ export class OnboardingService extends EventEmitter {
     };
     missingPermissions: {
       microphone: boolean;
-      screenRecording: boolean;
+      systemAudio: boolean;
     };
   }> {
     const forceOnboarding = process.env.FORCE_ONBOARDING === "true";
@@ -362,9 +399,9 @@ export class OnboardingService extends EventEmitter {
       : false;
 
     // Check actual system permissions
-    const permissions = this.checkSystemPermissions();
+    const permissions = await this.checkSystemPermissions();
     const hasMissingPermissions =
-      !permissions.microphone || !permissions.screenRecording;
+      !permissions.microphone || !permissions.systemAudio;
 
     const needed = forceOnboarding || !hasCompleted || hasMissingPermissions;
 
@@ -377,7 +414,7 @@ export class OnboardingService extends EventEmitter {
       },
       missingPermissions: {
         microphone: !permissions.microphone,
-        screenRecording: !permissions.screenRecording,
+        systemAudio: !permissions.systemAudio,
       },
     };
   }

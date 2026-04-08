@@ -99,7 +99,7 @@
     },
     "permissions": {
       "title": "Setup Permissions",
-      "subtitle": "Prismical needs a few permissions to work properly",
+      "subtitle": "Prismical needs microphone and system audio access to work properly",
       "waiting": "Waiting for permissions...",
       "polling": "Checking for permission changes...",
       "allGranted": {
@@ -122,10 +122,10 @@
         "description": "Required for recording and transcribing audio",
         "deniedHelp": "Please grant microphone access in System Settings"
       },
-      "screenRecording": {
-        "title": "Screen Recording Access",
-        "description": "Required for capturing system audio during meetings (macOS only)",
-        "deniedHelp": "Add Prismical to Screen Recording in System Settings"
+      "systemAudio": {
+        "title": "System Audio Access",
+        "description": "Required for capturing meeting audio from your Mac",
+        "deniedHelp": "Allow Prismical to capture system audio in System Settings."
       }
     },
     "discovery": {

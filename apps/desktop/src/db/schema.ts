@@ -273,6 +273,7 @@ export interface AppSettingsData {
     completedVersion: number;
     completedAt: string; // ISO 8601 timestamp
     lastVisitedScreen?: string; // Last screen user was on (for resume)
+    systemAudioPermissionStatus?: "unknown" | "granted" | "required"; // Cached status for passive UI. We do not run the native tap probe on screen load because that can itself trigger the OS prompt.
     skippedScreens?: string[]; // Screens skipped via feature flags
     featureInterests?: string[]; // Selected features (max 3)
     discoverySource?: string; // How user found Prismical
