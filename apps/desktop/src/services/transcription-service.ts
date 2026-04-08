@@ -274,6 +274,8 @@ export class TranscriptionService {
     let session = this.streamingSessions.get(sessionId);
 
     try {
+      let sessionWasCreated = false;
+
       if (!session) {
         const context = await this.buildContext();
         const streamingContext: StreamingPipelineContext = {
@@ -296,6 +298,7 @@ export class TranscriptionService {
         };
 
         this.streamingSessions.set(sessionId, session);
+        sessionWasCreated = true;
 
         logger.transcription.info("Started streaming session", {
           sessionId,
@@ -313,10 +316,14 @@ export class TranscriptionService {
 
       // Select the appropriate provider
       const provider = await this.selectProvider();
+      if (sessionWasCreated) {
+        provider.reset();
+      }
 
       // Transcribe chunk (flush is done separately in finalizeSession)
       const chunkTranscription = await provider.transcribe({
         audioData: audioChunk,
+        sampleRate: 16000,
         speechProbability: speechProbability,
         context: {
           sessionId,
@@ -960,6 +967,7 @@ export class TranscriptionService {
 
         const chunkTranscription = await provider.transcribe({
           audioData: frames[i],
+          sampleRate: 16000,
           speechProbability: vadProbs[i],
           context: {
             sessionId: retrySessionId,

@@ -154,12 +154,14 @@ export class MeetingManager extends EventEmitter {
     if (mode === "mic" || mode === "dual") {
       this.writers.mic = new StreamingWavWriter(
         path.join(artifactsDir, "mic.wav"),
+        48_000,
       );
     }
 
     if (mode === "system" || mode === "dual") {
       this.writers.system = new StreamingWavWriter(
         path.join(artifactsDir, "system.wav"),
+        48_000,
       );
     }
 
@@ -182,7 +184,9 @@ export class MeetingManager extends EventEmitter {
 
     this.setState("starting");
     try {
-      await this.captureClient.start(mode);
+      await this.captureClient.start(mode, {
+        debugArtifactsDir: artifactsDir,
+      });
       this.setState("recording");
       logger.audio.info("Meeting capture started", { meetingId, mode });
       return {

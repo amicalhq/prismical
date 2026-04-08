@@ -14,6 +14,7 @@ import {
   type ErrorCode,
   type CloudErrorResponse,
 } from "../../../types/error";
+import { StreamingLinearResampler } from "../../utils/streaming-linear-resampler";
 
 // Type guard to validate error codes from server
 const isValidErrorCode = (code: string | undefined): code is ErrorCode =>
@@ -54,6 +55,9 @@ export class PrismicalCloudProvider implements TranscriptionProvider {
   private currentAggregatedTranscription: string | undefined;
   private currentVocabulary: string[] = [];
   private currentSessionId: string | undefined;
+  private bufferedAudioSamples = 0;
+  private inputResampler: StreamingLinearResampler | null = null;
+  private inputSampleRate: number | null = null;
 
   // Configuration
   private readonly FRAME_SIZE = 512; // 32ms at 16kHz
@@ -78,7 +82,19 @@ export class PrismicalCloudProvider implements TranscriptionProvider {
    */
   async transcribe(params: TranscribeParams): Promise<string> {
     try {
-      const { audioData, speechProbability = 1, context } = params;
+      const {
+        audioData,
+        sampleRate,
+        speechProbability = 1,
+        context,
+      } = params;
+      const normalizedAudio = this.normalizeToProviderRate(
+        audioData,
+        sampleRate,
+      );
+      if (normalizedAudio.length === 0) {
+        return "";
+      }
 
       // Store context for API call
       this.currentLanguage = context.language;
@@ -96,7 +112,8 @@ export class PrismicalCloudProvider implements TranscriptionProvider {
       }
 
       // Add frame to buffer with speech probability
-      this.frameBuffer.push(audioData);
+      this.frameBuffer.push(normalizedAudio);
+      this.bufferedAudioSamples += normalizedAudio.length;
       this.frameBufferSpeechProbabilities.push(speechProbability);
 
       // Consider it speech if probability is above threshold
@@ -144,7 +161,13 @@ export class PrismicalCloudProvider implements TranscriptionProvider {
         );
       }
 
-      const enableFormatting = context.formattingEnabled ?? false;
+    const flushedResamplerAudio = this.flushResampler();
+    if (flushedResamplerAudio.length > 0) {
+      this.frameBuffer.push(flushedResamplerAudio);
+      this.bufferedAudioSamples += flushedResamplerAudio.length;
+    }
+
+    const enableFormatting = context.formattingEnabled ?? false;
       // flush() is called at session end, so this is the final call
       return this.doTranscription(enableFormatting, true);
     } catch (error) {
@@ -181,6 +204,7 @@ export class PrismicalCloudProvider implements TranscriptionProvider {
     this.frameBuffer = [];
     this.frameBufferSpeechProbabilities = [];
     this.currentSilenceFrameCount = 0;
+    this.bufferedAudioSamples = 0;
 
     // Make the API request
     return this.makeTranscriptionRequest(
@@ -200,23 +224,57 @@ export class PrismicalCloudProvider implements TranscriptionProvider {
     this.frameBuffer = [];
     this.frameBufferSpeechProbabilities = [];
     this.currentSilenceFrameCount = 0;
+    this.bufferedAudioSamples = 0;
     this.currentLanguage = undefined;
     this.currentAccessibilityContext = null;
     this.currentAggregatedTranscription = undefined;
     this.currentSessionId = undefined;
+    this.inputResampler?.reset();
+    this.inputResampler = null;
+    this.inputSampleRate = null;
   }
 
   private shouldTranscribe(): boolean {
     const silenceDuration =
       ((this.currentSilenceFrameCount * this.FRAME_SIZE) / this.SAMPLE_RATE) *
       1000;
-    const audioDuration =
-      ((this.frameBuffer.length * this.FRAME_SIZE) / this.SAMPLE_RATE) * 1000;
+    const audioDuration = (this.bufferedAudioSamples / this.SAMPLE_RATE) * 1000;
 
     return (
       audioDuration >= this.MIN_AUDIO_DURATION_MS &&
       silenceDuration >= this.MAX_SILENCE_DURATION_MS
     );
+  }
+
+  private normalizeToProviderRate(
+    audioData: Float32Array,
+    sampleRate: number,
+  ): Float32Array {
+    if (audioData.length === 0) {
+      return new Float32Array(0);
+    }
+
+    if (sampleRate === this.SAMPLE_RATE) {
+      return audioData;
+    }
+
+    if (this.inputSampleRate !== sampleRate || !this.inputResampler) {
+      this.inputSampleRate = sampleRate;
+      this.inputResampler = new StreamingLinearResampler(
+        sampleRate,
+        this.SAMPLE_RATE,
+      );
+    }
+
+    return this.inputResampler.process(audioData);
+  }
+
+  private flushResampler(): Float32Array {
+    if (!this.inputResampler) {
+      return new Float32Array(0);
+    }
+
+    return this.inputResampler.flush();
   }
 
   private async makeTranscriptionRequest(

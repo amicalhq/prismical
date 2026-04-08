@@ -46,7 +46,12 @@ export class NativeAudioCaptureClient extends EventEmitter {
     return super.emit(event, ...args);
   }
 
-  async start(mode: MeetingCaptureMode): Promise<void> {
+  async start(
+    mode: MeetingCaptureMode,
+    options?: {
+      debugArtifactsDir?: string;
+    },
+  ): Promise<void> {
     if (this.process) {
       throw new Error("Native audio capture is already running.");
     }
@@ -61,10 +66,16 @@ export class NativeAudioCaptureClient extends EventEmitter {
     logger.audio.info("Starting native audio capture", {
       binaryPath,
       mode,
+      debugArtifactsDir: options?.debugArtifactsDir,
     });
 
     this.pending = Buffer.alloc(0);
-    const captureProcess = spawn(binaryPath, ["--mode", mode], {
+    const args = ["--mode", mode];
+    if (options?.debugArtifactsDir) {
+      args.push("--debug-artifacts-dir", options.debugArtifactsDir);
+    }
+
+    const captureProcess = spawn(binaryPath, args, {
       stdio: ["ignore", "pipe", "pipe"],
     });
     this.process = captureProcess;
@@ -145,7 +156,7 @@ export class NativeAudioCaptureClient extends EventEmitter {
       throw new Error(`Unsupported audio packet format: ${format}`);
     }
 
-    if (channels !== 1 || sampleRate !== 16000) {
+    if (channels !== 1 || sampleRate !== 48000) {
       throw new Error(
         `Unexpected audio packet format: sampleRate=${sampleRate} channels=${channels}`,
       );
@@ -154,8 +165,8 @@ export class NativeAudioCaptureClient extends EventEmitter {
     return {
       source: sourceId === 1 ? "mic" : "system",
       samples: this.parseSamples(payload),
-      sampleRate: 16000,
-      channels: 1,
+      sampleRate,
+      channels,
       timestampMs,
       durationMs,
       sequenceNum,

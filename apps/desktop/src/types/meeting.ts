@@ -17,8 +17,8 @@ export type MeetingArtifactType = "mic_wav" | "system_wav" | "debug_json";
 export interface AudioFrame {
   source: AudioSource;
   samples: Float32Array;
-  sampleRate: 16000;
-  channels: 1;
+  sampleRate: number;
+  channels: number;
   timestampMs: number;
   durationMs: number;
   sequenceNum: number;

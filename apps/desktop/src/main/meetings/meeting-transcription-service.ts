@@ -73,6 +73,7 @@ export class MeetingSourceTranscriptionRuntime {
 
       const providerText = await this.provider.transcribe({
         audioData: frame.samples,
+        sampleRate: frame.sampleRate,
         speechProbability: 1,
         context: {
           sessionId: this.options.meetingId,

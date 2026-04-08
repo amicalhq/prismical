@@ -535,7 +535,7 @@ final class PacketWriter {
         .system: 0
     ]
 
-    func write(source: CaptureSource, samples: [Float], sampleRate: UInt32 = 16_000, channels: UInt8 = 1) {
+    func write(source: CaptureSource, samples: [Float], sampleRate: UInt32 = 48_000, channels: UInt8 = 1) {
         guard !samples.isEmpty else { return }
 
         let timestampMs = UInt64((DispatchTime.now().uptimeNanoseconds - startedAt) / 1_000_000)
@@ -581,10 +581,116 @@ final class PacketWriter {
     }
 }
 
+final class DebugWavWriter {
+    private let url: URL
+    private let sampleRate: UInt32
+    private let channels: UInt16
+    private var handle: FileHandle?
+    private var dataSize: UInt32 = 0
+    private var isFinalized = false
+
+    init?(filePath: String, sampleRate: UInt32, channels: UInt16 = 1) {
+        self.url = URL(fileURLWithPath: filePath)
+        self.sampleRate = sampleRate
+        self.channels = channels
+
+        let directoryURL = url.deletingLastPathComponent()
+        do {
+            try FileManager.default.createDirectory(
+                at: directoryURL,
+                withIntermediateDirectories: true
+            )
+
+            FileManager.default.createFile(atPath: url.path, contents: nil)
+            let handle = try FileHandle(forWritingTo: url)
+            self.handle = handle
+            try writeHeader()
+            Logger.info("Debug audio file initialized: \(url.path)")
+        } catch {
+            Logger.error("Failed to initialize debug WAV writer at \(url.path): \(error.localizedDescription)")
+            self.handle = nil
+            return nil
+        }
+    }
+
+    deinit {
+        try? finalize()
+    }
+
+    func append(samples: [Float]) throws {
+        guard !samples.isEmpty else { return }
+        guard !isFinalized, let handle else { return }
+
+        var pcmData = Data(capacity: samples.count * 2)
+        for sample in samples {
+            let clamped = max(-1.0, min(1.0, sample))
+            let intValue = Int16((clamped * 32767.0).rounded(.towardZero))
+            var littleEndian = intValue.littleEndian
+            withUnsafeBytes(of: &littleEndian) { bytes in
+                pcmData.append(contentsOf: bytes)
+            }
+        }
+
+        try handle.write(contentsOf: pcmData)
+        dataSize += UInt32(pcmData.count)
+    }
+
+    func finalize() throws {
+        guard !isFinalized else { return }
+        isFinalized = true
+        guard let handle else { return }
+
+        try handle.synchronize()
+        try handle.seek(toOffset: 0)
+        try writeHeader()
+        try handle.close()
+        self.handle = nil
+
+        Logger.info(
+            "Debug audio file finalized: path=\(url.path) dataSize=\(dataSize) duration=\(Double(dataSize) / Double(sampleRate * UInt32(channels) * 2))"
+        )
+    }
+
+    private func writeHeader() throws {
+        guard let handle else { return }
+
+        var header = Data(count: 44)
+        header.replaceSubrange(0..<4, with: Data("RIFF".utf8))
+        writeUInt32(&header, dataSize + 36, at: 4)
+        header.replaceSubrange(8..<12, with: Data("WAVE".utf8))
+        header.replaceSubrange(12..<16, with: Data("fmt ".utf8))
+        writeUInt32(&header, 16, at: 16)
+        writeUInt16(&header, 1, at: 20)
+        writeUInt16(&header, channels, at: 22)
+        writeUInt32(&header, sampleRate, at: 24)
+        writeUInt32(&header, sampleRate * UInt32(channels) * 2, at: 28)
+        writeUInt16(&header, channels * 2, at: 32)
+        writeUInt16(&header, 16, at: 34)
+        header.replaceSubrange(36..<40, with: Data("data".utf8))
+        writeUInt32(&header, dataSize, at: 40)
+
+        try handle.write(contentsOf: header)
+    }
+
+    private func writeUInt16(_ data: inout Data, _ value: UInt16, at offset: Int) {
+        var littleEndian = value.littleEndian
+        withUnsafeBytes(of: &littleEndian) { bytes in
+            data.replaceSubrange(offset..<(offset + 2), with: bytes)
+        }
+    }
+
+    private func writeUInt32(_ data: inout Data, _ value: UInt32, at offset: Int) {
+        var littleEndian = value.littleEndian
+        withUnsafeBytes(of: &littleEndian) { bytes in
+            data.replaceSubrange(offset..<(offset + 4), with: bytes)
+        }
+    }
+}
+
 final class MicrophoneCapture {
     private let engine = AVAudioEngine()
     private let writer: PacketWriter
-    private let targetFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false)!
+    private let targetFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48_000, channels: 1, interleaved: false)!
     private var converter: AVAudioConverter?
 
     init(writer: PacketWriter) {
@@ -667,15 +773,20 @@ final class MicrophoneCapture {
 final class SystemAudioCapture {
     private let writer: PacketWriter
     private let processingQueue = DispatchQueue(label: "ai.prismical.audio-capture.system.processing")
-    private let targetFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false)!
+    private let targetFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48_000, channels: 1, interleaved: false)!
+    private let debugArtifactsDirectory: String?
     private var sourceFormat: AVAudioFormat?
+    private var sourceSampleRate: Double?
     private var tapID: AudioObjectID = kAudioObjectUnknown
     private var aggregateDeviceID: AudioObjectID = kAudioObjectUnknown
     private var ioProcID: AudioDeviceIOProcID?
     private var callbackLogCount = 0
+    private var preResampleDebugWriter: DebugWavWriter?
+    private var postResampleDebugWriter: DebugWavWriter?
 
-    init(writer: PacketWriter) {
+    init(writer: PacketWriter, debugArtifactsDirectory: String? = nil) {
         self.writer = writer
+        self.debugArtifactsDirectory = debugArtifactsDirectory
     }
 
     func start() async throws {
@@ -683,7 +794,9 @@ final class SystemAudioCapture {
             throw CaptureError.unsupportedSystemAudioOSVersion
         }
 
+        Logger.info("System audio capture setup: begin")
         let excludedProcesses = getCurrentProcessObjectID().map { [$0] } ?? []
+        Logger.info("System audio capture setup: resolved excluded processes count=\(excludedProcesses.count)")
         let tapDescription = CATapDescription(monoGlobalTapButExcludeProcesses: excludedProcesses)
         tapDescription.name = "Prismical System Audio Capture"
         tapDescription.isPrivate = true
@@ -696,8 +809,10 @@ final class SystemAudioCapture {
             operation: "AudioHardwareCreateProcessTap"
         )
         self.tapID = tapID
+        Logger.info("System audio capture setup: process tap created id=\(tapID)")
 
         let outputDeviceUID = try getDefaultOutputDeviceUID()
+        Logger.info("System audio capture setup: default output device uid=\(outputDeviceUID)")
         let aggregateDeviceDescription = makeAggregateDeviceDescription(
             outputDeviceUID: outputDeviceUID
         )
@@ -708,17 +823,27 @@ final class SystemAudioCapture {
             operation: "AudioHardwareCreateAggregateDevice"
         )
         self.aggregateDeviceID = aggregateDeviceID
+        Logger.info("System audio capture setup: aggregate device created id=\(aggregateDeviceID)")
 
         try attachTapToAggregateDevice(
             aggregateDeviceID: aggregateDeviceID,
             tapUID: tapUUID.uuidString
         )
+        Logger.info("System audio capture setup: tap attached to aggregate device")
+
+        let aggregateDeviceSampleRate: Float64 = try getAudioObjectProperty(
+            objectID: aggregateDeviceID,
+            selector: kAudioDevicePropertyNominalSampleRate,
+            type: Float64.self
+        )
+        Logger.info("System audio capture setup: aggregate sample rate=\(Int(aggregateDeviceSampleRate))")
 
         var tapFormatDescription: AudioStreamBasicDescription = try getAudioObjectProperty(
             objectID: tapID,
             selector: kAudioTapPropertyFormat,
             type: AudioStreamBasicDescription.self
         )
+        Logger.info("System audio capture setup: tap format fetched")
 
         guard let sourceFormat = AVAudioFormat(streamDescription: &tapFormatDescription) else {
             throw CaptureError.unsupportedSystemAudioBuffer
@@ -729,10 +854,23 @@ final class SystemAudioCapture {
         }
 
         self.sourceFormat = sourceFormat
+        self.sourceSampleRate = aggregateDeviceSampleRate
         callbackLogCount = 0
 
+        if let debugArtifactsDirectory {
+            let debugDirectoryURL = URL(fileURLWithPath: debugArtifactsDirectory)
+            preResampleDebugWriter = DebugWavWriter(
+                filePath: debugDirectoryURL.appendingPathComponent("system-pre-resample.wav").path,
+                sampleRate: UInt32(aggregateDeviceSampleRate.rounded())
+            )
+            postResampleDebugWriter = DebugWavWriter(
+                filePath: debugDirectoryURL.appendingPathComponent("system-post-resample.wav").path,
+                sampleRate: 48_000
+            )
+        }
+
         Logger.info(
-            "System audio tap format ready: sampleRate=\(Int(sourceFormat.sampleRate)) channels=\(sourceFormat.channelCount) interleaved=\(sourceFormat.isInterleaved)"
+            "System audio tap format ready: tapSampleRate=\(Int(sourceFormat.sampleRate)) aggregateSampleRate=\(Int(aggregateDeviceSampleRate)) channels=\(sourceFormat.channelCount) interleaved=\(sourceFormat.isInterleaved)"
         )
 
         var ioProcID: AudioDeviceIOProcID?
@@ -794,6 +932,15 @@ final class SystemAudioCapture {
         aggregateDeviceID = kAudioObjectUnknown
         tapID = kAudioObjectUnknown
         sourceFormat = nil
+        sourceSampleRate = nil
+
+        do {
+            try preResampleDebugWriter?.finalize()
+            try postResampleDebugWriter?.finalize()
+        } catch {
+            Logger.error("Failed to finalize debug audio files: \(error.localizedDescription)")
+        }
+
         Logger.info("System audio capture stopped")
     }
 
@@ -853,6 +1000,7 @@ final class SystemAudioCapture {
         selectedSource: String
     ) {
         guard let tapFormat = sourceFormat else { return }
+        let sourceSampleRate = sourceSampleRate ?? tapFormat.sampleRate
 
         let sourceBuffers = UnsafeMutableAudioBufferListPointer(copiedBufferList.pointer)
         guard let firstBuffer = sourceBuffers.first else { return }
@@ -881,22 +1029,36 @@ final class SystemAudioCapture {
 
         let resampledSamples = resampleLinear(
             samples: monoSamples,
-            from: tapFormat.sampleRate,
+            from: sourceSampleRate,
             to: targetFormat.sampleRate
         )
 
-        writer.write(source: .system, samples: resampledSamples)
+        do {
+            try preResampleDebugWriter?.append(samples: monoSamples)
+            try postResampleDebugWriter?.append(samples: resampledSamples)
+        } catch {
+            Logger.error("Failed to write debug audio files: \(error.localizedDescription)")
+        }
+
+        writer.write(
+            source: .system,
+            samples: resampledSamples,
+            sampleRate: UInt32(targetFormat.sampleRate),
+            channels: 1
+        )
     }
 }
 
 final class CaptureCoordinator {
     private let writer = PacketWriter()
     private let mode: CaptureMode
+    private let debugArtifactsDirectory: String?
     private var microphoneCapture: MicrophoneCapture?
     private var systemAudioCapture: SystemAudioCapture?
 
-    init(mode: CaptureMode) {
+    init(mode: CaptureMode, debugArtifactsDirectory: String?) {
         self.mode = mode
+        self.debugArtifactsDirectory = debugArtifactsDirectory
     }
 
     func start() async throws {
@@ -907,7 +1069,10 @@ final class CaptureCoordinator {
         }
 
         if mode == .system || mode == .dual {
-            let systemAudioCapture = SystemAudioCapture(writer: writer)
+            let systemAudioCapture = SystemAudioCapture(
+                writer: writer,
+                debugArtifactsDirectory: debugArtifactsDirectory
+            )
             try await systemAudioCapture.start()
             self.systemAudioCapture = systemAudioCapture
         }
@@ -919,21 +1084,39 @@ final class CaptureCoordinator {
     }
 }
 
-func parseMode() throws -> CaptureMode {
+struct ParsedArguments {
+    let mode: CaptureMode
+    let debugArtifactsDirectory: String?
+}
+
+func parseArguments() throws -> ParsedArguments {
     let arguments = CommandLine.arguments
+    var mode: CaptureMode?
+    var debugArtifactsDirectory: String?
 
     if let modeIndex = arguments.firstIndex(of: "--mode"), modeIndex + 1 < arguments.count {
-        guard let mode = CaptureMode(rawValue: arguments[modeIndex + 1]) else {
+        guard let parsedMode = CaptureMode(rawValue: arguments[modeIndex + 1]) else {
             throw CaptureError.invalidArguments
         }
-        return mode
+        mode = parsedMode
+    } else if arguments.count > 1, let parsedMode = CaptureMode(rawValue: arguments[1]) {
+        mode = parsedMode
     }
 
-    guard arguments.count > 1, let mode = CaptureMode(rawValue: arguments[1]) else {
+    if let debugIndex = arguments.firstIndex(of: "--debug-artifacts-dir"),
+       debugIndex + 1 < arguments.count
+    {
+        debugArtifactsDirectory = arguments[debugIndex + 1]
+    }
+
+    guard let mode else {
         throw CaptureError.invalidArguments
     }
 
-    return mode
+    return ParsedArguments(
+        mode: mode,
+        debugArtifactsDirectory: debugArtifactsDirectory
+    )
 }
 
 @main
@@ -942,8 +1125,11 @@ struct PrismicalAudioCaptureApp {
         let coordinator: CaptureCoordinator
 
         do {
-            let mode = try parseMode()
-            coordinator = CaptureCoordinator(mode: mode)
+            let parsedArguments = try parseArguments()
+            coordinator = CaptureCoordinator(
+                mode: parsedArguments.mode,
+                debugArtifactsDirectory: parsedArguments.debugArtifactsDirectory
+            )
         } catch {
             Logger.error(error.localizedDescription)
             exit(1)
