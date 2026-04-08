@@ -122,10 +122,10 @@
         "description": "Required for recording and transcribing audio",
         "deniedHelp": "Please grant microphone access in System Settings"
       },
-      "accessibility": {
-        "title": "Accessibility Access",
-        "description": "Required for pasting transcription and global keyboard shortcuts (macOS only)",
-        "deniedHelp": "Add Prismical to Accessibility in System Settings"
+      "screenRecording": {
+        "title": "Screen Recording Access",
+        "description": "Required for capturing system audio during meetings (macOS only)",
+        "deniedHelp": "Add Prismical to Screen Recording in System Settings"
       }
     },
     "discovery": {
@@ -155,6 +155,7 @@
       "subtitle": "Select how you want Prismical to process your audio",
       "completeSetupToContinue": "Complete setup to continue",
       "recommended": "Recommended",
+      "comingSoon": "Coming soon",
       "prosLabel": "Pros:",
       "consLabel": "Cons:",
       "note": "You can change your model later in Settings - nothing is permanent.",

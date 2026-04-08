@@ -191,7 +191,9 @@ export class WhisperProvider implements TranscriptionProvider {
           ? rawAudio.length
           : Math.min(this.bufferedSpeechSamples, rawAudio.length);
       const transcribableAudio =
-        transcribableLength > 0 ? rawAudio.subarray(0, transcribableLength) : rawAudio;
+        transcribableLength > 0
+          ? rawAudio.subarray(0, transcribableLength)
+          : rawAudio;
       const unprocessedTail =
         transcribableLength < rawAudio.length
           ? rawAudio.slice(transcribableLength)
@@ -418,7 +420,10 @@ export class WhisperProvider implements TranscriptionProvider {
     }
 
     if (this.inputSampleRate !== sampleRate || !this.inputResampler) {
-      if (this.inputSampleRate !== null && this.inputSampleRate !== sampleRate) {
+      if (
+        this.inputSampleRate !== null &&
+        this.inputSampleRate !== sampleRate
+      ) {
         logger.transcription.warn(
           "Whisper input sample rate changed mid-session; resetting provider resampler",
           {
@@ -483,10 +488,7 @@ export class WhisperProvider implements TranscriptionProvider {
     return this.vadService;
   }
 
-  private concatFloat32(
-    left: Float32Array,
-    right: Float32Array,
-  ): Float32Array {
+  private concatFloat32(left: Float32Array, right: Float32Array): Float32Array {
     if (left.length === 0) {
       return right.slice();
     }

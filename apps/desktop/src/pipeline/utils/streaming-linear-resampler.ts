@@ -7,9 +7,7 @@ export class StreamingLinearResampler {
     private readonly outputSampleRate: number,
   ) {}
 
-  process(
-    chunk: Float32Array<ArrayBufferLike>,
-  ): Float32Array<ArrayBufferLike> {
+  process(chunk: Float32Array<ArrayBufferLike>): Float32Array<ArrayBufferLike> {
     if (chunk.length === 0) {
       return new Float32Array(0);
     }
@@ -68,7 +66,8 @@ export class StreamingLinearResampler {
       const lowerIndex = Math.floor(this.sourcePosition);
       const upperIndex = Math.min(lowerIndex + 1, this.buffer.length - 1);
       const fraction = this.sourcePosition - lowerIndex;
-      const lowerValue = this.buffer[Math.min(lowerIndex, this.buffer.length - 1)];
+      const lowerValue =
+        this.buffer[Math.min(lowerIndex, this.buffer.length - 1)];
       const upperValue = this.buffer[upperIndex];
 
       output.push(lowerValue + (upperValue - lowerValue) * fraction);

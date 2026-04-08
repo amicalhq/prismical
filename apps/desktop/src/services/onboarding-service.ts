@@ -321,21 +321,21 @@ export class OnboardingService extends EventEmitter {
 
   /**
    * Check system permissions (can be called anytime)
-   * Returns current microphone and accessibility permission status
+   * Returns current microphone and screen recording permission status
    */
   checkSystemPermissions(): {
     microphone: boolean;
-    accessibility: boolean;
+    screenRecording: boolean;
   } {
     const microphone =
       systemPreferences.getMediaAccessStatus("microphone") === "granted";
 
-    const accessibility =
+    const screenRecording =
       process.platform === "darwin"
-        ? systemPreferences.isTrustedAccessibilityClient(false)
-        : true; // Non-macOS platforms don't need accessibility permission
+        ? systemPreferences.getMediaAccessStatus("screen") === "granted"
+        : true; // Non-macOS platforms don't need screen recording permission
 
-    return { microphone, accessibility };
+    return { microphone, screenRecording };
   }
 
   /**
@@ -351,7 +351,7 @@ export class OnboardingService extends EventEmitter {
     };
     missingPermissions: {
       microphone: boolean;
-      accessibility: boolean;
+      screenRecording: boolean;
     };
   }> {
     const forceOnboarding = process.env.FORCE_ONBOARDING === "true";
@@ -364,7 +364,7 @@ export class OnboardingService extends EventEmitter {
     // Check actual system permissions
     const permissions = this.checkSystemPermissions();
     const hasMissingPermissions =
-      !permissions.microphone || !permissions.accessibility;
+      !permissions.microphone || !permissions.screenRecording;
 
     const needed = forceOnboarding || !hasCompleted || hasMissingPermissions;
 
@@ -377,7 +377,7 @@ export class OnboardingService extends EventEmitter {
       },
       missingPermissions: {
         microphone: !permissions.microphone,
-        accessibility: !permissions.accessibility,
+        screenRecording: !permissions.screenRecording,
       },
     };
   }

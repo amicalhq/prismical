@@ -82,12 +82,7 @@ export class PrismicalCloudProvider implements TranscriptionProvider {
    */
   async transcribe(params: TranscribeParams): Promise<string> {
     try {
-      const {
-        audioData,
-        sampleRate,
-        speechProbability = 1,
-        context,
-      } = params;
+      const { audioData, sampleRate, speechProbability = 1, context } = params;
       const normalizedAudio = this.normalizeToProviderRate(
         audioData,
         sampleRate,
@@ -161,13 +156,13 @@ export class PrismicalCloudProvider implements TranscriptionProvider {
         );
       }
 
-    const flushedResamplerAudio = this.flushResampler();
-    if (flushedResamplerAudio.length > 0) {
-      this.frameBuffer.push(flushedResamplerAudio);
-      this.bufferedAudioSamples += flushedResamplerAudio.length;
-    }
+      const flushedResamplerAudio = this.flushResampler();
+      if (flushedResamplerAudio.length > 0) {
+        this.frameBuffer.push(flushedResamplerAudio);
+        this.bufferedAudioSamples += flushedResamplerAudio.length;
+      }
 
-    const enableFormatting = context.formattingEnabled ?? false;
+      const enableFormatting = context.formattingEnabled ?? false;
       // flush() is called at session end, so this is the final call
       return this.doTranscription(enableFormatting, true);
     } catch (error) {

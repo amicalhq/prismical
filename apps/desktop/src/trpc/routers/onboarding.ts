@@ -328,24 +328,29 @@ export const onboardingRouter = createRouter({
   }),
 
   /**
-   * Check accessibility permission status
+   * Check screen recording permission status
    */
-  checkAccessibilityPermission: procedure.query(async (): Promise<boolean> => {
-    try {
-      // For non-macOS platforms, accessibility permission is not required
-      if (process.platform !== "darwin") {
-        return true;
-      }
+  checkScreenRecordingPermission: procedure.query(
+    async (): Promise<boolean> => {
+      try {
+        // For non-macOS platforms, screen recording permission is not required
+        if (process.platform !== "darwin") {
+          return true;
+        }
 
-      const hasPermission =
-        systemPreferences.isTrustedAccessibilityClient(false);
-      logger.main.debug("Accessibility permission status:", hasPermission);
-      return hasPermission;
-    } catch (error) {
-      logger.main.error("Failed to check accessibility permission:", error);
-      return false;
-    }
-  }),
+        const status = systemPreferences.getMediaAccessStatus("screen");
+        const hasPermission = status === "granted";
+        logger.main.debug("Screen recording permission status:", status);
+        return hasPermission;
+      } catch (error) {
+        logger.main.error(
+          "Failed to check screen recording permission:",
+          error,
+        );
+        return false;
+      }
+    },
+  ),
 
   /**
    * Get current platform
@@ -371,26 +376,26 @@ export const onboardingRouter = createRouter({
   ),
 
   /**
-   * Request accessibility permission (opens System Preferences)
+   * Request screen recording permission (opens System Preferences)
    */
-  requestAccessibilityPermission: procedure.mutation(
+  requestScreenRecordingPermission: procedure.mutation(
     async (): Promise<void> => {
       try {
         if (process.platform === "darwin") {
-          // Prompt for accessibility permission (shows system dialog)
-          systemPreferences.isTrustedAccessibilityClient(true);
-
-          // Open System Preferences to Privacy & Security > Accessibility
+          // Open System Preferences to Privacy & Security > Screen Recording
           await shell.openExternal(
-            "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
           );
 
           logger.main.info(
-            "Opened System Preferences for accessibility permission",
+            "Opened System Preferences for screen recording permission",
           );
         }
       } catch (error) {
-        logger.main.error("Failed to request accessibility permission:", error);
+        logger.main.error(
+          "Failed to request screen recording permission:",
+          error,
+        );
         throw error;
       }
     },

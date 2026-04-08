@@ -152,15 +152,19 @@ export function ModelSelectionScreen({
             const isRecommended = recommendation?.suggested === model.id;
             const isComplete = setupComplete[model.id];
 
+            const isDisabled = model.id === ModelType.Cloud;
+
             return (
               <Card
                 key={model.id}
-                className={`cursor-pointer transition-colors ${
-                  isSelected
-                    ? "border-primary bg-primary/5"
-                    : "hover:border-muted-foreground/50"
+                className={`transition-colors ${
+                  isDisabled
+                    ? "opacity-60 cursor-not-allowed"
+                    : isSelected
+                      ? "border-primary bg-primary/5 cursor-pointer"
+                      : "hover:border-muted-foreground/50 cursor-pointer"
                 }`}
-                onClick={() => handleModelSelect(model.id)}
+                onClick={() => !isDisabled && handleModelSelect(model.id)}
               >
                 <div className="flex items-start gap-4 px-4">
                   <div className="flex-1 space-y-2">
@@ -173,6 +177,14 @@ export function ModelSelectionScreen({
                         <div className="flex flex-col gap-0.5">
                           <div className="flex items-center gap-2">
                             <h3 className="font-medium">{model.title}</h3>
+                            {model.id === ModelType.Cloud && (
+                              <Badge
+                                variant="outline"
+                                className="text-xs text-muted-foreground"
+                              >
+                                {t("onboarding.modelSelection.comingSoon")}
+                              </Badge>
+                            )}
                             {isRecommended && (
                               <Badge variant="secondary" className="text-xs">
                                 {t("onboarding.modelSelection.recommended")}

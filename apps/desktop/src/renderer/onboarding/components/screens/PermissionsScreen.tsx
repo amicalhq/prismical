@@ -6,7 +6,7 @@ import {
   CheckCircle,
   AlertCircle,
   Mic,
-  Accessibility,
+  Monitor,
   ExternalLink,
   RefreshCw,
 } from "lucide-react";
@@ -19,14 +19,14 @@ interface PermissionsScreenProps {
   onBack: () => void;
   permissions: {
     microphone: "granted" | "denied" | "not-determined";
-    accessibility: boolean;
+    screenRecording: boolean;
   };
   platform: string;
   checkPermissions: () => Promise<void>;
 }
 
 /**
- * Permissions screen - handles microphone and accessibility permissions
+ * Permissions screen - handles microphone and screen recording permissions
  * Based on the existing UnifiedPermissionsStep component
  */
 export function PermissionsScreen({
@@ -47,7 +47,7 @@ export function PermissionsScreen({
 
   const allPermissionsGranted =
     permissions.microphone === "granted" &&
-    (permissions.accessibility || platform !== "darwin");
+    (permissions.screenRecording || platform !== "darwin");
 
   // Poll for permission changes continuously to keep UI in sync
   useEffect(() => {
@@ -74,10 +74,10 @@ export function PermissionsScreen({
     }
   };
 
-  const handleOpenAccessibility = async () => {
-    // Open System Preferences > Security & Privacy > Privacy > Accessibility
+  const handleOpenScreenRecording = async () => {
+    // Open System Preferences > Security & Privacy > Privacy > Screen Recording
     await openExternal.mutateAsync({
-      url: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+      url: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
     });
   };
 
@@ -113,8 +113,8 @@ export function PermissionsScreen({
     }
   };
 
-  const getAccessibilityStatus = () => {
-    if (permissions.accessibility) {
+  const getScreenRecordingStatus = () => {
+    if (permissions.screenRecording) {
       return {
         icon: CheckCircle,
         color: "text-green-500",
@@ -130,9 +130,9 @@ export function PermissionsScreen({
   };
 
   const micStatus = getMicrophoneStatus();
-  const accStatus = getAccessibilityStatus();
+  const scrStatus = getScreenRecordingStatus();
   const MicIcon = micStatus.icon;
-  const AccIcon = accStatus.icon;
+  const ScrIcon = scrStatus.icon;
 
   return (
     <OnboardingLayout
@@ -259,25 +259,25 @@ export function PermissionsScreen({
             </div>
           </Card>
 
-          {/* Accessibility Permission (macOS only) */}
+          {/* Screen Recording Permission (macOS only) */}
           {platform === "darwin" && (
             <Card className="p-6">
               <div className="flex items-start justify-between">
                 <div className="flex items-start gap-3">
-                  <div className={`mt-1 rounded-lg p-2 ${accStatus.bg}`}>
-                    <Accessibility className={`h-5 w-5 ${accStatus.color}`} />
+                  <div className={`mt-1 rounded-lg p-2 ${scrStatus.bg}`}>
+                    <Monitor className={`h-5 w-5 ${scrStatus.color}`} />
                   </div>
                   <div>
                     <h3 className="font-medium">
-                      {t("onboarding.permissions.accessibility.title")}
+                      {t("onboarding.permissions.screenRecording.title")}
                     </h3>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      {t("onboarding.permissions.accessibility.description")}
+                      {t("onboarding.permissions.screenRecording.description")}
                     </p>
 
-                    {permissions.accessibility ? (
+                    {permissions.screenRecording ? (
                       <div className="mt-2 flex items-center gap-2">
-                        <AccIcon className={`h-4 w-4 ${accStatus.color}`} />
+                        <ScrIcon className={`h-4 w-4 ${scrStatus.color}`} />
                         <span className="text-sm font-medium text-green-600 dark:text-green-400">
                           {t("onboarding.permissions.status.granted")}
                         </span>
@@ -285,22 +285,24 @@ export function PermissionsScreen({
                     ) : (
                       <div className="mt-2 space-y-2">
                         <div className="flex items-center gap-2">
-                          <AccIcon className={`h-4 w-4 ${accStatus.color}`} />
+                          <ScrIcon className={`h-4 w-4 ${scrStatus.color}`} />
                           <span className="text-sm font-medium text-yellow-600 dark:text-yellow-400">
                             {t("onboarding.permissions.status.required")}
                           </span>
                         </div>
                         <p className="text-sm text-muted-foreground">
-                          {t("onboarding.permissions.accessibility.deniedHelp")}
+                          {t(
+                            "onboarding.permissions.screenRecording.deniedHelp",
+                          )}
                         </p>
                       </div>
                     )}
                   </div>
                 </div>
 
-                {!permissions.accessibility && (
+                {!permissions.screenRecording && (
                   <Button
-                    onClick={handleOpenAccessibility}
+                    onClick={handleOpenScreenRecording}
                     size="sm"
                     variant="outline"
                     className="gap-2"

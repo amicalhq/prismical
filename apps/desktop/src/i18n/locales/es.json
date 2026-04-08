@@ -122,10 +122,10 @@
         "description": "Requerido para grabar y transcribir audio",
         "deniedHelp": "Por favor concede acceso al micrófono en Configuración del Sistema"
       },
-      "accessibility": {
-        "title": "Acceso de accesibilidad",
-        "description": "Requerido para pegar transcripciones y atajos de teclado globales (solo macOS)",
-        "deniedHelp": "Agrega Prismical a Accesibilidad en Configuración del Sistema"
+      "screenRecording": {
+        "title": "Acceso a grabación de pantalla",
+        "description": "Requerido para capturar audio del sistema durante reuniones (solo macOS)",
+        "deniedHelp": "Agrega Prismical a Grabación de Pantalla en Configuración del Sistema"
       }
     },
     "discovery": {
@@ -155,6 +155,7 @@
       "subtitle": "Selecciona cómo quieres que Prismical procese tu audio",
       "completeSetupToContinue": "Completa la configuración para continuar",
       "recommended": "Recomendado",
+      "comingSoon": "Próximamente",
       "prosLabel": "Ventajas:",
       "consLabel": "Desventajas:",
       "note": "Puedes cambiar tu modelo más tarde en Configuración; nada es permanente.",

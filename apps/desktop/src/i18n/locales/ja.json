@@ -122,10 +122,10 @@
         "description": "オーディオの録音と文字起こしに必要です",
         "deniedHelp": "システム設定でマイクへのアクセスを許可してください"
       },
-      "accessibility": {
-        "title": "アクセシビリティへのアクセス",
-        "description": "文字起こしの貼り付けとグローバルキーボードショートカットに必要です（macOSのみ）",
-        "deniedHelp": "システム設定のアクセシビリティにPrismicalを追加してください"
+      "screenRecording": {
+        "title": "画面収録へのアクセス",
+        "description": "会議中のシステム音声をキャプチャするために必要です（macOSのみ）",
+        "deniedHelp": "システム設定の画面収録にPrismicalを追加してください"
       }
     },
     "discovery": {
@@ -155,6 +155,7 @@
       "subtitle": "Prismicalがオーディオを処理する方法を選択してください",
       "completeSetupToContinue": "続行するにはセットアップを完了してください",
       "recommended": "おすすめ",
+      "comingSoon": "近日公開",
       "prosLabel": "メリット：",
       "consLabel": "デメリット：",
       "note": "モデルは後から設定で変更できます。",
