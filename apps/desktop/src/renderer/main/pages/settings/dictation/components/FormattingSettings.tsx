@@ -21,14 +21,9 @@ export function FormattingSettings() {
     formattingOptions,
     disableFormattingToggle,
     hasFormattingOptions,
-    showCloudRequiresSpeech,
-    showCloudRequiresAuth,
-    showCloudReady,
     showNoLanguageModels,
     handleFormattingEnabledChange,
     handleFormattingModelChange,
-    handleCloudLogin,
-    isLoginPending,
   } = useFormattingSettings();
 
   return (
@@ -97,36 +92,6 @@ export function FormattingSettings() {
                 )}
                 disabled={!hasFormattingOptions}
               />
-              {showCloudRequiresSpeech && (
-                <div className="flex items-center justify-between rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-                  <span>
-                    {t("settings.dictation.formatting.requiresCloudSpeech")}
-                  </span>
-                  <Link to="/settings/ai-models" search={{ tab: "speech" }}>
-                    <Button variant="outline" size="sm">
-                      {t("settings.dictation.formatting.switchSpeechModel")}
-                    </Button>
-                  </Link>
-                </div>
-              )}
-              {showCloudRequiresAuth && (
-                <div className="flex items-center justify-between rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-                  <span>{t("settings.dictation.formatting.signInCloud")}</span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleCloudLogin}
-                    disabled={isLoginPending}
-                  >
-                    {t("settings.dictation.formatting.signIn")}
-                  </Button>
-                </div>
-              )}
-              {showCloudReady && (
-                <p className="text-xs text-muted-foreground">
-                  {t("settings.dictation.formatting.cloudReady")}
-                </p>
-              )}
               {showNoLanguageModels && (
                 <div className="flex items-center justify-between rounded-md border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-xs text-muted-foreground">
                   <span>

@@ -118,37 +118,6 @@ export interface ModelManagerState {
 
 export const AVAILABLE_MODELS: AvailableWhisperModel[] = [
   {
-    id: "prismical-cloud",
-    name: "Prismical Cloud",
-    type: "whisper",
-    description: "Fast cloud-based transcription with high accuracy.",
-    checksum: "", // No checksum for cloud model
-    filename: "", // No file for cloud model
-    downloadUrl: "", // No download for cloud model
-    size: 0, // No size for cloud model
-    sizeFormatted: "Cloud",
-    modelSize: "Cloud",
-    features: [
-      {
-        icon: "cloud",
-        tooltip: "Cloud-based processing",
-      },
-      {
-        icon: "bolt",
-        tooltip: "Fast transcription",
-      },
-      {
-        icon: "languages",
-        tooltip: "Multilingual support",
-      },
-    ],
-    speed: 4.5,
-    accuracy: 4.5,
-    setup: "cloud",
-    provider: "Prismical Cloud",
-    providerIcon: "/assets/icon_logo.svg",
-  },
-  {
     id: "whisper-tiny",
     name: "Whisper Tiny",
     type: "whisper",

@@ -2,7 +2,6 @@
 import { ComponentProps, useEffect, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import DefaultModelCombobox from "../components/default-model-combobox";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -20,11 +19,8 @@ import {
   Square,
   Loader2,
   Trash2,
-  LogIn,
-  Cloud,
 } from "lucide-react";
 import { DynamicIcon } from "lucide-react/dynamic";
-import { Button } from "@/components/ui/button";
 import {
   TooltipContent,
   Tooltip,
@@ -43,14 +39,6 @@ import {
   AlertDialogAction,
   AlertDialogCancel,
 } from "@/components/ui/alert-dialog";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { DownloadProgress } from "@/constants/models";
 import { api } from "@/trpc/react";
 import { useTranslation } from "react-i18next";
@@ -120,13 +108,6 @@ export default function SpeechTab() {
   >({});
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [modelToDelete, setModelToDelete] = useState<string | null>(null);
-  const [showLoginDialog, setShowLoginDialog] = useState(false);
-  const [pendingCloudModel, setPendingCloudModel] = useState<string | null>(
-    null,
-  );
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean | undefined>(
-    undefined,
-  );
 
   // tRPC queries
   const availableModelsQuery = api.models.getAvailableModels.useQuery();
@@ -175,26 +156,12 @@ export default function SpeechTab() {
   });
 
   const setSelectedModelMutation = api.models.setSelectedModel.useMutation({
-    onSuccess: (_data, variables) => {
+    onSuccess: () => {
       utils.models.getSelectedModel.invalidate();
-      if (variables.modelId === "prismical-cloud") {
-        toast.success(t("settings.aiModels.speech.toast.cloudSelected"));
-      }
     },
     onError: (error) => {
       console.error("Failed to select model:", error);
       toast.error(t("settings.aiModels.speech.toast.selectFailed"));
-    },
-  });
-
-  // Auth mutations
-  const loginMutation = api.auth.login.useMutation({
-    onSuccess: () => {
-      toast.info(t("settings.aiModels.speech.toast.loginInBrowser"));
-    },
-    onError: (error) => {
-      console.error("Failed to initiate login:", error);
-      toast.error(t("settings.aiModels.speech.toast.loginStartFailed"));
     },
   });
 
@@ -276,22 +243,6 @@ export default function SpeechTab() {
     },
   });
 
-  // Auth state subscription - update auth state and handle pending cloud model selection
-  api.auth.onAuthStateChange.useSubscription(undefined, {
-    onData: (authState) => {
-      setIsAuthenticated(authState.isAuthenticated);
-
-      if (authState.isAuthenticated && pendingCloudModel) {
-        toast.success(t("settings.aiModels.speech.toast.loginSuccess"));
-        setSelectedModelMutation.mutate({ modelId: pendingCloudModel });
-        setPendingCloudModel(null);
-      }
-    },
-    onError: (error) => {
-      console.error("Auth state subscription error:", error);
-    },
-  });
-
   const handleDownload = async (modelId: string, event?: React.MouseEvent) => {
     if (event) {
       event.preventDefault();
@@ -351,34 +302,11 @@ export default function SpeechTab() {
   };
 
   const handleSelectModel = async (modelId: string) => {
-    // Check if this is a cloud model
-    const model = availableModels.find((m) => m.id === modelId);
-    const isCloudModel = model?.provider === "Prismical Cloud";
-
-    // If cloud model and not authenticated, show login dialog
-    if (isCloudModel && !isAuthenticated) {
-      setPendingCloudModel(modelId);
-      setShowLoginDialog(true);
-      return;
-    }
-
     try {
       await setSelectedModelMutation.mutateAsync({ modelId });
     } catch (err) {
       console.error("Failed to select model:", err);
       // Error is already handled by the mutation's onError
-    }
-  };
-
-  const handleLogin = async () => {
-    try {
-      await loginMutation.mutateAsync();
-      setShowLoginDialog(false);
-      toast.info(t("settings.aiModels.speech.toast.loginInBrowser"));
-      // Auth state subscription will handle the rest when login completes
-    } catch (err) {
-      console.error("Failed to login:", err);
-      toast.error(t("settings.aiModels.speech.toast.loginStartFailed"));
     }
   };
 
@@ -446,13 +374,8 @@ export default function SpeechTab() {
                         const progress = downloadProgress[model.id];
                         const isDownloading =
                           progress?.status === "downloading";
-                        const isCloudModel =
-                          model.provider === "Prismical Cloud";
-
-                        // Cloud models can be selected if authenticated, local models need to be downloaded
-                        const canSelect = isCloudModel
-                          ? (isAuthenticated ?? false)
-                          : isDownloaded && isTranscriptionAvailable;
+                        const canSelect =
+                          isDownloaded && isTranscriptionAvailable;
 
                         return (
                           <TableRow
@@ -491,27 +414,6 @@ export default function SpeechTab() {
                                     </Avatar>
                                     <span>{model.provider}</span>
                                   </div>
-                                  {isCloudModel && (
-                                    <div className="mt-1">
-                                      <Tooltip>
-                                        <TooltipTrigger asChild>
-                                          <Badge
-                                            variant="secondary"
-                                            className="text-[10px] px-1.5 py-0"
-                                          >
-                                            {t(
-                                              "settings.aiModels.speech.cloudFormatting.badge",
-                                            )}
-                                          </Badge>
-                                        </TooltipTrigger>
-                                        <TooltipContent>
-                                          {t(
-                                            "settings.aiModels.speech.cloudFormatting.tooltip",
-                                          )}
-                                        </TooltipContent>
-                                      </Tooltip>
-                                    </div>
-                                  )}
                                 </div>
                               </div>
                             </TableCell>
@@ -548,98 +450,69 @@ export default function SpeechTab() {
                             </TableCell>
                             <TableCell>
                               <div className="flex flex-col items-center space-y-1">
-                                {/* Cloud models show cloud icon or login button */}
-                                {isCloudModel && (
-                                  <>
-                                    {isAuthenticated ? (
-                                      <div className="w-8 h-8 rounded-full bg-blue-500/10 flex items-center justify-center">
-                                        <Cloud className="w-4 h-4 text-blue-500" />
-                                      </div>
-                                    ) : (
-                                      <button
-                                        onClick={() => setShowLoginDialog(true)}
-                                        className="w-8 h-8 rounded-full bg-blue-500 hover:bg-blue-600 flex items-center justify-center text-white transition-colors"
-                                        title={t(
-                                          "settings.aiModels.speech.cloudFormatting.signInTitle",
-                                        )}
-                                      >
-                                        <LogIn className="w-4 h-4" />
-                                      </button>
+                                {!isDownloaded && !isDownloading && (
+                                  <button
+                                    onClick={(e) => handleDownload(model.id, e)}
+                                    className="w-8 h-8 rounded-full bg-muted hover:bg-muted/80 flex items-center justify-center text-primary-foreground transition-colors"
+                                    title={t(
+                                      "settings.aiModels.speech.actions.downloadTitle",
                                     )}
-                                  </>
+                                  >
+                                    <Download className="w-4 h-4 text-muted-foreground" />
+                                  </button>
                                 )}
 
-                                {/* Local models show download/delete buttons */}
-                                {!isCloudModel &&
-                                  !isDownloaded &&
-                                  !isDownloading && (
+                                {!isDownloaded && isDownloading && (
+                                  <div className="relative">
                                     <button
+                                      type="button"
                                       onClick={(e) =>
-                                        handleDownload(model.id, e)
+                                        handleCancelDownload(model.id, e)
                                       }
-                                      className="w-8 h-8 rounded-full bg-muted hover:bg-muted/80 flex items-center justify-center text-primary-foreground transition-colors"
+                                      className="w-8 h-8 rounded-full bg-orange-500 hover:bg-orange-600 flex items-center justify-center text-white transition-colors"
                                       title={t(
-                                        "settings.aiModels.speech.actions.downloadTitle",
+                                        "settings.aiModels.speech.actions.cancelDownloadTitle",
+                                      )}
+                                      aria-label={t(
+                                        "settings.aiModels.speech.actions.cancelDownloadAria",
+                                        { modelName: model.name },
                                       )}
                                     >
-                                      <Download className="w-4 h-4 text-muted-foreground" />
+                                      <Square className="w-4 h-4" />
                                     </button>
-                                  )}
 
-                                {!isCloudModel &&
-                                  !isDownloaded &&
-                                  isDownloading && (
-                                    <div className="relative">
-                                      <button
-                                        type="button"
-                                        onClick={(e) =>
-                                          handleCancelDownload(model.id, e)
-                                        }
-                                        className="w-8 h-8 rounded-full bg-orange-500 hover:bg-orange-600 flex items-center justify-center text-white transition-colors"
-                                        title={t(
-                                          "settings.aiModels.speech.actions.cancelDownloadTitle",
-                                        )}
-                                        aria-label={t(
-                                          "settings.aiModels.speech.actions.cancelDownloadAria",
-                                          { modelName: model.name },
-                                        )}
+                                    {progress && (
+                                      <svg
+                                        className="absolute inset-0 w-8 h-8 -rotate-90 pointer-events-none"
+                                        viewBox="0 0 36 36"
                                       >
-                                        <Square className="w-4 h-4" />
-                                      </button>
+                                        <circle
+                                          cx="18"
+                                          cy="18"
+                                          r="15.9155"
+                                          fill="none"
+                                          stroke="currentColor"
+                                          strokeWidth="3"
+                                          strokeDasharray="100 100"
+                                          className="text-muted-foreground/30"
+                                        />
+                                        <circle
+                                          cx="18"
+                                          cy="18"
+                                          r="15.9155"
+                                          fill="none"
+                                          stroke="currentColor"
+                                          strokeWidth="3"
+                                          strokeDasharray={`${Math.max(0, Math.min(100, progress.progress))} 100`}
+                                          strokeLinecap="round"
+                                          className="text-white transition-all duration-300"
+                                        />
+                                      </svg>
+                                    )}
+                                  </div>
+                                )}
 
-                                      {/* Circular Progress Ring */}
-                                      {progress && (
-                                        <svg
-                                          className="absolute inset-0 w-8 h-8 -rotate-90 pointer-events-none"
-                                          viewBox="0 0 36 36"
-                                        >
-                                          <circle
-                                            cx="18"
-                                            cy="18"
-                                            r="15.9155"
-                                            fill="none"
-                                            stroke="currentColor"
-                                            strokeWidth="3"
-                                            strokeDasharray="100 100"
-                                            className="text-muted-foreground/30"
-                                          />
-                                          <circle
-                                            cx="18"
-                                            cy="18"
-                                            r="15.9155"
-                                            fill="none"
-                                            stroke="currentColor"
-                                            strokeWidth="3"
-                                            strokeDasharray={`${Math.max(0, Math.min(100, progress.progress))} 100`}
-                                            strokeLinecap="round"
-                                            className="text-white transition-all duration-300"
-                                          />
-                                        </svg>
-                                      )}
-                                    </div>
-                                  )}
-
-                                {!isCloudModel && isDownloaded && (
+                                {isDownloaded && (
                                   <button
                                     type="button"
                                     onClick={(e) =>
@@ -698,48 +571,6 @@ export default function SpeechTab() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      <Dialog open={showLoginDialog} onOpenChange={setShowLoginDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {t("settings.aiModels.speech.loginDialog.title")}
-            </DialogTitle>
-            <DialogDescription>
-              {t("settings.aiModels.speech.loginDialog.description")}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <p className="text-sm text-muted-foreground">
-              {t("settings.aiModels.speech.loginDialog.browserNotice")}
-            </p>
-            <div className="flex items-center space-x-2 text-sm">
-              <Cloud className="w-4 h-4 text-blue-500" />
-              <span>
-                {t("settings.aiModels.speech.loginDialog.cloudBenefit")}
-              </span>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowLoginDialog(false)}>
-              {t("settings.aiModels.speech.loginDialog.cancel")}
-            </Button>
-            <Button onClick={handleLogin} disabled={loginMutation.isPending}>
-              {loginMutation.isPending ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  {t("settings.aiModels.speech.loginDialog.openingBrowser")}
-                </>
-              ) : (
-                <>
-                  <LogIn className="w-4 h-4 mr-2" />
-                  {t("settings.aiModels.speech.loginDialog.signIn")}
-                </>
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </>
   );
 }

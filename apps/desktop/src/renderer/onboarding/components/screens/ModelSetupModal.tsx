@@ -12,7 +12,6 @@ import { Progress } from "@/components/ui/progress";
 import { Loader2, Download, AlertCircle, Check } from "lucide-react";
 import { api } from "@/trpc/react";
 import { ModelType } from "../../../../types/onboarding";
-import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 
 interface ModelSetupModalProps {
@@ -23,9 +22,7 @@ interface ModelSetupModalProps {
 }
 
 /**
- * Modal for setting up model-specific requirements
- * Cloud: OAuth authentication
- * Local: Model download
+ * Modal for setting up the local speech model download.
  */
 export function ModelSetupModal({
   isOpen,
@@ -52,34 +49,7 @@ export function ModelSetupModal({
       enabled: modelType === ModelType.Local && isOpen,
     });
 
-  // tRPC mutations
-  const loginMutation = api.auth.login.useMutation({
-    onSuccess: () => {
-      // Browser opened, waiting for OAuth completion via subscription
-      toast.info(t("onboarding.modelSetup.toast.loginInBrowser"));
-    },
-    onError: (err) => {
-      console.error("OAuth error:", err);
-      setError(t("onboarding.modelSetup.cloud.error.loginStartFailed"));
-      setIsLoading(false);
-    },
-  });
   const downloadModelMutation = api.models.downloadModel.useMutation();
-
-  // Subscribe to auth state changes for Cloud model OAuth completion
-  api.auth.onAuthStateChange.useSubscription(undefined, {
-    onData: (authState) => {
-      if (authState.isAuthenticated && isLoading) {
-        toast.success(t("onboarding.modelSetup.toast.authenticated"));
-        setIsLoading(false);
-        onContinue();
-      }
-    },
-    onError: (error) => {
-      console.error("Auth state subscription error:", error);
-    },
-    enabled: modelType === ModelType.Cloud && isOpen,
-  });
 
   // Check for existing downloaded models
   const { data: downloadedModels } = api.models.getDownloadedModels.useQuery(
@@ -107,15 +77,6 @@ export function ModelSetupModal({
     },
     enabled: modelType === ModelType.Local && isOpen,
   });
-
-  // Handle Prismical authentication
-  const handlePrismicalLogin = async () => {
-    setIsLoading(true);
-    setError(null);
-
-    // The login mutation triggers Prismical OAuth flow via the main process
-    loginMutation.mutate();
-  };
 
   // Handle model download
   const startDownload = async () => {
@@ -163,32 +124,8 @@ export function ModelSetupModal({
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
-  // Render content based on model type
+  // Render local model setup content
   const renderContent = () => {
-    if (modelType === ModelType.Cloud) {
-      return (
-        <>
-          <DialogHeader>
-            <DialogTitle>{t("onboarding.modelSetup.cloud.title")}</DialogTitle>
-            <DialogDescription>
-              {t("onboarding.modelSetup.cloud.description")}
-            </DialogDescription>
-          </DialogHeader>
-
-          <DialogFooter className="space-x-2">
-            <Button variant="outline" onClick={() => onClose(false)}>
-              {t("onboarding.modelSetup.actions.cancel")}
-            </Button>
-            <Button onClick={handlePrismicalLogin} disabled={isLoading}>
-              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {t("onboarding.modelSetup.actions.signIn")}
-            </Button>
-          </DialogFooter>
-        </>
-      );
-    }
-
-    // Local model download
     return (
       <>
         <DialogHeader>

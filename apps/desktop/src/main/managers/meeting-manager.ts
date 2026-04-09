@@ -13,6 +13,7 @@ import {
 } from "@/db/meetings";
 import { StreamingWavWriter } from "@/utils/streaming-wav-writer";
 import { NativeAudioCaptureClient } from "../meetings/native-audio-capture-client";
+import { ReferenceEchoCanceller } from "../meetings/reference-echo-canceller";
 import {
   MeetingTranscriptionService,
   type MeetingSourceTranscriptionRuntime,
@@ -22,6 +23,7 @@ import type { MeetingTranscriptionSelection } from "../meetings/meeting-transcri
 import type {
   AudioFrame,
   AudioSource,
+  CapturedAudioSource,
   MeetingCaptureMode,
   MeetingRuntimeSnapshot,
   MeetingRuntimeState,
@@ -41,6 +43,15 @@ const SOURCE_TO_SPEAKER: Record<AudioSource, TranscriptSpeaker> = {
   system: "them",
 };
 
+type MeetingArtifactSource = "mic_raw" | "mic_processed" | "system";
+
+const ARTIFACT_TYPE_BY_SOURCE: Record<MeetingArtifactSource, "mic_wav" | "mic_processed_wav" | "system_wav"> =
+  {
+    mic_raw: "mic_wav",
+    mic_processed: "mic_processed_wav",
+    system: "system_wav",
+  };
+
 export class MeetingManager extends EventEmitter {
   private state: MeetingRuntimeState = "idle";
   private mode: MeetingCaptureMode | null = null;
@@ -49,7 +60,8 @@ export class MeetingManager extends EventEmitter {
   private startedAtEpochMs: number | null = null;
   private captureClient: NativeAudioCaptureClient | null = null;
   private transcriptionService: MeetingTranscriptionService;
-  private writers: Partial<Record<AudioSource, StreamingWavWriter>> = {};
+  private writers: Partial<Record<MeetingArtifactSource, StreamingWavWriter>> =
+    {};
   private transcriptionRuntimes: Partial<
     Record<AudioSource, MeetingSourceTranscriptionRuntime>
   > = {};
@@ -63,6 +75,9 @@ export class MeetingManager extends EventEmitter {
   private nextSegmentOrder = 0;
   private activeTranscriptionSelection: MeetingTranscriptionSelection | null =
     null;
+  private echoCanceller: ReferenceEchoCanceller | null = null;
+  private hasNativeProcessedMicFrames = false;
+  private nativeEchoCancellationMode: string | null = null;
 
   constructor(modelService: ModelService) {
     super();
@@ -150,9 +165,12 @@ export class MeetingManager extends EventEmitter {
     };
     this.nextSegmentOrder = 0;
     this.activeTranscriptionSelection = null;
+    this.echoCanceller = mode === "dual" ? new ReferenceEchoCanceller() : null;
+    this.hasNativeProcessedMicFrames = false;
+    this.nativeEchoCancellationMode = null;
 
     if (mode === "mic" || mode === "dual") {
-      this.writers.mic = new StreamingWavWriter(
+      this.writers.mic_raw = new StreamingWavWriter(
         path.join(artifactsDir, "mic.wav"),
         48_000,
       );
@@ -161,6 +179,13 @@ export class MeetingManager extends EventEmitter {
     if (mode === "system" || mode === "dual") {
       this.writers.system = new StreamingWavWriter(
         path.join(artifactsDir, "system.wav"),
+        48_000,
+      );
+    }
+
+    if (mode === "dual") {
+      this.writers.mic_processed = new StreamingWavWriter(
+        path.join(artifactsDir, "mic_processed.wav"),
         48_000,
       );
     }
@@ -179,6 +204,7 @@ export class MeetingManager extends EventEmitter {
 
     this.captureClient = new NativeAudioCaptureClient();
     this.captureClient.on("frame", this.handleFrame);
+    this.captureClient.on("aec-mode", this.handleNativeAecMode);
     this.captureClient.on("error", this.handleCaptureError);
     this.captureClient.on("exit", this.handleCaptureExit);
 
@@ -240,6 +266,7 @@ export class MeetingManager extends EventEmitter {
         metadata: {
           sourceLayout: "merged",
           rawAudioRetained: true,
+          echoCancellation: this.resolveEchoCancellationMetadata(),
           transcriptSegmentCount: this.lastTranscript.length,
           transcriptionProvider:
             this.activeTranscriptionSelection?.providerType ?? null,
@@ -299,15 +326,25 @@ export class MeetingManager extends EventEmitter {
   }
 
   private handleFrame = (frame: AudioFrame): void => {
+    if (frame.source === "mic_processed") {
+      this.hasNativeProcessedMicFrames = true;
+    }
+
+    const artifactSource = this.resolveArtifactSource(frame.source);
+    const levelUpdate = this.resolveLevelUpdate(frame);
+    const transcriptionRouting = this.resolveTranscriptionRouting(frame);
+
     this.frameWriteChain = this.frameWriteChain
       .then(async () => {
-        const writer = this.writers[frame.source];
+        const writer = artifactSource ? this.writers[artifactSource] : null;
         if (writer) {
           await writer.appendAudio(frame.samples);
         }
 
-        this.levels[frame.source] = normalizeLevel(frame.samples);
-        this.emit("level", { ...this.levels });
+        if (levelUpdate) {
+          this.levels[levelUpdate.source] = normalizeLevel(levelUpdate.samples);
+          this.emit("level", { ...this.levels });
+        }
       })
       .catch((error) => {
         const normalizedError =
@@ -316,28 +353,120 @@ export class MeetingManager extends EventEmitter {
         this.emit("error", normalizedError);
       });
 
-    const runtime = this.transcriptionRuntimes[frame.source];
+    if (!transcriptionRouting) {
+      return;
+    }
+
+    const runtime = this.transcriptionRuntimes[transcriptionRouting.source];
     if (!runtime) {
       return;
     }
 
-    this.transcriptionChains[frame.source] = this.transcriptionChains[
-      frame.source
-    ]
-      .then(async () => {
-        const chunks = await runtime.ingestFrame(frame);
-        await this.persistTranscriptionChunks(chunks);
-      })
-      .catch((error) => {
-        const normalizedError =
-          error instanceof Error ? error : new Error(String(error));
-        logger.audio.error(
-          "Failed to transcribe meeting frame",
-          normalizedError,
-        );
-        this.setState("error");
-        this.emit("error", normalizedError);
-      });
+    this.transcriptionChains[transcriptionRouting.source] =
+      this.transcriptionChains[transcriptionRouting.source]
+        .then(async () => {
+          const chunks = await runtime.ingestFrame(transcriptionRouting.frame);
+          await this.persistTranscriptionChunks(chunks);
+        })
+        .catch((error) => {
+          const normalizedError =
+            error instanceof Error ? error : new Error(String(error));
+          logger.audio.error(
+            "Failed to transcribe meeting frame",
+            normalizedError,
+          );
+          this.setState("error");
+          this.emit("error", normalizedError);
+        });
+  };
+
+  private resolveArtifactSource(
+    source: CapturedAudioSource,
+  ): MeetingArtifactSource | null {
+    switch (source) {
+      case "mic_raw":
+        return "mic_raw";
+      case "mic_processed":
+        return "mic_processed";
+      case "system":
+        return "system";
+      default:
+        return null;
+    }
+  }
+
+  private resolveLevelUpdate(
+    frame: AudioFrame,
+  ): { source: AudioSource; samples: Float32Array } | null {
+    if (frame.source === "system") {
+      return { source: "system", samples: frame.samples };
+    }
+
+    if (frame.source === "mic_processed") {
+      return { source: "mic", samples: frame.samples };
+    }
+
+    return this.hasNativeProcessedMicFrames
+      ? null
+      : { source: "mic", samples: frame.samples };
+  }
+
+  private resolveTranscriptionRouting(
+    frame: AudioFrame,
+  ): { source: AudioSource; frame: AudioFrame } | null {
+    if (frame.source === "system") {
+      if (!this.hasNativeProcessedMicFrames) {
+        this.echoCanceller?.ingestReferenceFrame(frame.samples);
+      }
+
+      return {
+        source: "system",
+        frame,
+      };
+    }
+
+    if (frame.source === "mic_processed") {
+      return {
+        source: "mic",
+        frame,
+      };
+    }
+
+    if (this.hasNativeProcessedMicFrames) {
+      return null;
+    }
+
+    return {
+      source: "mic",
+      frame: this.prepareFallbackMicFrame(frame),
+    };
+  }
+
+  private prepareFallbackMicFrame(frame: AudioFrame): AudioFrame {
+    if (!this.echoCanceller) {
+      return {
+        ...frame,
+        source: "mic_processed",
+      };
+    }
+
+    return {
+      ...frame,
+      source: "mic_processed",
+      samples: this.echoCanceller.processCaptureFrame(frame.samples),
+    };
+  }
+
+  private resolveEchoCancellationMetadata(): string | null {
+    if (this.hasNativeProcessedMicFrames) {
+      return this.nativeEchoCancellationMode ?? "native-helper-processed";
+    }
+
+    return this.mode === "dual" ? "reference-reducer-v1" : null;
+  }
+
+  private handleNativeAecMode = (mode: string): void => {
+    this.nativeEchoCancellationMode = mode;
   };
 
   private handleCaptureError = (error: Error): void => {
@@ -433,12 +562,12 @@ export class MeetingManager extends EventEmitter {
     const pendingArtifacts: Array<{
       id: string;
       meetingId: string;
-      artifactType: "mic_wav" | "system_wav";
+      artifactType: "mic_wav" | "mic_processed_wav" | "system_wav";
       path: string;
       sizeBytes: number;
     }> = [];
 
-    for (const source of orderedSourcesForMode(this.mode)) {
+    for (const source of Object.keys(ARTIFACT_TYPE_BY_SOURCE) as MeetingArtifactSource[]) {
       const writer = this.writers[source];
       if (!writer) {
         continue;
@@ -448,7 +577,7 @@ export class MeetingManager extends EventEmitter {
       pendingArtifacts.push({
         id: uuid(),
         meetingId,
-        artifactType: source === "mic" ? "mic_wav" : "system_wav",
+        artifactType: ARTIFACT_TYPE_BY_SOURCE[source],
         path: writer.getFilePath(),
         sizeBytes: stats.size,
       });
@@ -487,6 +616,7 @@ export class MeetingManager extends EventEmitter {
   private resetRuntime(): void {
     if (this.captureClient) {
       this.captureClient.off("frame", this.handleFrame);
+      this.captureClient.off("aec-mode", this.handleNativeAecMode);
       this.captureClient.off("error", this.handleCaptureError);
       this.captureClient.off("exit", this.handleCaptureExit);
       this.captureClient = null;
@@ -506,6 +636,10 @@ export class MeetingManager extends EventEmitter {
     this.frameWriteChain = Promise.resolve();
     this.nextSegmentOrder = 0;
     this.activeTranscriptionSelection = null;
+    this.hasNativeProcessedMicFrames = false;
+    this.nativeEchoCancellationMode = null;
+    this.echoCanceller?.reset();
+    this.echoCanceller = null;
     this.setState("idle");
   }
 }

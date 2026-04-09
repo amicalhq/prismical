@@ -22,7 +22,6 @@ export interface TranscribeContext {
 export interface TranscribeParams {
   audioData: Float32Array;
   sampleRate: number;
-  speechProbability?: number; // Speech probability from frontend VAD (0-1)
   context: TranscribeContext;
 }
 

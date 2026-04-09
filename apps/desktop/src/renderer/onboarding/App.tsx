@@ -281,7 +281,7 @@ export function App() {
         skippedScreens: skippedScreensQuery.data || [],
         featureInterests: preferences.featureInterests,
         discoverySource: preferences.discoverySource,
-        selectedModelType: preferences.selectedModelType || ModelType.Cloud,
+        selectedModelType: preferences.selectedModelType || ModelType.Local,
         modelRecommendation: preferences.modelRecommendation,
       };
 

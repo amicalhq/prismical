@@ -37,20 +37,14 @@ export const useRecording = (): UseRecordingOutput => {
 
   // Handle audio frames by sending them to the main process
   const handleAudioChunk = useCallback(
-    async (
-      arrayBuffer: ArrayBuffer,
-      speechProbability: number,
-      isFinalChunk: boolean,
-    ) => {
+    async (arrayBuffer: ArrayBuffer, isFinalChunk: boolean) => {
       // Convert ArrayBuffer to Float32Array
       const float32Array = new Float32Array(arrayBuffer);
 
       // Send frame directly to main process
-      // TODO: We need to update the IPC to include speech detection info
       await window.electronAPI.sendAudioChunk(float32Array, isFinalChunk);
       console.debug(`Sent audio frame`, {
         samples: float32Array.length,
-        speechProbability: speechProbability.toFixed(3),
         isFinal: isFinalChunk,
       });
 

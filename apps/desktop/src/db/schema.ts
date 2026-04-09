@@ -98,7 +98,7 @@ export const meetingArtifacts = sqliteTable(
     meetingId: text("meeting_id")
       .notNull()
       .references(() => meetings.id, { onDelete: "cascade" }),
-    artifactType: text("artifact_type").notNull(), // "mic_wav" | "system_wav" | "debug_json"
+    artifactType: text("artifact_type").notNull(), // "mic_wav" | "mic_processed_wav" | "system_wav" | "debug_json"
     path: text("path").notNull(),
     sizeBytes: integer("size_bytes"),
     createdAt: integer("created_at", { mode: "timestamp" })

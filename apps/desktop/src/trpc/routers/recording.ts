@@ -82,38 +82,6 @@ export const recordingRouter = createRouter({
     });
   }),
 
-  // Voice detection subscription
-  voiceDetectionUpdates: procedure.subscription(({ ctx }) => {
-    return observable<boolean>((emit) => {
-      const vadService = ctx.serviceManager.getService("vadService");
-      const logger = ctx.serviceManager.getLogger();
-
-      if (!vadService) {
-        logger.main.warn(
-          "VAD service not available for voice detection subscription",
-        );
-        // Emit false and complete immediately if VAD is not available
-        emit.next(false);
-        return () => {};
-      }
-
-      const isSpeaking = vadService.getIsSpeaking();
-      emit.next(isSpeaking);
-
-      // Set up listener for voice detection changes
-      const handleVoiceDetection = (detected: boolean) => {
-        emit.next(detected);
-      };
-
-      vadService.on("voice-detected", handleVoiceDetection);
-
-      // Cleanup function
-      return () => {
-        vadService.off("voice-detected", handleVoiceDetection);
-      };
-    });
-  }),
-
   // Recording notification subscription
   recordingNotifications: procedure.subscription(({ ctx }) => {
     return observable<RecordingNotification>((emit) => {

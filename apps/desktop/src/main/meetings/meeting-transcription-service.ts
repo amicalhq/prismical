@@ -74,7 +74,6 @@ export class MeetingSourceTranscriptionRuntime {
       const providerText = await this.provider.transcribe({
         audioData: frame.samples,
         sampleRate: frame.sampleRate,
-        speechProbability: 1,
         context: {
           sessionId: this.options.meetingId,
           language: this.options.language ?? "auto",
@@ -143,21 +142,6 @@ export class MeetingSourceTranscriptionRuntime {
   }
 
   private extractEmittedText(providerText: string): string {
-    if (this.selection.transport === "cloud") {
-      const previousAggregated = this.aggregatedText;
-      this.aggregatedText = providerText;
-
-      if (!previousAggregated) {
-        return providerText;
-      }
-
-      if (providerText.startsWith(previousAggregated)) {
-        return providerText.slice(previousAggregated.length);
-      }
-
-      return providerText;
-    }
-
     this.aggregatedText += providerText;
     return providerText;
   }

@@ -1,4 +1,5 @@
 export type AudioSource = "mic" | "system";
+export type CapturedAudioSource = "mic_raw" | "mic_processed" | "system";
 export type MeetingCaptureMode = AudioSource | "dual";
 export type MeetingRuntimeState =
   | "idle"
@@ -12,10 +13,14 @@ export type MeetingPersistenceState =
   | "failed"
   | "cancelled";
 export type TranscriptSpeaker = "you" | "them";
-export type MeetingArtifactType = "mic_wav" | "system_wav" | "debug_json";
+export type MeetingArtifactType =
+  | "mic_wav"
+  | "mic_processed_wav"
+  | "system_wav"
+  | "debug_json";
 
 export interface AudioFrame {
-  source: AudioSource;
+  source: CapturedAudioSource;
   samples: Float32Array;
   sampleRate: number;
   channels: number;

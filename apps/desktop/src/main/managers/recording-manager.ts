@@ -293,13 +293,6 @@ export class RecordingManager extends EventEmitter {
    */
   private async initializeSession(): Promise<void> {
     try {
-      // Reset VAD state for fresh speech detection (mutex-protected to avoid
-      // interleaving with retry VAD computation)
-      const transcriptionService = this.serviceManager.getService(
-        "transcriptionService",
-      );
-      await transcriptionService.resetVadForNewSession();
-
       const settingsService = this.serviceManager.getService("settingsService");
       const preferences = await settingsService.getPreferences();
       const shouldMute = preferences?.muteSystemAudio ?? true;

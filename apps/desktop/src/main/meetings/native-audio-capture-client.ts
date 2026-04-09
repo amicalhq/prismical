@@ -4,7 +4,7 @@ import type { Readable } from "node:stream";
 import { logger } from "../logger";
 import type {
   AudioFrame,
-  AudioSource,
+  CapturedAudioSource,
   MeetingCaptureMode,
 } from "@/types/meeting";
 import { assertAudioCaptureBinaryExists } from "./audio-capture-binary";
@@ -15,6 +15,7 @@ const PACKET_FORMAT_FLOAT32 = 1;
 
 interface NativeAudioCaptureEvents {
   frame: (frame: AudioFrame) => void;
+  "aec-mode": (mode: string) => void;
   error: (error: Error) => void;
   exit: (code: number | null, signal: NodeJS.Signals | null) => void;
 }
@@ -22,6 +23,7 @@ interface NativeAudioCaptureEvents {
 export class NativeAudioCaptureClient extends EventEmitter {
   private process: ChildProcessByStdio<null, Readable, Readable> | null = null;
   private pending = Buffer.alloc(0);
+  private stderrPending = "";
 
   on<U extends keyof NativeAudioCaptureEvents>(
     event: U,
@@ -63,6 +65,7 @@ export class NativeAudioCaptureClient extends EventEmitter {
     });
 
     this.pending = Buffer.alloc(0);
+    this.stderrPending = "";
     const args = ["--mode", mode];
     if (options?.debugArtifactsDir) {
       args.push("--debug-artifacts-dir", options.debugArtifactsDir);
@@ -78,7 +81,7 @@ export class NativeAudioCaptureClient extends EventEmitter {
     });
 
     captureProcess.stderr.on("data", (data: Buffer) => {
-      logger.swift.info(data.toString("utf8").trim());
+      this.handleStderrData(data);
     });
 
     captureProcess.on("error", (error) => {
@@ -131,6 +134,31 @@ export class NativeAudioCaptureClient extends EventEmitter {
     }
   }
 
+  private handleStderrData(chunk: Buffer): void {
+    this.stderrPending += chunk.toString("utf8");
+    const lines = this.stderrPending.split(/\r?\n/);
+    this.stderrPending = lines.pop() ?? "";
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        continue;
+      }
+
+      logger.swift.info(trimmed);
+      this.maybeEmitAecMode(trimmed);
+    }
+  }
+
+  private maybeEmitAecMode(line: string): void {
+    const match = line.match(/Dual mode capture started: aec=([a-z0-9-]+)/i);
+    if (!match) {
+      return;
+    }
+
+    this.emit("aec-mode", match[1]);
+  }
+
   private parseFrame(header: Buffer, payload: Buffer): AudioFrame {
     const version = header.readUInt8(0);
     const sourceId = header.readUInt8(1);
@@ -156,7 +184,7 @@ export class NativeAudioCaptureClient extends EventEmitter {
     }
 
     return {
-      source: sourceId === 1 ? "mic" : "system",
+      source: this.parseSource(sourceId),
       samples: this.parseSamples(payload),
       sampleRate,
       channels,
@@ -164,6 +192,19 @@ export class NativeAudioCaptureClient extends EventEmitter {
       durationMs,
       sequenceNum,
     };
+  }
+
+  private parseSource(sourceId: number): CapturedAudioSource {
+    switch (sourceId) {
+      case 1:
+        return "mic_raw";
+      case 2:
+        return "system";
+      case 3:
+        return "mic_processed";
+      default:
+        throw new Error(`Unsupported audio packet source: ${sourceId}`);
+    }
   }
 
   private parseSamples(payload: Buffer): Float32Array {

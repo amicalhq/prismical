@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useState } from "react";
+import { useMemo, useCallback } from "react";
 import { api } from "@/trpc/react";
 import { toast } from "sonner";
 import type { FormatterConfig } from "@/types/formatter";
@@ -15,18 +15,11 @@ interface UseFormattingSettingsReturn {
   // Derived booleans
   disableFormattingToggle: boolean;
   hasFormattingOptions: boolean;
-  showCloudRequiresSpeech: boolean;
-  showCloudRequiresAuth: boolean;
-  showCloudReady: boolean;
   showNoLanguageModels: boolean;
 
   // Handlers
   handleFormattingEnabledChange: (enabled: boolean) => void;
   handleFormattingModelChange: (modelId: string) => void;
-  handleCloudLogin: () => Promise<void>;
-
-  // Loading state
-  isLoginPending: boolean;
 }
 
 export function useFormattingSettings(): UseFormattingSettingsReturn {
@@ -42,9 +35,6 @@ export function useFormattingSettings(): UseFormattingSettingsReturn {
   const defaultLanguageModelQuery = api.models.getDefaultModel.useQuery({
     type: "language",
   });
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean | undefined>(
-    undefined,
-  );
   const utils = api.useUtils();
 
   // Use query data directly
@@ -82,16 +72,6 @@ export function useFormattingSettings(): UseFormattingSettingsReturn {
       },
     });
 
-  const loginMutation = api.auth.login.useMutation({
-    onSuccess: () => {
-      toast.info(t("settings.dictation.formatting.toast.loginInBrowser"));
-    },
-    onError: (error) => {
-      console.error("Failed to initiate login:", error);
-      toast.error(t("settings.dictation.formatting.toast.loginStartFailed"));
-    },
-  });
-
   // Subscriptions
   api.models.onSelectionChanged.useSubscription(undefined, {
     onData: ({ modelType }) => {
@@ -105,61 +85,19 @@ export function useFormattingSettings(): UseFormattingSettingsReturn {
     },
   });
 
-  api.auth.onAuthStateChange.useSubscription(undefined, {
-    onData: (authState) => {
-      setIsAuthenticated(authState.isAuthenticated);
-    },
-    onError: (error) => {
-      console.error("Auth state subscription error:", error);
-    },
-  });
-
   // Derived values
   const languageModels = languageModelsQuery.data || [];
   const hasLanguageModels = languageModels.length > 0;
-  const isCloudSpeechSelected = speechModelQuery.data === "prismical-cloud";
-  const canUseCloudFormatting =
-    isCloudSpeechSelected && (isAuthenticated ?? false);
-  const hasFormattingOptions = hasLanguageModels || canUseCloudFormatting;
+  const hasFormattingOptions = hasLanguageModels;
   const formattingEnabled = formatterConfig?.enabled ?? false;
   const disableFormattingToggle = !hasFormattingOptions;
 
   const formattingOptions = useMemo<ComboboxOption[]>(() => {
-    const getCloudDisabledReason = () => {
-      if (!isCloudSpeechSelected && !isAuthenticated) {
-        return t("settings.dictation.formatting.disabledReason.cloudAndSignIn");
-      }
-      if (!isCloudSpeechSelected) {
-        return t("settings.dictation.formatting.disabledReason.cloud");
-      }
-      if (!isAuthenticated) {
-        return t("settings.dictation.formatting.disabledReason.signIn");
-      }
-      return undefined;
-    };
-
-    const options: ComboboxOption[] = [
-      {
-        value: "prismical-cloud",
-        label: t("settings.dictation.formatting.cloudOptionLabel"),
-        disabled: !canUseCloudFormatting,
-        disabledReason: getCloudDisabledReason(),
-      },
-    ];
-
-    const languageOptions = languageModels.map((model) => ({
+    return languageModels.map((model) => ({
       value: model.id,
       label: `${model.name} (${model.provider})`,
     }));
-
-    return [...options, ...languageOptions];
-  }, [
-    canUseCloudFormatting,
-    isCloudSpeechSelected,
-    isAuthenticated,
-    languageModels,
-    t,
-  ]);
+  }, [languageModels]);
 
   const optionValues = useMemo(() => {
     return new Set(formattingOptions.map((option) => option.value));
@@ -167,36 +105,32 @@ export function useFormattingSettings(): UseFormattingSettingsReturn {
 
   const selectedModelId = useMemo(() => {
     const preferredModelId =
-      formatterConfig?.modelId || defaultLanguageModelQuery.data || "";
+      formatterConfig?.modelId === "prismical-cloud"
+        ? defaultLanguageModelQuery.data || ""
+        : formatterConfig?.modelId || defaultLanguageModelQuery.data || "";
 
     return optionValues.has(preferredModelId) ? preferredModelId : "";
   }, [defaultLanguageModelQuery.data, formatterConfig?.modelId, optionValues]);
 
-  // Inline state conditions
-  const showCloudRequiresSpeech =
-    selectedModelId === "prismical-cloud" && !isCloudSpeechSelected;
-  const showCloudRequiresAuth =
-    selectedModelId === "prismical-cloud" &&
-    isCloudSpeechSelected &&
-    !isAuthenticated;
-  const showCloudReady =
-    selectedModelId === "prismical-cloud" && canUseCloudFormatting;
-  const showNoLanguageModels =
-    !hasLanguageModels &&
-    !canUseCloudFormatting &&
-    selectedModelId !== "prismical-cloud";
+  const showNoLanguageModels = !hasLanguageModels && !speechModelQuery.isLoading;
 
   // Handlers
   const handleFormattingEnabledChange = useCallback(
     (enabled: boolean) => {
       const nextConfig: FormatterConfig = {
         enabled,
-        modelId: formatterConfig?.modelId,
-        fallbackModelId: formatterConfig?.fallbackModelId,
+        modelId:
+          formatterConfig?.modelId === "prismical-cloud"
+            ? defaultLanguageModelQuery.data ?? undefined
+            : formatterConfig?.modelId ?? undefined,
+        fallbackModelId:
+          formatterConfig?.fallbackModelId === "prismical-cloud"
+            ? defaultLanguageModelQuery.data ?? undefined
+            : formatterConfig?.fallbackModelId ?? undefined,
       };
       setFormatterConfigMutation.mutate(nextConfig);
     },
-    [formatterConfig, setFormatterConfigMutation],
+    [defaultLanguageModelQuery.data, formatterConfig, setFormatterConfigMutation],
   );
 
   const handleFormattingModelChange = useCallback(
@@ -215,18 +149,8 @@ export function useFormattingSettings(): UseFormattingSettingsReturn {
       const nextConfig: FormatterConfig = {
         enabled: formatterConfig?.enabled ?? false,
         modelId,
-        fallbackModelId: formatterConfig?.fallbackModelId,
+        fallbackModelId: modelId,
       };
-
-      if (modelId !== "prismical-cloud") {
-        nextConfig.fallbackModelId = modelId;
-      } else if (
-        !nextConfig.fallbackModelId &&
-        currentModelId &&
-        currentModelId !== "prismical-cloud"
-      ) {
-        nextConfig.fallbackModelId = currentModelId;
-      }
 
       setFormatterConfigMutation.mutate(nextConfig);
     },
@@ -237,14 +161,6 @@ export function useFormattingSettings(): UseFormattingSettingsReturn {
     ],
   );
 
-  const handleCloudLogin = useCallback(async () => {
-    try {
-      await loginMutation.mutateAsync();
-    } catch {
-      // Errors already handled in mutation callbacks
-    }
-  }, [loginMutation]);
-
   return {
     // State
     formattingEnabled,
@@ -254,17 +170,10 @@ export function useFormattingSettings(): UseFormattingSettingsReturn {
     // Derived booleans
     disableFormattingToggle,
     hasFormattingOptions,
-    showCloudRequiresSpeech,
-    showCloudRequiresAuth,
-    showCloudReady,
     showNoLanguageModels,
 
     // Handlers
     handleFormattingEnabledChange,
     handleFormattingModelChange,
-    handleCloudLogin,
-
-    // Loading state
-    isLoginPending: loginMutation.isPending,
   };
 }

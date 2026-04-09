@@ -1,7 +1,6 @@
 import { REMOTE_PROVIDERS, type RemoteProvider } from "./remote-providers";
 
 export const PROVIDER_TYPES = {
-  prismicalCloud: "prismical-cloud",
   localWhisper: "local-whisper",
   openRouter: "openrouter",
   ollama: "ollama",
@@ -11,7 +10,6 @@ export const PROVIDER_TYPES = {
 export type ProviderType = (typeof PROVIDER_TYPES)[keyof typeof PROVIDER_TYPES];
 
 export const SYSTEM_PROVIDER_INSTANCE_IDS = {
-  prismicalCloud: "system-prismical-cloud",
   localWhisper: "system-local-whisper",
   openRouter: "system-openrouter",
   ollama: "system-ollama",
@@ -33,8 +31,6 @@ export function getSystemProviderInstanceId(
   providerType: ProviderType,
 ): string {
   switch (providerType) {
-    case PROVIDER_TYPES.prismicalCloud:
-      return SYSTEM_PROVIDER_INSTANCE_IDS.prismicalCloud;
     case PROVIDER_TYPES.localWhisper:
       return SYSTEM_PROVIDER_INSTANCE_IDS.localWhisper;
     case PROVIDER_TYPES.openRouter:
@@ -48,8 +44,6 @@ export function getSystemProviderInstanceId(
 
 export function getProviderDisplayName(providerType: ProviderType): string {
   switch (providerType) {
-    case PROVIDER_TYPES.prismicalCloud:
-      return "Prismical Cloud";
     case PROVIDER_TYPES.localWhisper:
       return "Local";
     case PROVIDER_TYPES.openRouter:
@@ -76,9 +70,6 @@ export function getProviderTypeFromModelProviderName(
       return PROVIDER_TYPES.openAICompatible;
     case "local-whisper":
       return PROVIDER_TYPES.localWhisper;
-    case "prismical cloud":
-    case "prismical-cloud":
-      return PROVIDER_TYPES.prismicalCloud;
     default:
       return null;
   }

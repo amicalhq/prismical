@@ -7,7 +7,6 @@ import {
 } from "../pipeline/core/pipeline-types";
 import { createDefaultContext } from "../pipeline/core/context";
 import { WhisperProvider } from "../pipeline/providers/transcription/whisper-provider";
-import { PrismicalCloudProvider } from "../pipeline/providers/transcription/prismical-cloud-provider";
 import { OpenRouterProvider } from "../pipeline/providers/formatting/openrouter-formatter";
 import { OllamaFormatter } from "../pipeline/providers/formatting/ollama-formatter";
 import { OpenAICompatibleFormatter } from "../pipeline/providers/formatting/openai-compatible-formatter";
@@ -24,10 +23,8 @@ import {
 import { getVocabulary } from "../db/vocabulary";
 import { logger } from "../main/logger";
 import { v4 as uuid } from "uuid";
-import { VADService } from "./vad-service";
 import { Mutex } from "async-mutex";
 import { dialog } from "electron";
-import { AVAILABLE_MODELS } from "../constants/models";
 import { AppError, ErrorCodes } from "../types/error";
 import { applyTextReplacements } from "../utils/text-replacement";
 import * as fs from "node:fs";
@@ -37,32 +34,24 @@ import * as fs from "node:fs";
  */
 export class TranscriptionService {
   private whisperProvider: WhisperProvider;
-  private cloudProvider: PrismicalCloudProvider;
   private currentProvider: TranscriptionProvider | null = null;
   private streamingSessions = new Map<string, StreamingSession>();
-  private vadService: VADService | null;
   private settingsService: SettingsService;
-  private vadMutex: Mutex;
   private transcriptionMutex: Mutex;
   private modelLoadMutex: Mutex;
   private telemetryService: TelemetryService;
   private modelService: ModelService;
   private modelWasPreloaded: boolean = false;
-  private loggedVadFallback = false;
 
   constructor(
     modelService: ModelService,
-    vadService: VADService,
     settingsService: SettingsService,
     telemetryService: TelemetryService,
     private nativeBridge: NativeBridge | null,
     private onboardingService: OnboardingService | null,
   ) {
     this.whisperProvider = new WhisperProvider(modelService);
-    this.cloudProvider = new PrismicalCloudProvider();
-    this.vadService = vadService;
     this.settingsService = settingsService;
-    this.vadMutex = new Mutex();
     this.transcriptionMutex = new Mutex();
     this.modelLoadMutex = new Mutex();
     this.telemetryService = telemetryService;
@@ -73,78 +62,43 @@ export class TranscriptionService {
    * Select the appropriate transcription provider based on the selected model
    */
   private async selectProvider(): Promise<TranscriptionProvider> {
-    const selectedModelId = await this.modelService.getSelectedModel();
-
-    if (!selectedModelId) {
-      // Default to whisper if no model selected
-      this.currentProvider = this.whisperProvider;
-      return this.whisperProvider;
-    }
-
-    // Find the model in AVAILABLE_MODELS
-    const model = AVAILABLE_MODELS.find((m) => m.id === selectedModelId);
-
-    // Use cloud provider for Prismical Cloud models
-    if (model?.provider === "Prismical Cloud") {
-      this.currentProvider = this.cloudProvider;
-      return this.cloudProvider;
-    }
-
-    // Default to whisper for all other models
     this.currentProvider = this.whisperProvider;
     return this.whisperProvider;
   }
 
   async initialize(): Promise<void> {
-    // Check if the selected model is a cloud model
-    const selectedModelId = await this.modelService.getSelectedModel();
-    const model = selectedModelId
-      ? AVAILABLE_MODELS.find((m) => m.id === selectedModelId)
-      : null;
-    const isCloudModel = model?.provider === "Prismical Cloud";
+    const transcriptionSettings =
+      await this.settingsService.getTranscriptionSettings();
+    const shouldPreload = transcriptionSettings?.preloadWhisperModel !== false;
 
-    // Only preload for local models
-    if (!isCloudModel) {
-      // Check if we should preload Whisper model
-      const transcriptionSettings =
-        await this.settingsService.getTranscriptionSettings();
-      const shouldPreload =
-        transcriptionSettings?.preloadWhisperModel !== false; // Default to true
-
-      if (shouldPreload) {
-        // Check if models are available for preloading
-        const hasModels = await this.isModelAvailable();
-        if (hasModels) {
-          logger.transcription.info("Preloading Whisper model...");
-          await this.preloadWhisperModel();
-          this.modelWasPreloaded = true;
-          logger.transcription.info("Whisper model preloaded successfully");
-        } else {
-          logger.transcription.info(
-            "Whisper model preloading skipped - no models available",
-          );
-          setTimeout(async () => {
-            const onboardingCheck =
-              await this.onboardingService?.checkNeedsOnboarding();
-            if (!onboardingCheck?.needed) {
-              dialog.showMessageBox({
-                type: "warning",
-                title: "No Transcription Models",
-                message: "No transcription models are available.",
-                detail:
-                  "To use voice transcription, please download a model from Speech Models or use a cloud model.",
-                buttons: ["OK"],
-              });
-            }
-          }, 2000); // Delay to ensure windows are ready
-        }
+    if (shouldPreload) {
+      const hasModels = await this.isModelAvailable();
+      if (hasModels) {
+        logger.transcription.info("Preloading Whisper model...");
+        await this.preloadWhisperModel();
+        this.modelWasPreloaded = true;
+        logger.transcription.info("Whisper model preloaded successfully");
       } else {
-        logger.transcription.info("Whisper model preloading disabled");
+        logger.transcription.info(
+          "Whisper model preloading skipped - no models available",
+        );
+        setTimeout(async () => {
+          const onboardingCheck =
+            await this.onboardingService?.checkNeedsOnboarding();
+          if (!onboardingCheck?.needed) {
+            dialog.showMessageBox({
+              type: "warning",
+              title: "No Transcription Models",
+              message: "No transcription models are available.",
+              detail:
+                "To use voice transcription, please download a model from Speech Models.",
+              buttons: ["OK"],
+            });
+          }
+        }, 2000);
       }
     } else {
-      logger.transcription.info(
-        "Using cloud model - skipping local model preload",
-      );
+      logger.transcription.info("Whisper model preloading disabled");
     }
 
     logger.transcription.info("Transcription service initialized");
@@ -169,16 +123,6 @@ export class TranscriptionService {
    */
   public async isModelAvailable(): Promise<boolean> {
     try {
-      // Check if selected model is a cloud model (doesn't need download)
-      const selectedModelId = await this.modelService.getSelectedModel();
-      if (selectedModelId) {
-        const model = AVAILABLE_MODELS.find((m) => m.id === selectedModelId);
-        if (model?.provider === "Prismical Cloud") {
-          return true;
-        }
-      }
-
-      // For local models, check if any are downloaded
       const modelService = this.whisperProvider["modelService"];
       const availableModels = await modelService.getValidDownloadedModels();
       return Object.keys(availableModels).length > 0;
@@ -235,37 +179,6 @@ export class TranscriptionService {
     recordingStartedAt?: number;
   }): Promise<string> {
     const { sessionId, audioChunk, recordingStartedAt } = options;
-
-    // Run VAD on the audio chunk
-    let speechProbability = this.vadService ? 0 : 1;
-    let isSpeaking = !this.vadService && audioChunk.length > 0;
-
-    if (audioChunk.length > 0 && !this.vadService && !this.loggedVadFallback) {
-      logger.transcription.warn(
-        "VAD unavailable; defaulting speechProbability to 1.0 for streaming chunks",
-      );
-      this.loggedVadFallback = true;
-    }
-
-    if (audioChunk.length > 0 && this.vadService) {
-      // Acquire VAD mutex
-      await this.vadMutex.acquire();
-      try {
-        // Pass Float32Array directly to VAD
-        const vadResult = await this.vadService.processAudioFrame(audioChunk);
-
-        speechProbability = vadResult.probability;
-        isSpeaking = vadResult.isSpeaking;
-      } finally {
-        // Release VAD mutex - always release even on error
-        this.vadMutex.release();
-      }
-
-      logger.transcription.debug("VAD result", {
-        probability: speechProbability.toFixed(3),
-        isSpeaking,
-      });
-    }
 
     // Acquire transcription mutex
     await this.transcriptionMutex.acquire();
@@ -324,7 +237,6 @@ export class TranscriptionService {
       const chunkTranscription = await provider.transcribe({
         audioData: audioChunk,
         sampleRate: 16000,
-        speechProbability: speechProbability,
         context: {
           sessionId,
           vocabulary: session.context.sharedData.vocabulary,
@@ -340,7 +252,6 @@ export class TranscriptionService {
       this.accumulateTranscriptionResult(
         session.transcriptionResults,
         chunkTranscription,
-        provider.name === "prismical-cloud",
       );
       if (chunkTranscription.trim()) {
         logger.transcription.info("Whisper returned transcription", {
@@ -411,10 +322,6 @@ export class TranscriptionService {
       }
 
       const formatterConfig = await this.settingsService.getFormatterConfig();
-      const shouldUseCloudFormatting =
-        formatterConfig?.enabled &&
-        formatterConfig.modelId === "prismical-cloud";
-      let usedCloudProvider = false;
 
       // Flush provider to get any remaining buffered audio
       await this.transcriptionMutex.acquire();
@@ -428,7 +335,6 @@ export class TranscriptionService {
         const aggregatedTranscription = session.transcriptionResults.join("");
 
         const provider = await this.selectProvider();
-        usedCloudProvider = provider.name === "prismical-cloud";
         const finalTranscription = await provider.flush({
           sessionId,
           vocabulary: session.context.sharedData.vocabulary,
@@ -436,13 +342,11 @@ export class TranscriptionService {
           previousChunk,
           aggregatedTranscription: aggregatedTranscription || undefined,
           language: session.context.sharedData.userPreferences?.language,
-          formattingEnabled: shouldUseCloudFormatting && usedCloudProvider,
         });
 
         this.accumulateTranscriptionResult(
           session.transcriptionResults,
           finalTranscription,
-          usedCloudProvider,
         );
         if (finalTranscription.trim()) {
           logger.transcription.info("Whisper returned final transcription", {
@@ -457,16 +361,13 @@ export class TranscriptionService {
 
       let completeTranscription = session.transcriptionResults.join("");
 
-      // Apply simple pre-formatting for local models (handles Whisper leading space artifact)
-      if (!usedCloudProvider) {
-        const preSelectionText =
-          session.context.sharedData.accessibilityContext?.context
-            ?.textSelection?.preSelectionText;
-        completeTranscription = this.preFormatLocalTranscription(
-          completeTranscription,
-          preSelectionText,
-        );
-      }
+      const preSelectionText =
+        session.context.sharedData.accessibilityContext?.context?.textSelection
+          ?.preSelectionText;
+      completeTranscription = this.preFormatLocalTranscription(
+        completeTranscription,
+        preSelectionText,
+      );
 
       logger.transcription.info("Finalizing streaming session", {
         sessionId,
@@ -476,7 +377,6 @@ export class TranscriptionService {
 
       const formatResult = await this.applyFormattingAndReplacements({
         text: completeTranscription,
-        usedCloudProvider,
         vocabulary: session.context.sharedData.vocabulary,
         accessibilityContext: session.context.sharedData.accessibilityContext,
         replacements: session.context.sharedData.replacements,
@@ -496,9 +396,7 @@ export class TranscriptionService {
       });
 
       const selectedModelId = await this.modelService.getSelectedModel();
-      const speechModelId = usedCloudProvider
-        ? "prismical-cloud"
-        : selectedModelId || "whisper-local";
+      const speechModelId = selectedModelId || "whisper-local";
 
       await createTranscription({
         text: completeTranscription,
@@ -567,7 +465,7 @@ export class TranscriptionService {
         formatting_enabled: formattingUsed,
         formatting_model: formattingModel,
         formatting_duration_ms: formattingDuration,
-        vad_enabled: !!this.vadService,
+        vad_enabled: false,
         language:
           session.context.sharedData.userPreferences?.language || "auto",
         vocabulary_size: session.context.sharedData.vocabulary?.length || 0,
@@ -705,7 +603,6 @@ export class TranscriptionService {
    */
   private async applyFormattingAndReplacements(options: {
     text: string;
-    usedCloudProvider: boolean;
     vocabulary?: string[];
     accessibilityContext?: StreamingSession["context"]["sharedData"]["accessibilityContext"];
     replacements: Map<string, string>;
@@ -727,18 +624,11 @@ export class TranscriptionService {
       logger.transcription.debug("Formatting skipped: disabled in config");
     } else if (!text.trim().length) {
       logger.transcription.debug("Formatting skipped: empty transcription");
-    } else if (formatterConfig.modelId === "prismical-cloud") {
-      if (!options.usedCloudProvider) {
-        logger.transcription.warn(
-          "Formatting skipped: Prismical Cloud formatting requires cloud transcription",
-        );
-      } else {
-        formattingUsed = true;
-        formattingModel = "prismical-cloud";
-      }
     } else {
       const modelId =
-        formatterConfig.modelId ||
+        formatterConfig.modelId === "prismical-cloud"
+          ? await this.settingsService.getDefaultLanguageModel()
+          : formatterConfig.modelId ||
         (await this.settingsService.getDefaultLanguageModel());
       if (!modelId) {
         logger.transcription.debug(
@@ -910,10 +800,6 @@ export class TranscriptionService {
     // Determine formatting config before acquiring mutex
     const selectedModelId = await this.modelService.getSelectedModel();
     const formatterConfig = await this.settingsService.getFormatterConfig();
-    const shouldUseCloudFormatting =
-      formatterConfig?.enabled && formatterConfig.modelId === "prismical-cloud";
-
-    // Split audio into 512-sample frames for per-frame VAD
     const FRAME_SIZE = 512;
     const frames: Float32Array[] = [];
     for (let offset = 0; offset < audioData.length; offset += FRAME_SIZE) {
@@ -923,20 +809,6 @@ export class TranscriptionService {
           Math.min(offset + FRAME_SIZE, audioData.length),
         ),
       );
-    }
-
-    // Compute per-frame VAD probabilities (batch under one vadMutex acquisition)
-    const vadProbs: number[] = [];
-    if (this.vadService) {
-      await this.vadMutex.runExclusive(async () => {
-        this.vadService!.reset();
-        for (const frame of frames) {
-          const result = await this.vadService!.processAudioFrame(frame);
-          vadProbs.push(result.probability);
-        }
-      });
-    } else {
-      vadProbs.push(...new Array(frames.length).fill(1));
     }
 
     logger.transcription.info("Starting transcription retry", {
@@ -949,15 +821,12 @@ export class TranscriptionService {
 
     // Transcribe using current provider settings
     const transcriptionResults: string[] = [];
-    let usedCloudProvider = false;
 
     await this.transcriptionMutex.acquire();
     try {
       const provider = await this.selectProvider();
-      usedCloudProvider = provider.name === "prismical-cloud";
       provider.reset();
 
-      // Feed each frame with its computed VAD probability
       for (let i = 0; i < frames.length; i++) {
         const previousChunk =
           transcriptionResults.length > 0
@@ -968,7 +837,6 @@ export class TranscriptionService {
         const chunkTranscription = await provider.transcribe({
           audioData: frames[i],
           sampleRate: 16000,
-          speechProbability: vadProbs[i],
           context: {
             sessionId: retrySessionId,
             vocabulary,
@@ -981,7 +849,6 @@ export class TranscriptionService {
         this.accumulateTranscriptionResult(
           transcriptionResults,
           chunkTranscription,
-          usedCloudProvider,
         );
       }
 
@@ -992,39 +859,28 @@ export class TranscriptionService {
         vocabulary,
         language,
         aggregatedTranscription: aggregatedTranscription || undefined,
-        formattingEnabled: shouldUseCloudFormatting && usedCloudProvider,
       });
 
       this.accumulateTranscriptionResult(
         transcriptionResults,
         finalTranscription,
-        usedCloudProvider,
       );
     } finally {
       this.transcriptionMutex.release();
     }
 
     let rawTranscription = transcriptionResults.join("");
-
-    if (!usedCloudProvider) {
-      rawTranscription = this.preFormatLocalTranscription(
-        rawTranscription,
-        null,
-      );
-    }
+    rawTranscription = this.preFormatLocalTranscription(rawTranscription, null);
 
     // Apply formatting and vocabulary replacements
     const formatResult = await this.applyFormattingAndReplacements({
       text: rawTranscription,
-      usedCloudProvider,
       vocabulary,
       replacements: context.sharedData.replacements,
       formattingStyle: context.sharedData.userPreferences?.formattingStyle,
     });
 
-    const speechModelId = usedCloudProvider
-      ? "prismical-cloud"
-      : selectedModelId || "whisper-local";
+    const speechModelId = selectedModelId || "whisper-local";
 
     // Update the existing record in-place
     await updateTranscription(transcriptionId, {
@@ -1059,8 +915,7 @@ export class TranscriptionService {
       formatting_enabled: formatResult.formattingUsed,
       formatting_model: formatResult.formattingModel,
       formatting_duration_ms: formatResult.formattingDuration,
-      vad_enabled: !!this.vadService,
-      is_retry: true,
+      vad_enabled: false,
       language: language || "auto",
       vocabulary_size: vocabulary.length,
     });
@@ -1077,27 +932,10 @@ export class TranscriptionService {
 
   /**
    * Accumulate a transcription result into the results array.
-   * Cloud provider returns cumulative text, so we replace; local provider appends.
    */
-  private accumulateTranscriptionResult(
-    results: string[],
-    newText: string,
-    isCloudProvider: boolean,
-  ): void {
+  private accumulateTranscriptionResult(results: string[], newText: string): void {
     if (!newText.trim()) return;
-    if (isCloudProvider && results.length > 0) {
-      results.length = 0;
-    }
     results.push(newText);
-  }
-
-  /**
-   * Reset VAD state behind vadMutex so it cannot interleave with retry VAD computation.
-   */
-  async resetVadForNewSession(): Promise<void> {
-    await this.vadMutex.runExclusive(() => {
-      this.vadService?.reset();
-    });
   }
 
   /**
@@ -1105,7 +943,6 @@ export class TranscriptionService {
    */
   async dispose(): Promise<void> {
     await this.whisperProvider.dispose();
-    // VAD service is managed by ServiceManager
     logger.transcription.info("Transcription service disposed");
   }
 }

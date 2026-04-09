@@ -91,7 +91,7 @@ export class WhisperProvider implements TranscriptionProvider {
   async transcribe(params: TranscribeParams): Promise<string> {
     await this.initializeWhisper();
 
-    const { audioData, sampleRate, speechProbability = 1, context } = params;
+    const { audioData, sampleRate, context } = params;
     const normalizedAudio = this.normalizeToWhisperRate(audioData, sampleRate);
     if (normalizedAudio.length === 0) {
       return "";
@@ -101,10 +101,7 @@ export class WhisperProvider implements TranscriptionProvider {
     // re-framed 512-sample windows so arbitrary native chunk sizes still map
     // cleanly onto the frame-based silence and extraction logic.
     this.frameBuffer.push(normalizedAudio);
-    const vadProbabilities = await this.processChunkThroughVad(
-      normalizedAudio,
-      speechProbability,
-    );
+    const vadProbabilities = await this.processChunkThroughVad(normalizedAudio);
     this.frameBufferSpeechProbabilities.push(...vadProbabilities);
     this.bufferedSpeechSamples += vadProbabilities.length * this.FRAME_SIZE;
 
@@ -119,7 +116,7 @@ export class WhisperProvider implements TranscriptionProvider {
     const latestProbability =
       vadProbabilities.length > 0
         ? vadProbabilities[vadProbabilities.length - 1]
-        : speechProbability;
+        : 0;
 
     logger.transcription.debug("Frame received", {
       speechProbability: latestProbability.toFixed(3),
@@ -150,10 +147,8 @@ export class WhisperProvider implements TranscriptionProvider {
       }
 
       this.frameBuffer.push(flushedResamplerAudio);
-      const vadProbabilities = await this.processChunkThroughVad(
-        flushedResamplerAudio,
-        1,
-      );
+      const vadProbabilities =
+        await this.processChunkThroughVad(flushedResamplerAudio);
       this.frameBufferSpeechProbabilities.push(...vadProbabilities);
       this.bufferedSpeechSamples += vadProbabilities.length * this.FRAME_SIZE;
     }
@@ -162,10 +157,8 @@ export class WhisperProvider implements TranscriptionProvider {
     const flushedResamplerAudio = this.flushResampler();
     if (flushedResamplerAudio.length > 0) {
       this.frameBuffer.push(flushedResamplerAudio);
-      const vadProbabilities = await this.processChunkThroughVad(
-        flushedResamplerAudio,
-        1,
-      );
+      const vadProbabilities =
+        await this.processChunkThroughVad(flushedResamplerAudio);
       this.frameBufferSpeechProbabilities.push(...vadProbabilities);
       this.bufferedSpeechSamples += vadProbabilities.length * this.FRAME_SIZE;
     }
@@ -356,7 +349,6 @@ export class WhisperProvider implements TranscriptionProvider {
 
   private async processChunkThroughVad(
     audioData: Float32Array,
-    fallbackProbability: number,
   ): Promise<number[]> {
     if (audioData.length === 0) {
       return [];
@@ -383,7 +375,6 @@ export class WhisperProvider implements TranscriptionProvider {
     if (!probabilities.length && !this.loggedVadFallback) {
       logger.transcription.debug("Awaiting more audio for full VAD frame", {
         remainderSamples: this.vadRemainder.length,
-        fallbackProbability,
       });
     }
 

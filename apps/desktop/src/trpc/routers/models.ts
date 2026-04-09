@@ -32,10 +32,6 @@ export const modelsRouter = createRouter({
         const availableModels = modelService.getAvailableModels();
         const downloadedModels = await modelService.getDownloadedModels();
 
-        // Check authentication status for cloud model filtering
-        const authService = ctx.serviceManager.getService("authService");
-        const isAuthenticated = await authService.isAuthenticated();
-
         // Map available models to Model format using downloaded data if available
         let models = availableModels.map((m) => {
           const downloaded = downloadedModels[m.id];
@@ -70,15 +66,7 @@ export const modelsRouter = createRouter({
 
         // Apply selectable filtering for dropdown/combobox
         if (input.selectable) {
-          models = models.filter((m) => {
-            const model = m as Model & { setup: "offline" | "cloud" };
-            // Filter cloud models if not authenticated
-            if (model.setup === "cloud") {
-              return isAuthenticated;
-            }
-            // Filter local models that aren't downloaded
-            return model.downloadedAt !== null;
-          });
+          models = models.filter((m) => m.downloadedAt !== null);
         }
 
         return models;

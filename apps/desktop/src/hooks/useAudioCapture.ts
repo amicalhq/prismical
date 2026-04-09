@@ -4,13 +4,11 @@ import { api } from "@/trpc/react";
 import { Mutex } from "async-mutex";
 
 // Audio configuration
-const FRAME_SIZE = 512; // 32ms at 16kHz
 const SAMPLE_RATE = 16000;
 
 export interface UseAudioCaptureParams {
   onAudioChunk: (
     arrayBuffer: ArrayBuffer,
-    speechProbability: number,
     isFinalChunk: boolean,
   ) => Promise<void> | void;
   enabled: boolean;
@@ -30,17 +28,7 @@ export const useAudioCapture = ({
   const workletNodeRef = useRef<AudioWorkletNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const mutexRef = useRef(new Mutex());
-
-  // Subscribe to voice detection updates via tRPC
-  api.recording.voiceDetectionUpdates.useSubscription(undefined, {
-    enabled,
-    onData: (detected: boolean) => {
-      setVoiceDetected(detected);
-    },
-    onError: (err) => {
-      console.error("Voice detection subscription error:", err);
-    },
-  });
+  const voiceResetTimeoutRef = useRef<number | null>(null);
 
   // Get user's preferred microphone from settings
   const { data: settings } = api.settings.getSettings.useQuery();
@@ -166,15 +154,34 @@ export const useAudioCapture = ({
             });
             const isFinal = event.data.isFinal || false;
 
+            const rms = Math.sqrt(
+              frame.reduce(
+                (sum: number, sample: number) => sum + sample * sample,
+                0,
+              ) / Math.max(frame.length, 1),
+            );
+            const hasActivity = rms > 0.015;
+
+            if (hasActivity) {
+              setVoiceDetected(true);
+              if (voiceResetTimeoutRef.current !== null) {
+                window.clearTimeout(voiceResetTimeoutRef.current);
+              }
+              voiceResetTimeoutRef.current = window.setTimeout(() => {
+                setVoiceDetected(false);
+                voiceResetTimeoutRef.current = null;
+              }, 160);
+            } else if (isFinal) {
+              setVoiceDetected(false);
+            }
+
             // Convert to ArrayBuffer for IPC
             const arrayBuffer = frame.buffer.slice(
               frame.byteOffset,
               frame.byteOffset + frame.byteLength,
             );
 
-            // Send to main process for VAD processing
-            // Main process will update voice detection state
-            await onAudioChunk(arrayBuffer, 0, isFinal); // Speech probability will come from main
+            await onAudioChunk(arrayBuffer, isFinal);
           }
         };
 
@@ -240,6 +247,11 @@ export const useAudioCapture = ({
   // Start/stop based on enabled state
   useEffect(() => {
     if (!enabled) {
+      setVoiceDetected(false);
+      if (voiceResetTimeoutRef.current !== null) {
+        window.clearTimeout(voiceResetTimeoutRef.current);
+        voiceResetTimeoutRef.current = null;
+      }
       return;
     }
 
@@ -248,6 +260,11 @@ export const useAudioCapture = ({
     });
 
     return () => {
+      if (voiceResetTimeoutRef.current !== null) {
+        window.clearTimeout(voiceResetTimeoutRef.current);
+        voiceResetTimeoutRef.current = null;
+      }
+      setVoiceDetected(false);
       stopCapture().catch((error) => {
         console.error("AudioCapture: Failed to stop:", error);
       });

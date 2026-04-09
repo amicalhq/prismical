@@ -229,10 +229,10 @@ export class OnboardingService extends EventEmitter {
         });
 
         // Set the actual model in ModelService
-        if (preferences.selectedModelType === "cloud") {
-          await this.modelService.setSelectedModel("prismical-cloud");
-          logger.main.info("Set default speech model to prismical-cloud");
-        } else if (preferences.selectedModelType === "local") {
+        if (
+          preferences.selectedModelType === "local" ||
+          preferences.selectedModelType === "cloud"
+        ) {
           // Keep existing selection if any, otherwise use first downloaded model
           const currentModel = await this.modelService.getSelectedModel();
           if (!currentModel) {
@@ -567,11 +567,10 @@ export class OnboardingService extends EventEmitter {
       };
     }
 
-    // Default to cloud for everything else (including M1 chips)
     return {
-      suggested: "cloud" as ModelType,
+      suggested: "local" as ModelType,
       reason:
-        "Your system may experience slow performance with local models. Cloud processing is recommended for optimal speed.",
+        "A smaller local model will keep transcription available without depending on a cloud provider.",
       systemSpecs: {
         cpu_cores: systemInfo.cpu_cores,
         memory_total_gb: systemInfo.memory_total_gb,
@@ -589,9 +588,9 @@ export class OnboardingService extends EventEmitter {
       if (!systemInfo) {
         // Fallback if system info not available
         return {
-          suggested: "cloud" as ModelType,
+          suggested: "local" as ModelType,
           reason:
-            "Unable to detect system specifications. Cloud processing is recommended.",
+            "Unable to detect system specifications. A local model is recommended.",
         };
       }
 
@@ -610,9 +609,9 @@ export class OnboardingService extends EventEmitter {
       logger.main.error("Failed to get system recommendation:", error);
       // Fallback recommendation on error
       return {
-        suggested: "cloud" as ModelType,
+        suggested: "local" as ModelType,
         reason:
-          "Unable to analyze system specifications. Cloud processing is recommended.",
+          "Unable to analyze system specifications. A local model is recommended.",
       };
     }
   }

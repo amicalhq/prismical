@@ -1,18 +1,15 @@
-import { AVAILABLE_MODELS } from "@/constants/models";
 import type { TranscriptionProvider } from "@/pipeline/core/pipeline-types";
-import { PrismicalCloudProvider } from "@/pipeline/providers/transcription/prismical-cloud-provider";
 import { WhisperProvider } from "@/pipeline/providers/transcription/whisper-provider";
 import type { ModelService } from "@/services/model-service";
 
 export const MEETING_TRANSCRIPTION_PROVIDER_TYPES = {
   localWhisper: "local-whisper",
-  prismicalCloud: "prismical-cloud",
 } as const;
 
 export type MeetingTranscriptionProviderType =
   (typeof MEETING_TRANSCRIPTION_PROVIDER_TYPES)[keyof typeof MEETING_TRANSCRIPTION_PROVIDER_TYPES];
 
-export type MeetingTranscriptionTransport = "local" | "cloud";
+export type MeetingTranscriptionTransport = "local";
 
 export interface MeetingTranscriptionSelection {
   providerType: MeetingTranscriptionProviderType;
@@ -34,35 +31,18 @@ const registry: Record<
       return new WhisperProvider(modelService);
     },
   },
-  [MEETING_TRANSCRIPTION_PROVIDER_TYPES.prismicalCloud]: {
-    async createProvider() {
-      return new PrismicalCloudProvider();
-    },
-  },
 };
 
 export async function resolveMeetingTranscriptionSelection(
   modelService: ModelService,
 ): Promise<MeetingTranscriptionSelection> {
   const selectedModelId = await modelService.getSelectedModel();
-  const model = selectedModelId
-    ? AVAILABLE_MODELS.find((entry) => entry.id === selectedModelId)
-    : null;
-
-  if (model?.provider === "Prismical Cloud") {
-    return {
-      providerType: MEETING_TRANSCRIPTION_PROVIDER_TYPES.prismicalCloud,
-      transport: "cloud",
-      modelId: model.id,
-      modelName: model.name,
-    };
-  }
 
   return {
     providerType: MEETING_TRANSCRIPTION_PROVIDER_TYPES.localWhisper,
     transport: "local",
-    modelId: model?.id ?? null,
-    modelName: model?.name ?? "Local Whisper",
+    modelId: selectedModelId,
+    modelName: "Local Whisper",
   };
 }
 

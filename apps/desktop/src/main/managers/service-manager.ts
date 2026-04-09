@@ -5,7 +5,6 @@ import { SettingsService } from "../../services/settings-service";
 import { NativeBridge } from "../../services/platform/native-bridge-service";
 import { AutoUpdaterService } from "../services/auto-updater";
 import { RecordingManager } from "./recording-manager";
-import { VADService } from "../../services/vad-service";
 import { ShortcutManager } from "./shortcut-manager";
 import { WindowManager } from "../core/window-manager";
 import { PostHogClient } from "../../services/posthog-client";
@@ -29,7 +28,6 @@ export interface ServiceMap {
   transcriptionService: TranscriptionService;
   settingsService: SettingsService;
   authService: AuthService;
-  vadService: VADService;
   nativeBridge: NativeBridge;
   autoUpdaterService: AutoUpdaterService;
   recordingManager: RecordingManager;
@@ -56,7 +54,6 @@ export class ServiceManager {
   private transcriptionService: TranscriptionService | null = null;
   private settingsService: SettingsService | null = null;
   private authService: AuthService | null = null;
-  private vadService: VADService | null = null;
   private onboardingService: OnboardingService | null = null;
 
   private nativeBridge: NativeBridge | null = null;
@@ -87,7 +84,6 @@ export class ServiceManager {
     await this.initializeModelServices();
     await this.initializeOnboardingService();
     this.initializePlatformServices();
-    await this.initializeVADService();
     await this.initializeAIServices();
     this.initializeMeetingManager();
     this.initializeRecordingManager();
@@ -157,21 +153,6 @@ export class ServiceManager {
     await this.modelService.initialize();
   }
 
-  private async initializeVADService(): Promise<void> {
-    try {
-      this.vadService = new VADService();
-      await this.vadService.initialize();
-      logger.main.info("VAD service initialized");
-    } catch (error) {
-      this.telemetryService?.captureException(error, {
-        source: "service_manager",
-        stage: "initialize_vad_service",
-      });
-      logger.main.error("Failed to initialize VAD service:", error);
-      // Don't throw - VAD is not critical for basic functionality
-    }
-  }
-
   private async initializeAIServices(): Promise<void> {
     if (!this.modelService) {
       throw new Error("Model manager service not initialized");
@@ -190,7 +171,6 @@ export class ServiceManager {
     try {
       this.transcriptionService = new TranscriptionService(
         this.modelService,
-        this.vadService!,
         this.settingsService,
         this.telemetryService!,
         this.nativeBridge,
@@ -329,7 +309,6 @@ export class ServiceManager {
       transcriptionService: this.transcriptionService!,
       settingsService: this.settingsService!,
       authService: this.authService!,
-      vadService: this.vadService!,
       nativeBridge: this.nativeBridge!,
       autoUpdaterService: this.autoUpdaterService!,
       recordingManager: this.recordingManager!,
@@ -369,11 +348,6 @@ export class ServiceManager {
     if (this.modelService) {
       logger.main.info("Cleaning up model downloads...");
       this.modelService.cleanup();
-    }
-
-    if (this.vadService) {
-      logger.main.info("Cleaning up VAD service...");
-      await this.vadService.dispose();
     }
 
     if (this.autoUpdaterService) {
