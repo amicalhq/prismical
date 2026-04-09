@@ -2,6 +2,7 @@ import AVFoundation
 import CoreMedia
 import CoreAudio
 import Foundation
+import PrismicalAec3Bridge
 
 enum CaptureMode: String {
     case mic
@@ -10,8 +11,9 @@ enum CaptureMode: String {
 }
 
 enum CaptureSource: UInt8 {
-    case mic = 1
+    case micRaw = 1
     case system = 2
+    case micProcessed = 3
 }
 
 enum PacketFormat: UInt8 {
@@ -219,6 +221,53 @@ func getDefaultOutputDeviceUID() throws -> String {
     )
 }
 
+func getDefaultInputDeviceUID() throws -> String {
+    let inputDeviceID: AudioObjectID = try getAudioObjectProperty(
+        objectID: AudioObjectID(kAudioObjectSystemObject),
+        selector: kAudioHardwarePropertyDefaultInputDevice,
+        type: AudioObjectID.self
+    )
+
+    guard inputDeviceID != kAudioObjectUnknown else {
+        throw CaptureError.microphoneUnavailable
+    }
+
+    return try getAudioObjectStringProperty(
+        objectID: inputDeviceID,
+        selector: kAudioDevicePropertyDeviceUID
+    )
+}
+
+func getDeviceStreamFormats(
+    deviceID: AudioObjectID,
+    scope: AudioObjectPropertyScope
+) throws -> [AVAudioFormat] {
+    let streamIDs: [AudioObjectID] = try getAudioObjectArrayProperty(
+        objectID: deviceID,
+        selector: kAudioDevicePropertyStreams,
+        scope: scope,
+        type: AudioObjectID.self
+    )
+
+    guard !streamIDs.isEmpty else {
+        throw CaptureError.unsupportedSystemAudioCapture
+    }
+
+    return try streamIDs.map { streamID in
+        var streamFormatDescription: AudioStreamBasicDescription = try getAudioObjectProperty(
+            objectID: streamID,
+            selector: kAudioStreamPropertyVirtualFormat,
+            type: AudioStreamBasicDescription.self
+        )
+
+        guard let streamFormat = AVAudioFormat(streamDescription: &streamFormatDescription) else {
+            throw CaptureError.unsupportedSystemAudioBuffer
+        }
+
+        return streamFormat
+    }
+}
+
 func attachTapToAggregateDevice(
     aggregateDeviceID: AudioObjectID,
     tapUID: String
@@ -290,6 +339,14 @@ func totalAudioBufferListBytes(_ bufferList: UnsafePointer<AudioBufferList>?) ->
     }
 }
 
+func audioBufferListCount(_ bufferList: UnsafePointer<AudioBufferList>?) -> Int {
+    guard let bufferList else { return 0 }
+    let buffers = UnsafeMutableAudioBufferListPointer(
+        UnsafeMutablePointer(mutating: bufferList)
+    )
+    return buffers.count
+}
+
 final class CopiedAudioBufferList {
     let pointer: UnsafeMutablePointer<AudioBufferList>
 
@@ -331,6 +388,42 @@ final class CopiedAudioBufferList {
                 mData: destinationData
             )
         }
+
+        self.pointer = pointer
+    }
+
+    init?(sourceBuffer: AudioBuffer) {
+        let rawPointer = UnsafeMutableRawPointer.allocate(
+            byteCount: MemoryLayout<AudioBufferList>.size,
+            alignment: MemoryLayout<AudioBufferList>.alignment
+        )
+        rawPointer.initializeMemory(
+            as: UInt8.self,
+            repeating: 0,
+            count: MemoryLayout<AudioBufferList>.size
+        )
+
+        let pointer = rawPointer.bindMemory(to: AudioBufferList.self, capacity: 1)
+        pointer.pointee.mNumberBuffers = 1
+        let destinationBuffers = UnsafeMutableAudioBufferListPointer(pointer)
+
+        let byteCount = Int(sourceBuffer.mDataByteSize)
+        let destinationData = UnsafeMutableRawPointer.allocate(
+            byteCount: max(byteCount, 1),
+            alignment: 16
+        )
+
+        if let sourceData = sourceBuffer.mData, byteCount > 0 {
+            destinationData.copyMemory(from: sourceData, byteCount: byteCount)
+        } else if byteCount > 0 {
+            destinationData.initializeMemory(as: UInt8.self, repeating: 0, count: byteCount)
+        }
+
+        destinationBuffers[0] = AudioBuffer(
+            mNumberChannels: sourceBuffer.mNumberChannels,
+            mDataByteSize: sourceBuffer.mDataByteSize,
+            mData: destinationData
+        )
 
         self.pointer = pointer
     }
@@ -531,8 +624,9 @@ final class PacketWriter {
     private let lock = NSLock()
     private let startedAt = DispatchTime.now().uptimeNanoseconds
     private var sequences: [CaptureSource: UInt32] = [
-        .mic: 0,
-        .system: 0
+        .micRaw: 0,
+        .system: 0,
+        .micProcessed: 0
     ]
 
     func write(source: CaptureSource, samples: [Float], sampleRate: UInt32 = 48_000, channels: UInt8 = 1) {
@@ -578,6 +672,119 @@ final class PacketWriter {
         withUnsafeBytes(of: &littleEndian) { bytes in
             data.replaceSubrange(offset..<(offset + 8), with: bytes)
         }
+    }
+}
+
+typealias NormalizedSampleHandler = ([Float]) -> Void
+
+final class Aec3Bridge {
+    private let sampleRate: Int
+    private let channels: Int
+    private var handle: UnsafeMutableRawPointer?
+
+    init(sampleRate: Int = 48_000, channels: Int = 1) {
+        self.sampleRate = sampleRate
+        self.channels = channels
+        self.handle = prismical_aec3_create(Int32(sampleRate), Int32(channels))
+    }
+
+    deinit {
+        guard let handle else { return }
+        prismical_aec3_destroy(handle)
+    }
+
+    var isReal: Bool {
+        prismical_aec3_is_real() != 0
+    }
+
+    func analyzeRender(_ frame: [Float]) {
+        guard let handle, !frame.isEmpty else { return }
+        frame.withUnsafeBufferPointer { buffer in
+            prismical_aec3_analyze_render(handle, buffer.baseAddress, Int32(buffer.count))
+        }
+    }
+
+    func processCapture(_ frame: [Float]) -> [Float] {
+        guard let handle, !frame.isEmpty else { return frame }
+
+        var output = Array(repeating: Float.zero, count: frame.count)
+        frame.withUnsafeBufferPointer { inputBuffer in
+            output.withUnsafeMutableBufferPointer { outputBuffer in
+                prismical_aec3_process_capture(
+                    handle,
+                    inputBuffer.baseAddress,
+                    outputBuffer.baseAddress,
+                    Int32(frame.count)
+                )
+            }
+        }
+        return output
+    }
+
+    func reset() {
+        guard let handle else { return }
+        prismical_aec3_reset(handle)
+    }
+}
+
+final class FixedFrameAecProcessor {
+    static let sampleRate = 48_000
+    static let frameSize = 480
+
+    private let bridge: Aec3Bridge
+    private var renderRemainder: [Float] = []
+    private var captureRemainder: [Float] = []
+
+    init(bridge: Aec3Bridge = Aec3Bridge()) {
+        self.bridge = bridge
+    }
+
+    var isReal: Bool {
+        bridge.isReal
+    }
+
+    func ingestRender(_ samples: [Float]) {
+        guard !samples.isEmpty else { return }
+        renderRemainder.append(contentsOf: samples)
+
+        while renderRemainder.count >= Self.frameSize {
+            let frame = Array(renderRemainder.prefix(Self.frameSize))
+            renderRemainder.removeFirst(Self.frameSize)
+            bridge.analyzeRender(frame)
+        }
+    }
+
+    func processCapture(_ samples: [Float]) -> [[Float]] {
+        guard !samples.isEmpty else { return [] }
+
+        captureRemainder.append(contentsOf: samples)
+        var processedFrames: [[Float]] = []
+
+        while captureRemainder.count >= Self.frameSize {
+            let frame = Array(captureRemainder.prefix(Self.frameSize))
+            captureRemainder.removeFirst(Self.frameSize)
+            processedFrames.append(bridge.processCapture(frame))
+        }
+
+        return processedFrames
+    }
+
+    func flushCaptureRemainder() -> [Float]? {
+        guard !captureRemainder.isEmpty else { return nil }
+
+        let originalCount = captureRemainder.count
+        let paddedCount = Self.frameSize - originalCount
+        let paddedFrame = captureRemainder + Array(repeating: Float.zero, count: paddedCount)
+        captureRemainder.removeAll(keepingCapacity: true)
+
+        let processed = bridge.processCapture(paddedFrame)
+        return Array(processed.prefix(originalCount))
+    }
+
+    func reset() {
+        renderRemainder.removeAll(keepingCapacity: true)
+        captureRemainder.removeAll(keepingCapacity: true)
+        bridge.reset()
     }
 }
 
@@ -689,12 +896,12 @@ final class DebugWavWriter {
 
 final class MicrophoneCapture {
     private let engine = AVAudioEngine()
-    private let writer: PacketWriter
+    private let onSamples: NormalizedSampleHandler
     private let targetFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48_000, channels: 1, interleaved: false)!
     private var converter: AVAudioConverter?
 
-    init(writer: PacketWriter) {
-        self.writer = writer
+    init(onSamples: @escaping NormalizedSampleHandler) {
+        self.onSamples = onSamples
     }
 
     func start() throws {
@@ -766,17 +973,22 @@ final class MicrophoneCapture {
 
         let frameLength = Int(convertedBuffer.frameLength)
         let samples = Array(UnsafeBufferPointer(start: channelData, count: frameLength))
-        writer.write(source: .mic, samples: samples)
+        onSamples(samples)
     }
 }
 
 final class SystemAudioCapture {
-    private let writer: PacketWriter
+    private let onSamples: NormalizedSampleHandler
+    private let onMicrophoneSamples: NormalizedSampleHandler?
+    private let captureAggregateInput: Bool
     private let processingQueue = DispatchQueue(label: "ai.prismical.audio-capture.system.processing")
     private let targetFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48_000, channels: 1, interleaved: false)!
     private let debugArtifactsDirectory: String?
     private var sourceFormat: AVAudioFormat?
     private var sourceSampleRate: Double?
+    private var aggregateInputFormats: [AVAudioFormat] = []
+    private var aggregateOutputFormats: [AVAudioFormat] = []
+    private var aggregateDeviceSampleRate: Double?
     private var tapID: AudioObjectID = kAudioObjectUnknown
     private var aggregateDeviceID: AudioObjectID = kAudioObjectUnknown
     private var ioProcID: AudioDeviceIOProcID?
@@ -784,9 +996,15 @@ final class SystemAudioCapture {
     private var preResampleDebugWriter: DebugWavWriter?
     private var postResampleDebugWriter: DebugWavWriter?
 
-    init(writer: PacketWriter, debugArtifactsDirectory: String? = nil) {
-        self.writer = writer
+    init(
+        debugArtifactsDirectory: String? = nil,
+        onSamples: @escaping NormalizedSampleHandler,
+        onMicrophoneSamples: NormalizedSampleHandler? = nil
+    ) {
         self.debugArtifactsDirectory = debugArtifactsDirectory
+        self.onSamples = onSamples
+        self.onMicrophoneSamples = onMicrophoneSamples
+        self.captureAggregateInput = onMicrophoneSamples != nil
     }
 
     func start() async throws {
@@ -813,8 +1031,19 @@ final class SystemAudioCapture {
 
         let outputDeviceUID = try getDefaultOutputDeviceUID()
         Logger.info("System audio capture setup: default output device uid=\(outputDeviceUID)")
+        var inputDeviceUID: String?
+        if captureAggregateInput {
+            do {
+                let resolvedInputDeviceUID = try getDefaultInputDeviceUID()
+                inputDeviceUID = resolvedInputDeviceUID
+                Logger.info("System audio capture setup: default input device uid=\(resolvedInputDeviceUID)")
+            } catch {
+                Logger.error("Failed to resolve default input device uid: \(error.localizedDescription)")
+            }
+        }
         let aggregateDeviceDescription = makeAggregateDeviceDescription(
-            outputDeviceUID: outputDeviceUID
+            outputDeviceUID: outputDeviceUID,
+            inputDeviceUID: inputDeviceUID
         )
 
         var aggregateDeviceID: AudioObjectID = kAudioObjectUnknown
@@ -836,6 +1065,7 @@ final class SystemAudioCapture {
             selector: kAudioDevicePropertyNominalSampleRate,
             type: Float64.self
         )
+        self.aggregateDeviceSampleRate = aggregateDeviceSampleRate
         Logger.info("System audio capture setup: aggregate sample rate=\(Int(aggregateDeviceSampleRate))")
 
         var tapFormatDescription: AudioStreamBasicDescription = try getAudioObjectProperty(
@@ -855,6 +1085,14 @@ final class SystemAudioCapture {
 
         self.sourceFormat = sourceFormat
         self.sourceSampleRate = aggregateDeviceSampleRate
+        self.aggregateInputFormats = (try? getDeviceStreamFormats(
+            deviceID: aggregateDeviceID,
+            scope: kAudioObjectPropertyScopeInput
+        )) ?? []
+        self.aggregateOutputFormats = (try? getDeviceStreamFormats(
+            deviceID: aggregateDeviceID,
+            scope: kAudioObjectPropertyScopeOutput
+        )) ?? []
         callbackLogCount = 0
 
         if let debugArtifactsDirectory {
@@ -872,6 +1110,16 @@ final class SystemAudioCapture {
         Logger.info(
             "System audio tap format ready: tapSampleRate=\(Int(sourceFormat.sampleRate)) aggregateSampleRate=\(Int(aggregateDeviceSampleRate)) channels=\(sourceFormat.channelCount) interleaved=\(sourceFormat.isInterleaved)"
         )
+        for (index, aggregateInputFormat) in aggregateInputFormats.enumerated() {
+            Logger.info(
+                "System audio aggregate input format[\(index)]: sampleRate=\(Int(aggregateInputFormat.sampleRate)) channels=\(aggregateInputFormat.channelCount) interleaved=\(aggregateInputFormat.isInterleaved)"
+            )
+        }
+        for (index, aggregateOutputFormat) in aggregateOutputFormats.enumerated() {
+            Logger.info(
+                "System audio aggregate output format[\(index)]: sampleRate=\(Int(aggregateOutputFormat.sampleRate)) channels=\(aggregateOutputFormat.channelCount) interleaved=\(aggregateOutputFormat.isInterleaved)"
+            )
+        }
 
         var ioProcID: AudioDeviceIOProcID?
         try coreAudioCheck(
@@ -933,6 +1181,9 @@ final class SystemAudioCapture {
         tapID = kAudioObjectUnknown
         sourceFormat = nil
         sourceSampleRate = nil
+        aggregateInputFormats = []
+        aggregateOutputFormats = []
+        aggregateDeviceSampleRate = nil
 
         do {
             try preResampleDebugWriter?.finalize()
@@ -946,16 +1197,27 @@ final class SystemAudioCapture {
 
     @available(macOS 14.2, *)
     private func makeAggregateDeviceDescription(
-        outputDeviceUID: String
+        outputDeviceUID: String,
+        inputDeviceUID: String? = nil
     ) -> [String: Any] {
-        [
+        var subDevices: [[String: Any]] = [
+            [kAudioSubDeviceUIDKey: outputDeviceUID]
+        ]
+
+        if let inputDeviceUID {
+            subDevices.append([
+                kAudioSubDeviceUIDKey: inputDeviceUID,
+                kAudioSubDeviceDriftCompensationKey: 1,
+                kAudioSubDeviceDriftCompensationQualityKey: kAudioAggregateDriftCompensationHighQuality
+            ])
+        }
+
+        return [
             kAudioAggregateDeviceNameKey: "Prismical System Audio Capture",
             kAudioAggregateDeviceUIDKey: "ai.prismical.audio-capture.aggregate.\(UUID().uuidString)",
             kAudioAggregateDeviceIsPrivateKey: 1,
             kAudioAggregateDeviceTapAutoStartKey: 1,
-            kAudioAggregateDeviceSubDeviceListKey: [
-                [kAudioSubDeviceUIDKey: outputDeviceUID]
-            ],
+            kAudioAggregateDeviceSubDeviceListKey: subDevices,
             kAudioAggregateDeviceMainSubDeviceKey: outputDeviceUID
         ]
     }
@@ -965,7 +1227,11 @@ final class SystemAudioCapture {
         outputData: UnsafeMutablePointer<AudioBufferList>?
     ) {
         let inputBytes = totalAudioBufferListBytes(inputData)
+        let inputBufferCount = audioBufferListCount(inputData)
         let outputBytes = totalAudioBufferListBytes(
+            outputData.map { UnsafePointer<AudioBufferList>($0) }
+        )
+        let outputBufferCount = audioBufferListCount(
             outputData.map { UnsafePointer<AudioBufferList>($0) }
         )
 
@@ -979,8 +1245,88 @@ final class SystemAudioCapture {
         if callbackLogCount < 4 {
             callbackLogCount += 1
             Logger.info(
-                "System audio callback: inputBytes=\(inputBytes) outputBytes=\(outputBytes) selected=\(selectedSource)"
+                "System audio callback: inputBytes=\(inputBytes) inputBuffers=\(inputBufferCount) outputBytes=\(outputBytes) outputBuffers=\(outputBufferCount) selected=\(selectedSource)"
             )
+        }
+
+        if captureAggregateInput,
+           !aggregateInputFormats.isEmpty
+        {
+            let aggregateSampleRate =
+                aggregateDeviceSampleRate ??
+                aggregateInputFormats.first?.sampleRate ??
+                aggregateOutputFormats.first?.sampleRate ??
+                targetFormat.sampleRate
+
+            if let onMicrophoneSamples,
+               inputBytes > 0,
+               let inputData
+            {
+                let inputBuffers = UnsafeMutableAudioBufferListPointer(
+                    UnsafeMutablePointer(mutating: inputData)
+                )
+
+                if inputBuffers.count > 1,
+                   let systemCandidateBuffer = inputBuffers.dropFirst().first,
+                   let copiedSystemBufferList = CopiedAudioBufferList(sourceBuffer: systemCandidateBuffer)
+                {
+                    let systemFormat =
+                        aggregateInputFormats.count > 1
+                        ? aggregateInputFormats[1]
+                        : (aggregateInputFormats.first ?? targetFormat)
+                    processingQueue.async { [weak self] in
+                        self?.process(
+                            copiedSystemBufferList,
+                            format: systemFormat,
+                            sourceSampleRate: aggregateSampleRate,
+                            selectedSource: "aggregate-input[1]-system",
+                            onSamples: self?.onSamples ?? { _ in },
+                            preResampleDebugWriter: self?.preResampleDebugWriter,
+                            postResampleDebugWriter: self?.postResampleDebugWriter
+                        )
+                    }
+                }
+
+                if let microphoneBuffer = inputBuffers.first,
+                   let copiedMicrophoneBufferList = CopiedAudioBufferList(sourceBuffer: microphoneBuffer)
+                {
+                    let microphoneFormat = aggregateInputFormats.first ?? targetFormat
+                    processingQueue.async { [weak self] in
+                        self?.process(
+                            copiedMicrophoneBufferList,
+                            format: microphoneFormat,
+                            sourceSampleRate: aggregateSampleRate,
+                            selectedSource: "aggregate-input[0]-mic",
+                            onSamples: onMicrophoneSamples
+                        )
+                    }
+                }
+
+                if inputBuffers.count > 1 {
+                    return
+                }
+            }
+
+            if outputBytes > 0,
+               let copiedOutputBufferList = outputData
+                .map({ UnsafePointer<AudioBufferList>($0) })
+                .flatMap(CopiedAudioBufferList.init(source:))
+            {
+                let aggregateOutputFormat = aggregateOutputFormats.first ?? targetFormat
+                processingQueue.async { [weak self] in
+                    self?.process(
+                        copiedOutputBufferList,
+                        format: aggregateOutputFormat,
+                        sourceSampleRate: aggregateSampleRate,
+                        selectedSource: "aggregate-output-fallback",
+                        onSamples: self?.onSamples ?? { _ in },
+                        preResampleDebugWriter: self?.preResampleDebugWriter,
+                        postResampleDebugWriter: self?.postResampleDebugWriter
+                    )
+                }
+            }
+
+            return
         }
 
         guard
@@ -991,20 +1337,31 @@ final class SystemAudioCapture {
         }
 
         processingQueue.async { [weak self] in
-            self?.process(copiedBufferList, selectedSource: selectedSource)
+            guard let self, let sourceFormat = self.sourceFormat else { return }
+            self.process(
+                copiedBufferList,
+                format: sourceFormat,
+                sourceSampleRate: self.sourceSampleRate ?? sourceFormat.sampleRate,
+                selectedSource: selectedSource,
+                onSamples: self.onSamples,
+                preResampleDebugWriter: self.preResampleDebugWriter,
+                postResampleDebugWriter: self.postResampleDebugWriter
+            )
         }
     }
 
     private func process(
         _ copiedBufferList: CopiedAudioBufferList,
-        selectedSource: String
+        format: AVAudioFormat,
+        sourceSampleRate: Double,
+        selectedSource: String,
+        onSamples: @escaping NormalizedSampleHandler,
+        preResampleDebugWriter: DebugWavWriter? = nil,
+        postResampleDebugWriter: DebugWavWriter? = nil
     ) {
-        guard let tapFormat = sourceFormat else { return }
-        let sourceSampleRate = sourceSampleRate ?? tapFormat.sampleRate
-
         let sourceBuffers = UnsafeMutableAudioBufferListPointer(copiedBufferList.pointer)
         guard let firstBuffer = sourceBuffers.first else { return }
-        guard let baseCommonFormat = commonFormat(from: tapFormat.streamDescription.pointee) else {
+        guard let baseCommonFormat = commonFormat(from: format.streamDescription.pointee) else {
             Logger.error(CaptureError.unsupportedSystemAudioBuffer.localizedDescription)
             return
         }
@@ -1022,7 +1379,7 @@ final class SystemAudioCapture {
 
         guard let monoSamples else {
             Logger.error(
-                "System audio sample extraction failed: selected=\(selectedSource) sampleRate=\(Int(tapFormat.sampleRate)) channels=\(callbackChannelCount) interleaved=\(isInterleaved) commonFormat=\(commonFormatName(baseCommonFormat))"
+                "System audio sample extraction failed: selected=\(selectedSource) sampleRate=\(Int(format.sampleRate)) channels=\(callbackChannelCount) interleaved=\(isInterleaved) commonFormat=\(commonFormatName(baseCommonFormat))"
             )
             return
         }
@@ -1040,12 +1397,78 @@ final class SystemAudioCapture {
             Logger.error("Failed to write debug audio files: \(error.localizedDescription)")
         }
 
-        writer.write(
-            source: .system,
-            samples: resampledSamples,
-            sampleRate: UInt32(targetFormat.sampleRate),
-            channels: 1
+        onSamples(resampledSamples)
+    }
+}
+
+final class DualModeCapture {
+    private let writer: PacketWriter
+    private let debugArtifactsDirectory: String?
+    private let processingQueue = DispatchQueue(label: "ai.prismical.audio-capture.dual.processing")
+    private let aecProcessor = FixedFrameAecProcessor()
+    private var systemAudioCapture: SystemAudioCapture?
+    private var hasAggregateMicrophoneSamples = false
+
+    init(writer: PacketWriter, debugArtifactsDirectory: String?) {
+        self.writer = writer
+        self.debugArtifactsDirectory = debugArtifactsDirectory
+    }
+
+    func start() async throws {
+        let systemAudioCapture = SystemAudioCapture(
+            debugArtifactsDirectory: debugArtifactsDirectory
+        ) { [weak self] samples in
+            self?.handleSystemSamples(samples)
+        } onMicrophoneSamples: { [weak self] samples in
+            self?.handleAggregateMicrophoneSamples(samples)
+        }
+        try await systemAudioCapture.start()
+        self.systemAudioCapture = systemAudioCapture
+
+        Logger.info(
+            "Dual mode capture started: aec=\(aecProcessor.isReal ? "webrtc-aec3" : "pass-through-bridge") frameSize=\(FixedFrameAecProcessor.frameSize)"
         )
+    }
+
+    func stop() async {
+        processingQueue.sync {
+            if let remainder = aecProcessor.flushCaptureRemainder(), !remainder.isEmpty {
+                writer.write(source: .micProcessed, samples: remainder)
+            }
+            aecProcessor.reset()
+        }
+
+        await systemAudioCapture?.stop()
+        if hasAggregateMicrophoneSamples {
+            Logger.info("Dual mode capture stopped with aggregate microphone active")
+        } else {
+            Logger.info("Dual mode capture stopped without aggregate microphone samples")
+        }
+        Logger.info("Dual mode capture stopped")
+    }
+
+    private func handleAggregateMicrophoneSamples(_ samples: [Float]) {
+        processingQueue.async { [weak self, writer] in
+            guard let self else { return }
+
+            if !self.hasAggregateMicrophoneSamples {
+                self.hasAggregateMicrophoneSamples = true
+                Logger.info("Dual mode aggregate microphone capture became active")
+            }
+
+            writer.write(source: .micRaw, samples: samples)
+            let processedFrames = self.aecProcessor.processCapture(samples)
+            for processedFrame in processedFrames where !processedFrame.isEmpty {
+                writer.write(source: .micProcessed, samples: processedFrame)
+            }
+        }
+    }
+
+    private func handleSystemSamples(_ samples: [Float]) {
+        processingQueue.async { [weak self, writer] in
+            self?.aecProcessor.ingestRender(samples)
+            writer.write(source: .system, samples: samples)
+        }
     }
 }
 
@@ -1055,6 +1478,7 @@ final class CaptureCoordinator {
     private let debugArtifactsDirectory: String?
     private var microphoneCapture: MicrophoneCapture?
     private var systemAudioCapture: SystemAudioCapture?
+    private var dualModeCapture: DualModeCapture?
 
     init(mode: CaptureMode, debugArtifactsDirectory: String?) {
         self.mode = mode
@@ -1062,23 +1486,37 @@ final class CaptureCoordinator {
     }
 
     func start() async throws {
-        if mode == .mic || mode == .dual {
-            let microphoneCapture = MicrophoneCapture(writer: writer)
+        if mode == .dual {
+            let dualModeCapture = DualModeCapture(
+                writer: writer,
+                debugArtifactsDirectory: debugArtifactsDirectory
+            )
+            try await dualModeCapture.start()
+            self.dualModeCapture = dualModeCapture
+            return
+        }
+
+        if mode == .mic {
+            let microphoneCapture = MicrophoneCapture { [writer] samples in
+                writer.write(source: .micRaw, samples: samples)
+            }
             try microphoneCapture.start()
             self.microphoneCapture = microphoneCapture
         }
 
-        if mode == .system || mode == .dual {
+        if mode == .system {
             let systemAudioCapture = SystemAudioCapture(
-                writer: writer,
                 debugArtifactsDirectory: debugArtifactsDirectory
-            )
+            ) { [writer] samples in
+                writer.write(source: .system, samples: samples)
+            }
             try await systemAudioCapture.start()
             self.systemAudioCapture = systemAudioCapture
         }
     }
 
     func stop() async {
+        await dualModeCapture?.stop()
         microphoneCapture?.stop()
         await systemAudioCapture?.stop()
     }
