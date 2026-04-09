@@ -1,12 +1,3 @@
-<!-- Markdown with HTML -->
-<div align="center">
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://prismical.ai/github-readme-header-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="https://prismical.ai/github-readme-header-light.png">
-  <img alt="Prismical" src="https://prismical.ai/github-readme-header-light.png">
-</picture>
-</div>
-
 <p align="center">
   <a href='http://makeapullrequest.com'>
     <img alt='PRs Welcome' src='https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=shields'/>
@@ -55,36 +46,33 @@ brew install --cask prismical
 
 ## 🔮 Overview
 
-Local-first AI Dictation app.
+Open-source AI note taker.
 
-Prismical is an open source AI-powered dictation and note-taking app that runs entirely on your machine.
-Powered by [Whisper](https://github.com/openai/whisper) for speech-to-text and open source LLMs for intelligent processing, Prismical gives you the power of AI dictation with complete privacy.
+Prismical is a free, open-source AI note-taker that transcribes meetings and captures voice notes — without a bot joining your call. It captures system audio in the background, processes it locally with AI, and gives you structured notes. No audio leaves your device unless you choose otherwise.
 
-Context-aware dictation that adapts to what you're doing: drafting an email, chatting on Discord, writing prompts in your IDE, or messaging friends. Prismical detects the active app and formats your speech accordingly.
+Powered by local AI models like [Whisper](https://github.com/openai/whisper) and [Parakeet](https://docs.nvidia.com/nemo-framework/user-guide/latest/nemotoolkit/asr/models.html#parakeet) for on-device transcription. Bring your own LLM for intelligent processing — run local models via [Ollama](https://ollama.ai), or connect cloud providers like OpenAI, Claude, and Gemini with your own API keys.
 
-<p align="center">
-  <img src="https://prismical.ai/demo/dictation-demo-component.gif" alt="Prismical dictation demo" width="600">
-</p>
+Works with Zoom, Google Meet, Microsoft Teams, Slack, WebEx — anything that plays audio. Not in a meeting? Just talk or type. Prismical captures and enhances your voice notes too.
 
 ## ✨ Features
 
-> ✔︎ - Done, ◑ - In Progress, ◯ - Planned
+🎙️ Real-time meeting transcription — system audio capture, no bot joins your call
 
-🚀 Super-fast dictation with AI-enhanced accuracy ✔︎
+🧠 AI summaries & action items — structured notes with key decisions and follow-ups
 
-🧠 Context-aware speech-to-text based on the active app ✔︎
+🗣️ Voice notes — talk or type, AI structures and organizes your thoughts
 
-📒 Smart voice notes → summaries, tasks, structured notes ◑
+🔐 Local-first AI — on-device transcription with Whisper and Parakeet, no audio leaves your machine
 
-🔌 MCP integration → voice commands that control your apps ◯
+☁️ BYOK cloud providers — optionally use OpenAI, Claude, or Gemini with your own keys
 
-🎙️ Real-time meeting transcription (mic + system audio) ◯
+🪟 Floating widget — always-on-top compact window for live transcripts and quick notes
 
-🔧 Extensible via hotkeys, voice macros, custom workflows ✔︎
+🔌 MCP server — connect Prismical to Claude, ChatGPT, Claude Code, and Codex
 
-🔐 Privacy-first: works offline, one click setup of local models in-app ✔︎
+🔍 Full-text search across all meetings, notes, and transcripts
 
-🪟 Floating widget for frictionless start/stop with custom hotkeys ✔︎
+📱 iOS & Android mobile apps
 
 ## 🔰 Tech Stack
 
