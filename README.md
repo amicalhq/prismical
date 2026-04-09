@@ -1,3 +1,12 @@
+<!-- Markdown with HTML -->
+<div align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://prismical.ai/github-readme-header-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="https://prismical.ai/github-readme-header-light.png">
+  <img alt="Prismical" src="https://prismical.ai/github-readme-header-light.png">
+</picture>
+</div>
+
 <p align="center">
   <a href='http://makeapullrequest.com'>
     <img alt='PRs Welcome' src='https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=shields'/>
