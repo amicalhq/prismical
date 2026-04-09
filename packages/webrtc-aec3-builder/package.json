@@ -1,0 +1,16 @@
+{
+  "name": "@prismical/webrtc-aec3-builder",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "doctor:env": "node ./scripts/doctor.js",
+    "fetch": "node ./scripts/fetch-checkout.js",
+    "sync": "node ./scripts/fetch-checkout.js --sync-only",
+    "gen:arm64": "node ./scripts/gen.js --arch arm64",
+    "gen:x64": "node ./scripts/gen.js --arch x64",
+    "build:arm64": "node ./scripts/build.js --arch arm64",
+    "build:x64": "node ./scripts/build.js --arch x64",
+    "bundle": "node ./scripts/bundle.js",
+    "build:bundle": "node ./scripts/build-all.js"
+  }
+}

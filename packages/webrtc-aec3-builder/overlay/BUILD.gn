@@ -1,0 +1,16 @@
+static_library("prismical_webrtc_aec3") {
+  complete_static_lib = true
+  output_name = "prismical_webrtc_aec3"
+
+  sources = [ "prismical_aec3_vendor.cpp" ]
+  public = [ "prismical_aec3.h" ]
+
+  configs -= [ "//build/config/compiler:thin_archive" ]
+
+  deps = [
+    "//api/audio:audio_processing",
+    "//api/audio:builtin_audio_processing_builder",
+    "//api/environment:environment_factory",
+    "//api:scoped_refptr",
+  ]
+}
