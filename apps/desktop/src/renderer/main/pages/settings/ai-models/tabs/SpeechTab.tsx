@@ -12,14 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Download,
-  Zap,
-  Circle,
-  Square,
-  Loader2,
-  Trash2,
-} from "lucide-react";
+import { Download, Zap, Circle, Square, Loader2, Trash2 } from "lucide-react";
 import { DynamicIcon } from "lucide-react/dynamic";
 import {
   TooltipContent,

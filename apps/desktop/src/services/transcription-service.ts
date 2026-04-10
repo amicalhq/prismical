@@ -234,7 +234,7 @@ export class TranscriptionService {
       }
 
       // Transcribe chunk (flush is done separately in finalizeSession)
-      const chunkTranscription = await provider.transcribe({
+      const chunkResult = await provider.transcribe({
         audioData: audioChunk,
         sampleRate: 16000,
         context: {
@@ -246,6 +246,7 @@ export class TranscriptionService {
           language: session.context.sharedData.userPreferences?.language,
         },
       });
+      const chunkTranscription = chunkResult.text;
 
       // Accumulate the result only if Whisper returned something
       // (it returns empty string while buffering)
@@ -335,7 +336,7 @@ export class TranscriptionService {
         const aggregatedTranscription = session.transcriptionResults.join("");
 
         const provider = await this.selectProvider();
-        const finalTranscription = await provider.flush({
+        const finalResult = await provider.flush({
           sessionId,
           vocabulary: session.context.sharedData.vocabulary,
           accessibilityContext: session.context.sharedData.accessibilityContext,
@@ -343,6 +344,7 @@ export class TranscriptionService {
           aggregatedTranscription: aggregatedTranscription || undefined,
           language: session.context.sharedData.userPreferences?.language,
         });
+        const finalTranscription = finalResult.text;
 
         this.accumulateTranscriptionResult(
           session.transcriptionResults,
@@ -629,7 +631,7 @@ export class TranscriptionService {
         formatterConfig.modelId === "prismical-cloud"
           ? await this.settingsService.getDefaultLanguageModel()
           : formatterConfig.modelId ||
-        (await this.settingsService.getDefaultLanguageModel());
+            (await this.settingsService.getDefaultLanguageModel());
       if (!modelId) {
         logger.transcription.debug(
           "Formatting skipped: no default language model",
@@ -834,7 +836,7 @@ export class TranscriptionService {
             : undefined;
         const aggregatedTranscription = transcriptionResults.join("");
 
-        const chunkTranscription = await provider.transcribe({
+        const chunkResult = await provider.transcribe({
           audioData: frames[i],
           sampleRate: 16000,
           context: {
@@ -845,6 +847,7 @@ export class TranscriptionService {
             aggregatedTranscription: aggregatedTranscription || undefined,
           },
         });
+        const chunkTranscription = chunkResult.text;
 
         this.accumulateTranscriptionResult(
           transcriptionResults,
@@ -854,12 +857,13 @@ export class TranscriptionService {
 
       // Flush to get remaining buffered audio
       const aggregatedTranscription = transcriptionResults.join("");
-      const finalTranscription = await provider.flush({
+      const finalResult = await provider.flush({
         sessionId: retrySessionId,
         vocabulary,
         language,
         aggregatedTranscription: aggregatedTranscription || undefined,
       });
+      const finalTranscription = finalResult.text;
 
       this.accumulateTranscriptionResult(
         transcriptionResults,
@@ -933,7 +937,10 @@ export class TranscriptionService {
   /**
    * Accumulate a transcription result into the results array.
    */
-  private accumulateTranscriptionResult(results: string[], newText: string): void {
+  private accumulateTranscriptionResult(
+    results: string[],
+    newText: string,
+  ): void {
     if (!newText.trim()) return;
     results.push(newText);
   }

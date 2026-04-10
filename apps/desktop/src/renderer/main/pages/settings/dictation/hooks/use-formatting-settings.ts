@@ -112,7 +112,8 @@ export function useFormattingSettings(): UseFormattingSettingsReturn {
     return optionValues.has(preferredModelId) ? preferredModelId : "";
   }, [defaultLanguageModelQuery.data, formatterConfig?.modelId, optionValues]);
 
-  const showNoLanguageModels = !hasLanguageModels && !speechModelQuery.isLoading;
+  const showNoLanguageModels =
+    !hasLanguageModels && !speechModelQuery.isLoading;
 
   // Handlers
   const handleFormattingEnabledChange = useCallback(
@@ -121,16 +122,20 @@ export function useFormattingSettings(): UseFormattingSettingsReturn {
         enabled,
         modelId:
           formatterConfig?.modelId === "prismical-cloud"
-            ? defaultLanguageModelQuery.data ?? undefined
-            : formatterConfig?.modelId ?? undefined,
+            ? (defaultLanguageModelQuery.data ?? undefined)
+            : (formatterConfig?.modelId ?? undefined),
         fallbackModelId:
           formatterConfig?.fallbackModelId === "prismical-cloud"
-            ? defaultLanguageModelQuery.data ?? undefined
-            : formatterConfig?.fallbackModelId ?? undefined,
+            ? (defaultLanguageModelQuery.data ?? undefined)
+            : (formatterConfig?.fallbackModelId ?? undefined),
       };
       setFormatterConfigMutation.mutate(nextConfig);
     },
-    [defaultLanguageModelQuery.data, formatterConfig, setFormatterConfigMutation],
+    [
+      defaultLanguageModelQuery.data,
+      formatterConfig,
+      setFormatterConfigMutation,
+    ],
   );
 
   const handleFormattingModelChange = useCallback(

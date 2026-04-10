@@ -14,6 +14,18 @@ interface SerializedFloat32Array {
   data: number[];
 }
 
+interface WorkerTranscriptionSegment {
+  text: string;
+  from: number;
+  to: number;
+  noSpeechProb?: number;
+}
+
+interface WorkerTranscriptionResult {
+  text: string;
+  segments: WorkerTranscriptionSegment[];
+}
+
 type MethodArg = SerializedFloat32Array | unknown;
 
 // IPC-based logging — sends structured log messages to the main process
@@ -85,13 +97,16 @@ const methods = {
       suppress_non_speech_tokens: boolean;
       no_timestamps: boolean;
     },
-  ): Promise<string> {
+  ): Promise<WorkerTranscriptionResult> {
     if (!whisperInstance) {
       throw new Error("Whisper instance is not initialized");
     }
 
     // Pad audio with silence to ensure at least 1 second of audio (16k samples)
     const SAMPLE_RATE = 16000; // Whisper expects 16kHz input
+    const originalAudioDurationMs = Math.round(
+      (aggregatedAudio.length / SAMPLE_RATE) * 1000,
+    );
     const MIN_DURATION_SAMPLES = SAMPLE_RATE * 1 + 4000; // 1 second + extra buffer
     if (aggregatedAudio.length < MIN_DURATION_SAMPLES) {
       const padded = new Float32Array(MIN_DURATION_SAMPLES);
@@ -109,6 +124,8 @@ const methods = {
     // Filter out hallucination/no-speech segments
     const segments = transcription as Array<{
       text: string;
+      from?: number;
+      to?: number;
       noSpeechProb?: number;
     }>;
 
@@ -118,14 +135,31 @@ const methods = {
       );
     }
 
-    const kept = segments.filter((segment) => !shouldDropSegment(segment));
-    const droppedCount = segments.length - kept.length;
+    const keptTextSegments = segments
+      .filter((segment) => !shouldDropSegment(segment))
+      .filter((segment) => segment.text.trim().length > 0);
+    const kept = keptTextSegments
+      .filter(
+        (segment): segment is typeof segment & { from: number; to: number } =>
+          typeof segment.from === "number" && typeof segment.to === "number",
+      )
+      .map((segment) => ({
+        text: segment.text,
+        from: Math.max(0, Math.min(segment.from, originalAudioDurationMs)),
+        to: Math.max(0, Math.min(segment.to, originalAudioDurationMs)),
+        noSpeechProb: segment.noSpeechProb,
+      }))
+      .filter((segment) => segment.to > segment.from);
+    const droppedCount = segments.length - keptTextSegments.length;
 
     logger.transcription.debug(
       `Segments: ${segments.length} total, ${kept.length} kept, ${droppedCount} dropped`,
     );
 
-    return kept.map((segment) => segment.text).join("");
+    return {
+      text: keptTextSegments.map((segment) => segment.text).join(""),
+      segments: kept,
+    };
   },
 
   async dispose(): Promise<void> {

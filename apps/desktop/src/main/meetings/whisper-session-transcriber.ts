@@ -10,6 +10,10 @@ interface TranscribeOptions {
   initialPrompt?: string;
 }
 
+interface WorkerTranscriptionResult {
+  text: string;
+}
+
 export class WhisperSessionTranscriber {
   private workerWrapper: SimpleForkWrapper | null = null;
   private currentModelPath: string | null = null;
@@ -38,19 +42,23 @@ export class WhisperSessionTranscriber {
       );
     }
 
-    const text = await this.workerWrapper.exec<string>("transcribeAudio", [
-      audio,
-      {
-        language: options.language ?? "auto",
-        initial_prompt: options.initialPrompt ?? "",
-        suppress_blank: true,
-        suppress_non_speech_tokens: true,
-        no_timestamps: true,
-      },
-    ]);
+    const transcription =
+      await this.workerWrapper.exec<WorkerTranscriptionResult>(
+        "transcribeAudio",
+        [
+          audio,
+          {
+            language: options.language ?? "auto",
+            initial_prompt: options.initialPrompt ?? "",
+            suppress_blank: true,
+            suppress_non_speech_tokens: true,
+            no_timestamps: true,
+          },
+        ],
+      );
 
     return {
-      text,
+      text: transcription.text,
       modelPath,
     };
   }

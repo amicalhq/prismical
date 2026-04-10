@@ -34,14 +34,107 @@ export const DEFAULT_VAD_CONFIG: VadConfig = {
   minSpeechFrames: 3, // ~96ms at 32ms/frame
 };
 
-interface SpeechSegment {
+export interface SpeechSegment {
   start: number;
   end: number;
+}
+
+export interface SpeechTimelineSpan {
+  startFrame: number;
+  endFrame: number;
+  originalStartSample: number;
+  originalEndSampleExclusive: number;
+  strippedStartSample: number;
+  strippedEndSampleExclusive: number;
 }
 
 export interface SpeechExtractionResult {
   audio: Float32Array;
   segments: SpeechSegment[];
+  timeline: SpeechTimelineSpan[];
+}
+
+function remapStrippedStartSampleToOriginalSample(
+  strippedSample: number,
+  timeline: SpeechTimelineSpan[],
+): number {
+  if (timeline.length === 0) {
+    return strippedSample;
+  }
+
+  const totalStrippedSamples =
+    timeline[timeline.length - 1]!.strippedEndSampleExclusive;
+  const clampedSample = Math.max(
+    0,
+    Math.min(strippedSample, totalStrippedSamples),
+  );
+
+  for (const span of timeline) {
+    if (clampedSample < span.strippedEndSampleExclusive) {
+      return (
+        span.originalStartSample + (clampedSample - span.strippedStartSample)
+      );
+    }
+  }
+
+  return timeline[timeline.length - 1]!.originalEndSampleExclusive;
+}
+
+function remapStrippedEndSampleToOriginalSample(
+  strippedSample: number,
+  timeline: SpeechTimelineSpan[],
+): number {
+  if (timeline.length === 0) {
+    return strippedSample;
+  }
+
+  const totalStrippedSamples =
+    timeline[timeline.length - 1]!.strippedEndSampleExclusive;
+  const clampedSample = Math.max(
+    0,
+    Math.min(strippedSample, totalStrippedSamples),
+  );
+
+  for (const span of timeline) {
+    if (clampedSample <= span.strippedEndSampleExclusive) {
+      return (
+        span.originalStartSample + (clampedSample - span.strippedStartSample)
+      );
+    }
+  }
+
+  return timeline[timeline.length - 1]!.originalEndSampleExclusive;
+}
+
+export function remapSpeechSegmentsToOriginalTimeline<
+  T extends { from: number; to: number },
+>(segments: T[], timeline: SpeechTimelineSpan[], sampleRate: number): T[] {
+  if (segments.length === 0 || timeline.length === 0) {
+    return segments;
+  }
+
+  return segments
+    .map((segment) => {
+      const strippedStartSample = Math.round(
+        (segment.from / 1000) * sampleRate,
+      );
+      const strippedEndSample = Math.round((segment.to / 1000) * sampleRate);
+      const originalStartSample = remapStrippedStartSampleToOriginalSample(
+        strippedStartSample,
+        timeline,
+      );
+      const originalEndSample = remapStrippedEndSampleToOriginalSample(
+        strippedEndSample,
+        timeline,
+      );
+
+      return {
+        ...segment,
+        from: Math.round((originalStartSample / sampleRate) * 1000),
+        to: Math.round((originalEndSample / sampleRate) * 1000),
+      };
+    })
+    .filter((segment) => segment.to > segment.from);
 }
 
 /**
@@ -149,13 +242,23 @@ export function extractSpeechFromVad(
   }
 
   const speechAudio = new Float32Array(totalSamples);
+  const timeline: SpeechTimelineSpan[] = [];
   let offset = 0;
   for (const segment of mergedSegments) {
     const startSample = segment.start * frameSize;
     const endSample = Math.min((segment.end + 1) * frameSize, audioData.length);
+    const segmentSamples = endSample - startSample;
     speechAudio.set(audioData.subarray(startSample, endSample), offset);
-    offset += endSample - startSample;
+    timeline.push({
+      startFrame: segment.start,
+      endFrame: segment.end,
+      originalStartSample: startSample,
+      originalEndSampleExclusive: endSample,
+      strippedStartSample: offset,
+      strippedEndSampleExclusive: offset + segmentSamples,
+    });
+    offset += segmentSamples;
   }
 
-  return { audio: speechAudio, segments: mergedSegments };
+  return { audio: speechAudio, segments: mergedSegments, timeline };
 }

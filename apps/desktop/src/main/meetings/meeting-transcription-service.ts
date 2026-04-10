@@ -74,6 +74,7 @@ export class MeetingSourceTranscriptionRuntime {
       const providerText = await this.provider.transcribe({
         audioData: frame.samples,
         sampleRate: frame.sampleRate,
+        startTimeMs: frame.timestampMs,
         context: {
           sessionId: this.options.meetingId,
           language: this.options.language ?? "auto",
@@ -112,17 +113,28 @@ export class MeetingSourceTranscriptionRuntime {
   }
 
   private consumeProviderOutput(
-    providerText: string,
+    providerOutput: Awaited<ReturnType<TranscriptionProvider["flush"]>>,
     isFinal: boolean,
   ): MeetingTranscriptionChunk[] {
-    if (!providerText || this.pendingStartTimeMs === null) {
-      return [];
+    const emittedText = this.extractEmittedText(providerOutput.text);
+    this.lastProviderChunk = providerOutput.text;
+
+    const emittedSegments =
+      providerOutput.segments?.filter((segment) => segment.text.trim()) ?? [];
+
+    if (emittedSegments.length > 0) {
+      this.resetPendingRange();
+      return emittedSegments.map((segment) => ({
+        source: this.options.source,
+        speaker: this.options.speaker,
+        text: segment.text.trim(),
+        startTimeMs: segment.startTimeMs,
+        endTimeMs: segment.endTimeMs,
+        isFinal,
+      }));
     }
 
-    const emittedText = this.extractEmittedText(providerText);
-    this.lastProviderChunk = providerText;
-
-    if (!emittedText.trim()) {
+    if (!emittedText.trim() || this.pendingStartTimeMs === null) {
       return [];
     }
 
@@ -135,8 +147,7 @@ export class MeetingSourceTranscriptionRuntime {
       isFinal,
     };
 
-    this.pendingStartTimeMs = null;
-    this.pendingEndTimeMs = 0;
+    this.resetPendingRange();
 
     return [chunk];
   }
@@ -144,5 +155,10 @@ export class MeetingSourceTranscriptionRuntime {
   private extractEmittedText(providerText: string): string {
     this.aggregatedText += providerText;
     return providerText;
+  }
+
+  private resetPendingRange(): void {
+    this.pendingStartTimeMs = null;
+    this.pendingEndTimeMs = 0;
   }
 }

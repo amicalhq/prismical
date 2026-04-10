@@ -202,7 +202,6 @@ class ModelService extends EventEmitter {
 
       // Validate all default models after sync
       await this.validateAndClearInvalidDefaults();
-
     } catch (error) {
       logger.main.error("Error initializing model manager", {
         error: error instanceof Error ? error.message : String(error),
@@ -594,9 +593,8 @@ class ModelService extends EventEmitter {
         fallbackModelId ||
         (await this.settingsService.getDefaultLanguageModel());
 
-      nextConfig.modelId = fallback && fallback !== "prismical-cloud"
-        ? fallback
-        : undefined;
+      nextConfig.modelId =
+        fallback && fallback !== "prismical-cloud" ? fallback : undefined;
       nextConfig.fallbackModelId =
         fallback && fallback !== "prismical-cloud" ? fallback : undefined;
       updated = true;

@@ -2,6 +2,7 @@ import {
   TranscriptionProvider,
   TranscribeParams,
   TranscribeContext,
+  TranscriptionChunkResult,
 } from "../../core/pipeline-types";
 import { logger } from "../../../main/logger";
 import { ModelService } from "../../../services/model-service";
@@ -10,8 +11,25 @@ import { SimpleForkWrapper } from "./simple-fork-wrapper";
 import * as path from "path";
 import { app } from "electron";
 import { AppError, ErrorCodes } from "../../../types/error";
-import { extractSpeechFromVad } from "../../utils/vad-audio-filter";
+import {
+  DEFAULT_VAD_CONFIG,
+  extractSpeechFromVad,
+  remapSpeechSegmentsToOriginalTimeline,
+  type SpeechTimelineSpan,
+} from "../../utils/vad-audio-filter";
 import { StreamingLinearResampler } from "../../utils/streaming-linear-resampler";
+
+interface WorkerTranscriptionSegment {
+  text: string;
+  from: number;
+  to: number;
+  noSpeechProb?: number;
+}
+
+interface WorkerTranscriptionResult {
+  text: string;
+  segments: WorkerTranscriptionSegment[];
+}
 
 export class WhisperProvider implements TranscriptionProvider {
   readonly name = "whisper-local";
@@ -29,6 +47,7 @@ export class WhisperProvider implements TranscriptionProvider {
   private currentSilenceFrameCount = 0;
   private bufferedSpeechSamples = 0;
   private vadRemainder = new Float32Array(0);
+  private bufferStartTimeMs: number | null = null;
   private inputResampler: StreamingLinearResampler | null = null;
   private inputSampleRate: number | null = null;
 
@@ -57,7 +76,8 @@ export class WhisperProvider implements TranscriptionProvider {
   private readonly MAX_SILENCE_DURATION_MS = 1500; // Max silence before cutting
   private readonly MAX_BUFFER_DURATION_MS = 7000; // Force a flush even without silence so meetings feel responsive
   private readonly SAMPLE_RATE = 16000;
-  private readonly SPEECH_PROBABILITY_THRESHOLD = 0.4; // Threshold for speech detection
+  private readonly SILENCE_PROBABILITY_THRESHOLD =
+    DEFAULT_VAD_CONFIG.endThreshold;
 
   constructor(modelService: ModelService) {
     this.modelService = modelService;
@@ -88,13 +108,19 @@ export class WhisperProvider implements TranscriptionProvider {
   /**
    * Process an audio chunk - buffers and conditionally transcribes
    */
-  async transcribe(params: TranscribeParams): Promise<string> {
+  async transcribe(
+    params: TranscribeParams,
+  ): Promise<TranscriptionChunkResult> {
     await this.initializeWhisper();
 
-    const { audioData, sampleRate, context } = params;
+    const { audioData, sampleRate, startTimeMs, context } = params;
     const normalizedAudio = this.normalizeToWhisperRate(audioData, sampleRate);
     if (normalizedAudio.length === 0) {
-      return "";
+      return { text: "", segments: [] };
+    }
+
+    if (startTimeMs !== undefined && this.bufferStartTimeMs === null) {
+      this.bufferStartTimeMs = startTimeMs;
     }
 
     // Buffer raw audio immediately. VAD probabilities are generated against
@@ -106,7 +132,7 @@ export class WhisperProvider implements TranscriptionProvider {
     this.bufferedSpeechSamples += vadProbabilities.length * this.FRAME_SIZE;
 
     for (const probability of vadProbabilities) {
-      if (probability > this.SPEECH_PROBABILITY_THRESHOLD) {
+      if (probability > this.SILENCE_PROBABILITY_THRESHOLD) {
         this.currentSilenceFrameCount = 0;
       } else {
         this.currentSilenceFrameCount++;
@@ -129,7 +155,7 @@ export class WhisperProvider implements TranscriptionProvider {
 
     // Only transcribe if speech/silence patterns indicate we should
     if (!this.shouldTranscribe()) {
-      return "";
+      return { text: "", segments: [] };
     }
 
     return this.doTranscription(context);
@@ -139,16 +165,17 @@ export class WhisperProvider implements TranscriptionProvider {
    * Flush any buffered audio and return transcription
    * Called at the end of a recording session
    */
-  async flush(context: TranscribeContext): Promise<string> {
+  async flush(context: TranscribeContext): Promise<TranscriptionChunkResult> {
     if (this.frameBuffer.length === 0) {
       const flushedResamplerAudio = this.flushResampler();
       if (flushedResamplerAudio.length === 0) {
-        return "";
+        return { text: "", segments: [] };
       }
 
       this.frameBuffer.push(flushedResamplerAudio);
-      const vadProbabilities =
-        await this.processChunkThroughVad(flushedResamplerAudio);
+      const vadProbabilities = await this.processChunkThroughVad(
+        flushedResamplerAudio,
+      );
       this.frameBufferSpeechProbabilities.push(...vadProbabilities);
       this.bufferedSpeechSamples += vadProbabilities.length * this.FRAME_SIZE;
     }
@@ -157,8 +184,9 @@ export class WhisperProvider implements TranscriptionProvider {
     const flushedResamplerAudio = this.flushResampler();
     if (flushedResamplerAudio.length > 0) {
       this.frameBuffer.push(flushedResamplerAudio);
-      const vadProbabilities =
-        await this.processChunkThroughVad(flushedResamplerAudio);
+      const vadProbabilities = await this.processChunkThroughVad(
+        flushedResamplerAudio,
+      );
       this.frameBufferSpeechProbabilities.push(...vadProbabilities);
       this.bufferedSpeechSamples += vadProbabilities.length * this.FRAME_SIZE;
     }
@@ -170,7 +198,9 @@ export class WhisperProvider implements TranscriptionProvider {
    * Shared transcription logic - aggregates buffer, calls whisper, clears state
    * Assumes initializeWhisper() was already called by caller
    */
-  private async doTranscription(context: TranscribeContext): Promise<string> {
+  private async doTranscription(
+    context: TranscribeContext,
+  ): Promise<TranscriptionChunkResult> {
     try {
       const { aggregatedTranscription, language } = context;
 
@@ -192,31 +222,57 @@ export class WhisperProvider implements TranscriptionProvider {
         transcribableLength < rawAudio.length
           ? rawAudio.slice(transcribableLength)
           : new Float32Array(0);
+      const transcriptionStartTimeMs = this.bufferStartTimeMs ?? 0;
+      const remainderStartTimeMs =
+        this.bufferStartTimeMs !== null
+          ? this.bufferStartTimeMs +
+            (transcribableLength / this.SAMPLE_RATE) * 1000
+          : null;
 
       // Clear only the buffered audio state so Silero state survives across
       // in-session chunk flushes. Full reset happens on session boundaries.
-      this.clearBufferedAudioState(unprocessedTail);
+      this.clearBufferedAudioState(unprocessedTail, remainderStartTimeMs);
 
       const shouldBypassVad =
         vadProbs.length === 0 ||
         vadProbs.every((probability) => probability >= 1);
+      const bypassEndFrame = Math.max(
+        0,
+        Math.ceil(transcribableAudio.length / this.FRAME_SIZE) - 1,
+      );
 
-      const { audio: speechOnlyAudio, segments: speechSegments } =
-        shouldBypassVad
-          ? {
-              audio: transcribableAudio,
-              segments:
-                transcribableAudio.length > 0
-                  ? [{ start: 0, end: Math.max(0, vadProbs.length - 1) }]
-                  : [],
-            }
-          : extractSpeechFromVad(transcribableAudio, vadProbs);
+      const {
+        audio: speechOnlyAudio,
+        segments: speechSegments,
+        timeline: speechTimeline,
+      } = shouldBypassVad
+        ? {
+            audio: transcribableAudio,
+            segments:
+              transcribableAudio.length > 0
+                ? [{ start: 0, end: bypassEndFrame }]
+                : [],
+            timeline:
+              transcribableAudio.length > 0
+                ? [
+                    {
+                      startFrame: 0,
+                      endFrame: bypassEndFrame,
+                      originalStartSample: 0,
+                      originalEndSampleExclusive: transcribableAudio.length,
+                      strippedStartSample: 0,
+                      strippedEndSampleExclusive: transcribableAudio.length,
+                    } satisfies SpeechTimelineSpan,
+                  ]
+                : [],
+          }
+        : extractSpeechFromVad(transcribableAudio, vadProbs);
 
       if (speechOnlyAudio.length === 0) {
         logger.transcription.debug(
           "Skipping transcription - no speech detected by VAD filter",
         );
-        return "";
+        return { text: "", segments: [] };
       }
 
       logger.transcription.debug(
@@ -240,22 +296,38 @@ export class WhisperProvider implements TranscriptionProvider {
         context.accessibilityContext,
       );
 
-      const text = await this.workerWrapper.exec<string>("transcribeAudio", [
-        speechOnlyAudio,
-        {
-          language: language || "auto",
-          initial_prompt: initialPrompt,
-          suppress_blank: true,
-          suppress_non_speech_tokens: true,
-          no_timestamps: false,
-        },
-      ]);
+      const transcription =
+        await this.workerWrapper.exec<WorkerTranscriptionResult>(
+          "transcribeAudio",
+          [
+            speechOnlyAudio,
+            {
+              language: language || "auto",
+              initial_prompt: initialPrompt,
+              suppress_blank: true,
+              suppress_non_speech_tokens: true,
+              no_timestamps: false,
+            },
+          ],
+        );
+      const remappedSegments = remapSpeechSegmentsToOriginalTimeline(
+        transcription.segments,
+        speechTimeline,
+        this.SAMPLE_RATE,
+      ).map((segment) => ({
+        text: segment.text,
+        startTimeMs: Math.round(transcriptionStartTimeMs + segment.from),
+        endTimeMs: Math.round(transcriptionStartTimeMs + segment.to),
+      }));
 
       logger.transcription.debug(
-        `Transcription completed, length: ${text.length}`,
+        `Transcription completed, length: ${transcription.text.length}`,
       );
 
-      return text;
+      return {
+        text: transcription.text,
+        segments: remappedSegments,
+      };
     } catch (error) {
       logger.transcription.error("Transcription failed:", error);
       // Re-throw AppError as-is, wrap other errors
@@ -281,12 +353,16 @@ export class WhisperProvider implements TranscriptionProvider {
     this.vadService?.reset();
   }
 
-  private clearBufferedAudioState(remainder = new Float32Array(0)): void {
+  private clearBufferedAudioState(
+    remainder = new Float32Array(0),
+    remainderStartTimeMs: number | null = null,
+  ): void {
     this.frameBuffer = remainder.length > 0 ? [remainder] : [];
     this.frameBufferSpeechProbabilities = [];
     this.currentSilenceFrameCount = 0;
     this.bufferedSpeechSamples = 0;
     this.vadRemainder = remainder;
+    this.bufferStartTimeMs = remainder.length > 0 ? remainderStartTimeMs : null;
   }
 
   private shouldTranscribe(): boolean {
@@ -391,7 +467,7 @@ export class WhisperProvider implements TranscriptionProvider {
     this.frameBufferSpeechProbabilities.push(result.probability);
     this.bufferedSpeechSamples += this.vadRemainder.length;
 
-    if (result.probability > this.SPEECH_PROBABILITY_THRESHOLD) {
+    if (result.probability > this.SILENCE_PROBABILITY_THRESHOLD) {
       this.currentSilenceFrameCount = 0;
     } else {
       this.currentSilenceFrameCount++;

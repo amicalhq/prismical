@@ -45,12 +45,14 @@ const SOURCE_TO_SPEAKER: Record<AudioSource, TranscriptSpeaker> = {
 
 type MeetingArtifactSource = "mic_raw" | "mic_processed" | "system";
 
-const ARTIFACT_TYPE_BY_SOURCE: Record<MeetingArtifactSource, "mic_wav" | "mic_processed_wav" | "system_wav"> =
-  {
-    mic_raw: "mic_wav",
-    mic_processed: "mic_processed_wav",
-    system: "system_wav",
-  };
+const ARTIFACT_TYPE_BY_SOURCE: Record<
+  MeetingArtifactSource,
+  "mic_wav" | "mic_processed_wav" | "system_wav"
+> = {
+  mic_raw: "mic_wav",
+  mic_processed: "mic_processed_wav",
+  system: "system_wav",
+};
 
 export class MeetingManager extends EventEmitter {
   private state: MeetingRuntimeState = "idle";
@@ -567,7 +569,9 @@ export class MeetingManager extends EventEmitter {
       sizeBytes: number;
     }> = [];
 
-    for (const source of Object.keys(ARTIFACT_TYPE_BY_SOURCE) as MeetingArtifactSource[]) {
+    for (const source of Object.keys(
+      ARTIFACT_TYPE_BY_SOURCE,
+    ) as MeetingArtifactSource[]) {
       const writer = this.writers[source];
       if (!writer) {
         continue;

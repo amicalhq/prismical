@@ -22,7 +22,19 @@ export interface TranscribeContext {
 export interface TranscribeParams {
   audioData: Float32Array;
   sampleRate: number;
+  startTimeMs?: number;
   context: TranscribeContext;
+}
+
+export interface TranscriptionChunkSegment {
+  text: string;
+  startTimeMs: number;
+  endTimeMs: number;
+}
+
+export interface TranscriptionChunkResult {
+  text: string;
+  segments?: TranscriptionChunkSegment[];
 }
 
 // Formatting input parameters
@@ -40,8 +52,8 @@ export interface FormatParams {
 // Transcription provider interface
 export interface TranscriptionProvider {
   readonly name: string;
-  transcribe(params: TranscribeParams): Promise<string>;
-  flush(context: TranscribeContext): Promise<string>;
+  transcribe(params: TranscribeParams): Promise<TranscriptionChunkResult>;
+  flush(context: TranscribeContext): Promise<TranscriptionChunkResult>;
   reset(): void; // Clear internal buffers without transcribing
 }
 

@@ -142,14 +142,14 @@ export function ModelSelectionScreen({
                           <Icon className={`h-6 w-6 ${model.iconColor}`} />
                         </div>
                         <div className="flex flex-col gap-0.5">
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-medium">{model.title}</h3>
-                          {isRecommended && (
-                            <Badge variant="secondary" className="text-xs">
-                              {t("onboarding.modelSelection.recommended")}
-                            </Badge>
-                          )}
-                        </div>
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-medium">{model.title}</h3>
+                            {isRecommended && (
+                              <Badge variant="secondary" className="text-xs">
+                                {t("onboarding.modelSelection.recommended")}
+                              </Badge>
+                            )}
+                          </div>
                           <p className="text-sm">{model.subtitle}</p>
                         </div>
                       </div>
