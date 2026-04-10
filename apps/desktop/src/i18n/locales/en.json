@@ -420,14 +420,6 @@
         "label": "Show app in dock",
         "description": "Display the application icon in the macOS dock"
       },
-      "muteSystemAudio": {
-        "label": "Mute system audio during recording",
-        "description": "Silence system output while capturing microphone audio"
-      },
-      "muteDictationSounds": {
-        "label": "Mute dictation sounds",
-        "description": "Disable the start and stop sounds when recording"
-      },
       "autoDictateOnNewNote": {
         "label": "Auto-dictate on new note",
         "description": "Automatically start dictation when creating a new note"

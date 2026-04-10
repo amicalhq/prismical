@@ -76,8 +76,6 @@ const defaultSettings: AppSettingsData = {
   preferences: {
     launchAtLogin: true,
     showInDock: true,
-    muteSystemAudio: true,
-    muteDictationSounds: false,
     autoDictateOnNewNote: false,
   },
   meetingNotifications: {

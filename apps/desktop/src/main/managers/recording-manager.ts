@@ -24,6 +24,8 @@ const QUICK_PRESS_THRESHOLD = 500;
 const NO_AUDIO_TIMEOUT = 5000;
 const STUCK_STATE_TIMEOUT = 10000;
 const CLEANUP_STOPPING_WAIT_TIMEOUT = 1000;
+const SHOULD_MUTE_SYSTEM_AUDIO_DURING_RECORDING = true;
+const SHOULD_MUTE_RECORDING_SOUNDS = false;
 
 /**
  * Manages recording state and coordinates audio recording across the application
@@ -69,8 +71,6 @@ export class RecordingManager extends EventEmitter {
 
   // System audio state tracking
   private systemAudioMuted: boolean = false;
-  // Sound muting for current session
-  private soundsMuted: boolean = false;
 
   constructor(private serviceManager: ServiceManager) {
     super();
@@ -293,11 +293,6 @@ export class RecordingManager extends EventEmitter {
    */
   private async initializeSession(): Promise<void> {
     try {
-      const settingsService = this.serviceManager.getService("settingsService");
-      const preferences = await settingsService.getPreferences();
-      const shouldMute = preferences?.muteSystemAudio ?? true;
-      this.soundsMuted = preferences?.muteDictationSounds ?? false;
-
       const nativeBridge = this.serviceManager.getService("nativeBridge");
       if (!nativeBridge) {
         logger.audio.info(
@@ -312,10 +307,11 @@ export class RecordingManager extends EventEmitter {
       nativeBridge.refreshAccessibilityContext();
 
       const result = await nativeBridge.call("startRecording", {
-        muteSystemAudio: shouldMute,
-        muteSounds: this.soundsMuted,
+        muteSystemAudio: SHOULD_MUTE_SYSTEM_AUDIO_DURING_RECORDING,
+        muteSounds: SHOULD_MUTE_RECORDING_SOUNDS,
       });
-      this.systemAudioMuted = shouldMute && !!result?.success;
+      this.systemAudioMuted =
+        SHOULD_MUTE_SYSTEM_AUDIO_DURING_RECORDING && !!result?.success;
     } catch (error) {
       this.systemAudioMuted = false;
       logger.audio.error("Failed to initialize session", { error });
@@ -363,7 +359,7 @@ export class RecordingManager extends EventEmitter {
         if (nativeBridge) {
           await nativeBridge.call("stopRecording", {
             wasMuted: this.systemAudioMuted,
-            muteSounds: this.soundsMuted,
+            muteSounds: SHOULD_MUTE_RECORDING_SOUNDS,
           });
         }
         this.systemAudioMuted = false;
@@ -786,7 +782,7 @@ export class RecordingManager extends EventEmitter {
       if (nativeBridge) {
         await nativeBridge.call("stopRecording", {
           wasMuted: this.systemAudioMuted,
-          muteSounds: this.soundsMuted,
+          muteSounds: SHOULD_MUTE_RECORDING_SOUNDS,
         });
       }
     } catch (error) {
@@ -814,7 +810,6 @@ export class RecordingManager extends EventEmitter {
     this.audioChunks = [];
     this.terminationCode = null;
     this.systemAudioMuted = false;
-    this.soundsMuted = false;
     this.clearTimers();
   }
 

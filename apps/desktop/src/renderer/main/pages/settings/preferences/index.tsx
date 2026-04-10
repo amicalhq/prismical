@@ -95,18 +95,6 @@ export default function PreferencesSettingsPage() {
     });
   };
 
-  const handleMuteSystemAudioChange = (checked: boolean) => {
-    updatePreferencesMutation.mutate({
-      muteSystemAudio: checked,
-    });
-  };
-
-  const handleMuteDictationSoundsChange = (checked: boolean) => {
-    updatePreferencesMutation.mutate({
-      muteDictationSounds: checked,
-    });
-  };
-
   const handleLanguageChange = (value: string) => {
     setSelectedLocale(value);
 
@@ -134,9 +122,6 @@ export default function PreferencesSettingsPage() {
   const minimizeToTray = preferencesQuery.data?.minimizeToTray ?? false;
   const launchAtLogin = preferencesQuery.data?.launchAtLogin ?? true;
   const showInDock = preferencesQuery.data?.showInDock ?? true;
-  const muteSystemAudio = preferencesQuery.data?.muteSystemAudio ?? true;
-  const muteDictationSounds =
-    preferencesQuery.data?.muteDictationSounds ?? false;
   const autoDictateOnNewNote =
     preferencesQuery.data?.autoDictateOnNewNote ?? false;
   const meetingWidgetEnabled = meetingWidgetSettingsQuery.data?.enabled ?? true;
@@ -217,49 +202,6 @@ export default function PreferencesSettingsPage() {
                 <Separator />
               </>
             )}
-
-            <div className="flex items-center justify-between">
-              <div className="space-y-1">
-                <Label className="text-base font-medium text-foreground">
-                  {t("settings.preferences.muteSystemAudio.label")}
-                </Label>
-                <p className="text-xs text-muted-foreground">
-                  {t("settings.preferences.muteSystemAudio.description")}
-                </p>
-              </div>
-              <Switch
-                checked={muteSystemAudio}
-                onCheckedChange={handleMuteSystemAudioChange}
-                disabled={
-                  updatePreferencesMutation.isPending ||
-                  preferencesQuery.isLoading
-                }
-              />
-            </div>
-
-            <Separator />
-
-            {/* Mute dictation sounds */}
-            <div className="flex items-center justify-between">
-              <div className="space-y-1">
-                <Label className="text-base font-medium text-foreground">
-                  {t("settings.preferences.muteDictationSounds.label")}
-                </Label>
-                <p className="text-xs text-muted-foreground">
-                  {t("settings.preferences.muteDictationSounds.description")}
-                </p>
-              </div>
-              <Switch
-                checked={muteDictationSounds}
-                onCheckedChange={handleMuteDictationSoundsChange}
-                disabled={
-                  updatePreferencesMutation.isPending ||
-                  preferencesQuery.isLoading
-                }
-              />
-            </div>
-
-            <Separator />
 
             {/* Auto-dictate on new note */}
             <div className="flex items-center justify-between">

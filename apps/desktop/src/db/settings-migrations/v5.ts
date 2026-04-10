@@ -1,13 +1,10 @@
 import type { AppSettingsData } from "../schema";
 
-// v4 -> v5: Default muteSystemAudio to preferences (default true)
+// v4 -> v5: normalize preferences section shape
 export function migrateToV5(data: unknown): AppSettingsData {
   const oldData = data as AppSettingsData;
   return {
     ...oldData,
-    preferences: {
-      ...(oldData.preferences ?? {}),
-      muteSystemAudio: oldData.preferences?.muteSystemAudio ?? true,
-    },
+    preferences: oldData.preferences ?? {},
   };
 }

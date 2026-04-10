@@ -27,8 +27,6 @@ export interface AppPreferences {
   launchAtLogin: boolean;
   minimizeToTray: boolean;
   showInDock: boolean;
-  muteSystemAudio: boolean;
-  muteDictationSounds: boolean;
   autoDictateOnNewNote: boolean;
 }
 
@@ -404,8 +402,6 @@ export class SettingsService extends EventEmitter {
       launchAtLogin: preferences?.launchAtLogin ?? true,
       minimizeToTray: preferences?.minimizeToTray ?? true,
       showInDock: preferences?.showInDock ?? true,
-      muteSystemAudio: preferences?.muteSystemAudio ?? true,
-      muteDictationSounds: preferences?.muteDictationSounds ?? false,
       autoDictateOnNewNote: preferences?.autoDictateOnNewNote ?? false,
     };
   }
@@ -432,7 +428,6 @@ export class SettingsService extends EventEmitter {
     this.emit("preferences-changed", {
       changes: preferences,
       showInDockChanged: preferences.showInDock !== undefined,
-      muteSystemAudioChanged: preferences.muteSystemAudio !== undefined,
     });
   }
 

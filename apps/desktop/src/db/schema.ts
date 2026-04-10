@@ -247,8 +247,6 @@ export interface AppSettingsData {
     launchAtLogin?: boolean;
     minimizeToTray?: boolean;
     showInDock?: boolean;
-    muteSystemAudio?: boolean;
-    muteDictationSounds?: boolean;
     autoDictateOnNewNote?: boolean;
   };
   meetingNotifications?: {
