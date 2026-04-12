@@ -1,45 +1,26 @@
 import type { AppSettingsData } from "../schema";
-import { migrateToV2 } from "./v2";
-import { migrateToV3 } from "./v3";
-import { migrateToV4 } from "./v4";
-import { migrateToV5 } from "./v5";
-import { migrateToV6 } from "./v6";
-import { migrateToV7 } from "./v7";
-import { migrateToV8 } from "./v8";
-import { migrateToV9 } from "./v9";
-import { migrateToV10 } from "./v10";
 
 export type MigrationFn = (data: unknown) => AppSettingsData;
 
-// Current settings schema version - increment when making breaking changes
-export const CURRENT_SETTINGS_VERSION = 10;
+// Fresh installs start at v1. Future schema changes can add migrations here.
+export const CURRENT_SETTINGS_VERSION = 1;
 
-const migrations: Record<number, MigrationFn> = {
-  2: migrateToV2,
-  3: migrateToV3,
-  4: migrateToV4,
-  5: migrateToV5,
-  6: migrateToV6,
-  7: migrateToV7,
-  8: migrateToV8,
-  9: migrateToV9,
-  10: migrateToV10,
-};
+const migrations: Record<number, MigrationFn> = {};
 
-/**
- * Run migrations from current version to target version
- */
 export function migrateSettings(
   data: unknown,
   fromVersion: number,
 ): AppSettingsData {
   let currentData = data;
 
-  for (let v = fromVersion + 1; v <= CURRENT_SETTINGS_VERSION; v++) {
-    const migrationFn = migrations[v];
+  for (
+    let version = fromVersion + 1;
+    version <= CURRENT_SETTINGS_VERSION;
+    version++
+  ) {
+    const migrationFn = migrations[version];
     if (migrationFn) {
       currentData = migrationFn(currentData);
-      console.log(`[Settings] Migrated settings from v${v - 1} to v${v}`);
     }
   }
 

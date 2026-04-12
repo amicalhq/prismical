@@ -126,11 +126,11 @@ export const vocabulary = sqliteTable("vocabulary", {
     .default(sql`(unixepoch())`),
 });
 
-// App settings table with typed JSON
+// App settings table with versioned typed JSON
 export const appSettings = sqliteTable("app_settings", {
   id: integer("id").primaryKey(),
   data: text("data", { mode: "json" }).$type<AppSettingsData>().notNull(),
-  version: integer("version").notNull().default(1), // For migrations
+  version: integer("version").notNull().default(1),
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()
     .default(sql`(unixepoch())`),

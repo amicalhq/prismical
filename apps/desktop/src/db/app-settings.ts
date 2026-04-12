@@ -10,11 +10,9 @@
  * - To update a single field, fetch the current section, modify it, and save the complete section
  * - The SettingsService handles this pattern correctly for all methods
  * - Direct calls to updateAppSettings should pass complete sections
- *
  * Settings Versioning:
- * - Settings have a version number for migrations
- * - When schema changes, increment CURRENT_SETTINGS_VERSION and add a migration function
- * - Migrations run automatically when loading settings with an older version
+ * - Settings have a version number for future migrations
+ * - Fresh installs start at version 1
  */
 
 import { eq } from "drizzle-orm";
@@ -131,12 +129,10 @@ export async function getAppSettings(): Promise<AppSettingsData> {
 
   const record = result[0];
 
-  // Check if migration is needed
   if (record.version < CURRENT_SETTINGS_VERSION) {
     const migratedData = migrateSettings(record.data, record.version);
-
-    // Save migrated data with new version
     const now = new Date();
+
     await db
       .update(appSettings)
       .set({
@@ -146,9 +142,6 @@ export async function getAppSettings(): Promise<AppSettingsData> {
       })
       .where(eq(appSettings.id, SETTINGS_ID));
 
-    console.log(
-      `[Settings] Migration complete: v${record.version} -> v${CURRENT_SETTINGS_VERSION}`,
-    );
     return migratedData;
   }
 

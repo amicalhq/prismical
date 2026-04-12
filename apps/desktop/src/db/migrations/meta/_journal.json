@@ -6,42 +6,7 @@
       "idx": 0,
       "version": "6",
       "when": 1750751926568,
-      "tag": "0000_worried_black_bird",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "6",
-      "when": 1757443963743,
-      "tag": "0001_short_betty_ross",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "6",
-      "when": 1757500655155,
-      "tag": "0002_cheerful_betty_brant",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "6",
-      "when": 1772313832685,
-      "tag": "0003_old_exiles",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "6",
-      "when": 1775248662421,
-      "tag": "0004_fantastic_longshot",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "6",
-      "when": 1775284200558,
-      "tag": "0005_wide_colossus",
+      "tag": "0000_initial_schema",
       "breakpoints": true
     }
   ]

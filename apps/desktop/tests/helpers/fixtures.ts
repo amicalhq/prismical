@@ -206,7 +206,6 @@ export const fixtures = {
     await testDb.db.insert(schema.appSettings).values({
       id: 1,
       data: defaultAppSettings,
-      version: 6,
     });
   },
 
@@ -266,7 +265,6 @@ export const fixtures = {
     await testDb.db.insert(schema.appSettings).values({
       id: 1,
       data: { ...defaultAppSettings, ...settings },
-      version: 6,
     });
   },
 
