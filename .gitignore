@@ -56,3 +56,7 @@ AGENTS.md
 
 # Temp files
 /tmp
+
+# Ignore repo-local docs and scripts
+docs/
+scripts/

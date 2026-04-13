@@ -14,8 +14,8 @@ let vendorLibraryDirectory = URL(fileURLWithPath: vendorLibraryAbsolutePath)
 let hasVendoredWebRtcBundle = FileManager.default.fileExists(atPath: vendorLibraryAbsolutePath)
 
 let bridgeTarget: Target = .target(
-    name: "PrismicalAec3Bridge",
-    path: "Sources/PrismicalAec3Bridge",
+    name: "Aec3Bridge",
+    path: "Sources/Aec3Bridge",
     exclude: hasVendoredWebRtcBundle ? ["prismical_aec3.cpp"] : [],
     publicHeadersPath: "include",
     cxxSettings: [
@@ -30,21 +30,37 @@ let bridgeTarget: Target = .target(
 )
 
 let package = Package(
-    name: "PrismicalAudioCapture",
+    name: "AudioCapture",
     platforms: [
         .macOS(.v13)
     ],
     products: [
         .executable(
-            name: "prismical-audio-capture",
-            targets: ["PrismicalAudioCapture"]
+            name: "audio-capture",
+            targets: ["AudioCapture"]
+        ),
+        .executable(
+            name: "aec3-replay",
+            targets: ["Aec3Replay"]
+        ),
+        .executable(
+            name: "aec3-live-trace-replay",
+            targets: ["Aec3LiveTraceReplay"]
         )
     ],
     targets: [
         bridgeTarget,
         .executableTarget(
-            name: "PrismicalAudioCapture",
-            dependencies: ["PrismicalAec3Bridge"]
+            name: "AudioCapture",
+            dependencies: ["Aec3Bridge"]
+        ),
+        .executableTarget(
+            name: "Aec3Replay",
+            dependencies: ["Aec3Bridge"]
+        ),
+        .executableTarget(
+            name: "Aec3LiveTraceReplay",
+            dependencies: ["Aec3Bridge"]
         )
     ],
     cxxLanguageStandard: .cxx17

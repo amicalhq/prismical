@@ -139,20 +139,6 @@ export class WhisperProvider implements TranscriptionProvider {
       }
     }
 
-    const latestProbability =
-      vadProbabilities.length > 0
-        ? vadProbabilities[vadProbabilities.length - 1]
-        : 0;
-
-    logger.transcription.debug("Frame received", {
-      speechProbability: latestProbability.toFixed(3),
-      generatedVadFrames: vadProbabilities.length,
-      bufferSize: this.frameBuffer.length,
-      bufferedSpeechSamples: this.bufferedSpeechSamples,
-      silenceCount: this.currentSilenceFrameCount,
-      vadRemainderSamples: this.vadRemainder.length,
-    });
-
     // Only transcribe if speech/silence patterns indicate we should
     if (!this.shouldTranscribe()) {
       return { text: "", segments: [] };
@@ -396,14 +382,6 @@ export class WhisperProvider implements TranscriptionProvider {
       return true;
     }
 
-    logger.transcription.debug("Not transcribing", {
-      audioDurationMs,
-      silenceDurationMs,
-      frameBufferLength: this.frameBuffer.length,
-      bufferedSpeechSamples: this.bufferedSpeechSamples,
-      silenceFrameCount: this.currentSilenceFrameCount,
-    });
-
     return false;
   }
 
@@ -447,12 +425,6 @@ export class WhisperProvider implements TranscriptionProvider {
     }
 
     this.vadRemainder = combined.slice(offset);
-
-    if (!probabilities.length && !this.loggedVadFallback) {
-      logger.transcription.debug("Awaiting more audio for full VAD frame", {
-        remainderSamples: this.vadRemainder.length,
-      });
-    }
 
     return probabilities;
   }

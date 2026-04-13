@@ -68,7 +68,7 @@ if [[ -z "$checkout" || ${#arm64_libs[@]} -eq 0 || ${#x64_libs[@]} -eq 0 ]]; the
 fi
 
 vendor_source="$package_root/Vendor/WebRTC/shims/prismical_aec3_vendor.cpp"
-public_header="$package_root/Sources/PrismicalAec3Bridge/include/prismical_aec3.h"
+public_header="$package_root/Sources/Aec3Bridge/include/prismical_aec3.h"
 tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/prismical-webrtc-bundle.XXXXXX")"
 
 cleanup() {
@@ -91,10 +91,14 @@ for lib_path in "${arm64_libs[@]}" "${x64_libs[@]}"; do
 done
 
 default_include_dirs=(
-  "$package_root/Sources/PrismicalAec3Bridge/include"
+  "$package_root/Sources/Aec3Bridge/include"
   "$checkout"
   "$checkout/third_party/abseil-cpp"
 )
+
+relative_to_bundle_dir() {
+  python3 -c 'import os, sys; print(os.path.relpath(sys.argv[1], sys.argv[2]))' "$1" "$bundle_dir"
+}
 
 compile_wrapper() {
   local arch="$1"
@@ -147,12 +151,24 @@ if git -C "$checkout" rev-parse HEAD >/dev/null 2>&1; then
   checkout_revision="$(git -C "$checkout" rev-parse HEAD)"
 fi
 
+relative_checkout="$(relative_to_bundle_dir "$checkout")"
+relative_arm64_libs=()
+relative_x64_libs=()
+
+for lib_path in "${arm64_libs[@]}"; do
+  relative_arm64_libs+=("$(relative_to_bundle_dir "$lib_path")")
+done
+
+for lib_path in "${x64_libs[@]}"; do
+  relative_x64_libs+=("$(relative_to_bundle_dir "$lib_path")")
+done
+
 {
-  echo "checkout=$checkout"
+  echo "checkout=$relative_checkout"
   echo "revision=$checkout_revision"
   echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  echo "arm64_libs=${arm64_libs[*]}"
-  echo "x64_libs=${x64_libs[*]}"
+  echo "arm64_libs=${relative_arm64_libs[*]}"
+  echo "x64_libs=${relative_x64_libs[*]}"
 } > "$bundle_dir/BUILD_INFO.txt"
 
 lipo -info "$bundle_dir/lib/libprismical_webrtc_aec3.a"

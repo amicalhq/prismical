@@ -412,7 +412,7 @@ const config: ForgeConfig = {
       `./node-binaries/${process.platform}-${process.arch}/node${
         process.platform === "win32" ? ".exe" : ""
       }`,
-      "../../packages/native-helpers/audio-capture/bin/prismical-audio-capture",
+      "../../packages/native-helpers/audio-capture/bin/audio-capture",
       "../../packages/native-helpers/mic-detector/bin/prismical-mic-detector",
       "./models",
       "./assets",

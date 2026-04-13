@@ -47,6 +47,7 @@ describe("MeetingSourceTranscriptionRuntime", () => {
       timestampMs: 1000,
       durationMs: 200,
       sequenceNum: 1,
+      sampleStartIndex: 16000,
     });
 
     expect(provider.transcribe).toHaveBeenCalledWith(
@@ -102,6 +103,7 @@ describe("MeetingSourceTranscriptionRuntime", () => {
       timestampMs: 500,
       durationMs: 200,
       sequenceNum: 1,
+      sampleStartIndex: 8000,
     });
 
     expect(chunks).toEqual([

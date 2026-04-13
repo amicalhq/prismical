@@ -2,6 +2,9 @@
   "name": "prismical",
   "private": true,
   "scripts": {
+    "audio:e2e:system": "node scripts/check-system-capture-e2e.cjs",
+    "audio:e2e:mic": "node scripts/check-mic-capture-e2e.cjs",
+    "audio:e2e:dual": "node scripts/check-dual-aec-e2e.cjs",
     "build": "turbo run build",
     "dev": "turbo run dev",
     "lint": "turbo run lint",

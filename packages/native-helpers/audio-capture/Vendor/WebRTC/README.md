@@ -24,7 +24,7 @@ The static library should be a universal or fat archive that contains both:
 - `x86_64`
 
 The archive must export the C symbols declared in
-`Sources/PrismicalAec3Bridge/include/prismical_aec3.h`. That keeps Prismical's
+`Sources/Aec3Bridge/include/prismical_aec3.h`. That keeps Prismical's
 build independent from raw WebRTC headers and makes the vendored bundle a
 drop-in replacement for the stub bridge.
 

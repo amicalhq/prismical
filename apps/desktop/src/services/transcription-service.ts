@@ -261,12 +261,6 @@ export class TranscriptionService {
           totalResults: session.transcriptionResults.length,
         });
       }
-
-      logger.transcription.debug("Processed frame", {
-        sessionId,
-        frameSize: audioChunk.length,
-        hadTranscription: chunkTranscription.length > 0,
-      });
     } finally {
       // Release transcription mutex - always release even on error
       this.transcriptionMutex.release();

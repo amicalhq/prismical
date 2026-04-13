@@ -14,6 +14,7 @@ import {
 import { StreamingWavWriter } from "@/utils/streaming-wav-writer";
 import { NativeAudioCaptureClient } from "../meetings/native-audio-capture-client";
 import { ReferenceEchoCanceller } from "../meetings/reference-echo-canceller";
+import { MeetingTraceWriter } from "../meetings/meeting-trace-writer";
 import {
   MeetingTranscriptionService,
   type MeetingSourceTranscriptionRuntime,
@@ -54,6 +55,32 @@ const ARTIFACT_TYPE_BY_SOURCE: Record<
   system: "system_wav",
 };
 
+const parseAecRenderHoldbackMs = (): number => {
+  const rawValue = process.env.PRISMICAL_AEC_RENDER_HOLDBACK_MS;
+  if (rawValue == null || rawValue.trim() === "") {
+    return 300;
+  }
+
+  const parsedValue = Number.parseInt(rawValue, 10);
+  return Number.isFinite(parsedValue) && parsedValue >= 0 ? parsedValue : 300;
+};
+
+const AEC_RENDER_HOLDBACK_MS = parseAecRenderHoldbackMs();
+const parseAecRenderWaitTimeoutMs = (fallbackMs: number): number => {
+  const rawValue = process.env.PRISMICAL_AEC_RENDER_WAIT_TIMEOUT_MS;
+  if (rawValue == null || rawValue.trim() === "") {
+    return fallbackMs;
+  }
+
+  const parsedValue = Number.parseInt(rawValue, 10);
+  return Number.isFinite(parsedValue) && parsedValue >= 0
+    ? parsedValue
+    : fallbackMs;
+};
+const AEC_RENDER_WAIT_TIMEOUT_MS = parseAecRenderWaitTimeoutMs(
+  AEC_RENDER_HOLDBACK_MS,
+);
+
 export class MeetingManager extends EventEmitter {
   private state: MeetingRuntimeState = "idle";
   private mode: MeetingCaptureMode | null = null;
@@ -80,6 +107,13 @@ export class MeetingManager extends EventEmitter {
   private echoCanceller: ReferenceEchoCanceller | null = null;
   private hasNativeProcessedMicFrames = false;
   private nativeEchoCancellationMode: string | null = null;
+  private traceWriter: MeetingTraceWriter | null = null;
+  private traceDirectory: string | null = null;
+  private artifactNextSampleIndex: Partial<
+    Record<MeetingArtifactSource, number>
+  > = {};
+  private transcriptionNextSampleIndex: Partial<Record<AudioSource, number>> =
+    {};
 
   constructor(modelService: ModelService) {
     super();
@@ -138,6 +172,7 @@ export class MeetingManager extends EventEmitter {
       "meetings",
       meetingId,
     );
+    const traceDirectory = path.join(artifactsDir, "trace");
     await fs.promises.mkdir(artifactsDir, { recursive: true });
 
     await createMeeting({
@@ -170,6 +205,32 @@ export class MeetingManager extends EventEmitter {
     this.echoCanceller = mode === "dual" ? new ReferenceEchoCanceller() : null;
     this.hasNativeProcessedMicFrames = false;
     this.nativeEchoCancellationMode = null;
+    this.artifactNextSampleIndex = {};
+    this.transcriptionNextSampleIndex = {};
+    this.traceWriter = new MeetingTraceWriter(traceDirectory);
+    this.traceDirectory = traceDirectory;
+    await this.traceWriter.recordEvent("meeting_start", {
+      meetingId,
+      noteId,
+      mode,
+      artifactsDir,
+      traceDirectory,
+    });
+    logger.audio.info("Meeting trace files", {
+      meetingId,
+      traceDirectory,
+      appTracePath: this.traceWriter.getTraceJsonlPath(),
+      transcriptionMicPath:
+        this.traceWriter.getTraceAudioPath("transcription-mic"),
+      transcriptionSystemPath: this.traceWriter.getTraceAudioPath(
+        "transcription-system",
+      ),
+      appFrameMicProcessedPath: this.traceWriter.getTraceAudioPath(
+        "app-frame-mic_processed",
+      ),
+      appFrameSystemPath:
+        this.traceWriter.getTraceAudioPath("app-frame-system"),
+    });
 
     if (mode === "mic" || mode === "dual") {
       this.writers.mic_raw = new StreamingWavWriter(
@@ -214,6 +275,8 @@ export class MeetingManager extends EventEmitter {
     try {
       await this.captureClient.start(mode, {
         debugArtifactsDir: artifactsDir,
+        aecRenderHoldbackMs: AEC_RENDER_HOLDBACK_MS,
+        aecRenderWaitTimeoutMs: AEC_RENDER_WAIT_TIMEOUT_MS,
       });
       this.setState("recording");
       logger.audio.info("Meeting capture started", { meetingId, mode });
@@ -221,6 +284,11 @@ export class MeetingManager extends EventEmitter {
         meetingId,
       };
     } catch (error) {
+      await this.traceWriter?.recordEvent("meeting_start_failed", {
+        meetingId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      await this.traceWriter?.close();
       await updateMeeting(meetingId, {
         state: "failed",
         endedAt: new Date(),
@@ -258,6 +326,12 @@ export class MeetingManager extends EventEmitter {
       await Promise.all(Object.values(this.transcriptionChains));
       await this.flushTranscriptionRuntimes();
       await this.finalizeArtifacts();
+      await this.traceWriter?.recordEvent("meeting_stop_completed", {
+        meetingId,
+        transcriptSegmentCount: this.lastTranscript.length,
+        echoCancellation: this.resolveEchoCancellationMetadata(),
+      });
+      await this.traceWriter?.close();
       await this.persistArtifacts(meetingId);
       await updateMeeting(meetingId, {
         state: "completed",
@@ -289,6 +363,11 @@ export class MeetingManager extends EventEmitter {
       };
     } catch (error) {
       logger.audio.error("Meeting capture finalization failed", error);
+      await this.traceWriter?.recordEvent("meeting_stop_failed", {
+        meetingId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      await this.traceWriter?.close();
       await updateMeeting(meetingId, {
         state: "failed",
         endedAt: new Date(),
@@ -320,6 +399,10 @@ export class MeetingManager extends EventEmitter {
       }
 
       await this.abortArtifacts();
+      await this.traceWriter?.recordEvent("meeting_cleanup_abort", {
+        state: this.state,
+      });
+      await this.traceWriter?.close();
       await this.disposeTranscriptionRuntimes();
       this.resetRuntime();
     }
@@ -328,6 +411,7 @@ export class MeetingManager extends EventEmitter {
   }
 
   private handleFrame = (frame: AudioFrame): void => {
+    const frameReceivedAtEpochMs = Date.now();
     if (frame.source === "mic_processed") {
       this.hasNativeProcessedMicFrames = true;
     }
@@ -338,9 +422,52 @@ export class MeetingManager extends EventEmitter {
 
     this.frameWriteChain = this.frameWriteChain
       .then(async () => {
+        await this.traceWriter?.recordAudioEvent(
+          "native_frame_received",
+          `app-frame-${frame.source}`,
+          frame.samples,
+          {
+            source: frame.source,
+            timestampMs: frame.timestampMs,
+            sampleStartIndex: frame.sampleStartIndex,
+            durationMs: frame.durationMs,
+            sequenceNum: frame.sequenceNum,
+            sampleRate: frame.sampleRate,
+            channels: frame.channels,
+            sampleCount: frame.samples.length,
+            frameReceivedAtEpochMs,
+          },
+        );
+
         const writer = artifactSource ? this.writers[artifactSource] : null;
-        if (writer) {
-          await writer.appendAudio(frame.samples);
+        if (artifactSource && writer) {
+          const resolvedArtifactSource: MeetingArtifactSource = artifactSource;
+          const scheduledFrames = this.expandFrameForTimeline(
+            resolvedArtifactSource,
+            frame,
+            this.artifactNextSampleIndex,
+          );
+          for (const scheduledFrame of scheduledFrames) {
+            const byteOffset = writer.getDataSize();
+            if (scheduledFrame.isSyntheticSilence) {
+              await writer.appendSilence(scheduledFrame.frame.samples.length);
+            } else {
+              await writer.appendAudio(scheduledFrame.frame.samples);
+            }
+
+            await this.traceWriter?.recordEvent("artifact_frame_appended", {
+              source: resolvedArtifactSource,
+              wavPath: writer.getFilePath(),
+              timestampMs: scheduledFrame.frame.timestampMs,
+              sampleStartIndex: scheduledFrame.frame.sampleStartIndex,
+              durationMs: scheduledFrame.frame.durationMs,
+              sequenceNum: scheduledFrame.frame.sequenceNum,
+              sampleCount: scheduledFrame.frame.samples.length,
+              isSyntheticSilence: scheduledFrame.isSyntheticSilence,
+              int16ByteOffset: byteOffset,
+              int16SampleOffset: Math.floor(byteOffset / 2),
+            });
+          }
         }
 
         if (levelUpdate) {
@@ -367,8 +494,47 @@ export class MeetingManager extends EventEmitter {
     this.transcriptionChains[transcriptionRouting.source] =
       this.transcriptionChains[transcriptionRouting.source]
         .then(async () => {
-          const chunks = await runtime.ingestFrame(transcriptionRouting.frame);
-          await this.persistTranscriptionChunks(chunks);
+          const scheduledFrames = this.expandFrameForTimeline(
+            transcriptionRouting.source,
+            transcriptionRouting.frame,
+            this.transcriptionNextSampleIndex,
+          );
+          for (const scheduledFrame of scheduledFrames) {
+            await this.traceWriter?.recordAudioEvent(
+              "transcription_frame_ingest",
+              `transcription-${transcriptionRouting.source}`,
+              scheduledFrame.frame.samples,
+              {
+                source: transcriptionRouting.source,
+                frameSource: scheduledFrame.frame.source,
+                timestampMs: scheduledFrame.frame.timestampMs,
+                sampleStartIndex: scheduledFrame.frame.sampleStartIndex,
+                durationMs: scheduledFrame.frame.durationMs,
+                sequenceNum: scheduledFrame.frame.sequenceNum,
+                sampleRate: scheduledFrame.frame.sampleRate,
+                channels: scheduledFrame.frame.channels,
+                sampleCount: scheduledFrame.frame.samples.length,
+                isSyntheticSilence: scheduledFrame.isSyntheticSilence,
+              },
+            );
+            const chunks = await runtime.ingestFrame(scheduledFrame.frame);
+            await this.traceWriter?.recordEvent("transcription_frame_result", {
+              source: transcriptionRouting.source,
+              frameSource: scheduledFrame.frame.source,
+              sequenceNum: scheduledFrame.frame.sequenceNum,
+              sampleStartIndex: scheduledFrame.frame.sampleStartIndex,
+              isSyntheticSilence: scheduledFrame.isSyntheticSilence,
+              emittedChunkCount: chunks.length,
+              emittedTextPreview:
+                chunks.length > 0
+                  ? chunks
+                      .map((chunk) => chunk.text)
+                      .join(" | ")
+                      .slice(0, 240)
+                  : null,
+            });
+            await this.persistTranscriptionChunks(chunks);
+          }
         })
         .catch((error) => {
           const normalizedError =
@@ -471,6 +637,65 @@ export class MeetingManager extends EventEmitter {
     this.nativeEchoCancellationMode = mode;
   };
 
+  private expandFrameForTimeline<K extends string>(
+    key: K,
+    frame: AudioFrame,
+    nextSampleIndexMap: Partial<Record<K, number>>,
+  ): Array<{ frame: AudioFrame; isSyntheticSilence: boolean }> {
+    const scheduledFrames: Array<{
+      frame: AudioFrame;
+      isSyntheticSilence: boolean;
+    }> = [];
+    const expectedSampleIndex = nextSampleIndexMap[key];
+
+    if (
+      Number.isFinite(expectedSampleIndex) &&
+      frame.sampleStartIndex > (expectedSampleIndex ?? 0)
+    ) {
+      const gapSampleCount =
+        frame.sampleStartIndex - (expectedSampleIndex ?? 0);
+      scheduledFrames.push({
+        frame: this.makeSyntheticSilenceFrame(
+          frame,
+          expectedSampleIndex ?? 0,
+          gapSampleCount,
+        ),
+        isSyntheticSilence: true,
+      });
+    }
+
+    scheduledFrames.push({
+      frame,
+      isSyntheticSilence: false,
+    });
+
+    const frameEndSampleIndex = frame.sampleStartIndex + frame.samples.length;
+    nextSampleIndexMap[key] = Math.max(
+      expectedSampleIndex ?? frame.sampleStartIndex,
+      frameEndSampleIndex,
+    );
+
+    return scheduledFrames;
+  }
+
+  private makeSyntheticSilenceFrame(
+    template: AudioFrame,
+    sampleStartIndex: number,
+    sampleCount: number,
+  ): AudioFrame {
+    const durationMs = Math.round((sampleCount / template.sampleRate) * 1000);
+    return {
+      ...template,
+      samples: new Float32Array(sampleCount),
+      timestampMs: sampleIndexToTimestampMs(
+        sampleStartIndex,
+        template.sampleRate,
+      ),
+      durationMs,
+      sampleStartIndex,
+    };
+  }
+
   private handleCaptureError = (error: Error): void => {
     logger.audio.error("Native capture reported an error", error);
     this.setState("error");
@@ -498,6 +723,17 @@ export class MeetingManager extends EventEmitter {
       }
 
       const chunks = await runtime.flush();
+      await this.traceWriter?.recordEvent("transcription_runtime_flush", {
+        source,
+        emittedChunkCount: chunks.length,
+        emittedTextPreview:
+          chunks.length > 0
+            ? chunks
+                .map((chunk) => chunk.text)
+                .join(" | ")
+                .slice(0, 240)
+            : null,
+      });
       await this.persistTranscriptionChunks(chunks);
     }
   }
@@ -564,7 +800,11 @@ export class MeetingManager extends EventEmitter {
     const pendingArtifacts: Array<{
       id: string;
       meetingId: string;
-      artifactType: "mic_wav" | "mic_processed_wav" | "system_wav";
+      artifactType:
+        | "mic_wav"
+        | "mic_processed_wav"
+        | "system_wav"
+        | "debug_json";
       path: string;
       sizeBytes: number;
     }> = [];
@@ -585,6 +825,32 @@ export class MeetingManager extends EventEmitter {
         path: writer.getFilePath(),
         sizeBytes: stats.size,
       });
+    }
+
+    if (this.traceDirectory) {
+      const traceEntries = await fs.promises.readdir(this.traceDirectory, {
+        withFileTypes: true,
+      });
+
+      for (const entry of traceEntries) {
+        if (!entry.isFile()) {
+          continue;
+        }
+
+        if (!entry.name.endsWith(".json") && !entry.name.endsWith(".jsonl")) {
+          continue;
+        }
+
+        const tracePath = path.join(this.traceDirectory, entry.name);
+        const stats = await fs.promises.stat(tracePath);
+        pendingArtifacts.push({
+          id: uuid(),
+          meetingId,
+          artifactType: "debug_json",
+          path: tracePath,
+          sizeBytes: stats.size,
+        });
+      }
     }
 
     await createMeetingArtifacts(pendingArtifacts);
@@ -642,6 +908,10 @@ export class MeetingManager extends EventEmitter {
     this.activeTranscriptionSelection = null;
     this.hasNativeProcessedMicFrames = false;
     this.nativeEchoCancellationMode = null;
+    this.artifactNextSampleIndex = {};
+    this.transcriptionNextSampleIndex = {};
+    this.traceWriter = null;
+    this.traceDirectory = null;
     this.echoCanceller?.reset();
     this.echoCanceller = null;
     this.setState("idle");
@@ -670,6 +940,17 @@ function normalizeLevel(audio: Float32Array): number {
 
   const rms = Math.sqrt(total / audio.length);
   return Math.min(1, rms * 4);
+}
+
+function sampleIndexToTimestampMs(
+  sampleStartIndex: number,
+  sampleRate: number,
+): number {
+  if (sampleStartIndex <= 0 || sampleRate <= 0) {
+    return 0;
+  }
+
+  return Math.round((sampleStartIndex / sampleRate) * 1000);
 }
 
 function orderedSourcesForMode(mode: MeetingCaptureMode | null): AudioSource[] {

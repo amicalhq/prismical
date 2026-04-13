@@ -50,6 +50,8 @@ export class NativeAudioCaptureClient extends EventEmitter {
     mode: MeetingCaptureMode,
     options?: {
       debugArtifactsDir?: string;
+      aecRenderHoldbackMs?: number;
+      aecRenderWaitTimeoutMs?: number;
     },
   ): Promise<void> {
     if (this.process) {
@@ -62,6 +64,8 @@ export class NativeAudioCaptureClient extends EventEmitter {
       binaryPath,
       mode,
       debugArtifactsDir: options?.debugArtifactsDir,
+      aecRenderHoldbackMs: options?.aecRenderHoldbackMs,
+      aecRenderWaitTimeoutMs: options?.aecRenderWaitTimeoutMs,
     });
 
     this.pending = Buffer.alloc(0);
@@ -69,6 +73,18 @@ export class NativeAudioCaptureClient extends EventEmitter {
     const args = ["--mode", mode];
     if (options?.debugArtifactsDir) {
       args.push("--debug-artifacts-dir", options.debugArtifactsDir);
+    }
+    if (options?.aecRenderHoldbackMs != null) {
+      args.push(
+        "--aec-render-holdback-ms",
+        String(options.aecRenderHoldbackMs),
+      );
+    }
+    if (options?.aecRenderWaitTimeoutMs != null) {
+      args.push(
+        "--aec-render-wait-timeout-ms",
+        String(options.aecRenderWaitTimeoutMs),
+      );
     }
 
     const captureProcess = spawn(binaryPath, args, {
@@ -168,6 +184,7 @@ export class NativeAudioCaptureClient extends EventEmitter {
     const sequenceNum = header.readUInt32LE(8);
     const durationMs = header.readUInt32LE(12);
     const timestampMs = Number(header.readBigUInt64LE(16));
+    const sampleStartIndex = header.readUInt32LE(28);
 
     if (version !== PACKET_VERSION) {
       throw new Error(`Unsupported audio packet version: ${version}`);
@@ -191,6 +208,7 @@ export class NativeAudioCaptureClient extends EventEmitter {
       timestampMs,
       durationMs,
       sequenceNum,
+      sampleStartIndex,
     };
   }
 

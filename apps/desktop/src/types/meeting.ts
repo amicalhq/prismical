@@ -27,6 +27,7 @@ export interface AudioFrame {
   timestampMs: number;
   durationMs: number;
   sequenceNum: number;
+  sampleStartIndex: number;
 }
 
 export interface TranscriptEvent {

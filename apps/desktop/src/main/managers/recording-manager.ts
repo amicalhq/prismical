@@ -900,11 +900,6 @@ export class RecordingManager extends EventEmitter {
 
         // Convert ArrayBuffer back to Float32Array
         const float32Array = new Float32Array(chunk);
-        logger.audio.debug("Received audio chunk", {
-          samples: float32Array.length,
-          isFinalChunk,
-        });
-
         await this.handleAudioChunk(float32Array, isFinalChunk);
       },
     );

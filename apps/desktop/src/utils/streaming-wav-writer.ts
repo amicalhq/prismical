@@ -90,12 +90,26 @@ export class StreamingWavWriter {
     });
 
     this.dataSize += buffer.length;
+  }
 
-    logger.transcription.debug("Appended audio to WAV file", {
-      samplesWritten: audioData.length,
-      bytesWritten: buffer.length,
-      totalDataSize: this.dataSize,
+  async appendSilence(sampleCount: number): Promise<void> {
+    if (sampleCount <= 0) {
+      return;
+    }
+
+    if (this.isFinalized) {
+      throw new Error("Cannot append to finalized WAV file");
+    }
+
+    const buffer = Buffer.alloc(sampleCount * 2);
+    await new Promise<void>((resolve, reject) => {
+      this.fileStream.write(buffer, (err) => {
+        if (err) reject(err);
+        else resolve();
+      });
     });
+
+    this.dataSize += buffer.length;
   }
 
   /**

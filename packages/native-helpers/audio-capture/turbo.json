@@ -3,11 +3,11 @@
   "tasks": {
     "build": {
       "dependsOn": [],
-      "outputs": [".build/**", "bin/prismical-audio-capture"]
+      "outputs": [".build/**", "bin/audio-capture"]
     },
     "build:native": {
       "dependsOn": [],
-      "outputs": [".build/**", "bin/prismical-audio-capture"]
+      "outputs": [".build/**", "bin/audio-capture"]
     },
     "dev": {
       "cache": false,

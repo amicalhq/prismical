@@ -17,6 +17,126 @@
       "name": "Release SwiftHelper (packages/native-helpers/swift-helper)",
       "program": "${workspaceFolder:prismical}/packages/native-helpers/swift-helper/.build/release/SwiftHelper",
       "preLaunchTask": "swift: Build Release SwiftHelper (packages/native-helpers/swift-helper)"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:prismical}/packages/native-helpers/audio-capture",
+      "name": "Debug prismical-audio-capture (packages/native-helpers/audio-capture)",
+      "target": "prismical-audio-capture",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug prismical-audio-capture (packages/native-helpers/audio-capture)"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:prismical}/packages/native-helpers/audio-capture",
+      "name": "Release prismical-audio-capture (packages/native-helpers/audio-capture)",
+      "target": "prismical-audio-capture",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release prismical-audio-capture (packages/native-helpers/audio-capture)"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:prismical}/packages/native-helpers/audio-capture",
+      "name": "Debug prismical-aec3-replay (packages/native-helpers/audio-capture)",
+      "target": "prismical-aec3-replay",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug prismical-aec3-replay (packages/native-helpers/audio-capture)"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:prismical}/packages/native-helpers/audio-capture",
+      "name": "Release prismical-aec3-replay (packages/native-helpers/audio-capture)",
+      "target": "prismical-aec3-replay",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release prismical-aec3-replay (packages/native-helpers/audio-capture)"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:prismical}/packages/native-helpers/audio-capture",
+      "name": "Debug prismical-aec3-live-trace-replay (packages/native-helpers/audio-capture)",
+      "target": "prismical-aec3-live-trace-replay",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug prismical-aec3-live-trace-replay (packages/native-helpers/audio-capture)"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:prismical}/packages/native-helpers/audio-capture",
+      "name": "Release prismical-aec3-live-trace-replay (packages/native-helpers/audio-capture)",
+      "target": "prismical-aec3-live-trace-replay",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release prismical-aec3-live-trace-replay (packages/native-helpers/audio-capture)"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:prismical}/packages/native-helpers/audio-capture",
+      "name": "Debug audio-capture (packages/native-helpers/audio-capture)",
+      "target": "audio-capture",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug audio-capture (packages/native-helpers/audio-capture)"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:prismical}/packages/native-helpers/audio-capture",
+      "name": "Release audio-capture (packages/native-helpers/audio-capture)",
+      "target": "audio-capture",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release audio-capture (packages/native-helpers/audio-capture)"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:prismical}/packages/native-helpers/audio-capture",
+      "name": "Debug aec3-replay (packages/native-helpers/audio-capture)",
+      "target": "aec3-replay",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug aec3-replay (packages/native-helpers/audio-capture)"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:prismical}/packages/native-helpers/audio-capture",
+      "name": "Release aec3-replay (packages/native-helpers/audio-capture)",
+      "target": "aec3-replay",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release aec3-replay (packages/native-helpers/audio-capture)"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:prismical}/packages/native-helpers/audio-capture",
+      "name": "Debug aec3-live-trace-replay (packages/native-helpers/audio-capture)",
+      "target": "aec3-live-trace-replay",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug aec3-live-trace-replay (packages/native-helpers/audio-capture)"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:prismical}/packages/native-helpers/audio-capture",
+      "name": "Release aec3-live-trace-replay (packages/native-helpers/audio-capture)",
+      "target": "aec3-live-trace-replay",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release aec3-live-trace-replay (packages/native-helpers/audio-capture)"
     }
   ]
 }

@@ -4,9 +4,7 @@ import { app } from "electron";
 
 export function resolveAudioCaptureBinaryPath(): string {
   const binaryName =
-    process.platform === "win32"
-      ? "prismical-audio-capture.exe"
-      : "prismical-audio-capture";
+    process.platform === "win32" ? "audio-capture.exe" : "audio-capture";
 
   if (app.isPackaged) {
     return path.join(process.resourcesPath, binaryName);

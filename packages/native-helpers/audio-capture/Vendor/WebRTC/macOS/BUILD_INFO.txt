@@ -1,4 +1,4 @@
 revision=373edbca7233475487f419c9aea6238e05853dd9
-generated_at=2026-04-09T02:52:19.513Z
+generated_at=2026-04-12T19:51:47.135Z
 arm64_archive=../../../../../webrtc-aec3-builder/build/arm64/libprismical_webrtc_aec3.a
 x64_archive=../../../../../webrtc-aec3-builder/build/x64/libprismical_webrtc_aec3.a
