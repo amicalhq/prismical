@@ -1,6 +1,6 @@
 {
   "name": "@prismical/desktop",
-  "version": "0.0.1-beta.2",
+  "version": "0.0.1-beta.3",
   "description": "Prismical Desktop app",
   "main": ".vite/build/main.js",
   "productName": "Prismical",
