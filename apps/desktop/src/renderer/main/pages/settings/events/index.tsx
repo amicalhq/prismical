@@ -2,6 +2,7 @@ import { useTranslation } from "react-i18next";
 import { useNavigate } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { getMeetingIcon } from "@/utils/meeting-icons";
+import { formatEventTimeRange } from "@/utils/event-time";
 import { CalendarDays } from "lucide-react";
 import { useMemo } from "react";
 import { api } from "@/trpc/react";
@@ -9,12 +10,12 @@ import { api } from "@/trpc/react";
 interface UpcomingMeeting {
   id: string;
   calendarColor: string;
-  date: Date;
-  startTime: string;
-  endTime: string;
+  startAt: Date;
+  endAt: Date;
+  isAllDay: boolean;
   title: string;
-  meetingUrl: string;
-  calendarEventUrl: string;
+  meetingUrl: string | null;
+  calendarEventUrl: string | null;
 }
 
 function getDateKey(date: Date): string {
@@ -48,92 +49,6 @@ function getDateLabel(date: Date, t: (key: string) => string): string {
   ).format(date);
 }
 
-// TODO: Replace with real calendar data
-const today = new Date();
-const tomorrow = new Date(
-  today.getFullYear(),
-  today.getMonth(),
-  today.getDate() + 1,
-);
-const dayAfter = new Date(
-  today.getFullYear(),
-  today.getMonth(),
-  today.getDate() + 2,
-);
-const day3 = new Date(
-  today.getFullYear(),
-  today.getMonth(),
-  today.getDate() + 3,
-);
-const day5 = new Date(
-  today.getFullYear(),
-  today.getMonth(),
-  today.getDate() + 5,
-);
-
-const ALL_MEETINGS: UpcomingMeeting[] = [
-  {
-    id: "standup",
-    calendarColor: "#34C759",
-    date: today,
-    startTime: "9:30 AM",
-    endTime: "10:00 AM",
-    title: "Product & Engineering Daily Standup",
-    meetingUrl: "https://meet.google.com/abc-defg-hij",
-    calendarEventUrl: "https://calendar.google.com/calendar/event?eid=abc123",
-  },
-  {
-    id: "1on1",
-    calendarColor: "#34C759",
-    date: today,
-    startTime: "2:00 PM",
-    endTime: "2:30 PM",
-    title: "1:1 with Manager",
-    meetingUrl: "https://meet.google.com/xyz-uvwx-yz",
-    calendarEventUrl: "https://calendar.google.com/calendar/event?eid=xyz789",
-  },
-  {
-    id: "design-review",
-    calendarColor: "#0A84FF",
-    date: tomorrow,
-    startTime: "11:00 AM",
-    endTime: "11:45 AM",
-    title: "Desktop Home Experience Design Review",
-    meetingUrl: "https://zoom.us/j/123456789",
-    calendarEventUrl: "https://calendar.google.com/calendar/event?eid=def456",
-  },
-  {
-    id: "customer-sync",
-    calendarColor: "#FF9F0A",
-    date: dayAfter,
-    startTime: "3:00 PM",
-    endTime: "3:30 PM",
-    title: "Customer Notes Workflow Sync",
-    meetingUrl: "https://teams.microsoft.com/l/meetup-join/123",
-    calendarEventUrl: "https://outlook.office365.com/calendar/item/ghi789",
-  },
-  {
-    id: "sprint-planning",
-    calendarColor: "#0A84FF",
-    date: day3,
-    startTime: "10:00 AM",
-    endTime: "11:00 AM",
-    title: "Sprint Planning",
-    meetingUrl: "https://meet.google.com/spr-plan-ing",
-    calendarEventUrl: "https://calendar.google.com/calendar/event?eid=spr123",
-  },
-  {
-    id: "all-hands",
-    calendarColor: "#AF52DE",
-    date: day5,
-    startTime: "4:00 PM",
-    endTime: "5:00 PM",
-    title: "Company All-Hands",
-    meetingUrl: "https://zoom.us/j/987654321",
-    calendarEventUrl: "https://calendar.google.com/calendar/event?eid=ah456",
-  },
-];
-
 interface DateGroup {
   dateKey: string;
   label: string;
@@ -146,6 +61,23 @@ export default function EventsPage() {
   const navigate = useNavigate();
   const utils = api.useUtils();
 
+  const { data: eventRows } = api.events.getUpcoming.useQuery();
+
+  const allMeetings: UpcomingMeeting[] = useMemo(
+    () =>
+      (eventRows ?? []).map((event) => ({
+        id: event.id,
+        calendarColor: event.calendarColor,
+        startAt: event.startAt,
+        endAt: event.endAt,
+        isAllDay: event.isAllDay,
+        title: event.title,
+        meetingUrl: event.meetingUrl,
+        calendarEventUrl: event.calendarEventUrl,
+      })),
+    [eventRows],
+  );
+
   const createNoteFromEvent = api.notes.createNoteFromEvent.useMutation({
     onSuccess: (data) => {
       utils.notes.getNotes.invalidate();
@@ -156,7 +88,8 @@ export default function EventsPage() {
     },
   });
 
-  const handleOpenMeeting = (url: string) => {
+  const handleOpenMeeting = (url: string | null) => {
+    if (!url) return;
     window.electronAPI.openExternal(url);
   };
 
@@ -168,11 +101,11 @@ export default function EventsPage() {
         eventId: meeting.id,
         title: meeting.title,
         calendarColor: meeting.calendarColor,
-        meetingUrl: meeting.meetingUrl,
-        calendarEventUrl: meeting.calendarEventUrl,
-        startTime: meeting.startTime,
-        endTime: meeting.endTime,
-        date: meeting.date.toISOString(),
+        meetingUrl: meeting.meetingUrl ?? undefined,
+        calendarEventUrl: meeting.calendarEventUrl ?? undefined,
+        startAt: meeting.startAt,
+        endAt: meeting.endAt,
+        isAllDay: meeting.isAllDay,
       },
     });
   };
@@ -180,13 +113,13 @@ export default function EventsPage() {
   const dateGroups = useMemo<DateGroup[]>(() => {
     const groups = new Map<string, DateGroup>();
 
-    for (const meeting of ALL_MEETINGS) {
-      const key = getDateKey(meeting.date);
+    for (const meeting of allMeetings) {
+      const key = getDateKey(meeting.startAt);
       if (!groups.has(key)) {
         groups.set(key, {
           dateKey: key,
-          label: getDateLabel(meeting.date, t),
-          date: meeting.date,
+          label: getDateLabel(meeting.startAt, t),
+          date: meeting.startAt,
           meetings: [],
         });
       }
@@ -196,7 +129,7 @@ export default function EventsPage() {
     return Array.from(groups.values()).sort(
       (a, b) => a.date.getTime() - b.date.getTime(),
     );
-  }, [t]);
+  }, [allMeetings, t]);
 
   return (
     <div className="w-full max-w-4xl">
@@ -236,7 +169,11 @@ export default function EventsPage() {
 
                     <div className="min-w-0 flex-1">
                       <p className="text-xs text-muted-foreground">
-                        {meeting.startTime} - {meeting.endTime}
+                        {formatEventTimeRange(
+                          meeting.startAt,
+                          meeting.endAt,
+                          meeting.isAllDay,
+                        )}
                       </p>
                       <div className="flex items-center gap-2">
                         <button
@@ -248,10 +185,12 @@ export default function EventsPage() {
                         >
                           {meeting.title}
                         </button>
-                        {getMeetingIcon(meeting.meetingUrl, {
-                          className:
-                            "h-3.5 w-3.5 text-muted-foreground shrink-0",
-                        })}
+                        {meeting.meetingUrl
+                          ? getMeetingIcon(meeting.meetingUrl, {
+                              className:
+                                "h-3.5 w-3.5 text-muted-foreground shrink-0",
+                            })
+                          : null}
                       </div>
                     </div>
 
@@ -264,14 +203,16 @@ export default function EventsPage() {
                       >
                         {t("settings.home.upcoming.notes")}
                       </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        className="h-7 text-xs px-2.5 bg-primary text-primary-foreground hover:bg-primary/80 cursor-pointer"
-                        onClick={() => handleOpenMeeting(meeting.meetingUrl)}
-                      >
-                        {t("settings.home.upcoming.join")}
-                      </Button>
+                      {meeting.meetingUrl ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-7 text-xs px-2.5 bg-primary text-primary-foreground hover:bg-primary/80 cursor-pointer"
+                          onClick={() => handleOpenMeeting(meeting.meetingUrl)}
+                        >
+                          {t("settings.home.upcoming.join")}
+                        </Button>
+                      ) : null}
                     </div>
                   </div>
                 ))}

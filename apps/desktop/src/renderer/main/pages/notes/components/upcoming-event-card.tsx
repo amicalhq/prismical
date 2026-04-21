@@ -6,6 +6,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { getMeetingIcon } from "@/utils/meeting-icons";
+import { formatEventTimeRange } from "@/utils/event-time";
 import { useTranslation } from "react-i18next";
 import type { UpcomingEvent } from "../types";
 
@@ -45,7 +46,7 @@ const UpcomingEventCard = ({ event, onTakeNotes }: UpcomingEventCardProps) => {
           {/* Time and meeting url */}
           <div className="flex items-center gap-2 text-muted-foreground text-xs">
             <span className="whitespace-nowrap">
-              {event.startTime} - {event.endTime}
+              {formatEventTimeRange(event.startAt, event.endAt, event.isAllDay)}
             </span>
             |{" "}
             {

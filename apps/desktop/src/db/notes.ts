@@ -33,9 +33,9 @@ export interface NoteWithEvent extends Note {
     calendarColor: string;
     meetingUrl?: string;
     calendarEventUrl?: string;
-    startTime?: string;
-    endTime?: string;
-    date?: string;
+    startAt: Date;
+    endAt: Date;
+    isAllDay: boolean;
   } | null;
 }
 
@@ -53,9 +53,9 @@ function toNoteWithEvent(row: {
           calendarColor: event.calendarColor,
           meetingUrl: event.meetingUrl ?? undefined,
           calendarEventUrl: event.calendarEventUrl ?? undefined,
-          startTime: event.startTime ?? undefined,
-          endTime: event.endTime ?? undefined,
-          date: event.date ?? undefined,
+          startAt: event.startAt,
+          endAt: event.endAt,
+          isAllDay: event.isAllDay,
         }
       : null,
   };

@@ -1,11 +1,11 @@
 export type UpcomingEvent = {
   id: string;
   title: string;
-  startTime: string;
-  endTime: string;
+  startAt: Date;
+  endAt: Date;
+  isAllDay: boolean;
   meetingUrl: string;
   calendarEventUrl?: string;
-  date: Date;
   calendarColor?: string;
 };
 
@@ -22,9 +22,9 @@ export interface Note {
     calendarColor: string;
     meetingUrl?: string;
     calendarEventUrl?: string;
-    startTime?: string;
-    endTime?: string;
-    date?: string;
+    startAt: Date;
+    endAt: Date;
+    isAllDay: boolean;
   } | null;
 }
 

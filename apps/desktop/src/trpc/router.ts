@@ -12,6 +12,7 @@ import { featureFlagsRouter } from "./routers/feature-flags";
 import { meetingsRouter } from "./routers/meetings";
 import { notificationsRouter } from "./routers/notifications";
 import { meetingWidgetRouter } from "./routers/meeting-widget";
+import { eventsRouter } from "./routers/events";
 import { createRouter, procedure } from "./trpc";
 
 export const router = createRouter({
@@ -77,6 +78,9 @@ export const router = createRouter({
 
   // Meeting recording widget router
   meetingWidget: meetingWidgetRouter,
+
+  // Events router
+  events: eventsRouter,
 });
 
 export type AppRouter = typeof router;

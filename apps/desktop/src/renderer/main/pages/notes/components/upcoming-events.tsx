@@ -1,56 +1,29 @@
-import { Calendar, CalendarX, CalendarPlus } from "lucide-react";
+import { Calendar } from "lucide-react";
 import UpcomingEventCard from "./upcoming-event-card";
 import { UpcomingEvent } from "../types";
-import { Button } from "@/components/ui/button";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "@tanstack/react-router";
 import { api } from "@/trpc/react";
-
-type CalendarState = "with-events" | "no-events" | "no-calendar";
-
-// TOOD: add calendar connection and sync logic
 
 export function UpcomingEvents() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const utils = api.useUtils();
 
-  // Switch this variable to test different states:
-  // "with-events" - shows upcoming events
-  // "no-events" - calendar connected but no events
-  // "no-calendar" - no calendar connected
-  const calendarState: CalendarState = "with-events";
+  const { data: eventRows } = api.events.getUpcoming.useQuery({ limit: 3 });
 
-  // TODO: replace mock data with actual data from backend
-  const today = new Date();
-  const tomorrow = new Date(
-    today.getFullYear(),
-    today.getMonth(),
-    today.getDate() + 1,
-  );
-  const mockEvents: UpcomingEvent[] = [
-    {
-      id: "product-review-q3",
-      title: "Product Review: Q3 Feature Planning",
-      date: tomorrow,
-      startTime: "2:00 PM",
-      endTime: "3:00 PM",
-      meetingUrl: "https://zoom.us/j/123456789",
-      calendarColor: "#0A84FF",
-    },
-    {
-      id: "1on1-sarah",
-      title: "1:1 with Sarah - Engineering Sync",
-      date: tomorrow,
-      startTime: "10:00 AM",
-      endTime: "10:30 AM",
-      meetingUrl: "https://meet.google.com/abc-defg-hij",
-      calendarColor: "#34C759",
-    },
-  ];
-
-  // Determine events based on state
-  const upcomingEvents = calendarState === "with-events" ? mockEvents : [];
+  const upcomingEvents: UpcomingEvent[] = (eventRows ?? [])
+    .filter((event) => event.meetingUrl)
+    .map((event) => ({
+      id: event.id,
+      title: event.title,
+      startAt: event.startAt,
+      endAt: event.endAt,
+      isAllDay: event.isAllDay,
+      meetingUrl: event.meetingUrl as string,
+      calendarEventUrl: event.calendarEventUrl ?? undefined,
+      calendarColor: event.calendarColor,
+    }));
 
   const createNoteFromEvent = api.notes.createNoteFromEvent.useMutation({
     onSuccess: (data) => {
@@ -72,19 +45,15 @@ export function UpcomingEvents() {
         calendarColor: event.calendarColor ?? "#0A84FF",
         meetingUrl: event.meetingUrl,
         calendarEventUrl: event.calendarEventUrl,
-        startTime: event.startTime,
-        endTime: event.endTime,
-        date: event.date.toISOString(),
+        startAt: event.startAt,
+        endAt: event.endAt,
+        isAllDay: event.isAllDay,
       },
     });
   };
 
-  const handleConnectCalendar = () => {
-    // Handle connecting calendar
-    console.log("Connecting calendar...");
-    // TODO: implement your calendar connection logic here
-    // You can implement your calendar connection logic here
-  };
+  if (upcomingEvents.length === 0) return null;
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2 text-muted-foreground">
@@ -94,42 +63,13 @@ export function UpcomingEvents() {
         </h2>
       </div>
 
-      {calendarState === "with-events" ? (
-        <div className="bg-accent/40 rounded-xl overflow-clip">
-          {upcomingEvents.map((event) => (
-            <div key={event.id}>
-              <UpcomingEventCard event={event} onTakeNotes={handleTakeNotes} />
-            </div>
-          ))}
-        </div>
-      ) : calendarState === "no-events" ? (
-        <div className="border border-dashed rounded-lg p-6 text-center">
-          <CalendarX className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
-          <p className="text-sm text-muted-foreground">
-            {t("settings.notes.upcomingEvents.empty")}
-          </p>
-        </div>
-      ) : (
-        <div className="border border-dashed rounded-lg p-6 text-center space-y-4">
-          <CalendarPlus className="w-8 h-8 text-muted-foreground mx-auto" />
-          <div className="space-y-2">
-            <p className="text-sm text-muted-foreground">
-              {t("settings.notes.upcomingEvents.connect.title")}
-              <br />
-              {t("settings.notes.upcomingEvents.connect.description")}
-            </p>
-            <Button
-              onClick={handleConnectCalendar}
-              className="mt-2"
-              size={"sm"}
-              variant={"outline"}
-            >
-              <CalendarPlus className="w-4 h-4" />
-              {t("settings.notes.upcomingEvents.connect.button")}
-            </Button>
+      <div className="bg-accent/40 rounded-xl overflow-clip">
+        {upcomingEvents.map((event) => (
+          <div key={event.id}>
+            <UpcomingEventCard event={event} onTakeNotes={handleTakeNotes} />
           </div>
-        </div>
-      )}
+        ))}
+      </div>
     </div>
   );
 }

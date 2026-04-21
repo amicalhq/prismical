@@ -298,22 +298,30 @@ export interface AppSettingsData {
 }
 
 // Events table for calendar events linked to notes
-export const events = sqliteTable("events", {
-  id: text("id").primaryKey(),
-  title: text("title").notNull(),
-  calendarColor: text("calendar_color").notNull(),
-  meetingUrl: text("meeting_url"),
-  calendarEventUrl: text("calendar_event_url"),
-  startTime: text("start_time"),
-  endTime: text("end_time"),
-  date: text("date"), // ISO 8601 date string
-  createdAt: integer("created_at", { mode: "timestamp" })
-    .notNull()
-    .default(sql`(unixepoch())`),
-  updatedAt: integer("updated_at", { mode: "timestamp" })
-    .notNull()
-    .default(sql`(unixepoch())`),
-});
+export const events = sqliteTable(
+  "events",
+  {
+    id: text("id").primaryKey(),
+    title: text("title").notNull(),
+    calendarColor: text("calendar_color").notNull(),
+    meetingUrl: text("meeting_url"),
+    calendarEventUrl: text("calendar_event_url"),
+    // For all-day events, startAt is UTC midnight of the day and endAt is
+    // UTC midnight of the day after (Google convention — half-open interval).
+    startAt: integer("start_at", { mode: "timestamp" }).notNull(),
+    endAt: integer("end_at", { mode: "timestamp" }).notNull(),
+    isAllDay: integer("is_all_day", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (table) => [index("events_start_at_idx").on(table.startAt)],
+);
 
 // Notes table
 export const notes = sqliteTable("notes", {

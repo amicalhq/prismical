@@ -11,9 +11,9 @@ const NoteEventDataSchema = z.object({
   calendarColor: z.string(),
   meetingUrl: z.string().optional(),
   calendarEventUrl: z.string().optional(),
-  startTime: z.string().optional(),
-  endTime: z.string().optional(),
-  date: z.string().optional(),
+  startAt: z.date(),
+  endAt: z.date(),
+  isAllDay: z.boolean().default(false),
 });
 
 // Input schemas
@@ -116,9 +116,9 @@ export const notesRouter = createRouter({
         calendarColor: input.eventData.calendarColor,
         meetingUrl: input.eventData.meetingUrl ?? null,
         calendarEventUrl: input.eventData.calendarEventUrl ?? null,
-        startTime: input.eventData.startTime ?? null,
-        endTime: input.eventData.endTime ?? null,
-        date: input.eventData.date ?? null,
+        startAt: input.eventData.startAt,
+        endAt: input.eventData.endAt,
+        isAllDay: input.eventData.isAllDay,
       });
 
       // Check if a note already exists for this event
