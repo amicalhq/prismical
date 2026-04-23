@@ -15,6 +15,13 @@
       "when": 1776755559570,
       "tag": "0001_smooth_gorgon",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1776983031060,
+      "tag": "0002_left_ink",
+      "breakpoints": true
     }
   ]
 }

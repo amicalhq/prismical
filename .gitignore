@@ -53,6 +53,8 @@ CLAUDE.md
 amical.db
 prismical.db
 AGENTS.md
+skills/
+agents/
 
 # Temp files
 /tmp

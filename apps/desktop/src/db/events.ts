@@ -1,6 +1,15 @@
 import { asc, eq, gte, sql } from "drizzle-orm";
+import { v4 as uuid } from "uuid";
 import { db } from "./index";
-import { events, notes, type NewEvent } from "./schema";
+import {
+  events,
+  meetings,
+  noteArtifacts,
+  notes,
+  transcriptSegments,
+  type NewEvent,
+} from "./schema";
+import { serializePlainTextToLexicalEditorStateJson } from "../services/notes/lexical-editor-state";
 
 export async function upsertEvent(
   data: Omit<NewEvent, "createdAt" | "updatedAt">,
@@ -85,13 +94,16 @@ export async function seedEventsAndNotes() {
       endAt: at(1, 11, 45),
     },
     {
+      // Seeded in the past so the attached completed meeting + transcript
+      // + AI summary below tells a coherent story (no "upcoming" event with
+      // an already-finished transcript).
       id: "customer-sync",
       title: "Customer Notes Workflow Sync",
       calendarColor: "#FF9F0A",
       meetingUrl: "https://teams.microsoft.com/l/meetup-join/123",
       calendarEventUrl: "https://outlook.office365.com/calendar/item/ghi789",
-      startAt: at(2, 15, 0),
-      endAt: at(2, 15, 30),
+      startAt: at(-2, 15, 0),
+      endAt: at(-2, 15, 30),
     },
     {
       id: "sprint-planning",
@@ -211,11 +223,11 @@ export async function seedEventsAndNotes() {
       .onConflictDoNothing();
   }
 
-  // Seed notes (only if no notes exist yet)
+  // Seed notes only on a truly empty DB (preserves existing behavior).
   const existingNotes = await db
     .select({ count: sql<number>`count(*)` })
     .from(notes);
-  if (existingNotes[0].count > 0) return;
+  const notesAlreadySeeded = existingNotes[0].count > 0;
 
   const seedNotes: {
     title: string;
@@ -290,16 +302,169 @@ export async function seedEventsAndNotes() {
     },
   ];
 
-  for (const note of seedNotes) {
-    const createdAt = new Date(now.getTime() - note.daysAgo * 86_400_000);
-    await db.insert(notes).values({
-      title: note.title,
-      eventId: note.eventId ?? null,
-      icon: note.icon ?? null,
-      starred: note.starred ?? false,
-      folder: note.folder ?? null,
-      createdAt,
-      updatedAt: createdAt,
-    });
+  if (!notesAlreadySeeded) {
+    for (const note of seedNotes) {
+      const createdAt = new Date(now.getTime() - note.daysAgo * 86_400_000);
+      await db.insert(notes).values({
+        title: note.title,
+        eventId: note.eventId ?? null,
+        icon: note.icon ?? null,
+        starred: note.starred ?? false,
+        folder: note.folder ?? null,
+        createdAt,
+        updatedAt: createdAt,
+      });
+    }
   }
+
+  // Idempotently seed the meeting + transcript + AI summary artifact attached
+  // to the customer-sync note. Runs on both fresh DBs and existing dev DBs
+  // that predate this seed, so the artifacts demo is always available.
+  await seedCustomerSyncMeetingIfMissing(now);
+}
+
+// Look up the customer-sync note and, if it exists without a meeting, seed the
+// completed-meeting + transcript + summary artifact. Idempotent.
+async function seedCustomerSyncMeetingIfMissing(now: Date) {
+  const [note] = await db
+    .select({ id: notes.id })
+    .from(notes)
+    .where(eq(notes.eventId, "customer-sync"))
+    .limit(1);
+  if (!note) return;
+
+  const [existing] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(meetings)
+    .where(eq(meetings.noteId, note.id));
+  if (existing.count > 0) return;
+
+  await seedCustomerSyncMeeting(note.id, now);
+}
+
+// Seeds a completed meeting + transcript + AI summary artifact for the
+// customer-sync note, so the dev DB has a realistic end-to-end example.
+async function seedCustomerSyncMeeting(noteId: number, now: Date) {
+  const meetingId = uuid();
+  const startedAt = new Date(now.getTime() - 2 * 86_400_000); // 2 days ago
+  const durationMs = 30 * 60_000;
+  const endedAt = new Date(startedAt.getTime() + durationMs);
+
+  await db.insert(meetings).values({
+    id: meetingId,
+    noteId,
+    title: "Customer Notes Workflow Sync",
+    startedAt,
+    endedAt,
+    durationMs,
+    captureMode: "dual",
+    state: "completed",
+    transcriptionModel: "whisper-large-v3",
+    createdAt: startedAt,
+    updatedAt: endedAt,
+  });
+
+  const segmentDialogue: Array<{
+    speaker: "you" | "them";
+    text: string;
+    startSec: number;
+    endSec: number;
+  }> = [
+    {
+      speaker: "you",
+      text: "Thanks for making time. I wanted to walk through how we're planning to use the notes product during onboarding calls.",
+      startSec: 2,
+      endSec: 10,
+    },
+    {
+      speaker: "them",
+      text: "Sounds good. The customer success team has been asking for something like this — right now they're dumping everything into a shared doc and it gets messy fast.",
+      startSec: 11,
+      endSec: 22,
+    },
+    {
+      speaker: "you",
+      text: "Right. The idea is each onboarding call becomes a note, the transcript is captured, and the AI drafts a structured summary with decisions and action items.",
+      startSec: 23,
+      endSec: 37,
+    },
+    {
+      speaker: "them",
+      text: "Can we tailor the structure per playbook? Enterprise onboarding has different sections than SMB.",
+      startSec: 38,
+      endSec: 48,
+    },
+    {
+      speaker: "you",
+      text: "Yeah, that's where templates come in. We'll default new accounts to the onboarding playbook template but the team can switch.",
+      startSec: 49,
+      endSec: 62,
+    },
+    {
+      speaker: "them",
+      text: "And action items — can they route to the account owner automatically? Right now the CS team has to tag people manually.",
+      startSec: 63,
+      endSec: 75,
+    },
+    {
+      speaker: "you",
+      text: "Planning to auto-tag the account owner using the calendar event metadata. If there are multiple contacts on the call we'll probably need a disambiguation step.",
+      startSec: 76,
+      endSec: 91,
+    },
+    {
+      speaker: "them",
+      text: "Makes sense. Let's schedule a design review for the template picker — end of the week works.",
+      startSec: 92,
+      endSec: 104,
+    },
+  ];
+
+  await db.insert(transcriptSegments).values(
+    segmentDialogue.map((seg, index) => ({
+      id: uuid(),
+      meetingId,
+      source: seg.speaker === "you" ? "mic" : "system",
+      speaker: seg.speaker,
+      text: seg.text,
+      startTimeMs: seg.startSec * 1000,
+      endTimeMs: seg.endSec * 1000,
+      segmentOrder: index,
+      isFinal: true,
+      createdAt: startedAt,
+    })),
+  );
+
+  const summaryText = [
+    "Kicked off the Customer Notes Workflow Sync to align on how customer success will use in-product notes during onboarding calls.",
+    "",
+    "Key decisions",
+    "",
+    "New accounts default to the onboarding playbook template, with the ability to switch templates per call.",
+    "Action items auto-tag the account owner using calendar event metadata.",
+    "",
+    "Action items",
+    "",
+    "Engineering to spec the account-owner lookup service by end of week.",
+    "Product to draft the onboarding playbook template.",
+    "Design review of the template picker UI scheduled for end of the week.",
+    "",
+    "Open questions",
+    "",
+    "How do we handle notes for accounts with multiple contacts on the call?",
+    "Should the summary auto-regenerate when action items are edited in place?",
+  ].join("\n");
+
+  await db.insert(noteArtifacts).values({
+    id: uuid(),
+    noteId,
+    kind: "summary",
+    content: serializePlainTextToLexicalEditorStateJson(summaryText),
+    generator: "ai",
+    modelId: "claude-opus-4-7",
+    meta: { prompt: "default_summary_v1" },
+    generatedAt: endedAt,
+    createdAt: endedAt,
+    updatedAt: endedAt,
+  });
 }

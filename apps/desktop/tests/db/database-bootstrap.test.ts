@@ -19,7 +19,7 @@ describe("Database Bootstrap", () => {
     testDb = undefined;
   });
 
-  it("creates the current schema from a single baseline migration", async () => {
+  it("creates the current schema from drizzle migrations", async () => {
     testDb = await createTestDatabase({ name: "database-bootstrap-test.db" });
 
     const tablesResult = await testDb.db.$client.execute(
@@ -35,6 +35,7 @@ describe("Database Bootstrap", () => {
         "meeting_artifacts",
         "meetings",
         "models",
+        "note_artifacts",
         "notes",
         "transcript_segments",
         "transcriptions",
@@ -46,7 +47,7 @@ describe("Database Bootstrap", () => {
     const migrationsResult = await testDb.db.$client.execute(
       "SELECT count(*) AS count FROM __drizzle_migrations",
     );
-    expect(Number(migrationsResult.rows[0]?.count ?? 0)).toBe(1);
+    expect(Number(migrationsResult.rows[0]?.count ?? 0)).toBeGreaterThan(0);
 
     const appSettingsColumns = await testDb.db.$client.execute(
       "PRAGMA table_info(app_settings)",

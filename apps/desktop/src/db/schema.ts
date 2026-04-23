@@ -342,6 +342,34 @@ export const notes = sqliteTable("notes", {
     .default(sql`(unixepoch())`),
 });
 
+// Note artifacts table — generated / synthesized content attached to a note
+// (AI summaries, action items, etc.). `notes.content` stays as the user's raw
+// input; artifacts are produced outputs.
+export const noteArtifacts = sqliteTable(
+  "note_artifacts",
+  {
+    id: text("id").primaryKey(),
+    noteId: integer("note_id")
+      .notNull()
+      .references(() => notes.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull().default("summary"),
+    content: text("content").notNull(), // Lexical editor state JSON
+    generator: text("generator").notNull(), // "ai" | "user" | "imported"
+    modelId: text("model_id"),
+    meta: text("meta", { mode: "json" }).$type<Record<string, unknown>>(),
+    generatedAt: integer("generated_at", { mode: "timestamp" }),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (table) => [
+    index("note_artifacts_note_id_kind_idx").on(table.noteId, table.kind),
+  ],
+);
+
 // Yjs updates table for persistence
 export const yjsUpdates = sqliteTable(
   "yjs_updates",
@@ -380,5 +408,7 @@ export type Event = typeof events.$inferSelect;
 export type NewEvent = typeof events.$inferInsert;
 export type Note = typeof notes.$inferSelect;
 export type NewNote = typeof notes.$inferInsert;
+export type NoteArtifact = typeof noteArtifacts.$inferSelect;
+export type NewNoteArtifact = typeof noteArtifacts.$inferInsert;
 export type YjsUpdate = typeof yjsUpdates.$inferSelect;
 export type NewYjsUpdate = typeof yjsUpdates.$inferInsert;
