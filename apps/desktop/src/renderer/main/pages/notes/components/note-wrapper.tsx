@@ -7,12 +7,6 @@ import Note from "./note";
 import { NoteEditor } from "./note-editor";
 import { ArtifactEditor } from "./artifact-editor";
 import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
-import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -26,8 +20,7 @@ import { FileTextIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTranslation } from "react-i18next";
 import type { NoteAssetKind } from "../types";
-
-type NoteTab = "summary" | "raw";
+import type { NoteTab } from "./note";
 import type {
   MeetingRuntimeSnapshot,
   MeetingRuntimeState,
@@ -445,30 +438,25 @@ export default function NotePage({
       onGenerateNotes={handleGenerateNotes}
       isGeneratingNotes={generateNotesMutation.isPending}
       isDeleting={deleteMutation.isPending}
+      activeTab={activeTab}
+      onActiveTabChange={setActiveTab}
+      showTabSwitcher={Boolean(artifact)}
     >
       {artifact ? (
-        <Tabs
-          value={activeTab}
-          onValueChange={(value) => setActiveTab(value as NoteTab)}
-          className="w-full"
-        >
-          <TabsList>
-            <TabsTrigger value="summary">AI Summary</TabsTrigger>
-            <TabsTrigger value="raw">Raw notes</TabsTrigger>
-          </TabsList>
-          {/* forceMount keeps both editors alive so switching tabs doesn't
-              tear down/re-init the Yjs editor (slow) or discard in-flight
-              artifact edits. Inactive tab content is hidden via CSS. */}
-          <TabsContent value="summary" forceMount className="hidden data-[state=active]:block">
+        // Both editors stay mounted so switching tabs doesn't tear down the
+        // Yjs editor (slow to re-init) or discard in-flight artifact edits.
+        // The inactive one is hidden via CSS.
+        <>
+          <div className={activeTab === "summary" ? "block" : "hidden"}>
             <ArtifactEditor
               artifactId={artifact.id}
               initialContent={artifact.content}
             />
-          </TabsContent>
-          <TabsContent value="raw" forceMount className="hidden data-[state=active]:block">
+          </div>
+          <div className={activeTab === "raw" ? "block" : "hidden"}>
             <NoteEditor noteId={noteIdNumber} onReady={handleEditorReady} />
-          </TabsContent>
-        </Tabs>
+          </div>
+        </>
       ) : (
         <NoteEditor noteId={noteIdNumber} onReady={handleEditorReady} />
       )}

@@ -9,6 +9,7 @@ import {
   Trash2,
 } from "lucide-react";
 import EmojiPicker, { Theme } from "emoji-picker-react";
+import { IconNotes, IconSparkles } from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
@@ -58,6 +59,8 @@ import {
   getMeetingPlatformDisplayName,
 } from "@/utils/meeting-icons";
 
+export type NoteTab = "summary" | "raw";
+
 export type NoteEventData = {
   eventId: string;
   title: string;
@@ -91,6 +94,9 @@ export type NotePageUIProps = {
   onStopMeeting: () => void;
   onGenerateNotes: () => void;
   isGeneratingNotes: boolean;
+  activeTab: NoteTab;
+  onActiveTabChange: (tab: NoteTab) => void;
+  showTabSwitcher: boolean;
   isDeleting?: boolean;
   children?: ReactNode;
 };
@@ -151,6 +157,9 @@ export default function Note({
   onStopMeeting,
   onGenerateNotes,
   isGeneratingNotes,
+  activeTab,
+  onActiveTabChange,
+  showTabSwitcher,
   isDeleting = false,
   children,
 }: NotePageUIProps) {
@@ -458,7 +467,7 @@ export default function Note({
               isGeneratingNotes={isGeneratingNotes}
             />
           </div>
-          <div className="pointer-events-auto">
+          <div className="pointer-events-auto flex items-center gap-2">
             <NoteRecordingDock
               isTranscriptionOpen={isTranscriptionOpen}
               onToggleTranscription={() => onToggleAsset("transcription")}
@@ -466,6 +475,36 @@ export default function Note({
               onStartMeeting={onStartMeeting}
               onStopMeeting={onStopMeeting}
             />
+            {showTabSwitcher ? (
+              <div className="flex h-[42px] w-[78px] items-center justify-center gap-1 rounded-full bg-black/80 p-[5px] backdrop-blur-md ring-[1px] ring-black/60 shadow-[0px_0px_15px_0px_rgba(0,0,0,0.40)] transition-all duration-200 ease-out hover:scale-110 dark:bg-black/70">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className={`!h-8 !w-8 rounded-full !p-0 text-white/70 hover:bg-white/15 hover:text-white ${
+                    activeTab === "raw" ? "bg-white/15 text-white" : ""
+                  }`}
+                  onClick={() => onActiveTabChange("raw")}
+                  aria-label="Raw notes"
+                  title="Raw notes"
+                >
+                  <IconNotes className="!h-[18px] !w-[18px]" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className={`!h-8 !w-8 rounded-full !p-0 text-white/70 hover:bg-white/15 hover:text-white ${
+                    activeTab === "summary" ? "bg-white/15 text-white" : ""
+                  }`}
+                  onClick={() => onActiveTabChange("summary")}
+                  aria-label="AI Summary"
+                  title="AI Summary"
+                >
+                  <IconSparkles className="!h-[18px] !w-[18px]" />
+                </Button>
+              </div>
+            ) : null}
           </div>
         </div>
       </div>

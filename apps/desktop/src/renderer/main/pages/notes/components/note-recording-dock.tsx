@@ -67,12 +67,11 @@ export function NoteRecordingDock({
     <div
       className={`
         group
-        transition-all duration-150 ease-out overflow-hidden
-        h-[42px]
+        transition-all duration-200 ease-out overflow-hidden
+        h-[42px] hover:scale-110
         ${isRecording ? "w-[160px]" : onToggleTranscription ? "w-[78px] hover:w-[86px]" : "w-[56px] hover:w-[64px]"}
         bg-black/80 dark:bg-black/70 rounded-[28px] backdrop-blur-md
         ring-[1px] ring-black/60 shadow-[0px_0px_15px_0px_rgba(0,0,0,0.40)]
-        before:content-[''] before:absolute before:inset-[1px] before:rounded-[27px] before:outline before:outline-white/15 before:pointer-events-none
         relative select-none
         flex items-center justify-center
       `}
@@ -80,34 +79,31 @@ export function NoteRecordingDock({
       {/* Idle state — Mic + Chevron, delays showing when closing */}
       <div
         className={`
-          absolute inset-0 flex items-center
+          absolute inset-0 flex items-center justify-center gap-1 p-[5px]
           transition-opacity
           ${isRecording ? "opacity-0 duration-75 delay-0 pointer-events-none" : "opacity-100 duration-100 delay-100"}
         `}
       >
         <button
           onClick={handleMicClick}
-          className="flex flex-1 items-center justify-center h-full cursor-pointer active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full cursor-pointer text-white/70 transition-colors hover:bg-white/15 hover:text-white active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
           aria-label="Start meeting transcription"
           disabled={isBusy}
         >
-          <Mic className="w-[18px] h-[18px] text-white/70 group-hover:text-white transition-all duration-300" />
+          <Mic className="w-[18px] h-[18px]" />
         </button>
         {onToggleTranscription && (
-          <>
-            <div className="h-[18px] w-px bg-white/15 shrink-0" />
-            <button
-              onClick={onToggleTranscription}
-              className="flex items-center justify-center h-full w-[26px] shrink-0 cursor-pointer"
-              aria-label="Toggle transcription"
-            >
-              <ChevronUp
-                className={`w-3.5 h-3.5 text-white/50 group-hover:text-white/80 transition-all duration-200 ${
-                  isTranscriptionOpen ? "rotate-180" : ""
-                }`}
-              />
-            </button>
-          </>
+          <button
+            onClick={onToggleTranscription}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full cursor-pointer text-white/50 transition-colors hover:bg-white/15 hover:text-white/80"
+            aria-label="Toggle transcription"
+          >
+            <ChevronUp
+              className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                isTranscriptionOpen ? "rotate-180" : ""
+              }`}
+            />
+          </button>
         )}
       </div>
 
