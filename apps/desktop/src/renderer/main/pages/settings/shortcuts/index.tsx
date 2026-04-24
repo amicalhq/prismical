@@ -1,11 +1,18 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { ShortcutInput } from "@/components/shortcut-input";
-import { Separator } from "@/components/ui/separator";
 import { api } from "@/trpc/react";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
+
+// TEMP: native helper bridge is disabled in Prismical, so the PTT / hands-free
+// / paste-last-transcript / new-note shortcuts can't actually fire. Only the
+// openApp shortcut works (via Electron's globalShortcut). The state + handlers
+// + the rendered rows for the other shortcuts are kept below and gated behind
+// NATIVE_SHORTCUTS_ENABLED — flip this back to `true` once the native bridge
+// is re-enabled in service-manager.initializePlatformServices.
+const NATIVE_SHORTCUTS_ENABLED = false;
 
 export function ShortcutsSettingsPage() {
   const { t } = useTranslation();
@@ -143,109 +150,116 @@ export function ShortcutsSettingsPage() {
       <div className="space-y-6">
         <Card>
           <CardContent className="space-y-8">
-            <div>
-              <div className="flex flex-col md:flex-row md:justify-between gap-4">
+            {/*
+              TODO: un-gate these rows once the native helper bridge is back on.
+              They're hidden today because the underlying key-capture layer is
+              disabled, so saving a binding here wouldn't do anything.
+            */}
+            {NATIVE_SHORTCUTS_ENABLED && (
+              <>
                 <div>
-                  <Label className="text-base font-semibold text-foreground">
-                    {t("settings.shortcuts.pushToTalk.label")}
-                  </Label>
-                  <p className="text-xs text-muted-foreground mt-1 max-w-md">
-                    {t("settings.shortcuts.pushToTalk.description")}
-                  </p>
+                  <div className="flex flex-col md:flex-row md:justify-between gap-4">
+                    <div>
+                      <Label className="text-base font-semibold text-foreground">
+                        {t("settings.shortcuts.pushToTalk.label")}
+                      </Label>
+                      <p className="text-xs text-muted-foreground mt-1 max-w-md">
+                        {t("settings.shortcuts.pushToTalk.description")}
+                      </p>
+                    </div>
+                    <div className="flex flex-col gap-2 items-end min-w-[260px]">
+                      <ShortcutInput
+                        value={pushToTalkShortcut}
+                        onChange={handlePushToTalkChange}
+                        isRecordingShortcut={recordingShortcut === "pushToTalk"}
+                        onRecordingShortcutChange={(recording) =>
+                          setRecordingShortcut(recording ? "pushToTalk" : null)
+                        }
+                      />
+                    </div>
+                  </div>
                 </div>
-                <div className="flex flex-col gap-2 items-end min-w-[260px]">
-                  <ShortcutInput
-                    value={pushToTalkShortcut}
-                    onChange={handlePushToTalkChange}
-                    isRecordingShortcut={recordingShortcut === "pushToTalk"}
-                    onRecordingShortcutChange={(recording) =>
-                      setRecordingShortcut(recording ? "pushToTalk" : null)
-                    }
-                  />
+
+                <div>
+                  <div className="flex flex-col md:flex-row md:justify-between gap-4">
+                    <div>
+                      <Label className="text-base font-semibold text-foreground">
+                        {t("settings.shortcuts.handsFree.label")}
+                      </Label>
+                      <p className="text-xs text-muted-foreground mt-1 max-w-md">
+                        {t("settings.shortcuts.handsFree.description")}
+                      </p>
+                    </div>
+                    <div className="flex flex-col gap-2 items-end min-w-[260px]">
+                      <ShortcutInput
+                        value={toggleRecordingShortcut}
+                        onChange={handleToggleRecordingChange}
+                        isRecordingShortcut={
+                          recordingShortcut === "toggleRecording"
+                        }
+                        onRecordingShortcutChange={(recording) =>
+                          setRecordingShortcut(
+                            recording ? "toggleRecording" : null,
+                          )
+                        }
+                      />
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <Separator className="my-4" />
-            </div>
+
+                <div>
+                  <div className="flex flex-col md:flex-row md:justify-between gap-4">
+                    <div>
+                      <Label className="text-base font-semibold text-foreground">
+                        {t("settings.shortcuts.pasteLastTranscript.label")}
+                      </Label>
+                      <p className="text-xs text-muted-foreground mt-1 max-w-md">
+                        {t("settings.shortcuts.pasteLastTranscript.description")}
+                      </p>
+                    </div>
+                    <div className="flex flex-col gap-2 items-end min-w-[260px]">
+                      <ShortcutInput
+                        value={pasteLastTranscriptShortcut}
+                        onChange={handlePasteLastTranscriptChange}
+                        isRecordingShortcut={
+                          recordingShortcut === "pasteLastTranscript"
+                        }
+                        onRecordingShortcutChange={(recording) =>
+                          setRecordingShortcut(
+                            recording ? "pasteLastTranscript" : null,
+                          )
+                        }
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex flex-col md:flex-row md:justify-between gap-4">
+                    <div>
+                      <Label className="text-base font-semibold text-foreground">
+                        {t("settings.shortcuts.newNote.label")}
+                      </Label>
+                      <p className="text-xs text-muted-foreground mt-1 max-w-md">
+                        {t("settings.shortcuts.newNote.description")}
+                      </p>
+                    </div>
+                    <div className="flex flex-col gap-2 items-end min-w-[260px]">
+                      <ShortcutInput
+                        value={newNoteShortcut}
+                        onChange={handleNewNoteChange}
+                        isRecordingShortcut={recordingShortcut === "newNote"}
+                        onRecordingShortcutChange={(recording) =>
+                          setRecordingShortcut(recording ? "newNote" : null)
+                        }
+                      />
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
 
             <div>
-              <div className="flex flex-col md:flex-row md:justify-between gap-4">
-                <div>
-                  <Label className="text-base font-semibold text-foreground">
-                    {t("settings.shortcuts.handsFree.label")}
-                  </Label>
-                  <p className="text-xs text-muted-foreground mt-1 max-w-md">
-                    {t("settings.shortcuts.handsFree.description")}
-                  </p>
-                </div>
-                <div className="flex flex-col gap-2 items-end min-w-[260px]">
-                  <ShortcutInput
-                    value={toggleRecordingShortcut}
-                    onChange={handleToggleRecordingChange}
-                    isRecordingShortcut={
-                      recordingShortcut === "toggleRecording"
-                    }
-                    onRecordingShortcutChange={(recording) =>
-                      setRecordingShortcut(recording ? "toggleRecording" : null)
-                    }
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div>
-              <Separator className="my-4" />
-              <div className="flex flex-col md:flex-row md:justify-between gap-4">
-                <div>
-                  <Label className="text-base font-semibold text-foreground">
-                    {t("settings.shortcuts.pasteLastTranscript.label")}
-                  </Label>
-                  <p className="text-xs text-muted-foreground mt-1 max-w-md">
-                    {t("settings.shortcuts.pasteLastTranscript.description")}
-                  </p>
-                </div>
-                <div className="flex flex-col gap-2 items-end min-w-[260px]">
-                  <ShortcutInput
-                    value={pasteLastTranscriptShortcut}
-                    onChange={handlePasteLastTranscriptChange}
-                    isRecordingShortcut={
-                      recordingShortcut === "pasteLastTranscript"
-                    }
-                    onRecordingShortcutChange={(recording) =>
-                      setRecordingShortcut(
-                        recording ? "pasteLastTranscript" : null,
-                      )
-                    }
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div>
-              <Separator className="my-4" />
-              <div className="flex flex-col md:flex-row md:justify-between gap-4">
-                <div>
-                  <Label className="text-base font-semibold text-foreground">
-                    {t("settings.shortcuts.newNote.label")}
-                  </Label>
-                  <p className="text-xs text-muted-foreground mt-1 max-w-md">
-                    {t("settings.shortcuts.newNote.description")}
-                  </p>
-                </div>
-                <div className="flex flex-col gap-2 items-end min-w-[260px]">
-                  <ShortcutInput
-                    value={newNoteShortcut}
-                    onChange={handleNewNoteChange}
-                    isRecordingShortcut={recordingShortcut === "newNote"}
-                    onRecordingShortcutChange={(recording) =>
-                      setRecordingShortcut(recording ? "newNote" : null)
-                    }
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div>
-              <Separator className="my-4" />
               <div className="flex flex-col md:flex-row md:justify-between gap-4">
                 <div>
                   <Label className="text-base font-semibold text-foreground">
