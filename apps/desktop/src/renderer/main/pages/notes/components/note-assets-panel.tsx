@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { X } from "lucide-react";
+import { Maximize2, Minimize2, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,8 @@ type NoteAssetsPanelProps = {
   activeAsset: NoteAssetKind;
   isOpen: boolean;
   onClose: () => void;
+  isExpanded: boolean;
+  onToggleExpanded: () => void;
   transcript: TranscriptEvent[];
   meetingState: MeetingRuntimeState;
   onGenerateNotes: () => void;
@@ -36,6 +38,8 @@ export function NoteAssetsPanel({
   activeAsset,
   isOpen,
   onClose,
+  isExpanded,
+  onToggleExpanded,
   transcript,
   meetingState,
   onGenerateNotes,
@@ -139,16 +143,32 @@ export function NoteAssetsPanel({
                   </Button>
                 ) : null}
               </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 shrink-0 text-white/70 hover:bg-white/15 hover:text-white"
-                onClick={onClose}
-                aria-label={t("settings.notes.note.actions.closeTranscription")}
-                title={t("settings.notes.note.actions.closeTranscription")}
-              >
-                <X className="h-4 w-4" />
-              </Button>
+              <div className="flex shrink-0 items-center gap-0.5">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-white/70 hover:bg-white/15 hover:text-white"
+                  onClick={onToggleExpanded}
+                  aria-label={isExpanded ? "Shrink transcription" : "Expand transcription"}
+                  title={isExpanded ? "Shrink" : "Expand"}
+                >
+                  {isExpanded ? (
+                    <Minimize2 className="h-4 w-4" />
+                  ) : (
+                    <Maximize2 className="h-4 w-4" />
+                  )}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-white/70 hover:bg-white/15 hover:text-white"
+                  onClick={onClose}
+                  aria-label={t("settings.notes.note.actions.closeTranscription")}
+                  title={t("settings.notes.note.actions.closeTranscription")}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
 
             <ScrollArea

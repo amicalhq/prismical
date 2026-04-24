@@ -169,6 +169,7 @@ export default function Note({
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showCreateFolderDialog, setShowCreateFolderDialog] = useState(false);
   const [showFolderPicker, setShowFolderPicker] = useState(false);
+  const [isTranscriptionExpanded, setIsTranscriptionExpanded] = useState(false);
   // Re-render once a minute so the "Edited X ago" label stays fresh without
   // each edit having to round-trip through state.
   const [, setRelativeTimeTick] = useState(0);
@@ -537,9 +538,13 @@ export default function Note({
       <div className="pointer-events-none absolute inset-x-0 bottom-4 z-10">
         <div className="mx-auto flex w-full max-w-4xl flex-col items-center gap-2 px-6">
           <div
-            className={`w-full max-w-md transition-all duration-200 ease-out ${
+            className={`w-full transition-all duration-200 ease-out ${
+              isTranscriptionExpanded ? "max-w-2xl" : "max-w-md"
+            } ${
               isTranscriptionOpen
-                ? "pointer-events-auto h-[50vh] opacity-100"
+                ? `pointer-events-auto opacity-100 ${
+                    isTranscriptionExpanded ? "h-[75vh]" : "h-[50vh]"
+                  }`
                 : "pointer-events-none h-0 opacity-0"
             }`}
           >
@@ -547,6 +552,10 @@ export default function Note({
               activeAsset="transcription"
               isOpen={isTranscriptionOpen}
               onClose={() => onToggleAsset("transcription")}
+              isExpanded={isTranscriptionExpanded}
+              onToggleExpanded={() =>
+                setIsTranscriptionExpanded((prev) => !prev)
+              }
               transcript={transcript}
               meetingState={meetingState}
               onGenerateNotes={onGenerateNotes}
