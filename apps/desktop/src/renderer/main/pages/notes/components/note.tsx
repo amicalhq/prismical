@@ -177,15 +177,95 @@ export default function Note({
     return () => window.clearInterval(id);
   }, []);
 
+  // Narrow window: move title/actions into the slim header so the big in-page
+  // title doesn't crowd out the body.
+  const [isNarrow, setIsNarrow] = useState(false);
   useEffect(() => {
-    setHeaderContent(null);
-    return () => setHeaderContent(null);
-  }, [setHeaderContent]);
+    const mq = window.matchMedia("(max-width: 768px)");
+    const update = () => setIsNarrow(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
 
   useEffect(() => {
-    setActions(null);
-    return () => setActions(null);
-  }, [setActions]);
+    if (!isNarrow) {
+      setHeaderContent(null);
+      setActions(null);
+      return;
+    }
+
+    const titleLabel =
+      noteTitle || t("settings.notes.note.titlePlaceholder");
+
+    setHeaderContent(
+      <div className="flex min-w-0 items-center gap-1.5 pr-12">
+        <span className="shrink-0" aria-hidden="true">
+          {noteEmoji ? (
+            <span className="text-base leading-none">{noteEmoji}</span>
+          ) : (
+            <FileTextIcon className="h-4 w-4 text-muted-foreground" />
+          )}
+        </span>
+        <span className="truncate text-sm font-medium">{titleLabel}</span>
+      </div>,
+    );
+
+    setActions(
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+            <MoreHorizontal className="h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem
+            className="gap-2"
+            onSelect={() => onStarredChange(!noteStarred)}
+          >
+            <Star
+              className={`h-4 w-4 ${
+                noteStarred ? "fill-yellow-400 text-yellow-400" : ""
+              }`}
+            />
+            {noteStarred
+              ? t("settings.notes.note.actions.removeFromFavorites")
+              : t("settings.notes.note.actions.addToFavorites")}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            className="gap-2"
+            onSelect={() => setShowFolderPicker(true)}
+          >
+            <FolderOpen className="h-4 w-4" />
+            {t("settings.notes.note.actions.moveToFolder")}
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            className="gap-2"
+            variant="destructive"
+            onSelect={() => setShowDeleteDialog(true)}
+          >
+            <Trash2 className="h-4 w-4 text-destructive" />
+            {t("settings.notes.note.actions.delete")}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>,
+    );
+
+    return () => {
+      setHeaderContent(null);
+      setActions(null);
+    };
+  }, [
+    isNarrow,
+    noteTitle,
+    noteEmoji,
+    noteStarred,
+    setHeaderContent,
+    setActions,
+    onStarredChange,
+    t,
+  ]);
 
   const handleDeleteClick = () => {
     setShowDeleteDialog(false);
@@ -214,6 +294,7 @@ export default function Note({
         scrollBarClassName={SCROLLBAR_WHILE_SCROLLING_CLASS}
       >
         <div className="mx-auto flex w-full max-w-4xl flex-col px-6 pb-32 pt-6">
+          {!isNarrow && (
           <div className="mb-1 flex items-center">
             <Popover open={showEmojiPicker} onOpenChange={setShowEmojiPicker}>
               <PopoverTrigger asChild>
@@ -265,6 +346,7 @@ export default function Note({
               placeholder={t("settings.notes.note.titlePlaceholder")}
             />
           </div>
+          )}
 
           <div className="mb-6 flex flex-col gap-0.5 bg-card pl-4">
               <div className="flex flex-wrap items-center gap-1">
@@ -274,53 +356,57 @@ export default function Note({
                   })}
                 </span>
 
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="gap-2"
-                      onClick={() => onStarredChange(!noteStarred)}
-                    >
-                      <Star
-                        className={`h-4 w-4 ${
-                          noteStarred ? "fill-yellow-400 text-yellow-400" : ""
-                        }`}
-                      />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    {noteStarred
-                      ? t("settings.notes.note.actions.removeFromFavorites")
-                      : t("settings.notes.note.actions.addToFavorites")}
-                  </TooltipContent>
-                </Tooltip>
+                {!isNarrow && (
+                  <>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="gap-2"
+                          onClick={() => onStarredChange(!noteStarred)}
+                        >
+                          <Star
+                            className={`h-4 w-4 ${
+                              noteStarred ? "fill-yellow-400 text-yellow-400" : ""
+                            }`}
+                          />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        {noteStarred
+                          ? t("settings.notes.note.actions.removeFromFavorites")
+                          : t("settings.notes.note.actions.addToFavorites")}
+                      </TooltipContent>
+                    </Tooltip>
 
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="sm">
-                      <MoreHorizontal className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem
-                      className="gap-2"
-                      onSelect={() => setShowFolderPicker(true)}
-                    >
-                      <FolderOpen className="h-4 w-4" />
-                      {t("settings.notes.note.actions.moveToFolder")}
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      className="gap-2"
-                      variant="destructive"
-                      onSelect={() => setShowDeleteDialog(true)}
-                    >
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                      {t("settings.notes.note.actions.delete")}
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="sm">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          className="gap-2"
+                          onSelect={() => setShowFolderPicker(true)}
+                        >
+                          <FolderOpen className="h-4 w-4" />
+                          {t("settings.notes.note.actions.moveToFolder")}
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          className="gap-2"
+                          variant="destructive"
+                          onSelect={() => setShowDeleteDialog(true)}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                          {t("settings.notes.note.actions.delete")}
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </>
+                )}
               </div>
 
               {eventData ? (

@@ -121,7 +121,7 @@ function SettingsLayoutContent() {
             currentView={
               headerContent ?? getSettingsPageTitle(location.pathname)
             }
-            showTitle={isScrolled}
+            showTitle={isScrolled || headerContent != null}
             actions={headerActions ?? undefined}
           />
           <MeetingRecordingBanner />
