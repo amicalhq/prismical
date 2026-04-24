@@ -92,6 +92,33 @@ export function getMeetingIcon(
   }
 }
 
+// Human-readable name for a meeting platform, e.g. "Zoom" or "Google Meet".
+// Returns null for unknown/default URLs so callers can fall back gracefully
+// (e.g. to a generic "Join" label).
+export function getMeetingPlatformDisplayName(url: string): string | null {
+  const platform = getMeetingPlatform(url);
+  switch (platform) {
+    case "zoom":
+      return "Zoom";
+    case "google-meet":
+      return "Google Meet";
+    case "microsoft-teams":
+      return "Microsoft Teams";
+    case "discord":
+      return "Discord";
+    case "webex":
+      return "Webex";
+    case "gotomeeting":
+      return "GoToMeeting";
+    case "bluejeans":
+      return "BlueJeans";
+    case "whereby":
+      return "Whereby";
+    default:
+      return null;
+  }
+}
+
 // Export the platforms for potential use elsewhere
 export const SUPPORTED_PLATFORMS = {
   ZOOM: "zoom",

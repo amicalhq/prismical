@@ -2,7 +2,10 @@ import { useTranslation } from "react-i18next";
 import { useNavigate } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { getMeetingIcon } from "@/utils/meeting-icons";
-import { formatEventTimeRange } from "@/utils/event-time";
+import {
+  formatEventTimeRange,
+  getEventDateLabel,
+} from "@/utils/event-time";
 import { CalendarDays } from "lucide-react";
 import { useMemo } from "react";
 import { api } from "@/trpc/react";
@@ -22,32 +25,6 @@ function getDateKey(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
-function getDateLabel(date: Date, t: (key: string) => string): string {
-  const now = new Date();
-  const startOfToday = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate(),
-  );
-  const startOfDate = new Date(
-    date.getFullYear(),
-    date.getMonth(),
-    date.getDate(),
-  );
-  const diffDays = Math.round(
-    (startOfDate.getTime() - startOfToday.getTime()) / (1000 * 60 * 60 * 24),
-  );
-
-  if (diffDays === 0) return t("settings.home.upcoming.today");
-  if (diffDays === 1) return t("settings.home.upcoming.tomorrow");
-
-  return new Intl.DateTimeFormat(
-    typeof navigator !== "undefined"
-      ? navigator.language
-      : Intl.DateTimeFormat().resolvedOptions().locale,
-    { weekday: "long", month: "short", day: "numeric" },
-  ).format(date);
-}
 
 interface DateGroup {
   dateKey: string;
@@ -118,7 +95,11 @@ export default function EventsPage() {
       if (!groups.has(key)) {
         groups.set(key, {
           dateKey: key,
-          label: getDateLabel(meeting.startAt, t),
+          label: getEventDateLabel(meeting.startAt, t, {
+            weekday: "long",
+            month: "short",
+            day: "numeric",
+          }),
           date: meeting.startAt,
           meetings: [],
         });

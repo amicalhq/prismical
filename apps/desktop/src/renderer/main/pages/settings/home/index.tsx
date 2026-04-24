@@ -3,7 +3,10 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { NotesList } from "../../notes/components/notes-list";
 import { getMeetingIcon } from "@/utils/meeting-icons";
-import { formatEventTimeRange } from "@/utils/event-time";
+import {
+  formatEventTimeRange,
+  getEventDateLabel,
+} from "@/utils/event-time";
 import { api } from "@/trpc/react";
 
 type GreetingPeriod = "morning" | "afternoon" | "evening";
@@ -17,33 +20,6 @@ interface UpcomingMeeting {
   title: string;
   meetingUrl: string | null;
   calendarEventUrl: string | null;
-}
-
-function getMeetingDateLabel(date: Date, t: (key: string) => string): string {
-  const now = new Date();
-  const startOfToday = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate(),
-  );
-  const startOfDate = new Date(
-    date.getFullYear(),
-    date.getMonth(),
-    date.getDate(),
-  );
-  const diffDays = Math.round(
-    (startOfDate.getTime() - startOfToday.getTime()) / (1000 * 60 * 60 * 24),
-  );
-
-  if (diffDays === 0) return t("settings.home.upcoming.today");
-  if (diffDays === 1) return t("settings.home.upcoming.tomorrow");
-
-  return new Intl.DateTimeFormat(
-    typeof navigator !== "undefined"
-      ? navigator.language
-      : Intl.DateTimeFormat().resolvedOptions().locale,
-    { month: "short", day: "numeric" },
-  ).format(date);
 }
 
 function getGreetingPeriod(date: Date): GreetingPeriod {
@@ -151,7 +127,7 @@ export default function HomePage() {
 
                   <div className="min-w-0 flex-1">
                     <p className="text-xs text-muted-foreground">
-                      {getMeetingDateLabel(meeting.startAt, t)}{" "}
+                      {getEventDateLabel(meeting.startAt, t)}{" "}
                       <span aria-hidden="true">•</span>{" "}
                       {formatEventTimeRange(
                         meeting.startAt,

@@ -38,7 +38,6 @@ import {
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -50,6 +49,14 @@ import { NoteAssetsPanel } from "./note-assets-panel";
 import { NoteRecordingDock } from "./note-recording-dock";
 import type { NoteAssetKind } from "../types";
 import type { MeetingRuntimeState, TranscriptEvent } from "@/types/meeting";
+import {
+  formatEventTimeRange,
+  getEventDateLabel,
+} from "@/utils/event-time";
+import {
+  getMeetingIcon,
+  getMeetingPlatformDisplayName,
+} from "@/utils/meeting-icons";
 
 export type NoteEventData = {
   eventId: string;
@@ -121,26 +128,6 @@ function formatRelativeTime(date: Date, locale: string): string {
   }).format(date);
 }
 
-function formatEventTimeRange(
-  startAt: Date,
-  endAt: Date,
-  isAllDay: boolean,
-  locale: string,
-): string {
-  if (isAllDay) {
-    return new Intl.DateTimeFormat(locale, {
-      weekday: "short",
-      month: "short",
-      day: "numeric",
-    }).format(startAt);
-  }
-  const time = (d: Date) =>
-    new Intl.DateTimeFormat(locale, {
-      hour: "numeric",
-      minute: "2-digit",
-    }).format(d);
-  return `${time(startAt)} – ${time(endAt)}`;
-}
 
 export default function Note({
   noteTitle,
@@ -270,8 +257,7 @@ export default function Note({
             />
           </div>
 
-          <TooltipProvider>
-            <div className="flex flex-col gap-0.5 bg-card pl-4">
+          <div className="flex flex-col gap-0.5 bg-card pl-4">
               <div className="flex flex-wrap items-center gap-1">
                 <span className="mr-1 text-sm text-muted-foreground">
                   {t("settings.notes.note.edited", {
@@ -329,14 +315,114 @@ export default function Note({
               </div>
 
               {eventData ? (
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                    <Calendar
-                      className="h-3.5 w-3.5"
-                      style={{ color: eventData.calendarColor }}
-                    />
-                    <span>{eventData.title}</span>
-                    <span className="h-1 w-1 rounded-full bg-muted-foreground" />
+                <div className="@container/event-chip flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm text-muted-foreground">
+                  <Calendar
+                    className="h-3.5 w-3.5 shrink-0"
+                    style={{ color: eventData.calendarColor }}
+                  />
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-auto max-w-full px-1.5 py-0.5 text-sm font-normal text-muted-foreground hover:text-foreground"
+                        title={eventData.title}
+                      >
+                        <span className="truncate">
+                          {eventData.title.length > 30
+                            ? `${eventData.title.slice(0, 30).trimEnd()}…`
+                            : eventData.title}
+                        </span>
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent
+                      side="bottom"
+                      align="start"
+                      sideOffset={6}
+                      className="w-80 p-0"
+                    >
+                    <div className="flex items-start gap-3 p-3">
+                      <span
+                        className="mt-0.5 h-8 w-1.5 shrink-0 rounded-sm"
+                        style={{ backgroundColor: eventData.calendarColor }}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs text-muted-foreground">
+                          {getEventDateLabel(eventData.startAt, t)}{" "}
+                          <span aria-hidden="true">•</span>{" "}
+                          {formatEventTimeRange(
+                            eventData.startAt,
+                            eventData.endAt,
+                            eventData.isAllDay,
+                            i18n.language,
+                          )}
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium leading-tight">
+                            {eventData.title}
+                          </p>
+                          {eventData.meetingUrl
+                            ? getMeetingIcon(eventData.meetingUrl, {
+                                className:
+                                  "h-3.5 w-3.5 text-muted-foreground shrink-0",
+                              })
+                            : null}
+                        </div>
+
+                        {(eventData.meetingUrl ||
+                          eventData.calendarEventUrl) && (
+                          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                            {eventData.meetingUrl ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                className="h-7 px-2.5 text-xs"
+                                onClick={() =>
+                                  window.electronAPI.openExternal(
+                                    eventData.meetingUrl!,
+                                  )
+                                }
+                              >
+                                {getMeetingIcon(eventData.meetingUrl, {
+                                  className: "mr-1 h-3.5 w-3.5",
+                                })}
+                                {(() => {
+                                  const platform = getMeetingPlatformDisplayName(
+                                    eventData.meetingUrl,
+                                  );
+                                  const joinLabel = t(
+                                    "settings.home.upcoming.join",
+                                  );
+                                  return platform
+                                    ? `${joinLabel} ${platform}`
+                                    : joinLabel;
+                                })()}
+                              </Button>
+                            ) : null}
+                            {eventData.calendarEventUrl ? (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-7 px-2.5 text-xs"
+                                onClick={() =>
+                                  window.electronAPI.openExternal(
+                                    eventData.calendarEventUrl!,
+                                  )
+                                }
+                              >
+                                Open in calendar
+                              </Button>
+                            ) : null}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+                  <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap">
+                    <span className="h-1 w-1 rounded-full bg-muted-foreground @max-[420px]/event-chip:hidden" />
                     <span className="text-xs">
                       {formatEventTimeRange(
                         eventData.startAt,
@@ -345,11 +431,10 @@ export default function Note({
                         i18n.language,
                       )}
                     </span>
-                  </div>
+                  </span>
                 </div>
               ) : null}
             </div>
-          </TooltipProvider>
           {children}
         </div>
       </ScrollArea>
