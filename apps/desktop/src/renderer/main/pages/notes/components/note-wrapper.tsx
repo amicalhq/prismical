@@ -4,11 +4,20 @@ import { api } from "@/trpc/react";
 import { toast } from "sonner";
 import { debounce } from "@/renderer/main/utils/debounce";
 import Note from "./note";
-import { NoteEditor, type NoteEditorHandle } from "./note-editor";
+import { NoteEditor } from "./note-editor";
+import { ArtifactEditor } from "./artifact-editor";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
 import { FileTextIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTranslation } from "react-i18next";
 import type { NoteAssetKind } from "../types";
+
+type NoteTab = "summary" | "raw";
 import type {
   MeetingRuntimeSnapshot,
   MeetingRuntimeState,
@@ -55,8 +64,37 @@ export default function NotePage({
   const [transcript, setTranscript] = useState<TranscriptEvent[]>([]);
 
   const noteRef = useRef<typeof note>(null);
-  const noteEditorRef = useRef<NoteEditorHandle | null>(null);
   const autoRecordTriggeredRef = useRef(false);
+
+  // Active artifact (latest "summary" for this note). Drives tab visibility
+  // and the AI Summary tab's content.
+  const artifactQuery = api.artifacts.getByNote.useQuery(
+    { noteId: noteIdNumber, kind: "summary" },
+    { enabled: Number.isFinite(noteIdNumber) && noteIdNumber > 0 },
+  );
+  const artifact = artifactQuery.data ?? null;
+
+  // Active tab. Defaults to AI Summary when an artifact exists, otherwise Raw.
+  const [activeTab, setActiveTab] = useState<NoteTab>("summary");
+  const lastSeenArtifactUpdatedAtRef = useRef<number | null>(null);
+
+  // Auto-switch to AI Summary when a new/updated artifact arrives.
+  useEffect(() => {
+    if (!artifact) {
+      lastSeenArtifactUpdatedAtRef.current = null;
+      return;
+    }
+    const updatedAtMs = artifact.updatedAt.getTime();
+    if (lastSeenArtifactUpdatedAtRef.current === null) {
+      lastSeenArtifactUpdatedAtRef.current = updatedAtMs;
+      setActiveTab("summary");
+      return;
+    }
+    if (updatedAtMs > lastSeenArtifactUpdatedAtRef.current) {
+      lastSeenArtifactUpdatedAtRef.current = updatedAtMs;
+      setActiveTab("summary");
+    }
+  }, [artifact]);
 
   // Fetch note data
   const { data: note, isLoading } = api.notes.getNoteById.useQuery(
@@ -274,14 +312,22 @@ export default function NotePage({
 
     generateNotesMutation
       .mutateAsync({ noteId: noteIdNumber })
-      .then((result) => {
-        noteEditorRef.current?.applyGeneratedMarkdown(result.markdown);
-        toast.success("Generated notes inserted into the note.");
+      .then(() => {
+        utils.artifacts.getByNote.invalidate({
+          noteId: noteIdNumber,
+          kind: "summary",
+        });
+        toast.success("AI Summary generated.");
       })
       .catch((error) => {
         toast.error(`Failed to generate notes: ${error.message}`);
       });
-  }, [defaultLanguageModelQuery.data, generateNotesMutation, noteIdNumber]);
+  }, [
+    defaultLanguageModelQuery.data,
+    generateNotesMutation,
+    noteIdNumber,
+    utils.artifacts.getByNote,
+  ]);
 
   const handleTitleChange = useCallback(
     (newTitle: string) => {
@@ -384,11 +430,32 @@ export default function NotePage({
       isGeneratingNotes={generateNotesMutation.isPending}
       isDeleting={deleteMutation.isPending}
     >
-      <NoteEditor
-        ref={noteEditorRef}
-        noteId={noteIdNumber}
-        onReady={handleEditorReady}
-      />
+      {artifact ? (
+        <Tabs
+          value={activeTab}
+          onValueChange={(value) => setActiveTab(value as NoteTab)}
+          className="w-full"
+        >
+          <TabsList>
+            <TabsTrigger value="summary">AI Summary</TabsTrigger>
+            <TabsTrigger value="raw">Raw notes</TabsTrigger>
+          </TabsList>
+          {/* forceMount keeps both editors alive so switching tabs doesn't
+              tear down/re-init the Yjs editor (slow) or discard in-flight
+              artifact edits. Inactive tab content is hidden via CSS. */}
+          <TabsContent value="summary" forceMount className="hidden data-[state=active]:block">
+            <ArtifactEditor
+              artifactId={artifact.id}
+              initialContent={artifact.content}
+            />
+          </TabsContent>
+          <TabsContent value="raw" forceMount className="hidden data-[state=active]:block">
+            <NoteEditor noteId={noteIdNumber} onReady={handleEditorReady} />
+          </TabsContent>
+        </Tabs>
+      ) : (
+        <NoteEditor noteId={noteIdNumber} onReady={handleEditorReady} />
+      )}
     </Note>
   );
 }

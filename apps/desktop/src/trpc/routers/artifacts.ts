@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { createRouter, procedure } from "../trpc";
-import { getLatestArtifactByNote } from "../../db/artifacts";
+import {
+  getLatestArtifactByNote,
+  updateArtifactContent,
+} from "../../db/artifacts";
 
 export const artifactsRouter = createRouter({
   getByNote: procedure
@@ -12,5 +15,23 @@ export const artifactsRouter = createRouter({
     )
     .query(async ({ input }) => {
       return await getLatestArtifactByNote(input.noteId, input.kind);
+    }),
+
+  updateContent: procedure
+    .input(
+      z.object({
+        artifactId: z.string().min(1),
+        content: z.string(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      const updated = await updateArtifactContent(
+        input.artifactId,
+        input.content,
+      );
+      if (!updated) {
+        throw new Error("Artifact not found");
+      }
+      return updated;
     }),
 });

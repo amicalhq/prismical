@@ -2,6 +2,7 @@ import {
   getProviderTypeFromModelProviderName,
   type ProviderType,
 } from "@/constants/provider-types";
+import { createOrReplaceArtifact } from "@/db/artifacts";
 import { getNoteTranscript } from "@/db/meetings";
 import { getNoteById } from "@/db/notes";
 import { logger } from "@/main/logger";
@@ -10,11 +11,13 @@ import {
   type RemoteNoteGenerationProviderType,
 } from "@/pipeline/providers/note-generation/remote-note-generation-provider-registry";
 import type { NoteGenerationResult } from "@/pipeline/providers/note-generation/types";
+import type { NoteArtifact } from "@/db/schema";
 import type { SettingsService } from "./settings-service";
 import type { ModelService } from "./model-service";
+import { markdownToLexicalStateJson } from "./notes/markdown-to-lexical";
 
 export interface GeneratedNotesResult {
-  markdown: string;
+  artifact: NoteArtifact;
   modelSelection: string;
   modelId: string;
   providerType: RemoteNoteGenerationProviderType;
@@ -86,8 +89,23 @@ export class NoteGenerationService {
 
     const generatedAt = new Date();
 
-    logger.pipeline.info("Generated note markdown from transcript", {
+    const artifact = await createOrReplaceArtifact({
       noteId,
+      kind: "summary",
+      content: markdownToLexicalStateJson(result.markdown),
+      generator: "ai",
+      modelId: modelRecord.id,
+      meta: {
+        modelSelection,
+        providerType,
+        transcriptLength: transcriptText.length,
+      },
+      generatedAt,
+    });
+
+    logger.pipeline.info("Generated note artifact from transcript", {
+      noteId,
+      artifactId: artifact.id,
       modelSelection,
       providerType,
       transcriptLength: transcriptText.length,
@@ -95,7 +113,7 @@ export class NoteGenerationService {
     });
 
     return {
-      markdown: result.markdown,
+      artifact,
       modelSelection,
       modelId: modelRecord.id,
       providerType,

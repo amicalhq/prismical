@@ -54,6 +54,14 @@ export default defineConfig({
     },
   },
   resolve: {
+    // Forge's base main config sets `conditions: ['node']`, which makes the
+    // resolver pick the "node" export of every `@lexical/*` package — each of
+    // those is a `.node.mjs` that uses top-level await and breaks Rollup's CJS
+    // output. Adding "development"/"production" here (merged with forge's list)
+    // lets the resolver match the "development"/"production" keys in the
+    // package.json exports object FIRST, picking the plain ESM variants which
+    // have no TLA.
+    conditions: ["development", "production"],
     alias: {
       "@": resolve(__dirname, "src"),
     },

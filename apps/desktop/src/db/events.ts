@@ -1,6 +1,8 @@
 import { asc, eq, gte, sql } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
+import * as Y from "yjs";
 import { db } from "./index";
+import { saveYjsUpdate } from "./notes";
 import {
   events,
   meetings,
@@ -251,6 +253,8 @@ export async function seedEventsAndNotes() {
     {
       title: "Customer Notes Workflow Sync",
       eventId: "customer-sync",
+      starred: true, // Surfaced in sidebar favorites so the end-to-end
+      // demo (meeting + transcript + AI summary) is easy to find.
       daysAgo: 2,
     },
     // Standalone notes
@@ -344,11 +348,40 @@ async function seedCustomerSyncMeetingIfMissing(now: Date) {
 
 // Seeds a completed meeting + transcript + AI summary artifact for the
 // customer-sync note, so the dev DB has a realistic end-to-end example.
+// Also seeds a few lines of raw notes on the note itself so the "Raw notes"
+// tab shows the user's live jottings alongside the synthesized summary.
 async function seedCustomerSyncMeeting(noteId: number, now: Date) {
   const meetingId = uuid();
   const startedAt = new Date(now.getTime() - 2 * 86_400_000); // 2 days ago
   const durationMs = 30 * 60_000;
   const endedAt = new Date(startedAt.getTime() + durationMs);
+
+  const rawNotesText = [
+    "Walk through onboarding notes use case during the call.",
+    "Confirm the templates design review for end of the week.",
+    "Open question — how to handle multiple contacts on one call?",
+  ].join("\n");
+  const rawNotesLexicalJson =
+    serializePlainTextToLexicalEditorStateJson(rawNotesText);
+
+  // `notes.content` is a fallback/snapshot field — the editor reads from Yjs
+  // updates. Set both so list previews, search, and the live editor all show
+  // something.
+  await db
+    .update(notes)
+    .set({
+      content: rawNotesLexicalJson,
+      updatedAt: endedAt,
+    })
+    .where(eq(notes.id, noteId));
+
+  // Seed a Yjs update so the Raw notes tab has content on first open.
+  // The editor's YjsSyncPlugin stores the Lexical editor state JSON as a
+  // plain string inside a Y.Text named "content".
+  const ydoc = new Y.Doc();
+  ydoc.getText("content").insert(0, rawNotesLexicalJson);
+  await saveYjsUpdate(noteId, Y.encodeStateAsUpdate(ydoc));
+  ydoc.destroy();
 
   await db.insert(meetings).values({
     id: meetingId,
