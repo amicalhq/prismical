@@ -29,7 +29,6 @@ import {
 } from "@/utils/feature-flags";
 import { api } from "@/trpc/react";
 import { CommandSearchButton } from "./command-search-button";
-import { CreateNoteButton } from "./create-note-button";
 import { NavNotesGroups } from "./nav-notes-groups";
 import { SettingsNavigationControls } from "./settings-navigation-controls";
 import { HOME_NAV_ITEMS, SETTINGS_NAV_ITEMS } from "../lib/settings-navigation";
@@ -163,9 +162,6 @@ export function SettingsSidebar({
                   </span>
                 </div>
               </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <CreateNoteButton />
             </SidebarMenuItem>
             {homeNavItem ? (
               <SidebarMenuItem key={homeNavItem.url}>

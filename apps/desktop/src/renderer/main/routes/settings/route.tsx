@@ -10,6 +10,8 @@ import {
   SettingsHeaderProvider,
   useSettingsHeaderActions,
 } from "./header-actions-context";
+import { CreateNoteProvider } from "../../components/create-note-context";
+import { HeaderCreateNoteButton } from "../../components/header-create-note-button";
 
 export const Route = createFileRoute("/settings")({
   component: SettingsLayout,
@@ -18,7 +20,9 @@ export const Route = createFileRoute("/settings")({
 function SettingsLayout() {
   return (
     <SettingsHeaderProvider>
-      <SettingsLayoutContent />
+      <CreateNoteProvider>
+        <SettingsLayoutContent />
+      </CreateNoteProvider>
     </SettingsHeaderProvider>
   );
 }
@@ -122,7 +126,12 @@ function SettingsLayoutContent() {
               headerContent ?? getSettingsPageTitle(location.pathname)
             }
             showTitle={isScrolled || headerContent != null}
-            actions={headerActions ?? undefined}
+            actions={
+              <>
+                {headerActions}
+                <HeaderCreateNoteButton />
+              </>
+            }
           />
           <MeetingRecordingBanner />
           <div className="flex flex-1 flex-col min-h-0">

@@ -1,12 +1,25 @@
-import { useEffect, useCallback } from "react";
-import { Plus } from "lucide-react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  type ReactNode,
+} from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { SidebarMenuButton } from "@/components/ui/sidebar";
-import { api } from "@/trpc/react";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
+import { api } from "@/trpc/react";
 
-export function CreateNoteButton() {
+type CreateNoteContextValue = {
+  createNote: () => void;
+  isPending: boolean;
+  shortcutDisplay: string;
+};
+
+const CreateNoteContext = createContext<CreateNoteContextValue | null>(null);
+
+export function CreateNoteProvider({ children }: { children: ReactNode }) {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const utils = api.useUtils();
@@ -14,7 +27,7 @@ export function CreateNoteButton() {
   const isMac =
     typeof window !== "undefined" && window.electronAPI?.platform === "darwin";
 
-  const createNoteMutation = api.notes.createNote.useMutation({
+  const mutation = api.notes.createNote.useMutation({
     onSuccess: async (newNote) => {
       utils.notes.getNotes.invalidate();
       let autoRecord = preferencesQuery.data?.autoDictateOnNewNote;
@@ -39,43 +52,48 @@ export function CreateNoteButton() {
     },
   });
 
-  const onCreateNote = useCallback(() => {
-    if (createNoteMutation.isPending) return;
+  const createNote = useCallback(() => {
+    if (mutation.isPending) return;
     const dateStr = new Date().toLocaleDateString(i18n.language, {
       day: "numeric",
       month: "short",
     });
-    createNoteMutation.mutate({
+    mutation.mutate({
       title: t("settings.notes.defaultTitleWithDate", { date: dateStr }),
     });
-  }, [createNoteMutation, i18n.language, t]);
+  }, [mutation, i18n.language, t]);
 
-  // Keyboard shortcut: Cmd+N (Mac) / Ctrl+N (Windows/Linux)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "n" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
-        onCreateNote();
+        createNote();
       }
     };
-
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [onCreateNote]);
+  }, [createNote]);
 
-  const shortcutDisplay = isMac ? "⌘ N" : "Ctrl+N";
+  const value = useMemo<CreateNoteContextValue>(
+    () => ({
+      createNote,
+      isPending: mutation.isPending,
+      shortcutDisplay: isMac ? "⌘ N" : "Ctrl+N",
+    }),
+    [createNote, mutation.isPending, isMac],
+  );
 
   return (
-    <SidebarMenuButton
-      onClick={onCreateNote}
-      disabled={createNoteMutation.isPending}
-      className="cursor-pointer"
-    >
-      <Plus />
-      <span>{t("settings.notes.sidebarButtonLabel")}</span>
-      <kbd className="pointer-events-none inline-flex h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground ml-auto">
-        {shortcutDisplay}
-      </kbd>
-    </SidebarMenuButton>
+    <CreateNoteContext.Provider value={value}>
+      {children}
+    </CreateNoteContext.Provider>
   );
+}
+
+export function useCreateNoteAction(): CreateNoteContextValue {
+  const ctx = useContext(CreateNoteContext);
+  if (!ctx) {
+    throw new Error("useCreateNoteAction must be used within CreateNoteProvider");
+  }
+  return ctx;
 }
