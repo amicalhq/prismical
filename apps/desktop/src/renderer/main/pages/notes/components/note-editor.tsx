@@ -174,7 +174,7 @@ export function NoteEditor({
         <RichTextPlugin
           contentEditable={
             <ContentEditable
-              className="min-h-[500px] px-4 py-2 outline-none text-base leading-relaxed"
+              className="min-h-[500px] px-4 py-2 outline-none text-base leading-normal selection:bg-indigo-500/20"
               aria-placeholder={t("settings.notes.note.bodyPlaceholder")}
               placeholder={
                 <div className="absolute top-2 left-4 text-muted-foreground pointer-events-none">
