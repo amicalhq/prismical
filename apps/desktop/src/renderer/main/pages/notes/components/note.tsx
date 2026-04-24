@@ -539,7 +539,7 @@ export default function Note({
         <div className="mx-auto flex w-full max-w-4xl flex-col items-center gap-2 px-6">
           <div
             className={`w-full transition-all duration-200 ease-out ${
-              isTranscriptionExpanded ? "max-w-2xl" : "max-w-md"
+              isTranscriptionExpanded ? "max-w-4xl" : "max-w-xl"
             } ${
               isTranscriptionOpen
                 ? `pointer-events-auto opacity-100 ${
