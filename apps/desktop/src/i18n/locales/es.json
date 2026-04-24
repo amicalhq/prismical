@@ -701,6 +701,17 @@
         "label": "Mostrar/ocultar Prismical",
         "description": "Muestra la ventana de Prismical desde cualquier lugar, u ocúltala si ya está enfocada"
       },
+      "builtIn": {
+        "title": "Atajos dentro de la app",
+        "description": "Funcionan cuando Prismical está enfocada; no se activan desde otras apps.",
+        "newNote": "Nueva nota",
+        "commandSearch": "Abrir búsqueda de comandos",
+        "home": "Ir a inicio",
+        "preferences": "Abrir preferencias",
+        "toggleSidebar": "Mostrar/ocultar barra lateral",
+        "back": "Ir atrás",
+        "forward": "Ir adelante"
+      },
       "validation": {
         "noKeysDetected": "No se detectaron teclas",
         "tooManyKeys": "Demasiadas teclas: usa {{max}} o menos",

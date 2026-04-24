@@ -701,6 +701,17 @@
         "label": "Prismicalの表示/非表示",
         "description": "どこからでもPrismicalのウィンドウを表示、またはフォーカス中の場合は非表示にします"
       },
+      "builtIn": {
+        "title": "アプリ内ショートカット",
+        "description": "Prismicalがフォーカスされているときのみ動作します。他のアプリからは使えません。",
+        "newNote": "新規ノート",
+        "commandSearch": "コマンド検索を開く",
+        "home": "ホームへ移動",
+        "preferences": "環境設定を開く",
+        "toggleSidebar": "サイドバーの表示/非表示",
+        "back": "戻る",
+        "forward": "進む"
+      },
       "validation": {
         "noKeysDetected": "キーが検出されません",
         "tooManyKeys": "キーが多すぎます - {{max}}個以下にしてください",

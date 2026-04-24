@@ -702,6 +702,17 @@
         "label": "Toggle Prismical",
         "description": "Show the Prismical window from anywhere, or hide it if it's already in focus"
       },
+      "builtIn": {
+        "title": "In-app shortcuts",
+        "description": "These work while Prismical is focused — they won't fire from other apps.",
+        "newNote": "New note",
+        "commandSearch": "Open command search",
+        "home": "Go to home",
+        "preferences": "Open preferences",
+        "toggleSidebar": "Toggle sidebar",
+        "back": "Go back",
+        "forward": "Go forward"
+      },
       "validation": {
         "noKeysDetected": "No keys detected",
         "tooManyKeys": "Too many keys - use {{max}} or fewer",

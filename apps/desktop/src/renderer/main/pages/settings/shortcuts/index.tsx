@@ -6,6 +6,47 @@ import { api } from "@/trpc/react";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 
+// Hard-coded, non-configurable shortcuts that are handled inside the
+// renderer (keydown listeners scattered across components) rather than via
+// the native helper / Electron globalShortcut. Listed here so the user can
+// see what's already bound — in sync with:
+//   - ⌘/Ctrl+N       → create-note-context.tsx
+//   - ⌘/Ctrl+K       → command-search-button.tsx
+//   - ⌘/Ctrl+H       → routes/settings/route.tsx
+//   - ⌘/Ctrl+,       → routes/settings/route.tsx
+//   - ⌘/Ctrl+B       → components/ui/sidebar.tsx (SIDEBAR_KEYBOARD_SHORTCUT)
+//   - ⌘[/Alt+←, ⌘]/Alt+→ (history back/forward) → routes/settings/route.tsx
+// If you add/move/rename one of those, update this list too.
+const BUILT_IN_SHORTCUTS: Array<{
+  labelKey: string;
+  mac: string;
+  other: string;
+}> = [
+  { labelKey: "settings.shortcuts.builtIn.newNote", mac: "⌘ N", other: "Ctrl+N" },
+  {
+    labelKey: "settings.shortcuts.builtIn.commandSearch",
+    mac: "⌘ K",
+    other: "Ctrl+K",
+  },
+  { labelKey: "settings.shortcuts.builtIn.home", mac: "⌘ H", other: "Ctrl+H" },
+  {
+    labelKey: "settings.shortcuts.builtIn.preferences",
+    mac: "⌘ ,",
+    other: "Ctrl+,",
+  },
+  {
+    labelKey: "settings.shortcuts.builtIn.toggleSidebar",
+    mac: "⌘ B",
+    other: "Ctrl+B",
+  },
+  { labelKey: "settings.shortcuts.builtIn.back", mac: "⌘ [", other: "Alt+←" },
+  {
+    labelKey: "settings.shortcuts.builtIn.forward",
+    mac: "⌘ ]",
+    other: "Alt+→",
+  },
+];
+
 // TEMP: native helper bridge is disabled in Prismical, so the PTT / hands-free
 // / paste-last-transcript / new-note shortcuts can't actually fire. Only the
 // openApp shortcut works (via Electron's globalShortcut). The state + handlers
@@ -16,6 +57,8 @@ const NATIVE_SHORTCUTS_ENABLED = false;
 
 export function ShortcutsSettingsPage() {
   const { t } = useTranslation();
+  const isMac =
+    typeof window !== "undefined" && window.electronAPI?.platform === "darwin";
   const [pushToTalkShortcut, setPushToTalkShortcut] = useState<number[]>([]);
   const [toggleRecordingShortcut, setToggleRecordingShortcut] = useState<
     number[]
@@ -281,6 +324,32 @@ export function ShortcutsSettingsPage() {
                 </div>
               </div>
             </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="space-y-4">
+            <div>
+              <Label className="text-base font-semibold text-foreground">
+                {t("settings.shortcuts.builtIn.title")}
+              </Label>
+              <p className="text-xs text-muted-foreground mt-1 max-w-md">
+                {t("settings.shortcuts.builtIn.description")}
+              </p>
+            </div>
+            <ul className="divide-y divide-border">
+              {BUILT_IN_SHORTCUTS.map(({ labelKey, mac, other }) => (
+                <li
+                  key={labelKey}
+                  className="flex items-center justify-between py-2"
+                >
+                  <span className="text-sm">{t(labelKey)}</span>
+                  <kbd className="inline-flex items-center rounded-md bg-muted px-2 py-1 font-mono text-xs">
+                    {isMac ? mac : other}
+                  </kbd>
+                </li>
+              ))}
+            </ul>
           </CardContent>
         </Card>
       </div>

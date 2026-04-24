@@ -4,7 +4,7 @@ import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { SettingsSidebar } from "../../components/settings-sidebar";
 import { SiteHeader } from "@/components/site-header";
 import { MeetingRecordingBanner } from "../../components/meeting-recording-banner";
-import { useLocation, useNavigate } from "@tanstack/react-router";
+import { useLocation, useNavigate, useRouter } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
 import {
   SettingsHeaderProvider,
@@ -30,6 +30,7 @@ function SettingsLayout() {
 function SettingsLayoutContent() {
   const location = useLocation();
   const navigate = useNavigate();
+  const router = useRouter();
   const scrollRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const {
@@ -50,6 +51,16 @@ function SettingsLayoutContent() {
     navigate({ to: "/settings/preferences" });
   }, [navigate]);
 
+  // History navigation:
+  //   macOS: Cmd+[ / Cmd+]
+  //   Win/Linux: Alt+Left / Alt+Right
+  const goBack = useCallback(() => {
+    router.history.back();
+  }, [router]);
+  const goForward = useCallback(() => {
+    router.history.forward();
+  }, [router]);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "h" && (e.metaKey || e.ctrlKey)) {
@@ -58,12 +69,24 @@ function SettingsLayoutContent() {
       } else if (e.key === "," && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
         goPreferences();
+      } else if (
+        (e.key === "[" && (e.metaKey || e.ctrlKey)) ||
+        (e.key === "ArrowLeft" && e.altKey)
+      ) {
+        e.preventDefault();
+        goBack();
+      } else if (
+        (e.key === "]" && (e.metaKey || e.ctrlKey)) ||
+        (e.key === "ArrowRight" && e.altKey)
+      ) {
+        e.preventDefault();
+        goForward();
       }
     };
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [goHome, goPreferences]);
+  }, [goHome, goPreferences, goBack, goForward]);
 
   // Reset scroll state (and stale header content) on page change
   useEffect(() => {
