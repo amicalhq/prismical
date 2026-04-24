@@ -12,6 +12,16 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { FileTextIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTranslation } from "react-i18next";
@@ -77,6 +87,11 @@ export default function NotePage({
   // Active tab. Defaults to AI Summary when an artifact exists, otherwise Raw.
   const [activeTab, setActiveTab] = useState<NoteTab>("summary");
   const lastSeenArtifactUpdatedAtRef = useRef<number | null>(null);
+
+  // Surfaced when the user clicks "Generate notes" without a default language
+  // model configured — dialog routes them to the settings page.
+  const [showNoLanguageModelDialog, setShowNoLanguageModelDialog] =
+    useState(false);
 
   // Auto-switch to AI Summary when a new/updated artifact arrives.
   useEffect(() => {
@@ -306,7 +321,7 @@ export default function NotePage({
 
   const handleGenerateNotes = useCallback(() => {
     if (!defaultLanguageModelQuery.data) {
-      toast.error("Configure a language model before generating notes.");
+      setShowNoLanguageModelDialog(true);
       return;
     }
 
@@ -406,6 +421,7 @@ export default function NotePage({
   }
   // Use the presentational component
   return (
+    <>
     <Note
       noteId={noteIdNumber}
       noteTitle={noteTitle}
@@ -426,7 +442,6 @@ export default function NotePage({
       onStartMeeting={handleStartMeeting}
       onStopMeeting={handleStopMeeting}
       onGenerateNotes={handleGenerateNotes}
-      canGenerateNotes={Boolean(defaultLanguageModelQuery.data)}
       isGeneratingNotes={generateNotesMutation.isPending}
       isDeleting={deleteMutation.isPending}
     >
@@ -457,5 +472,34 @@ export default function NotePage({
         <NoteEditor noteId={noteIdNumber} onReady={handleEditorReady} />
       )}
     </Note>
+    <AlertDialog
+      open={showNoLanguageModelDialog}
+      onOpenChange={setShowNoLanguageModelDialog}
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Set a default language model</AlertDialogTitle>
+          <AlertDialogDescription>
+            Generating an AI summary needs a language model. Pick one in
+            Settings → AI Models and try again.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={() => {
+              setShowNoLanguageModelDialog(false);
+              navigate({
+                to: "/settings/ai-models",
+                search: { tab: "language" },
+              });
+            }}
+          >
+            Open settings
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   );
 }

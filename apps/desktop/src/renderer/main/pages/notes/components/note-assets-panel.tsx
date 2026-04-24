@@ -29,7 +29,6 @@ type NoteAssetsPanelProps = {
   transcript: TranscriptEvent[];
   meetingState: MeetingRuntimeState;
   onGenerateNotes: () => void;
-  canGenerateNotes: boolean;
   isGeneratingNotes: boolean;
 };
 
@@ -40,7 +39,6 @@ export function NoteAssetsPanel({
   transcript,
   meetingState,
   onGenerateNotes,
-  canGenerateNotes,
   isGeneratingNotes,
 }: NoteAssetsPanelProps) {
   const { t } = useTranslation();
@@ -135,12 +133,8 @@ export function NoteAssetsPanel({
                     size="sm"
                     className="h-7 shrink-0 rounded-full px-3 text-xs"
                     onClick={onGenerateNotes}
-                    disabled={!canGenerateNotes || isGeneratingNotes}
-                    title={
-                      canGenerateNotes
-                        ? "Generate notes from transcript"
-                        : "Configure a language model to generate notes"
-                    }
+                    disabled={isGeneratingNotes}
+                    title="Generate notes from transcript"
                   >
                     {isGeneratingNotes ? "Generating..." : "Generate notes"}
                   </Button>

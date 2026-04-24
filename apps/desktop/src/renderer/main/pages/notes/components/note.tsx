@@ -64,7 +64,6 @@ export type NotePageUIProps = {
   onStartMeeting: () => void;
   onStopMeeting: () => void;
   onGenerateNotes: () => void;
-  canGenerateNotes: boolean;
   isGeneratingNotes: boolean;
   isDeleting?: boolean;
   children?: ReactNode;
@@ -93,7 +92,6 @@ export default function Note({
   onStartMeeting,
   onStopMeeting,
   onGenerateNotes,
-  canGenerateNotes,
   isGeneratingNotes,
   isDeleting = false,
   children,
@@ -265,7 +263,6 @@ export default function Note({
               transcript={transcript}
               meetingState={meetingState}
               onGenerateNotes={onGenerateNotes}
-              canGenerateNotes={canGenerateNotes}
               isGeneratingNotes={isGeneratingNotes}
             />
           </div>
