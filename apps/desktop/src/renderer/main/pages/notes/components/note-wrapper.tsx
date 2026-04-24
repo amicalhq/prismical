@@ -423,7 +423,6 @@ export default function NotePage({
   return (
     <>
     <Note
-      noteId={noteIdNumber}
       noteTitle={noteTitle}
       noteEmoji={noteIcon}
       noteStarred={noteStarred}
@@ -437,6 +436,8 @@ export default function NotePage({
       onEmojiChange={handleEmojiChange}
       onStarredChange={handleStarredChange}
       onFolderChange={handleFolderChange}
+      noteUpdatedAt={note?.updatedAt ?? new Date()}
+      eventData={note?.eventData ?? null}
       meetingState={meetingState}
       transcript={transcript}
       onStartMeeting={handleStartMeeting}

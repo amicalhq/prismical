@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import {
+  Calendar,
   FileTextIcon,
   FolderOpen,
   Loader2,
@@ -34,6 +35,12 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { CreateFolderDialog } from "@/renderer/main/components/create-folder-dialog";
 import { FolderPickerDialog } from "@/renderer/main/components/folder-picker-dialog";
@@ -44,12 +51,24 @@ import { NoteRecordingDock } from "./note-recording-dock";
 import type { NoteAssetKind } from "../types";
 import type { MeetingRuntimeState, TranscriptEvent } from "@/types/meeting";
 
+export type NoteEventData = {
+  eventId: string;
+  title: string;
+  calendarColor: string;
+  meetingUrl?: string;
+  calendarEventUrl?: string;
+  startAt: Date;
+  endAt: Date;
+  isAllDay: boolean;
+};
+
 export type NotePageUIProps = {
-  noteId: number;
   noteTitle: string;
   noteEmoji: string | null;
   noteStarred: boolean;
   noteFolder: string | null;
+  noteUpdatedAt: Date;
+  eventData: NoteEventData | null;
   folderOptions: string[];
   isLoading: boolean;
   activeAsset: NoteAssetKind | null;
@@ -72,12 +91,64 @@ export type NotePageUIProps = {
 const SCROLLBAR_WHILE_SCROLLING_CLASS =
   "data-[state=hidden]:opacity-0 data-[state=visible]:opacity-100 transition-opacity duration-150";
 
+// Cheap relative-time formatter — ticks once a minute so "Edited 5 min ago"
+// stays roughly correct without a dependency like date-fns.
+function formatRelativeTime(date: Date, locale: string): string {
+  const now = new Date();
+  const diffSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
+
+  if (diffSeconds < 60) return rtf.format(0, "second");
+  const diffMins = Math.floor(diffSeconds / 60);
+  if (diffMins < 60) return rtf.format(-diffMins, "minute");
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffHours < 24) return rtf.format(-diffHours, "hour");
+
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (
+    date.getDate() === yesterday.getDate() &&
+    date.getMonth() === yesterday.getMonth() &&
+    date.getFullYear() === yesterday.getFullYear()
+  ) {
+    return rtf.format(-1, "day");
+  }
+
+  return new Intl.DateTimeFormat(locale, {
+    day: "numeric",
+    month: "short",
+    year: date.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
+  }).format(date);
+}
+
+function formatEventTimeRange(
+  startAt: Date,
+  endAt: Date,
+  isAllDay: boolean,
+  locale: string,
+): string {
+  if (isAllDay) {
+    return new Intl.DateTimeFormat(locale, {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+    }).format(startAt);
+  }
+  const time = (d: Date) =>
+    new Intl.DateTimeFormat(locale, {
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(d);
+  return `${time(startAt)} – ${time(endAt)}`;
+}
+
 export default function Note({
-  noteId,
   noteTitle,
   noteEmoji,
   noteStarred,
   noteFolder,
+  noteUpdatedAt,
+  eventData,
   folderOptions,
   isLoading,
   activeAsset,
@@ -96,12 +167,19 @@ export default function Note({
   isDeleting = false,
   children,
 }: NotePageUIProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { setActions, setHeaderContent } = useSettingsHeaderActions();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showCreateFolderDialog, setShowCreateFolderDialog] = useState(false);
   const [showFolderPicker, setShowFolderPicker] = useState(false);
+  // Re-render once a minute so the "Edited X ago" label stays fresh without
+  // each edit having to round-trip through state.
+  const [, setRelativeTimeTick] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setRelativeTimeTick((n) => n + 1), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
 
   useEffect(() => {
     setHeaderContent(null);
@@ -109,61 +187,9 @@ export default function Note({
   }, [setHeaderContent]);
 
   useEffect(() => {
-    setActions(
-      <div className="flex items-center gap-1">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 w-7 p-0"
-          onClick={() => onStarredChange(!noteStarred)}
-          aria-label={
-            noteStarred
-              ? t("settings.notes.note.actions.removeFromFavorites")
-              : t("settings.notes.note.actions.addToFavorites")
-          }
-          title={
-            noteStarred
-              ? t("settings.notes.note.actions.removeFromFavorites")
-              : t("settings.notes.note.actions.addToFavorites")
-          }
-        >
-          <Star
-            className={`h-4 w-4 ${
-              noteStarred ? "fill-yellow-400 text-yellow-400" : ""
-            }`}
-          />
-        </Button>
-
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem
-              className="gap-2"
-              onSelect={() => setShowFolderPicker(true)}
-            >
-              <FolderOpen className="h-4 w-4" />
-              {t("settings.notes.note.actions.moveToFolder")}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              className="gap-2"
-              variant="destructive"
-              onSelect={() => setShowDeleteDialog(true)}
-            >
-              <Trash2 className="h-4 w-4 text-destructive" />
-              {t("settings.notes.note.actions.delete")}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>,
-    );
-
+    setActions(null);
     return () => setActions(null);
-  }, [noteId, noteStarred, onStarredChange, setActions, t]);
+  }, [setActions]);
 
   const handleDeleteClick = () => {
     setShowDeleteDialog(false);
@@ -198,12 +224,12 @@ export default function Note({
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-12 w-12 shrink-0 p-0 hover:bg-muted/50"
+                  className="!h-12 !w-12 shrink-0 !p-0 hover:bg-muted/50"
                 >
                   {noteEmoji ? (
                     <span className="text-2xl">{noteEmoji}</span>
                   ) : (
-                    <FileTextIcon className="h-6 w-6 text-muted-foreground" />
+                    <FileTextIcon className="!h-6 !w-6 text-muted-foreground" />
                   )}
                 </Button>
               </PopoverTrigger>
@@ -239,10 +265,91 @@ export default function Note({
             <Input
               value={noteTitle}
               onChange={(event) => onTitleChange(event.target.value)}
-              className="flex-1 border-0 bg-transparent px-4 py-2 text-4xl font-semibold shadow-none placeholder:text-muted-foreground focus-visible:ring-0"
+              className="flex-1 !h-auto !bg-transparent dark:!bg-transparent px-4 py-2 !text-4xl font-semibold !border-0 !shadow-none placeholder:text-muted-foreground focus-visible:!border-0 focus-visible:!ring-0"
               placeholder={t("settings.notes.note.titlePlaceholder")}
             />
           </div>
+
+          <TooltipProvider>
+            <div className="flex flex-col gap-0.5 bg-card pl-4">
+              <div className="flex flex-wrap items-center gap-1">
+                <span className="mr-1 text-sm text-muted-foreground">
+                  {t("settings.notes.note.edited", {
+                    date: formatRelativeTime(noteUpdatedAt, i18n.language),
+                  })}
+                </span>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="gap-2"
+                      onClick={() => onStarredChange(!noteStarred)}
+                    >
+                      <Star
+                        className={`h-4 w-4 ${
+                          noteStarred ? "fill-yellow-400 text-yellow-400" : ""
+                        }`}
+                      />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {noteStarred
+                      ? t("settings.notes.note.actions.removeFromFavorites")
+                      : t("settings.notes.note.actions.addToFavorites")}
+                  </TooltipContent>
+                </Tooltip>
+
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="sm">
+                      <MoreHorizontal className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      className="gap-2"
+                      onSelect={() => setShowFolderPicker(true)}
+                    >
+                      <FolderOpen className="h-4 w-4" />
+                      {t("settings.notes.note.actions.moveToFolder")}
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      className="gap-2"
+                      variant="destructive"
+                      onSelect={() => setShowDeleteDialog(true)}
+                    >
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                      {t("settings.notes.note.actions.delete")}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+
+              {eventData ? (
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                    <Calendar
+                      className="h-3.5 w-3.5"
+                      style={{ color: eventData.calendarColor }}
+                    />
+                    <span>{eventData.title}</span>
+                    <span className="h-1 w-1 rounded-full bg-muted-foreground" />
+                    <span className="text-xs">
+                      {formatEventTimeRange(
+                        eventData.startAt,
+                        eventData.endAt,
+                        eventData.isAllDay,
+                        i18n.language,
+                      )}
+                    </span>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </TooltipProvider>
           {children}
         </div>
       </ScrollArea>
