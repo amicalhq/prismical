@@ -1,4 +1,4 @@
-import { createOpenAI } from "@ai-sdk/openai";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { generateText } from "ai";
 import { FormattingProvider, FormatParams } from "../../core/pipeline-types";
 import { logger } from "../../../main/logger";
@@ -9,7 +9,7 @@ import { constructFormatterPrompt } from "./formatter-prompt";
 export class OpenAICompatibleFormatter implements FormattingProvider {
   readonly name = "openai-compatible";
 
-  private provider: ReturnType<typeof createOpenAI>;
+  private provider: ReturnType<typeof createOpenAICompatible>;
   private baseURL: string;
 
   constructor(
@@ -18,13 +18,20 @@ export class OpenAICompatibleFormatter implements FormattingProvider {
     private model: string,
   ) {
     this.baseURL = baseURL;
-    this.provider = createOpenAI({
+    this.provider = createOpenAICompatible({
       apiKey,
       baseURL,
-      compatibility: "compatible",
       name: "openai-compatible",
       headers: {
         "User-Agent": getUserAgent(),
+      },
+      // Newer OpenAI models (o-series, gpt-5) reject `max_tokens` and require
+      // `max_completion_tokens`. Renaming unconditionally is safe: OpenAI accepts
+      // the new name for all chat models.
+      transformRequestBody: (body) => {
+        if (typeof body.max_tokens !== "number") return body;
+        const { max_tokens, ...rest } = body;
+        return { ...rest, max_completion_tokens: max_tokens };
       },
     });
   }
@@ -54,7 +61,7 @@ export class OpenAICompatibleFormatter implements FormattingProvider {
           },
         ],
         temperature: 0.1,
-        maxTokens: 2000,
+        maxOutputTokens: 2000,
       });
 
       const extraction = extractFormattedText(aiResponse, text);

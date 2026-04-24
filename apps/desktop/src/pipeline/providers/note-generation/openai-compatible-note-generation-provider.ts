@@ -1,4 +1,4 @@
-import { createOpenAI } from "@ai-sdk/openai";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { generateText } from "ai";
 import { logger } from "@/main/logger";
 import { getUserAgent } from "@/utils/http-client";
@@ -22,13 +22,20 @@ export class OpenAICompatibleNoteGenerationProvider
     baseURL: string,
     private readonly model: string,
   ) {
-    this.provider = createOpenAI({
+    this.provider = createOpenAICompatible({
       apiKey,
       baseURL,
-      compatibility: "compatible",
       name: "openai-compatible",
       headers: {
         "User-Agent": getUserAgent(),
+      },
+      // Newer OpenAI models (o-series, gpt-5) reject `max_tokens` and require
+      // `max_completion_tokens`. Renaming unconditionally is safe: OpenAI accepts
+      // the new name for all chat models.
+      transformRequestBody: (body) => {
+        if (typeof body.max_tokens !== "number") return body;
+        const { max_tokens, ...rest } = body;
+        return { ...rest, max_completion_tokens: max_tokens };
       },
     });
   }
@@ -50,7 +57,7 @@ export class OpenAICompatibleNoteGenerationProvider
         { role: "user", content: userPrompt },
       ],
       temperature: 0.1,
-      maxTokens: 3000,
+      maxOutputTokens: 3000,
     });
 
     return {

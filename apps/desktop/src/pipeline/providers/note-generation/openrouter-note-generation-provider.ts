@@ -42,7 +42,7 @@ export class OpenRouterNoteGenerationProvider
         { role: "user", content: userPrompt },
       ],
       temperature: 0.1,
-      maxTokens: 3000,
+      maxOutputTokens: 3000,
     });
 
     return {

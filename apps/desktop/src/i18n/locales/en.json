@@ -874,7 +874,7 @@
           "openRouter": "API Key",
           "ollama": "Ollama URL (e.g., http://localhost:11434)",
           "openAICompatibleApiKey": "API Key",
-          "openAICompatibleBaseURL": "Base URL (e.g., https://api.example.com/v1)"
+          "openAICompatibleBaseURL": "Base URL (e.g., https://api.openai.com/v1)"
         },
         "buttons": {
           "connect": "Connect",

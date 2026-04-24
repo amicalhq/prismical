@@ -51,7 +51,7 @@ export class OpenRouterProvider implements FormattingProvider {
           },
         ],
         temperature: 0.1, // Low temperature for consistent formatting
-        maxTokens: 2000,
+        maxOutputTokens: 2000,
       });
 
       logger.pipeline.debug("Formatting raw response", {
