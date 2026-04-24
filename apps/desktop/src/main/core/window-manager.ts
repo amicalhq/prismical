@@ -1,6 +1,7 @@
 import { BrowserWindow, screen, nativeTheme, shell } from "electron";
 import path from "node:path";
 import { logger } from "../logger";
+import { getAppIconPath } from "./icon";
 import type { SettingsService } from "../../services/settings-service";
 import type { createIPCHandler } from "electron-trpc-experimental/main";
 
@@ -216,6 +217,7 @@ export class WindowManager {
       width: 1200,
       height: windowHeight,
       frame: true,
+      icon: getAppIconPath(),
       backgroundColor:
         process.platform === "darwin" ? "#00000000" : colors.backgroundColor,
       ...(process.platform === "darwin"

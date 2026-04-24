@@ -6,6 +6,7 @@ import { logger } from "./logger";
 
 import started from "electron-squirrel-startup";
 import { AppManager } from "./core/app-manager";
+import { getAppIconPath } from "./core/icon";
 import { isWindows } from "../utils/platform";
 import { ServiceManager } from "./managers/service-manager";
 
@@ -86,6 +87,12 @@ app.on("second-instance", (_event, commandLine) => {
 
 app.whenReady().then(async () => {
   try {
+    // macOS dock icon in dev: packaged builds read the bundle icon from
+    // packagerConfig.icon, but electron-forge start shows Electron's default
+    // unless we set one explicitly.
+    if (process.platform === "darwin") {
+      app.dock?.setIcon(getAppIconPath());
+    }
     await appManager.initialize();
     isInitialized = true;
 
