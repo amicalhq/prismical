@@ -537,7 +537,7 @@ export default function Note({
       <div className="pointer-events-none absolute inset-x-0 bottom-4 z-10">
         <div className="mx-auto flex w-full max-w-4xl flex-col items-center gap-2 px-6">
           <div
-            className={`w-full max-w-md overflow-hidden transition-all duration-200 ease-out ${
+            className={`w-full max-w-md transition-all duration-200 ease-out ${
               isTranscriptionOpen
                 ? "pointer-events-auto h-[50vh] opacity-100"
                 : "pointer-events-none h-0 opacity-0"

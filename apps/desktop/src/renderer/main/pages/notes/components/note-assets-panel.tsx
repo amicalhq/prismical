@@ -112,26 +112,25 @@ export function NoteAssetsPanel({
       return (
         <div className="flex h-full min-h-0">
           <div
-            className={`flex h-full min-h-0 w-full flex-col overflow-hidden rounded-2xl border bg-card transition-[opacity,transform,border-color,box-shadow] duration-120 ease-out ${
+            className={`flex h-full min-h-0 w-full flex-col overflow-hidden rounded-2xl bg-black/80 dark:bg-black/70 backdrop-blur-md transition-[opacity,transform,box-shadow] duration-120 ease-out ${
               isOpen
-                ? "translate-x-0 opacity-100 border-border/70 shadow-sm"
-                : "translate-x-2 opacity-0 border-border/0 shadow-none"
+                ? "translate-x-0 opacity-100 shadow-[0_1px_4px_rgba(0,0,0,0.15)]"
+                : "translate-x-2 opacity-0 shadow-none"
             }`}
           >
             <div
-              className={`flex items-center justify-between gap-3 bg-muted/45 px-4 py-2.5 transition-opacity duration-100 ${
+              className={`flex items-center justify-between gap-3 px-4 py-2.5 transition-opacity duration-100 ${
                 isContentVisible ? "opacity-100" : "opacity-0"
               }`}
             >
               <div className="flex min-w-0 items-center gap-2">
-                <h2 className="min-w-0 truncate text-sm font-semibold">
+                <h2 className="min-w-0 truncate text-sm font-semibold text-white">
                   {t("settings.notes.note.transcription")}
                 </h2>
                 {transcript.length > 0 && meetingState === "idle" ? (
                   <Button
-                    variant="secondary"
                     size="sm"
-                    className="h-7 shrink-0 rounded-full px-3 text-xs"
+                    className="h-7 shrink-0 rounded-full bg-white/15 px-3 text-xs text-white hover:bg-white/25"
                     onClick={onGenerateNotes}
                     disabled={isGeneratingNotes}
                     title="Generate notes from transcript"
@@ -143,7 +142,7 @@ export function NoteAssetsPanel({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 shrink-0"
+                className="h-8 w-8 shrink-0 text-white/70 hover:bg-white/15 hover:text-white"
                 onClick={onClose}
                 aria-label={t("settings.notes.note.actions.closeTranscription")}
                 title={t("settings.notes.note.actions.closeTranscription")}
@@ -166,7 +165,7 @@ export function NoteAssetsPanel({
                 }`}
               >
                 {transcript.length === 0 ? (
-                  <div className="px-2 py-6 text-center text-sm text-muted-foreground">
+                  <div className="px-2 py-6 text-center text-sm text-white/60">
                     {isProcessing
                       ? "Meeting transcription will appear here."
                       : "Start a meeting from the dock to capture transcript here."}
@@ -198,11 +197,11 @@ export function NoteAssetsPanel({
                               className={`mb-0.5 flex items-center gap-1.5 px-1 ${isUser ? "flex-row-reverse" : "flex-row"}`}
                             >
                               <span
-                                className={`text-[11px] font-medium ${isUser ? "text-muted-foreground" : "text-emerald-400"}`}
+                                className={`text-[11px] font-medium ${isUser ? "text-white/70" : "text-emerald-400"}`}
                               >
                                 {getSpeakerLabel(segment)}
                               </span>
-                              <span className="text-[10px] tabular-nums text-muted-foreground/60">
+                              <span className="text-[10px] tabular-nums text-white/40">
                                 {formatTimestamp(segment.startTimeMs)}
                               </span>
                             </div>
@@ -210,8 +209,8 @@ export function NoteAssetsPanel({
                           <div
                             className={`rounded-2xl px-3 py-1.5 text-[13px] leading-relaxed ${
                               isUser
-                                ? "bg-primary text-primary-foreground rounded-br-md"
-                                : "bg-muted/70 text-foreground rounded-bl-md"
+                                ? "bg-white text-black rounded-br-md"
+                                : "bg-neutral-800 text-white rounded-bl-md"
                             }`}
                           >
                             {segment.text}
