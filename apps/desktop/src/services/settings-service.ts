@@ -12,6 +12,11 @@ import {
   normalizeOllamaUrl,
   normalizeOpenAICompatibleBaseURL,
 } from "../utils/provider-utils";
+import {
+  validateShortcutComprehensive,
+  type ShortcutType,
+  type ValidationResult,
+} from "../utils/shortcut-validation";
 
 /**
  * Database-backed settings service with typed configuration
@@ -21,6 +26,7 @@ export interface ShortcutsConfig {
   toggleRecording: number[];
   pasteLastTranscript: number[];
   newNote: number[];
+  openApp: number[];
 }
 
 export interface AppPreferences {
@@ -200,7 +206,30 @@ export class SettingsService extends EventEmitter {
       toggleRecording: shortcuts?.toggleRecording ?? [],
       pasteLastTranscript: shortcuts?.pasteLastTranscript ?? [],
       newNote: shortcuts?.newNote ?? [],
+      openApp: shortcuts?.openApp ?? [],
     };
+  }
+
+  /**
+   * Validate and persist a single shortcut without going through ShortcutManager.
+   * Used by shortcuts that don't need the native key-capture bridge (e.g. openApp,
+   * which is registered via Electron's globalShortcut).
+   */
+  async setShortcutStandalone(
+    type: ShortcutType,
+    keys: number[],
+  ): Promise<ValidationResult> {
+    const current = await this.getShortcuts();
+    const result = validateShortcutComprehensive({
+      candidateShortcut: keys,
+      candidateType: type,
+      shortcutsByType: current,
+      platform: process.platform,
+    });
+    if (!result.valid) return result;
+
+    await this.setShortcuts({ ...current, [type]: keys });
+    return result;
   }
 
   /**
@@ -219,6 +248,7 @@ export class SettingsService extends EventEmitter {
         ? shortcuts.pasteLastTranscript
         : undefined,
       newNote: shortcuts.newNote?.length ? shortcuts.newNote : undefined,
+      openApp: shortcuts.openApp?.length ? shortcuts.openApp : undefined,
     };
     await updateSettingsSection("shortcuts", dataToStore);
   }

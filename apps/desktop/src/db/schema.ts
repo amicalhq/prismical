@@ -220,6 +220,7 @@ export interface AppSettingsData {
     toggleRecording?: number[];
     pasteLastTranscript?: number[];
     newNote?: number[];
+    openApp?: number[];
   };
 
   modelProvidersConfig?: {

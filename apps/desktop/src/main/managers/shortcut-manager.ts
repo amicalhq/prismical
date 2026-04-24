@@ -1,6 +1,9 @@
 import { EventEmitter } from "events";
 import { globalShortcut } from "electron";
-import { SettingsService } from "@/services/settings-service";
+import {
+  SettingsService,
+  type ShortcutsConfig,
+} from "@/services/settings-service";
 import { NativeBridge } from "@/services/platform/native-bridge-service";
 import { KeyEventPayload, HelperEvent } from "@prismical/types";
 import { logger } from "@/main/logger";
@@ -19,20 +22,17 @@ interface KeyInfo {
   timestamp: number;
 }
 
-interface ShortcutConfig {
-  pushToTalk: number[];
-  toggleRecording: number[];
-  pasteLastTranscript: number[];
-  newNote: number[];
-}
-
 export class ShortcutManager extends EventEmitter {
   private activeKeys = new Map<number, KeyInfo>();
-  private shortcuts: ShortcutConfig = {
+  // openApp is stored for completeness (persisted with the rest of the
+  // shortcut config) but isn't consumed by the native bridge — it's
+  // registered via Electron's globalShortcut in OpenAppShortcutManager.
+  private shortcuts: ShortcutsConfig = {
     pushToTalk: [],
     toggleRecording: [],
     pasteLastTranscript: [],
     newNote: [],
+    openApp: [],
   };
   private settingsService: SettingsService;
   private nativeBridge: NativeBridge;

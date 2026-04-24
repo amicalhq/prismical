@@ -44,6 +44,7 @@ const getDefaultShortcuts = () => {
         MAC_KEYCODES.V,
       ],
       newNote: [MAC_KEYCODES.CMD, MAC_KEYCODES.CTRL, MAC_KEYCODES.N],
+      openApp: [MAC_KEYCODES.CMD, MAC_KEYCODES.SHIFT, MAC_KEYCODES.P],
     };
   }
 
@@ -60,6 +61,7 @@ const getDefaultShortcuts = () => {
       WINDOWS_KEYCODES.Z,
     ],
     newNote: [WINDOWS_KEYCODES.ALT, WINDOWS_KEYCODES.SHIFT, WINDOWS_KEYCODES.N],
+    openApp: [WINDOWS_KEYCODES.CTRL, WINDOWS_KEYCODES.SHIFT, WINDOWS_KEYCODES.P],
   };
 };
 

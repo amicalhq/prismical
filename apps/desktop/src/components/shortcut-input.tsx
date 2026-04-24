@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Pencil, X } from "lucide-react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { api } from "@/trpc/react";
 import { toast } from "sonner";
 import { getKeyFromKeycode } from "@/utils/keycode-map";
+import { webKeyboardEventToKeycode } from "@/utils/web-keyboard-event-to-keycode";
 import { useTranslation } from "react-i18next";
 
 interface ShortcutInputProps {
@@ -163,9 +164,17 @@ export function ShortcutInput({
   const setRecordingStateMutation =
     api.settings.setShortcutRecordingState.useMutation();
 
-  const handleStartRecording = () => {
+  const handleStartRecording = async () => {
+    // Wait for the main process to suspend its globalShortcut before flipping
+    // the UI into recording mode — otherwise the user's first keypress can
+    // still be consumed by the currently-registered global hotkey.
+    try {
+      await setRecordingStateMutation.mutateAsync(true);
+    } catch (error) {
+      console.error("Failed to enter shortcut recording mode", error);
+      return;
+    }
     onRecordingShortcutChange(true);
-    setRecordingStateMutation.mutate(true);
   };
 
   const handleCancelRecording = () => {
@@ -174,45 +183,99 @@ export function ShortcutInput({
     setRecordingStateMutation.mutate(false);
   };
 
-  // Subscribe to key events when recording
-  // Note: activeKeys closure is fresh on each render because useSubscription
-  // updates its callback reference, so previousKeys correctly captures the
-  // previous state value when onData fires.
-  api.settings.activeKeysUpdates.useSubscription(undefined, {
-    enabled: isRecordingShortcut,
-    onData: (keys: number[]) => {
-      const previousKeys = activeKeys;
-      setActiveKeys(keys);
-
-      // When any key is released, validate the combination
-      if (previousKeys.length > 0 && keys.length < previousKeys.length) {
-        const result = validateShortcutFormat(previousKeys);
-
-        if (result.valid && result.shortcut) {
-          // Basic format is valid - let parent handle backend validation
-          onChange(result.shortcut);
-        } else {
-          toast.error(
-            result.error
-              ? t(result.error.key, result.error.params)
-              : t("settings.shortcuts.validation.invalidKeyCombination"),
-          );
-        }
-
-        onRecordingShortcutChange(false);
-        setRecordingStateMutation.mutate(false);
-      }
-    },
-    onError: (error) => {
-      console.error("Error subscribing to active keys", error);
-    },
-  });
-
   // Reset state when recording starts
   useEffect(() => {
     if (isRecordingShortcut) {
       setActiveKeys([]);
     }
+  }, [isRecordingShortcut]);
+
+  // Renderer-side fallback: when the native-bridge-backed key subscription
+  // isn't emitting (e.g. native helpers disabled), capture keys via the
+  // window's keyboard events so the user can still record a shortcut.
+  const pressedKeysRef = useRef<Set<number>>(new Set());
+  // Stash callbacks in a ref so the keydown effect below only re-runs when
+  // isRecordingShortcut flips — without this, unstable prop identities from
+  // the parent would re-run the effect on every setActiveKeys call and wipe
+  // the pressed-keys set between keydowns.
+  const latestRef = useRef({
+    onChange,
+    onRecordingShortcutChange,
+    setRecordingStateMutation,
+    t,
+  });
+  latestRef.current = {
+    onChange,
+    onRecordingShortcutChange,
+    setRecordingStateMutation,
+    t,
+  };
+
+  useEffect(() => {
+    if (!isRecordingShortcut) return;
+
+    pressedKeysRef.current = new Set();
+
+    const finishRecording = (prevKeys: number[]) => {
+      const { onChange, onRecordingShortcutChange, setRecordingStateMutation, t } =
+        latestRef.current;
+      const result = validateShortcutFormat(prevKeys);
+      if (result.valid && result.shortcut) {
+        onChange(result.shortcut);
+      } else {
+        toast.error(
+          result.error
+            ? t(result.error.key, result.error.params)
+            : t("settings.shortcuts.validation.invalidKeyCombination"),
+        );
+      }
+      onRecordingShortcutChange(false);
+      setRecordingStateMutation.mutate(false);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const keycode = webKeyboardEventToKeycode(event);
+      if (keycode === undefined) return;
+      event.preventDefault();
+      event.stopPropagation();
+
+      const pressed = pressedKeysRef.current;
+      if (pressed.has(keycode)) return;
+      pressed.add(keycode);
+      setActiveKeys(Array.from(pressed));
+    };
+
+    const handleKeyUp = (event: KeyboardEvent) => {
+      const keycode = webKeyboardEventToKeycode(event);
+      if (keycode === undefined) return;
+      event.preventDefault();
+      event.stopPropagation();
+
+      const pressed = pressedKeysRef.current;
+      if (!pressed.has(keycode)) return;
+
+      const prevKeys = Array.from(pressed);
+      pressed.delete(keycode);
+      setActiveKeys(Array.from(pressed));
+
+      // Mirror the native subscription's behavior: any key release finishes
+      // the recording, using the snapshot of keys that were down just before.
+      if (prevKeys.length > 0) {
+        finishRecording(prevKeys);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    window.addEventListener("keyup", handleKeyUp, true);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown, true);
+      window.removeEventListener("keyup", handleKeyUp, true);
+      // Safety net: if the component unmounts (e.g. user navigates away)
+      // while still recording, restore the suspended globalShortcut so it
+      // doesn't stay disabled forever. Idempotent when recording ended
+      // cleanly — finishRecording already called mutate(false).
+      latestRef.current.setRecordingStateMutation.mutate(false);
+    };
   }, [isRecordingShortcut]);
 
   return (

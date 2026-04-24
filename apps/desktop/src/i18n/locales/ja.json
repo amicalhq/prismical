@@ -678,7 +678,8 @@
         "pushToTalkUpdated": "プッシュトゥトークのショートカットを更新しました",
         "handsFreeUpdated": "ハンズフリーモードのショートカットを更新しました",
         "pasteLastTranscriptUpdated": "最新の文字起こしを貼り付けるショートカットを更新しました",
-        "newNoteUpdated": "新規ノートのショートカットを更新しました"
+        "newNoteUpdated": "新規ノートのショートカットを更新しました",
+        "openAppUpdated": "Prismicalの表示/非表示ショートカットを更新しました"
       },
       "pushToTalk": {
         "label": "プッシュトゥトーク",
@@ -695,6 +696,10 @@
       "newNote": {
         "label": "新規ノート",
         "description": "ノートウィンドウを開いて新しいノートを作成します"
+      },
+      "openApp": {
+        "label": "Prismicalの表示/非表示",
+        "description": "どこからでもPrismicalのウィンドウを表示、またはフォーカス中の場合は非表示にします"
       },
       "validation": {
         "noKeysDetected": "キーが検出されません",

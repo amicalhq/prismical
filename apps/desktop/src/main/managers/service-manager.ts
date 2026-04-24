@@ -6,6 +6,7 @@ import { NativeBridge } from "../../services/platform/native-bridge-service";
 import { AutoUpdaterService } from "../services/auto-updater";
 import { RecordingManager } from "./recording-manager";
 import { ShortcutManager } from "./shortcut-manager";
+import { OpenAppShortcutManager } from "./open-app-shortcut-manager";
 import { WindowManager } from "../core/window-manager";
 import { PostHogClient } from "../../services/posthog-client";
 import { TelemetryService } from "../../services/telemetry-service";
@@ -36,6 +37,7 @@ export interface ServiceMap {
   meetingStartNotificationManager: MeetingStartNotificationManager;
   noteGenerationService: NoteGenerationService;
   shortcutManager: ShortcutManager;
+  openAppShortcutManager: OpenAppShortcutManager;
   windowManager: WindowManager;
   onboardingService: OnboardingService;
 }
@@ -66,6 +68,7 @@ export class ServiceManager {
     null;
   private noteGenerationService: NoteGenerationService | null = null;
   private shortcutManager: ShortcutManager | null = null;
+  private openAppShortcutManager: OpenAppShortcutManager | null = null;
   private windowManager: WindowManager | null = null;
 
   async initialize(): Promise<void> {
@@ -317,6 +320,7 @@ export class ServiceManager {
       meetingStartNotificationManager: this.meetingStartNotificationManager!,
       noteGenerationService: this.noteGenerationService!,
       shortcutManager: this.shortcutManager!,
+      openAppShortcutManager: this.openAppShortcutManager!,
       windowManager: this.windowManager!,
       onboardingService: this.onboardingService!,
     };
@@ -328,6 +332,10 @@ export class ServiceManager {
     if (this.shortcutManager) {
       logger.main.info("Cleaning up shortcut manager...");
       this.shortcutManager.cleanup();
+    }
+    if (this.openAppShortcutManager) {
+      logger.main.info("Cleaning up open-app shortcut manager...");
+      this.openAppShortcutManager.cleanup();
     }
     if (this.recordingManager) {
       logger.main.info("Cleaning up recording manager...");
@@ -399,6 +407,25 @@ export class ServiceManager {
     if (this.isInitialized && !this.meetingStartNotificationManager) {
       this.initializeMeetingStartNotificationManager();
     }
+    if (!this.openAppShortcutManager) {
+      this.initializeOpenAppShortcutManager();
+    }
     logger.main.info("Window manager registered with ServiceManager");
+  }
+
+  private initializeOpenAppShortcutManager(): void {
+    if (!this.settingsService || !this.windowManager) {
+      return;
+    }
+    this.openAppShortcutManager = new OpenAppShortcutManager(
+      this.settingsService,
+      this.windowManager,
+    );
+    this.openAppShortcutManager.initialize().catch((error) => {
+      logger.main.error("Failed to initialize OpenAppShortcutManager", {
+        error,
+      });
+    });
+    logger.main.info("Open-app shortcut manager initialized");
   }
 }

@@ -16,8 +16,14 @@ export function ShortcutsSettingsPage() {
   const [pasteLastTranscriptShortcut, setPasteLastTranscriptShortcut] =
     useState<number[]>([]);
   const [newNoteShortcut, setNewNoteShortcut] = useState<number[]>([]);
+  const [openAppShortcut, setOpenAppShortcut] = useState<number[]>([]);
   const [recordingShortcut, setRecordingShortcut] = useState<
-    "pushToTalk" | "toggleRecording" | "pasteLastTranscript" | "newNote" | null
+    | "pushToTalk"
+    | "toggleRecording"
+    | "pasteLastTranscript"
+    | "newNote"
+    | "openApp"
+    | null
   >(null);
 
   // tRPC queries and mutations
@@ -34,6 +40,7 @@ export function ShortcutsSettingsPage() {
           setToggleRecordingShortcut(cached.toggleRecording);
           setPasteLastTranscriptShortcut(cached.pasteLastTranscript);
           setNewNoteShortcut(cached.newNote);
+          setOpenAppShortcut(cached.openApp);
         } else {
           utils.settings.getShortcuts.invalidate();
         }
@@ -53,6 +60,7 @@ export function ShortcutsSettingsPage() {
             "settings.shortcuts.toast.pasteLastTranscriptUpdated",
           ),
           newNote: t("settings.shortcuts.toast.newNoteUpdated"),
+          openApp: t("settings.shortcuts.toast.openAppUpdated"),
         } as const;
         toast.success(successMessages[variables.type]);
       }
@@ -79,6 +87,7 @@ export function ShortcutsSettingsPage() {
       setToggleRecordingShortcut(shortcutsQuery.data.toggleRecording);
       setPasteLastTranscriptShortcut(shortcutsQuery.data.pasteLastTranscript);
       setNewNoteShortcut(shortcutsQuery.data.newNote);
+      setOpenAppShortcut(shortcutsQuery.data.openApp);
     }
   }, [shortcutsQuery.data]);
 
@@ -110,6 +119,14 @@ export function ShortcutsSettingsPage() {
     setNewNoteShortcut(shortcut);
     setShortcutMutation.mutate({
       type: "newNote",
+      shortcut: shortcut,
+    });
+  };
+
+  const handleOpenAppChange = (shortcut: number[]) => {
+    setOpenAppShortcut(shortcut);
+    setShortcutMutation.mutate({
+      type: "openApp",
       shortcut: shortcut,
     });
   };
@@ -221,6 +238,30 @@ export function ShortcutsSettingsPage() {
                     isRecordingShortcut={recordingShortcut === "newNote"}
                     onRecordingShortcutChange={(recording) =>
                       setRecordingShortcut(recording ? "newNote" : null)
+                    }
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <Separator className="my-4" />
+              <div className="flex flex-col md:flex-row md:justify-between gap-4">
+                <div>
+                  <Label className="text-base font-semibold text-foreground">
+                    {t("settings.shortcuts.openApp.label")}
+                  </Label>
+                  <p className="text-xs text-muted-foreground mt-1 max-w-md">
+                    {t("settings.shortcuts.openApp.description")}
+                  </p>
+                </div>
+                <div className="flex flex-col gap-2 items-end min-w-[260px]">
+                  <ShortcutInput
+                    value={openAppShortcut}
+                    onChange={handleOpenAppChange}
+                    isRecordingShortcut={recordingShortcut === "openApp"}
+                    onRecordingShortcutChange={(recording) =>
+                      setRecordingShortcut(recording ? "openApp" : null)
                     }
                   />
                 </div>

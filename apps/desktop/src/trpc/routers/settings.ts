@@ -22,6 +22,7 @@ const SetShortcutSchema = z.object({
     "toggleRecording",
     "pasteLastTranscript",
     "newNote",
+    "openApp",
   ]),
   shortcut: z.array(z.number()),
 });
@@ -274,6 +275,32 @@ export const settingsRouter = createRouter({
     .input(SetShortcutSchema)
     .mutation(async ({ input, ctx }) => {
       const shortcutManager = ctx.serviceManager.getService("shortcutManager");
+
+      // openApp is registered via Electron's globalShortcut and doesn't need
+      // the native-bridge-backed ShortcutManager. Route it through a standalone
+      // path so users can configure it even when native helpers are disabled.
+      if (input.type === "openApp") {
+        const settingsService =
+          ctx.serviceManager.getService("settingsService");
+        const openAppShortcutManager = ctx.serviceManager.getService(
+          "openAppShortcutManager",
+        );
+        const result = await settingsService.setShortcutStandalone(
+          input.type,
+          input.shortcut,
+        );
+        if (!result.valid) {
+          return {
+            success: false as const,
+            error: result.error ?? { key: "errors.generic" },
+          };
+        }
+        if (openAppShortcutManager) {
+          await openAppShortcutManager.reload();
+        }
+        return { success: true as const, warning: result.warning };
+      }
+
       if (!shortcutManager) {
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
@@ -300,30 +327,33 @@ export const settingsRouter = createRouter({
   setShortcutRecordingState: procedure
     .input(z.boolean())
     .mutation(async ({ input, ctx }) => {
-      try {
-        const shortcutManager =
-          ctx.serviceManager.getService("shortcutManager");
-        if (!shortcutManager) {
-          throw new Error("ShortcutManager not available");
-        }
-
+      const shortcutManager = ctx.serviceManager.getService("shortcutManager");
+      if (shortcutManager) {
         shortcutManager.setIsRecordingShortcut(input);
-
-        const logger = ctx.serviceManager.getLogger();
-        if (logger) {
-          logger.main.info("Shortcut recording state updated", {
-            isRecording: input,
-          });
-        }
-
-        return true;
-      } catch (error) {
-        const logger = ctx.serviceManager.getLogger();
-        if (logger) {
-          logger.main.error("Error setting shortcut recording state:", error);
-        }
-        throw error;
       }
+
+      // While recording, suspend the Electron globalShortcut for openApp so
+      // the OS doesn't swallow the key combo before the renderer sees it.
+      // Re-register (with whatever the user ended up saving) on stop.
+      const openAppShortcutManager = ctx.serviceManager.getService(
+        "openAppShortcutManager",
+      );
+      if (openAppShortcutManager) {
+        if (input) {
+          openAppShortcutManager.suspend();
+        } else {
+          await openAppShortcutManager.reload();
+        }
+      }
+
+      const logger = ctx.serviceManager.getLogger();
+      if (logger) {
+        logger.main.info("Shortcut recording state updated", {
+          isRecording: input,
+        });
+      }
+
+      return true;
     }),
 
   // Active keys subscription for shortcut recording

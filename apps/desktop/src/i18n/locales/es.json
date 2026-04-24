@@ -678,7 +678,8 @@
         "pushToTalkUpdated": "Atajo de pulsar para hablar actualizado",
         "handsFreeUpdated": "Atajo de modo manos libres actualizado",
         "pasteLastTranscriptUpdated": "Atajo de pegar última transcripción actualizado",
-        "newNoteUpdated": "Atajo de nueva nota actualizado"
+        "newNoteUpdated": "Atajo de nueva nota actualizado",
+        "openAppUpdated": "Atajo para mostrar/ocultar Prismical actualizado"
       },
       "pushToTalk": {
         "label": "Pulsar para hablar",
@@ -695,6 +696,10 @@
       "newNote": {
         "label": "Nueva nota",
         "description": "Abre la ventana de notas y crea una nota nueva"
+      },
+      "openApp": {
+        "label": "Mostrar/ocultar Prismical",
+        "description": "Muestra la ventana de Prismical desde cualquier lugar, u ocúltala si ya está enfocada"
       },
       "validation": {
         "noKeysDetected": "No se detectaron teclas",

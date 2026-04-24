@@ -679,7 +679,8 @@
         "pushToTalkUpdated": "Push to talk shortcut updated",
         "handsFreeUpdated": "Hands-free mode shortcut updated",
         "pasteLastTranscriptUpdated": "Paste last transcript shortcut updated",
-        "newNoteUpdated": "New note shortcut updated"
+        "newNoteUpdated": "New note shortcut updated",
+        "openAppUpdated": "Toggle Prismical shortcut updated"
       },
       "pushToTalk": {
         "label": "Push to talk",
@@ -696,6 +697,10 @@
       "newNote": {
         "label": "New note",
         "description": "Open notes window and create a new note"
+      },
+      "openApp": {
+        "label": "Toggle Prismical",
+        "description": "Show the Prismical window from anywhere, or hide it if it's already in focus"
       },
       "validation": {
         "noKeysDetected": "No keys detected",
