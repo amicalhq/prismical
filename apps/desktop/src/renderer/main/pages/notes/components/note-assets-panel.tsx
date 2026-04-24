@@ -229,8 +229,8 @@ export function NoteAssetsPanel({
                           <div
                             className={`rounded-2xl px-3 py-1.5 text-[13px] leading-relaxed ${
                               isUser
-                                ? "bg-white text-black rounded-br-md"
-                                : "bg-neutral-800 text-white rounded-bl-md"
+                                ? "bg-white text-neutral-900 dark:bg-white/90 rounded-br-md"
+                                : "bg-white/15 text-white dark:bg-white/10 rounded-bl-md"
                             }`}
                           >
                             {segment.text}
