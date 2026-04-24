@@ -214,7 +214,7 @@ export default function Note({
         scrollBarClassName={SCROLLBAR_WHILE_SCROLLING_CLASS}
       >
         <div className="mx-auto flex w-full max-w-4xl flex-col px-6 pb-32 pt-6">
-          <div className="mb-4 flex items-center">
+          <div className="mb-1 flex items-center">
             <Popover open={showEmojiPicker} onOpenChange={setShowEmojiPicker}>
               <PopoverTrigger asChild>
                 <Button
@@ -266,7 +266,7 @@ export default function Note({
             />
           </div>
 
-          <div className="flex flex-col gap-0.5 bg-card pl-4">
+          <div className="mb-6 flex flex-col gap-0.5 bg-card pl-4">
               <div className="flex flex-wrap items-center gap-1">
                 <span className="mr-1 text-sm text-muted-foreground">
                   {t("settings.notes.note.edited", {
