@@ -10,6 +10,7 @@ import { WhisperProvider } from "../pipeline/providers/transcription/whisper-pro
 import { OpenRouterProvider } from "../pipeline/providers/formatting/openrouter-formatter";
 import { OllamaFormatter } from "../pipeline/providers/formatting/ollama-formatter";
 import { OpenAICompatibleFormatter } from "../pipeline/providers/formatting/openai-compatible-formatter";
+import { MockFormatter } from "../pipeline/providers/formatting/mock-formatter";
 import { ModelService } from "../services/model-service";
 import { SettingsService } from "../services/settings-service";
 import { TelemetryService } from "../services/telemetry-service";
@@ -713,6 +714,23 @@ export class TranscriptionService {
               formattingUsed = true;
               formattingModel = modelId;
             }
+          }
+        } else if (model.provider === "Mock") {
+          logger.transcription.info("Starting formatting", {
+            provider: model.provider,
+            model: modelId,
+          });
+          const provider = new MockFormatter(modelId);
+          const result = await this.formatWithProvider(provider, text, {
+            style: options.formattingStyle,
+            vocabulary: options.vocabulary,
+            accessibilityContext: options.accessibilityContext,
+          });
+          if (result) {
+            text = result.text;
+            formattingDuration = result.duration;
+            formattingUsed = true;
+            formattingModel = modelId;
           }
         } else {
           logger.transcription.warn(

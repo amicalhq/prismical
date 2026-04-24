@@ -5,6 +5,7 @@ export const PROVIDER_TYPES = {
   openRouter: "openrouter",
   ollama: "ollama",
   openAICompatible: "openai-compatible",
+  mock: "mock",
 } as const;
 
 export type ProviderType = (typeof PROVIDER_TYPES)[keyof typeof PROVIDER_TYPES];
@@ -14,6 +15,7 @@ export const SYSTEM_PROVIDER_INSTANCE_IDS = {
   openRouter: "system-openrouter",
   ollama: "system-ollama",
   openAICompatible: "system-openai-compatible",
+  mock: "system-mock",
 } as const;
 
 export function getRemoteProviderType(provider: RemoteProvider): ProviderType {
@@ -24,6 +26,8 @@ export function getRemoteProviderType(provider: RemoteProvider): ProviderType {
       return PROVIDER_TYPES.ollama;
     case REMOTE_PROVIDERS.openAICompatible:
       return PROVIDER_TYPES.openAICompatible;
+    case REMOTE_PROVIDERS.mock:
+      return PROVIDER_TYPES.mock;
   }
 }
 
@@ -39,6 +43,8 @@ export function getSystemProviderInstanceId(
       return SYSTEM_PROVIDER_INSTANCE_IDS.ollama;
     case PROVIDER_TYPES.openAICompatible:
       return SYSTEM_PROVIDER_INSTANCE_IDS.openAICompatible;
+    case PROVIDER_TYPES.mock:
+      return SYSTEM_PROVIDER_INSTANCE_IDS.mock;
   }
 }
 
@@ -52,6 +58,8 @@ export function getProviderDisplayName(providerType: ProviderType): string {
       return REMOTE_PROVIDERS.ollama;
     case PROVIDER_TYPES.openAICompatible:
       return REMOTE_PROVIDERS.openAICompatible;
+    case PROVIDER_TYPES.mock:
+      return REMOTE_PROVIDERS.mock;
   }
 }
 
@@ -70,6 +78,8 @@ export function getProviderTypeFromModelProviderName(
       return PROVIDER_TYPES.openAICompatible;
     case "local-whisper":
       return PROVIDER_TYPES.localWhisper;
+    case "mock":
+      return PROVIDER_TYPES.mock;
     default:
       return null;
   }

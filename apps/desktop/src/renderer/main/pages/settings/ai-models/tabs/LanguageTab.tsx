@@ -4,8 +4,11 @@ import { Accordion } from "@/components/ui/accordion";
 import SyncedModelsList from "../components/synced-models-list";
 import DefaultModelCombobox from "../components/default-model-combobox";
 import ProviderAccordion from "../components/provider-accordion";
+import MockProviderDevSection from "../components/mock-provider-dev-section";
 import { useTranslation } from "react-i18next";
 import { REMOTE_PROVIDERS } from "@/constants/remote-providers";
+
+const isDev = process.env.NODE_ENV !== "production";
 
 export default function LanguageTab() {
   const { t } = useTranslation();
@@ -33,6 +36,8 @@ export default function LanguageTab() {
             modelType="language"
           />
         </Accordion>
+
+        {isDev && <MockProviderDevSection />}
 
         {/* Synced Models List */}
         <SyncedModelsList

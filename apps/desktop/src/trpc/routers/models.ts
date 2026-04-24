@@ -513,6 +513,38 @@ export const modelsRouter = createRouter({
     return true;
   }),
 
+  // Dev-only: UI entry-point is gated behind NODE_ENV !== "production". The
+  // procedures are reachable in prod builds but have no UI surface to invoke them.
+  enableMockProvider: procedure.mutation(async ({ ctx }) => {
+    const modelService = ctx.serviceManager.getService("modelService");
+    if (!modelService) {
+      throw new Error("Model manager service not initialized");
+    }
+
+    await modelService.syncProviderModelsToDatabase("Mock", [
+      {
+        id: "mock-markdown",
+        name: "Mock (canned markdown)",
+        provider: "Mock",
+        size: "Mock",
+        context: "—",
+        description: "Returns a fixed markdown summary. For dev use only.",
+      },
+    ]);
+
+    return true;
+  }),
+
+  disableMockProvider: procedure.mutation(async ({ ctx }) => {
+    const modelService = ctx.serviceManager.getService("modelService");
+    if (!modelService) {
+      throw new Error("Model manager service not initialized");
+    }
+
+    await modelService.removeProviderModels("Mock");
+    return true;
+  }),
+
   removeOpenAICompatibleProvider: procedure.mutation(async ({ ctx }) => {
     const modelService = ctx.serviceManager.getService("modelService");
     if (!modelService) {

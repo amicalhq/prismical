@@ -128,7 +128,8 @@ function isRemoteNoteGenerationProviderType(
   return (
     providerType === "openrouter" ||
     providerType === "ollama" ||
-    providerType === "openai-compatible"
+    providerType === "openai-compatible" ||
+    providerType === "mock"
   );
 }
 
