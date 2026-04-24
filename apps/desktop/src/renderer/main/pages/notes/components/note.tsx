@@ -572,32 +572,40 @@ export default function Note({
             />
             {showTabSwitcher ? (
               <div className="flex h-[42px] w-[78px] items-center justify-center gap-1 rounded-full bg-black/80 p-[5px] backdrop-blur-md ring-[1px] ring-black/60 shadow-[0px_0px_15px_0px_rgba(0,0,0,0.40)] transition-all duration-200 ease-out hover:scale-110 dark:bg-black/70">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className={`!h-8 !w-8 rounded-full !p-0 text-white/70 hover:bg-white/15 hover:text-white ${
-                    activeTab === "raw" ? "bg-white/15 text-white" : ""
-                  }`}
-                  onClick={() => onActiveTabChange("raw")}
-                  aria-label="Raw notes"
-                  title="Raw notes"
-                >
-                  <IconNotes className="!h-[18px] !w-[18px]" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className={`!h-8 !w-8 rounded-full !p-0 text-white/70 hover:bg-white/15 hover:text-white ${
-                    activeTab === "summary" ? "bg-white/15 text-white" : ""
-                  }`}
-                  onClick={() => onActiveTabChange("summary")}
-                  aria-label="AI Summary"
-                  title="AI Summary"
-                >
-                  <IconSparkles className="!h-[18px] !w-[18px]" />
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className={`!h-8 !w-8 rounded-full !p-0 text-white/70 hover:bg-white/15 hover:text-white ${
+                        activeTab === "raw" ? "bg-white/15 text-white" : ""
+                      }`}
+                      onClick={() => onActiveTabChange("raw")}
+                      aria-label="Raw notes"
+                    >
+                      <IconNotes className="!h-[18px] !w-[18px]" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Raw notes</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className={`!h-8 !w-8 rounded-full !p-0 text-white/70 hover:bg-white/15 hover:text-white ${
+                        activeTab === "summary" ? "bg-white/15 text-white" : ""
+                      }`}
+                      onClick={() => onActiveTabChange("summary")}
+                      aria-label="AI Summary"
+                    >
+                      <IconSparkles className="!h-[18px] !w-[18px]" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>AI Summary</TooltipContent>
+                </Tooltip>
               </div>
             ) : null}
           </div>
