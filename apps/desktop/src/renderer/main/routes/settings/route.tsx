@@ -45,17 +45,25 @@ function SettingsLayoutContent() {
     navigate({ to: "/settings/home" });
   }, [navigate]);
 
+  // Keyboard shortcut: Cmd+, (Mac) / Ctrl+, (Windows/Linux) to open preferences
+  const goPreferences = useCallback(() => {
+    navigate({ to: "/settings/preferences" });
+  }, [navigate]);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "h" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
         goHome();
+      } else if (e.key === "," && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        goPreferences();
       }
     };
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [goHome]);
+  }, [goHome, goPreferences]);
 
   // Reset scroll state (and stale header content) on page change
   useEffect(() => {

@@ -33,6 +33,7 @@ export const HOME_NAV_ITEMS: SidebarNavItem[] = [
     titleKey: "menu.settings",
     url: "/settings/preferences",
     icon: IconSettings,
+    shortcutKey: ",",
   },
 ];
 
