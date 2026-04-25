@@ -90,7 +90,7 @@ const RecordingSettingsSchema = z.object({
 });
 
 const MeetingWidgetSettingsSchema = z.object({
-  enabled: z.boolean().optional(),
+  visibility: z.enum(["never", "while-recording", "always"]).optional(),
   normalizedY: z.number().min(0).max(1).optional(),
 });
 

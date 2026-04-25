@@ -44,8 +44,10 @@ export interface MeetingNotificationSettings {
   blockedBundleIds: string[];
 }
 
+export type MeetingWidgetVisibility = "never" | "while-recording" | "always";
+
 export interface MeetingWidgetSettings {
-  enabled: boolean;
+  visibility: MeetingWidgetVisibility;
   normalizedY: number;
 }
 
@@ -149,8 +151,8 @@ export class SettingsService extends EventEmitter {
     const meetingWidget = await getSettingsSection("meetingWidget");
 
     return {
-      enabled: meetingWidget?.enabled ?? true,
-      normalizedY: clampNormalizedY(meetingWidget?.normalizedY ?? 1),
+      visibility: meetingWidget?.visibility ?? "always",
+      normalizedY: clampNormalizedY(meetingWidget?.normalizedY ?? 0.5),
     };
   }
 

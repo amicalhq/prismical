@@ -212,7 +212,7 @@ export interface AppSettingsData {
     preferredMicrophoneName?: string;
   };
   meetingWidget?: {
-    enabled?: boolean;
+    visibility?: "never" | "while-recording" | "always";
     normalizedY?: number;
   };
   shortcuts?: {

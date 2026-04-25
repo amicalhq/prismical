@@ -424,8 +424,13 @@
         "description": "Iniciar la transcripción automáticamente al crear una nueva nota"
       },
       "meetingWidget": {
-        "label": "Mostrar widget de grabación",
-        "description": "Mostrar un widget flotante mientras una reunión se está grabando y Prismical está en segundo plano"
+        "label": "Widget flotante",
+        "description": "Muestra una píldora de grabación flotante en el lateral de la pantalla cuando Prismical está en segundo plano",
+        "options": {
+          "never": "Nunca",
+          "whileRecording": "Solo durante la grabación",
+          "always": "Siempre"
+        }
       },
       "language": {
         "label": "Idioma",

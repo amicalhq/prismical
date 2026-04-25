@@ -113,9 +113,11 @@ export default function PreferencesSettingsPage() {
     });
   };
 
-  const handleMeetingWidgetEnabledChange = (checked: boolean) => {
+  const handleMeetingWidgetVisibilityChange = (
+    value: "never" | "while-recording" | "always",
+  ) => {
     updateMeetingWidgetSettingsMutation.mutate({
-      enabled: checked,
+      visibility: value,
     });
   };
 
@@ -124,7 +126,8 @@ export default function PreferencesSettingsPage() {
   const showInDock = preferencesQuery.data?.showInDock ?? true;
   const autoTranscribeOnNewNote =
     preferencesQuery.data?.autoTranscribeOnNewNote ?? false;
-  const meetingWidgetEnabled = meetingWidgetSettingsQuery.data?.enabled ?? true;
+  const meetingWidgetVisibility =
+    meetingWidgetSettingsQuery.data?.visibility ?? "always";
   const isMac = window.electronAPI.platform === "darwin";
   const localeDisabled =
     uiSettingsQuery.isLoading || updateUILocaleMutation.isPending;
@@ -231,14 +234,31 @@ export default function PreferencesSettingsPage() {
                   {t("settings.preferences.meetingWidget.description")}
                 </p>
               </div>
-              <Switch
-                checked={meetingWidgetEnabled}
-                onCheckedChange={handleMeetingWidgetEnabledChange}
+              <Select
+                value={meetingWidgetVisibility}
+                onValueChange={handleMeetingWidgetVisibilityChange}
                 disabled={
                   updateMeetingWidgetSettingsMutation.isPending ||
                   meetingWidgetSettingsQuery.isLoading
                 }
-              />
+              >
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="never">
+                    {t("settings.preferences.meetingWidget.options.never")}
+                  </SelectItem>
+                  <SelectItem value="while-recording">
+                    {t(
+                      "settings.preferences.meetingWidget.options.whileRecording",
+                    )}
+                  </SelectItem>
+                  <SelectItem value="always">
+                    {t("settings.preferences.meetingWidget.options.always")}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             <Separator />

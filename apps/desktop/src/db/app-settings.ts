@@ -104,8 +104,8 @@ const defaultSettings: AppSettingsData = {
     maxRecordingDuration: 60,
   },
   meetingWidget: {
-    enabled: true,
-    normalizedY: 1,
+    visibility: "always",
+    normalizedY: 0.5,
   },
   shortcuts: getDefaultShortcuts(),
   modelProvidersConfig: {

@@ -424,8 +424,13 @@
         "description": "新しいノートを作成した時に自動的に文字起こしを開始"
       },
       "meetingWidget": {
-        "label": "録音ウィジェットを表示",
-        "description": "会議を録音中でPrismicalがバックグラウンドにあるとき、フローティングウィジェットを表示します"
+        "label": "フローティングウィジェット",
+        "description": "Prismicalがバックグラウンドにあるとき、画面の端にフローティング録音ピルを表示します",
+        "options": {
+          "never": "表示しない",
+          "whileRecording": "録音中のみ",
+          "always": "常に表示"
+        }
       },
       "language": {
         "label": "言語",

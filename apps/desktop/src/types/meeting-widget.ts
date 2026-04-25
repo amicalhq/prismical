@@ -1,7 +1,9 @@
 import type { MeetingRuntimeState } from "./meeting";
 
+export type MeetingWidgetVisibility = "never" | "while-recording" | "always";
+
 export interface MeetingWidgetState {
-  enabled: boolean;
+  visibility: MeetingWidgetVisibility;
   visible: boolean;
   meetingState: MeetingRuntimeState;
   noteId: number | null;

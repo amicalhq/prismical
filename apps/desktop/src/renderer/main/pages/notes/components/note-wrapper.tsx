@@ -3,6 +3,10 @@ import { useNavigate } from "@tanstack/react-router";
 import { api } from "@/trpc/react";
 import { toast } from "sonner";
 import { debounce } from "@/renderer/main/utils/debounce";
+import {
+  TRANSCRIPTION_OPEN_EVENT,
+  consumeOpenTranscriptionRequest,
+} from "@/renderer/main/utils/transcription-request";
 import Note from "./note";
 import { NoteEditor } from "./note-editor";
 import { ArtifactEditor } from "./artifact-editor";
@@ -31,12 +35,14 @@ type NotePageProps = {
   noteId: string;
   onBack?: () => void;
   autoRecord?: boolean;
+  openTranscription?: boolean;
 };
 
 export default function NotePage({
   noteId,
   onBack,
   autoRecord,
+  openTranscription,
 }: NotePageProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -265,6 +271,42 @@ export default function NotePage({
   const handleEditorReady = useCallback(() => {
     setEditorReady(true);
   }, []);
+
+  // Cold-start path: when the user opens the note from a closed main window,
+  // the floating widget passes `?openTranscription=true` in the URL hash so
+  // we know to force the panel open on first mount. Ref-guarded so it fires
+  // once per mount without re-running on every re-render.
+  const transcriptionForcedRef = useRef(false);
+  useEffect(() => {
+    if (!openTranscription || transcriptionForcedRef.current) return;
+    transcriptionForcedRef.current = true;
+    setActiveAsset("transcription");
+  }, [openTranscription]);
+
+  // Cross-note widget click path: the widget navigated us here and queued
+  // a request before this wrapper mounted, so drain the pending set on
+  // mount / when noteId changes.
+  useEffect(() => {
+    if (consumeOpenTranscriptionRequest(noteIdNumber)) {
+      setActiveAsset("transcription");
+    }
+  }, [noteIdNumber]);
+
+  // Same-note widget click path: the widget asked an already-mounted page
+  // to open its panel — handled via DOM event so it can re-trigger after
+  // the user manually closes the panel.
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ noteId: number }>).detail;
+      if (detail?.noteId === noteIdNumber) {
+        setActiveAsset("transcription");
+      }
+    };
+    window.addEventListener(TRANSCRIPTION_OPEN_EVENT, handler);
+    return () => {
+      window.removeEventListener(TRANSCRIPTION_OPEN_EVENT, handler);
+    };
+  }, [noteIdNumber]);
 
   // Auto-start recording when editor is ready and autoRecord flag is set
   useEffect(() => {

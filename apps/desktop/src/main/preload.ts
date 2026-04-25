@@ -132,7 +132,11 @@ const api: ElectronAPI = {
       ipcRenderer.invoke("meeting-widget:drag-move", screenY, pointerOffsetY),
     dragEnd: (screenY: number, pointerOffsetY: number) =>
       ipcRenderer.invoke("meeting-widget:drag-end", screenY, pointerOffsetY),
-    openNote: () => ipcRenderer.invoke("meeting-widget:open-note"),
+    openNote: (options?: {
+      noteId?: number | null;
+      openTranscription?: boolean;
+    }) => ipcRenderer.invoke("meeting-widget:open-note", options),
+    stopMeeting: () => ipcRenderer.invoke("meeting-widget:stop-meeting"),
   },
 };
 

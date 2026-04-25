@@ -15,8 +15,8 @@ export class WindowManager {
   private static readonly NOTIFICATION_WINDOW_WIDTH = 380 as const;
   private static readonly NOTIFICATION_WINDOW_HEIGHT = 120 as const;
   private static readonly NOTIFICATION_WINDOW_MARGIN = 16 as const;
-  private static readonly MEETING_WIDGET_WINDOW_WIDTH = 92 as const;
-  private static readonly MEETING_WIDGET_WINDOW_HEIGHT = 124 as const;
+  private static readonly MEETING_WIDGET_WINDOW_WIDTH = 80 as const;
+  private static readonly MEETING_WIDGET_WINDOW_HEIGHT = 240 as const;
   private static readonly MEETING_WIDGET_EDGE_MARGIN = 12 as const;
   private static readonly MEETING_WIDGET_VERTICAL_MARGIN = 24 as const;
   private mainWindow: BrowserWindow | null = null;
@@ -70,7 +70,7 @@ export class WindowManager {
   }
 
   private getMeetingWidgetWindowBounds(
-    normalizedY: number = 1,
+    normalizedY: number = 0.5,
     displayPoint: Electron.Point = screen.getCursorScreenPoint(),
   ): Electron.Rectangle {
     const display = screen.getDisplayNearestPoint(displayPoint);
@@ -436,7 +436,7 @@ export class WindowManager {
   }
 
   async createOrShowMeetingWidgetWindow(
-    normalizedY: number = 1,
+    normalizedY: number = 0.5,
   ): Promise<void> {
     const bounds = this.getMeetingWidgetWindowBounds(normalizedY);
 
@@ -588,6 +588,35 @@ export class WindowManager {
       const mainWindow = this.getMainWindow();
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send("navigate", route);
+      }
+    }
+  }
+
+  /**
+   * Navigate the main window to a specific note. Uses a typed IPC payload
+   * instead of a raw URL string so the renderer can call `router.navigate`
+   * with structured params/search — avoids any reliance on hash-history
+   * URL string parsing for query params.
+   */
+  async navigateToNote(
+    noteId: number,
+    options: { openTranscription?: boolean } = {},
+  ): Promise<void> {
+    const windowExisted = this.getMainWindow() !== null;
+    // For the cold-start path the route still travels via URL hash. The
+    // renderer's hash-history parser handles the search portion correctly.
+    const search = options.openTranscription ? "?openTranscription=true" : "";
+    const initialRoute = `/settings/notes/${noteId}${search}`;
+
+    await this.createOrShowMainWindow(initialRoute);
+
+    if (windowExisted) {
+      const mainWindow = this.getMainWindow();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send("navigate-to-note", {
+          noteId,
+          openTranscription: !!options.openTranscription,
+        });
       }
     }
   }

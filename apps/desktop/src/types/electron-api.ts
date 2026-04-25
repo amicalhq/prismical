@@ -51,6 +51,10 @@ export interface ElectronAPI {
     setInteractive: (interactive: boolean) => Promise<void>;
     dragMove: (screenY: number, pointerOffsetY: number) => Promise<void>;
     dragEnd: (screenY: number, pointerOffsetY: number) => Promise<void>;
-    openNote: () => Promise<void>;
+    openNote: (options?: {
+      noteId?: number | null;
+      openTranscription?: boolean;
+    }) => Promise<void>;
+    stopMeeting: () => Promise<void>;
   };
 }

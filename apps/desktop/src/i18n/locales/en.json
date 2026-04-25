@@ -336,8 +336,13 @@
         "description": "Automatically start transcribing when creating a new note"
       },
       "meetingWidget": {
-        "label": "Show recording widget",
-        "description": "Display a floating widget while a meeting is recording and Prismical is in the background"
+        "label": "Floating widget",
+        "description": "Show a floating recording pill on the side of the screen when Prismical is in the background",
+        "options": {
+          "never": "Never",
+          "whileRecording": "Only when recording",
+          "always": "Always"
+        }
       },
       "language": {
         "label": "Language",

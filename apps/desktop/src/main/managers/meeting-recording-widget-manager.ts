@@ -18,7 +18,17 @@ const IPC_CHANNELS = {
   dragMove: "meeting-widget:drag-move",
   dragEnd: "meeting-widget:drag-end",
   openNote: "meeting-widget:open-note",
+  stopMeeting: "meeting-widget:stop-meeting",
 } as const;
+
+interface OpenNoteOptions {
+  // Allow the renderer to pass its own snapshot of `noteId`. The widget shows
+  // the recording pill while the meeting is `stopping`, so a click can reach
+  // the main process after `MeetingManager` has already cleared `noteId`.
+  // Trusting the renderer's snapshot avoids that race.
+  noteId?: number | null;
+  openTranscription?: boolean;
+}
 
 interface MeetingRecordingWidgetManagerEvents {
   "state-changed": (state: MeetingWidgetState) => void;
@@ -32,7 +42,7 @@ interface MeetingRecordingWidgetManagerDeps {
 
 export class MeetingRecordingWidgetManager extends EventEmitter {
   private readonly state: MeetingWidgetState = {
-    enabled: true,
+    visibility: "always",
     visible: false,
     meetingState: "idle",
     noteId: null,
@@ -40,8 +50,8 @@ export class MeetingRecordingWidgetManager extends EventEmitter {
 
   private started = false;
   private settings: MeetingWidgetSettings = {
-    enabled: true,
-    normalizedY: 1,
+    visibility: "always",
+    normalizedY: 0.5,
   };
   private hideTimer: NodeJS.Timeout | null = null;
   private ipcHandlersRegistered = false;
@@ -91,7 +101,7 @@ export class MeetingRecordingWidgetManager extends EventEmitter {
     this.clearHideTimer();
     this.deps.windowManager.hideMeetingWidgetWindow();
     this.updateState({
-      enabled: this.settings.enabled,
+      visibility: this.settings.visibility,
       visible: false,
       meetingState: this.deps.meetingManager.getState().state,
       noteId: this.deps.meetingManager.getState().noteId,
@@ -102,17 +112,39 @@ export class MeetingRecordingWidgetManager extends EventEmitter {
     return { ...this.state };
   }
 
-  async openMeetingNote(): Promise<void> {
-    const noteId = this.deps.meetingManager.getState().noteId;
+  async openMeetingNote(options: OpenNoteOptions = {}): Promise<void> {
+    const noteId = options.noteId ?? this.deps.meetingManager.getState().noteId;
+
     if (!noteId) {
-      logger.warn("Ignoring meeting widget click with no active note");
+      // Idle: no active meeting/note — just bring the main window forward.
+      // Focus event will fire `refreshState` automatically.
+      await this.deps.windowManager.createOrShowMainWindow();
       return;
     }
 
-    await this.deps.windowManager.navigateMainWindow(
-      `/settings/notes/${noteId}`,
-    );
-    this.refreshState("open-note");
+    await this.deps.windowManager.navigateToNote(noteId, {
+      openTranscription: options.openTranscription,
+    });
+  }
+
+  async stopMeeting(): Promise<void> {
+    const runtimeState = this.deps.meetingManager.getState().state;
+    if (
+      runtimeState !== "recording" &&
+      runtimeState !== "starting" &&
+      runtimeState !== "error"
+    ) {
+      logger.debug("Ignoring widget stop request — no active meeting", {
+        state: runtimeState,
+      });
+      return;
+    }
+
+    try {
+      await this.deps.meetingManager.stop();
+    } catch (error) {
+      logger.error("Failed to stop meeting from widget", error);
+    }
   }
 
   setInteractive(interactive: boolean): void {
@@ -208,8 +240,15 @@ export class MeetingRecordingWidgetManager extends EventEmitter {
         return true;
       },
     );
-    ipcMain.handle(IPC_CHANNELS.openNote, async () => {
-      await this.openMeetingNote();
+    ipcMain.handle(
+      IPC_CHANNELS.openNote,
+      async (_event, options?: OpenNoteOptions) => {
+        await this.openMeetingNote(options ?? {});
+        return true;
+      },
+    );
+    ipcMain.handle(IPC_CHANNELS.stopMeeting, async () => {
+      await this.stopMeeting();
       return true;
     });
 
@@ -225,6 +264,7 @@ export class MeetingRecordingWidgetManager extends EventEmitter {
     ipcMain.removeHandler(IPC_CHANNELS.dragMove);
     ipcMain.removeHandler(IPC_CHANNELS.dragEnd);
     ipcMain.removeHandler(IPC_CHANNELS.openNote);
+    ipcMain.removeHandler(IPC_CHANNELS.stopMeeting);
     this.ipcHandlersRegistered = false;
   }
 
@@ -259,7 +299,7 @@ export class MeetingRecordingWidgetManager extends EventEmitter {
     }
 
     this.updateState({
-      enabled: this.settings.enabled,
+      visibility: this.settings.visibility,
       visible: nextVisible,
       meetingState: runtime.state,
       noteId: runtime.noteId,
@@ -271,24 +311,32 @@ export class MeetingRecordingWidgetManager extends EventEmitter {
       meetingState: runtime.state,
       noteId: runtime.noteId,
       mainWindowFocused: this.isMainWindowFocused(),
-      enabled: this.settings.enabled,
+      visibility: this.settings.visibility,
     });
   }
 
   private shouldShowWidget(runtime: MeetingRuntimeSnapshot): boolean {
-    if (!this.settings.enabled) {
+    if (this.settings.visibility === "never") {
       return false;
     }
 
-    if (
-      runtime.state !== "starting" &&
-      runtime.state !== "recording" &&
-      runtime.state !== "error"
-    ) {
+    if (this.isMainWindowFocused()) {
       return false;
     }
 
-    return !this.isMainWindowFocused();
+    if (this.settings.visibility === "always") {
+      return true;
+    }
+
+    // visibility === "while-recording"
+    // Include `stopping` so the pill stays visible through the stop animation
+    // rather than vanishing the instant the user clicks stop.
+    return (
+      runtime.state === "starting" ||
+      runtime.state === "recording" ||
+      runtime.state === "stopping" ||
+      runtime.state === "error"
+    );
   }
 
   private isMainWindowFocused(): boolean {
@@ -320,7 +368,7 @@ export class MeetingRecordingWidgetManager extends EventEmitter {
 
   private updateState(nextState: MeetingWidgetState): void {
     if (
-      nextState.enabled === this.state.enabled &&
+      nextState.visibility === this.state.visibility &&
       nextState.visible === this.state.visible &&
       nextState.meetingState === this.state.meetingState &&
       nextState.noteId === this.state.noteId
@@ -328,7 +376,7 @@ export class MeetingRecordingWidgetManager extends EventEmitter {
       return;
     }
 
-    this.state.enabled = nextState.enabled;
+    this.state.visibility = nextState.visibility;
     this.state.visible = nextState.visible;
     this.state.meetingState = nextState.meetingState;
     this.state.noteId = nextState.noteId;
