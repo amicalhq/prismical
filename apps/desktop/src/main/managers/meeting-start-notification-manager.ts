@@ -5,6 +5,7 @@ import { createScopedLogger } from "../logger";
 import type { SettingsService } from "@/services/settings-service";
 import type { WindowManager } from "../core/window-manager";
 import type { MeetingManager } from "./meeting-manager";
+import type { MeetingRecordingWidgetManager } from "./meeting-recording-widget-manager";
 import type { OnboardingService } from "@/services/onboarding-service";
 import type { TelemetryService } from "@/services/telemetry-service";
 import type {
@@ -36,6 +37,7 @@ interface MeetingStartNotificationManagerDeps {
   settingsService: SettingsService;
   windowManager: WindowManager;
   meetingManager: MeetingManager;
+  meetingRecordingWidgetManager: MeetingRecordingWidgetManager;
   onboardingService: OnboardingService;
   telemetryService?: TelemetryService | null;
 }
@@ -175,6 +177,28 @@ export class MeetingStartNotificationManager extends EventEmitter {
     return {
       noteId: note.id,
     };
+  }
+
+  async startNoteFromIdle(): Promise<{ noteId: number }> {
+    const note = await this.notesService.createNote({
+      title: buildIdleNoteTitle(),
+      icon: null,
+    });
+
+    this.deps.telemetryService?.trackNoteCreated({
+      note_id: note.id,
+      has_initial_content: false,
+      has_icon: false,
+    });
+
+    await this.deps.windowManager.navigateMainWindow(
+      `/settings/notes/${note.id}?autoRecord=true`,
+    );
+
+    this.clearActiveNotificationWindow();
+    logger.info("Started note from idle widget", { noteId: note.id });
+
+    return { noteId: note.id };
   }
 
   async showTestNotification(): Promise<void> {
@@ -425,7 +449,7 @@ export class MeetingStartNotificationManager extends EventEmitter {
     this.state.activeNotification = payload;
     this.state.lastError = null;
     this.emit("state-changed");
-    await this.deps.windowManager.createOrShowNotificationWindow();
+    this.deps.meetingRecordingWidgetManager.setMeetingDetection(payload);
     logger.info("Showing meeting start notification", {
       bundleId: payload.bundleId,
       title: payload.title,
@@ -435,11 +459,15 @@ export class MeetingStartNotificationManager extends EventEmitter {
 
   private clearActiveNotificationWindow(): void {
     this.state.activeNotification = null;
-    this.deps.windowManager.hideNotificationWindow();
+    this.deps.meetingRecordingWidgetManager.setMeetingDetection(null);
     this.emit("state-changed");
   }
 }
 
 function buildMeetingNoteTitle(displayName: string): string {
   return `${displayName} meeting · ${format(new Date(), "MMM dd, h:mm a")}`;
+}
+
+function buildIdleNoteTitle(): string {
+  return `Meeting · ${format(new Date(), "MMM dd, h:mm a")}`;
 }

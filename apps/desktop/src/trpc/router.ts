@@ -10,7 +10,6 @@ import { authRouter } from "./routers/auth";
 import { onboardingRouter } from "./routers/onboarding";
 import { featureFlagsRouter } from "./routers/feature-flags";
 import { meetingsRouter } from "./routers/meetings";
-import { notificationsRouter } from "./routers/notifications";
 import { meetingWidgetRouter } from "./routers/meeting-widget";
 import { eventsRouter } from "./routers/events";
 import { artifactsRouter } from "./routers/artifacts";
@@ -73,9 +72,6 @@ export const router = createRouter({
 
   // Meetings router
   meetings: meetingsRouter,
-
-  // Notifications router
-  notifications: notificationsRouter,
 
   // Meeting recording widget router
   meetingWidget: meetingWidgetRouter,

@@ -227,10 +227,11 @@ export class ServiceManager {
       !this.settingsService ||
       !this.windowManager ||
       !this.meetingManager ||
+      !this.meetingRecordingWidgetManager ||
       !this.onboardingService
     ) {
       throw new Error(
-        "Settings, window, meeting, and onboarding services must be initialized before MeetingStartNotificationManager",
+        "Settings, window, meeting, widget, and onboarding services must be initialized before MeetingStartNotificationManager",
       );
     }
 
@@ -238,6 +239,7 @@ export class ServiceManager {
       settingsService: this.settingsService,
       windowManager: this.windowManager,
       meetingManager: this.meetingManager,
+      meetingRecordingWidgetManager: this.meetingRecordingWidgetManager,
       onboardingService: this.onboardingService,
       telemetryService: this.telemetryService,
     });

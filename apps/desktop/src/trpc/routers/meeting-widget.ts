@@ -29,4 +29,34 @@ export const meetingWidgetRouter = createRouter({
       };
     });
   }),
+
+  dismissDetection: procedure.mutation(async ({ ctx }) => {
+    const meetingStartNotificationManager = ctx.serviceManager.getService(
+      "meetingStartNotificationManager",
+    );
+    await meetingStartNotificationManager.dismissActiveNotification();
+    return true;
+  }),
+
+  startNoteFromDetection: procedure.mutation(async ({ ctx }) => {
+    const meetingStartNotificationManager = ctx.serviceManager.getService(
+      "meetingStartNotificationManager",
+    );
+    return await meetingStartNotificationManager.startNoteFromNotification();
+  }),
+
+  startNoteFromIdle: procedure.mutation(async ({ ctx }) => {
+    const meetingStartNotificationManager = ctx.serviceManager.getService(
+      "meetingStartNotificationManager",
+    );
+    return await meetingStartNotificationManager.startNoteFromIdle();
+  }),
+
+  showTestDetection: procedure.mutation(async ({ ctx }) => {
+    const meetingStartNotificationManager = ctx.serviceManager.getService(
+      "meetingStartNotificationManager",
+    );
+    await meetingStartNotificationManager.showTestNotification();
+    return true;
+  }),
 });

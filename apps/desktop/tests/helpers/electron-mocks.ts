@@ -222,6 +222,7 @@ const mockApp = {
   getLocaleCountryCode: vi.fn(() => "US"),
   getSystemLocale: vi.fn(() => "en-US"),
   on: vi.fn(),
+  off: vi.fn(),
   once: vi.fn(),
   removeListener: vi.fn(),
   removeAllListeners: vi.fn(),

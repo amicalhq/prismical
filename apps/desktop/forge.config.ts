@@ -603,10 +603,6 @@ const config: ForgeConfig = {
           config: "vite.onboarding.config.mts",
         },
         {
-          name: "notification_window",
-          config: "vite.notification.config.mts",
-        },
-        {
           name: "recording_widget_window",
           config: "vite.recording-widget.config.mts",
         },

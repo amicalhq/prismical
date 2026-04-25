@@ -9,6 +9,7 @@ import type { WindowManager } from "../core/window-manager";
 import type { MeetingManager } from "./meeting-manager";
 import type { MeetingRuntimeSnapshot } from "@/types/meeting";
 import type { MeetingWidgetState } from "@/types/meeting-widget";
+import type { MeetingStartNotificationPayload } from "@/types/meeting-start-notifications";
 
 const logger = createScopedLogger("meetingWidget");
 const WIDGET_HIDE_ANIMATION_MS = 180;
@@ -46,6 +47,7 @@ export class MeetingRecordingWidgetManager extends EventEmitter {
     visible: false,
     meetingState: "idle",
     noteId: null,
+    meetingDetection: null,
   };
 
   private started = false;
@@ -105,11 +107,40 @@ export class MeetingRecordingWidgetManager extends EventEmitter {
       visible: false,
       meetingState: this.deps.meetingManager.getState().state,
       noteId: this.deps.meetingManager.getState().noteId,
+      meetingDetection: null,
     });
   }
 
   getState(): MeetingWidgetState {
-    return { ...this.state };
+    return {
+      ...this.state,
+      meetingDetection: this.state.meetingDetection
+        ? { ...this.state.meetingDetection }
+        : null,
+    };
+  }
+
+  setMeetingDetection(payload: MeetingStartNotificationPayload | null): void {
+    const current = this.state.meetingDetection;
+    if (payload === null && current === null) {
+      return;
+    }
+    if (payload && current && payload.id === current.id) {
+      return;
+    }
+
+    this.state.meetingDetection = payload ? { ...payload } : null;
+
+    // Detection is treated like an active reason to show the widget — recompute
+    // visibility so a `while-recording` user still sees the prompt.
+    const emittedFromRefresh = this.refreshState("meeting-detection-changed");
+
+    // refreshState only emits when bookkeeping fields change. Detection alone
+    // may not flip visible/meetingState, so emit explicitly when refresh did
+    // not.
+    if (!emittedFromRefresh) {
+      this.emit("state-changed", this.getState());
+    }
   }
 
   async openMeetingNote(options: OpenNoteOptions = {}): Promise<void> {
@@ -283,7 +314,7 @@ export class MeetingRecordingWidgetManager extends EventEmitter {
     this.refreshState("browser-window-focus-change");
   };
 
-  private refreshState(reason: string): void {
+  private refreshState(reason: string): boolean {
     const runtime = this.deps.meetingManager.getState();
     const nextVisible = this.shouldShowWidget(runtime);
 
@@ -298,11 +329,12 @@ export class MeetingRecordingWidgetManager extends EventEmitter {
       this.scheduleHide();
     }
 
-    this.updateState({
+    const emitted = this.updateState({
       visibility: this.settings.visibility,
       visible: nextVisible,
       meetingState: runtime.state,
       noteId: runtime.noteId,
+      meetingDetection: this.state.meetingDetection,
     });
 
     logger.debug("Meeting recording widget state refreshed", {
@@ -313,11 +345,21 @@ export class MeetingRecordingWidgetManager extends EventEmitter {
       mainWindowFocused: this.isMainWindowFocused(),
       visibility: this.settings.visibility,
     });
+
+    return emitted;
   }
 
   private shouldShowWidget(runtime: MeetingRuntimeSnapshot): boolean {
     if (this.settings.visibility === "never") {
       return false;
+    }
+
+    // A pending meeting detection always surfaces the widget — even when the
+    // main app is focused. The widget replaces the old top-right notification
+    // window, which was visible regardless of focus. Without this override,
+    // detections fired while the main app is foregrounded would be invisible.
+    if (this.state.meetingDetection !== null) {
+      return true;
     }
 
     if (this.isMainWindowFocused()) {
@@ -366,20 +408,32 @@ export class MeetingRecordingWidgetManager extends EventEmitter {
     }
   }
 
-  private updateState(nextState: MeetingWidgetState): void {
+  private updateState(nextState: MeetingWidgetState): boolean {
     if (
       nextState.visibility === this.state.visibility &&
       nextState.visible === this.state.visible &&
       nextState.meetingState === this.state.meetingState &&
-      nextState.noteId === this.state.noteId
+      nextState.noteId === this.state.noteId &&
+      sameDetectionId(nextState.meetingDetection, this.state.meetingDetection)
     ) {
-      return;
+      return false;
     }
 
     this.state.visibility = nextState.visibility;
     this.state.visible = nextState.visible;
     this.state.meetingState = nextState.meetingState;
     this.state.noteId = nextState.noteId;
+    this.state.meetingDetection = nextState.meetingDetection;
     this.emit("state-changed", this.getState());
+    return true;
   }
+}
+
+function sameDetectionId(
+  a: MeetingStartNotificationPayload | null,
+  b: MeetingStartNotificationPayload | null,
+): boolean {
+  if (a === null && b === null) return true;
+  if (a === null || b === null) return false;
+  return a.id === b.id;
 }

@@ -8,20 +8,15 @@ import type { createIPCHandler } from "electron-trpc-experimental/main";
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string;
 declare const MAIN_WINDOW_VITE_NAME: string;
 declare const ONBOARDING_WINDOW_VITE_NAME: string;
-declare const NOTIFICATION_WINDOW_VITE_NAME: string;
 declare const RECORDING_WIDGET_WINDOW_VITE_NAME: string;
 
 export class WindowManager {
-  private static readonly NOTIFICATION_WINDOW_WIDTH = 380 as const;
-  private static readonly NOTIFICATION_WINDOW_HEIGHT = 120 as const;
-  private static readonly NOTIFICATION_WINDOW_MARGIN = 16 as const;
-  private static readonly MEETING_WIDGET_WINDOW_WIDTH = 80 as const;
+  private static readonly MEETING_WIDGET_WINDOW_WIDTH = 380 as const;
   private static readonly MEETING_WIDGET_WINDOW_HEIGHT = 240 as const;
   private static readonly MEETING_WIDGET_EDGE_MARGIN = 12 as const;
   private static readonly MEETING_WIDGET_VERTICAL_MARGIN = 24 as const;
   private mainWindow: BrowserWindow | null = null;
   private onboardingWindow: BrowserWindow | null = null;
-  private notificationWindow: BrowserWindow | null = null;
   private meetingWidgetWindow: BrowserWindow | null = null;
   private themeListenerSetup: boolean = false;
 
@@ -44,29 +39,6 @@ export class WindowManager {
     const isTahoeOrLater = majorVersion >= 26;
 
     return { x: 16, y: 16 };
-  }
-
-  private getNotificationWindowBounds(): Electron.Rectangle {
-    const display = screen.getDisplayNearestPoint(
-      screen.getCursorScreenPoint(),
-    );
-    const workArea = display.workArea;
-    const width = Math.min(
-      WindowManager.NOTIFICATION_WINDOW_WIDTH,
-      workArea.width,
-    );
-    const height = Math.min(
-      WindowManager.NOTIFICATION_WINDOW_HEIGHT,
-      workArea.height,
-    );
-    const margin = WindowManager.NOTIFICATION_WINDOW_MARGIN;
-
-    return {
-      x: workArea.x + workArea.width - width - margin,
-      y: workArea.y + margin,
-      width,
-      height,
-    };
   }
 
   private getMeetingWidgetWindowBounds(
@@ -363,78 +335,6 @@ export class WindowManager {
     logger.main.info("Onboarding window created");
   }
 
-  async createOrShowNotificationWindow(): Promise<void> {
-    if (this.notificationWindow && !this.notificationWindow.isDestroyed()) {
-      this.notificationWindow.setBounds(this.getNotificationWindowBounds());
-      this.notificationWindow.showInactive();
-      return;
-    }
-
-    const bounds = this.getNotificationWindowBounds();
-
-    this.notificationWindow = new BrowserWindow({
-      ...bounds,
-      show: false,
-      frame: false,
-      transparent: true,
-      backgroundColor: "#00000000",
-      resizable: false,
-      minimizable: false,
-      maximizable: false,
-      fullscreenable: false,
-      skipTaskbar: true,
-      hasShadow: false,
-      alwaysOnTop: true,
-      ...(process.platform === "darwin" && {
-        type: "panel" as const,
-      }),
-      webPreferences: {
-        preload: path.join(__dirname, "preload.js"),
-        nodeIntegration: false,
-        contextIsolation: true,
-      },
-    });
-
-    if (process.platform === "darwin") {
-      this.notificationWindow.setAlwaysOnTop(true, "floating", 2);
-      this.notificationWindow.setVisibleOnAllWorkspaces(true, {
-        visibleOnFullScreen: true,
-      });
-      this.notificationWindow.setHiddenInMissionControl(true);
-    }
-
-    this.notificationWindow.once("ready-to-show", () => {
-      this.notificationWindow?.showInactive();
-    });
-
-    if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
-      const devUrl = new URL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
-      devUrl.pathname = "notification.html";
-      this.notificationWindow.loadURL(devUrl.toString());
-    } else {
-      this.notificationWindow.loadFile(
-        path.join(
-          __dirname,
-          `../renderer/${NOTIFICATION_WINDOW_VITE_NAME}/notification.html`,
-        ),
-      );
-    }
-
-    this.notificationWindow.on("close", () => {
-      this.trpcHandler.detachWindow(this.notificationWindow!);
-    });
-
-    this.notificationWindow.on("closed", () => {
-      this.notificationWindow = null;
-    });
-
-    this.trpcHandler.attachWindow(this.notificationWindow);
-
-    logger.main.info("Notification window created", {
-      bounds,
-    });
-  }
-
   async createOrShowMeetingWidgetWindow(
     normalizedY: number = 0.5,
   ): Promise<void> {
@@ -510,14 +410,6 @@ export class WindowManager {
     logger.main.info("Meeting recording widget window created", {
       bounds,
     });
-  }
-
-  hideNotificationWindow(): void {
-    if (!this.notificationWindow || this.notificationWindow.isDestroyed()) {
-      return;
-    }
-
-    this.notificationWindow.hide();
   }
 
   hideMeetingWidgetWindow(): void {
@@ -642,10 +534,6 @@ export class WindowManager {
     return this.onboardingWindow;
   }
 
-  getNotificationWindow(): BrowserWindow | null {
-    return this.notificationWindow;
-  }
-
   getMeetingWidgetWindow(): BrowserWindow | null {
     return this.meetingWidgetWindow;
   }
@@ -654,7 +542,6 @@ export class WindowManager {
     return [
       this.mainWindow,
       this.onboardingWindow,
-      this.notificationWindow,
       this.meetingWidgetWindow,
     ];
   }

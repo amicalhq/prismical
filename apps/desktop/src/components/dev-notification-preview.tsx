@@ -6,10 +6,10 @@ import { SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
 import { api } from "@/trpc/react";
 
 export function DevNotificationPreview() {
-  const openPreviewWindowMutation =
-    api.notifications.showTestNotification.useMutation({
+  const showTestDetectionMutation =
+    api.meetingWidget.showTestDetection.useMutation({
       onError: (error) => {
-        toast.error("Failed to show test notification", {
+        toast.error("Failed to show test detection", {
           description: error.message,
         });
       },
@@ -18,15 +18,15 @@ export function DevNotificationPreview() {
   return (
     <SidebarMenuItem>
       <SidebarMenuButton
-        onClick={() => openPreviewWindowMutation.mutate()}
-        disabled={openPreviewWindowMutation.isPending}
+        onClick={() => showTestDetectionMutation.mutate()}
+        disabled={showTestDetectionMutation.isPending}
       >
-        {openPreviewWindowMutation.isPending ? (
+        {showTestDetectionMutation.isPending ? (
           <Loader2 className="size-4 animate-spin" />
         ) : (
           <IconBellRinging />
         )}
-        <span>Test Notification</span>
+        <span>Test Detection</span>
       </SidebarMenuButton>
     </SidebarMenuItem>
   );

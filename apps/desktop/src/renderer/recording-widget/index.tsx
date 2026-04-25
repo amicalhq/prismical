@@ -7,34 +7,20 @@ import React, {
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
-import {
-  AlertTriangle,
-  ArrowLeftToLine,
-  Loader2,
-  Square,
-} from "lucide-react";
-import { Waveform } from "@/components/Waveform";
 import { api, trpcClient } from "@/trpc/react";
 import type { MeetingWidgetState } from "@/types/meeting-widget";
+import { IdlePill } from "./idle-pill";
+import { DetectionPill } from "./detection-pill";
+import { RecordingPill } from "./recording-pill";
 import "@/styles/globals.css";
-
-const NUM_WAVEFORM_BARS = 6;
 
 const queryClient = new QueryClient({
   defaultOptions: {
-    queries: {
-      retry: false,
-      refetchOnWindowFocus: false,
-    },
+    queries: { retry: false, refetchOnWindowFocus: false },
   },
 });
 
-type DragState = {
-  pointerOffsetY: number;
-};
-
-const PILL_SHELL_CLASS =
-  "relative pointer-events-auto bg-black/80 dark:bg-black/70 backdrop-blur-md ring-[1px] ring-black/60 shadow-[0px_0px_15px_0px_rgba(0,0,0,0.40)] before:content-[''] before:absolute before:inset-[1px] before:outline before:outline-white/15 before:pointer-events-none";
+type DragState = { pointerOffsetY: number };
 
 function RecordingWidgetWindow() {
   const initialStateQuery = api.meetingWidget.getState.useQuery();
@@ -49,19 +35,23 @@ function RecordingWidgetWindow() {
     onData: (nextState) => setLiveState(nextState),
   });
 
+  const startNoteFromIdleMutation = api.meetingWidget.startNoteFromIdle.useMutation();
+  const startNoteFromDetectionMutation =
+    api.meetingWidget.startNoteFromDetection.useMutation();
+  const dismissDetectionMutation = api.meetingWidget.dismissDetection.useMutation();
+
   const state = liveState ?? initialStateQuery.data ?? null;
   const widgetVisible = state?.visible ?? false;
   const meetingState = state?.meetingState ?? "idle";
+  const meetingDetection = state?.meetingDetection ?? null;
+  const currentNoteId = state?.noteId ?? null;
 
-  const isError = meetingState === "error";
   const isRecording =
     meetingState === "recording" ||
     meetingState === "starting" ||
-    meetingState === "stopping";
-  const isStarting = meetingState === "starting";
-  const isStopping = meetingState === "stopping";
-  const isBusy = isStarting || isStopping;
-  const isActive = isRecording || isError;
+    meetingState === "stopping" ||
+    meetingState === "error";
+  const isDetection = !isRecording && meetingDetection !== null;
 
   // Demo voice-detected toggle so the waveform looks alive — same trick the
   // in-app dock uses until we wire real RMS data through.
@@ -150,24 +140,6 @@ function RecordingWidgetWindow() {
     }
   }, [dragState]);
 
-  const currentNoteId = state?.noteId ?? null;
-
-  const handleOpenApp = useCallback(() => {
-    // Snapshot `noteId` here rather than letting the main process re-read it,
-    // because the manager may transition `noteId` to null during `stopping`
-    // → `idle` between this click and the IPC handler firing.
-    void window.electronAPI.recordingWidget.openNote({
-      noteId: currentNoteId,
-      openTranscription: isActive && currentNoteId !== null,
-    });
-  }, [currentNoteId, isActive]);
-
-  const handleStop = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    void window.electronAPI.recordingWidget.stopMeeting();
-  }, []);
-
   const handleDragStart = useCallback(
     (event: React.PointerEvent<HTMLButtonElement>) => {
       event.preventDefault();
@@ -177,6 +149,34 @@ function RecordingWidgetWindow() {
     },
     [],
   );
+
+  const handleStop = useCallback(
+    (event: React.MouseEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      void window.electronAPI.recordingWidget.stopMeeting();
+    },
+    [],
+  );
+
+  const handleOpenNote = useCallback(() => {
+    void window.electronAPI.recordingWidget.openNote({
+      noteId: currentNoteId,
+      openTranscription: isRecording && currentNoteId !== null,
+    });
+  }, [currentNoteId, isRecording]);
+
+  const handleTakeNotesIdle = useCallback(() => {
+    startNoteFromIdleMutation.mutate();
+  }, [startNoteFromIdleMutation]);
+
+  const handleTakeNotesDetection = useCallback(() => {
+    startNoteFromDetectionMutation.mutate();
+  }, [startNoteFromDetectionMutation]);
+
+  const handleDismissDetection = useCallback(() => {
+    dismissDetectionMutation.mutate();
+  }, [dismissDetectionMutation]);
 
   const showHandle = isHovered || dragState !== null;
 
@@ -190,123 +190,54 @@ function RecordingWidgetWindow() {
         <motion.div
           initial={false}
           animate={
-            widgetVisible
-              ? { opacity: 1, x: 0 }
-              : { opacity: 0, x: 24 }
+            widgetVisible ? { opacity: 1, x: 0 } : { opacity: 0, x: 24 }
           }
-          transition={{
-            type: "spring",
-            stiffness: 280,
-            damping: 26,
-            mass: 0.7,
-          }}
+          transition={{ type: "spring", stiffness: 280, damping: 26, mass: 0.7 }}
           className="flex items-center gap-1.5"
         >
-          {/* Drag handle (left of pill) — visible on hover */}
           <motion.button
             type="button"
             data-hit-zone="true"
             onPointerDown={handleDragStart}
             initial={false}
-            animate={{
-              opacity: showHandle ? 1 : 0,
-              x: showHandle ? 0 : 6,
-            }}
+            animate={{ opacity: showHandle ? 1 : 0, x: showHandle ? 0 : 6 }}
             transition={{ duration: 0.16, ease: "easeOut" }}
             className="pointer-events-auto flex h-[34px] w-[18px] items-center justify-center rounded-full border border-white/10 bg-[rgba(12,14,18,0.72)] text-white/45 backdrop-blur-md shadow-[0_10px_24px_rgba(3,6,14,0.28)]"
             aria-label="Drag recording widget"
           >
             <div className="grid grid-cols-2 gap-[3px]">
               {Array.from({ length: 6 }).map((_, i) => (
-                <span
-                  key={i}
-                  className="h-[3px] w-[3px] rounded-full bg-current"
-                />
+                <span key={i} className="h-[3px] w-[3px] rounded-full bg-current" />
               ))}
             </div>
           </motion.button>
 
           <AnimatePresence mode="wait" initial={false}>
-            {isActive ? (
-              <motion.div
+            {isRecording ? (
+              <RecordingPill
                 key="recording"
-                data-hit-zone="true"
-                initial={{ opacity: 0, scale: 0.96 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.96 }}
-                transition={{ duration: 0.18, ease: "easeOut" }}
-                className={`${PILL_SHELL_CLASS} flex w-[44px] flex-col items-center justify-between rounded-[24px] before:rounded-[23px] py-2 gap-1.5`}
-                style={{ minHeight: 140 }}
-              >
-                <button
-                  type="button"
-                  onClick={handleStop}
-                  disabled={isBusy}
-                  className="flex h-9 w-9 items-center justify-center rounded-full transition-colors hover:bg-white/15 cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
-                  aria-label={isError ? "Recording error" : "Stop recording"}
-                >
-                  {isBusy ? (
-                    <Loader2 className="h-5 w-5 animate-spin text-white/80" />
-                  ) : isError ? (
-                    <AlertTriangle className="h-[18px] w-[18px] text-red-400" />
-                  ) : (
-                    <Square className="h-[18px] w-[18px] fill-red-500 text-red-500" />
-                  )}
-                </button>
-
-                <div className="flex h-7 w-full items-end justify-center gap-[3px] px-2">
-                  {Array.from({ length: NUM_WAVEFORM_BARS }).map((_, index) => (
-                    <Waveform
-                      key={index}
-                      index={index}
-                      isRecording={meetingState === "recording"}
-                      voiceDetected={voiceDetected}
-                      baseHeight={90}
-                      silentHeight={30}
-                    />
-                  ))}
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleOpenApp}
-                  className="flex h-9 w-9 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/15 hover:text-white cursor-pointer"
-                  aria-label="Open meeting note with transcription"
-                >
-                  <ArrowLeftToLine className="h-[18px] w-[18px]" />
-                </button>
-              </motion.div>
+                hovered={isHovered || dragState !== null}
+                meetingState={meetingState}
+                voiceDetected={voiceDetected}
+                onStop={handleStop}
+                onOpenNote={handleOpenNote}
+              />
+            ) : isDetection && meetingDetection ? (
+              <DetectionPill
+                key="detection"
+                payload={meetingDetection}
+                onTakeNotes={handleTakeNotesDetection}
+                onDismiss={handleDismissDetection}
+                takingNotes={startNoteFromDetectionMutation.isPending}
+                dismissing={dismissDetectionMutation.isPending}
+              />
             ) : (
-              <motion.button
+              <IdlePill
                 key="idle"
-                type="button"
-                data-hit-zone="true"
-                onClick={handleOpenApp}
-                initial={false}
-                animate={
-                  isHovered
-                    ? { width: 36, height: 110 }
-                    : { width: 8, height: 56 }
-                }
-                transition={{ duration: 0.18, ease: "easeOut" }}
-                className={`${PILL_SHELL_CLASS} flex items-center justify-center rounded-full before:rounded-full text-white/70 hover:text-white overflow-hidden`}
-                aria-label="Open Prismical"
-              >
-                <AnimatePresence>
-                  {isHovered && (
-                    <motion.span
-                      key="idle-icon"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      transition={{ duration: 0.12, delay: 0.08 }}
-                      className="flex items-center justify-center"
-                    >
-                      <ArrowLeftToLine className="h-4 w-4" />
-                    </motion.span>
-                  )}
-                </AnimatePresence>
-              </motion.button>
+                hovered={isHovered || dragState !== null}
+                onTakeNotes={handleTakeNotesIdle}
+                takingNotes={startNoteFromIdleMutation.isPending}
+              />
             )}
           </AnimatePresence>
         </motion.div>
