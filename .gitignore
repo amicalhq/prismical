@@ -62,3 +62,7 @@ agents/
 # Ignore repo-local docs and scripts
 docs/
 scripts/
+
+# Superpowers / agent artifacts
+.superpowers/
+.worktrees/
