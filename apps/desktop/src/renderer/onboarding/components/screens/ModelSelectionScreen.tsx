@@ -1,81 +1,111 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { ChevronDown, Sparkles, Zap, Circle, Loader2 } from "lucide-react";
 import { OnboardingLayout } from "../shared/OnboardingLayout";
 import { NavigationButtons } from "../shared/NavigationButtons";
-import { ModelSetupModal } from "./ModelSetupModal";
-import { useSystemRecommendation } from "../../hooks/useSystemRecommendation";
-import { ModelType } from "../../../../types/onboarding";
-import { Laptop, Sparkles, Check, X, Star } from "lucide-react";
-import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
+import { api } from "@/trpc/react";
+import { toast } from "sonner";
 
 interface ModelSelectionScreenProps {
-  onNext: (modelType: ModelType, recommendationFollowed: boolean) => void;
+  onNext: (modelId: string) => void;
   onBack: () => void;
-  initialSelection?: ModelType;
+  initialSelection?: string;
 }
 
-/**
- * Model selection screen for the local speech model.
- */
+const RATING_LENGTH = 5;
+
+function Rating({
+  rating,
+  variant,
+}: {
+  rating: number;
+  variant: "speed" | "accuracy";
+}) {
+  const filled = Math.floor(rating);
+  const Icon = variant === "speed" ? Zap : Circle;
+  const filledClass =
+    variant === "speed"
+      ? "fill-yellow-400 text-yellow-400"
+      : "fill-green-500 text-green-500";
+  return (
+    <div className="flex items-center gap-0.5">
+      {Array.from({ length: RATING_LENGTH }, (_, i) => (
+        <Icon
+          key={i}
+          className={`h-3.5 w-3.5 ${i < filled ? filledClass : "text-gray-300"}`}
+        />
+      ))}
+      <span className="ml-1 text-xs text-muted-foreground">{rating}</span>
+    </div>
+  );
+}
+
 export function ModelSelectionScreen({
   onNext,
   onBack,
   initialSelection,
 }: ModelSelectionScreenProps) {
   const { t } = useTranslation();
-  const { recommendation, isLoading } = useSystemRecommendation();
-  const [selectedModel, setSelectedModel] = useState<ModelType | null>(
-    initialSelection || null,
+
+  const availableModels = api.models.getAvailableModels.useQuery();
+  const downloadedModels = api.models.getDownloadedModels.useQuery();
+  const recommended = api.onboarding.getRecommendedLocalModel.useQuery();
+  const downloadMutation = api.models.downloadModel.useMutation();
+  const setSelectedModelMutation = api.models.setSelectedModel.useMutation();
+
+  const [selectedId, setSelectedId] = useState<string | undefined>(
+    initialSelection,
   );
-  const [showSetupModal, setShowSetupModal] = useState(false);
-  const [setupComplete, setSetupComplete] = useState(false);
 
-  const models = [
-    {
-      id: ModelType.Local,
-      title: t("onboarding.modelSelection.models.local.title"),
-      subtitle: t("onboarding.modelSelection.models.local.subtitle"),
-      description: t("onboarding.modelSelection.models.local.description"),
-      pros: [
-        t("onboarding.modelSelection.models.local.pros.privacy"),
-        t("onboarding.modelSelection.models.local.pros.offline"),
-      ],
-      cons: [t("onboarding.modelSelection.models.local.cons.resources")],
-      icon: Laptop,
-      iconBg: "bg-slate-500/10",
-      iconColor: "text-slate-500",
-    },
-  ];
+  useEffect(() => {
+    if (!selectedId && recommended.data) {
+      setSelectedId(recommended.data);
+    }
+  }, [recommended.data, selectedId]);
 
-  const handleModelSelect = (modelType: ModelType) => {
-    setSelectedModel(modelType);
-    setShowSetupModal(true);
-  };
+  const isLoading = availableModels.isLoading || recommended.isLoading;
+  const recommendedId = recommended.data;
+  const recommendedModel = (availableModels.data ?? []).find(
+    (m) => m.id === recommendedId,
+  );
+  const otherModels = (availableModels.data ?? []).filter(
+    (m) => m.id !== recommendedId,
+  );
 
-  const handleSetupComplete = () => {
-    setSetupComplete(true);
-  };
+  const isAlreadyDownloaded =
+    !!selectedId && !!downloadedModels.data?.[selectedId];
 
   const handleContinue = () => {
-    if (!selectedModel) {
+    if (!selectedId) {
       toast.error(t("onboarding.modelSelection.toast.selectModel"));
       return;
     }
-
-    if (!setupComplete) {
-      toast.error(t("onboarding.modelSelection.toast.completeSetup"));
-      return;
+    if (isAlreadyDownloaded) {
+      // Already on disk — just mark it as the active speech model.
+      setSelectedModelMutation.mutate({ modelId: selectedId });
+    } else {
+      // Kick off download in background; auto-selection happens on complete.
+      downloadMutation.mutate({ modelId: selectedId });
     }
-
-    const followedRecommendation = recommendation?.suggested === selectedModel;
-    onNext(selectedModel, followedRecommendation);
+    onNext(selectedId);
   };
-
-  // Check if any setup is complete
-  const canContinue = selectedModel !== null && setupComplete;
 
   return (
     <OnboardingLayout
@@ -85,150 +115,185 @@ export function ModelSelectionScreen({
         <NavigationButtons
           onBack={onBack}
           onNext={handleContinue}
-          disableNext={!canContinue}
+          disableNext={!selectedId}
           nextLabel={
-            canContinue
-              ? t("onboarding.navigation.continue")
-              : t("onboarding.modelSelection.completeSetupToContinue")
+            isAlreadyDownloaded
+              ? t("onboarding.modelSelection.actions.continue")
+              : t("onboarding.modelSelection.actions.downloadAndContinue")
           }
         />
       }
     >
-      <div className="space-y-4">
-        {/* System Recommendation */}
-        {recommendation && !isLoading && (
-          <Alert className="border-primary/50 bg-primary/5">
-            <Sparkles className="h-4 w-4" />
-            <AlertDescription>
-              <div>
-                <span className="font-medium">
-                  {t("onboarding.modelSelection.recommendation.label")}
-                </span>{" "}
-                {t("onboarding.modelSelection.recommendation.text")}{" "}
-                <span className="font-medium whitespace-nowrap">
-                  {t("onboarding.modelSelection.models.local.title")}
-                </span>
-                .
-              </div>
-              <div className="mt-1">{recommendation.reason}</div>
-            </AlertDescription>
-          </Alert>
-        )}
-
-        {/* Model Options */}
-        <div className="space-y-4">
-          {models.map((model) => {
-            const Icon = model.icon;
-            const isSelected = selectedModel === model.id;
-            const isRecommended = recommendation?.suggested === model.id;
-            const isComplete = setupComplete;
-
-            return (
+      {isLoading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          <span className="ml-2 text-sm text-muted-foreground">
+            {t("onboarding.modelSelection.loading")}
+          </span>
+        </div>
+      ) : (
+        <RadioGroup
+          value={selectedId ?? ""}
+          onValueChange={(v) => setSelectedId(v)}
+        >
+          <div className="space-y-4">
+            {recommendedModel && (
               <Card
-                key={model.id}
-                className={`transition-colors ${
-                  isSelected
-                    ? "border-primary bg-primary/5 cursor-pointer"
-                    : "hover:border-muted-foreground/50 cursor-pointer"
+                className={`cursor-pointer p-4 transition-colors ${
+                  selectedId === recommendedModel.id
+                    ? "border-primary bg-primary/5"
+                    : "hover:border-muted-foreground/50"
                 }`}
-                onClick={() => handleModelSelect(model.id)}
+                onClick={() => setSelectedId(recommendedModel.id)}
               >
-                <div className="flex items-start gap-4 px-4">
+                <div className="flex items-start gap-3">
+                  <RadioGroupItem
+                    value={recommendedModel.id}
+                    id={recommendedModel.id}
+                    className="mt-1.5"
+                  />
                   <div className="flex-1 space-y-2">
-                    {/* Header */}
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className={`rounded-lg p-2 ${model.iconBg}`}>
-                          <Icon className={`h-6 w-6 ${model.iconColor}`} />
-                        </div>
-                        <div className="flex flex-col gap-0.5">
-                          <div className="flex items-center gap-2">
-                            <h3 className="font-medium">{model.title}</h3>
-                            {isRecommended && (
-                              <Badge variant="secondary" className="text-xs">
-                                {t("onboarding.modelSelection.recommended")}
-                              </Badge>
-                            )}
-                          </div>
-                          <p className="text-sm">{model.subtitle}</p>
-                        </div>
-                      </div>
-                      {isComplete && (
-                        <div className="rounded-full bg-green-500/10 p-1">
-                          <Check className="h-4 w-4 text-green-500" />
-                        </div>
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="h-4 w-4 text-primary" />
+                      <Badge variant="secondary" className="text-xs">
+                        {t("onboarding.modelSelection.recommendedForYou")}
+                      </Badge>
+                      {!!downloadedModels.data?.[recommendedModel.id] && (
+                        <Badge variant="outline" className="text-xs">
+                          {t("onboarding.modelSelection.alreadyDownloaded")}
+                        </Badge>
                       )}
                     </div>
-
-                    {/* Description */}
-                    <p className="text-sm text-muted-foreground whitespace-pre-line">
-                      {model.description}
-                    </p>
-
-                    {/* Pros and Cons */}
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div>
-                        <p className="mb-1 font-medium text-green-600 dark:text-green-400">
-                          {t("onboarding.modelSelection.prosLabel")}
-                        </p>
-                        <ul className="space-y-0.5 text-muted-foreground">
-                          {model.pros.map((pro, i) => (
-                            <li key={i} className="flex items-center gap-1.5">
-                              <Check className="h-3.5 w-3.5 text-green-500 shrink-0" />
-                              {pro}
-                            </li>
-                          ))}
-                        </ul>
+                    <div>
+                      <Label
+                        htmlFor={recommendedModel.id}
+                        className="cursor-pointer text-base font-semibold"
+                      >
+                        {recommendedModel.name}
+                      </Label>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {t("onboarding.modelSelection.recommendationReason")}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                      <span>
+                        {t("onboarding.modelSelection.table.size")}:{" "}
+                        {recommendedModel.sizeFormatted}
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span>
+                          {t("onboarding.modelSelection.table.speed")}:
+                        </span>
+                        <Rating
+                          rating={recommendedModel.speed}
+                          variant="speed"
+                        />
                       </div>
-                      <div>
-                        <p className="mb-1 font-medium text-orange-600 dark:text-orange-400">
-                          {t("onboarding.modelSelection.consLabel")}
-                        </p>
-                        <ul className="space-y-0.5 text-muted-foreground">
-                          {model.cons.map((con, i) => (
-                            <li key={i} className="flex items-center gap-1.5">
-                              <X className="h-3.5 w-3.5 text-red-500 shrink-0" />
-                              {con}
-                            </li>
-                          ))}
-                        </ul>
+                      <div className="flex items-center gap-1.5">
+                        <span>
+                          {t("onboarding.modelSelection.table.accuracy")}:
+                        </span>
+                        <Rating
+                          rating={recommendedModel.accuracy}
+                          variant="accuracy"
+                        />
                       </div>
                     </div>
                   </div>
                 </div>
               </Card>
-            );
-          })}
-        </div>
+            )}
 
-        {/* Settings Note */}
-        <div className="flex items-start gap-2 rounded-lg bg-muted/50 p-4">
-          <Star className="h-4 w-4 mt-0.5 text-yellow-500 shrink-0 " />
-          <p className="text-sm text-muted-foreground">
-            {t("onboarding.modelSelection.note")}
-          </p>
-        </div>
-      </div>
-
-      {/* Setup Modal */}
-      {selectedModel && (
-        <ModelSetupModal
-          isOpen={showSetupModal}
-          onClose={(wasCompleted) => {
-            setShowSetupModal(false);
-            // Deselect if setup wasn't completed
-            if (!wasCompleted && !setupComplete) {
-              setSelectedModel(null);
-            }
-          }}
-          modelType={selectedModel}
-          onContinue={() => {
-            handleSetupComplete();
-            const followedRecommendation =
-              recommendation?.suggested === selectedModel;
-            onNext(selectedModel, followedRecommendation);
-          }}
-        />
+            {otherModels.length > 0 && (
+              <Collapsible>
+                <CollapsibleTrigger className="group flex w-full items-center justify-between rounded-md border bg-muted/40 px-3 py-2 text-sm hover:bg-muted/60">
+                  <div className="text-left">
+                    <p className="font-medium">
+                      {t("onboarding.modelSelection.otherModels")}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {t("onboarding.modelSelection.otherModelsDescription")}
+                    </p>
+                  </div>
+                  <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+                </CollapsibleTrigger>
+                <CollapsibleContent className="pt-2">
+                  <div className="rounded-md border bg-muted/30">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>
+                            {t("onboarding.modelSelection.table.model")}
+                          </TableHead>
+                          <TableHead>
+                            {t("onboarding.modelSelection.table.size")}
+                          </TableHead>
+                          <TableHead>
+                            {t("onboarding.modelSelection.table.speed")}
+                          </TableHead>
+                          <TableHead>
+                            {t("onboarding.modelSelection.table.accuracy")}
+                          </TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {otherModels.map((m) => {
+                          const isSelected = selectedId === m.id;
+                          const downloaded =
+                            !!downloadedModels.data?.[m.id];
+                          return (
+                            <TableRow
+                              key={m.id}
+                              className={`cursor-pointer hover:bg-muted/50 ${
+                                isSelected ? "bg-primary/5" : ""
+                              }`}
+                              onClick={() => setSelectedId(m.id)}
+                            >
+                              <TableCell>
+                                <div className="flex items-center gap-2">
+                                  <RadioGroupItem
+                                    value={m.id}
+                                    id={`row-${m.id}`}
+                                  />
+                                  <Label
+                                    htmlFor={`row-${m.id}`}
+                                    className="cursor-pointer font-medium"
+                                  >
+                                    {m.name}
+                                  </Label>
+                                  {downloaded && (
+                                    <Badge
+                                      variant="outline"
+                                      className="text-[10px]"
+                                    >
+                                      {t(
+                                        "onboarding.modelSelection.alreadyDownloaded",
+                                      )}
+                                    </Badge>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell>{m.sizeFormatted}</TableCell>
+                              <TableCell>
+                                <Rating rating={m.speed} variant="speed" />
+                              </TableCell>
+                              <TableCell>
+                                <Rating
+                                  rating={m.accuracy}
+                                  variant="accuracy"
+                                />
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
+            )}
+          </div>
+        </RadioGroup>
       )}
     </OnboardingLayout>
   );

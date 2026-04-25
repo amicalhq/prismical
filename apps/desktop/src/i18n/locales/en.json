@@ -45,8 +45,7 @@
       "complete": "Complete"
     },
     "progress": {
-      "step": "Step {{current}} of {{total}}",
-      "percent": "{{percent}}%"
+      "step": "Step {{current}} of {{total}}"
     },
     "toast": {
       "loadStateFailed": "Failed to load onboarding state",
@@ -64,38 +63,9 @@
       "supportNote": "If this problem persists, please contact support or check the documentation for help."
     },
     "welcome": {
-      "title": "Welcome to Prismical",
-      "subtitle": "Select the features you're interested in to personalize your experience",
-      "skip": "Skip onboarding",
-      "comingSoon": "Coming Soon",
-      "selectAria": "Select {{feature}}",
-      "features": {
-        "contextualDictation": {
-          "title": "Contextual Dictation",
-          "description": "Quick voice input in any application for seamless speech-to-text"
-        },
-        "noteTaking": {
-          "title": "Note Taking",
-          "description": "Capture thoughts and ideas through speech with smart formatting"
-        },
-        "meetingTranscriptions": {
-          "title": "Meeting Transcriptions",
-          "description": "Record and transcribe meetings and conversations with high accuracy"
-        },
-        "voiceCommands": {
-          "title": "Voice Commands",
-          "description": "Control your apps hands-free - act on tasks with natural voice commands"
-        }
-      },
-      "toast": {
-        "maxFeatures": "You can select up to {{max}} features",
-        "selectAtLeastOne": "Please select at least one feature to personalize your experience"
-      },
-      "selection": {
-        "none": "Select at least one feature",
-        "selected": "{{count}} selected"
-      },
-      "note": "Your choices help personalize setup - all features remain available anytime."
+      "title": "AI note taking",
+      "subtitle": "Open-source and private",
+      "continue": "Get started"
     },
     "permissions": {
       "title": "Setup Permissions",
@@ -151,103 +121,44 @@
       }
     },
     "modelSelection": {
-      "title": "Choose Your AI Model",
-      "subtitle": "Select how you want Prismical to process your audio",
-      "completeSetupToContinue": "Complete setup to continue",
-      "recommended": "Recommended",
-      "comingSoon": "Coming soon",
-      "prosLabel": "Pros:",
-      "consLabel": "Cons:",
-      "note": "You can change your model later in Settings - nothing is permanent.",
-      "recommendation": {
-        "label": "Recommendation:",
-        "text": "Based on your system specs, we recommend"
-      },
-      "toast": {
-        "selectModel": "Please select a model type",
-        "completeSetup": "Please complete setup to continue"
-      },
-      "models": {
-        "cloud": {
-          "title": "Prismical Cloud",
-          "subtitle": "Fast, more accurate, and free - no setup needed",
-          "description": "Ideal if you want the best accuracy or your device can't run local models.\\nSecure processing; audio is never stored.",
-          "pros": {
-            "free": "Free",
-            "fast": "Fast",
-            "accurate": "More accurate",
-            "noSetup": "No setup needed"
-          },
-          "cons": {
-            "internetLogin": "Needs internet and login"
-          }
-        },
-        "local": {
-          "title": "Local Models",
-          "subtitle": "Private, offline, and free - runs fully on your device.",
-          "description": "Great for privacy-focused users with capable hardware. No login required.",
-          "pros": {
-            "privacy": "Full privacy",
-            "offline": "Works offline"
-          },
-          "cons": {
-            "resources": "Uses device resources"
-          }
-        }
-      }
-    },
-    "modelSetup": {
-      "toast": {
-        "loginInBrowser": "Complete login in your browser",
-        "authenticated": "Successfully authenticated!"
+      "title": "Choose your transcription model",
+      "subtitle": "Models run locally on your device. You can change this later in Settings.",
+      "loading": "Loading models...",
+      "recommendedForYou": "Recommended for you",
+      "recommendationReason": "Based on your system specs.",
+      "otherModels": "Other models",
+      "otherModelsDescription": "Pick a different size to trade off between speed and accuracy.",
+      "alreadyDownloaded": "Already downloaded",
+      "table": {
+        "model": "Model",
+        "speed": "Speed",
+        "accuracy": "Accuracy",
+        "size": "Size"
       },
       "actions": {
-        "cancel": "Cancel",
-        "signIn": "Sign in",
-        "retry": "Retry"
+        "downloadAndContinue": "Download and continue",
+        "continue": "Continue"
       },
-      "cloud": {
-        "title": "Sign in required",
-        "description": "Cloud transcription needs authentication to continue.",
-        "error": {
-          "loginStartFailed": "Failed to open login. Please try again."
-        }
-      },
-      "local": {
-        "downloadingTitle": "Downloading Local Model",
-        "downloadingDescription": "Setting up local model for private, offline transcription",
-        "readyTitle": "Local Model Ready",
-        "readyDescription": "Ready for private, offline transcription.",
-        "alreadyInstalled": "Model Already Installed",
-        "downloadComplete": "Download Complete",
-        "using": "Using: {{model}}",
-        "error": {
-          "downloadFailed": "Failed to download model: {{message}}"
-        }
+      "toast": {
+        "selectModel": "Please select a model"
       }
     },
+    "downloadWidget": {
+      "downloading": "Downloading {{name}}",
+      "ready": "{{name}} is ready",
+      "cancel": "Cancel download",
+      "dismiss": "Dismiss"
+    },
+    "llmPrompt": {
+      "title": "Set up an AI model",
+      "description": "Connect a language model to generate AI notes from your transcriptions.",
+      "setup": "Set up",
+      "skip": "Maybe later"
+    },
     "completion": {
-      "title": "Setup Complete!",
-      "start": "Start Using Prismical",
-      "quickConfig": {
-        "title": "Quick Configuration"
-      },
-      "community": {
-        "discordAlt": "Discord",
-        "title": "Join our Community",
-        "description": "Get help, share feedback, and connect with other users",
-        "joinDiscord": "Join Discord"
-      },
-      "next": {
-        "title": "You're All Set!",
-        "items": {
-          "pushToTalk": "Use your push-to-talk shortcut to start transcribing",
-          "recordingWidget": "Click the floating recording widget for quick access",
-          "settings": "Explore Settings for more customization options"
-        }
-      },
-      "info": "All settings can be changed anytime in the application preferences.",
-      "infoLocalModel": "Your selected local model is ready to use offline."
+      "title": "You're all set!",
+      "subtitle": "Welcome to Prismical.",
+      "start": "Start using Prismical"
     }
   },
   "recordingNotifications": {

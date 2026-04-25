@@ -3,6 +3,7 @@ import { api } from "@/trpc/react";
 import { useOnboardingState } from "./hooks/useOnboardingState";
 import { ProgressIndicator } from "./components/shared/ProgressIndicator";
 import { OnboardingErrorBoundary } from "./components/ErrorBoundary";
+import { TranscriptionDownloadWidget } from "@/components/transcription-download-widget";
 import { useTranslation } from "react-i18next";
 
 // Screens
@@ -19,7 +20,6 @@ import {
   type SystemAudioPermissionStatus,
   type OnboardingState,
   type OnboardingPreferences,
-  type FeatureInterest,
   type DiscoverySource,
 } from "../../types/onboarding";
 
@@ -244,11 +244,6 @@ export function App() {
     });
   };
 
-  // Handle feature interests selection (telemetry tracked in backend)
-  const handleFeatureInterests = (interests: FeatureInterest[]) => {
-    handleSaveAndContinue({ featureInterests: interests });
-  };
-
   // Handle discovery source selection (telemetry tracked in backend)
   const handleDiscoverySource = (source: DiscoverySource, details?: string) => {
     setDiscoveryDetails(details || "");
@@ -259,15 +254,10 @@ export function App() {
   };
 
   // Handle model selection (telemetry tracked in backend)
-  const handleModelSelection = (
-    modelType: ModelType,
-    recommendationFollowed: boolean,
-  ) => {
+  const handleModelSelection = (modelId: string) => {
     handleSaveAndContinue({
-      selectedModelType: modelType,
-      modelRecommendation: state?.modelRecommendation
-        ? { ...state.modelRecommendation, followed: recommendationFollowed }
-        : undefined,
+      selectedTranscriptionModelId: modelId,
+      selectedModelType: ModelType.Local,
     });
   };
 
@@ -279,9 +269,9 @@ export function App() {
         completedVersion: 1,
         completedAt: new Date().toISOString(),
         skippedScreens: skippedScreensQuery.data || [],
-        featureInterests: preferences.featureInterests,
         discoverySource: preferences.discoverySource,
         selectedModelType: preferences.selectedModelType || ModelType.Local,
+        selectedTranscriptionModelId: preferences.selectedTranscriptionModelId,
         modelRecommendation: preferences.modelRecommendation,
       };
 
@@ -314,12 +304,7 @@ export function App() {
   const renderScreen = () => {
     switch (currentScreen) {
       case OnboardingScreen.Welcome:
-        return (
-          <WelcomeScreen
-            onNext={handleFeatureInterests}
-            initialInterests={preferences.featureInterests}
-          />
-        );
+        return <WelcomeScreen onNext={navigateNext} />;
 
       case OnboardingScreen.Permissions:
         return (
@@ -347,18 +332,12 @@ export function App() {
           <ModelSelectionScreen
             onNext={handleModelSelection}
             onBack={navigateBack}
-            initialSelection={preferences.selectedModelType}
+            initialSelection={preferences.selectedTranscriptionModelId}
           />
         );
 
       case OnboardingScreen.Completion:
-        return (
-          <CompletionScreen
-            onComplete={handleComplete}
-            onBack={navigateBack}
-            preferences={preferences}
-          />
-        );
+        return <CompletionScreen onComplete={handleComplete} />;
 
       default:
         return <div>{t("onboarding.app.unknownScreen")}</div>;
@@ -380,6 +359,11 @@ export function App() {
 
         {/* Screen Content */}
         <div className="h-full overflow-auto pt-20">{renderScreen()}</div>
+
+        {/* Floating notifications (download progress, persists across screens) */}
+        <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
+          <TranscriptionDownloadWidget />
+        </div>
       </div>
     </OnboardingErrorBoundary>
   );

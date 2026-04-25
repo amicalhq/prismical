@@ -71,6 +71,10 @@ export function useOnboardingState(): UseOnboardingStateReturn {
           if (preferences.selectedModelType !== undefined) {
             updated.selectedModelType = preferences.selectedModelType;
           }
+          if (preferences.selectedTranscriptionModelId !== undefined) {
+            updated.selectedTranscriptionModelId =
+              preferences.selectedTranscriptionModelId;
+          }
           if (preferences.modelRecommendation !== undefined) {
             updated.modelRecommendation = preferences.modelRecommendation;
           }

@@ -75,6 +75,7 @@ export interface OnboardingPreferences {
   discoverySource?: DiscoverySource;
   discoveryDetails?: string;
   selectedModelType?: ModelType;
+  selectedTranscriptionModelId?: string;
   modelRecommendation?: ModelRecommendation & { followed: boolean };
   lastVisitedScreen?: OnboardingScreen;
 }
@@ -87,6 +88,7 @@ export interface OnboardingState {
   featureInterests?: FeatureInterest[];
   discoverySource?: DiscoverySource;
   selectedModelType: ModelType;
+  selectedTranscriptionModelId?: string;
   modelRecommendation?: {
     suggested: ModelType;
     reason: string;
@@ -124,6 +126,7 @@ export const OnboardingStateSchema = z.object({
   featureInterests: z.array(FeatureInterestSchema).optional(),
   discoverySource: DiscoverySourceSchema.optional(),
   selectedModelType: ModelTypeSchema,
+  selectedTranscriptionModelId: z.string().optional(),
   modelRecommendation: z
     .object({
       suggested: ModelTypeSchema,
@@ -138,6 +141,7 @@ export const OnboardingPreferencesSchema = z.object({
   discoverySource: DiscoverySourceSchema.optional(),
   discoveryDetails: z.string().max(200).optional(),
   selectedModelType: ModelTypeSchema.optional(),
+  selectedTranscriptionModelId: z.string().optional(),
   modelRecommendation: z
     .object({
       suggested: ModelTypeSchema,
