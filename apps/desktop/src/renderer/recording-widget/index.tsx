@@ -189,7 +189,7 @@ function RecordingWidgetWindow() {
             <div className="pointer-events-none absolute inset-x-4 top-2 h-8 rounded-full bg-white/5 blur-xl" />
             <div className="relative z-10 flex flex-col items-center gap-1">
               <img
-                src="/assets/icon_logo.svg"
+                src="/assets/app-icon.png"
                 alt=""
                 className="h-4 w-4 opacity-80"
                 draggable={false}
