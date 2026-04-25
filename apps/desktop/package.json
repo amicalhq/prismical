@@ -45,6 +45,7 @@
     "build:mic-detector": "pnpm --filter @prismical/mic-detector build",
     "build:types": "pnpm --filter @prismical/types build",
     "dev": "pnpm start",
+    "kill": "bash scripts/kill-dev.sh",
     "download-node": "tsx scripts/download-node-binaries.ts",
     "download-node:all": "tsx scripts/download-node-binaries.ts --all"
   },
