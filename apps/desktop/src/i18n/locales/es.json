@@ -336,8 +336,8 @@
         "description": "Configura las preferencias generales y el comportamiento de la aplicación"
       },
       "dictation": {
-        "title": "Dictado",
-        "description": "Configura el reconocimiento de voz y los ajustes de dictado"
+        "title": "Transcripción",
+        "description": "Configura el idioma y el micrófono para la transcripción"
       },
       "shortcuts": {
         "title": "Atajos",
@@ -345,7 +345,7 @@
       },
       "vocabulary": {
         "title": "Vocabulario",
-        "description": "Administra el vocabulario personalizado y el reconocimiento de palabras"
+        "description": "Agrega jerga y nombres propios para que la IA los reconozca durante la transcripción y la generación de notas"
       },
       "aiModels": {
         "title": "Modelos de IA",
@@ -419,9 +419,9 @@
         "label": "Mostrar app en el dock",
         "description": "Mostrar el ícono de la aplicación en el dock de macOS"
       },
-      "autoDictateOnNewNote": {
-        "label": "Dictar automáticamente en nota nueva",
-        "description": "Iniciar el dictado automáticamente al crear una nueva nota"
+      "autoTranscribeOnNewNote": {
+        "label": "Transcribir automáticamente en nota nueva",
+        "description": "Iniciar la transcripción automáticamente al crear una nueva nota"
       },
       "meetingWidget": {
         "label": "Mostrar widget de grabación",
@@ -617,8 +617,8 @@
       }
     },
     "dictation": {
-      "title": "Dictado",
-      "description": "Configura el dictado, el idioma, el micrófono y los ajustes de modelo de IA",
+      "title": "Transcripción",
+      "description": "Configura el idioma y el micrófono para la transcripción",
       "language": {
         "autoDetect": {
           "label": "Detectar idioma automáticamente",
@@ -673,7 +673,7 @@
     },
     "shortcuts": {
       "title": "Atajos",
-      "description": "Configura atajos de teclado para dictado y modos manos libres",
+      "description": "Configura atajos globales y consulta los atajos de teclado dentro de la app",
       "toast": {
         "pushToTalkUpdated": "Atajo de pulsar para hablar actualizado",
         "handsFreeUpdated": "Atajo de modo manos libres actualizado",
@@ -804,7 +804,7 @@
     },
     "vocabulary": {
       "title": "Vocabulario",
-      "description": "Administra tu vocabulario personalizado y los reemplazos de palabras para el dictado.",
+      "description": "Agrega aquí jerga, nombres propios o términos específicos del dominio para que la IA los capte durante la transcripción y la generación de notas.",
       "addButton": "Agregar palabra",
       "loading": "Cargando vocabulario...",
       "empty": "No se encontraron palabras en el vocabulario. Agrega tu primera palabra para comenzar.",

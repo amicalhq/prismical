@@ -33,7 +33,7 @@ export interface AppPreferences {
   launchAtLogin: boolean;
   minimizeToTray: boolean;
   showInDock: boolean;
-  autoDictateOnNewNote: boolean;
+  autoTranscribeOnNewNote: boolean;
 }
 
 export interface MeetingNotificationSettings {
@@ -432,7 +432,7 @@ export class SettingsService extends EventEmitter {
       launchAtLogin: preferences?.launchAtLogin ?? true,
       minimizeToTray: preferences?.minimizeToTray ?? true,
       showInDock: preferences?.showInDock ?? true,
-      autoDictateOnNewNote: preferences?.autoDictateOnNewNote ?? false,
+      autoTranscribeOnNewNote: preferences?.autoTranscribeOnNewNote ?? false,
     };
   }
 

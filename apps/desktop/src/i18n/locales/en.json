@@ -336,8 +336,8 @@
         "description": "Configure general application preferences and behavior"
       },
       "dictation": {
-        "title": "Dictation",
-        "description": "Configure speech recognition and dictation settings"
+        "title": "Transcription",
+        "description": "Configure transcription language and microphone"
       },
       "shortcuts": {
         "title": "Shortcuts",
@@ -345,7 +345,7 @@
       },
       "vocabulary": {
         "title": "Vocabulary",
-        "description": "Manage custom vocabulary and word recognition"
+        "description": "Add jargon and proper names so AI recognises them during transcription and note generation"
       },
       "aiModels": {
         "title": "AI Models",
@@ -420,9 +420,9 @@
         "label": "Show app in dock",
         "description": "Display the application icon in the macOS dock"
       },
-      "autoDictateOnNewNote": {
-        "label": "Auto-dictate on new note",
-        "description": "Automatically start dictation when creating a new note"
+      "autoTranscribeOnNewNote": {
+        "label": "Auto-transcribe on new note",
+        "description": "Automatically start transcribing when creating a new note"
       },
       "meetingWidget": {
         "label": "Show recording widget",
@@ -618,8 +618,8 @@
       }
     },
     "dictation": {
-      "title": "Dictation",
-      "description": "Configure dictation, language, microphone, and AI model settings",
+      "title": "Transcription",
+      "description": "Configure transcription language and microphone",
       "language": {
         "autoDetect": {
           "label": "Auto detect language",
@@ -674,7 +674,7 @@
     },
     "shortcuts": {
       "title": "Shortcuts",
-      "description": "Configure keyboard shortcuts for dictation and hands-free modes",
+      "description": "Configure global hotkeys and view in-app keyboard shortcuts",
       "toast": {
         "pushToTalkUpdated": "Push to talk shortcut updated",
         "handsFreeUpdated": "Hands-free mode shortcut updated",
@@ -812,7 +812,7 @@
     },
     "vocabulary": {
       "title": "Vocabulary",
-      "description": "Manage your custom vocabulary and word replacements for dictation.",
+      "description": "Add jargon, proper names, or domain-specific terms here so AI picks them up during transcription and note generation.",
       "addButton": "Add Word",
       "loading": "Loading vocabulary...",
       "empty": "No vocabulary words found. Add your first word to get started.",

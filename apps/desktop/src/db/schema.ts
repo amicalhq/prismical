@@ -248,7 +248,7 @@ export interface AppSettingsData {
     launchAtLogin?: boolean;
     minimizeToTray?: boolean;
     showInDock?: boolean;
-    autoDictateOnNewNote?: boolean;
+    autoTranscribeOnNewNote?: boolean;
   };
   meetingNotifications?: {
     enabled?: boolean;

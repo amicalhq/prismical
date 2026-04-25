@@ -76,7 +76,7 @@ const defaultSettings: AppSettingsData = {
   preferences: {
     launchAtLogin: true,
     showInDock: true,
-    autoDictateOnNewNote: false,
+    autoTranscribeOnNewNote: false,
   },
   meetingNotifications: {
     enabled: true,

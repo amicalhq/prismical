@@ -107,9 +107,9 @@ export default function PreferencesSettingsPage() {
     updateUILocaleMutation.mutate({ locale: nextLocale });
   };
 
-  const handleAutoDictateOnNewNoteChange = (checked: boolean) => {
+  const handleAutoTranscribeOnNewNoteChange = (checked: boolean) => {
     updatePreferencesMutation.mutate({
-      autoDictateOnNewNote: checked,
+      autoTranscribeOnNewNote: checked,
     });
   };
 
@@ -122,8 +122,8 @@ export default function PreferencesSettingsPage() {
   const minimizeToTray = preferencesQuery.data?.minimizeToTray ?? false;
   const launchAtLogin = preferencesQuery.data?.launchAtLogin ?? true;
   const showInDock = preferencesQuery.data?.showInDock ?? true;
-  const autoDictateOnNewNote =
-    preferencesQuery.data?.autoDictateOnNewNote ?? false;
+  const autoTranscribeOnNewNote =
+    preferencesQuery.data?.autoTranscribeOnNewNote ?? false;
   const meetingWidgetEnabled = meetingWidgetSettingsQuery.data?.enabled ?? true;
   const isMac = window.electronAPI.platform === "darwin";
   const localeDisabled =
@@ -203,19 +203,19 @@ export default function PreferencesSettingsPage() {
               </>
             )}
 
-            {/* Auto-dictate on new note */}
+            {/* Auto-transcribe on new note */}
             <div className="flex items-center justify-between">
               <div className="space-y-1">
                 <Label className="text-base font-medium text-foreground">
-                  {t("settings.preferences.autoDictateOnNewNote.label")}
+                  {t("settings.preferences.autoTranscribeOnNewNote.label")}
                 </Label>
                 <p className="text-xs text-muted-foreground">
-                  {t("settings.preferences.autoDictateOnNewNote.description")}
+                  {t("settings.preferences.autoTranscribeOnNewNote.description")}
                 </p>
               </div>
               <Switch
-                checked={autoDictateOnNewNote}
-                onCheckedChange={handleAutoDictateOnNewNoteChange}
+                checked={autoTranscribeOnNewNote}
+                onCheckedChange={handleAutoTranscribeOnNewNoteChange}
                 disabled={updatePreferencesMutation.isPending}
               />
             </div>

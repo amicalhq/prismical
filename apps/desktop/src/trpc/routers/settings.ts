@@ -61,7 +61,7 @@ const AppPreferencesSchema = z.object({
   launchAtLogin: z.boolean().optional(),
   minimizeToTray: z.boolean().optional(),
   showInDock: z.boolean().optional(),
-  autoDictateOnNewNote: z.boolean().optional(),
+  autoTranscribeOnNewNote: z.boolean().optional(),
 });
 
 const UIThemeSchema = z.object({

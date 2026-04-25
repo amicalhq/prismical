@@ -336,8 +336,8 @@
         "description": "アプリケーション全般の設定と動作を構成"
       },
       "dictation": {
-        "title": "音声入力",
-        "description": "音声認識と音声入力の設定を構成"
+        "title": "文字起こし",
+        "description": "文字起こしの言語とマイクを設定"
       },
       "shortcuts": {
         "title": "ショートカット",
@@ -345,7 +345,7 @@
       },
       "vocabulary": {
         "title": "カスタム辞書",
-        "description": "カスタム辞書と単語認識を管理"
+        "description": "専門用語や固有名詞を追加すると、文字起こしやノート生成時にAIが認識します"
       },
       "aiModels": {
         "title": "AIモデル",
@@ -419,9 +419,9 @@
         "label": "Dockにアプリを表示",
         "description": "macOSのDockにアプリケーションアイコンを表示"
       },
-      "autoDictateOnNewNote": {
-        "label": "新しいノートで自動音声入力",
-        "description": "新しいノートを作成した時に自動的に音声入力を開始"
+      "autoTranscribeOnNewNote": {
+        "label": "新しいノートで自動文字起こし",
+        "description": "新しいノートを作成した時に自動的に文字起こしを開始"
       },
       "meetingWidget": {
         "label": "録音ウィジェットを表示",
@@ -617,8 +617,8 @@
       }
     },
     "dictation": {
-      "title": "音声入力",
-      "description": "音声入力、言語、マイク、AIモデルの設定を構成",
+      "title": "文字起こし",
+      "description": "文字起こしの言語とマイクを設定",
       "language": {
         "autoDetect": {
           "label": "言語を自動検出",
@@ -673,7 +673,7 @@
     },
     "shortcuts": {
       "title": "ショートカット",
-      "description": "音声入力とハンズフリーモードのキーボードショートカットを設定",
+      "description": "グローバルホットキーの設定とアプリ内のキーボードショートカットを表示",
       "toast": {
         "pushToTalkUpdated": "プッシュトゥトークのショートカットを更新しました",
         "handsFreeUpdated": "ハンズフリーモードのショートカットを更新しました",
@@ -804,7 +804,7 @@
     },
     "vocabulary": {
       "title": "カスタム辞書",
-      "description": "音声入力用のカスタム辞書と単語置換を管理します。",
+      "description": "専門用語、固有名詞、業界特有の言葉をここに追加すると、文字起こしやノート生成時にAIが正しく認識します。",
       "addButton": "単語を追加",
       "loading": "カスタム辞書を読み込み中...",
       "empty": "カスタム辞書が見つかりません。最初の単語を追加して始めましょう。",

@@ -1,11 +1,6 @@
-import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import {
-  LanguageSettings,
-  MicrophoneSettings,
-  FormattingSettings,
-} from "./components";
+import { LanguageSettings, MicrophoneSettings } from "./components";
 import { useTranslation } from "react-i18next";
 
 export default function DictationSettingsPage() {
@@ -23,14 +18,6 @@ export default function DictationSettingsPage() {
           <LanguageSettings />
           <Separator />
           <MicrophoneSettings />
-          <Separator />
-          {/* <SpeechToTextSettings
-            speechModels={speechModels}
-            speechModel={speechModel}
-            onSpeechModelChange={setSpeechModel}
-          />
-          <Separator /> */}
-          <FormattingSettings />
         </CardContent>
       </Card>
     </div>

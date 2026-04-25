@@ -130,7 +130,7 @@ function SettingsLayoutContent() {
 
     const routes: Record<string, string> = {
       "/settings/preferences": "Preferences",
-      "/settings/dictation": "Dictation",
+      "/settings/dictation": "Transcription",
       "/settings/vocabulary": "Vocabulary",
       "/settings/shortcuts": "Shortcuts",
       "/settings/ai-models": "AI Models",
