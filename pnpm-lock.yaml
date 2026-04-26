@@ -262,6 +262,9 @@ importers:
       libsql:
         specifier: ^0.5.13
         version: 0.5.17
+      lottie-react:
+        specifier: ^2.4.1
+        version: 2.4.1(react-dom@19.1.1(react@19.1.1))(react@19.1.1)
       lucide-react:
         specifier: ^0.510.0
         version: 0.510.0(react@19.1.1)
@@ -368,6 +371,12 @@ importers:
       '@electron/fuses':
         specifier: ^1.8.0
         version: 1.8.0
+      '@prismical/audio-capture':
+        specifier: workspace:*
+        version: link:../../packages/native-helpers/audio-capture
+      '@prismical/mic-detector':
+        specifier: workspace:*
+        version: link:../../packages/native-helpers/mic-detector
       '@rollup/plugin-commonjs':
         specifier: ^28.0.6
         version: 28.0.6(rollup@4.47.1)
@@ -5023,6 +5032,15 @@ packages:
   loose-envify@1.4.0:
     resolution: {integrity: sha512-lyuxPGr/Wfhrlem2CL/UcnUc1zcqKAImBDzukY7Y5F/yQiNdko6+fRLevlw1HgMySw7f611UIY408EtxRSoK3Q==}
     hasBin: true
+
+  lottie-react@2.4.1:
+    resolution: {integrity: sha512-LQrH7jlkigIIv++wIyrOYFLHSKQpEY4zehPicL9bQsrt1rnoKRYCYgpCUe5maqylNtacy58/sQDZTkwMcTRxZw==}
+    peerDependencies:
+      react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
+      react-dom: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
+
+  lottie-web@5.13.0:
+    resolution: {integrity: sha512-+gfBXl6sxXMPe8tKQm7qzLnUy5DUPJPKIyRHwtpCpyUEYjHYRJC/5gjUvdkuO2c3JllrPtHXH5UJJK8LRYl5yQ==}
 
   lower-case-first@1.0.2:
     resolution: {integrity: sha512-UuxaYakO7XeONbKrZf5FEgkantPf5DUqDayzP5VXZrtRPdH86s4kN47I8B3TW10S4QKiE3ziHNf3kRN//okHjA==}
@@ -11960,6 +11978,14 @@ snapshots:
   loose-envify@1.4.0:
     dependencies:
       js-tokens: 4.0.0
+
+  lottie-react@2.4.1(react-dom@19.1.1(react@19.1.1))(react@19.1.1):
+    dependencies:
+      lottie-web: 5.13.0
+      react: 19.1.1
+      react-dom: 19.1.1(react@19.1.1)
+
+  lottie-web@5.13.0: {}
 
   lower-case-first@1.0.2:
     dependencies:

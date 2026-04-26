@@ -1,6 +1,8 @@
 packages:
   - "apps/*"
   - "packages/*"
-  - "packages/**"
+  - "packages/native-helpers/*"
+  - "packages/whisper-wrapper/addon"
   - "!packages/**/whisper.cpp/**"
+  - "!packages/**/.local/**"
   - "!apps/www"

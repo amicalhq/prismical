@@ -16,7 +16,9 @@
     ]
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "pnpm build:ts && pnpm build:native",
+    "build:ts": "tsc -p tsconfig.json",
+    "dev:prepare": "node ./scripts/dev-prepare.js",
     "preinstall": "node ./scripts/apply-patches.js",
     "postinstall": "node ./bin/build-addon.js",
     "build:native": "node ./scripts/build-native.js",

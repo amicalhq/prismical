@@ -23,10 +23,19 @@ function run(cmd, opts = {}) {
 const pkgDir = path.resolve(__dirname, "..");
 const addonDir = path.join(pkgDir, "addon");
 const whisperDir = path.join(pkgDir, "whisper.cpp");
+const requiredWhisperFiles = [
+  "CMakeLists.txt",
+  "src/whisper.cpp",
+  "examples/common-whisper.cpp",
+];
 
-if (!fs.existsSync(addonDir) || !fs.existsSync(whisperDir)) {
+const hasRequiredWhisperSources =
+  fs.existsSync(whisperDir) &&
+  requiredWhisperFiles.every((file) => fs.existsSync(path.join(whisperDir, file)));
+
+if (!fs.existsSync(addonDir) || !hasRequiredWhisperSources) {
   console.error(
-    "whisper.cpp sources not found. Please add them to packages/whisper-wrapper/whisper.cpp",
+    "whisper.cpp sources not found. Run `pnpm --filter @prismical/whisper-wrapper dev:prepare` before building.",
   );
   process.exit(1);
 }
@@ -238,6 +247,11 @@ for (const variant of variants) {
 
   const env = {
     ...process.env,
+    GGML_NATIVE:
+      typeof process.env.GGML_NATIVE === "string" &&
+      process.env.GGML_NATIVE.length > 0
+        ? process.env.GGML_NATIVE
+        : "OFF",
     CMAKE_JS_CACHE: cacheDir,
     HOME: homeDir,
     CMAKE_JS_NODE_DIR: path.resolve(process.execPath, "..", ".."),
@@ -303,6 +317,3 @@ for (const variant of variants) {
   // extremely long CMake-generated paths that break Windows packaging tools.
   fs.rmSync(buildVariantDir, { recursive: true, force: true });
 }
-
-
-

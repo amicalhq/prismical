@@ -16,6 +16,7 @@
         ".next/**",
         "!.next/cache/**",
         "bin/**",
+        "native/**",
         "out/**",
         "dist/**",
         "build/**"
@@ -34,7 +35,8 @@
         "AUTH_TOKEN_ENDPOINT",
         "AUTH_REDIRECT_URI",
         "FEEDBACK_SURVEY_ID",
-        "API_ENDPOINT"
+        "API_ENDPOINT",
+        "GGML_NATIVE"
       ]
     },
     "build:native": {
@@ -48,8 +50,12 @@
         "binding.gyp",
         "whisper.cpp/**"
       ],
-      "outputs": ["bin/**", "build/**"],
+      "outputs": ["bin/**", "build/**", "native/**"],
+      "env": ["GGML_NATIVE"],
       "cache": true
+    },
+    "dev:prepare": {
+      "cache": false
     },
     "format:check": {},
     "lint": {
@@ -59,7 +65,7 @@
       "dependsOn": ["^build", "^type:check"]
     },
     "dev": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^build", "dev:prepare"],
       "cache": false,
       "persistent": true
     },

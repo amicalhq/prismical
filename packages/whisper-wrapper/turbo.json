@@ -1,0 +1,12 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      "dependsOn": ["dev:prepare", "^build"]
+    },
+    "build:native": {
+      "dependsOn": ["dev:prepare"]
+    }
+  }
+}

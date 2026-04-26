@@ -7,8 +7,12 @@ reasoning behind them.
 
 ## Build workflow
 
-- `pnpm install` (postinstall) runs `bin/build-addon.js` via CMake.js and drops
-  the resulting `whisper.node` into `native/<platform-arch(-tag)>/`.
+- `pnpm --filter @prismical/whisper-wrapper build` prepares the `whisper.cpp`
+  submodule, builds the TypeScript entrypoint, then builds the native addon.
+- `pnpm install` may also run `bin/build-addon.js` via postinstall when package
+  lifecycle scripts are enabled, but development does not rely on that path.
+- The native build drops the resulting `whisper.node` into
+  `native/<platform-arch(-tag)>/`.
 - `pnpm --filter @prismical/whisper-wrapper build:native` rebuilds the default
   variants for this platform (Metal + CPU on macOS, CPU elsewhere).
 - `pnpm --filter @prismical/whisper-wrapper build:native:cuda` builds an extra
@@ -43,9 +47,9 @@ binaries alongside CPU ones without breaking installs that lack the GPU stack.
 
 GitHub’s hosted macOS runners expose `i8mm` but clang refuses to emit the
 `vmmlaq_s32` intrinsic when `-mcpu=native` is passed, so the build dies in
-`ggml-cpu/arch/arm/quants.c`. CI therefore exports `GGML_NATIVE=OFF` before
-calling the build scripts. Locally you can flip it back on if your toolchain
-supports those instructions:
+`ggml-cpu/arch/arm/quants.c`. Native builds therefore default to
+`GGML_NATIVE=OFF`. Locally you can flip it back on if your toolchain supports
+those instructions:
 
 ```bash
 GGML_NATIVE=ON pnpm --filter @prismical/whisper-wrapper build:native
@@ -82,8 +86,9 @@ file directly, matching the CLI smoke tests.
 ## Patches
 
 Local patches in `patches/` are applied to the whisper.cpp submodule automatically
-during `pnpm install` (via the `preinstall` script). The apply script is idempotent —
-already-applied patches are skipped.
+during `pnpm --filter @prismical/whisper-wrapper dev:prepare` and during
+`pnpm install` when package lifecycle scripts are enabled. The apply script is
+idempotent — already-applied patches are skipped.
 
 ### fix-no-speech-prob-sot-position.patch
 

@@ -60,8 +60,8 @@ agents/
 /tmp
 
 # Ignore repo-local docs and scripts
-docs/
-scripts/
+/docs/
+/scripts/
 
 # Superpowers / agent artifacts
 .superpowers/
