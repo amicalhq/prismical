@@ -15,6 +15,9 @@ interface ModelsDevModel {
   id?: string;
   name?: string;
   description?: string;
+  // ISO date strings (YYYY-MM-DD).
+  release_date?: string;
+  last_updated?: string;
   // models.dev expresses modality input/output as arrays; "audio" → speech,
   // "embedding" output → embedding, otherwise language.
   modalities?: {
@@ -89,6 +92,7 @@ export function modelsDevEntryToCatalog(
   };
   if (typeof m.limit?.context === "number") entry.context = m.limit.context;
   if (typeof m.description === "string") entry.description = m.description;
+  if (typeof m.release_date === "string") entry.releaseDate = m.release_date;
   if (
     typeof m.cost?.input === "number" &&
     typeof m.cost?.output === "number"

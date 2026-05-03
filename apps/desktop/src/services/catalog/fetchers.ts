@@ -76,6 +76,8 @@ export async function fetchOpenRouterCatalog(
         output: completionUSD * 1_000_000,
       };
     }
+    const date = unixToISODate(m.created);
+    if (date) entry.releaseDate = date;
     return entry;
   });
 }
@@ -234,9 +236,23 @@ async function fetchOpenAIShape(
   for (const m of data.data ?? []) {
     const type = classify(m.id);
     if (!type) continue;
-    out.push({ id: m.id, name: m.id, type });
+    const entry: CatalogEntry = { id: m.id, name: m.id, type };
+    const date = unixToISODate(m.created);
+    if (date) entry.releaseDate = date;
+    out.push(entry);
   }
   return out;
+}
+
+// Convert a Unix epoch (seconds) into an ISO-8601 date string. Returns
+// null for missing or implausible timestamps so the caller can omit
+// the field rather than store garbage.
+function unixToISODate(seconds: unknown): string | null {
+  if (typeof seconds !== "number" || !Number.isFinite(seconds)) return null;
+  if (seconds <= 0) return null;
+  const d = new Date(seconds * 1000);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString().slice(0, 10);
 }
 
 // OpenAI's id space is well-known. We only surface families we route — TTS,
@@ -333,6 +349,8 @@ interface OpenAIShapeModel {
   id: string;
   object?: string;
   owned_by?: string;
+  // Unix epoch seconds. OpenAI / Groq / many compat servers populate this.
+  created?: number;
 }
 
 interface OpenRouterModel {
@@ -340,6 +358,8 @@ interface OpenRouterModel {
   name?: string;
   description?: string;
   context_length?: number;
+  // Unix epoch seconds — OpenRouter exposes the model's release timestamp.
+  created?: number;
   architecture?: {
     modality?: string;
     tokenizer?: string;

@@ -165,14 +165,26 @@ export default function ChangeDefaultDialog({
 
   const filteredCatalog = useMemo<CatalogEntry[]>(() => {
     const all = catalogQuery.data ?? [];
-    const matching = all.filter((entry) => entry.type === modelType);
-    if (!searchQuery.trim()) return matching;
-    const q = searchQuery.trim().toLowerCase();
-    return matching.filter(
-      (entry) =>
-        entry.id.toLowerCase().includes(q) ||
-        entry.name.toLowerCase().includes(q),
-    );
+    let matching = all.filter((entry) => entry.type === modelType);
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      matching = matching.filter(
+        (entry) =>
+          entry.id.toLowerCase().includes(q) ||
+          entry.name.toLowerCase().includes(q),
+      );
+    }
+    // Sort: newest releaseDate first; entries without a date fall to
+    // the bottom in alphabetical order. Picker users expect "claude
+    // 4.5" above "claude 3.5" without having to scan the whole list.
+    return matching.slice().sort((a, b) => {
+      if (a.releaseDate && b.releaseDate) {
+        return b.releaseDate.localeCompare(a.releaseDate);
+      }
+      if (a.releaseDate) return -1;
+      if (b.releaseDate) return 1;
+      return a.name.localeCompare(b.name);
+    });
   }, [catalogQuery.data, modelType, searchQuery]);
 
   const handleBackToStepOne = () => {
@@ -408,6 +420,10 @@ function CatalogRow({
   onOpenWhisperManager,
 }: CatalogRowProps) {
   const disabled = isWhisper && !isDownloaded;
+  // Show the raw id as a smaller secondary line only when it differs
+  // from the friendly name. Avoids "gpt-4o" being rendered twice when
+  // the fetcher had no nicer name to fall back to.
+  const showId = entry.id !== entry.name;
   return (
     <div
       className={`flex items-center gap-3 rounded-md p-2 ${disabled ? "opacity-60" : "hover:bg-accent"}`}
@@ -415,13 +431,18 @@ function CatalogRow({
       <RadioGroupItem value={entry.id} id={entry.id} disabled={disabled} />
       <Label
         htmlFor={entry.id}
-        className={`flex-1 min-w-0 ${disabled ? "cursor-not-allowed" : "cursor-pointer"}`}
+        className={`flex-1 min-w-0 flex flex-col gap-0.5 ${disabled ? "cursor-not-allowed" : "cursor-pointer"}`}
       >
-        <div className="font-medium truncate">{entry.name}</div>
+        <span className="text-sm font-medium truncate">{entry.name}</span>
+        {showId && (
+          <span className="text-xs text-muted-foreground truncate font-mono">
+            {entry.id}
+          </span>
+        )}
         {entry.description && (
-          <div className="text-xs text-muted-foreground truncate">
+          <span className="text-xs text-muted-foreground line-clamp-1">
             {entry.description}
-          </div>
+          </span>
         )}
       </Label>
       {isWhisper && !isDownloaded && (

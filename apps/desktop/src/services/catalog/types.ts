@@ -11,6 +11,12 @@ export interface CatalogEntry {
   context?: number; // context window in tokens (raw number; UI formats to "32k" etc.)
   pricing?: ModelPricing; // USD per 1M tokens, when known
   description?: string;
+  /**
+   * ISO 8601 date string (YYYY-MM-DD) of when the model was released.
+   * Used by the picker to sort newer models above older ones. Optional
+   * because not every provider exposes it (Ollama doesn't ship one).
+   */
+  releaseDate?: string;
 }
 
 export interface ModelPricing {
