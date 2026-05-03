@@ -16,18 +16,17 @@ interface AvailableTilesProps {
   onOpenWhisperManager: () => void;
 }
 
-// Display order for the Available tiles. Cloud providers first
-// (these are what most users will reach for), then the local /
-// compatibility / dev tiles. Ordering is hand-tuned for the
-// "most likely to want" gradient — adjust here only.
+// Display order for the Available tiles. Local Whisper leads as the
+// flagship on-device option; cloud providers follow. Mock stays at
+// the end (dev-only debug tile). Ordering is hand-tuned — adjust here.
 const TILE_ORDER: ProviderType[] = [
+  PROVIDER_TYPES.localWhisper,
   PROVIDER_TYPES.openai,
   PROVIDER_TYPES.anthropic,
   PROVIDER_TYPES.groq,
   PROVIDER_TYPES.openRouter,
   PROVIDER_TYPES.ollama,
   PROVIDER_TYPES.openAICompatible,
-  PROVIDER_TYPES.localWhisper,
   PROVIDER_TYPES.mock,
 ];
 

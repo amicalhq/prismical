@@ -1,5 +1,5 @@
 import type { ComponentType } from "react";
-import { Cloud, Mic, Plug, TestTube2 } from "lucide-react";
+import { Cloud, HardDrive, Plug, TestTube2 } from "lucide-react";
 import {
   PROVIDER_TYPES,
   PROVIDER_TYPE_LABELS,
@@ -68,7 +68,7 @@ export const PROVIDER_META: Record<ProviderType, ProviderMeta> = {
   },
   [PROVIDER_TYPES.localWhisper]: {
     label: PROVIDER_TYPE_LABELS[PROVIDER_TYPES.localWhisper],
-    Logo: Mic,
+    Logo: HardDrive,
     tint: "text-emerald-700 dark:text-emerald-300",
   },
   [PROVIDER_TYPES.mock]: {
