@@ -1,5 +1,6 @@
 import { getUserAgent } from "../../utils/http-client";
 import { AVAILABLE_MODELS } from "../../constants/models";
+import { logger } from "../../main/logger";
 import {
   isOllamaEmbeddingModelName,
   normalizeOllamaUrl,
@@ -191,23 +192,70 @@ async function enrichWithModelsDev(
   const data = await getModelsDevCatalog();
   const provider = data?.[providerId];
   const models = provider?.models;
-  if (!models) return entries;
-  return entries.map((entry) => {
+  // Always run the local prettifier so cloud catalogs read decently
+  // even when models.dev is unreachable. The remote layer only adds
+  // value on top — replacing the prettified guess with a curated
+  // name, attaching a release date, etc.
+  const prettified = entries.map((entry) =>
+    entry.name === entry.id
+      ? { ...entry, name: prettifyCloudModelId(entry.id) }
+      : entry,
+  );
+  if (!models) {
+    logger.main.warn(
+      `enrichWithModelsDev: no models.dev data for "${providerId}" (count=${entries.length})`,
+    );
+    return prettified;
+  }
+  let matched = 0;
+  const out = prettified.map((entry) => {
     const lookupId = idToLookupId(entry.id);
     const md = models[lookupId];
     if (!md) return entry;
-    const out: CatalogEntry = { ...entry };
-    if (typeof md.name === "string" && md.name.length > 0) out.name = md.name;
-    if (typeof md.release_date === "string") out.releaseDate = md.release_date;
+    matched++;
+    const enriched: CatalogEntry = { ...entry };
+    if (typeof md.name === "string" && md.name.length > 0) {
+      enriched.name = md.name;
+    }
+    if (typeof md.release_date === "string") {
+      enriched.releaseDate = md.release_date;
+    }
     if (
-      !out.description &&
+      !enriched.description &&
       typeof md.description === "string" &&
       md.description.length > 0
     ) {
-      out.description = md.description;
+      enriched.description = md.description;
     }
-    return out;
+    return enriched;
   });
+  logger.main.info(
+    `enrichWithModelsDev: provider=${providerId} matched=${matched}/${entries.length}`,
+  );
+  return out;
+}
+
+// Local fallback prettifier for cloud model ids when no curated name is
+// available. Hand-tuned for the families we route — adds proper case
+// to common prefixes ("gpt-" → "GPT-", "claude-" → "Claude ") and is a
+// no-op for anything unexpected. Models.dev results override this
+// when present.
+function prettifyCloudModelId(id: string): string {
+  const lower = id.toLowerCase();
+  // Match longest-prefix-first.
+  const rules: Array<[RegExp, string]> = [
+    [/^chatgpt-/, "ChatGPT "],
+    [/^gpt-/, "GPT-"],
+    [/^claude-/, "Claude "],
+    [/^text-embedding-/, "Text Embedding "],
+    [/^o(\d+)([-.])?/, "o$1$2"], // o1, o3, o4 keep lowercase 'o'
+  ];
+  for (const [from, to] of rules) {
+    if (from.test(lower)) {
+      return id.replace(from, to);
+    }
+  }
+  return id;
 }
 
 export async function fetchFromModelsDev(
