@@ -165,10 +165,7 @@ export class ServiceManager {
       throw new Error("Settings service not initialized");
     }
 
-    this.noteGenerationService = new NoteGenerationService(
-      this.modelService,
-      this.settingsService,
-    );
+    this.noteGenerationService = new NoteGenerationService(this.settingsService);
     logger.pipeline.info("Note generation service initialized");
 
     try {

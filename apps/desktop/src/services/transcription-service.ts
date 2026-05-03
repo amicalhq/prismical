@@ -7,10 +7,8 @@ import {
 } from "../pipeline/core/pipeline-types";
 import { createDefaultContext } from "../pipeline/core/context";
 import { WhisperProvider } from "../pipeline/providers/transcription/whisper-provider";
-import { OpenRouterProvider } from "../pipeline/providers/formatting/openrouter-formatter";
-import { OllamaFormatter } from "../pipeline/providers/formatting/ollama-formatter";
-import { OpenAICompatibleFormatter } from "../pipeline/providers/formatting/openai-compatible-formatter";
-import { MockFormatter } from "../pipeline/providers/formatting/mock-formatter";
+import { createFormatter } from "../pipeline/providers/formatting/formatter-registry";
+import { getInstanceById } from "../db/instances";
 import { ModelService } from "../services/model-service";
 import { SettingsService } from "../services/settings-service";
 import { TelemetryService } from "../services/telemetry-service";
@@ -317,8 +315,6 @@ export class TranscriptionService {
         session.recordingStartedAt = recordingStartedAt;
       }
 
-      const formatterConfig = await this.settingsService.getFormatterConfig();
-
       // Flush provider to get any remaining buffered audio
       await this.transcriptionMutex.acquire();
       try {
@@ -622,121 +618,54 @@ export class TranscriptionService {
     } else if (!text.trim().length) {
       logger.transcription.debug("Formatting skipped: empty transcription");
     } else {
-      const modelId =
-        formatterConfig.modelId === "prismical-cloud"
-          ? await this.settingsService.getDefaultLanguageModel()
-          : formatterConfig.modelId ||
-            (await this.settingsService.getDefaultLanguageModel());
-      if (!modelId) {
+      // Resolve the formatting model from the per-use-case defaults; the
+      // legacy formatterConfig.modelId / fallbackModelId fields (with the
+      // "prismical-cloud" magic value) no longer participate.
+      const selection = await this.settingsService.getDefault("formatting");
+      if (!selection) {
         logger.transcription.debug(
-          "Formatting skipped: no default language model",
+          "Formatting skipped: no formatting model is configured",
         );
       } else {
-        const allModels = await this.modelService.getSyncedProviderModels();
-        const model = allModels.find(
-          (m) => m.id === modelId && m.type === "language",
-        );
-
-        if (!model) {
-          logger.transcription.warn("Formatting skipped: model not found", {
-            modelId,
-          });
-        } else if (model.provider === "OpenRouter") {
-          const config = await this.settingsService.getOpenRouterConfig();
-          if (!config?.apiKey) {
-            logger.transcription.warn(
-              "Formatting skipped: OpenRouter API key missing",
-            );
-          } else {
-            logger.transcription.info("Starting formatting", {
-              provider: model.provider,
-              model: modelId,
-            });
-            const provider = new OpenRouterProvider(config.apiKey, modelId);
-            const result = await this.formatWithProvider(provider, text, {
-              style: options.formattingStyle,
-              vocabulary: options.vocabulary,
-              accessibilityContext: options.accessibilityContext,
-            });
-            if (result) {
-              text = result.text;
-              formattingDuration = result.duration;
-              formattingUsed = true;
-              formattingModel = modelId;
-            }
-          }
-        } else if (model.provider === "Ollama") {
-          const config = await this.settingsService.getOllamaConfig();
-          if (!config?.url) {
-            logger.transcription.warn("Formatting skipped: Ollama URL missing");
-          } else {
-            logger.transcription.info("Starting formatting", {
-              provider: model.provider,
-              model: modelId,
-            });
-            const provider = new OllamaFormatter(config.url, modelId);
-            const result = await this.formatWithProvider(provider, text, {
-              style: options.formattingStyle,
-              vocabulary: options.vocabulary,
-              accessibilityContext: options.accessibilityContext,
-            });
-            if (result) {
-              text = result.text;
-              formattingDuration = result.duration;
-              formattingUsed = true;
-              formattingModel = modelId;
-            }
-          }
-        } else if (model.provider === "OpenAI Compatible") {
-          const config = await this.settingsService.getOpenAICompatibleConfig();
-          if (!config?.apiKey || !config?.baseURL) {
-            logger.transcription.warn(
-              "Formatting skipped: OpenAI-compatible config missing",
-            );
-          } else {
-            logger.transcription.info("Starting formatting", {
-              provider: model.provider,
-              model: modelId,
-            });
-            const provider = new OpenAICompatibleFormatter(
-              config.apiKey,
-              config.baseURL,
-              modelId,
-            );
-            const result = await this.formatWithProvider(provider, text, {
-              style: options.formattingStyle,
-              vocabulary: options.vocabulary,
-              accessibilityContext: options.accessibilityContext,
-            });
-            if (result) {
-              text = result.text;
-              formattingDuration = result.duration;
-              formattingUsed = true;
-              formattingModel = modelId;
-            }
-          }
-        } else if (model.provider === "Mock") {
-          logger.transcription.info("Starting formatting", {
-            provider: model.provider,
-            model: modelId,
-          });
-          const provider = new MockFormatter(modelId);
-          const result = await this.formatWithProvider(provider, text, {
-            style: options.formattingStyle,
-            vocabulary: options.vocabulary,
-            accessibilityContext: options.accessibilityContext,
-          });
-          if (result) {
-            text = result.text;
-            formattingDuration = result.duration;
-            formattingUsed = true;
-            formattingModel = modelId;
-          }
-        } else {
+        const instance = await getInstanceById(selection.instanceId);
+        if (!instance) {
           logger.transcription.warn(
-            "Formatting skipped: unsupported provider",
-            { provider: model.provider },
+            "Formatting skipped: instance no longer exists",
+            { instanceId: selection.instanceId, modelId: selection.modelId },
           );
+        } else {
+          try {
+            logger.transcription.info("Starting formatting", {
+              provider: instance.type,
+              instanceId: instance.id,
+              model: selection.modelId,
+            });
+            const provider = await createFormatter(
+              instance,
+              selection.modelId,
+            );
+            const result = await this.formatWithProvider(provider, text, {
+              style: options.formattingStyle,
+              vocabulary: options.vocabulary,
+              accessibilityContext: options.accessibilityContext,
+            });
+            if (result) {
+              text = result.text;
+              formattingDuration = result.duration;
+              formattingUsed = true;
+              formattingModel = selection.modelId;
+            }
+          } catch (error) {
+            logger.transcription.warn(
+              "Formatting skipped: provider construction failed",
+              {
+                provider: instance.type,
+                instanceId: instance.id,
+                error:
+                  error instanceof Error ? error.message : String(error),
+              },
+            );
+          }
         }
       }
     }
@@ -811,9 +740,8 @@ export class TranscriptionService {
     const vocabulary = context.sharedData.vocabulary;
     const language = context.sharedData.userPreferences?.language;
 
-    // Determine formatting config before acquiring mutex
+    // Determine selected speech model before acquiring mutex
     const selectedModelId = await this.modelService.getSelectedModel();
-    const formatterConfig = await this.settingsService.getFormatterConfig();
     const FRAME_SIZE = 512;
     const frames: Float32Array[] = [];
     for (let offset = 0; offset < audioData.length; offset += FRAME_SIZE) {
