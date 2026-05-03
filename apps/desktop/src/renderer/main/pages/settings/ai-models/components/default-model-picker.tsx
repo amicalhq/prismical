@@ -20,7 +20,6 @@ import {
 } from "@/utils/model-selection";
 import { isProviderType } from "@/constants/provider-types";
 import { PROVIDER_META } from "@/renderer/main/components/provider-meta";
-import { invalidateModelsDevCache } from "@/services/catalog";
 import type { Instance } from "@/db/schema";
 import type { CatalogEntry, ModelType } from "@/services/catalog";
 
@@ -76,6 +75,15 @@ export default function DefaultModelPicker({
     },
   });
 
+  const refreshCatalogsMutation = api.instances.refreshCatalogs.useMutation({
+    onSuccess: () => {
+      utils.instances.fetchCatalog.invalidate();
+    },
+    onError: (error) => {
+      toast.error(`Couldn't refresh catalogs: ${error.message}`);
+    },
+  });
+
   // Listen for selection changes from ModelService (whisper auto-select etc.)
   api.models.onSelectionChanged.useSubscription(undefined, {
     onData: () => {
@@ -101,8 +109,7 @@ export default function DefaultModelPicker({
   };
 
   const handleRefreshAll = () => {
-    invalidateModelsDevCache();
-    utils.instances.fetchCatalog.invalidate();
+    refreshCatalogsMutation.mutate();
   };
 
   return (

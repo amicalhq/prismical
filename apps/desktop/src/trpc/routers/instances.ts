@@ -17,7 +17,11 @@ import {
   updateInstance,
 } from "../../db/instances";
 import type { InstanceConfig } from "../../db/schema";
-import { getCatalog, type CatalogEntry } from "../../services/catalog";
+import {
+  getCatalog,
+  invalidateModelsDevCache,
+  type CatalogEntry,
+} from "../../services/catalog";
 import {
   validateInstanceConfig,
   type ValidationResult,
@@ -249,7 +253,8 @@ export const instancesRouter = createRouter({
   /**
    * Fetch the model catalog for a single instance. The picker mounts this
    * on demand; React Query caches it for the session, with an explicit
-   * refresh button calling `invalidateModelsDevCache` (catalog/index.ts).
+   * refresh button calling `refreshCatalogs` to bust the main-process
+   * models.dev memo before the React Query cache is invalidated.
    */
   fetchCatalog: procedure
     .input(z.object({ id: z.string().min(1) }))
@@ -260,6 +265,11 @@ export const instancesRouter = createRouter({
       }
       return await getCatalog(instance);
     }),
+
+  refreshCatalogs: procedure.mutation(async () => {
+    invalidateModelsDevCache();
+    return { ok: true };
+  }),
 
   // ---------- modelDefaults (per use-case selections) ----------
 
