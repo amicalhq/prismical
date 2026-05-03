@@ -2,6 +2,7 @@ import { z } from "zod";
 import { vocabularyRouter } from "./routers/vocabulary";
 import { transcriptionsRouter } from "./routers/transcriptions";
 import { modelsRouter } from "./routers/models";
+import { instancesRouter } from "./routers/instances";
 import { settingsRouter } from "./routers/settings";
 import { updaterRouter } from "./routers/updater";
 import { recordingRouter } from "./routers/recording";
@@ -46,8 +47,11 @@ export const router = createRouter({
   // Transcriptions router
   transcriptions: transcriptionsRouter,
 
-  // Models router
+  // Models router (whisper download manager + speech selection)
   models: modelsRouter,
+
+  // Provider instances router (CRUD + catalog + per-use-case defaults)
+  instances: instancesRouter,
 
   // Settings router
   settings: settingsRouter,

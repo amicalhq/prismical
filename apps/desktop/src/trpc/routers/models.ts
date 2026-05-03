@@ -5,100 +5,17 @@ import type {
   AvailableWhisperModel,
   DownloadProgress,
 } from "../../constants/models";
-import type { Model } from "../../db/schema";
-import type { ValidationResult } from "../../types/providers";
-import { removeModel } from "../../db/models";
+import type { LocalWhisperDownloadedModel } from "../../db/schema";
+
+// What's left of the old models router after the multi-instance refactor:
+// it's now scoped to the local-whisper download manager (download / cancel /
+// delete / progress events) plus the local-whisper selection. Everything
+// remote (catalogs, defaults for language/embedding, instance CRUD) lives
+// on the `instances` router.
 
 export const modelsRouter = createRouter({
-  // Unified models fetching
-  getModels: procedure
-    .input(
-      z.object({
-        provider: z.string().optional(),
-        type: z.enum(["speech", "language", "embedding"]).optional(),
-        selectable: z.boolean().optional().default(false),
-      }),
-    )
-    .query(async ({ input, ctx }): Promise<Model[]> => {
-      const modelService = ctx.serviceManager.getService("modelService");
-      if (!modelService) {
-        throw new Error("Model manager service not available");
-      }
+  // ---------- Catalog of downloadable Whisper models ----------
 
-      // For speech models (local whisper)
-      if (input.type === "speech") {
-        // Return all available whisper models as Model type
-        // We need to convert from AvailableWhisperModel to Model format
-        const availableModels = modelService.getAvailableModels();
-        const downloadedModels = await modelService.getDownloadedModels();
-
-        // Map available models to Model format using downloaded data if available
-        let models = availableModels.map((m) => {
-          const downloaded = downloadedModels[m.id];
-          if (downloaded) {
-            // Include setup field from available model metadata
-            return {
-              ...downloaded,
-              setup: m.setup,
-            } as Model & { setup: "offline" | "cloud" };
-          }
-          // Create a partial Model for non-downloaded models
-          return {
-            id: m.id,
-            name: m.name,
-            provider: m.provider,
-            type: "speech" as const,
-            size: m.sizeFormatted,
-            context: null,
-            description: m.description,
-            localPath: null,
-            sizeBytes: null,
-            checksum: null,
-            downloadedAt: null,
-            originalModel: null,
-            speed: m.speed,
-            accuracy: m.accuracy,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-            setup: m.setup,
-          } as Model & { setup: "offline" | "cloud" };
-        });
-
-        // Apply selectable filtering for dropdown/combobox
-        if (input.selectable) {
-          models = models.filter((m) => m.downloadedAt !== null);
-        }
-
-        return models;
-      }
-
-      // For language/embedding models (provider models)
-      let models = await modelService.getSyncedProviderModels();
-
-      // Filter by provider if specified
-      if (input.provider) {
-        models = models.filter((m) => m.provider === input.provider);
-      }
-
-      // Filter by type if specified
-      if (input.type) {
-        models = models.filter((m) => {
-          if (input.type === "embedding") {
-            return (
-              m.provider === "Ollama" && m.name.toLowerCase().includes("embed")
-            );
-          }
-          // For language models, exclude embedding models
-          return !(
-            m.provider === "Ollama" && m.name.toLowerCase().includes("embed")
-          );
-        });
-      }
-
-      return models;
-    }),
-
-  // Legacy endpoints (kept for backward compatibility)
   getAvailableModels: procedure.query(
     async ({ ctx }): Promise<AvailableWhisperModel[]> => {
       const modelService = ctx.serviceManager.getService("modelService");
@@ -107,16 +24,15 @@ export const modelsRouter = createRouter({
   ),
 
   getDownloadedModels: procedure.query(
-    async ({ ctx }): Promise<Record<string, Model>> => {
+    async ({ ctx }): Promise<Record<string, LocalWhisperDownloadedModel>> => {
       const modelService = ctx.serviceManager.getService("modelService");
       if (!modelService) {
-        throw new Error("Model manager service not available");
+        throw new Error("Model service not available");
       }
       return await modelService.getDownloadedModels();
     },
   ),
 
-  // Check if model is downloaded
   isModelDownloaded: procedure
     .input(z.object({ modelId: z.string() }))
     .query(async ({ input, ctx }) => {
@@ -126,7 +42,6 @@ export const modelsRouter = createRouter({
         : false;
     }),
 
-  // Get download progress
   getDownloadProgress: procedure
     .input(z.object({ modelId: z.string() }))
     .query(async ({ input, ctx }) => {
@@ -134,7 +49,6 @@ export const modelsRouter = createRouter({
       return modelService?.getDownloadProgress(input.modelId) || null;
     }),
 
-  // Get active downloads
   getActiveDownloads: procedure.query(
     async ({ ctx }): Promise<DownloadProgress[]> => {
       const modelService = ctx.serviceManager.getService("modelService");
@@ -142,13 +56,11 @@ export const modelsRouter = createRouter({
     },
   ),
 
-  // Get models directory
   getModelsDirectory: procedure.query(async ({ ctx }) => {
     const modelService = ctx.serviceManager.getService("modelService");
     return modelService?.getModelsDirectory() || "";
   }),
 
-  // Transcription model selection methods
   isTranscriptionAvailable: procedure.query(async ({ ctx }) => {
     const modelService = ctx.serviceManager.getService("modelService");
     return modelService ? await modelService.isAvailable() : false;
@@ -161,19 +73,19 @@ export const modelsRouter = createRouter({
       : [];
   }),
 
+  /** The currently selected local-whisper model id, if any. */
   getSelectedModel: procedure.query(async ({ ctx }) => {
     const modelService = ctx.serviceManager.getService("modelService");
     return modelService ? await modelService.getSelectedModel() : null;
   }),
 
-  // Mutations
+  // ---------- Mutations ----------
+
   downloadModel: procedure
     .input(z.object({ modelId: z.string() }))
     .mutation(async ({ input, ctx }) => {
       const modelService = ctx.serviceManager.getService("modelService");
-      if (!modelService) {
-        throw new Error("Model manager service not initialized");
-      }
+      if (!modelService) throw new Error("Model service not initialized");
       return await modelService.downloadModel(input.modelId);
     }),
 
@@ -181,9 +93,7 @@ export const modelsRouter = createRouter({
     .input(z.object({ modelId: z.string() }))
     .mutation(async ({ input, ctx }) => {
       const modelService = ctx.serviceManager.getService("modelService");
-      if (!modelService) {
-        throw new Error("Model manager service not initialized");
-      }
+      if (!modelService) throw new Error("Model service not initialized");
       return modelService.cancelDownload(input.modelId);
     }),
 
@@ -191,22 +101,25 @@ export const modelsRouter = createRouter({
     .input(z.object({ modelId: z.string() }))
     .mutation(async ({ input, ctx }) => {
       const modelService = ctx.serviceManager.getService("modelService");
-      if (!modelService) {
-        throw new Error("Model manager service not initialized");
-      }
+      if (!modelService) throw new Error("Model service not initialized");
       return modelService.deleteModel(input.modelId);
     }),
 
+  /**
+   * Pick or clear the local-whisper speech model. The instances router's
+   * `setDefault` for `transcription` routes through this when the
+   * selection's instance is system-local-whisper, so callers usually
+   * don't need to call this directly — the picker writes through the
+   * instances router for uniformity.
+   */
   setSelectedModel: procedure
     .input(z.object({ modelId: z.string().nullable() }))
     .mutation(async ({ input, ctx }) => {
       const modelService = ctx.serviceManager.getService("modelService");
-      if (!modelService) {
-        throw new Error("Model manager service not initialized");
-      }
+      if (!modelService) throw new Error("Model service not initialized");
       await modelService.setSelectedModel(input.modelId);
 
-      // Notify transcription service about model change (fire-and-forget to avoid blocking UI)
+      // Notify transcription service so the live pipeline updates.
       const transcriptionService = ctx.serviceManager.getService(
         "transcriptionService",
       );
@@ -217,480 +130,89 @@ export const modelsRouter = createRouter({
       return true;
     }),
 
-  // Provider validation endpoints
-  validateOpenRouterConnection: procedure
-    .input(z.object({ apiKey: z.string() }))
-    .mutation(async ({ input, ctx }): Promise<ValidationResult> => {
-      const modelService = ctx.serviceManager.getService("modelService");
-      if (!modelService) {
-        throw new Error("Model manager service not initialized");
-      }
-      return await modelService.validateOpenRouterConnection(input.apiKey);
-    }),
+  // ---------- Subscriptions ----------
+  // Observables (vs async generators) avoid a Symbol.asyncDispose conflict
+  // between Node 20+ and electron-trpc; behaviour is otherwise equivalent.
 
-  validateOllamaConnection: procedure
-    .input(z.object({ url: z.string() }))
-    .mutation(async ({ input, ctx }): Promise<ValidationResult> => {
-      const modelService = ctx.serviceManager.getService("modelService");
-      if (!modelService) {
-        throw new Error("Model manager service not initialized");
-      }
-      return await modelService.validateOllamaConnection(input.url);
-    }),
-
-  validateOpenAICompatibleConnection: procedure
-    .input(z.object({ apiKey: z.string(), baseURL: z.string() }))
-    .mutation(async ({ input, ctx }): Promise<ValidationResult> => {
-      const modelService = ctx.serviceManager.getService("modelService");
-      if (!modelService) {
-        throw new Error("Model manager service not initialized");
-      }
-      return await modelService.validateOpenAICompatibleConnection(
-        input.baseURL,
-        input.apiKey,
-      );
-    }),
-
-  // Provider model fetching
-  fetchOpenRouterModels: procedure
-    .input(z.object({ apiKey: z.string() }))
-    .query(async ({ input, ctx }) => {
-      const modelService = ctx.serviceManager.getService("modelService");
-      if (!modelService) {
-        throw new Error("Model manager service not initialized");
-      }
-      return await modelService.fetchOpenRouterModels(input.apiKey);
-    }),
-
-  fetchOllamaModels: procedure
-    .input(z.object({ url: z.string() }))
-    .query(async ({ input, ctx }) => {
-      const modelService = ctx.serviceManager.getService("modelService");
-      if (!modelService) {
-        throw new Error("Model manager service not initialized");
-      }
-      return await modelService.fetchOllamaModels(input.url);
-    }),
-
-  fetchOpenAICompatibleModels: procedure
-    .input(z.object({ apiKey: z.string(), baseURL: z.string() }))
-    .query(async ({ input, ctx }) => {
-      const modelService = ctx.serviceManager.getService("modelService");
-      if (!modelService) {
-        throw new Error("Model manager service not initialized");
-      }
-      return await modelService.fetchOpenAICompatibleModels(
-        input.baseURL,
-        input.apiKey,
-      );
-    }),
-
-  // Provider model database sync
-  getSyncedProviderModels: procedure.query(
-    async ({ ctx }): Promise<Model[]> => {
-      const modelService = ctx.serviceManager.getService("modelService");
-      if (!modelService) {
-        throw new Error("Model manager service not initialized");
-      }
-      return await modelService.getSyncedProviderModels();
-    },
-  ),
-
-  syncProviderModelsToDatabase: procedure
-    .input(
-      z.object({
-        provider: z.string(),
-        models: z.array(z.any()), // ProviderModel[]
-      }),
-    )
-    .mutation(async ({ input, ctx }) => {
-      const modelService = ctx.serviceManager.getService("modelService");
-      if (!modelService) {
-        throw new Error("Model manager service not initialized");
-      }
-      await modelService.syncProviderModelsToDatabase(
-        input.provider,
-        input.models,
-      );
-      return true;
-    }),
-
-  // Unified default model management
-  getDefaultModel: procedure
-    .input(
-      z.object({
-        type: z.enum(["speech", "language", "embedding"]),
-      }),
-    )
-    .query(async ({ input, ctx }) => {
-      const modelService = ctx.serviceManager.getService("modelService");
-      if (!modelService) {
-        throw new Error("Model manager service not initialized");
-      }
-
-      switch (input.type) {
-        case "speech":
-          return await modelService.getSelectedModel();
-        case "language":
-          return await modelService.getDefaultLanguageModel();
-        case "embedding":
-          return await modelService.getDefaultEmbeddingModel();
-      }
-    }),
-
-  setDefaultModel: procedure
-    .input(
-      z.object({
-        type: z.enum(["speech", "language", "embedding"]),
-        modelId: z.string().nullable(),
-      }),
-    )
-    .mutation(async ({ input, ctx }) => {
-      const modelService = ctx.serviceManager.getService("modelService");
-      if (!modelService) {
-        throw new Error("Model manager service not initialized");
-      }
-
-      switch (input.type) {
-        case "speech": {
-          await modelService.setSelectedModel(input.modelId);
-          // Notify transcription service about model change (fire-and-forget to avoid blocking UI)
-          const transcriptionService = ctx.serviceManager.getService(
-            "transcriptionService",
-          );
-          if (transcriptionService) {
-            transcriptionService.handleModelChange().catch((err) => {
-              const logger = ctx.serviceManager.getLogger();
-              logger?.main.error("Failed to handle model change:", err);
-            });
-          }
-          break;
-        }
-        case "language":
-          await modelService.setDefaultLanguageModel(input.modelId);
-          break;
-        case "embedding":
-          await modelService.setDefaultEmbeddingModel(input.modelId);
-          break;
-      }
-      return true;
-    }),
-
-  // Legacy endpoints (kept for backward compatibility, can be removed later)
-  getDefaultLanguageModel: procedure.query(async ({ ctx }) => {
-    const modelService = ctx.serviceManager.getService("modelService");
-    if (!modelService) {
-      throw new Error("Model manager service not initialized");
-    }
-    return await modelService.getDefaultLanguageModel();
-  }),
-
-  setDefaultLanguageModel: procedure
-    .input(z.object({ modelId: z.string().nullable() }))
-    .mutation(async ({ input, ctx }) => {
-      const modelService = ctx.serviceManager.getService("modelService");
-      if (!modelService) {
-        throw new Error("Model manager service not initialized");
-      }
-      await modelService.setDefaultLanguageModel(input.modelId);
-      return true;
-    }),
-
-  getDefaultEmbeddingModel: procedure.query(async ({ ctx }) => {
-    const modelService = ctx.serviceManager.getService("modelService");
-    if (!modelService) {
-      throw new Error("Model manager service not initialized");
-    }
-    return await modelService.getDefaultEmbeddingModel();
-  }),
-
-  setDefaultEmbeddingModel: procedure
-    .input(z.object({ modelId: z.string().nullable() }))
-    .mutation(async ({ input, ctx }) => {
-      const modelService = ctx.serviceManager.getService("modelService");
-      if (!modelService) {
-        throw new Error("Model manager service not initialized");
-      }
-      await modelService.setDefaultEmbeddingModel(input.modelId);
-      return true;
-    }),
-
-  // Remove provider model
-  removeProviderModel: procedure
-    .input(z.object({ modelId: z.string() }))
-    .mutation(async ({ input, ctx }) => {
-      const modelService = ctx.serviceManager.getService("modelService");
-      if (!modelService) {
-        throw new Error("Model manager service not initialized");
-      }
-
-      // Find the model to get its provider
-      const allModels = await modelService.getSyncedProviderModels();
-      const model = allModels.find((m) => m.id === input.modelId);
-
-      if (!model) {
-        throw new Error(`Model not found: ${input.modelId}`);
-      }
-
-      await removeModel(model.provider, input.modelId);
-      return true;
-    }),
-
-  // Remove provider endpoints
-  removeOpenRouterProvider: procedure.mutation(async ({ ctx }) => {
-    const modelService = ctx.serviceManager.getService("modelService");
-    if (!modelService) {
-      throw new Error("Model manager service not initialized");
-    }
-
-    // Remove all OpenRouter models from database
-    await modelService.removeProviderModels("OpenRouter");
-
-    // Clear OpenRouter config from settings
-    const settingsService = ctx.serviceManager.getService("settingsService");
-    if (settingsService) {
-      const currentConfig = await settingsService.getModelProvidersConfig();
-      const updatedConfig = { ...currentConfig };
-      delete updatedConfig.openRouter;
-
-      // Clear default if it's an OpenRouter model
-      const allModels = await modelService.getSyncedProviderModels();
-      const openRouterModels = allModels.filter(
-        (m) => m.provider === "OpenRouter",
-      );
-      if (
-        currentConfig?.defaultLanguageModel &&
-        openRouterModels.some(
-          (m) => m.id === currentConfig.defaultLanguageModel,
-        )
-      ) {
-        updatedConfig.defaultLanguageModel = undefined;
-      }
-
-      await settingsService.setModelProvidersConfig(updatedConfig);
-    }
-
-    return true;
-  }),
-
-  removeOllamaProvider: procedure.mutation(async ({ ctx }) => {
-    const modelService = ctx.serviceManager.getService("modelService");
-    if (!modelService) {
-      throw new Error("Model manager service not initialized");
-    }
-
-    // Remove all Ollama models from database
-    await modelService.removeProviderModels("Ollama");
-
-    // Clear Ollama config from settings
-    const settingsService = ctx.serviceManager.getService("settingsService");
-    if (settingsService) {
-      const currentConfig = await settingsService.getModelProvidersConfig();
-      const updatedConfig = { ...currentConfig };
-      delete updatedConfig.ollama;
-
-      // Clear defaults if they're Ollama models
-      const allModels = await modelService.getSyncedProviderModels();
-      const ollamaModels = allModels.filter((m) => m.provider === "Ollama");
-
-      if (
-        currentConfig?.defaultLanguageModel &&
-        ollamaModels.some((m) => m.id === currentConfig.defaultLanguageModel)
-      ) {
-        updatedConfig.defaultLanguageModel = undefined;
-      }
-
-      if (
-        currentConfig?.defaultEmbeddingModel &&
-        ollamaModels.some((m) => m.id === currentConfig.defaultEmbeddingModel)
-      ) {
-        updatedConfig.defaultEmbeddingModel = undefined;
-      }
-
-      await settingsService.setModelProvidersConfig(updatedConfig);
-    }
-
-    return true;
-  }),
-
-  // Dev-only: UI entry-point is gated behind NODE_ENV !== "production". The
-  // procedures are reachable in prod builds but have no UI surface to invoke them.
-  enableMockProvider: procedure.mutation(async ({ ctx }) => {
-    const modelService = ctx.serviceManager.getService("modelService");
-    if (!modelService) {
-      throw new Error("Model manager service not initialized");
-    }
-
-    await modelService.syncProviderModelsToDatabase("Mock", [
-      {
-        id: "mock-markdown",
-        name: "Mock (canned markdown)",
-        provider: "Mock",
-        size: "Mock",
-        context: "—",
-        description: "Returns a fixed markdown summary. For dev use only.",
-      },
-    ]);
-
-    return true;
-  }),
-
-  disableMockProvider: procedure.mutation(async ({ ctx }) => {
-    const modelService = ctx.serviceManager.getService("modelService");
-    if (!modelService) {
-      throw new Error("Model manager service not initialized");
-    }
-
-    await modelService.removeProviderModels("Mock");
-    return true;
-  }),
-
-  removeOpenAICompatibleProvider: procedure.mutation(async ({ ctx }) => {
-    const modelService = ctx.serviceManager.getService("modelService");
-    if (!modelService) {
-      throw new Error("Model manager service not initialized");
-    }
-
-    await modelService.removeProviderModels("OpenAI Compatible");
-
-    const settingsService = ctx.serviceManager.getService("settingsService");
-    if (settingsService) {
-      const currentConfig = await settingsService.getModelProvidersConfig();
-      const updatedConfig = { ...currentConfig };
-      delete updatedConfig.openAICompatible;
-      await settingsService.setModelProvidersConfig(updatedConfig);
-    }
-
-    return true;
-  }),
-
-  // Subscriptions using Observables
-  // Using Observable instead of async generator due to Symbol.asyncDispose conflict
-  // Modern Node.js (20+) adds Symbol.asyncDispose to async generators natively,
-  // which conflicts with electron-trpc's attempt to add the same symbol.
-  // While Observables are deprecated in tRPC, they work without this conflict.
-  // TODO: Remove this workaround when electron-trpc is updated to handle native Symbol.asyncDispose
   // eslint-disable-next-line deprecation/deprecation
   onDownloadProgress: procedure.subscription(({ ctx }) => {
     return observable<{ modelId: string; progress: DownloadProgress }>(
       (emit) => {
         const modelService = ctx.serviceManager.getService("modelService");
         if (!modelService) {
-          throw new Error("Model manager service not initialized");
+          throw new Error("Model service not initialized");
         }
-
-        const handleDownloadProgress = (
-          modelId: string,
-          progress: DownloadProgress,
-        ) => {
+        const handler = (modelId: string, progress: DownloadProgress) => {
           emit.next({ modelId, progress });
         };
-
-        modelService.on("download-progress", handleDownloadProgress);
-
-        // Cleanup function
-        return () => {
-          modelService?.off("download-progress", handleDownloadProgress);
-        };
+        modelService.on("download-progress", handler);
+        return () => modelService.off("download-progress", handler);
       },
     );
   }),
 
-  // Using Observable instead of async generator due to Symbol.asyncDispose conflict
   // eslint-disable-next-line deprecation/deprecation
   onDownloadComplete: procedure.subscription(({ ctx }) => {
     return observable<{
       modelId: string;
-      downloadedModel: Model;
+      entry: LocalWhisperDownloadedModel;
     }>((emit) => {
       const modelService = ctx.serviceManager.getService("modelService");
       if (!modelService) {
-        throw new Error("Model manager service not initialized");
+        throw new Error("Model service not initialized");
       }
-
-      const handleDownloadComplete = (
+      const handler = (
         modelId: string,
-        downloadedModel: Model,
+        entry: LocalWhisperDownloadedModel,
       ) => {
-        emit.next({ modelId, downloadedModel });
+        emit.next({ modelId, entry });
       };
-
-      modelService.on("download-complete", handleDownloadComplete);
-
-      // Cleanup function
-      return () => {
-        modelService?.off("download-complete", handleDownloadComplete);
-      };
+      modelService.on("download-complete", handler);
+      return () => modelService.off("download-complete", handler);
     });
   }),
 
-  // Using Observable instead of async generator due to Symbol.asyncDispose conflict
   // eslint-disable-next-line deprecation/deprecation
   onDownloadError: procedure.subscription(({ ctx }) => {
     return observable<{ modelId: string; error: string }>((emit) => {
       const modelService = ctx.serviceManager.getService("modelService");
       if (!modelService) {
-        throw new Error("Model manager service not initialized");
+        throw new Error("Model service not initialized");
       }
-
-      const handleDownloadError = (modelId: string, error: Error) => {
+      const handler = (modelId: string, error: Error) => {
         emit.next({ modelId, error: error.message });
       };
-
-      modelService.on("download-error", handleDownloadError);
-
-      // Cleanup function
-      return () => {
-        modelService?.off("download-error", handleDownloadError);
-      };
+      modelService.on("download-error", handler);
+      return () => modelService.off("download-error", handler);
     });
   }),
 
-  // Using Observable instead of async generator due to Symbol.asyncDispose conflict
   // eslint-disable-next-line deprecation/deprecation
   onDownloadCancelled: procedure.subscription(({ ctx }) => {
     return observable<{ modelId: string }>((emit) => {
       const modelService = ctx.serviceManager.getService("modelService");
       if (!modelService) {
-        throw new Error("Model manager service not initialized");
+        throw new Error("Model service not initialized");
       }
-
-      const handleDownloadCancelled = (modelId: string) => {
-        emit.next({ modelId });
-      };
-
-      modelService.on("download-cancelled", handleDownloadCancelled);
-
-      // Cleanup function
-      return () => {
-        modelService?.off("download-cancelled", handleDownloadCancelled);
-      };
+      const handler = (modelId: string) => emit.next({ modelId });
+      modelService.on("download-cancelled", handler);
+      return () => modelService.off("download-cancelled", handler);
     });
   }),
 
-  // Using Observable instead of async generator due to Symbol.asyncDispose conflict
   // eslint-disable-next-line deprecation/deprecation
   onModelDeleted: procedure.subscription(({ ctx }) => {
     return observable<{ modelId: string }>((emit) => {
       const modelService = ctx.serviceManager.getService("modelService");
       if (!modelService) {
-        throw new Error("Model manager service not initialized");
+        throw new Error("Model service not initialized");
       }
-
-      const handleModelDeleted = (modelId: string) => {
-        emit.next({ modelId });
-      };
-
-      modelService.on("model-deleted", handleModelDeleted);
-
-      // Cleanup function
-      return () => {
-        modelService?.off("model-deleted", handleModelDeleted);
-      };
+      const handler = (modelId: string) => emit.next({ modelId });
+      modelService.on("model-deleted", handler);
+      return () => modelService.off("model-deleted", handler);
     });
   }),
 
-  // Using Observable instead of async generator due to Symbol.asyncDispose conflict
   // eslint-disable-next-line deprecation/deprecation
   onSelectionChanged: procedure.subscription(({ ctx }) => {
     return observable<{
@@ -701,14 +223,12 @@ export const modelsRouter = createRouter({
         | "auto-first-download"
         | "auto-after-deletion"
         | "cleared";
-      modelType: "speech" | "language" | "embedding";
     }>((emit) => {
       const modelService = ctx.serviceManager.getService("modelService");
       if (!modelService) {
-        throw new Error("Model manager service not initialized");
+        throw new Error("Model service not initialized");
       }
-
-      const handleSelectionChanged = (
+      const handler = (
         oldModelId: string | null,
         newModelId: string | null,
         reason:
@@ -716,17 +236,11 @@ export const modelsRouter = createRouter({
           | "auto-first-download"
           | "auto-after-deletion"
           | "cleared",
-        modelType: "speech" | "language" | "embedding",
       ) => {
-        emit.next({ oldModelId, newModelId, reason, modelType });
+        emit.next({ oldModelId, newModelId, reason });
       };
-
-      modelService.on("selection-changed", handleSelectionChanged);
-
-      // Cleanup function
-      return () => {
-        modelService?.off("selection-changed", handleSelectionChanged);
-      };
+      modelService.on("selection-changed", handler);
+      return () => modelService.off("selection-changed", handler);
     });
   }),
 });
