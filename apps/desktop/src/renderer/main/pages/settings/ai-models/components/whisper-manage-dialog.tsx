@@ -1,5 +1,5 @@
 "use client";
-import { ComponentProps, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Table,
   TableBody,
@@ -17,21 +17,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import {
-  Download,
-  Zap,
-  Circle,
-  Square,
-  Loader2,
-  Trash2,
-} from "lucide-react";
-import { DynamicIcon } from "lucide-react/dynamic";
-import {
-  TooltipContent,
-  Tooltip,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Download, Zap, Circle, Square, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -250,13 +236,13 @@ export default function WhisperManageDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="max-w-4xl">
           <DialogHeader>
             <DialogTitle>Whisper (local) — manage downloads</DialogTitle>
             <DialogDescription>
               Download a Whisper model to transcribe locally on this machine.
-              Selection of which model to use is set in the transcription
-              default picker.
+              The model used for transcription is chosen separately from the
+              Transcription default picker.
             </DialogDescription>
           </DialogHeader>
 
@@ -268,140 +254,113 @@ export default function WhisperManageDialog({
               </span>
             </div>
           ) : (
-            <div className="border rounded-md bg-muted/30">
-              <TooltipProvider>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Model</TableHead>
-                      <TableHead>Features</TableHead>
-                      <TableHead>Speed</TableHead>
-                      <TableHead>Accuracy</TableHead>
-                      <TableHead></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {availableModels.map((model) => {
-                      const isDownloaded = !!downloadedModels[model.id];
-                      const progress = downloadProgress[model.id];
-                      const isDownloading = progress?.status === "downloading";
+            <div className="border rounded-md bg-muted/30 overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Model</TableHead>
+                    <TableHead>Size</TableHead>
+                    <TableHead>Speed</TableHead>
+                    <TableHead>Accuracy</TableHead>
+                    <TableHead className="w-16 text-right pr-3"></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {availableModels.map((model) => {
+                    const isDownloaded = !!downloadedModels[model.id];
+                    const progress = downloadProgress[model.id];
+                    const isDownloading = progress?.status === "downloading";
 
-                      return (
-                        <TableRow key={model.id} className="hover:bg-muted/50">
-                          <TableCell>
-                            <span className="font-semibold">{model.name}</span>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex flex-wrap gap-2">
-                              {model.features.map((feature, i) => (
-                                <Tooltip key={i}>
-                                  <TooltipTrigger asChild>
-                                    <div className="p-2 rounded-md bg-muted hover:bg-muted/80 cursor-help transition-colors">
-                                      <DynamicIcon
-                                        name={
-                                          feature.icon as ComponentProps<
-                                            typeof DynamicIcon
-                                          >["name"]
-                                        }
-                                        className="w-4 h-4"
-                                      />
-                                    </div>
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    <p>{feature.tooltip}</p>
-                                  </TooltipContent>
-                                </Tooltip>
-                              ))}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <SpeedRating rating={model.speed} />
-                          </TableCell>
-                          <TableCell>
-                            <AccuracyRating rating={model.accuracy} />
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex flex-col items-center space-y-1">
-                              {!isDownloaded && !isDownloading && (
-                                <button
-                                  onClick={(e) => handleDownload(model.id, e)}
-                                  className="w-8 h-8 rounded-full bg-muted hover:bg-muted/80 flex items-center justify-center text-primary-foreground transition-colors"
-                                  title="Download"
-                                >
-                                  <Download className="w-4 h-4 text-muted-foreground" />
-                                </button>
-                              )}
+                    return (
+                      <TableRow key={model.id} className="hover:bg-muted/50">
+                        <TableCell className="py-2 font-medium">
+                          {model.name}
+                        </TableCell>
+                        <TableCell className="py-2 text-sm text-muted-foreground tabular-nums">
+                          {model.sizeFormatted}
+                        </TableCell>
+                        <TableCell className="py-2">
+                          <SpeedRating rating={model.speed} />
+                        </TableCell>
+                        <TableCell className="py-2">
+                          <AccuracyRating rating={model.accuracy} />
+                        </TableCell>
+                        <TableCell className="py-2 pr-3">
+                          <div className="flex justify-end">
+                            {!isDownloaded && !isDownloading && (
+                              <button
+                                onClick={(e) => handleDownload(model.id, e)}
+                                className="size-8 rounded-full bg-muted hover:bg-muted/80 flex items-center justify-center transition-colors"
+                                title="Download"
+                                aria-label={`Download ${model.name}`}
+                              >
+                                <Download className="size-4 text-muted-foreground" />
+                              </button>
+                            )}
 
-                              {!isDownloaded && isDownloading && (
-                                <div className="relative">
-                                  <button
-                                    type="button"
-                                    onClick={(e) =>
-                                      handleCancelDownload(model.id, e)
-                                    }
-                                    className="w-8 h-8 rounded-full bg-orange-500 hover:bg-orange-600 flex items-center justify-center text-white transition-colors"
-                                    title="Cancel download"
-                                    aria-label={`Cancel download of ${model.name}`}
-                                  >
-                                    <Square className="w-4 h-4" />
-                                  </button>
-
-                                  {progress && (
-                                    <svg
-                                      className="absolute inset-0 w-8 h-8 -rotate-90 pointer-events-none"
-                                      viewBox="0 0 36 36"
-                                    >
-                                      <circle
-                                        cx="18"
-                                        cy="18"
-                                        r="15.9155"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        strokeWidth="3"
-                                        strokeDasharray="100 100"
-                                        className="text-muted-foreground/30"
-                                      />
-                                      <circle
-                                        cx="18"
-                                        cy="18"
-                                        r="15.9155"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        strokeWidth="3"
-                                        strokeDasharray={`${Math.max(0, Math.min(100, progress.progress))} 100`}
-                                        strokeLinecap="round"
-                                        className="text-white transition-all duration-300"
-                                      />
-                                    </svg>
-                                  )}
-                                </div>
-                              )}
-
-                              {isDownloaded && (
+                            {!isDownloaded && isDownloading && (
+                              <div className="relative size-8">
                                 <button
                                   type="button"
                                   onClick={(e) =>
-                                    handleDeleteClick(model.id, e)
+                                    handleCancelDownload(model.id, e)
                                   }
-                                  className="w-8 h-8 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center text-white transition-colors"
-                                  title="Delete"
-                                  aria-label={`Delete ${model.name}`}
+                                  className="size-8 rounded-full bg-orange-500 hover:bg-orange-600 flex items-center justify-center text-white transition-colors"
+                                  title="Cancel download"
+                                  aria-label={`Cancel download of ${model.name}`}
                                 >
-                                  <Trash2 className="w-4 h-4" />
+                                  <Square className="size-4" />
                                 </button>
-                              )}
 
-                              <div className="text-xs text-muted-foreground text-center">
-                                {model.sizeFormatted}
+                                {progress && (
+                                  <svg
+                                    className="absolute inset-0 size-8 -rotate-90 pointer-events-none"
+                                    viewBox="0 0 36 36"
+                                  >
+                                    <circle
+                                      cx="18"
+                                      cy="18"
+                                      r="15.9155"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      strokeWidth="3"
+                                      strokeDasharray="100 100"
+                                      className="text-muted-foreground/30"
+                                    />
+                                    <circle
+                                      cx="18"
+                                      cy="18"
+                                      r="15.9155"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      strokeWidth="3"
+                                      strokeDasharray={`${Math.max(0, Math.min(100, progress.progress))} 100`}
+                                      strokeLinecap="round"
+                                      className="text-white transition-all duration-300"
+                                    />
+                                  </svg>
+                                )}
                               </div>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </TooltipProvider>
+                            )}
+
+                            {isDownloaded && (
+                              <button
+                                type="button"
+                                onClick={(e) => handleDeleteClick(model.id, e)}
+                                className="size-8 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center text-white transition-colors"
+                                title="Delete"
+                                aria-label={`Delete ${model.name}`}
+                              >
+                                <Trash2 className="size-4" />
+                              </button>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
             </div>
           )}
 
