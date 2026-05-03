@@ -158,28 +158,6 @@ export async function fetchAnthropicCatalog(): Promise<CatalogEntry[]> {
   return fetchFromModelsDev("anthropic");
 }
 
-// Local prettifier for cloud model ids. Hand-tuned for the families we
-// route — adds proper case to common prefixes ("gpt-" → "GPT-",
-// "claude-" → "Claude ") and is a no-op for anything unexpected.
-function prettifyCloudModelId(id: string): string {
-  const lower = id.toLowerCase();
-  // Match longest-prefix-first.
-  const rules: Array<[RegExp, string]> = [
-    [/^chatgpt-/, "ChatGPT "],
-    [/^gpt-/, "GPT-"],
-    [/^claude-/, "Claude "],
-    [/^text-embedding-/, "Text Embedding "],
-    [/^whisper-/, "Whisper-"], // hosted OpenAI Whisper API
-    [/^o(\d+)([-.])?/, "o$1$2"], // o1, o3, o4 keep lowercase 'o'
-  ];
-  for (const [from, to] of rules) {
-    if (from.test(lower)) {
-      return id.replace(from, to);
-    }
-  }
-  return id;
-}
-
 export async function fetchFromModelsDev(
   providerId: string,
 ): Promise<CatalogEntry[]> {
@@ -217,7 +195,7 @@ export async function fetchLocalWhisperCatalog(
       sizeBytes: meta?.size ?? m.sizeBytes ?? 0,
       entry: {
         id: m.id,
-        name: meta?.name ?? prettifyCloudModelId(m.id),
+        name: meta?.name ?? m.id,
         type: "transcription" as const,
       } satisfies CatalogEntry,
     };
@@ -265,11 +243,12 @@ async function fetchOpenAIShape(
     const type = classify(m.id);
     if (!type) continue;
     const entry: CatalogEntry = {
+      // OpenAI / Groq /v1/models ship raw ids only. Use the id as
+      // the display name — readers know what gpt-4o vs gpt-3.5-turbo
+      // means; mangling it through a prettifier was inconsistent
+      // ("GPT-4o" vs the unchanged tail) and added confusion.
       id: m.id,
-      // OpenAI / Groq /v1/models ship raw ids only (no name field).
-      // Apply local prettifier so the picker reads "GPT-3.5 Turbo"
-      // instead of "gpt-3.5-turbo".
-      name: prettifyCloudModelId(m.id),
+      name: m.id,
       type,
     };
     const date = unixToISODate(m.created);

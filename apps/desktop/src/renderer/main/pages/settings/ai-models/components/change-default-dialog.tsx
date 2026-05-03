@@ -430,9 +430,10 @@ function CatalogRow({
 }: CatalogRowProps) {
   const disabled = isWhisper && !isDownloaded;
   // Show the raw id as a smaller secondary line only when it differs
-  // from the friendly name. Avoids "gpt-4o" being rendered twice when
-  // the fetcher had no nicer name to fall back to.
-  const showId = entry.id !== entry.name;
+  // from the friendly name AND we're not on a Whisper row (the
+  // curated Whisper names are self-explanatory; the id underneath is
+  // noise).
+  const showId = !isWhisper && entry.id !== entry.name;
   return (
     <div
       className={`flex items-center gap-3 rounded-md p-2 ${disabled ? "opacity-60" : "hover:bg-accent"}`}
