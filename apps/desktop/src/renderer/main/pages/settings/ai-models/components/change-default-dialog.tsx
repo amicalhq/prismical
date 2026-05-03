@@ -431,7 +431,9 @@ function CatalogRow({
       <RadioGroupItem value={entry.id} id={entry.id} disabled={disabled} />
       <Label
         htmlFor={entry.id}
-        className={`flex-1 min-w-0 flex flex-col gap-0.5 ${disabled ? "cursor-not-allowed" : "cursor-pointer"}`}
+        // shadcn Label has `items-center` baked in — explicitly override
+        // to items-start so name/id/description stack left-aligned.
+        className={`flex-1 min-w-0 flex flex-col gap-0.5 items-start ${disabled ? "cursor-not-allowed" : "cursor-pointer"}`}
       >
         <span className="text-sm font-medium truncate">{entry.name}</span>
         {showId && (

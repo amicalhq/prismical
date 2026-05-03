@@ -27,21 +27,23 @@ import type {
 export async function fetchOpenAICatalog(
   config: ApiKeyConfig,
 ): Promise<CatalogEntry[]> {
-  return fetchOpenAIShape(
+  const entries = await fetchOpenAIShape(
     "https://api.openai.com/v1/models",
     config.apiKey,
     classifyOpenAIModel,
   );
+  return enrichWithModelsDev("openai", entries);
 }
 
 export async function fetchGroqCatalog(
   config: ApiKeyConfig,
 ): Promise<CatalogEntry[]> {
-  return fetchOpenAIShape(
+  const entries = await fetchOpenAIShape(
     "https://api.groq.com/openai/v1/models",
     config.apiKey,
     classifyGroqModel,
   );
+  return enrichWithModelsDev("groq", entries);
 }
 
 export async function fetchOpenRouterCatalog(
@@ -55,7 +57,7 @@ export async function fetchOpenRouterCatalog(
     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
   }
   const data = (await response.json()) as { data?: OpenRouterModel[] };
-  return (data.data ?? []).map((m): CatalogEntry => {
+  const entries = (data.data ?? []).map((m): CatalogEntry => {
     const type = classifyOpenRouterModel(m);
     const entry: CatalogEntry = {
       id: m.id,
@@ -79,6 +81,14 @@ export async function fetchOpenRouterCatalog(
     const date = unixToISODate(m.created);
     if (date) entry.releaseDate = date;
     return entry;
+  });
+  // OpenRouter ids are namespaced ("anthropic/claude-3-5-sonnet"); the
+  // bare model id ("claude-3-5-sonnet") is what models.dev keys on, so
+  // strip the namespace before the lookup. Best-effort — ids that
+  // don't match are returned as-is.
+  return enrichWithModelsDev("openrouter", entries, (id) => {
+    const slash = id.lastIndexOf("/");
+    return slash >= 0 ? id.slice(slash + 1) : id;
   });
 }
 
@@ -156,6 +166,48 @@ export async function fetchOpenAICompatibleCatalog(
 export async function fetchAnthropicCatalog(): Promise<CatalogEntry[]> {
   // Anthropic has no list-models endpoint, so we always go through models.dev.
   return fetchFromModelsDev("anthropic");
+}
+
+/**
+ * Layer models.dev metadata on top of direct-API catalog entries when
+ * the ids match. Specifically: friendly `name`, `releaseDate`, and a
+ * `description` if one wasn't set already. Used by OpenAI/Groq/
+ * OpenRouter — these endpoints return raw ids and either no `created`
+ * or a `created` value that doesn't reflect the model's release date,
+ * which is why sort-by-newest needs models.dev to land correctly.
+ *
+ * `idToLookupId` lets callers map a provider-namespaced id to the
+ * bare id models.dev keys on (e.g. OpenRouter's "anthropic/claude-…"
+ * → "claude-…"). Defaults to identity.
+ *
+ * Best-effort — if models.dev is unreachable or the provider/id isn't
+ * present, returns the entries unchanged.
+ */
+async function enrichWithModelsDev(
+  providerId: string,
+  entries: CatalogEntry[],
+  idToLookupId: (id: string) => string = (id) => id,
+): Promise<CatalogEntry[]> {
+  const data = await getModelsDevCatalog();
+  const provider = data?.[providerId];
+  const models = provider?.models;
+  if (!models) return entries;
+  return entries.map((entry) => {
+    const lookupId = idToLookupId(entry.id);
+    const md = models[lookupId];
+    if (!md) return entry;
+    const out: CatalogEntry = { ...entry };
+    if (typeof md.name === "string" && md.name.length > 0) out.name = md.name;
+    if (typeof md.release_date === "string") out.releaseDate = md.release_date;
+    if (
+      !out.description &&
+      typeof md.description === "string" &&
+      md.description.length > 0
+    ) {
+      out.description = md.description;
+    }
+    return out;
+  });
 }
 
 export async function fetchFromModelsDev(
