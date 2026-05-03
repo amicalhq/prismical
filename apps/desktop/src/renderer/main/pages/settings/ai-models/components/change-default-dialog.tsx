@@ -181,16 +181,18 @@ export default function ChangeDefaultDialog({
           entry.name.toLowerCase().includes(q),
       );
     }
-    // Sort: newest releaseDate first; entries without a date fall to
-    // the bottom in alphabetical order. Picker users expect "claude
-    // 4.5" above "claude 3.5" without having to scan the whole list.
+    // Sort: newest releaseDate first; entries without a date stay in
+    // the order the fetcher returned them (the fetcher is the right
+    // place to encode provider-specific ordering — e.g., Whisper
+    // returns largest-model-first since size = quality there).
+    // sort() is stable so equal-rank entries keep input order.
     return matching.slice().sort((a, b) => {
       if (a.releaseDate && b.releaseDate) {
         return b.releaseDate.localeCompare(a.releaseDate);
       }
       if (a.releaseDate) return -1;
       if (b.releaseDate) return 1;
-      return a.name.localeCompare(b.name);
+      return 0;
     });
   }, [catalogQuery.data, modelType, searchQuery]);
 

@@ -1,6 +1,5 @@
 import { getUserAgent } from "../../utils/http-client";
 import { AVAILABLE_MODELS } from "../../constants/models";
-import { logger } from "../../main/logger";
 import {
   isOllamaEmbeddingModelName,
   normalizeOllamaUrl,
@@ -28,23 +27,21 @@ import type {
 export async function fetchOpenAICatalog(
   config: ApiKeyConfig,
 ): Promise<CatalogEntry[]> {
-  const entries = await fetchOpenAIShape(
+  return fetchOpenAIShape(
     "https://api.openai.com/v1/models",
     config.apiKey,
     classifyOpenAIModel,
   );
-  return enrichWithModelsDev("openai", entries);
 }
 
 export async function fetchGroqCatalog(
   config: ApiKeyConfig,
 ): Promise<CatalogEntry[]> {
-  const entries = await fetchOpenAIShape(
+  return fetchOpenAIShape(
     "https://api.groq.com/openai/v1/models",
     config.apiKey,
     classifyGroqModel,
   );
-  return enrichWithModelsDev("groq", entries);
 }
 
 export async function fetchOpenRouterCatalog(
@@ -58,7 +55,7 @@ export async function fetchOpenRouterCatalog(
     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
   }
   const data = (await response.json()) as { data?: OpenRouterModel[] };
-  const entries = (data.data ?? []).map((m): CatalogEntry => {
+  return (data.data ?? []).map((m): CatalogEntry => {
     const type = classifyOpenRouterModel(m);
     const entry: CatalogEntry = {
       id: m.id,
@@ -82,14 +79,6 @@ export async function fetchOpenRouterCatalog(
     const date = unixToISODate(m.created);
     if (date) entry.releaseDate = date;
     return entry;
-  });
-  // OpenRouter ids are namespaced ("anthropic/claude-3-5-sonnet"); the
-  // bare model id ("claude-3-5-sonnet") is what models.dev keys on, so
-  // strip the namespace before the lookup. Best-effort — ids that
-  // don't match are returned as-is.
-  return enrichWithModelsDev("openrouter", entries, (id) => {
-    const slash = id.lastIndexOf("/");
-    return slash >= 0 ? id.slice(slash + 1) : id;
   });
 }
 
@@ -169,77 +158,9 @@ export async function fetchAnthropicCatalog(): Promise<CatalogEntry[]> {
   return fetchFromModelsDev("anthropic");
 }
 
-/**
- * Layer models.dev metadata on top of direct-API catalog entries when
- * the ids match. Specifically: friendly `name`, `releaseDate`, and a
- * `description` if one wasn't set already. Used by OpenAI/Groq/
- * OpenRouter — these endpoints return raw ids and either no `created`
- * or a `created` value that doesn't reflect the model's release date,
- * which is why sort-by-newest needs models.dev to land correctly.
- *
- * `idToLookupId` lets callers map a provider-namespaced id to the
- * bare id models.dev keys on (e.g. OpenRouter's "anthropic/claude-…"
- * → "claude-…"). Defaults to identity.
- *
- * Best-effort — if models.dev is unreachable or the provider/id isn't
- * present, returns the entries unchanged.
- */
-async function enrichWithModelsDev(
-  providerId: string,
-  entries: CatalogEntry[],
-  idToLookupId: (id: string) => string = (id) => id,
-): Promise<CatalogEntry[]> {
-  const data = await getModelsDevCatalog();
-  const provider = data?.[providerId];
-  const models = provider?.models;
-  // Always run the local prettifier so cloud catalogs read decently
-  // even when models.dev is unreachable. The remote layer only adds
-  // value on top — replacing the prettified guess with a curated
-  // name, attaching a release date, etc.
-  const prettified = entries.map((entry) =>
-    entry.name === entry.id
-      ? { ...entry, name: prettifyCloudModelId(entry.id) }
-      : entry,
-  );
-  if (!models) {
-    logger.main.warn(
-      `enrichWithModelsDev: no models.dev data for "${providerId}" (count=${entries.length})`,
-    );
-    return prettified;
-  }
-  let matched = 0;
-  const out = prettified.map((entry) => {
-    const lookupId = idToLookupId(entry.id);
-    const md = models[lookupId];
-    if (!md) return entry;
-    matched++;
-    const enriched: CatalogEntry = { ...entry };
-    if (typeof md.name === "string" && md.name.length > 0) {
-      enriched.name = md.name;
-    }
-    if (typeof md.release_date === "string") {
-      enriched.releaseDate = md.release_date;
-    }
-    if (
-      !enriched.description &&
-      typeof md.description === "string" &&
-      md.description.length > 0
-    ) {
-      enriched.description = md.description;
-    }
-    return enriched;
-  });
-  logger.main.info(
-    `enrichWithModelsDev: provider=${providerId} matched=${matched}/${entries.length}`,
-  );
-  return out;
-}
-
-// Local fallback prettifier for cloud model ids when no curated name is
-// available. Hand-tuned for the families we route — adds proper case
-// to common prefixes ("gpt-" → "GPT-", "claude-" → "Claude ") and is a
-// no-op for anything unexpected. Models.dev results override this
-// when present.
+// Local prettifier for cloud model ids. Hand-tuned for the families we
+// route — adds proper case to common prefixes ("gpt-" → "GPT-",
+// "claude-" → "Claude ") and is a no-op for anything unexpected.
 function prettifyCloudModelId(id: string): string {
   const lower = id.toLowerCase();
   // Match longest-prefix-first.
@@ -285,25 +206,24 @@ export async function fetchLocalWhisperCatalog(
   config: LocalWhisperConfig,
 ): Promise<CatalogEntry[]> {
   const downloaded = config.downloadedModels ?? [];
-  const out = downloaded.map((m): CatalogEntry => {
+  // Decorate each downloaded model with its manifest size so we can
+  // sort by it. Larger models = higher quality; users typically want
+  // the biggest one they're willing to run, so put the largest first.
+  const decorated = downloaded.map((m) => {
     const meta = AVAILABLE_MODELS.find((am) => am.id === m.id);
-    const entry: CatalogEntry = {
-      id: m.id,
-      // Prefer the curated display name ("Whisper Large v3 Turbo").
-      // Fall back to the prettifier so we never surface a raw id
-      // (handles drift between the manifest and what's on disk).
-      name: meta?.name ?? prettifyCloudModelId(m.id),
-      type: "transcription",
+    return {
+      meta,
+      sizeBytes: meta?.size ?? m.sizeBytes ?? 0,
+      entry: {
+        id: m.id,
+        name: meta?.name ?? prettifyCloudModelId(m.id),
+        type: "transcription" as const,
+        ...(meta?.description ? { description: meta.description } : {}),
+      } satisfies CatalogEntry,
     };
-    if (meta?.description) entry.description = meta.description;
-    return entry;
   });
-  logger.main.info(
-    `fetchLocalWhisperCatalog: returned ${out.length} entries (names: ${out
-      .map((e) => e.name)
-      .join(", ")})`,
-  );
-  return out;
+  decorated.sort((a, b) => b.sizeBytes - a.sizeBytes);
+  return decorated.map((d) => d.entry);
 }
 
 const MOCK_CATALOG: readonly CatalogEntry[] = [
@@ -344,7 +264,14 @@ async function fetchOpenAIShape(
   for (const m of data.data ?? []) {
     const type = classify(m.id);
     if (!type) continue;
-    const entry: CatalogEntry = { id: m.id, name: m.id, type };
+    const entry: CatalogEntry = {
+      id: m.id,
+      // OpenAI / Groq /v1/models ship raw ids only (no name field).
+      // Apply local prettifier so the picker reads "GPT-3.5 Turbo"
+      // instead of "gpt-3.5-turbo".
+      name: prettifyCloudModelId(m.id),
+      type,
+    };
     const date = unixToISODate(m.created);
     if (date) entry.releaseDate = date;
     out.push(entry);
