@@ -1,6 +1,7 @@
 import { app, dialog, ipcMain, shell } from "electron";
 import { initializeDatabase } from "../../db";
 import { seedEventsAndNotes } from "../../db/events";
+import { bootstrapInstances } from "../../services/instance-bootstrap";
 import { logger } from "../logger";
 import { WindowManager } from "./window-manager";
 import { setupApplicationMenu } from "../menu";
@@ -141,6 +142,10 @@ export class AppManager {
     await initializeDatabase();
     await runDataMigrations();
     await seedEventsAndNotes();
+    // Seed system provider instances + reconcile local-whisper downloads.
+    // Must run before service-manager constructs ModelService, which reads
+    // from the local-whisper instance row on the transcription hot path.
+    await bootstrapInstances();
     logger.db.info(
       "Database initialized and migrations completed successfully",
     );
