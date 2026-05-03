@@ -8,11 +8,11 @@ import { dbPath, closeDatabase } from "../../db";
 import type { AppSettingsData } from "../../db/schema";
 import * as fs from "fs/promises";
 
-// FormatterConfig schema
+// FormatterConfig schema. The model used by the formatter is the
+// per-use-case `modelDefaults.formatting` selection on the instances
+// router; this slot only carries the on/off flag now.
 const FormatterConfigSchema = z.object({
   enabled: z.boolean(),
-  modelId: z.string().optional(),
-  fallbackModelId: z.string().optional(),
 });
 
 // Shortcut schema (array of keycodes)

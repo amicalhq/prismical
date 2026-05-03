@@ -1,12 +1,3 @@
-import {
-  REMOTE_PROVIDERS,
-  type RemoteProvider,
-} from "@/constants/remote-providers";
-
-export function isRemoteProvider(provider: string): provider is RemoteProvider {
-  return Object.values(REMOTE_PROVIDERS).includes(provider as RemoteProvider);
-}
-
 export function isOllamaEmbeddingModelName(name: string): boolean {
   return name.toLowerCase().includes("embed");
 }

@@ -523,8 +523,6 @@ export class TranscriptionService {
       }
     }
 
-    // TODO: Load formatter config from settings
-
     return context;
   }
 

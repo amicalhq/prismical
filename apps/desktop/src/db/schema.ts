@@ -222,9 +222,12 @@ export interface ModelSelection {
 // Define the shape of our settings JSON
 export interface AppSettingsData {
   formatterConfig?: {
+    // Whether on-the-fly transcript formatting is enabled. The model used
+    // is the per-use-case `modelDefaults.formatting` selection — there is
+    // no per-formatter override anymore. Older builds carried legacy
+    // `modelId` / `fallbackModelId` fields here for a "prismical-cloud"
+    // magic value; both have been removed.
     enabled: boolean;
-    modelId?: string; // Formatting model selection (language model ID or "prismical-cloud")
-    fallbackModelId?: string; // Last non-cloud formatting model for auto-restore
   };
   ui?: {
     theme: "light" | "dark" | "system";
