@@ -11,7 +11,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent } from "@/components/ui/card";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -333,44 +332,46 @@ export default function ChangeDefaultDialog({
           </Button>
         </div>
 
-        <Card className="max-h-[400px] overflow-auto">
-          <CardContent className="p-2">
-            {catalogQuery.isLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="size-5 animate-spin" />
-              </div>
-            ) : catalogQuery.error ? (
-              <div className="p-4 text-sm text-destructive">
-                Couldn't load catalog: {catalogQuery.error.message}
-              </div>
-            ) : filteredCatalog.length === 0 ? (
-              <div className="p-4 text-sm text-muted-foreground italic">
-                {searchQuery
-                  ? `No models match "${searchQuery}".`
-                  : `This provider has no ${useCaseTitle} models available.`}
-              </div>
-            ) : (
-              <RadioGroup
-                value={pendingModelId ?? ""}
-                onValueChange={setPendingModelId}
-              >
-                {filteredCatalog.map((entry) => (
-                  <CatalogRow
-                    key={entry.id}
-                    entry={entry}
-                    isWhisper={isWhisperInstance}
-                    isDownloaded={
-                      isWhisperInstance
-                        ? !!downloadedModelsQuery.data?.[entry.id]
-                        : true
-                    }
-                    onOpenWhisperManager={onOpenWhisperManager}
-                  />
-                ))}
-              </RadioGroup>
-            )}
-          </CardContent>
-        </Card>
+        {/* Plain bordered scroll container — Card ships with py-6
+            baked in which would stack on top of inner padding and
+            create a dead band above/below the list. */}
+        <div className="rounded-md border bg-card max-h-[400px] overflow-auto">
+          {catalogQuery.isLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="size-5 animate-spin" />
+            </div>
+          ) : catalogQuery.error ? (
+            <div className="p-4 text-sm text-destructive">
+              Couldn't load catalog: {catalogQuery.error.message}
+            </div>
+          ) : filteredCatalog.length === 0 ? (
+            <div className="p-4 text-sm text-muted-foreground italic">
+              {searchQuery
+                ? `No models match "${searchQuery}".`
+                : `This provider has no ${useCaseTitle} models available.`}
+            </div>
+          ) : (
+            <RadioGroup
+              value={pendingModelId ?? ""}
+              onValueChange={setPendingModelId}
+              className="p-1.5 gap-0"
+            >
+              {filteredCatalog.map((entry) => (
+                <CatalogRow
+                  key={entry.id}
+                  entry={entry}
+                  isWhisper={isWhisperInstance}
+                  isDownloaded={
+                    isWhisperInstance
+                      ? !!downloadedModelsQuery.data?.[entry.id]
+                      : true
+                  }
+                  onOpenWhisperManager={onOpenWhisperManager}
+                />
+              ))}
+            </RadioGroup>
+          )}
+        </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
