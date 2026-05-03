@@ -1,54 +1,101 @@
 "use client";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import SpeechTab from "./tabs/SpeechTab";
-import LanguageTab from "./tabs/LanguageTab";
-import EmbeddingTab from "./tabs/EmbeddingTab";
-import ProvidersPanel from "./components/providers-panel";
-import { useNavigate, getRouteApi } from "@tanstack/react-router";
+import { useState } from "react";
+import { Mic, MessageSquare } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import { type ProviderType } from "@/constants/provider-types";
 
-const routeApi = getRouteApi("/settings/ai-models");
+import DefaultCard from "./components/default-card";
+import ChangeDefaultDialog from "./components/change-default-dialog";
+import ConnectedList from "./components/connected-list";
+import AvailableTiles from "./components/available-tiles";
+import WhisperManageDialog from "./components/whisper-manage-dialog";
+import InstanceFormDialog from "./components/instance-form-dialog";
+
+type ChangeTarget = "transcription" | "formatting" | null;
+type FormMode =
+  | { kind: "create"; type: ProviderType }
+  | { kind: "edit"; id: string }
+  | null;
 
 export default function AIModelsSettingsPage() {
-  const navigate = useNavigate();
-  const { tab } = routeApi.useSearch();
+  const { t } = useTranslation();
+
+  // The page owns each dialog's open state so children can trigger
+  // them via callback (avoids prop-drilling open/close all the way
+  // down).
+  const [changeTarget, setChangeTarget] = useState<ChangeTarget>(null);
+  const [formMode, setFormMode] = useState<FormMode>(null);
+  const [whisperOpen, setWhisperOpen] = useState(false);
+
+  const openWhisperManager = () => setWhisperOpen(true);
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-xl font-bold">AI Models</h1>
+    <div>
+      <h1 className="text-xl font-bold mb-6">{t("settings.aiModels.title")}</h1>
 
-      <ProvidersPanel />
+      <section className="mb-6">
+        <h2 className="text-sm font-semibold text-muted-foreground mb-2">
+          Defaults
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <DefaultCard
+            useCase="transcription"
+            title="Transcription"
+            Icon={Mic}
+            onChange={() => setChangeTarget("transcription")}
+          />
+          <DefaultCard
+            useCase="formatting"
+            title="Formatting & notes"
+            Icon={MessageSquare}
+            onChange={() => setChangeTarget("formatting")}
+          />
+        </div>
+      </section>
 
-      <Tabs
-        value={tab}
-        onValueChange={(newTab) => {
-          navigate({
-            to: "/settings/ai-models",
-            search: { tab: newTab as "speech" | "language" | "embedding" },
-          });
+      <section className="mb-6">
+        <h2 className="text-sm font-semibold text-muted-foreground mb-2">
+          Connected
+        </h2>
+        <ConnectedList
+          onEdit={(id) => setFormMode({ kind: "edit", id })}
+          onOpenWhisperManager={openWhisperManager}
+        />
+      </section>
+
+      <section>
+        <h2 className="text-sm font-semibold text-muted-foreground mb-2">
+          Add a provider
+        </h2>
+        <AvailableTiles
+          onAddCloud={(type) => setFormMode({ kind: "create", type })}
+          onOpenWhisperManager={openWhisperManager}
+        />
+      </section>
+
+      {changeTarget && (
+        <ChangeDefaultDialog
+          open={!!changeTarget}
+          onOpenChange={(open) => {
+            if (!open) setChangeTarget(null);
+          }}
+          useCase={changeTarget}
+          onOpenWhisperManager={openWhisperManager}
+        />
+      )}
+
+      <InstanceFormDialog
+        open={!!formMode}
+        onOpenChange={(open) => {
+          if (!open) setFormMode(null);
         }}
-        className="w-full"
-      >
-        <TabsList className="mb-4">
-          <TabsTrigger value="speech" className="text-base">
-            Transcription
-          </TabsTrigger>
-          <TabsTrigger value="language" className="text-base">
-            Formatting & notes
-          </TabsTrigger>
-          <TabsTrigger value="embedding" className="text-base">
-            Embedding
-          </TabsTrigger>
-        </TabsList>
-        <TabsContent value="speech">
-          <SpeechTab />
-        </TabsContent>
-        <TabsContent value="language">
-          <LanguageTab />
-        </TabsContent>
-        <TabsContent value="embedding">
-          <EmbeddingTab />
-        </TabsContent>
-      </Tabs>
+        mode={formMode}
+      />
+
+      <WhisperManageDialog
+        open={whisperOpen}
+        onOpenChange={setWhisperOpen}
+      />
     </div>
   );
 }
