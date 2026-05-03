@@ -108,12 +108,8 @@ const defaultSettings: AppSettingsData = {
     normalizedY: 0.5,
   },
   shortcuts: getDefaultShortcuts(),
-  modelProvidersConfig: {
-    defaultSpeechModel: "",
-    defaultLanguageModel: "",
-    defaultLanguageModelSelection: "",
-    defaultEmbeddingModel: "",
-  },
+  // No `modelDefaults` here — undefined means "no default set yet"; the
+  // pipeline falls back to its preferred-order logic until the user picks.
 };
 
 // Get all app settings (with automatic migration if needed)
