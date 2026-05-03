@@ -5,7 +5,7 @@ import {
   integer,
   real,
   index,
-  primaryKey,
+  uniqueIndex,
   blob,
 } from "drizzle-orm/sqlite-core";
 
@@ -139,35 +139,22 @@ export const appSettings = sqliteTable("app_settings", {
     .default(sql`(unixepoch())`),
 });
 
-// Unified models table for all model types (Whisper, Language, Embedding)
-export const models = sqliteTable(
-  "models",
+// Provider instances — one row per user-configured connection.
+// Multiple rows can share a `type` (e.g. two OpenRouter accounts).
+//
+// Singleton enforcement for `local-whisper` and `mock`: there is no
+// schema-level partial unique index. Instead, those rows use fixed primary
+// keys (`system-local-whisper`, `system-mock`) and the bootstrap step seeds
+// them with `INSERT OR IGNORE`. The PK uniqueness then guarantees at most
+// one row per singleton type. tRPC create/update for these types must
+// reject user attempts to add additional ones.
+export const instances = sqliteTable(
+  "instances",
   {
-    // Identity
-    id: text("id").notNull(),
-    provider: text("provider").notNull(), // "local-whisper", "openrouter", "ollama"
-
-    // Common fields
-    name: text("name").notNull(),
-    type: text("type").notNull(), // "speech", "language", "embedding"
-    size: text("size"), // Model size string (e.g., "7B", "Large", "~78 MB")
-    context: text("context"), // Context window (e.g., "32k", "128k")
-    description: text("description"),
-
-    // Local model fields (only for downloaded Whisper models)
-    localPath: text("local_path"), // Where file is stored on disk
-    sizeBytes: integer("size_bytes"), // Actual file size in bytes
-    checksum: text("checksum"), // SHA-1 hash for verification
-    downloadedAt: integer("downloaded_at", { mode: "timestamp" }),
-
-    // Remote model fields (OpenRouter/Ollama)
-    originalModel: text("original_model", { mode: "json" }), // Original API response
-
-    // Model characteristics (for UI display)
-    speed: real("speed"), // 1-5 rating
-    accuracy: real("accuracy"), // 1-5 rating
-
-    // Timestamps
+    id: text("id").primaryKey(), // "system-local-whisper" | nanoid for user-created
+    type: text("type").notNull(), // ProviderType: "openai" | "anthropic" | "groq" | "openrouter" | "ollama" | "openai-compatible" | "local-whisper" | "mock"
+    label: text("label").notNull(), // User-facing name ("Personal OpenAI")
+    config: text("config", { mode: "json" }).$type<InstanceConfig>().notNull(), // shape depends on `type` — see InstanceConfig
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
       .default(sql`(unixepoch())`),
@@ -176,13 +163,52 @@ export const models = sqliteTable(
       .default(sql`(unixepoch())`),
   },
   (table) => [
-    // Composite primary key on (provider, id)
-    primaryKey({ columns: [table.provider, table.id] }),
-    // Indexes for efficient lookups
-    index("models_provider_idx").on(table.provider),
-    index("models_type_idx").on(table.type),
+    index("instances_type_idx").on(table.type),
+    // Prevent two instances of the same type from sharing a label —
+    // otherwise the model picker shows ambiguous "OpenRouter / model-x"
+    // entries the user can't disambiguate.
+    uniqueIndex("instances_type_label_unique").on(table.type, table.label),
   ],
 );
+
+// Discriminated union of per-type config payloads stored in `instances.config`.
+// The discriminator is the row's `type` column (not a field inside the JSON),
+// so the consumer must select the right branch based on the row.
+export type InstanceConfig =
+  | ApiKeyConfig // openai, anthropic, groq, openrouter
+  | OllamaConfig // ollama
+  | OpenAICompatibleConfig // openai-compatible
+  | LocalWhisperConfig // local-whisper
+  | MockConfig; // mock (dev only)
+
+export interface ApiKeyConfig {
+  apiKey: string;
+}
+
+export interface OllamaConfig {
+  url: string;
+}
+
+export interface OpenAICompatibleConfig {
+  apiKey: string;
+  baseURL: string;
+}
+
+export interface LocalWhisperConfig {
+  downloadedModels: LocalWhisperDownloadedModel[];
+}
+
+export interface LocalWhisperDownloadedModel {
+  id: string; // e.g. "whisper-large-v3-turbo"
+  filename: string; // e.g. "ggml-large-v3-turbo.bin"
+  sizeBytes: number;
+  checksum?: string;
+  downloadedAt: string; // ISO 8601
+}
+
+// Mock has no config fields, but we use an explicit shape rather than `{}` so
+// the union remains a discriminated set of named types.
+export type MockConfig = Record<string, never>;
 
 // Define the shape of our settings JSON
 export interface AppSettingsData {
@@ -401,8 +427,8 @@ export type MeetingArtifact = typeof meetingArtifacts.$inferSelect;
 export type NewMeetingArtifact = typeof meetingArtifacts.$inferInsert;
 export type Vocabulary = typeof vocabulary.$inferSelect;
 export type NewVocabulary = typeof vocabulary.$inferInsert;
-export type Model = typeof models.$inferSelect;
-export type NewModel = typeof models.$inferInsert;
+export type Instance = typeof instances.$inferSelect;
+export type NewInstance = typeof instances.$inferInsert;
 export type AppSettings = typeof appSettings.$inferSelect;
 export type NewAppSettings = typeof appSettings.$inferInsert;
 export type Event = typeof events.$inferSelect;
