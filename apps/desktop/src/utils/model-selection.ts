@@ -1,129 +1,38 @@
-const MODEL_SELECTION_SEPARATOR = "::";
+import type { ModelSelection } from "@/db/schema";
 
-export type ModelSelectionType = "speech" | "language" | "embedding";
+// UI components (Select, Combobox, etc.) need a single string value per
+// option. Compose / parse the canonical opaque key here so callers don't
+// hand-roll string concatenation.
 
-export interface ParsedModelSelectionKey {
-  providerInstanceId: string;
-  type: ModelSelectionType;
-  id: string;
+// Invariant: `instanceId` must NEVER contain `::` so the first occurrence is
+// always the separator. `modelId` may contain `::` (some self-hosted /
+// OpenAI-compatible servers expose ids like `org/repo::variant`) — this is
+// why `keyToSelection` splits on `indexOf`, not `split`. Don't change to
+// `.split(SEPARATOR)` or `.lastIndexOf(SEPARATOR)`.
+const SEPARATOR = "::";
+
+export function selectionToKey(selection: ModelSelection): string {
+  return `${selection.instanceId}${SEPARATOR}${selection.modelId}`;
 }
 
-export function getModelSelectionKey(
-  providerInstanceId: string,
-  type: ModelSelectionType | string,
-  id: string,
-): string {
-  return [providerInstanceId, type, id].join(MODEL_SELECTION_SEPARATOR);
+export function keyToSelection(value: string): ModelSelection | null {
+  const separatorIndex = value.indexOf(SEPARATOR);
+  if (separatorIndex === -1) return null;
+
+  const instanceId = value.slice(0, separatorIndex);
+  const modelId = value.slice(separatorIndex + SEPARATOR.length);
+
+  if (!instanceId || !modelId) return null;
+
+  return { instanceId, modelId };
 }
 
-export function parseModelSelectionKey(
-  value: string,
-): ParsedModelSelectionKey | null {
-  const firstSeparatorIndex = value.indexOf(MODEL_SELECTION_SEPARATOR);
-  if (firstSeparatorIndex === -1) {
-    return null;
-  }
-
-  const secondSeparatorIndex = value.indexOf(
-    MODEL_SELECTION_SEPARATOR,
-    firstSeparatorIndex + MODEL_SELECTION_SEPARATOR.length,
-  );
-  if (secondSeparatorIndex === -1) {
-    return null;
-  }
-
-  const providerInstanceId = value.slice(0, firstSeparatorIndex);
-  const type = value.slice(
-    firstSeparatorIndex + MODEL_SELECTION_SEPARATOR.length,
-    secondSeparatorIndex,
-  );
-  const id = value.slice(
-    secondSeparatorIndex + MODEL_SELECTION_SEPARATOR.length,
-  );
-
-  if (
-    !providerInstanceId ||
-    !id ||
-    (type !== "speech" && type !== "language" && type !== "embedding")
-  ) {
-    return null;
-  }
-
-  return {
-    providerInstanceId,
-    type,
-    id,
-  };
-}
-
-export function resolveStoredModelSelectionValue<
-  T extends {
-    providerInstanceId: string;
-    type: string;
-    id: string;
-  },
->(
-  models: T[],
-  value: string | null | undefined,
-  expectedType?: ModelSelectionType,
-): string | undefined {
-  if (!value) {
-    return undefined;
-  }
-
-  const parsed = parseModelSelectionKey(value);
-  if (parsed) {
-    if (expectedType && parsed.type !== expectedType) {
-      return undefined;
-    }
-
-    return models.some(
-      (model) =>
-        model.providerInstanceId === parsed.providerInstanceId &&
-        model.type === parsed.type &&
-        model.id === parsed.id,
-    )
-      ? value
-      : undefined;
-  }
-
-  const matches = models.filter(
-    (model) =>
-      model.id === value && (!expectedType || model.type === expectedType),
-  );
-
-  if (matches.length !== 1) {
-    return undefined;
-  }
-
-  return getModelSelectionKey(
-    matches[0].providerInstanceId,
-    matches[0].type as ModelSelectionType,
-    matches[0].id,
-  );
-}
-
-export function findModelBySelectionValue<
-  T extends {
-    providerInstanceId: string;
-    type: string;
-    id: string;
-  },
->(models: T[], value: string | null | undefined): T | undefined {
-  const resolvedValue = resolveStoredModelSelectionValue(models, value);
-  if (!resolvedValue) {
-    return undefined;
-  }
-
-  const parsed = parseModelSelectionKey(resolvedValue);
-  if (!parsed) {
-    return undefined;
-  }
-
-  return models.find(
-    (model) =>
-      model.providerInstanceId === parsed.providerInstanceId &&
-      model.type === parsed.type &&
-      model.id === parsed.id,
-  );
+export function selectionsEqual(
+  a: ModelSelection | null | undefined,
+  b: ModelSelection | null | undefined,
+): boolean {
+  // Treat null and undefined as equivalent — both mean "no selection."
+  if (!a && !b) return true;
+  if (!a || !b) return false;
+  return a.instanceId === b.instanceId && a.modelId === b.modelId;
 }

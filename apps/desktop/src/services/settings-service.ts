@@ -7,11 +7,9 @@ import {
   getAppSettings,
   updateAppSettings,
 } from "../db/app-settings";
-import type { AppSettingsData } from "../db/schema";
-import {
-  normalizeOllamaUrl,
-  normalizeOpenAICompatibleBaseURL,
-} from "../utils/provider-utils";
+import type { AppSettingsData, ModelSelection } from "../db/schema";
+
+export type DefaultUseCase = "transcription" | "formatting" | "embedding";
 import {
   validateShortcutComprehensive,
   type ShortcutType,
@@ -256,173 +254,70 @@ export class SettingsService extends EventEmitter {
   }
 
   /**
-   * Get model providers configuration
+   * Get all model defaults at once.
    */
-  async getModelProvidersConfig(): Promise<
-    AppSettingsData["modelProvidersConfig"]
-  > {
-    return await getSettingsSection("modelProvidersConfig");
+  async getModelDefaults(): Promise<AppSettingsData["modelDefaults"]> {
+    return await getSettingsSection("modelDefaults");
   }
 
   /**
-   * Update model providers configuration
+   * Get the default model selection for a use case.
    */
-  async setModelProvidersConfig(
-    config: AppSettingsData["modelProvidersConfig"],
+  async getDefault(
+    useCase: DefaultUseCase,
+  ): Promise<ModelSelection | undefined> {
+    const defaults = await this.getModelDefaults();
+    return defaults?.[useCase];
+  }
+
+  /**
+   * Set the default model selection for a use case.
+   */
+  async setDefault(
+    useCase: DefaultUseCase,
+    selection: ModelSelection,
   ): Promise<void> {
-    await updateSettingsSection("modelProvidersConfig", config);
-  }
-
-  /**
-   * Get OpenRouter configuration
-   */
-  async getOpenRouterConfig(): Promise<{ apiKey: string } | undefined> {
-    const config = await this.getModelProvidersConfig();
-    return config?.openRouter;
-  }
-
-  /**
-   * Update OpenRouter configuration
-   */
-  async setOpenRouterConfig(config: { apiKey: string }): Promise<void> {
-    const currentConfig = await this.getModelProvidersConfig();
-    await this.setModelProvidersConfig({
-      ...currentConfig,
-      openRouter: config,
+    const current = await this.getModelDefaults();
+    await updateSettingsSection("modelDefaults", {
+      ...current,
+      [useCase]: selection,
     });
   }
 
   /**
-   * Get Ollama configuration
+   * Clear the default selection for a use case (the use case will fall back
+   * to the pipeline's own preferred-order logic).
    */
-  async getOllamaConfig(): Promise<{ url: string } | undefined> {
-    const config = await this.getModelProvidersConfig();
-    return config?.ollama;
+  async clearDefault(useCase: DefaultUseCase): Promise<void> {
+    const current = await this.getModelDefaults();
+    if (!current?.[useCase]) return;
+
+    const next = { ...current };
+    delete next[useCase];
+
+    await updateSettingsSection("modelDefaults", next);
   }
 
   /**
-   * Update Ollama configuration
+   * Clear any default selection that points at a now-deleted instance.
+   * Called by the instances tRPC router when a row is removed.
    */
-  async setOllamaConfig(config: { url: string }): Promise<void> {
-    const currentConfig = await this.getModelProvidersConfig();
-    const normalizedUrl = normalizeOllamaUrl(config.url);
+  async clearDefaultsForInstance(instanceId: string): Promise<void> {
+    const current = await this.getModelDefaults();
+    if (!current) return;
 
-    // If URL is empty, remove the ollama config entirely
-    if (normalizedUrl === "") {
-      const updatedConfig = { ...currentConfig };
-      delete updatedConfig.ollama;
-      await this.setModelProvidersConfig(updatedConfig);
-    } else {
-      await this.setModelProvidersConfig({
-        ...currentConfig,
-        ollama: { url: normalizedUrl },
-      });
+    const next = { ...current };
+    let changed = false;
+    for (const useCase of Object.keys(next) as DefaultUseCase[]) {
+      if (next[useCase]?.instanceId === instanceId) {
+        delete next[useCase];
+        changed = true;
+      }
     }
-  }
 
-  /**
-   * Get OpenAI-compatible configuration
-   */
-  async getOpenAICompatibleConfig(): Promise<
-    { apiKey: string; baseURL: string } | undefined
-  > {
-    const config = await this.getModelProvidersConfig();
-    return config?.openAICompatible;
-  }
+    if (!changed) return;
 
-  /**
-   * Update OpenAI-compatible configuration
-   */
-  async setOpenAICompatibleConfig(config: {
-    apiKey: string;
-    baseURL: string;
-  }): Promise<void> {
-    const currentConfig = await this.getModelProvidersConfig();
-    await this.setModelProvidersConfig({
-      ...currentConfig,
-      openAICompatible: {
-        apiKey: config.apiKey.trim(),
-        baseURL: normalizeOpenAICompatibleBaseURL(config.baseURL),
-      },
-    });
-  }
-
-  /**
-   * Get default speech model (Whisper)
-   */
-  async getDefaultSpeechModel(): Promise<string | undefined> {
-    const config = await this.getModelProvidersConfig();
-    return config?.defaultSpeechModel;
-  }
-
-  /**
-   * Set default speech model (Whisper)
-   */
-  async setDefaultSpeechModel(modelId: string | undefined): Promise<void> {
-    const currentConfig = await this.getModelProvidersConfig();
-    await this.setModelProvidersConfig({
-      ...currentConfig,
-      defaultSpeechModel: modelId,
-    });
-  }
-
-  /**
-   * Get default language model
-   */
-  async getDefaultLanguageModel(): Promise<string | undefined> {
-    const config = await this.getModelProvidersConfig();
-    return config?.defaultLanguageModel;
-  }
-
-  /**
-   * Get default language model selection value.
-   */
-  async getDefaultLanguageModelSelection(): Promise<string | undefined> {
-    const config = await this.getModelProvidersConfig();
-    return config?.defaultLanguageModelSelection;
-  }
-
-  /**
-   * Set default language model
-   */
-  async setDefaultLanguageModel(modelId: string | undefined): Promise<void> {
-    const currentConfig = await this.getModelProvidersConfig();
-    await this.setModelProvidersConfig({
-      ...currentConfig,
-      defaultLanguageModel: modelId,
-    });
-  }
-
-  /**
-   * Set default language model selection value.
-   */
-  async setDefaultLanguageModelSelection(
-    selectionValue: string | undefined,
-  ): Promise<void> {
-    const currentConfig = await this.getModelProvidersConfig();
-    await this.setModelProvidersConfig({
-      ...currentConfig,
-      defaultLanguageModelSelection: selectionValue,
-    });
-  }
-
-  /**
-   * Get default embedding model
-   */
-  async getDefaultEmbeddingModel(): Promise<string | undefined> {
-    const config = await this.getModelProvidersConfig();
-    return config?.defaultEmbeddingModel;
-  }
-
-  /**
-   * Set default embedding model
-   */
-  async setDefaultEmbeddingModel(modelId: string | undefined): Promise<void> {
-    const currentConfig = await this.getModelProvidersConfig();
-    await this.setModelProvidersConfig({
-      ...currentConfig,
-      defaultEmbeddingModel: modelId,
-    });
+    await updateSettingsSection("modelDefaults", next);
   }
 
   /**

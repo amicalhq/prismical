@@ -210,6 +210,15 @@ export interface LocalWhisperDownloadedModel {
 // the union remains a discriminated set of named types.
 export type MockConfig = Record<string, never>;
 
+// Pointer to a specific model on a specific instance.
+// The model's *type* (speech / language / embedding) is implied by the
+// settings slot the selection lives in (modelDefaults.transcription is
+// always a speech model, etc.), so it's not encoded here.
+export interface ModelSelection {
+  instanceId: string;
+  modelId: string;
+}
+
 // Define the shape of our settings JSON
 export interface AppSettingsData {
   formatterConfig?: {
@@ -249,21 +258,13 @@ export interface AppSettingsData {
     openApp?: number[];
   };
 
-  modelProvidersConfig?: {
-    openRouter?: {
-      apiKey: string;
-    };
-    ollama?: {
-      url: string;
-    };
-    openAICompatible?: {
-      apiKey: string;
-      baseURL: string;
-    };
-    defaultSpeechModel?: string; // Model ID for default speech model (Whisper)
-    defaultLanguageModel?: string; // Model ID for default language model
-    defaultLanguageModelSelection?: string; // Composite selection key for the default language model
-    defaultEmbeddingModel?: string; // Model ID for default embedding model
+  // Per-use-case default model selections. Each value points at a specific
+  // model on a specific provider instance. Provider credentials/URLs live
+  // in the `instances` table, not here.
+  modelDefaults?: {
+    transcription?: ModelSelection; // Speech-to-text (e.g. Whisper)
+    formatting?: ModelSelection; // Language model used to format/summarize
+    embedding?: ModelSelection; // Embedding model (used later for RAG)
   };
 
   dictation?: {
