@@ -2,8 +2,6 @@
 import { ComponentProps, useEffect, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import DefaultModelCombobox from "../components/default-model-combobox";
-import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import {
   Table,
   TableBody,
@@ -12,7 +10,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Download, Zap, Circle, Square, Loader2, Trash2 } from "lucide-react";
+import {
+  Download,
+  Zap,
+  Circle,
+  Square,
+  Loader2,
+  Trash2,
+} from "lucide-react";
 import { DynamicIcon } from "lucide-react/dynamic";
 import {
   TooltipContent,
@@ -34,12 +39,11 @@ import {
 } from "@/components/ui/alert-dialog";
 import { DownloadProgress } from "@/constants/models";
 import { api } from "@/trpc/react";
-import { useTranslation } from "react-i18next";
+import DefaultModelPicker from "../components/default-model-picker";
 
 const SpeedRating = ({ rating }: { rating: number }) => {
   const fullIcons = Math.floor(rating);
   const hasHalf = rating % 1 !== 0;
-
   return (
     <div className="flex items-center gap-1">
       {Array.from({ length: 5 }, (_, i) => {
@@ -68,7 +72,6 @@ const SpeedRating = ({ rating }: { rating: number }) => {
 const AccuracyRating = ({ rating }: { rating: number }) => {
   const fullIcons = Math.floor(rating);
   const hasHalf = rating % 1 !== 0;
-
   return (
     <div className="flex items-center gap-1">
       {Array.from({ length: 5 }, (_, i) => {
@@ -95,14 +98,12 @@ const AccuracyRating = ({ rating }: { rating: number }) => {
 };
 
 export default function SpeechTab() {
-  const { t } = useTranslation();
   const [downloadProgress, setDownloadProgress] = useState<
     Record<string, DownloadProgress>
   >({});
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [modelToDelete, setModelToDelete] = useState<string | null>(null);
 
-  // tRPC queries
   const availableModelsQuery = api.models.getAvailableModels.useQuery();
   const downloadedModelsQuery = api.models.getDownloadedModels.useQuery();
   const activeDownloadsQuery = api.models.getActiveDownloads.useQuery();
@@ -112,26 +113,17 @@ export default function SpeechTab() {
 
   const utils = api.useUtils();
 
-  // tRPC mutations
   const downloadModelMutation = api.models.downloadModel.useMutation({
     onSuccess: () => {
       utils.models.getDownloadedModels.invalidate();
       utils.models.getActiveDownloads.invalidate();
     },
-    onError: (error) => {
-      console.error("Failed to start download:", error);
-      toast.error(t("settings.aiModels.speech.toast.downloadStartFailed"));
-    },
+    onError: () => toast.error("Failed to start download"),
   });
 
   const cancelDownloadMutation = api.models.cancelDownload.useMutation({
-    onSuccess: () => {
-      utils.models.getActiveDownloads.invalidate();
-    },
-    onError: (error) => {
-      console.error("Failed to cancel download:", error);
-      toast.error(t("settings.aiModels.speech.toast.downloadCancelFailed"));
-    },
+    onSuccess: () => utils.models.getActiveDownloads.invalidate(),
+    onError: () => toast.error("Failed to cancel download"),
   });
 
   const deleteModelMutation = api.models.deleteModel.useMutation({
@@ -140,9 +132,8 @@ export default function SpeechTab() {
       setShowDeleteDialog(false);
       setModelToDelete(null);
     },
-    onError: (error) => {
-      console.error("Failed to delete model:", error);
-      toast.error(t("settings.aiModels.speech.toast.deleteFailed"));
+    onError: () => {
+      toast.error("Failed to delete model");
       setShowDeleteDialog(false);
       setModelToDelete(null);
     },
@@ -151,11 +142,9 @@ export default function SpeechTab() {
   const setSelectedModelMutation = api.models.setSelectedModel.useMutation({
     onSuccess: () => {
       utils.models.getSelectedModel.invalidate();
+      utils.instances.getDefaults.invalidate();
     },
-    onError: (error) => {
-      console.error("Failed to select model:", error);
-      toast.error(t("settings.aiModels.speech.toast.selectFailed"));
-    },
+    onError: () => toast.error("Failed to select model"),
   });
 
   // Initialize active downloads progress on load
@@ -169,148 +158,91 @@ export default function SpeechTab() {
     }
   }, [activeDownloadsQuery.data]);
 
-  // Set up tRPC subscriptions for real-time download updates
   api.models.onDownloadProgress.useSubscription(undefined, {
     onData: ({ modelId, progress }) => {
       setDownloadProgress((prev) => ({ ...prev, [modelId]: progress }));
-    },
-    onError: (error) => {
-      console.error("Download progress subscription error:", error);
     },
   });
 
   api.models.onDownloadComplete.useSubscription(undefined, {
     onData: ({ modelId }) => {
       setDownloadProgress((prev) => {
-        const newProgress = { ...prev };
-        delete newProgress[modelId];
-        return newProgress;
+        const next = { ...prev };
+        delete next[modelId];
+        return next;
       });
       utils.models.getDownloadedModels.invalidate();
       utils.models.getActiveDownloads.invalidate();
-      // Also invalidate selected model in case of auto-selection
       utils.models.getSelectedModel.invalidate();
-    },
-    onError: (error) => {
-      console.error("Download complete subscription error:", error);
+      utils.instances.fetchCatalog.invalidate();
     },
   });
 
   api.models.onDownloadError.useSubscription(undefined, {
     onData: ({ modelId, error }) => {
       setDownloadProgress((prev) => {
-        const newProgress = { ...prev };
-        delete newProgress[modelId];
-        return newProgress;
+        const next = { ...prev };
+        delete next[modelId];
+        return next;
       });
-      toast.error(
-        t("settings.aiModels.speech.toast.downloadFailed", { message: error }),
-      );
+      toast.error(`Download failed: ${error}`);
       utils.models.getActiveDownloads.invalidate();
-    },
-    onError: (error) => {
-      console.error("Download error subscription error:", error);
     },
   });
 
   api.models.onDownloadCancelled.useSubscription(undefined, {
     onData: ({ modelId }) => {
       setDownloadProgress((prev) => {
-        const newProgress = { ...prev };
-        delete newProgress[modelId];
-        return newProgress;
+        const next = { ...prev };
+        delete next[modelId];
+        return next;
       });
       utils.models.getActiveDownloads.invalidate();
-    },
-    onError: (error) => {
-      console.error("Download cancelled subscription error:", error);
     },
   });
 
   api.models.onModelDeleted.useSubscription(undefined, {
     onData: () => {
       utils.models.getDownloadedModels.invalidate();
-    },
-    onError: (error) => {
-      console.error("Model deleted subscription error:", error);
+      utils.instances.fetchCatalog.invalidate();
     },
   });
 
-  const handleDownload = async (modelId: string, event?: React.MouseEvent) => {
-    if (event) {
-      event.preventDefault();
-      event.stopPropagation();
-    }
-
-    try {
-      await downloadModelMutation.mutateAsync({ modelId });
-      console.log("Download started for:", modelId);
-    } catch (err) {
-      console.error("Failed to start download:", err);
-      // Error is already handled by the mutation's onError
-    }
+  const handleDownload = (modelId: string, event?: React.MouseEvent) => {
+    event?.preventDefault();
+    event?.stopPropagation();
+    downloadModelMutation.mutate({ modelId });
   };
 
-  const handleCancelDownload = async (
-    modelId: string,
-    event?: React.MouseEvent,
-  ) => {
-    if (event) {
-      event.preventDefault();
-      event.stopPropagation();
-    }
-
-    try {
-      await cancelDownloadMutation.mutateAsync({ modelId });
-      console.log("Cancel download successful for:", modelId);
-    } catch (err) {
-      console.error("Failed to cancel download:", err);
-      // Error is already handled by the mutation's onError
-    }
+  const handleCancelDownload = (modelId: string, event?: React.MouseEvent) => {
+    event?.preventDefault();
+    event?.stopPropagation();
+    cancelDownloadMutation.mutate({ modelId });
   };
 
   const handleDeleteClick = (modelId: string, event?: React.MouseEvent) => {
-    if (event) {
-      event.preventDefault();
-      event.stopPropagation();
-    }
+    event?.preventDefault();
+    event?.stopPropagation();
     setModelToDelete(modelId);
     setShowDeleteDialog(true);
   };
 
-  const handleDeleteConfirm = async () => {
-    if (!modelToDelete) return;
-
-    try {
-      await deleteModelMutation.mutateAsync({ modelId: modelToDelete });
-    } catch (err) {
-      console.error("Failed to delete model:", err);
-      // Error is already handled by the mutation's onError
+  const handleDeleteConfirm = () => {
+    if (modelToDelete) {
+      deleteModelMutation.mutate({ modelId: modelToDelete });
     }
   };
 
-  const handleDeleteCancel = () => {
-    setShowDeleteDialog(false);
-    setModelToDelete(null);
+  const handleSelectModel = (modelId: string) => {
+    setSelectedModelMutation.mutate({ modelId });
   };
 
-  const handleSelectModel = async (modelId: string) => {
-    try {
-      await setSelectedModelMutation.mutateAsync({ modelId });
-    } catch (err) {
-      console.error("Failed to select model:", err);
-      // Error is already handled by the mutation's onError
-    }
-  };
-
-  // Loading state
   const loading =
     availableModelsQuery.isLoading ||
     downloadedModelsQuery.isLoading ||
     isTranscriptionAvailableQuery.isLoading ||
     selectedModelQuery.isLoading;
 
-  // Data from queries
   const availableModels = availableModelsQuery.data || [];
   const downloadedModels = downloadedModelsQuery.data || {};
   const isTranscriptionAvailable = isTranscriptionAvailableQuery.data || false;
@@ -320,23 +252,29 @@ export default function SpeechTab() {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="w-8 h-8 animate-spin" />
-        <span className="ml-2">{t("settings.aiModels.speech.loading")}</span>
+        <span className="ml-2">Loading…</span>
       </div>
     );
   }
+
   return (
     <>
       <Card>
-        <CardContent className="space-y-6">
-          {/* Default model picker using unified component */}
-          <DefaultModelCombobox
-            modelType="speech"
-            title={t("settings.aiModels.defaultModels.speech")}
+        <CardContent className="space-y-6 p-6">
+          <DefaultModelPicker
+            useCase="transcription"
+            title="Default transcription model"
           />
+
           <div>
-            <Label className="text-lg font-semibold mb-2 block">
-              {t("settings.aiModels.speech.availableModels")}
+            <Label className="text-base font-semibold mb-2 block">
+              Local Whisper downloads
             </Label>
+            <p className="text-xs text-muted-foreground mb-3">
+              Download a Whisper model to transcribe locally on this machine.
+              The selected model below also becomes the default transcription
+              model when no other provider is chosen above.
+            </p>
             <div className="divide-y border rounded-md bg-muted/30">
               <TooltipProvider>
                 <RadioGroup
@@ -346,18 +284,10 @@ export default function SpeechTab() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>
-                          {t("settings.aiModels.speech.table.model")}
-                        </TableHead>
-                        <TableHead>
-                          {t("settings.aiModels.speech.table.features")}
-                        </TableHead>
-                        <TableHead>
-                          {t("settings.aiModels.speech.table.speed")}
-                        </TableHead>
-                        <TableHead>
-                          {t("settings.aiModels.speech.table.accuracy")}
-                        </TableHead>
+                        <TableHead>Model</TableHead>
+                        <TableHead>Features</TableHead>
+                        <TableHead>Speed</TableHead>
+                        <TableHead>Accuracy</TableHead>
                         <TableHead></TableHead>
                       </TableRow>
                     </TableHeader>
@@ -385,47 +315,28 @@ export default function SpeechTab() {
                                   id={model.id}
                                   disabled={!canSelect}
                                 />
-                                <div>
-                                  <Label
-                                    htmlFor={model.id}
-                                    className="font-semibold cursor-pointer"
-                                  >
-                                    {model.name}
-                                  </Label>
-                                  <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
-                                    <Avatar className="w-4 h-4">
-                                      <AvatarImage
-                                        src={model.providerIcon}
-                                        alt={t(
-                                          "settings.aiModels.speech.providerIconAlt",
-                                          { provider: model.provider },
-                                        )}
-                                      />
-                                      <AvatarFallback className="text-xs">
-                                        {model.provider.charAt(0).toUpperCase()}
-                                      </AvatarFallback>
-                                    </Avatar>
-                                    <span>{model.provider}</span>
-                                  </div>
-                                </div>
+                                <Label
+                                  htmlFor={model.id}
+                                  className="font-semibold cursor-pointer"
+                                >
+                                  {model.name}
+                                </Label>
                               </div>
                             </TableCell>
                             <TableCell>
                               <div className="flex flex-wrap gap-2">
-                                {model.features.map((feature, featureIndex) => (
-                                  <Tooltip key={featureIndex}>
+                                {model.features.map((feature, i) => (
+                                  <Tooltip key={i}>
                                     <TooltipTrigger asChild>
                                       <div className="p-2 rounded-md bg-muted hover:bg-muted/80 cursor-help transition-colors">
-                                        {
-                                          <DynamicIcon
-                                            name={
-                                              feature.icon as ComponentProps<
-                                                typeof DynamicIcon
-                                              >["name"]
-                                            }
-                                            className="w-4 h-4"
-                                          />
-                                        }
+                                        <DynamicIcon
+                                          name={
+                                            feature.icon as ComponentProps<
+                                              typeof DynamicIcon
+                                            >["name"]
+                                          }
+                                          className="w-4 h-4"
+                                        />
                                       </div>
                                     </TooltipTrigger>
                                     <TooltipContent>
@@ -445,11 +356,11 @@ export default function SpeechTab() {
                               <div className="flex flex-col items-center space-y-1">
                                 {!isDownloaded && !isDownloading && (
                                   <button
-                                    onClick={(e) => handleDownload(model.id, e)}
+                                    onClick={(e) =>
+                                      handleDownload(model.id, e)
+                                    }
                                     className="w-8 h-8 rounded-full bg-muted hover:bg-muted/80 flex items-center justify-center text-primary-foreground transition-colors"
-                                    title={t(
-                                      "settings.aiModels.speech.actions.downloadTitle",
-                                    )}
+                                    title="Download"
                                   >
                                     <Download className="w-4 h-4 text-muted-foreground" />
                                   </button>
@@ -463,13 +374,8 @@ export default function SpeechTab() {
                                         handleCancelDownload(model.id, e)
                                       }
                                       className="w-8 h-8 rounded-full bg-orange-500 hover:bg-orange-600 flex items-center justify-center text-white transition-colors"
-                                      title={t(
-                                        "settings.aiModels.speech.actions.cancelDownloadTitle",
-                                      )}
-                                      aria-label={t(
-                                        "settings.aiModels.speech.actions.cancelDownloadAria",
-                                        { modelName: model.name },
-                                      )}
+                                      title="Cancel download"
+                                      aria-label={`Cancel download of ${model.name}`}
                                     >
                                       <Square className="w-4 h-4" />
                                     </button>
@@ -512,13 +418,8 @@ export default function SpeechTab() {
                                       handleDeleteClick(model.id, e)
                                     }
                                     className="w-8 h-8 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center text-white transition-colors"
-                                    title={t(
-                                      "settings.aiModels.speech.actions.deleteTitle",
-                                    )}
-                                    aria-label={t(
-                                      "settings.aiModels.speech.actions.deleteAria",
-                                      { modelName: model.name },
-                                    )}
+                                    title="Delete"
+                                    aria-label={`Delete ${model.name}`}
                                   >
                                     <Trash2 className="w-4 h-4" />
                                   </button>
@@ -544,22 +445,19 @@ export default function SpeechTab() {
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>
-              {t("settings.aiModels.speech.deleteDialog.title")}
-            </AlertDialogTitle>
+            <AlertDialogTitle>Delete this model?</AlertDialogTitle>
             <AlertDialogDescription>
-              {t("settings.aiModels.speech.deleteDialog.description")}
+              The .bin file will be removed from disk. You can re-download it
+              any time.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={handleDeleteCancel}>
-              {t("settings.aiModels.speech.deleteDialog.cancel")}
-            </AlertDialogCancel>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDeleteConfirm}
               className="bg-red-500 hover:bg-red-600"
             >
-              {t("settings.aiModels.speech.deleteDialog.confirm")}
+              Delete
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

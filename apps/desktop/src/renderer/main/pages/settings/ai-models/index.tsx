@@ -1,22 +1,23 @@
 "use client";
-
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import SpeechTab from "./tabs/SpeechTab";
 import LanguageTab from "./tabs/LanguageTab";
 import EmbeddingTab from "./tabs/EmbeddingTab";
+import ProvidersPanel from "./components/providers-panel";
 import { useNavigate, getRouteApi } from "@tanstack/react-router";
-import { useTranslation } from "react-i18next";
 
 const routeApi = getRouteApi("/settings/ai-models");
 
 export default function AIModelsSettingsPage() {
-  const { t } = useTranslation();
   const navigate = useNavigate();
   const { tab } = routeApi.useSearch();
 
   return (
-    <div>
-      <h1 className="text-xl font-bold mb-6">{t("settings.aiModels.title")}</h1>
+    <div className="space-y-6">
+      <h1 className="text-xl font-bold">AI Models</h1>
+
+      <ProvidersPanel />
+
       <Tabs
         value={tab}
         onValueChange={(newTab) => {
@@ -27,15 +28,15 @@ export default function AIModelsSettingsPage() {
         }}
         className="w-full"
       >
-        <TabsList className="mb-6">
+        <TabsList className="mb-4">
           <TabsTrigger value="speech" className="text-base">
-            {t("settings.aiModels.tabs.speech")}
+            Transcription
           </TabsTrigger>
           <TabsTrigger value="language" className="text-base">
-            {t("settings.aiModels.tabs.language")}
+            Formatting & notes
           </TabsTrigger>
           <TabsTrigger value="embedding" className="text-base">
-            {t("settings.aiModels.tabs.embedding")}
+            Embedding
           </TabsTrigger>
         </TabsList>
         <TabsContent value="speech">
