@@ -218,7 +218,6 @@ export async function fetchLocalWhisperCatalog(
         id: m.id,
         name: meta?.name ?? prettifyCloudModelId(m.id),
         type: "transcription" as const,
-        ...(meta?.description ? { description: meta.description } : {}),
       } satisfies CatalogEntry,
     };
   });
@@ -296,9 +295,12 @@ function unixToISODate(seconds: unknown): string | null {
 // underlying capability so paying users can pick their own models.
 function classifyOpenAIModel(id: string): ModelType | null {
   const lower = id.toLowerCase();
-  // Match the underlying capability anywhere in the id so "ft:gpt-4o:..."
-  // and "ft:whisper-large:..." surface in the right pickers.
-  if (lower.includes("whisper")) return "transcription";
+  // Transcription = "whisper-*" (classic Whisper API) OR "*-transcribe"
+  // (the gpt-4o-transcribe / gpt-4o-mini-transcribe family). Important
+  // to check BEFORE the gpt- branch — those ids match both prefixes.
+  if (lower.includes("whisper") || lower.includes("transcribe")) {
+    return "transcription";
+  }
   if (lower.includes("text-embedding")) return "embedding";
   // "gpt-" also catches "chatgpt-*". `\bo[134]\b` matches o1/o3/o4 even
   // when prefixed (e.g. "o3-mini") since `-` is a word boundary.
