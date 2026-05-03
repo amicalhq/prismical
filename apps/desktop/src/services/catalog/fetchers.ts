@@ -169,6 +169,7 @@ function prettifyCloudModelId(id: string): string {
     [/^gpt-/, "GPT-"],
     [/^claude-/, "Claude "],
     [/^text-embedding-/, "Text Embedding "],
+    [/^whisper-/, "Whisper-"], // hosted OpenAI Whisper API
     [/^o(\d+)([-.])?/, "o$1$2"], // o1, o3, o4 keep lowercase 'o'
   ];
   for (const [from, to] of rules) {
