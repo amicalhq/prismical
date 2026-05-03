@@ -1,69 +1,65 @@
-import type { ComponentType, SVGProps } from "react";
-import {
-  Cloud,
-  Cpu,
-  Globe,
-  Mic,
-  Plug,
-  Server,
-  Sparkles,
-  TestTube2,
-} from "lucide-react";
+import type { ComponentType } from "react";
+import { Cloud, Mic, Plug, TestTube2 } from "lucide-react";
 import {
   PROVIDER_TYPES,
   PROVIDER_TYPE_LABELS,
   type ProviderType,
 } from "@/constants/provider-types";
+import {
+  AnthropicLogo,
+  GroqLogo,
+  OllamaLogo,
+  OpenAILogo,
+  OpenRouterLogo,
+} from "@/renderer/main/components/logos";
 
 // UI-side metadata for the AI Models settings page. Pulled into its own
 // file so the constants module stays React-free and importable from the
 // main process.
 //
-// Logos are Lucide icons today as a working baseline. To replace any
-// entry with the real brand SVG, install via the svgl.app shadcn
-// registry into `components/logos/` and swap the `Logo` reference here:
-//   npx shadcn@latest add https://svgl.app/library/<name>.svg
-// (svgl exposes raw SVGs at the URL shown above; wrap as a React
-// component or use an `<img>` source; both work with `currentColor` for
-// dark/light theming.)
+// Brand logos for the cloud providers come from svgl.app; the source
+// SVGs and their light/dark wrappers live in `./logos/`. The
+// non-branded providers (whisper, openai-compatible, mock) keep
+// Lucide icons because they don't have an established brand mark in
+// our context.
 
-// Widened from `LucideIcon` so a future svgl-sourced wrapper component
-// (or any plain SVG component accepting `className`) satisfies the type
-// without changing this file.
-export type ProviderLogo = ComponentType<SVGProps<SVGSVGElement>>;
+// `className` is the only thing consumers need to set (size, optional
+// dark-mode tweaks). LucideIcon's full SVGProps surface is wider than
+// what brand logos can support — many ship as <img> tags whose
+// theming is hard-coded — so we use this narrower contract for both.
+export type ProviderLogo = ComponentType<{ className?: string }>;
 
 export interface ProviderMeta {
   label: string;
   Logo: ProviderLogo;
-  /** Tailwind text class for tinting the icon when rendered inline. */
+  /**
+   * Tailwind text class used to tint Lucide-based logos via
+   * currentColor. Brand-image logos (svgl) ignore this since they ship
+   * with their own colors.
+   */
   tint?: string;
 }
 
 export const PROVIDER_META: Record<ProviderType, ProviderMeta> = {
   [PROVIDER_TYPES.openai]: {
     label: PROVIDER_TYPE_LABELS[PROVIDER_TYPES.openai],
-    Logo: Sparkles,
-    tint: "text-emerald-600 dark:text-emerald-400",
+    Logo: OpenAILogo,
   },
   [PROVIDER_TYPES.anthropic]: {
     label: PROVIDER_TYPE_LABELS[PROVIDER_TYPES.anthropic],
-    Logo: Sparkles,
-    tint: "text-orange-600 dark:text-orange-400",
+    Logo: AnthropicLogo,
   },
   [PROVIDER_TYPES.groq]: {
     label: PROVIDER_TYPE_LABELS[PROVIDER_TYPES.groq],
-    Logo: Cpu,
-    tint: "text-rose-600 dark:text-rose-400",
+    Logo: GroqLogo,
   },
   [PROVIDER_TYPES.openRouter]: {
     label: PROVIDER_TYPE_LABELS[PROVIDER_TYPES.openRouter],
-    Logo: Globe,
-    tint: "text-sky-600 dark:text-sky-400",
+    Logo: OpenRouterLogo,
   },
   [PROVIDER_TYPES.ollama]: {
     label: PROVIDER_TYPE_LABELS[PROVIDER_TYPES.ollama],
-    Logo: Server,
-    tint: "text-violet-600 dark:text-violet-400",
+    Logo: OllamaLogo,
   },
   [PROVIDER_TYPES.openAICompatible]: {
     label: PROVIDER_TYPE_LABELS[PROVIDER_TYPES.openAICompatible],
