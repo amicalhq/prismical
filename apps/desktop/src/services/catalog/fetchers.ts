@@ -284,18 +284,26 @@ export async function fetchFromModelsDev(
 export async function fetchLocalWhisperCatalog(
   config: LocalWhisperConfig,
 ): Promise<CatalogEntry[]> {
-  return (config.downloadedModels ?? []).map((m): CatalogEntry => {
+  const downloaded = config.downloadedModels ?? [];
+  const out = downloaded.map((m): CatalogEntry => {
     const meta = AVAILABLE_MODELS.find((am) => am.id === m.id);
-    return {
+    const entry: CatalogEntry = {
       id: m.id,
-      // Prefer the curated display name ("Whisper Large v3 Turbo")
-      // over the raw id ("whisper-large-v3-turbo"). Falls back to id
-      // for any model not in the static manifest (shouldn't happen
-      // since downloads also draw from AVAILABLE_MODELS).
-      name: meta?.name ?? m.id,
+      // Prefer the curated display name ("Whisper Large v3 Turbo").
+      // Fall back to the prettifier so we never surface a raw id
+      // (handles drift between the manifest and what's on disk).
+      name: meta?.name ?? prettifyCloudModelId(m.id),
       type: "transcription",
     };
+    if (meta?.description) entry.description = meta.description;
+    return entry;
   });
+  logger.main.info(
+    `fetchLocalWhisperCatalog: returned ${out.length} entries (names: ${out
+      .map((e) => e.name)
+      .join(", ")})`,
+  );
+  return out;
 }
 
 const MOCK_CATALOG: readonly CatalogEntry[] = [

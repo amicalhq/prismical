@@ -74,7 +74,14 @@ export default function ChangeDefaultDialog({
   });
   const catalogQuery = api.instances.fetchCatalog.useQuery(
     { id: chosenInstanceId! },
-    { enabled: open && !!chosenInstanceId },
+    {
+      enabled: open && !!chosenInstanceId,
+      // Force a refetch on every step-2 mount. The picker is a rare,
+      // intentional interaction; serving cached catalog from a
+      // previous session here masks fixes/changes to the catalog
+      // shape and surfaces stale model lists.
+      refetchOnMount: "always",
+    },
   );
 
   const setDefaultMutation = api.instances.setDefault.useMutation({
