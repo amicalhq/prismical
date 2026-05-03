@@ -19,6 +19,7 @@ import { toast } from "sonner";
 import { api } from "@/trpc/react";
 import {
   PROVIDER_TYPE_CAPABILITIES,
+  PROVIDER_TYPE_MULTI_INSTANCE,
   isProviderType,
   type ProviderType,
 } from "@/constants/provider-types";
@@ -214,33 +215,49 @@ export default function ChangeDefaultDialog({
           ) : eligibleInstances.length === 0 ? (
             <div className="rounded-md border border-dashed bg-muted/30 p-6 text-center text-sm text-muted-foreground">
               No connected providers can serve {useCaseTitle} yet. Add one
-              from the providers list below the cards.
+              from the providers list on the AI Models page.
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-3">
+            // Same divided-list shape as ConnectedList on the settings
+            // page — strip credential previews and per-row actions
+            // (each row is the action: click to advance to step 2).
+            // Capped height with internal scroll for users with many
+            // configured instances.
+            <div className="rounded-md border divide-y bg-card max-h-[400px] overflow-y-auto">
               {eligibleInstances.map((instance) => {
                 if (!isProviderType(instance.type)) return null;
                 const meta = PROVIDER_META[instance.type];
                 const isCurrent =
                   defaultsQuery.data?.[useCase]?.instanceId === instance.id;
+                const showInstanceLabel =
+                  PROVIDER_TYPE_MULTI_INSTANCE[instance.type];
                 return (
                   <button
                     key={instance.id}
                     type="button"
                     onClick={() => setChosenInstanceId(instance.id)}
-                    className="text-left rounded-md border bg-card p-3 hover:bg-accent transition-colors flex items-center gap-3"
+                    className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-muted/40 text-left transition-colors"
                   >
-                    <meta.Logo className="size-6 shrink-0" />
-                    <div className="min-w-0 flex-1">
-                      <div className="font-medium truncate">
-                        {meta.label} · {instance.label}
-                      </div>
-                      {isCurrent && (
-                        <Badge variant="secondary" className="mt-1 text-xs">
-                          Current
-                        </Badge>
+                    <meta.Logo
+                      className={`size-4 shrink-0 ${meta.tint ?? ""}`}
+                    />
+                    <span className="text-sm font-medium truncate flex-1 min-w-0">
+                      {meta.label}
+                      {showInstanceLabel && (
+                        <span className="text-muted-foreground">
+                          {" · "}
+                          {instance.label}
+                        </span>
                       )}
-                    </div>
+                    </span>
+                    {isCurrent && (
+                      <Badge
+                        variant="secondary"
+                        className="text-xs shrink-0"
+                      >
+                        Current
+                      </Badge>
+                    )}
                   </button>
                 );
               })}
