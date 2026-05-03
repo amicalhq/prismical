@@ -2,7 +2,6 @@
 import { useState } from "react";
 import { Pencil, Settings2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -25,9 +24,7 @@ import { PROVIDER_META } from "@/renderer/main/components/provider-meta";
 import type { Instance, InstanceConfig } from "@/db/schema";
 
 interface ConnectedListProps {
-  /** Open the Edit form dialog with the given instance id. The
-   *  parent owns the form dialog so we don't have two copies in
-   *  the DOM (one here, one in the Available tiles). */
+  /** Open the Edit form dialog with the given instance id. */
   onEdit: (id: string) => void;
   /** Open the Whisper download manager. */
   onOpenWhisperManager: () => void;
@@ -37,9 +34,19 @@ const SINGLETON_TYPES = new Set<ProviderType>(
   Object.keys(SINGLETON_INSTANCE_IDS) as ProviderType[],
 );
 
-// Redacted preview of an instance's credential. Designed to be just
-// enough so the user can recognize which key/URL they configured
-// without exposing the secret.
+// Display order for connected rows: local Whisper first (flagship),
+// cloud providers next (server-insertion order, which mirrors creation
+// order for the user), then Mock at the very end (dev-only). Returns
+// a comparator suitable for Array.prototype.sort.
+function connectedRank(type: string): number {
+  if (type === PROVIDER_TYPES.localWhisper) return 0;
+  if (type === PROVIDER_TYPES.mock) return 99;
+  return 50;
+}
+
+// Redacted preview of an instance's credential. Just enough so the
+// user can recognize the configured value without exposing the
+// secret.
 function configPreview(type: ProviderType, config: InstanceConfig): string {
   switch (type) {
     case PROVIDER_TYPES.openai:
@@ -91,75 +98,68 @@ export default function ConnectedList({
     },
   });
 
-  const all = instancesQuery.data ?? [];
-
-  // Partition: user-added cloud instances vs singleton "system" rows.
-  // Local whisper only appears here when it has at least one downloaded
-  // model (per design — before that, it lives in Available tiles only).
-  // Mock only appears in dev (the bootstrap seeds it conditionally too,
-  // but we double-gate the render).
   const isDev = process.env.NODE_ENV !== "production";
-  const cloud = all.filter(
-    (i) => isProviderType(i.type) && !SINGLETON_TYPES.has(i.type),
-  );
-  const systemRows = all.filter((i) => {
-    if (!isProviderType(i.type) || !SINGLETON_TYPES.has(i.type)) return false;
-    if (i.type === PROVIDER_TYPES.localWhisper) {
-      const config = i.config;
-      const count =
-        "downloadedModels" in config ? (config.downloadedModels?.length ?? 0) : 0;
-      return count > 0;
-    }
-    if (i.type === PROVIDER_TYPES.mock) return isDev;
-    return true;
-  });
 
-  const hasAny = cloud.length > 0 || systemRows.length > 0;
+  // Single ordered list — no cloud-vs-system bifurcation. Hide
+  // singletons that have nothing to manage:
+  //   - local-whisper without downloads → only in Available tiles
+  //   - mock outside dev → never shown
+  const visible = (instancesQuery.data ?? [])
+    .filter((i) => {
+      if (!isProviderType(i.type)) return false;
+      if (i.type === PROVIDER_TYPES.localWhisper) {
+        const config = i.config;
+        const count =
+          "downloadedModels" in config
+            ? (config.downloadedModels?.length ?? 0)
+            : 0;
+        return count > 0;
+      }
+      if (i.type === PROVIDER_TYPES.mock) return isDev;
+      return true;
+    })
+    .sort((a, b) => connectedRank(a.type) - connectedRank(b.type));
 
   if (instancesQuery.isLoading) {
     return null;
   }
 
-  if (!hasAny) {
+  if (visible.length === 0) {
     return (
-      <Card>
-        <CardContent className="p-4">
-          <div className="text-sm text-muted-foreground italic">
-            No providers connected yet. Add one from the list below.
-          </div>
-        </CardContent>
-      </Card>
+      <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground italic">
+        No providers connected yet. Add one from the list below.
+      </div>
     );
   }
 
   return (
     <>
-      <Card>
-        <CardContent className="p-2">
-          {cloud.map((instance) => (
-            <ConnectedRow
+      <div className="rounded-md border divide-y bg-card">
+        {visible.map((instance) => {
+          const isSingleton = SINGLETON_TYPES.has(instance.type as ProviderType);
+          if (isSingleton) {
+            return (
+              <SystemRow
+                key={instance.id}
+                instance={instance}
+                onManage={
+                  instance.type === PROVIDER_TYPES.localWhisper
+                    ? onOpenWhisperManager
+                    : undefined
+                }
+              />
+            );
+          }
+          return (
+            <CloudRow
               key={instance.id}
               instance={instance}
               onEdit={() => onEdit(instance.id)}
               onRemove={() => setConfirmRemove(instance)}
             />
-          ))}
-          {cloud.length > 0 && systemRows.length > 0 && (
-            <div className="my-1 border-t" />
-          )}
-          {systemRows.map((instance) => (
-            <SystemRow
-              key={instance.id}
-              instance={instance}
-              onManage={
-                instance.type === PROVIDER_TYPES.localWhisper
-                  ? onOpenWhisperManager
-                  : undefined
-              }
-            />
-          ))}
-        </CardContent>
-      </Card>
+          );
+        })}
+      </div>
 
       <AlertDialog
         open={!!confirmRemove}
@@ -181,7 +181,8 @@ export default function ConnectedList({
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
-                if (confirmRemove) removeMutation.mutate({ id: confirmRemove.id });
+                if (confirmRemove)
+                  removeMutation.mutate({ id: confirmRemove.id });
               }}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
@@ -194,21 +195,21 @@ export default function ConnectedList({
   );
 }
 
-interface ConnectedRowProps {
+interface CloudRowProps {
   instance: Instance;
   onEdit: () => void;
   onRemove: () => void;
 }
 
-function ConnectedRow({ instance, onEdit, onRemove }: ConnectedRowProps) {
+function CloudRow({ instance, onEdit, onRemove }: CloudRowProps) {
   if (!isProviderType(instance.type)) return null;
   const meta = PROVIDER_META[instance.type];
   const preview = configPreview(instance.type, instance.config);
 
   return (
-    <div className="flex items-center gap-3 px-2 py-2 rounded-md hover:bg-muted/40">
-      <meta.Logo className="size-5 shrink-0" />
-      <div className="min-w-0 flex-1 flex items-center gap-2">
+    <div className="flex items-center gap-3 px-3 py-2.5 hover:bg-muted/40">
+      <meta.Logo className={`size-4 shrink-0 ${meta.tint ?? ""}`} />
+      <div className="min-w-0 flex-1 flex items-baseline gap-2">
         <span className="text-sm font-medium truncate">
           {meta.label} · {instance.label}
         </span>
@@ -216,7 +217,7 @@ function ConnectedRow({ instance, onEdit, onRemove }: ConnectedRowProps) {
           {preview}
         </span>
       </div>
-      <div className="flex items-center gap-0.5">
+      <div className="flex items-center gap-0.5 shrink-0">
         <Button
           size="icon"
           variant="ghost"
@@ -251,15 +252,10 @@ function SystemRow({ instance, onManage }: SystemRowProps) {
   const preview = configPreview(instance.type, instance.config);
 
   return (
-    <div className="flex items-center gap-3 px-2 py-2 rounded-md hover:bg-muted/40">
-      <meta.Logo className="size-5 shrink-0" />
-      <div className="min-w-0 flex-1 flex items-center gap-2">
-        <span className="text-sm font-medium truncate">
-          {meta.label}
-          <span className="ml-1 text-xs text-muted-foreground italic font-normal">
-            system
-          </span>
-        </span>
+    <div className="flex items-center gap-3 px-3 py-2.5 hover:bg-muted/40">
+      <meta.Logo className={`size-4 shrink-0 ${meta.tint ?? ""}`} />
+      <div className="min-w-0 flex-1 flex items-baseline gap-2">
+        <span className="text-sm font-medium truncate">{meta.label}</span>
         <span className="text-xs text-muted-foreground truncate">
           {preview}
         </span>
@@ -269,7 +265,7 @@ function SystemRow({ instance, onManage }: SystemRowProps) {
           size="sm"
           variant="ghost"
           onClick={onManage}
-          className="h-7 gap-1 text-xs"
+          className="h-7 gap-1 text-xs shrink-0"
         >
           <Settings2 className="size-3.5" />
           Manage
