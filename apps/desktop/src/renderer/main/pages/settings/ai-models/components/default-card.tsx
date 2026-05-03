@@ -4,7 +4,10 @@ import { AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { api } from "@/trpc/react";
-import { isProviderType } from "@/constants/provider-types";
+import {
+  isProviderType,
+  PROVIDER_TYPE_MULTI_INSTANCE,
+} from "@/constants/provider-types";
 import { PROVIDER_META } from "@/renderer/main/components/provider-meta";
 
 type UseCase = "transcription" | "formatting";
@@ -53,8 +56,11 @@ export default function DefaultCard({
   const hasSelection = !!selection && !!instance;
 
   return (
-    <Card>
-      <CardContent className="p-4 space-y-4">
+    // Override Card's default py-6 — it stacks on top of CardContent's
+    // padding and produces a 40px-tall dead band above and below the
+    // content. py-4 + px-4 gives a tight, uniform 16px frame.
+    <Card className="py-4 gap-3">
+      <CardContent className="px-4 space-y-3">
         <div>
           <h3 className="flex items-center gap-2 text-base font-semibold">
             <Icon className="size-4 text-muted-foreground" />
@@ -79,9 +85,16 @@ export default function DefaultCard({
                 </div>
                 <div className="text-xs text-muted-foreground truncate">
                   {meta.label}
-                  {instance && instance.label !== meta.label && (
-                    <> · {instance.label}</>
-                  )}
+                  {/* Singletons (Whisper, Mock) carry a seeded label
+                      that's effectively a placeholder — appending
+                      "· Local" after "Whisper" is just noise. Only
+                      show the user-supplied label for multi-instance
+                      providers where it actually disambiguates. */}
+                  {instance &&
+                    isProviderType(instance.type) &&
+                    PROVIDER_TYPE_MULTI_INSTANCE[instance.type] && (
+                      <> · {instance.label}</>
+                    )}
                 </div>
               </div>
             </div>

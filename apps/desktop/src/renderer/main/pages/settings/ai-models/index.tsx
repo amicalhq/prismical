@@ -37,7 +37,7 @@ export default function AIModelsSettingsPage() {
         <h2 className="text-sm font-semibold text-muted-foreground mb-2">
           Defaults
         </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
           <DefaultCard
             useCase="transcription"
             title="Transcription"
