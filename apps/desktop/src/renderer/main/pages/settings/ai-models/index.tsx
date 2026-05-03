@@ -41,12 +41,14 @@ export default function AIModelsSettingsPage() {
           <DefaultCard
             useCase="transcription"
             title="Transcription"
+            description="Converts speech to text in recordings, dictation, and meetings."
             Icon={Mic}
             onChange={() => setChangeTarget("transcription")}
           />
           <DefaultCard
             useCase="formatting"
             title="Formatting & notes"
+            description="Generates structured notes and summaries from your transcripts."
             Icon={MessageSquare}
             onChange={() => setChangeTarget("formatting")}
           />

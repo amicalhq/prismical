@@ -1,5 +1,6 @@
 "use client";
 import { ComponentType } from "react";
+import { AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { api } from "@/trpc/react";
@@ -11,21 +12,27 @@ type UseCase = "transcription" | "formatting";
 interface DefaultCardProps {
   useCase: UseCase;
   title: string;
+  /** One-line explanation of what this default model is used for in
+   *  prismical. Sits under the title to orient users who don't yet
+   *  have a mental model for what each use case does. */
+  description: string;
   Icon: ComponentType<{ className?: string }>;
   onChange: () => void;
 }
 
-// Hero card for one model-default use case. Compact two-row layout:
+// Hero card for one model-default use case. Three vertical bands:
 //
-//   [icon] Title                              [Change]
-//   [logo] modelId                            instance.label
+//   1. Title + description (orient the user)
+//   2. Selected model panel (or empty-state warning)
+//   3. Change/Choose button, right-aligned
 //
-// Display only — no catalog fetches happen here. The model name shown
-// is the raw modelId, which reads acceptably for the providers we
-// support today (gpt-4o, whisper-large-v3-turbo, etc).
+// Display only — no catalog fetches happen here. The model name
+// shown is the raw modelId, which reads acceptably for the providers
+// we support today.
 export default function DefaultCard({
   useCase,
   title,
+  description,
   Icon,
   onChange,
 }: DefaultCardProps) {
@@ -43,49 +50,67 @@ export default function DefaultCard({
       : undefined;
 
   const isLoading = defaultsQuery.isLoading || instancesQuery.isLoading;
+  const hasSelection = !!selection && !!instance;
 
   return (
     <Card>
-      <CardContent className="p-3 space-y-2">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide">
-            <Icon className="size-3.5" />
+      <CardContent className="p-4 space-y-4">
+        <div>
+          <h3 className="flex items-center gap-2 text-base font-semibold">
+            <Icon className="size-4 text-muted-foreground" />
             {title}
-          </div>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={onChange}
-            className="h-7 -mr-1 px-2 text-xs"
-          >
-            {selection ? "Change" : "Choose"}
-          </Button>
+          </h3>
+          <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+            {description}
+          </p>
         </div>
 
         {isLoading ? (
-          <div className="h-9" />
-        ) : selection && instance ? (
-          <div className="flex items-center gap-2 min-w-0">
-            {meta && <meta.Logo className="size-4 shrink-0" />}
-            <span className="text-sm font-medium truncate">
-              {selection.modelId}
-            </span>
-            <span className="text-xs text-muted-foreground truncate">
-              · {instance.label}
-            </span>
-          </div>
-        ) : selection && !instance ? (
-          // Default points at an instance that no longer exists. Backend
-          // clears defaults on instance remove, but surface it just in
-          // case (e.g., DB edited externally).
-          <div className="text-sm text-muted-foreground italic">
-            Previous selection unavailable
+          <div className="rounded-md border bg-muted/30 p-3 h-[58px]" />
+        ) : hasSelection && meta ? (
+          <div className="rounded-md border bg-muted/40 p-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <meta.Logo
+                className={`size-5 shrink-0 ${meta.tint ?? ""}`}
+              />
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-semibold truncate">
+                  {selection.modelId}
+                </div>
+                <div className="text-xs text-muted-foreground truncate">
+                  {meta.label}
+                  {instance && instance.label !== meta.label && (
+                    <> · {instance.label}</>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
         ) : (
-          <div className="text-sm text-muted-foreground italic">
-            No model selected
+          <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
+            <div className="flex items-start gap-2.5">
+              <AlertTriangle className="size-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-amber-700 dark:text-amber-400">
+                  {selection
+                    ? "Previous selection unavailable"
+                    : "No model selected"}
+                </div>
+                <div className="text-xs text-muted-foreground mt-0.5">
+                  {useCase === "transcription"
+                    ? "Pick a model to enable transcription."
+                    : "Pick a model to enable note generation."}
+                </div>
+              </div>
+            </div>
           </div>
         )}
+
+        <div className="flex justify-end">
+          <Button size="sm" variant="outline" onClick={onChange}>
+            {hasSelection ? "Change model" : "Choose model"}
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );
