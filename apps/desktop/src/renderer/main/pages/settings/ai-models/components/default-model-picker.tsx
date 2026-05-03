@@ -26,7 +26,7 @@ import type { CatalogEntry, ModelType } from "@/services/catalog";
 type UseCase = "transcription" | "formatting" | "embedding";
 
 const USE_CASE_TO_MODEL_TYPE: Record<UseCase, ModelType> = {
-  transcription: "speech",
+  transcription: "transcription",
   formatting: "language",
   embedding: "embedding",
 };

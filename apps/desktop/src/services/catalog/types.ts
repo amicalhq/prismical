@@ -2,7 +2,7 @@
 // consume this shape; provider-specific response shapes are flattened here so
 // the picker doesn't need per-provider rendering branches.
 
-export type ModelType = "speech" | "language" | "embedding";
+export type ModelType = "transcription" | "language" | "embedding";
 
 export interface CatalogEntry {
   id: string; // provider-native model id, e.g. "gpt-4o-mini" or "anthropic/claude-3.5-sonnet"

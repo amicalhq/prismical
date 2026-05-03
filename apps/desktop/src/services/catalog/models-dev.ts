@@ -109,8 +109,8 @@ function classifyModelsDevModality(
   const input = modalities.input ?? [];
   const output = modalities.output ?? [];
 
-  // Speech-to-text: audio input → text output.
-  if (input.includes("audio") && output.includes("text")) return "speech";
+  // Transcription (speech-to-text): audio input → text output.
+  if (input.includes("audio") && output.includes("text")) return "transcription";
   // Embeddings: vector/embedding output.
   if (output.includes("embedding") || output.includes("vector")) {
     return "embedding";

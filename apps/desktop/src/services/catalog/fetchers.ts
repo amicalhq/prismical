@@ -185,7 +185,7 @@ export async function fetchLocalWhisperCatalog(
     (m): CatalogEntry => ({
       id: m.id,
       name: m.id,
-      type: "speech",
+      type: "transcription",
     }),
   );
 }
@@ -193,7 +193,7 @@ export async function fetchLocalWhisperCatalog(
 const MOCK_CATALOG: readonly CatalogEntry[] = [
   { id: "mock-language-fast", name: "Mock Language (fast)", type: "language" },
   { id: "mock-language-slow", name: "Mock Language (slow)", type: "language" },
-  { id: "mock-speech", name: "Mock Speech", type: "speech" },
+  { id: "mock-speech", name: "Mock Speech", type: "transcription" },
   { id: "mock-embedding", name: "Mock Embedding", type: "embedding" },
 ];
 
@@ -241,7 +241,7 @@ function classifyOpenAIModel(id: string): ModelType | null {
   const lower = id.toLowerCase();
   // Match the underlying capability anywhere in the id so "ft:gpt-4o:..."
   // and "ft:whisper-large:..." surface in the right pickers.
-  if (lower.includes("whisper")) return "speech";
+  if (lower.includes("whisper")) return "transcription";
   if (lower.includes("text-embedding")) return "embedding";
   // "gpt-" also catches "chatgpt-*". `\bo[134]\b` matches o1/o3/o4 even
   // when prefixed (e.g. "o3-mini") since `-` is a word boundary.
@@ -254,7 +254,7 @@ function classifyOpenAIModel(id: string): ModelType | null {
 // dropped so a future image/tts release doesn't leak into the language picker.
 function classifyGroqModel(id: string): ModelType | null {
   const lower = id.toLowerCase();
-  if (lower.includes("whisper")) return "speech";
+  if (lower.includes("whisper")) return "transcription";
   if (
     lower.includes("llama") ||
     lower.includes("mixtral") ||
@@ -272,11 +272,11 @@ function classifyGroqModel(id: string): ModelType | null {
 
 function classifyOpenRouterModel(model: OpenRouterModel): ModelType {
   const id = model.id.toLowerCase();
-  if (id.includes("whisper")) return "speech";
+  if (id.includes("whisper")) return "transcription";
   if (id.includes("embed")) return "embedding";
   // OpenRouter's modality field is reliable for non-text routes; default to language.
   const modality = model.architecture?.modality;
-  if (typeof modality === "string" && modality.includes("audio")) return "speech";
+  if (typeof modality === "string" && modality.includes("audio")) return "transcription";
   return "language";
 }
 
