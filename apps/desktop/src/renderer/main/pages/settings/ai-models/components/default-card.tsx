@@ -15,16 +15,14 @@ interface DefaultCardProps {
   onChange: () => void;
 }
 
-// Hero card for one model-default use case. Renders the currently
-// selected instance + model (or a "no model selected" empty state),
-// plus a [Change] / [Choose] button that opens ChangeDefaultDialog.
+// Hero card for one model-default use case. Compact two-row layout:
 //
-// Display only — no catalog fetches happen here. The model's
-// human-readable name is the modelId itself (good enough for the
-// providers we support; OpenAI/Groq/Whisper IDs are already
-// presentable). When/if we want pretty names without a catalog
-// fetch we can cache the most-recently-fetched name on the
-// modelDefaults entry.
+//   [icon] Title                              [Change]
+//   [logo] modelId                            instance.label
+//
+// Display only — no catalog fetches happen here. The model name shown
+// is the raw modelId, which reads acceptably for the providers we
+// support today (gpt-4o, whisper-large-v3-turbo, etc).
 export default function DefaultCard({
   useCase,
   title,
@@ -48,31 +46,38 @@ export default function DefaultCard({
 
   return (
     <Card>
-      <CardContent className="p-4 flex flex-col gap-3">
-        <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-          <Icon className="size-4" />
-          {title}
+      <CardContent className="p-3 space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            <Icon className="size-3.5" />
+            {title}
+          </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={onChange}
+            className="h-7 -mr-1 px-2 text-xs"
+          >
+            {selection ? "Change" : "Choose"}
+          </Button>
         </div>
 
         {isLoading ? (
-          <div className="h-10" />
+          <div className="h-9" />
         ) : selection && instance ? (
-          <div className="flex items-center gap-2">
-            {meta && <meta.Logo className="size-5 shrink-0" />}
-            <div className="min-w-0 flex-1">
-              <div className="text-sm font-semibold truncate">
-                {selection.modelId}
-              </div>
-              <div className="text-xs text-muted-foreground truncate">
-                {meta?.label ?? instance.type} · {instance.label}
-              </div>
-            </div>
+          <div className="flex items-center gap-2 min-w-0">
+            {meta && <meta.Logo className="size-4 shrink-0" />}
+            <span className="text-sm font-medium truncate">
+              {selection.modelId}
+            </span>
+            <span className="text-xs text-muted-foreground truncate">
+              · {instance.label}
+            </span>
           </div>
         ) : selection && !instance ? (
-          // Default points at an instance that no longer exists. The
-          // backend's clearDefaultsForInstance hook should have caught
-          // this on remove; surface it explicitly anyway so the user
-          // can re-pick.
+          // Default points at an instance that no longer exists. Backend
+          // clears defaults on instance remove, but surface it just in
+          // case (e.g., DB edited externally).
           <div className="text-sm text-muted-foreground italic">
             Previous selection unavailable
           </div>
@@ -81,12 +86,6 @@ export default function DefaultCard({
             No model selected
           </div>
         )}
-
-        <div className="flex justify-end">
-          <Button size="sm" variant="outline" onClick={onChange}>
-            {selection ? "Change" : "Choose"}
-          </Button>
-        </div>
       </CardContent>
     </Card>
   );
