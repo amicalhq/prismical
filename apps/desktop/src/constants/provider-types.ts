@@ -36,7 +36,7 @@ export const PROVIDER_TYPE_LABELS: Record<ProviderType, string> = {
   [PROVIDER_TYPES.openRouter]: "OpenRouter",
   [PROVIDER_TYPES.ollama]: "Ollama",
   [PROVIDER_TYPES.openAICompatible]: "OpenAI Compatible",
-  [PROVIDER_TYPES.localWhisper]: "Local",
+  [PROVIDER_TYPES.localWhisper]: "Whisper",
   [PROVIDER_TYPES.mock]: "Mock",
 };
 

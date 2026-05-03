@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { Pencil, Trash2, Plus, Settings2 } from "lucide-react";
+import { Pencil, Trash2, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -24,7 +24,6 @@ import { toast } from "sonner";
 import {
   isProviderType,
   PROVIDER_TYPES,
-  PROVIDER_TYPE_MULTI_INSTANCE,
   SINGLETON_INSTANCE_IDS,
   type ProviderType,
 } from "@/constants/provider-types";
@@ -36,9 +35,6 @@ interface ConnectedListProps {
   onEdit: (id: string) => void;
   /** Open the Whisper download manager. */
   onOpenWhisperManager: () => void;
-  /** Open the Add form dialog for a brand-new instance of `type`. Used
-   *  by the "Add another <provider>" menu item on cloud rows. */
-  onAddCloud: (type: ProviderType) => void;
 }
 
 const SINGLETON_TYPES = new Set<ProviderType>(
@@ -94,7 +90,6 @@ type RemoveTarget =
 export default function ConnectedList({
   onEdit,
   onOpenWhisperManager,
-  onAddCloud,
 }: ConnectedListProps) {
   const [removeTarget, setRemoveTarget] = useState<RemoveTarget | null>(null);
   const utils = api.useUtils();
@@ -207,8 +202,9 @@ export default function ConnectedList({
               />
             );
           }
-          // Cloud row: Edit (creds), Delete (instance), Add another
-          // (same provider type).
+          // Cloud row: Edit (creds), Delete (instance). Adding another
+          // instance of the same type happens via the Available tiles
+          // below — no point duplicating the entry point in this menu.
           return (
             <Row
               key={instance.id}
@@ -216,11 +212,6 @@ export default function ConnectedList({
               onEditClick={() => onEdit(instance.id)}
               onDeleteClick={() =>
                 setRemoveTarget({ kind: "cloud", instance })
-              }
-              onAddAnother={
-                PROVIDER_TYPE_MULTI_INSTANCE[instance.type]
-                  ? () => onAddCloud(instance.type as ProviderType)
-                  : undefined
               }
             />
           );
@@ -287,12 +278,9 @@ interface RowProps {
   instance: Instance;
   onEditClick: () => void;
   onDeleteClick: () => void;
-  /** Cloud rows pass this; singletons leave it undefined to hide
-   *  "Add another" from the menu. */
-  onAddAnother?: () => void;
 }
 
-function Row({ instance, onEditClick, onDeleteClick, onAddAnother }: RowProps) {
+function Row({ instance, onEditClick, onDeleteClick }: RowProps) {
   if (!isProviderType(instance.type)) return null;
   const meta = PROVIDER_META[instance.type];
   const preview = configPreview(instance.type, instance.config);
@@ -321,7 +309,7 @@ function Row({ instance, onEditClick, onDeleteClick, onAddAnother }: RowProps) {
             <Pencil className="size-3.5" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-44">
+        <DropdownMenuContent align="end" className="w-40">
           <DropdownMenuItem onClick={onEditClick}>
             {isSingleton ? (
               <>
@@ -335,12 +323,6 @@ function Row({ instance, onEditClick, onDeleteClick, onAddAnother }: RowProps) {
               </>
             )}
           </DropdownMenuItem>
-          {onAddAnother && (
-            <DropdownMenuItem onClick={onAddAnother}>
-              <Plus className="mr-2 size-3.5" />
-              Add another {meta.label}
-            </DropdownMenuItem>
-          )}
           <DropdownMenuSeparator />
           <DropdownMenuItem
             onClick={onDeleteClick}
