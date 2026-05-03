@@ -7,7 +7,9 @@
 //   2. Add label, multi-instance flag, and config fields below. If the new
 //      type is a singleton, also add it to `SINGLETON_INSTANCE_IDS`.
 //   3. Add a catalog fetcher in `services/catalog/`.
-//   4. Add a logo entry in the UI provider-meta file.
+//   4. Add a logo entry in the UI provider-meta file
+//      (`renderer/main/components/provider-meta.tsx`). The `label` there
+//      mirrors `PROVIDER_TYPE_LABELS` below — keep them aligned.
 //   5. Update `InstanceConfig` in `db/schema.ts` if the config payload is novel.
 
 export const PROVIDER_TYPES = {
