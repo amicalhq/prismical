@@ -69,7 +69,7 @@ export const PROVIDER_META: Record<ProviderType, ProviderMeta> = {
   [PROVIDER_TYPES.localWhisper]: {
     label: PROVIDER_TYPE_LABELS[PROVIDER_TYPES.localWhisper],
     Logo: HardDrive,
-    tint: "text-emerald-700 dark:text-emerald-300",
+    tint: "text-indigo-600 dark:text-indigo-400",
   },
   [PROVIDER_TYPES.mock]: {
     label: PROVIDER_TYPE_LABELS[PROVIDER_TYPES.mock],

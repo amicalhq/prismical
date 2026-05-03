@@ -60,6 +60,7 @@ export default function AIModelsSettingsPage() {
         <ConnectedList
           onEdit={(id) => setFormMode({ kind: "edit", id })}
           onOpenWhisperManager={openWhisperManager}
+          onAddCloud={(type) => setFormMode({ kind: "create", type })}
         />
       </section>
 

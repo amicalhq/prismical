@@ -1,7 +1,14 @@
 "use client";
 import { useState } from "react";
-import { Pencil, Settings2, Trash2 } from "lucide-react";
+import { Pencil, Trash2, Plus, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,6 +24,7 @@ import { toast } from "sonner";
 import {
   isProviderType,
   PROVIDER_TYPES,
+  PROVIDER_TYPE_MULTI_INSTANCE,
   SINGLETON_INSTANCE_IDS,
   type ProviderType,
 } from "@/constants/provider-types";
@@ -24,20 +32,21 @@ import { PROVIDER_META } from "@/renderer/main/components/provider-meta";
 import type { Instance, InstanceConfig } from "@/db/schema";
 
 interface ConnectedListProps {
-  /** Open the Edit form dialog with the given instance id. */
+  /** Open the Edit form dialog for this instance id (cloud only). */
   onEdit: (id: string) => void;
   /** Open the Whisper download manager. */
   onOpenWhisperManager: () => void;
+  /** Open the Add form dialog for a brand-new instance of `type`. Used
+   *  by the "Add another <provider>" menu item on cloud rows. */
+  onAddCloud: (type: ProviderType) => void;
 }
 
 const SINGLETON_TYPES = new Set<ProviderType>(
   Object.keys(SINGLETON_INSTANCE_IDS) as ProviderType[],
 );
 
-// Display order for connected rows: local Whisper first (flagship),
-// cloud providers next (server-insertion order, which mirrors creation
-// order for the user), then Mock at the very end (dev-only). Returns
-// a comparator suitable for Array.prototype.sort.
+// Display rank for connected rows. Local Whisper leads, cloud sits in
+// the middle, Mock pinned to the very end (dev only).
 function connectedRank(type: string): number {
   if (type === PROVIDER_TYPES.localWhisper) return 0;
   if (type === PROVIDER_TYPES.mock) return 99;
@@ -75,11 +84,19 @@ function configPreview(type: ProviderType, config: InstanceConfig): string {
   }
 }
 
+// Discriminated remove target so the AlertDialog can show the right
+// copy and handler for each shape: removing a cloud instance row vs
+// purging all downloaded Whisper models.
+type RemoveTarget =
+  | { kind: "cloud"; instance: Instance }
+  | { kind: "whisper-all"; instance: Instance };
+
 export default function ConnectedList({
   onEdit,
   onOpenWhisperManager,
+  onAddCloud,
 }: ConnectedListProps) {
-  const [confirmRemove, setConfirmRemove] = useState<Instance | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<RemoveTarget | null>(null);
   const utils = api.useUtils();
 
   const instancesQuery = api.instances.list.useQuery();
@@ -90,11 +107,17 @@ export default function ConnectedList({
       utils.instances.list.invalidate();
       utils.instances.listByType.invalidate();
       utils.instances.getDefaults.invalidate();
-      setConfirmRemove(null);
+      setRemoveTarget(null);
     },
     onError: (error) => {
       toast.error(`Couldn't remove instance: ${error.message}`);
-      setConfirmRemove(null);
+      setRemoveTarget(null);
+    },
+  });
+
+  const deleteWhisperModelMutation = api.models.deleteModel.useMutation({
+    onError: (error) => {
+      toast.error(`Couldn't delete model: ${error.message}`);
     },
   });
 
@@ -132,121 +155,213 @@ export default function ConnectedList({
     );
   }
 
+  const handleConfirmRemove = async () => {
+    if (!removeTarget) return;
+    if (removeTarget.kind === "cloud") {
+      removeMutation.mutate({ id: removeTarget.instance.id });
+      return;
+    }
+    // whisper-all: purge every downloaded .bin sequentially. The
+    // onModelDeleted subscription in WhisperManageDialog refreshes
+    // state; here we close the dialog and surface a single success
+    // toast at the end.
+    const config = removeTarget.instance.config;
+    const downloaded =
+      "downloadedModels" in config ? (config.downloadedModels ?? []) : [];
+    try {
+      for (const model of downloaded) {
+        await deleteWhisperModelMutation.mutateAsync({ modelId: model.id });
+      }
+      toast.success(
+        `Removed ${downloaded.length} downloaded Whisper model${downloaded.length === 1 ? "" : "s"}`,
+      );
+      utils.instances.list.invalidate();
+      utils.instances.fetchCatalog.invalidate();
+      utils.instances.getDefaults.invalidate();
+    } finally {
+      setRemoveTarget(null);
+    }
+  };
+
   return (
     <>
       <div className="rounded-md border divide-y bg-card">
         {visible.map((instance) => {
-          const isSingleton = SINGLETON_TYPES.has(instance.type as ProviderType);
+          if (!isProviderType(instance.type)) return null;
+          const isSingleton = SINGLETON_TYPES.has(instance.type);
+          const isMock = instance.type === PROVIDER_TYPES.mock;
+          if (isMock) {
+            return <MockRow key={instance.id} instance={instance} />;
+          }
           if (isSingleton) {
+            // Whisper system row: Edit (manage downloads), Delete
+            // (purge everything).
             return (
-              <SystemRow
+              <Row
                 key={instance.id}
                 instance={instance}
-                onManage={
-                  instance.type === PROVIDER_TYPES.localWhisper
-                    ? onOpenWhisperManager
-                    : undefined
+                onEditClick={onOpenWhisperManager}
+                onDeleteClick={() =>
+                  setRemoveTarget({ kind: "whisper-all", instance })
                 }
               />
             );
           }
+          // Cloud row: Edit (creds), Delete (instance), Add another
+          // (same provider type).
           return (
-            <CloudRow
+            <Row
               key={instance.id}
               instance={instance}
-              onEdit={() => onEdit(instance.id)}
-              onRemove={() => setConfirmRemove(instance)}
+              onEditClick={() => onEdit(instance.id)}
+              onDeleteClick={() =>
+                setRemoveTarget({ kind: "cloud", instance })
+              }
+              onAddAnother={
+                PROVIDER_TYPE_MULTI_INSTANCE[instance.type]
+                  ? () => onAddCloud(instance.type as ProviderType)
+                  : undefined
+              }
             />
           );
         })}
       </div>
 
       <AlertDialog
-        open={!!confirmRemove}
+        open={!!removeTarget}
         onOpenChange={(open) => {
-          if (!open) setConfirmRemove(null);
+          if (!open) setRemoveTarget(null);
         }}
       >
         <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              Remove {confirmRemove?.label ?? "instance"}?
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              The instance and any defaults pointing at it will be cleared. You
-              can add it again any time.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                if (confirmRemove)
-                  removeMutation.mutate({ id: confirmRemove.id });
-              }}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              Remove
-            </AlertDialogAction>
-          </AlertDialogFooter>
+          {removeTarget?.kind === "cloud" && (
+            <>
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  Remove {removeTarget.instance.label}?
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  The instance and any defaults pointing at it will be cleared.
+                  You can add it again any time.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={handleConfirmRemove}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  Remove
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </>
+          )}
+          {removeTarget?.kind === "whisper-all" && (
+            <>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete all Whisper models?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Every downloaded Whisper model file will be removed from
+                  disk. The transcription default may be cleared if it pointed
+                  at one of these models. You can re-download any time.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={handleConfirmRemove}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  Delete all
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </>
+          )}
         </AlertDialogContent>
       </AlertDialog>
     </>
   );
 }
 
-interface CloudRowProps {
+interface RowProps {
   instance: Instance;
-  onEdit: () => void;
-  onRemove: () => void;
+  onEditClick: () => void;
+  onDeleteClick: () => void;
+  /** Cloud rows pass this; singletons leave it undefined to hide
+   *  "Add another" from the menu. */
+  onAddAnother?: () => void;
 }
 
-function CloudRow({ instance, onEdit, onRemove }: CloudRowProps) {
+function Row({ instance, onEditClick, onDeleteClick, onAddAnother }: RowProps) {
   if (!isProviderType(instance.type)) return null;
   const meta = PROVIDER_META[instance.type];
   const preview = configPreview(instance.type, instance.config);
+  const isSingleton = SINGLETON_TYPES.has(instance.type);
 
   return (
     <div className="flex items-center gap-3 px-3 py-2.5 hover:bg-muted/40">
       <meta.Logo className={`size-4 shrink-0 ${meta.tint ?? ""}`} />
-      <div className="min-w-0 flex-1 flex items-baseline gap-2">
-        <span className="text-sm font-medium truncate">
-          {meta.label} · {instance.label}
-        </span>
-        <span className="text-xs text-muted-foreground truncate font-mono">
-          {preview}
-        </span>
-      </div>
-      <div className="flex items-center gap-0.5 shrink-0">
-        <Button
-          size="icon"
-          variant="ghost"
-          className="h-7 w-7"
-          onClick={onEdit}
-          aria-label={`Edit ${instance.label}`}
-        >
-          <Pencil className="size-3.5" />
-        </Button>
-        <Button
-          size="icon"
-          variant="ghost"
-          className="h-7 w-7 text-destructive hover:text-destructive"
-          onClick={onRemove}
-          aria-label={`Remove ${instance.label}`}
-        >
-          <Trash2 className="size-3.5" />
-        </Button>
-      </div>
+      <span className="text-sm font-medium truncate flex-1 min-w-0">
+        {meta.label}
+        {!isSingleton && (
+          <span className="text-muted-foreground"> · {instance.label}</span>
+        )}
+      </span>
+      <span className="text-xs text-muted-foreground truncate font-mono shrink-0 max-w-[40%]">
+        {preview}
+      </span>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-7 w-7 shrink-0"
+            aria-label={`${instance.label} options`}
+          >
+            <Pencil className="size-3.5" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-44">
+          <DropdownMenuItem onClick={onEditClick}>
+            {isSingleton ? (
+              <>
+                <Settings2 className="mr-2 size-3.5" />
+                Manage
+              </>
+            ) : (
+              <>
+                <Pencil className="mr-2 size-3.5" />
+                Edit
+              </>
+            )}
+          </DropdownMenuItem>
+          {onAddAnother && (
+            <DropdownMenuItem onClick={onAddAnother}>
+              <Plus className="mr-2 size-3.5" />
+              Add another {meta.label}
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onClick={onDeleteClick}
+            className="text-destructive focus:text-destructive"
+          >
+            <Trash2 className="mr-2 size-3.5" />
+            Delete
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }
 
-interface SystemRowProps {
+interface MockRowProps {
   instance: Instance;
-  onManage?: () => void;
 }
 
-function SystemRow({ instance, onManage }: SystemRowProps) {
+// Mock has no actions worth surfacing — it's a dev-only sanity row.
+// Render the row but skip the menu trigger entirely.
+function MockRow({ instance }: MockRowProps) {
   if (!isProviderType(instance.type)) return null;
   const meta = PROVIDER_META[instance.type];
   const preview = configPreview(instance.type, instance.config);
@@ -254,23 +369,12 @@ function SystemRow({ instance, onManage }: SystemRowProps) {
   return (
     <div className="flex items-center gap-3 px-3 py-2.5 hover:bg-muted/40">
       <meta.Logo className={`size-4 shrink-0 ${meta.tint ?? ""}`} />
-      <div className="min-w-0 flex-1 flex items-baseline gap-2">
-        <span className="text-sm font-medium truncate">{meta.label}</span>
-        <span className="text-xs text-muted-foreground truncate">
-          {preview}
-        </span>
-      </div>
-      {onManage && (
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={onManage}
-          className="h-7 gap-1 text-xs shrink-0"
-        >
-          <Settings2 className="size-3.5" />
-          Manage
-        </Button>
-      )}
+      <span className="text-sm font-medium truncate flex-1 min-w-0">
+        {meta.label}
+      </span>
+      <span className="text-xs text-muted-foreground truncate shrink-0 max-w-[40%]">
+        {preview}
+      </span>
     </div>
   );
 }

@@ -236,7 +236,7 @@ export default function WhisperManageDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-4xl">
+        <DialogContent className="max-w-5xl sm:max-w-[min(1100px,95vw)]">
           <DialogHeader>
             <DialogTitle>Whisper (local) — manage downloads</DialogTitle>
             <DialogDescription>
