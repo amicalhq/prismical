@@ -1,4 +1,5 @@
 import { getUserAgent } from "../../utils/http-client";
+import { AVAILABLE_MODELS } from "../../constants/models";
 import {
   isOllamaEmbeddingModelName,
   normalizeOllamaUrl,
@@ -181,13 +182,18 @@ export async function fetchFromModelsDev(
 export async function fetchLocalWhisperCatalog(
   config: LocalWhisperConfig,
 ): Promise<CatalogEntry[]> {
-  return (config.downloadedModels ?? []).map(
-    (m): CatalogEntry => ({
+  return (config.downloadedModels ?? []).map((m): CatalogEntry => {
+    const meta = AVAILABLE_MODELS.find((am) => am.id === m.id);
+    return {
       id: m.id,
-      name: m.id,
+      // Prefer the curated display name ("Whisper Large v3 Turbo")
+      // over the raw id ("whisper-large-v3-turbo"). Falls back to id
+      // for any model not in the static manifest (shouldn't happen
+      // since downloads also draw from AVAILABLE_MODELS).
+      name: meta?.name ?? m.id,
       type: "transcription",
-    }),
-  );
+    };
+  });
 }
 
 const MOCK_CATALOG: readonly CatalogEntry[] = [

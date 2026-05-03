@@ -6,9 +6,22 @@ import { Card, CardContent } from "@/components/ui/card";
 import { api } from "@/trpc/react";
 import {
   isProviderType,
+  PROVIDER_TYPES,
   PROVIDER_TYPE_MULTI_INSTANCE,
 } from "@/constants/provider-types";
+import { AVAILABLE_MODELS } from "@/constants/models";
 import { PROVIDER_META } from "@/renderer/main/components/provider-meta";
+
+// Translate a raw modelId into a presentable display name. Today only
+// the local-whisper case needs help (its ids look like
+// "whisper-large-v3-turbo"); everything else already returns
+// human-readable ids (gpt-4o, claude-3.5-sonnet, etc.).
+function modelDisplayName(instanceType: string, modelId: string): string {
+  if (instanceType === PROVIDER_TYPES.localWhisper) {
+    return AVAILABLE_MODELS.find((m) => m.id === modelId)?.name ?? modelId;
+  }
+  return modelId;
+}
 
 type UseCase = "transcription" | "formatting";
 
@@ -81,7 +94,7 @@ export default function DefaultCard({
               />
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-semibold truncate">
-                  {selection.modelId}
+                  {modelDisplayName(instance.type, selection.modelId)}
                 </div>
                 <div className="text-xs text-muted-foreground truncate">
                   {meta.label}
