@@ -1,3 +1,5 @@
+import type { ModelType } from "../services/catalog";
+
 // Static registry of supported AI provider types. Provider *instances*
 // (rows in the `instances` table) carry the user's credentials; this file
 // holds compile-time metadata about the types themselves.
@@ -98,6 +100,27 @@ export const PROVIDER_TYPE_CONFIG_FIELDS: Record<
   ],
   [PROVIDER_TYPES.localWhisper]: [],
   [PROVIDER_TYPES.mock]: [],
+};
+
+// Capabilities per provider type. Used by the model picker (and similar
+// UIs) to filter which instances are eligible for which use case without
+// having to fetch each instance's catalog. Static map: kept in lockstep
+// with the catalog fetcher classifiers for the same type — if a fetcher
+// can produce a given ModelType, that ModelType belongs here.
+//
+// "openai-compatible" is a wildcard endpoint shape. We assume any of
+// language/embedding might be hosted there. Speech-on-compatible is
+// rare; left out by default to avoid surfacing irrelevant instances in
+// the transcription picker.
+export const PROVIDER_TYPE_CAPABILITIES: Record<ProviderType, ModelType[]> = {
+  [PROVIDER_TYPES.openai]: ["transcription", "language", "embedding"],
+  [PROVIDER_TYPES.anthropic]: ["language"],
+  [PROVIDER_TYPES.groq]: ["transcription", "language"],
+  [PROVIDER_TYPES.openRouter]: ["language"],
+  [PROVIDER_TYPES.ollama]: ["language", "embedding"],
+  [PROVIDER_TYPES.openAICompatible]: ["language", "embedding"],
+  [PROVIDER_TYPES.localWhisper]: ["transcription"],
+  [PROVIDER_TYPES.mock]: ["transcription", "language", "embedding"],
 };
 
 // Type guard for narrowing arbitrary strings to ProviderType.
