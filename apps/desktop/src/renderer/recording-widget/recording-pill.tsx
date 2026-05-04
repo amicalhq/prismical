@@ -11,7 +11,8 @@ const NUM_WAVEFORM_BARS_COLLAPSED = 4;
 export interface RecordingPillProps {
   hovered: boolean;
   meetingState: MeetingRuntimeState;
-  voiceDetected: boolean;
+  // Real-time amplitude (0-1) — combined mic + system, owned by the parent.
+  level: number;
   onStop: (event: React.MouseEvent<HTMLButtonElement>) => void;
   onOpenNote: () => void;
 }
@@ -19,7 +20,7 @@ export interface RecordingPillProps {
 export function RecordingPill({
   hovered,
   meetingState,
-  voiceDetected,
+  level,
   onStop,
   onOpenNote,
 }: RecordingPillProps) {
@@ -71,7 +72,7 @@ export function RecordingPill({
             key={index}
             index={index}
             isRecording={meetingState === "recording"}
-            voiceDetected={voiceDetected}
+            level={level}
             baseHeight={hovered ? 90 : 80}
             silentHeight={hovered ? 30 : 25}
           />

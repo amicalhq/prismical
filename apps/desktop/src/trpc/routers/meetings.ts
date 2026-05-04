@@ -8,7 +8,11 @@ import {
   getMeetings,
   getNoteTranscript,
 } from "@/db/meetings";
-import type { MeetingRuntimeSnapshot, TranscriptEvent } from "@/types/meeting";
+import type {
+  MeetingLevels,
+  MeetingRuntimeSnapshot,
+  TranscriptEvent,
+} from "@/types/meeting";
 import { createRouter, procedure } from "../trpc";
 
 const StartMeetingSchema = z.object({
@@ -145,6 +149,33 @@ export const meetingsRouter = createRouter({
 
       return () => {
         meetingManager.off("state-changed", handleStateChange);
+      };
+    });
+  }),
+
+  // Per-source mic/system amplitude levels for waveform visualisation.
+  // Throttled to ~30Hz on the main side — native frames arrive at 50-100Hz
+  // and the visual difference of dropping every other one is imperceptible.
+  // eslint-disable-next-line deprecation/deprecation
+  levelUpdates: procedure.subscription(({ ctx }) => {
+    return observable<MeetingLevels>((emit) => {
+      const meetingManager = ctx.serviceManager.getService("meetingManager");
+      const THROTTLE_MS = 33;
+      let lastEmit = 0;
+
+      const handleLevel = (levels: { mic?: number; system?: number }) => {
+        const now = Date.now();
+        if (now - lastEmit < THROTTLE_MS) return;
+        lastEmit = now;
+        emit.next({ mic: levels.mic ?? 0, system: levels.system ?? 0 });
+      };
+
+      // Seed an initial zeroed level so consumers don't have to special-case
+      // the pre-first-frame moment.
+      emit.next({ mic: 0, system: 0 });
+      meetingManager.on("level", handleLevel);
+      return () => {
+        meetingManager.off("level", handleLevel);
       };
     });
   }),

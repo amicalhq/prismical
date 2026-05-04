@@ -1,4 +1,3 @@
-import { useState, useEffect, useRef } from "react";
 import { Mic, Square, ChevronUp } from "lucide-react";
 import { Waveform } from "@/components/Waveform";
 import {
@@ -14,6 +13,10 @@ type NoteRecordingDockProps = {
   isTranscriptionOpen?: boolean;
   onToggleTranscription?: () => void;
   meetingState: MeetingRuntimeState;
+  // Real-time audio amplitude in [0, 1] (combined mic + system). Owned by
+  // the parent via useMeetingLevel so a single subscription feeds every
+  // dock instance.
+  level: number;
   onStartMeeting: () => void;
   onStopMeeting: () => void;
 };
@@ -22,6 +25,7 @@ export function NoteRecordingDock({
   isTranscriptionOpen = false,
   onToggleTranscription,
   meetingState,
+  level,
   onStartMeeting,
   onStopMeeting,
 }: NoteRecordingDockProps) {
@@ -31,29 +35,6 @@ export function NoteRecordingDock({
   const isRecording =
     meetingState === "recording" || meetingState === "starting";
   const isBusy = meetingState === "starting" || meetingState === "stopping";
-  const [voiceDetected, setVoiceDetected] = useState(false);
-  const voiceIntervalRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Simulate voice detection cycling for visual demo
-  useEffect(() => {
-    if (isRecording) {
-      voiceIntervalRef.current = setInterval(() => {
-        setVoiceDetected((prev) => !prev);
-      }, 1200);
-    } else {
-      setVoiceDetected(false);
-      if (voiceIntervalRef.current) {
-        clearInterval(voiceIntervalRef.current);
-        voiceIntervalRef.current = null;
-      }
-    }
-
-    return () => {
-      if (voiceIntervalRef.current) {
-        clearInterval(voiceIntervalRef.current);
-      }
-    };
-  }, [isRecording]);
 
   const handleMicClick = () => {
     if (!isBusy) {
@@ -145,7 +126,7 @@ export function NoteRecordingDock({
               key={index}
               index={index}
               isRecording={isRecording}
-              voiceDetected={voiceDetected}
+              level={level}
               baseHeight={60}
               silentHeight={20}
             />

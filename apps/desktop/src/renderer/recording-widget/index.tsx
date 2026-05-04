@@ -8,6 +8,7 @@ import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
 import { api, trpcClient } from "@/trpc/react";
+import { combinedLevel, useMeetingLevel } from "@/hooks/useMeetingLevel";
 import type { MeetingWidgetState } from "@/types/meeting-widget";
 import { IdlePill } from "./idle-pill";
 import { DetectionPill } from "./detection-pill";
@@ -27,13 +28,16 @@ function RecordingWidgetWindow() {
   const [liveState, setLiveState] = useState<MeetingWidgetState | null>(null);
   const [isHovered, setIsHovered] = useState(false);
   const [dragState, setDragState] = useState<DragState | null>(null);
-  const [voiceDetected, setVoiceDetected] = useState(false);
   const interactiveRef = useRef(false);
-  const voiceIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   api.meetingWidget.stateUpdates.useSubscription(undefined, {
     onData: (nextState) => setLiveState(nextState),
   });
+
+  // Real-time mic + system audio amplitude (combined max), used to drive the
+  // waveform in the recording pill.
+  const meetingLevels = useMeetingLevel();
+  const waveformLevel = combinedLevel(meetingLevels);
 
   const startNoteFromIdleMutation = api.meetingWidget.startNoteFromIdle.useMutation();
   const startNoteFromDetectionMutation =
@@ -52,28 +56,6 @@ function RecordingWidgetWindow() {
     meetingState === "stopping" ||
     meetingState === "error";
   const isDetection = !isRecording && meetingDetection !== null;
-
-  // Demo voice-detected toggle so the waveform looks alive — same trick the
-  // in-app dock uses until we wire real RMS data through.
-  useEffect(() => {
-    if (meetingState === "recording") {
-      voiceIntervalRef.current = setInterval(() => {
-        setVoiceDetected((prev) => !prev);
-      }, 1200);
-    } else {
-      setVoiceDetected(false);
-      if (voiceIntervalRef.current) {
-        clearInterval(voiceIntervalRef.current);
-        voiceIntervalRef.current = null;
-      }
-    }
-    return () => {
-      if (voiceIntervalRef.current) {
-        clearInterval(voiceIntervalRef.current);
-        voiceIntervalRef.current = null;
-      }
-    };
-  }, [meetingState]);
 
   const isInteractive = isHovered || dragState !== null;
 
@@ -219,7 +201,7 @@ function RecordingWidgetWindow() {
                 key="recording"
                 hovered={isHovered || dragState !== null}
                 meetingState={meetingState}
-                voiceDetected={voiceDetected}
+                level={waveformLevel}
                 onStop={handleStop}
                 onOpenNote={handleOpenNote}
               />

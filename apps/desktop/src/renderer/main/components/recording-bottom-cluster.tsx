@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { IconNotes, IconSparkles } from "@tabler/icons-react";
 
 import { api } from "@/trpc/react";
+import { combinedLevel, useMeetingLevel } from "@/hooks/useMeetingLevel";
 import { useCurrentNote } from "@/renderer/main/components/current-note-context";
 import { useMeetingSnapshot } from "@/renderer/main/components/meeting-snapshot-context";
 import { NoteAssetsPanel } from "@/renderer/main/pages/notes/components/note-assets-panel";
@@ -33,6 +34,8 @@ export function RecordingBottomCluster() {
   const utils = api.useUtils();
   const currentNote = useCurrentNote();
   const snapshot = useMeetingSnapshot();
+  const meetingLevels = useMeetingLevel();
+  const dockLevel = combinedLevel(meetingLevels);
   const stopMeetingMutation = api.meetings.stopMeeting.useMutation();
 
   const recordingActive = isActiveState(snapshot.state);
@@ -220,6 +223,7 @@ export function RecordingBottomCluster() {
               currentNote ? currentNote.onToggleTranscription : undefined
             }
             meetingState={dockMeetingState}
+            level={dockLevel}
             onStartMeeting={handleStart}
             onStopMeeting={handleStop}
           />

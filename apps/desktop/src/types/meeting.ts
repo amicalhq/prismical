@@ -53,6 +53,13 @@ export interface MeetingRuntimeSnapshot {
   startedAt?: number | null;
 }
 
+// Per-source amplitude (RMS, normalised to 0-1) emitted by MeetingManager so
+// renderers can drive a real waveform visualisation instead of a fake pulse.
+export interface MeetingLevels {
+  mic: number;
+  system: number;
+}
+
 export interface MeetingListItem {
   id: string;
   noteId: number | null;
