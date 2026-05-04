@@ -5,7 +5,11 @@ import type {
   NoteGenerationResult,
 } from "./types";
 
-const MOCK_LATENCY_MS = 500;
+// `mock-language-slow` is the variant kept around for exercising loading
+// states (e.g. the AI generation shimmer); fast is the default and stays
+// snappy so dev iteration isn't painful.
+const MOCK_LATENCY_MS_FAST = 500;
+const MOCK_LATENCY_MS_SLOW = 3000;
 
 const CANNED_MARKDOWN = `# Mock Summary
 
@@ -37,7 +41,11 @@ export class MockNoteGenerationProvider implements NoteGenerationProvider {
       transcriptLength: input.transcript.length,
     });
 
-    await new Promise((resolve) => setTimeout(resolve, MOCK_LATENCY_MS));
+    const latencyMs =
+      this.model === "mock-language-slow"
+        ? MOCK_LATENCY_MS_SLOW
+        : MOCK_LATENCY_MS_FAST;
+    await new Promise((resolve) => setTimeout(resolve, latencyMs));
 
     return { markdown: CANNED_MARKDOWN };
   }
