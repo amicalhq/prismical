@@ -23,6 +23,10 @@ import {
 import { FileTextIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTranslation } from "react-i18next";
+import {
+  CurrentNoteProvider,
+  type CurrentNoteContextValue,
+} from "@/renderer/main/components/current-note-context";
 import type { NoteAssetKind } from "../types";
 import type { NoteTab } from "./note";
 import type {
@@ -70,6 +74,7 @@ export default function NotePage({
   const [activeAsset, setActiveAsset] = useState<NoteAssetKind | null>(null);
   const [meetingState, setMeetingState] = useState<MeetingRuntimeState>("idle");
   const [transcript, setTranscript] = useState<TranscriptEvent[]>([]);
+  const [isTranscriptionExpanded, setIsTranscriptionExpanded] = useState(false);
 
   const noteRef = useRef<typeof note>(null);
   const autoRecordTriggeredRef = useRef(false);
@@ -424,6 +429,49 @@ export default function NotePage({
     setActiveAsset((currentAsset) => (currentAsset === asset ? null : asset));
   }, []);
 
+  const handleToggleTranscription = useCallback(() => {
+    handleToggleAsset("transcription");
+  }, [handleToggleAsset]);
+
+  const isTranscriptionOpen = activeAsset === "transcription";
+
+  const currentNoteValue = useMemo<CurrentNoteContextValue | null>(() => {
+    if (!Number.isFinite(noteIdNumber) || noteIdNumber <= 0) {
+      return null;
+    }
+    return {
+      noteId: noteIdNumber,
+      title: noteTitle,
+      transcript,
+      isTranscriptionOpen,
+      isTranscriptionExpanded,
+      onToggleTranscription: handleToggleTranscription,
+      onSetTranscriptionExpanded: setIsTranscriptionExpanded,
+      meetingState,
+      onStartMeeting: handleStartMeeting,
+      onStopMeeting: handleStopMeeting,
+      hasArtifact: Boolean(artifact),
+      activeTab,
+      onActiveTabChange: setActiveTab,
+      onGenerateNotes: handleGenerateNotes,
+      isGeneratingNotes: generateNotesMutation.isPending,
+    };
+  }, [
+    noteIdNumber,
+    noteTitle,
+    transcript,
+    isTranscriptionOpen,
+    isTranscriptionExpanded,
+    handleToggleTranscription,
+    meetingState,
+    handleStartMeeting,
+    handleStopMeeting,
+    artifact,
+    activeTab,
+    handleGenerateNotes,
+    generateNotesMutation.isPending,
+  ]);
+
   const handleEmojiChange = useCallback(
     (emoji: string | null) => {
       setNoteIcon(emoji);
@@ -454,98 +502,112 @@ export default function NotePage({
     );
   }
   // Use the presentational component
-  return (
+  const noteTree = (
     <>
-    <Note
-      noteTitle={noteTitle}
-      noteEmoji={noteIcon}
-      noteStarred={noteStarred}
-      noteFolder={noteFolder}
-      folderOptions={folderOptions}
-      isLoading={isLoading}
-      activeAsset={activeAsset}
-      onToggleAsset={handleToggleAsset}
-      onTitleChange={handleTitleChange}
-      onDelete={handleDelete}
-      onEmojiChange={handleEmojiChange}
-      onStarredChange={handleStarredChange}
-      onFolderChange={handleFolderChange}
-      noteUpdatedAt={note?.updatedAt ?? new Date()}
-      eventData={note?.eventData ?? null}
-      meetingState={meetingState}
-      transcript={transcript}
-      onStartMeeting={handleStartMeeting}
-      onStopMeeting={handleStopMeeting}
-      onGenerateNotes={handleGenerateNotes}
-      isGeneratingNotes={generateNotesMutation.isPending}
-      isDeleting={deleteMutation.isPending}
-      activeTab={activeTab}
-      onActiveTabChange={setActiveTab}
-      showTabSwitcher={Boolean(artifact)}
-    >
-      {(() => {
-        // Drives the same-hue text shimmer (see .ai-generating-text in
-        // globals.css). Wrappers below opt in while regeneration is in flight.
-        const shimmerClass = generateNotesMutation.isPending
-          ? "ai-generating-text"
-          : "";
-        return artifact ? (
-          // Both editors stay mounted so switching tabs doesn't tear down the
-          // Yjs editor (slow to re-init) or discard in-flight artifact edits.
-          // The inactive one is hidden via CSS.
-          <>
-            <div
-              className={`${activeTab === "summary" ? "block" : "hidden"} ${shimmerClass}`}
-            >
-              <ArtifactEditor
-                // Remount on regeneration so Lexical re-seeds from the new
-                // content. `generatedAt` advances on regen but not on user
-                // edits (updateArtifactContent only touches updated_at), so
-                // typing won't blow away the editor.
-                key={`${artifact.id}:${artifact.generatedAt?.getTime() ?? 0}`}
-                artifactId={artifact.id}
-                initialContent={artifact.content}
-              />
-            </div>
-            <div className={`${activeTab === "raw" ? "block" : "hidden"} ${shimmerClass}`}>
+      <Note
+        noteTitle={noteTitle}
+        noteEmoji={noteIcon}
+        noteStarred={noteStarred}
+        noteFolder={noteFolder}
+        folderOptions={folderOptions}
+        isLoading={isLoading}
+        activeAsset={activeAsset}
+        onToggleAsset={handleToggleAsset}
+        onTitleChange={handleTitleChange}
+        onDelete={handleDelete}
+        onEmojiChange={handleEmojiChange}
+        onStarredChange={handleStarredChange}
+        onFolderChange={handleFolderChange}
+        noteUpdatedAt={note?.updatedAt ?? new Date()}
+        eventData={note?.eventData ?? null}
+        meetingState={meetingState}
+        transcript={transcript}
+        onStartMeeting={handleStartMeeting}
+        onStopMeeting={handleStopMeeting}
+        onGenerateNotes={handleGenerateNotes}
+        isGeneratingNotes={generateNotesMutation.isPending}
+        isDeleting={deleteMutation.isPending}
+        activeTab={activeTab}
+        onActiveTabChange={setActiveTab}
+        showTabSwitcher={Boolean(artifact)}
+        isTranscriptionExpanded={isTranscriptionExpanded}
+        onSetTranscriptionExpanded={setIsTranscriptionExpanded}
+      >
+        {(() => {
+          // Drives the same-hue text shimmer (see .ai-generating-text in
+          // globals.css). Wrappers below opt in while regeneration is in flight.
+          const shimmerClass = generateNotesMutation.isPending
+            ? "ai-generating-text"
+            : "";
+          return artifact ? (
+            // Both editors stay mounted so switching tabs doesn't tear down the
+            // Yjs editor (slow to re-init) or discard in-flight artifact edits.
+            // The inactive one is hidden via CSS.
+            <>
+              <div
+                className={`${activeTab === "summary" ? "block" : "hidden"} ${shimmerClass}`}
+              >
+                <ArtifactEditor
+                  // Remount on regeneration so Lexical re-seeds from the new
+                  // content. `generatedAt` advances on regen but not on user
+                  // edits (updateArtifactContent only touches updated_at), so
+                  // typing won't blow away the editor.
+                  key={`${artifact.id}:${artifact.generatedAt?.getTime() ?? 0}`}
+                  artifactId={artifact.id}
+                  initialContent={artifact.content}
+                />
+              </div>
+              <div
+                className={`${activeTab === "raw" ? "block" : "hidden"} ${shimmerClass}`}
+              >
+                <NoteEditor noteId={noteIdNumber} onReady={handleEditorReady} />
+              </div>
+            </>
+          ) : (
+            <div className={shimmerClass}>
               <NoteEditor noteId={noteIdNumber} onReady={handleEditorReady} />
             </div>
-          </>
-        ) : (
-          <div className={shimmerClass}>
-            <NoteEditor noteId={noteIdNumber} onReady={handleEditorReady} />
-          </div>
-        );
-      })()}
-    </Note>
-    <AlertDialog
-      open={showNoLanguageModelDialog}
-      onOpenChange={setShowNoLanguageModelDialog}
-    >
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Set a default language model</AlertDialogTitle>
-          <AlertDialogDescription>
-            Generating an AI summary needs a language model. Pick one in
-            Settings → AI Models and try again.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            onClick={() => {
-              setShowNoLanguageModelDialog(false);
-              navigate({
-                to: "/settings/ai-models",
-                search: { tab: "language" },
-              });
-            }}
-          >
-            Open settings
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+          );
+        })()}
+      </Note>
+      <AlertDialog
+        open={showNoLanguageModelDialog}
+        onOpenChange={setShowNoLanguageModelDialog}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Set a default language model</AlertDialogTitle>
+            <AlertDialogDescription>
+              Generating an AI summary needs a language model. Pick one in
+              Settings → AI Models and try again.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setShowNoLanguageModelDialog(false);
+                navigate({
+                  to: "/settings/ai-models",
+                  search: { tab: "language" },
+                });
+              }}
+            >
+              Open settings
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
+  );
+
+  if (!currentNoteValue) {
+    return noteTree;
+  }
+
+  return (
+    <CurrentNoteProvider value={currentNoteValue}>
+      {noteTree}
+    </CurrentNoteProvider>
   );
 }

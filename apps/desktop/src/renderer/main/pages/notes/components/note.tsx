@@ -50,10 +50,7 @@ import { NoteAssetsPanel } from "./note-assets-panel";
 import { NoteRecordingDock } from "./note-recording-dock";
 import type { NoteAssetKind } from "../types";
 import type { MeetingRuntimeState, TranscriptEvent } from "@/types/meeting";
-import {
-  formatEventTimeRange,
-  getEventDateLabel,
-} from "@/utils/event-time";
+import { formatEventTimeRange, getEventDateLabel } from "@/utils/event-time";
 import {
   getMeetingIcon,
   getMeetingPlatformDisplayName,
@@ -97,6 +94,8 @@ export type NotePageUIProps = {
   activeTab: NoteTab;
   onActiveTabChange: (tab: NoteTab) => void;
   showTabSwitcher: boolean;
+  isTranscriptionExpanded: boolean;
+  onSetTranscriptionExpanded: (expanded: boolean) => void;
   isDeleting?: boolean;
   children?: ReactNode;
 };
@@ -134,7 +133,6 @@ function formatRelativeTime(date: Date, locale: string): string {
   }).format(date);
 }
 
-
 export default function Note({
   noteTitle,
   noteEmoji,
@@ -160,6 +158,8 @@ export default function Note({
   activeTab,
   onActiveTabChange,
   showTabSwitcher,
+  isTranscriptionExpanded,
+  onSetTranscriptionExpanded,
   isDeleting = false,
   children,
 }: NotePageUIProps) {
@@ -169,12 +169,14 @@ export default function Note({
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showCreateFolderDialog, setShowCreateFolderDialog] = useState(false);
   const [showFolderPicker, setShowFolderPicker] = useState(false);
-  const [isTranscriptionExpanded, setIsTranscriptionExpanded] = useState(false);
   // Re-render once a minute so the "Edited X ago" label stays fresh without
   // each edit having to round-trip through state.
   const [, setRelativeTimeTick] = useState(0);
   useEffect(() => {
-    const id = window.setInterval(() => setRelativeTimeTick((n) => n + 1), 60_000);
+    const id = window.setInterval(
+      () => setRelativeTimeTick((n) => n + 1),
+      60_000,
+    );
     return () => window.clearInterval(id);
   }, []);
 
@@ -196,8 +198,7 @@ export default function Note({
       return;
     }
 
-    const titleLabel =
-      noteTitle || t("settings.notes.note.titlePlaceholder");
+    const titleLabel = noteTitle || t("settings.notes.note.titlePlaceholder");
 
     setHeaderContent(
       <div className="flex min-w-0 items-center gap-1.5 pr-12">
@@ -296,148 +297,148 @@ export default function Note({
       >
         <div className="mx-auto flex w-full max-w-4xl flex-col px-6 pb-32 pt-6">
           {!isNarrow && (
-          <div className="mb-1 flex items-center">
-            <Popover open={showEmojiPicker} onOpenChange={setShowEmojiPicker}>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="!h-12 !w-12 shrink-0 !p-0 hover:bg-muted/50"
-                >
-                  {noteEmoji ? (
-                    <span className="text-2xl">{noteEmoji}</span>
-                  ) : (
-                    <FileTextIcon className="!h-6 !w-6 text-muted-foreground" />
-                  )}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="start">
-                <div>
-                  {noteEmoji ? (
-                    <div className="flex justify-end border-b p-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => onEmojiChange(null)}
-                        className="text-xs"
-                      >
-                        {t("settings.notes.note.removeEmoji")}
-                      </Button>
-                    </div>
-                  ) : null}
-                  <EmojiPicker
-                    onEmojiClick={(emojiData) => {
-                      onEmojiChange(emojiData.emoji);
-                      setShowEmojiPicker(false);
-                    }}
-                    autoFocusSearch={false}
-                    theme={Theme.DARK}
-                    lazyLoadEmojis={false}
-                    height={400}
-                    width={400}
-                  />
-                </div>
-              </PopoverContent>
-            </Popover>
+            <div className="mb-1 flex items-center">
+              <Popover open={showEmojiPicker} onOpenChange={setShowEmojiPicker}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="!h-12 !w-12 shrink-0 !p-0 hover:bg-muted/50"
+                  >
+                    {noteEmoji ? (
+                      <span className="text-2xl">{noteEmoji}</span>
+                    ) : (
+                      <FileTextIcon className="!h-6 !w-6 text-muted-foreground" />
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <div>
+                    {noteEmoji ? (
+                      <div className="flex justify-end border-b p-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => onEmojiChange(null)}
+                          className="text-xs"
+                        >
+                          {t("settings.notes.note.removeEmoji")}
+                        </Button>
+                      </div>
+                    ) : null}
+                    <EmojiPicker
+                      onEmojiClick={(emojiData) => {
+                        onEmojiChange(emojiData.emoji);
+                        setShowEmojiPicker(false);
+                      }}
+                      autoFocusSearch={false}
+                      theme={Theme.DARK}
+                      lazyLoadEmojis={false}
+                      height={400}
+                      width={400}
+                    />
+                  </div>
+                </PopoverContent>
+              </Popover>
 
-            <Input
-              value={noteTitle}
-              onChange={(event) => onTitleChange(event.target.value)}
-              className="flex-1 !h-auto !bg-transparent dark:!bg-transparent px-4 py-2 !text-4xl font-semibold !border-0 !shadow-none placeholder:text-muted-foreground focus-visible:!border-0 focus-visible:!ring-0"
-              placeholder={t("settings.notes.note.titlePlaceholder")}
-            />
-          </div>
+              <Input
+                value={noteTitle}
+                onChange={(event) => onTitleChange(event.target.value)}
+                className="flex-1 !h-auto !bg-transparent dark:!bg-transparent px-4 py-2 !text-4xl font-semibold !border-0 !shadow-none placeholder:text-muted-foreground focus-visible:!border-0 focus-visible:!ring-0"
+                placeholder={t("settings.notes.note.titlePlaceholder")}
+              />
+            </div>
           )}
 
           <div className="mb-6 flex flex-col gap-0.5 bg-card pl-4">
-              <div className="flex flex-wrap items-center gap-1">
-                <span className="mr-1 text-sm text-muted-foreground">
-                  {t("settings.notes.note.edited", {
-                    date: formatRelativeTime(noteUpdatedAt, i18n.language),
-                  })}
-                </span>
+            <div className="flex flex-wrap items-center gap-1">
+              <span className="mr-1 text-sm text-muted-foreground">
+                {t("settings.notes.note.edited", {
+                  date: formatRelativeTime(noteUpdatedAt, i18n.language),
+                })}
+              </span>
 
-                {!isNarrow && (
-                  <>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="gap-2"
-                          onClick={() => onStarredChange(!noteStarred)}
-                        >
-                          <Star
-                            className={`h-4 w-4 ${
-                              noteStarred ? "fill-yellow-400 text-yellow-400" : ""
-                            }`}
-                          />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        {noteStarred
-                          ? t("settings.notes.note.actions.removeFromFavorites")
-                          : t("settings.notes.note.actions.addToFavorites")}
-                      </TooltipContent>
-                    </Tooltip>
-
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="sm">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          className="gap-2"
-                          onSelect={() => setShowFolderPicker(true)}
-                        >
-                          <FolderOpen className="h-4 w-4" />
-                          {t("settings.notes.note.actions.moveToFolder")}
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          className="gap-2"
-                          variant="destructive"
-                          onSelect={() => setShowDeleteDialog(true)}
-                        >
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                          {t("settings.notes.note.actions.delete")}
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </>
-                )}
-              </div>
-
-              {eventData ? (
-                <div className="@container/event-chip flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm text-muted-foreground">
-                  <Calendar
-                    className="h-3.5 w-3.5 shrink-0"
-                    style={{ color: eventData.calendarColor }}
-                  />
-                  <Popover>
-                    <PopoverTrigger asChild>
+              {!isNarrow && (
+                <>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
                       <Button
-                        type="button"
-                        variant="ghost"
                         size="sm"
-                        className="h-auto max-w-full px-1.5 py-0.5 text-sm font-normal text-muted-foreground hover:text-foreground"
-                        title={eventData.title}
+                        variant="ghost"
+                        className="gap-2"
+                        onClick={() => onStarredChange(!noteStarred)}
                       >
-                        <span className="truncate">
-                          {eventData.title.length > 30
-                            ? `${eventData.title.slice(0, 30).trimEnd()}…`
-                            : eventData.title}
-                        </span>
+                        <Star
+                          className={`h-4 w-4 ${
+                            noteStarred ? "fill-yellow-400 text-yellow-400" : ""
+                          }`}
+                        />
                       </Button>
-                    </PopoverTrigger>
-                    <PopoverContent
-                      side="bottom"
-                      align="start"
-                      sideOffset={6}
-                      className="w-80 p-0"
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      {noteStarred
+                        ? t("settings.notes.note.actions.removeFromFavorites")
+                        : t("settings.notes.note.actions.addToFavorites")}
+                    </TooltipContent>
+                  </Tooltip>
+
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="sm">
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        className="gap-2"
+                        onSelect={() => setShowFolderPicker(true)}
+                      >
+                        <FolderOpen className="h-4 w-4" />
+                        {t("settings.notes.note.actions.moveToFolder")}
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        className="gap-2"
+                        variant="destructive"
+                        onSelect={() => setShowDeleteDialog(true)}
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                        {t("settings.notes.note.actions.delete")}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </>
+              )}
+            </div>
+
+            {eventData ? (
+              <div className="@container/event-chip flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm text-muted-foreground">
+                <Calendar
+                  className="h-3.5 w-3.5 shrink-0"
+                  style={{ color: eventData.calendarColor }}
+                />
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-auto max-w-full px-1.5 py-0.5 text-sm font-normal text-muted-foreground hover:text-foreground"
+                      title={eventData.title}
                     >
+                      <span className="truncate">
+                        {eventData.title.length > 30
+                          ? `${eventData.title.slice(0, 30).trimEnd()}…`
+                          : eventData.title}
+                      </span>
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    side="bottom"
+                    align="start"
+                    sideOffset={6}
+                    className="w-80 p-0"
+                  >
                     <div className="flex items-start gap-3 p-3">
                       <span
                         className="mt-0.5 h-8 w-1.5 shrink-0 rounded-sm"
@@ -484,9 +485,10 @@ export default function Note({
                                   className: "mr-1 h-3.5 w-3.5",
                                 })}
                                 {(() => {
-                                  const platform = getMeetingPlatformDisplayName(
-                                    eventData.meetingUrl,
-                                  );
+                                  const platform =
+                                    getMeetingPlatformDisplayName(
+                                      eventData.meetingUrl,
+                                    );
                                   const joinLabel = t(
                                     "settings.home.upcoming.join",
                                   );
@@ -517,20 +519,20 @@ export default function Note({
                     </div>
                   </PopoverContent>
                 </Popover>
-                  <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap">
-                    <span className="h-1 w-1 rounded-full bg-muted-foreground @max-[420px]/event-chip:hidden" />
-                    <span className="text-xs">
-                      {formatEventTimeRange(
-                        eventData.startAt,
-                        eventData.endAt,
-                        eventData.isAllDay,
-                        i18n.language,
-                      )}
-                    </span>
+                <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap">
+                  <span className="h-1 w-1 rounded-full bg-muted-foreground @max-[420px]/event-chip:hidden" />
+                  <span className="text-xs">
+                    {formatEventTimeRange(
+                      eventData.startAt,
+                      eventData.endAt,
+                      eventData.isAllDay,
+                      i18n.language,
+                    )}
                   </span>
-                </div>
-              ) : null}
-            </div>
+                </span>
+              </div>
+            ) : null}
+          </div>
           {children}
         </div>
       </ScrollArea>
@@ -554,7 +556,7 @@ export default function Note({
               onClose={() => onToggleAsset("transcription")}
               isExpanded={isTranscriptionExpanded}
               onToggleExpanded={() =>
-                setIsTranscriptionExpanded((prev) => !prev)
+                onSetTranscriptionExpanded(!isTranscriptionExpanded)
               }
               transcript={transcript}
               meetingState={meetingState}
