@@ -52,9 +52,8 @@ export default function NotePage({
   const generateNotesMutation =
     api.notes.generateNotesFromTranscript.useMutation();
   const noteIdNumber = Number.parseInt(noteId, 10);
-  const defaultLanguageModelQuery = api.models.getDefaultModel.useQuery({
-    type: "language",
-  });
+  const defaultsQuery = api.instances.getDefaults.useQuery();
+  const hasFormattingDefault = !!defaultsQuery.data?.formatting;
   const noteTranscriptQuery = api.meetings.getNoteTranscript.useQuery(
     { noteId: noteIdNumber },
     {
@@ -355,7 +354,7 @@ export default function NotePage({
   }, [meetingState, refreshNoteTranscript, stopMeetingMutation]);
 
   const handleGenerateNotes = useCallback(() => {
-    if (!defaultLanguageModelQuery.data) {
+    if (!hasFormattingDefault) {
       setShowNoLanguageModelDialog(true);
       return;
     }
@@ -373,7 +372,7 @@ export default function NotePage({
         toast.error(`Failed to generate notes: ${error.message}`);
       });
   }, [
-    defaultLanguageModelQuery.data,
+    hasFormattingDefault,
     generateNotesMutation,
     noteIdNumber,
     utils.artifacts.getByNote,

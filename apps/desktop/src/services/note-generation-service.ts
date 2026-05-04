@@ -1,34 +1,27 @@
-import {
-  getProviderTypeFromModelProviderName,
-  type ProviderType,
-} from "@/constants/provider-types";
 import { createOrReplaceArtifact } from "@/db/artifacts";
+import { getInstanceById } from "@/db/instances";
 import { getNoteTranscript } from "@/db/meetings";
 import { getNoteById } from "@/db/notes";
 import { logger } from "@/main/logger";
-import {
-  createRemoteNoteGenerationProvider,
-  type RemoteNoteGenerationProviderType,
-} from "@/pipeline/providers/note-generation/remote-note-generation-provider-registry";
+import { createNoteGenerationProvider } from "@/pipeline/providers/note-generation/remote-note-generation-provider-registry";
 import type { NoteGenerationResult } from "@/pipeline/providers/note-generation/types";
 import type { NoteArtifact } from "@/db/schema";
 import type { SettingsService } from "./settings-service";
-import type { ModelService } from "./model-service";
+import { selectionToKey } from "@/utils/model-selection";
 import { markdownToLexicalStateJson } from "./notes/markdown-to-lexical";
 
 export interface GeneratedNotesResult {
   artifact: NoteArtifact;
+  /** Opaque "instanceId::modelId" key suitable for round-tripping back to the picker. */
   modelSelection: string;
   modelId: string;
-  providerType: RemoteNoteGenerationProviderType;
+  /** Provider type from the instance row, e.g. "openrouter", "groq". */
+  providerType: string;
   generatedAt: Date;
 }
 
 export class NoteGenerationService {
-  constructor(
-    private readonly modelService: ModelService,
-    private readonly settingsService: SettingsService,
-  ) {}
+  constructor(private readonly settingsService: SettingsService) {}
 
   async generateNotesFromTranscript(
     noteId: number,
@@ -38,43 +31,30 @@ export class NoteGenerationService {
       getNoteTranscript(noteId),
     ]);
 
-    if (!note) {
-      throw new Error("Note not found");
-    }
-
+    if (!note) throw new Error("Note not found");
     if (transcript.length === 0) {
       throw new Error("No transcript is available for this note yet");
     }
 
-    const modelRecord = await this.modelService.getDefaultLanguageModelRecord();
-    const modelSelection =
-      await this.modelService.getDefaultLanguageModelSelection();
-
-    if (!modelRecord || !modelSelection) {
+    // Note generation reuses the user's "formatting" default — both are
+    // language-model use cases and the user hasn't expressed a separate
+    // selection for note generation.
+    const selection = await this.settingsService.getDefault("formatting");
+    if (!selection) {
       throw new Error("No language model is configured");
     }
 
-    const providerType = getProviderTypeFromModelProviderName(
-      modelRecord.provider,
-    );
-
-    if (!providerType || !isRemoteNoteGenerationProviderType(providerType)) {
+    const instance = await getInstanceById(selection.instanceId);
+    if (!instance) {
       throw new Error(
-        `Unsupported language model provider for note generation: ${modelRecord.provider}`,
+        `The instance "${selection.instanceId}" referenced by the formatting default no longer exists`,
       );
     }
 
-    const provider = await createRemoteNoteGenerationProvider(
-      this.settingsService,
-      providerType,
-      modelRecord.id,
+    const provider = await createNoteGenerationProvider(
+      instance,
+      selection.modelId,
     );
-
-    if (!provider) {
-      throw new Error(
-        `Provider ${providerType} is not configured for note generation`,
-      );
-    }
 
     const transcriptText = serializeTranscriptForGeneration(transcript);
     const result: NoteGenerationResult = await provider.generateMarkdown({
@@ -88,16 +68,19 @@ export class NoteGenerationService {
     }
 
     const generatedAt = new Date();
+    const modelSelectionKey = selectionToKey(selection);
 
     const artifact = await createOrReplaceArtifact({
       noteId,
       kind: "summary",
       content: markdownToLexicalStateJson(result.markdown),
       generator: "ai",
-      modelId: modelRecord.id,
+      modelId: selection.modelId,
       meta: {
-        modelSelection,
-        providerType,
+        modelSelection: modelSelectionKey,
+        providerType: instance.type,
+        instanceId: instance.id,
+        instanceLabel: instance.label,
         transcriptLength: transcriptText.length,
       },
       generatedAt,
@@ -106,31 +89,20 @@ export class NoteGenerationService {
     logger.pipeline.info("Generated note artifact from transcript", {
       noteId,
       artifactId: artifact.id,
-      modelSelection,
-      providerType,
+      modelSelection: modelSelectionKey,
+      providerType: instance.type,
       transcriptLength: transcriptText.length,
       generatedAt: generatedAt.toISOString(),
     });
 
     return {
       artifact,
-      modelSelection,
-      modelId: modelRecord.id,
-      providerType,
+      modelSelection: modelSelectionKey,
+      modelId: selection.modelId,
+      providerType: instance.type,
       generatedAt,
     };
   }
-}
-
-function isRemoteNoteGenerationProviderType(
-  providerType: ProviderType,
-): providerType is RemoteNoteGenerationProviderType {
-  return (
-    providerType === "openrouter" ||
-    providerType === "ollama" ||
-    providerType === "openai-compatible" ||
-    providerType === "mock"
-  );
 }
 
 function serializeTranscriptForGeneration(

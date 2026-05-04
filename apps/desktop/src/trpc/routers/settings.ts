@@ -8,11 +8,11 @@ import { dbPath, closeDatabase } from "../../db";
 import type { AppSettingsData } from "../../db/schema";
 import * as fs from "fs/promises";
 
-// FormatterConfig schema
+// FormatterConfig schema. The model used by the formatter is the
+// per-use-case `modelDefaults.formatting` selection on the instances
+// router; this slot only carries the on/off flag now.
 const FormatterConfigSchema = z.object({
   enabled: z.boolean(),
-  modelId: z.string().optional(),
-  fallbackModelId: z.string().optional(),
 });
 
 // Shortcut schema (array of keycodes)
@@ -27,25 +27,8 @@ const SetShortcutSchema = z.object({
   shortcut: z.array(z.number()),
 });
 
-// Model providers schemas
-const OpenRouterConfigSchema = z.object({
-  apiKey: z.string(),
-});
-
-const OllamaConfigSchema = z.object({
-  url: z.string().url().or(z.literal("")),
-});
-
-const OpenAICompatibleConfigSchema = z.object({
-  apiKey: z.string(),
-  baseURL: z.string().url(),
-});
-
-const ModelProvidersConfigSchema = z.object({
-  openRouter: OpenRouterConfigSchema.optional(),
-  ollama: OllamaConfigSchema.optional(),
-  openAICompatible: OpenAICompatibleConfigSchema.optional(),
-});
+// Per-provider model schemas previously lived here; they moved into the
+// `instances` router as part of the multi-instance refactor.
 
 const DictationSettingsSchema = z.object({
   autoDetectEnabled: z.boolean(),
@@ -491,130 +474,10 @@ export const settingsRouter = createRouter({
       }
     }),
 
-  // Get model providers configuration
-  getModelProvidersConfig: procedure.query(async ({ ctx }) => {
-    try {
-      const settingsService = ctx.serviceManager.getService("settingsService");
-      if (!settingsService) {
-        throw new Error("SettingsService not available");
-      }
-      return await settingsService.getModelProvidersConfig();
-    } catch (error) {
-      const logger = ctx.serviceManager.getLogger();
-      if (logger) {
-        logger.main.error("Error getting model providers config:", error);
-      }
-      return null;
-    }
-  }),
-
-  // Set model providers configuration
-  setModelProvidersConfig: procedure
-    .input(ModelProvidersConfigSchema)
-    .mutation(async ({ input, ctx }) => {
-      try {
-        const settingsService =
-          ctx.serviceManager.getService("settingsService");
-        if (!settingsService) {
-          throw new Error("SettingsService not available");
-        }
-        await settingsService.setModelProvidersConfig(input);
-
-        const logger = ctx.serviceManager.getLogger();
-        if (logger) {
-          logger.main.info("Model providers configuration updated");
-        }
-
-        return true;
-      } catch (error) {
-        const logger = ctx.serviceManager.getLogger();
-        if (logger) {
-          logger.main.error("Error setting model providers config:", error);
-        }
-        throw error;
-      }
-    }),
-
-  // Set OpenRouter configuration
-  setOpenRouterConfig: procedure
-    .input(OpenRouterConfigSchema)
-    .mutation(async ({ input, ctx }) => {
-      try {
-        const settingsService =
-          ctx.serviceManager.getService("settingsService");
-        if (!settingsService) {
-          throw new Error("SettingsService not available");
-        }
-        await settingsService.setOpenRouterConfig(input);
-
-        const logger = ctx.serviceManager.getLogger();
-        if (logger) {
-          logger.main.info("OpenRouter configuration updated");
-        }
-
-        return true;
-      } catch (error) {
-        const logger = ctx.serviceManager.getLogger();
-        if (logger) {
-          logger.main.error("Error setting OpenRouter config:", error);
-        }
-        throw error;
-      }
-    }),
-
-  // Set Ollama configuration
-  setOllamaConfig: procedure
-    .input(OllamaConfigSchema)
-    .mutation(async ({ input, ctx }) => {
-      try {
-        const settingsService =
-          ctx.serviceManager.getService("settingsService");
-        if (!settingsService) {
-          throw new Error("SettingsService not available");
-        }
-        await settingsService.setOllamaConfig(input);
-
-        const logger = ctx.serviceManager.getLogger();
-        if (logger) {
-          logger.main.info("Ollama configuration updated");
-        }
-
-        return true;
-      } catch (error) {
-        const logger = ctx.serviceManager.getLogger();
-        if (logger) {
-          logger.main.error("Error setting Ollama config:", error);
-        }
-        throw error;
-      }
-    }),
-
-  // Set OpenAI-compatible configuration
-  setOpenAICompatibleConfig: procedure
-    .input(OpenAICompatibleConfigSchema)
-    .mutation(async ({ input, ctx }) => {
-      try {
-        const settingsService =
-          ctx.serviceManager.getService("settingsService");
-        if (!settingsService) {
-          throw new Error("SettingsService not available");
-        }
-        await settingsService.setOpenAICompatibleConfig(input);
-
-        const logger = ctx.serviceManager.getLogger();
-        if (logger) {
-          logger.main.info("OpenAI-compatible configuration updated");
-        }
-
-        return true;
-      } catch (error) {
-        const logger = ctx.serviceManager.getLogger();
-        if (logger) {
-          logger.main.error("Error setting OpenAI-compatible config:", error);
-        }
-        throw error;
-      }
-    }),
+  // Per-provider config slots and the singleton modelProvidersConfig were
+  // removed in the multi-instance refactor. UI now talks to the
+  // `instances` router for instance CRUD, validate, fetchCatalog, and the
+  // per-use-case `setDefault`/`clearDefault`/`getDefaults` mutations.
 
   // Get data path
   getDataPath: procedure.query(() => {

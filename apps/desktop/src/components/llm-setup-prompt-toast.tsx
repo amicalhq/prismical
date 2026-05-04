@@ -14,7 +14,7 @@ export function LLMSetupPromptToast() {
   const navigate = useNavigate();
 
   const onboardingState = api.onboarding.getState.useQuery();
-  const defaultLanguageModel = api.models.getDefaultLanguageModel.useQuery();
+  const defaults = api.instances.getDefaults.useQuery();
 
   const [dismissed, setDismissed] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
@@ -22,7 +22,7 @@ export function LLMSetupPromptToast() {
   });
 
   const isOnboardingComplete = !!onboardingState.data?.completedVersion;
-  const hasLLM = !!defaultLanguageModel.data;
+  const hasLLM = !!defaults.data?.formatting;
 
   if (!isOnboardingComplete || hasLLM || dismissed) return null;
 
