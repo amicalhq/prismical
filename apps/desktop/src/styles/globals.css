@@ -208,6 +208,61 @@ html.vibrancy [data-slot="sidebar-inner"] {
   background-size: 200% 100%;
 }
 
+/* Text-only AI shimmer used while a note is being generated. Same-hue
+ * brightness sweep (muted → foreground → muted) — no accent color, matches
+ * the "thinking" effect used in most AI chat surfaces.
+ *
+ * One animation runs on the wrapper and updates `--shimmer-x`. Every text
+ * descendant inherits that variable and uses it as `background-position-x`,
+ * so they all sample the same gradient at the same offset. The gradient is
+ * sized in viewport units and anchored with `background-attachment: fixed`
+ * so the band moves at a consistent visible speed regardless of each
+ * element's own width — this is what was causing the jitter on the AI
+ * summary, which has many small spans (bold, list markers) of varying width. */
+@property --shimmer-x {
+  syntax: "<percentage>";
+  inherits: true;
+  initial-value: 100%;
+}
+
+@keyframes shimmer-sweep {
+  0% {
+    --shimmer-x: 100%;
+  }
+  100% {
+    --shimmer-x: -100%;
+  }
+}
+
+.ai-generating-text {
+  animation: shimmer-sweep 2s linear infinite;
+}
+
+.ai-generating-text [contenteditable],
+.ai-generating-text [contenteditable] * {
+  /* Dim state is muted-foreground faded ~65% toward background; gives the
+   * sweep a much wider contrast range so the highlight band reads stronger. */
+  --shimmer-dim: color-mix(
+    in oklch,
+    var(--muted-foreground) 35%,
+    var(--background)
+  );
+  background-image: linear-gradient(
+    90deg,
+    var(--shimmer-dim) 0%,
+    var(--shimmer-dim) 40%,
+    var(--foreground) 50%,
+    var(--shimmer-dim) 60%,
+    var(--shimmer-dim) 100%
+  );
+  background-size: 200vw 100vh;
+  background-attachment: fixed;
+  background-position-x: var(--shimmer-x);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
 /* Lexical Checklist - shadcn-style checkboxes */
 .listitemChecked,
 .listitemUnchecked {

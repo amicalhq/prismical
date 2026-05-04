@@ -483,29 +483,40 @@ export default function NotePage({
       onActiveTabChange={setActiveTab}
       showTabSwitcher={Boolean(artifact)}
     >
-      {artifact ? (
-        // Both editors stay mounted so switching tabs doesn't tear down the
-        // Yjs editor (slow to re-init) or discard in-flight artifact edits.
-        // The inactive one is hidden via CSS.
-        <>
-          <div className={activeTab === "summary" ? "block" : "hidden"}>
-            <ArtifactEditor
-              // Remount on regeneration so Lexical re-seeds from the new
-              // content. `generatedAt` advances on regen but not on user
-              // edits (updateArtifactContent only touches updated_at), so
-              // typing won't blow away the editor.
-              key={`${artifact.id}:${artifact.generatedAt?.getTime() ?? 0}`}
-              artifactId={artifact.id}
-              initialContent={artifact.content}
-            />
-          </div>
-          <div className={activeTab === "raw" ? "block" : "hidden"}>
+      {(() => {
+        // Drives the same-hue text shimmer (see .ai-generating-text in
+        // globals.css). Wrappers below opt in while regeneration is in flight.
+        const shimmerClass = generateNotesMutation.isPending
+          ? "ai-generating-text"
+          : "";
+        return artifact ? (
+          // Both editors stay mounted so switching tabs doesn't tear down the
+          // Yjs editor (slow to re-init) or discard in-flight artifact edits.
+          // The inactive one is hidden via CSS.
+          <>
+            <div
+              className={`${activeTab === "summary" ? "block" : "hidden"} ${shimmerClass}`}
+            >
+              <ArtifactEditor
+                // Remount on regeneration so Lexical re-seeds from the new
+                // content. `generatedAt` advances on regen but not on user
+                // edits (updateArtifactContent only touches updated_at), so
+                // typing won't blow away the editor.
+                key={`${artifact.id}:${artifact.generatedAt?.getTime() ?? 0}`}
+                artifactId={artifact.id}
+                initialContent={artifact.content}
+              />
+            </div>
+            <div className={`${activeTab === "raw" ? "block" : "hidden"} ${shimmerClass}`}>
+              <NoteEditor noteId={noteIdNumber} onReady={handleEditorReady} />
+            </div>
+          </>
+        ) : (
+          <div className={shimmerClass}>
             <NoteEditor noteId={noteIdNumber} onReady={handleEditorReady} />
           </div>
-        </>
-      ) : (
-        <NoteEditor noteId={noteIdNumber} onReady={handleEditorReady} />
-      )}
+        );
+      })()}
     </Note>
     <AlertDialog
       open={showNoLanguageModelDialog}
