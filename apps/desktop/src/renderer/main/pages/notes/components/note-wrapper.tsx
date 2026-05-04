@@ -24,16 +24,13 @@ import { FileTextIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTranslation } from "react-i18next";
 import {
-  CurrentNoteProvider,
+  useRegisterCurrentNote,
   type CurrentNoteContextValue,
 } from "@/renderer/main/components/current-note-context";
+import { useMeetingSnapshot } from "@/renderer/main/components/meeting-snapshot-context";
 import type { NoteAssetKind } from "../types";
 import type { NoteTab } from "./note";
-import type {
-  MeetingRuntimeSnapshot,
-  MeetingRuntimeState,
-  TranscriptEvent,
-} from "@/types/meeting";
+import type { MeetingRuntimeState, TranscriptEvent } from "@/types/meeting";
 
 type NotePageProps = {
   noteId: string;
@@ -246,19 +243,18 @@ export default function NotePage({
     [debouncedRefreshNoteTranscript],
   );
 
-  api.meetings.stateUpdates.useSubscription(undefined, {
-    onData: (snapshot: MeetingRuntimeSnapshot) => {
-      const isCurrentNoteSession = snapshot.noteId === noteIdNumber;
-      setMeetingState(isCurrentNoteSession ? snapshot.state : "idle");
+  const meetingSnapshot = useMeetingSnapshot();
 
-      if (isCurrentNoteSession && snapshot.state !== "idle") {
-        setActiveAsset("transcription");
-      }
-    },
-    onError: (error) => {
-      console.error("Failed to subscribe to meeting state:", error);
-    },
-  });
+  // Derive per-note meeting state from the shared snapshot. The snapshot is
+  // global; we coerce to "idle" when the active session belongs to a different
+  // note so that per-note dock UI / transcript panel render correctly.
+  useEffect(() => {
+    const isCurrentNoteSession = meetingSnapshot.noteId === noteIdNumber;
+    setMeetingState(isCurrentNoteSession ? meetingSnapshot.state : "idle");
+    if (isCurrentNoteSession && meetingSnapshot.state !== "idle") {
+      setActiveAsset("transcription");
+    }
+  }, [meetingSnapshot.noteId, meetingSnapshot.state, noteIdNumber]);
 
   api.meetings.transcriptUpdates.useSubscription(undefined, {
     onData: (event) => {
@@ -439,6 +435,12 @@ export default function NotePage({
     if (!Number.isFinite(noteIdNumber) || noteIdNumber <= 0) {
       return null;
     }
+    // Wait until the note has actually loaded — otherwise we'd register a
+    // value pointing at a not-yet-loaded (or deleted) note, surfacing
+    // unusable handlers to the cluster.
+    if (!note) {
+      return null;
+    }
     return {
       noteId: noteIdNumber,
       title: noteTitle,
@@ -458,6 +460,7 @@ export default function NotePage({
     };
   }, [
     noteIdNumber,
+    note,
     noteTitle,
     transcript,
     isTranscriptionOpen,
@@ -479,6 +482,21 @@ export default function NotePage({
     },
     [noteIdNumber, updateNoteIconMutation],
   );
+
+  // Push the per-note value into the layout-level CurrentNoteContext so the
+  // global RecordingBottomCluster (mounted as a sibling of <Outlet />) can
+  // read it. The setter is keyed by noteId so an A→B navigation (where B's
+  // mount runs before A's unmount cleanup) doesn't leave the slot null.
+  const registerCurrentNote = useRegisterCurrentNote();
+  useEffect(() => {
+    if (!Number.isFinite(noteIdNumber) || noteIdNumber <= 0) {
+      return;
+    }
+    registerCurrentNote(noteIdNumber, currentNoteValue);
+    return () => {
+      registerCurrentNote(noteIdNumber, null);
+    };
+  }, [noteIdNumber, currentNoteValue, registerCurrentNote]);
 
   // Note not found state
   if (!isLoading && !note) {
@@ -502,7 +520,7 @@ export default function NotePage({
     );
   }
   // Use the presentational component
-  const noteTree = (
+  return (
     <>
       <Note
         noteTitle={noteTitle}
@@ -586,15 +604,5 @@ export default function NotePage({
         </AlertDialogContent>
       </AlertDialog>
     </>
-  );
-
-  if (!currentNoteValue) {
-    return noteTree;
-  }
-
-  return (
-    <CurrentNoteProvider value={currentNoteValue}>
-      {noteTree}
-    </CurrentNoteProvider>
   );
 }

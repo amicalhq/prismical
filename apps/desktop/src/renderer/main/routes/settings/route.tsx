@@ -4,6 +4,8 @@ import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { SettingsSidebar } from "../../components/settings-sidebar";
 import { SiteHeader } from "@/components/site-header";
 import { RecordingBottomCluster } from "@/renderer/main/components/recording-bottom-cluster";
+import { MeetingSnapshotProvider } from "@/renderer/main/components/meeting-snapshot-context";
+import { CurrentNoteProvider } from "@/renderer/main/components/current-note-context";
 import { useLocation, useNavigate, useRouter } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
 import {
@@ -141,68 +143,72 @@ function SettingsLayoutContent() {
   };
 
   return (
-    <SidebarProvider
-      style={
-        {
-          "--sidebar-width": "calc(var(--spacing) * 64)",
-          "--header-height": "calc(var(--spacing) * 12)",
-        } as React.CSSProperties
-      }
-    >
-      <div className="flex h-screen w-screen">
-        <SettingsSidebar variant="inset" />
-        <SidebarInset className="!mt-0">
-          <SiteHeader
-            currentView={
-              headerContent ?? getSettingsPageTitle(location.pathname)
-            }
-            showTitle={isScrolled || headerContent != null}
-            actions={
-              <>
-                {headerActions}
-                <HeaderCreateNoteButton />
-              </>
-            }
-          />
-          <div className="flex flex-1 flex-col min-h-0">
-            <div className="@container/settings flex flex-1 flex-col min-h-0 overflow-hidden">
-              <div
-                ref={scrollRef}
-                className={cn(
-                  "flex-1",
-                  isNoteDetailRoute ? "overflow-hidden" : "overflow-y-auto",
-                )}
-              >
-                <div
-                  className={cn(
-                    "relative w-full",
-                    isNoteDetailRoute
-                      ? "flex h-full min-h-0 flex-col"
-                      : "mx-auto flex flex-col gap-4 md:gap-6",
-                  )}
-                  style={
-                    isNoteDetailRoute
-                      ? {
-                          paddingInline: "0px",
-                        }
-                      : {
-                          maxWidth: "var(--content-max-width)",
-                          paddingInline: "var(--content-padding)",
-                        }
-                  }
-                >
+    <MeetingSnapshotProvider>
+      <CurrentNoteProvider>
+        <SidebarProvider
+          style={
+            {
+              "--sidebar-width": "calc(var(--spacing) * 64)",
+              "--header-height": "calc(var(--spacing) * 12)",
+            } as React.CSSProperties
+          }
+        >
+          <div className="flex h-screen w-screen">
+            <SettingsSidebar variant="inset" />
+            <SidebarInset className="!mt-0">
+              <SiteHeader
+                currentView={
+                  headerContent ?? getSettingsPageTitle(location.pathname)
+                }
+                showTitle={isScrolled || headerContent != null}
+                actions={
+                  <>
+                    {headerActions}
+                    <HeaderCreateNoteButton />
+                  </>
+                }
+              />
+              <div className="flex flex-1 flex-col min-h-0">
+                <div className="@container/settings flex flex-1 flex-col min-h-0 overflow-hidden">
                   <div
-                    ref={sentinelRef}
-                    className="absolute top-0 h-[60px] w-px"
-                  />
-                  <Outlet />
+                    ref={scrollRef}
+                    className={cn(
+                      "flex-1",
+                      isNoteDetailRoute ? "overflow-hidden" : "overflow-y-auto",
+                    )}
+                  >
+                    <div
+                      className={cn(
+                        "relative w-full",
+                        isNoteDetailRoute
+                          ? "flex h-full min-h-0 flex-col"
+                          : "mx-auto flex flex-col gap-4 md:gap-6",
+                      )}
+                      style={
+                        isNoteDetailRoute
+                          ? {
+                              paddingInline: "0px",
+                            }
+                          : {
+                              maxWidth: "var(--content-max-width)",
+                              paddingInline: "var(--content-padding)",
+                            }
+                      }
+                    >
+                      <div
+                        ref={sentinelRef}
+                        className="absolute top-0 h-[60px] w-px"
+                      />
+                      <Outlet />
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
+              <RecordingBottomCluster />
+            </SidebarInset>
           </div>
-          <RecordingBottomCluster />
-        </SidebarInset>
-      </div>
-    </SidebarProvider>
+        </SidebarProvider>
+      </CurrentNoteProvider>
+    </MeetingSnapshotProvider>
   );
 }

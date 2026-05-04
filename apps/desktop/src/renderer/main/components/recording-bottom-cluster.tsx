@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
@@ -6,6 +6,7 @@ import { IconNotes, IconSparkles } from "@tabler/icons-react";
 
 import { api } from "@/trpc/react";
 import { useCurrentNote } from "@/renderer/main/components/current-note-context";
+import { useMeetingSnapshot } from "@/renderer/main/components/meeting-snapshot-context";
 import { NoteAssetsPanel } from "@/renderer/main/pages/notes/components/note-assets-panel";
 import { NoteRecordingDock } from "@/renderer/main/pages/notes/components/note-recording-dock";
 import { RecordingJumpPill } from "@/renderer/main/components/recording-jump-pill";
@@ -15,19 +16,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import type {
-  MeetingRuntimeSnapshot,
-  MeetingRuntimeState,
-} from "@/types/meeting";
-
-const EMPTY_SNAPSHOT: MeetingRuntimeSnapshot = {
-  state: "idle",
-  mode: null,
-  meetingId: null,
-  noteId: null,
-  durationMs: 0,
-  startedAt: null,
-};
+import type { MeetingRuntimeState } from "@/types/meeting";
 
 function isActiveState(state: MeetingRuntimeState): boolean {
   return (
@@ -43,20 +32,8 @@ export function RecordingBottomCluster() {
   const navigate = useNavigate();
   const utils = api.useUtils();
   const currentNote = useCurrentNote();
+  const snapshot = useMeetingSnapshot();
   const stopMeetingMutation = api.meetings.stopMeeting.useMutation();
-
-  const [snapshot, setSnapshot] =
-    useState<MeetingRuntimeSnapshot>(EMPTY_SNAPSHOT);
-
-  api.meetings.stateUpdates.useSubscription(undefined, {
-    onData: (next) => setSnapshot(next),
-    onError: (error) => {
-      console.error(
-        "RecordingBottomCluster: meeting subscription error:",
-        error,
-      );
-    },
-  });
 
   const recordingActive = isActiveState(snapshot.state);
   const recordingNoteId = snapshot.noteId;
