@@ -37,30 +37,12 @@ export interface TranscriptionChunkResult {
   segments?: TranscriptionChunkSegment[];
 }
 
-// Formatting input parameters
-export interface FormatParams {
-  text: string;
-  context: {
-    style?: string;
-    vocabulary?: string[];
-    accessibilityContext?: GetAccessibilityContextResult | null;
-    previousChunk?: string;
-    aggregatedTranscription?: string;
-  };
-}
-
 // Transcription provider interface
 export interface TranscriptionProvider {
   readonly name: string;
   transcribe(params: TranscribeParams): Promise<TranscriptionChunkResult>;
   flush(context: TranscribeContext): Promise<TranscriptionChunkResult>;
   reset(): void; // Clear internal buffers without transcribing
-}
-
-// Formatting provider interface
-export interface FormattingProvider {
-  readonly name: string;
-  format(params: FormatParams): Promise<string>;
 }
 
 // Pipeline execution result
@@ -70,7 +52,6 @@ export interface PipelineResult {
   metadata: {
     duration?: number;
     provider: string;
-    formatted: boolean;
   };
 }
 
@@ -95,6 +76,5 @@ export interface StreamingSession {
 // Simple pipeline configuration
 export interface PipelineConfig {
   transcriptionProvider: TranscriptionProvider;
-  formattingProvider?: FormattingProvider;
   saveToDatabase: boolean;
 }

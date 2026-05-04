@@ -3,12 +3,9 @@ import {
   StreamingPipelineContext,
   StreamingSession,
   TranscriptionProvider,
-  FormattingProvider,
 } from "../pipeline/core/pipeline-types";
 import { createDefaultContext } from "../pipeline/core/context";
 import { WhisperProvider } from "../pipeline/providers/transcription/whisper-provider";
-import { createFormatter } from "../pipeline/providers/formatting/formatter-registry";
-import { getInstanceById } from "../db/instances";
 import { ModelService } from "../services/model-service";
 import { SettingsService } from "../services/settings-service";
 import { TelemetryService } from "../services/telemetry-service";
@@ -368,18 +365,10 @@ export class TranscriptionService {
         chunkCount: session.transcriptionResults.length,
       });
 
-      const formatResult = await this.applyFormattingAndReplacements({
-        text: completeTranscription,
-        vocabulary: session.context.sharedData.vocabulary,
-        accessibilityContext: session.context.sharedData.accessibilityContext,
-        replacements: session.context.sharedData.replacements,
-        formattingStyle:
-          session.context.sharedData.userPreferences?.formattingStyle,
-      });
-      completeTranscription = formatResult.text;
-      const formattingUsed = formatResult.formattingUsed;
-      const formattingModel = formatResult.formattingModel;
-      const formattingDuration = formatResult.formattingDuration;
+      completeTranscription = this.applyVocabularyReplacements(
+        completeTranscription,
+        session.context.sharedData.replacements,
+      );
 
       // Save directly to database
       logger.transcription.info("Saving transcription with audio file", {
@@ -397,14 +386,11 @@ export class TranscriptionService {
           session.context.sharedData.userPreferences?.language || "auto",
         duration: session.context.sharedData.audioMetadata?.duration,
         speechModel: speechModelId,
-        formattingModel,
         audioFile: audioFilePath,
         meta: {
           sessionId,
           source: session.context.sharedData.audioMetadata?.source,
           vocabularySize: session.context.sharedData.vocabulary?.length || 0,
-          formattingStyle:
-            session.context.sharedData.userPreferences?.formattingStyle,
         },
       });
 
@@ -455,9 +441,6 @@ export class TranscriptionService {
             : undefined,
         text_length: completeTranscription.length,
         word_count: completeTranscription.trim().split(/\s+/).length,
-        formatting_enabled: formattingUsed,
-        formatting_model: formattingModel,
-        formatting_duration_ms: formattingDuration,
         vad_enabled: false,
         language:
           session.context.sharedData.userPreferences?.language || "auto",
@@ -549,139 +532,25 @@ export class TranscriptionService {
     return shouldStripLeadingSpace ? transcription.slice(1) : transcription;
   }
 
-  private async formatWithProvider(
-    provider: FormattingProvider,
-    text: string,
-    context: {
-      style?: string;
-      vocabulary?: string[];
-      accessibilityContext?: StreamingSession["context"]["sharedData"]["accessibilityContext"];
-    },
-  ): Promise<{ text: string; duration: number } | null> {
-    const startTime = performance.now();
-
-    try {
-      const formattedText = await provider.format({
-        text,
-        context: {
-          style: context.style,
-          vocabulary: context.vocabulary,
-          accessibilityContext: context.accessibilityContext,
-          aggregatedTranscription: text,
-        },
-      });
-
-      const duration = performance.now() - startTime;
-
-      logger.transcription.info("Text formatted successfully", {
-        originalLength: text.length,
-        formattedLength: formattedText.length,
-        formattingDuration: duration,
-      });
-
-      return { text: formattedText, duration };
-    } catch (error) {
-      logger.transcription.error("Formatting failed, using unformatted text", {
-        error,
-      });
-      return null;
-    }
-  }
-
   /**
-   * Shared formatting and vocabulary replacement logic used by both
-   * finalizeSession and retryTranscription.
+   * Apply user-defined vocabulary substitutions ("naomi" → "Naomi", etc.)
+   * to a finalized transcription. Used by both finalizeSession and
+   * retryTranscription. No-op when the replacements map is empty.
    */
-  private async applyFormattingAndReplacements(options: {
-    text: string;
-    vocabulary?: string[];
-    accessibilityContext?: StreamingSession["context"]["sharedData"]["accessibilityContext"];
-    replacements: Map<string, string>;
-    formattingStyle?: string;
-  }): Promise<{
-    text: string;
-    formattingUsed: boolean;
-    formattingModel?: string;
-    formattingDuration?: number;
-  }> {
-    let text = options.text;
-    let formattingUsed = false;
-    let formattingModel: string | undefined;
-    let formattingDuration: number | undefined;
-
-    const formatterConfig = await this.settingsService.getFormatterConfig();
-
-    if (!formatterConfig || !formatterConfig.enabled) {
-      logger.transcription.debug("Formatting skipped: disabled in config");
-    } else if (!text.trim().length) {
-      logger.transcription.debug("Formatting skipped: empty transcription");
-    } else {
-      // Resolve the formatting model from the per-use-case defaults; the
-      // legacy formatterConfig.modelId / fallbackModelId fields (with the
-      // "prismical-cloud" magic value) no longer participate.
-      const selection = await this.settingsService.getDefault("formatting");
-      if (!selection) {
-        logger.transcription.debug(
-          "Formatting skipped: no formatting model is configured",
-        );
-      } else {
-        const instance = await getInstanceById(selection.instanceId);
-        if (!instance) {
-          logger.transcription.warn(
-            "Formatting skipped: instance no longer exists",
-            { instanceId: selection.instanceId, modelId: selection.modelId },
-          );
-        } else {
-          try {
-            logger.transcription.info("Starting formatting", {
-              provider: instance.type,
-              instanceId: instance.id,
-              model: selection.modelId,
-            });
-            const provider = await createFormatter(
-              instance,
-              selection.modelId,
-            );
-            const result = await this.formatWithProvider(provider, text, {
-              style: options.formattingStyle,
-              vocabulary: options.vocabulary,
-              accessibilityContext: options.accessibilityContext,
-            });
-            if (result) {
-              text = result.text;
-              formattingDuration = result.duration;
-              formattingUsed = true;
-              formattingModel = selection.modelId;
-            }
-          } catch (error) {
-            logger.transcription.warn(
-              "Formatting skipped: provider construction failed",
-              {
-                provider: instance.type,
-                instanceId: instance.id,
-                error:
-                  error instanceof Error ? error.message : String(error),
-              },
-            );
-          }
-        }
-      }
+  private applyVocabularyReplacements(
+    text: string,
+    replacements: Map<string, string>,
+  ): string {
+    if (replacements.size === 0) return text;
+    const out = applyTextReplacements(text, replacements);
+    if (out !== text) {
+      logger.transcription.info("Applied vocabulary replacements", {
+        replacementCount: replacements.size,
+        originalLength: text.length,
+        newLength: out.length,
+      });
     }
-
-    // Apply vocabulary replacements (final post-processing step)
-    if (options.replacements.size > 0) {
-      const beforeReplacements = text;
-      text = applyTextReplacements(text, options.replacements);
-      if (beforeReplacements !== text) {
-        logger.transcription.info("Applied vocabulary replacements", {
-          replacementCount: options.replacements.size,
-          originalLength: beforeReplacements.length,
-          newLength: text.length,
-        });
-      }
-    }
-
-    return { text, formattingUsed, formattingModel, formattingDuration };
+    return out;
   }
 
   /**
@@ -814,21 +683,17 @@ export class TranscriptionService {
     let rawTranscription = transcriptionResults.join("");
     rawTranscription = this.preFormatLocalTranscription(rawTranscription, null);
 
-    // Apply formatting and vocabulary replacements
-    const formatResult = await this.applyFormattingAndReplacements({
-      text: rawTranscription,
-      vocabulary,
-      replacements: context.sharedData.replacements,
-      formattingStyle: context.sharedData.userPreferences?.formattingStyle,
-    });
+    const finalText = this.applyVocabularyReplacements(
+      rawTranscription,
+      context.sharedData.replacements,
+    );
 
     const speechModelId = selectedModelId || "whisper-local";
 
     // Update the existing record in-place
     await updateTranscription(transcriptionId, {
-      text: formatResult.text,
+      text: finalText,
       speechModel: speechModelId,
-      formattingModel: formatResult.formattingModel,
       meta: {
         ...(typeof record.meta === "object" && record.meta !== null
           ? record.meta
@@ -852,11 +717,8 @@ export class TranscriptionService {
         audioDurationSeconds && processingDuration
           ? audioDurationSeconds / (processingDuration / 1000)
           : undefined,
-      text_length: formatResult.text.length,
-      word_count: formatResult.text.trim().split(/\s+/).length,
-      formatting_enabled: formatResult.formattingUsed,
-      formatting_model: formatResult.formattingModel,
-      formatting_duration_ms: formatResult.formattingDuration,
+      text_length: finalText.length,
+      word_count: finalText.trim().split(/\s+/).length,
       vad_enabled: false,
       language: language || "auto",
       vocabulary_size: vocabulary.length,
@@ -865,11 +727,10 @@ export class TranscriptionService {
     logger.transcription.info("Transcription retry completed", {
       transcriptionId,
       sessionId: retrySessionId,
-      textLength: formatResult.text.length,
-      formattingUsed: formatResult.formattingUsed,
+      textLength: finalText.length,
     });
 
-    return formatResult.text;
+    return finalText;
   }
 
   /**

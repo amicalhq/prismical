@@ -41,10 +41,6 @@ const defaultShortcuts = {
  * Default app settings for testing
  */
 export const defaultAppSettings: AppSettingsData = {
-  formatterConfig: {
-    modelId: "gpt-4o-mini",
-    enabled: false,
-  },
   ui: {
     theme: "system",
   },

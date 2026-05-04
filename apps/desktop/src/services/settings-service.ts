@@ -1,6 +1,5 @@
 import { app } from "electron";
 import { EventEmitter } from "events";
-import { FormatterConfig } from "../types/formatter";
 import {
   getSettingsSection,
   updateSettingsSection,
@@ -52,21 +51,6 @@ export interface MeetingWidgetSettings {
 export class SettingsService extends EventEmitter {
   constructor() {
     super();
-  }
-
-  /**
-   * Get formatter configuration
-   */
-  async getFormatterConfig(): Promise<FormatterConfig | null> {
-    const formatterConfig = await getSettingsSection("formatterConfig");
-    return formatterConfig || null;
-  }
-
-  /**
-   * Set formatter configuration
-   */
-  async setFormatterConfig(config: FormatterConfig): Promise<void> {
-    await updateSettingsSection("formatterConfig", config);
   }
 
   /**

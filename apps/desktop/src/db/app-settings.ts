@@ -67,9 +67,6 @@ const getDefaultShortcuts = () => {
 
 // Default settings
 const defaultSettings: AppSettingsData = {
-  formatterConfig: {
-    enabled: false,
-  },
   ui: {
     theme: "system",
   },

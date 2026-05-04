@@ -8,13 +8,6 @@ import { dbPath, closeDatabase } from "../../db";
 import type { AppSettingsData } from "../../db/schema";
 import * as fs from "fs/promises";
 
-// FormatterConfig schema. The model used by the formatter is the
-// per-use-case `modelDefaults.formatting` selection on the instances
-// router; this slot only carries the on/off flag now.
-const FormatterConfigSchema = z.object({
-  enabled: z.boolean(),
-});
-
 // Shortcut schema (array of keycodes)
 const SetShortcutSchema = z.object({
   type: z.enum([
@@ -220,31 +213,6 @@ export const settingsRouter = createRouter({
       return true;
     }),
 
-  // Get formatter configuration
-  getFormatterConfig: procedure.query(async ({ ctx }) => {
-    try {
-      const settingsService = ctx.serviceManager.getService("settingsService");
-      if (!settingsService) {
-        throw new Error("SettingsService not available");
-      }
-      return await settingsService.getFormatterConfig();
-    } catch (error) {
-      const logger = ctx.serviceManager.getLogger();
-      if (logger) {
-        logger.transcription.error("Error getting formatter config:", error);
-      }
-      return null;
-    }
-  }),
-
-  // Set formatter configuration
-  setFormatterConfig: procedure
-    .input(FormatterConfigSchema)
-    .mutation(async ({ input, ctx }) => {
-      const settingsService = ctx.serviceManager.getService("settingsService");
-      await settingsService.setFormatterConfig(input);
-      return true;
-    }),
   // Get shortcuts configuration
   getShortcuts: procedure.query(async ({ ctx }) => {
     const settingsService = ctx.serviceManager.getService("settingsService");
