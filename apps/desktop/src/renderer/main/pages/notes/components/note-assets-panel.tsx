@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Maximize2, Minimize2, X } from "lucide-react";
+import { IconSparkles } from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -131,19 +132,23 @@ export function NoteAssetsPanel({
                 <h2 className="min-w-0 truncate text-sm font-semibold text-white">
                   {t("settings.notes.note.transcription")}
                 </h2>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
                 {transcript.length > 0 && meetingState === "idle" ? (
                   <Button
                     size="sm"
-                    className="h-7 shrink-0 rounded-full bg-white/15 px-3 text-xs text-white hover:bg-white/25"
+                    className="h-7 shrink-0 gap-1.5 rounded-full bg-white/15 px-3 text-xs text-white hover:bg-white/25"
                     onClick={onGenerateNotes}
                     disabled={isGeneratingNotes}
                     title="Generate notes from transcript"
                   >
+                    <IconSparkles
+                      className="h-3.5 w-3.5 text-yellow-300"
+                      aria-hidden="true"
+                    />
                     {isGeneratingNotes ? "Generating..." : "Generate notes"}
                   </Button>
                 ) : null}
-              </div>
-              <div className="flex shrink-0 items-center gap-0.5">
                 <Button
                   variant="ghost"
                   size="icon"
