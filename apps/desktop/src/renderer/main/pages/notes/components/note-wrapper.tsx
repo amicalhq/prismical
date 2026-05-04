@@ -490,6 +490,11 @@ export default function NotePage({
         <>
           <div className={activeTab === "summary" ? "block" : "hidden"}>
             <ArtifactEditor
+              // Remount on regeneration so Lexical re-seeds from the new
+              // content. `generatedAt` advances on regen but not on user
+              // edits (updateArtifactContent only touches updated_at), so
+              // typing won't blow away the editor.
+              key={`${artifact.id}:${artifact.generatedAt?.getTime() ?? 0}`}
               artifactId={artifact.id}
               initialContent={artifact.content}
             />
