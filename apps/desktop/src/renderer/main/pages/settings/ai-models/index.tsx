@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
-import { Mic, MessageSquare } from "lucide-react";
+import { Mic } from "lucide-react";
+import { IconNotes } from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
 import { type ProviderType } from "@/constants/provider-types";
 
@@ -47,9 +48,9 @@ export default function AIModelsSettingsPage() {
           />
           <DefaultCard
             useCase="formatting"
-            title="Formatting & notes"
-            description="Generates structured notes and summaries from your transcripts."
-            Icon={MessageSquare}
+            title="Text generation"
+            description="Powers note generation, summaries, and other text output from your transcripts."
+            Icon={IconNotes}
             onChange={() => setChangeTarget("formatting")}
           />
         </div>
