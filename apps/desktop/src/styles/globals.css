@@ -238,6 +238,27 @@ html.vibrancy [data-slot="sidebar-inner"] {
   animation: shimmer-sweep 2s linear infinite;
 }
 
+/* Direct-element variant for shimmering text on dark backgrounds (e.g. the
+ * "Generate notes" pill while a summary is being generated). Combine with
+ * `.ai-generating-text` on the same element so the animation drives
+ * `--shimmer-x` and the gradient below reads it. */
+.shimmer-text-light {
+  background-image: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.5) 0%,
+    rgba(255, 255, 255, 0.5) 40%,
+    rgb(255, 255, 255) 50%,
+    rgba(255, 255, 255, 0.5) 60%,
+    rgba(255, 255, 255, 0.5) 100%
+  );
+  background-size: 200vw 100vh;
+  background-attachment: fixed;
+  background-position-x: var(--shimmer-x);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
 .ai-generating-text [contenteditable],
 .ai-generating-text [contenteditable] * {
   /* Dim state is muted-foreground faded ~65% toward background; gives the

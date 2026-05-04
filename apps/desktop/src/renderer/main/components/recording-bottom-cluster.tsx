@@ -122,6 +122,21 @@ export function RecordingBottomCluster() {
   const showTabSwitcher =
     !showJumpPill && currentNote !== null && currentNote.hasArtifact;
 
+  // Above-dock CTA: surfaces "Generate notes" when the user has a transcript
+  // but hasn't summarised it yet. Mirrors the panel-header gate
+  // (transcript present, not actively recording) and adds `!hasArtifact` so
+  // it disappears once the user has generated their first summary — the
+  // panel-header button remains available for regeneration. Hidden whenever
+  // the transcription panel is open since the panel-header CTA is already
+  // visible there; this pill is the discovery affordance for users who keep
+  // the panel closed.
+  const showGenerateNotesPill =
+    currentNote !== null &&
+    currentNote.transcript.length > 0 &&
+    currentNote.meetingState === "idle" &&
+    !currentNote.hasArtifact &&
+    !currentNote.isTranscriptionOpen;
+
   // Positioning: the cluster mounts inside <SidebarInset> (which is
   // `position: relative`), so `absolute inset-x-0 bottom-4` centres over the
   // content area, not the viewport. Viewport-fixed positioning would ignore
@@ -168,6 +183,32 @@ export function RecordingBottomCluster() {
               isGeneratingNotes={currentNote.isGeneratingNotes}
             />
           </div>
+        )}
+
+        {showGenerateNotesPill && currentNote && (
+          <button
+            type="button"
+            onClick={currentNote.onGenerateNotes}
+            disabled={currentNote.isGeneratingNotes}
+            title="Generate notes from transcript"
+            className="pointer-events-auto group flex h-8 items-center gap-1.5 rounded-full bg-black/80 pr-3 pl-2.5 ring-[1px] ring-black/60 shadow-[0px_0px_15px_0px_rgba(0,0,0,0.40)] backdrop-blur-md transition-all duration-200 ease-out select-none hover:scale-110 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-70 disabled:hover:scale-100 dark:bg-black/70"
+          >
+            <IconSparkles
+              className="h-3.5 w-3.5 shrink-0 text-yellow-300"
+              aria-hidden="true"
+            />
+            <span
+              className={`text-xs font-medium text-white/90 group-hover:text-white ${
+                currentNote.isGeneratingNotes
+                  ? "ai-generating-text shimmer-text-light"
+                  : ""
+              }`}
+            >
+              {currentNote.isGeneratingNotes
+                ? "Generating..."
+                : "Generate notes"}
+            </span>
+          </button>
         )}
 
         <div className="pointer-events-auto flex items-center gap-2">
