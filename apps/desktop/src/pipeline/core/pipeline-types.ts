@@ -15,7 +15,6 @@ export interface TranscribeContext {
   previousChunk?: string;
   aggregatedTranscription?: string;
   language?: string;
-  formattingEnabled?: boolean;
 }
 
 // Transcription input parameters
@@ -45,16 +44,6 @@ export interface TranscriptionProvider {
   reset(): void; // Clear internal buffers without transcribing
 }
 
-// Pipeline execution result
-export interface PipelineResult {
-  transcription: string;
-  sessionId: string;
-  metadata: {
-    duration?: number;
-    provider: string;
-  };
-}
-
 // Streaming context for pipeline processing
 export interface StreamingPipelineContext extends PipelineContext {
   sessionId: string;
@@ -73,8 +62,3 @@ export interface StreamingSession {
   finalizationStartedAt?: number; // When finalizeSession() was called
 }
 
-// Simple pipeline configuration
-export interface PipelineConfig {
-  transcriptionProvider: TranscriptionProvider;
-  saveToDatabase: boolean;
-}

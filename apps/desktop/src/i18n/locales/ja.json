@@ -646,34 +646,6 @@
           "systemDefault": "システムデフォルトのマイクを使用します",
           "changeFailed": "マイクの変更に失敗しました"
         }
-      },
-      "formatting": {
-        "label": "フォーマット",
-        "badge": "アルファ",
-        "description": "文字起こしに句読点と構造を適用します。",
-        "cloudOptionLabel": "Prismical Cloud（Prismical）",
-        "disabledTooltip": "フォーマットを有効にするには、言語モデルを同期するか、Prismical Cloud文字起こしを選択してください。",
-        "disabledReason": {
-          "cloudAndSignIn": "Prismical Cloud文字起こしとサインインが必要です",
-          "cloud": "Prismical Cloud文字起こしが必要です",
-          "signIn": "サインインが必要です"
-        },
-        "manageLanguageModels": "言語モデルを管理",
-        "modelLabel": "フォーマットモデル",
-        "modelDescription": "文字起こしのフォーマットに使用するモデルを選択してください。",
-        "modelPlaceholder": "モデルを選択...",
-        "requiresCloudSpeech": "Prismical Cloud文字起こしが必要です。",
-        "switchSpeechModel": "音声モデルを切り替え",
-        "signInCloud": "Prismical Cloudフォーマットを使用するにはサインインしてください。",
-        "signIn": "サインイン",
-        "cloudReady": "Prismical Cloudフォーマットを使用中。",
-        "noLanguageModels": "フォーマットは実行されません - 言語モデルがありません。",
-        "syncLanguageModels": "言語モデルを同期",
-        "toast": {
-          "saveFailed": "フォーマット設定の保存に失敗しました。もう一度お試しください。",
-          "loginInBrowser": "ブラウザでログインを完了してください",
-          "loginStartFailed": "ログインプロセスの開始に失敗しました"
-        }
       }
     },
     "shortcuts": {
@@ -979,11 +951,6 @@
           "accuracy": "精度"
         },
         "providerIconAlt": "{{provider}}アイコン",
-        "cloudFormatting": {
-          "badge": "フォーマット対応",
-          "tooltip": "このモデルを選択すると、クラウドフォーマットが利用できます。",
-          "signInTitle": "クラウドモデルを使用するにはサインインしてください"
-        },
         "actions": {
           "downloadTitle": "クリックしてダウンロード",
           "cancelDownloadTitle": "クリックしてダウンロードをキャンセル",
@@ -1010,7 +977,6 @@
           "downloadStartFailed": "ダウンロードの開始に失敗しました",
           "downloadCancelFailed": "ダウンロードのキャンセルに失敗しました",
           "deleteFailed": "モデルの削除に失敗しました",
-          "cloudSelected": "Prismical Cloudを選択しました。クラウドフォーマットが有効です。",
           "selectFailed": "モデルの選択に失敗しました",
           "loginInBrowser": "ブラウザでログインを完了してください",
           "loginStartFailed": "ログインプロセスの開始に失敗しました",

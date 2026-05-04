@@ -558,34 +558,6 @@
           "systemDefault": "Using system default microphone",
           "changeFailed": "Failed to change microphone"
         }
-      },
-      "formatting": {
-        "label": "Formatting",
-        "badge": "Alpha",
-        "description": "Apply punctuation and structure to your transcriptions.",
-        "cloudOptionLabel": "Prismical Cloud (Prismical)",
-        "disabledTooltip": "Sync a language model or select Prismical Cloud transcription to enable formatting.",
-        "disabledReason": {
-          "cloudAndSignIn": "Requires Prismical Cloud transcription and sign in",
-          "cloud": "Requires Prismical Cloud transcription",
-          "signIn": "Requires sign in"
-        },
-        "manageLanguageModels": "Manage language models",
-        "modelLabel": "Formatting model",
-        "modelDescription": "Choose the model used to format your transcription.",
-        "modelPlaceholder": "Select a model...",
-        "requiresCloudSpeech": "Requires Prismical Cloud transcription.",
-        "switchSpeechModel": "Switch speech model",
-        "signInCloud": "Sign in to use Prismical Cloud formatting.",
-        "signIn": "Sign in",
-        "cloudReady": "Using Prismical Cloud formatting.",
-        "noLanguageModels": "Formatting won't run - no language model available.",
-        "syncLanguageModels": "Sync language models",
-        "toast": {
-          "saveFailed": "Failed to save formatting settings. Please try again.",
-          "loginInBrowser": "Complete login in your browser",
-          "loginStartFailed": "Failed to start login process"
-        }
       }
     },
     "shortcuts": {
@@ -898,11 +870,6 @@
           "accuracy": "Accuracy"
         },
         "providerIconAlt": "{{provider}} icon",
-        "cloudFormatting": {
-          "badge": "Formatting available",
-          "tooltip": "Cloud formatting is available when this model is selected.",
-          "signInTitle": "Sign in to use cloud model"
-        },
         "actions": {
           "downloadTitle": "Click to download",
           "cancelDownloadTitle": "Click to cancel download",
@@ -929,7 +896,6 @@
           "downloadStartFailed": "Failed to start download",
           "downloadCancelFailed": "Failed to cancel download",
           "deleteFailed": "Failed to delete model",
-          "cloudSelected": "Prismical Cloud selected. Cloud formatting enabled.",
           "selectFailed": "Failed to select model",
           "loginInBrowser": "Please complete login in your browser",
           "loginStartFailed": "Failed to start login process",

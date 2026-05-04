@@ -26,7 +26,7 @@ import { applyTextReplacements } from "../utils/text-replacement";
 import * as fs from "node:fs";
 
 /**
- * Service for audio transcription and optional formatting
+ * Service for audio transcription.
  */
 export class TranscriptionService {
   private whisperProvider: WhisperProvider;
@@ -286,8 +286,9 @@ export class TranscriptionService {
   }
 
   /**
-   * Finalize a streaming session - flush provider, format, save to DB
-   * Call this instead of processStreamingChunk with isFinal=true
+   * Finalize a streaming session — flush the provider, apply vocabulary
+   * replacements, save to DB. Call this instead of processStreamingChunk
+   * with isFinal=true.
    */
   async finalizeSession(options: {
     sessionId: string;
@@ -510,9 +511,9 @@ export class TranscriptionService {
   }
 
   /**
-   * Simple pre-formatter for local Transcription models.
-   * Handles leading space based on insertion context to avoid double spaces or unwanted leading whitespace.
-   * Runs before LLM formatter (if configured) to ensure clean input.
+   * Trim leading whitespace from local-transcription output when the
+   * user's pre-selection text already ends in whitespace, so we don't
+   * paste a double space at the insertion point.
    */
   private preFormatLocalTranscription(
     transcription: string,

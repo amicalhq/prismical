@@ -219,7 +219,6 @@ export const transcriptionsRouter = createRouter({
         ...(speechModelForTelemetry
           ? { speech_model: speechModelForTelemetry }
           : {}),
-        formatting_model: transcription.formattingModel || undefined,
         language: transcription.language || undefined,
         report_channel: "history",
       });

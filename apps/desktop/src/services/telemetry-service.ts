@@ -30,9 +30,6 @@ export interface TranscriptionMetrics {
   realtime_factor?: number;
   text_length?: number;
   word_count?: number;
-  formatting_enabled?: boolean;
-  formatting_model?: string;
-  formatting_duration_ms?: number;
   vad_enabled?: boolean;
   is_retry?: boolean;
   language?: string;

@@ -5,8 +5,6 @@
 // Core types
 export type {
   TranscriptionProvider,
-  PipelineResult,
-  PipelineConfig,
   StreamingPipelineContext,
   StreamingSession,
 } from "./core/pipeline-types";

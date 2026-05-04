@@ -16,7 +16,6 @@ export interface SharedPipelineData {
   replacements: Map<string, string>; // Custom replacements
   userPreferences: {
     language?: string; // Optional - undefined means auto-detect
-    formattingStyle: "formal" | "casual" | "technical";
   };
   audioMetadata: {
     source: "microphone" | "file" | "stream";
@@ -36,7 +35,6 @@ export function createDefaultContext(sessionId: string): PipelineContext {
       replacements: new Map(),
       userPreferences: {
         language: undefined,
-        formattingStyle: "formal",
       },
       audioMetadata: {
         source: "microphone",
