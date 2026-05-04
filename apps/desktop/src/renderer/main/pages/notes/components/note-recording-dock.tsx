@@ -25,10 +25,11 @@ export function NoteRecordingDock({
   onStartMeeting,
   onStopMeeting,
 }: NoteRecordingDockProps) {
+  // "stopping" is excluded so the dock collapses back to its idle pill the
+  // moment Stop is clicked — finalisation work continues in the background and
+  // is surfaced via a "Transcribing…" indicator inside the transcription panel.
   const isRecording =
-    meetingState === "recording" ||
-    meetingState === "starting" ||
-    meetingState === "stopping";
+    meetingState === "recording" || meetingState === "starting";
   const isBusy = meetingState === "starting" || meetingState === "stopping";
   const [voiceDetected, setVoiceDetected] = useState(false);
   const voiceIntervalRef = useRef<NodeJS.Timeout | null>(null);
