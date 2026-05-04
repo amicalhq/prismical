@@ -626,6 +626,9 @@
       "create": "New note",
       "defaultTitleWithDate": "Note - {{date}}",
       "untitledTitle": "Untitled Note",
+      "jumpPill": {
+        "ariaLabel": "Return to recording: {{title}}"
+      },
       "recordingBanner": {
         "status": {
           "starting": "Starting",

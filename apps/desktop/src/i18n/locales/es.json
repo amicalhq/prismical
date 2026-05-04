@@ -707,6 +707,9 @@
       "create": "Crear nota",
       "defaultTitleWithDate": "Nota - {{date}}",
       "untitledTitle": "Nota sin título",
+      "jumpPill": {
+        "ariaLabel": "Volver a la grabación: {{title}}"
+      },
       "recordingBanner": {
         "status": {
           "starting": "Iniciando",

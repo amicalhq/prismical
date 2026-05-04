@@ -707,6 +707,9 @@
       "create": "ノートを作成",
       "defaultTitleWithDate": "ノート - {{date}}",
       "untitledTitle": "無題のノート",
+      "jumpPill": {
+        "ariaLabel": "録音中のノートに戻る: {{title}}"
+      },
       "recordingBanner": {
         "status": {
           "starting": "開始中",
