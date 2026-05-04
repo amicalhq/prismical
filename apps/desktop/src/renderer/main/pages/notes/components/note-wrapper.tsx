@@ -9,7 +9,7 @@ import {
 } from "@/renderer/main/utils/transcription-request";
 import Note from "./note";
 import { NoteEditor } from "./note-editor";
-import { ArtifactEditor } from "./artifact-editor";
+import { ArtifactEditor, type PendingRegen } from "./artifact-editor";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -87,6 +87,11 @@ export default function NotePage({
   // Active tab. Defaults to AI Summary when an artifact exists, otherwise Raw.
   const [activeTab, setActiveTab] = useState<NoteTab>("summary");
   const lastSeenArtifactUpdatedAtRef = useRef<number | null>(null);
+
+  // Set when a regen completes so ArtifactEditor can replay the new markdown
+  // through editor.update() — keeps the editor mounted so ⌘Z reverts to the
+  // pre-regen content. Cleared once the editor reports it has applied.
+  const [pendingRegen, setPendingRegen] = useState<PendingRegen | null>(null);
 
   // Surfaced when the user clicks "Generate notes" without a default language
   // model configured — dialog routes them to the settings page.
@@ -207,6 +212,7 @@ export default function NotePage({
     autoRecordTriggeredRef.current = false;
     setMeetingState("idle");
     setTranscript([]);
+    setPendingRegen(null);
   }, [noteId]);
 
   useEffect(() => {
@@ -362,7 +368,11 @@ export default function NotePage({
 
     generateNotesMutation
       .mutateAsync({ noteId: noteIdNumber })
-      .then(() => {
+      .then((res) => {
+        // Trigger an in-place editor.update in ArtifactEditor so the change
+        // is captured by HistoryPlugin (⌘Z reverts). Date.now() ensures the
+        // token differs even when consecutive regens produce identical text.
+        setPendingRegen({ markdown: res.markdown, token: Date.now() });
         utils.artifacts.getByNote.invalidate({
           noteId: noteIdNumber,
           kind: "summary",
@@ -378,6 +388,10 @@ export default function NotePage({
     noteIdNumber,
     utils.artifacts.getByNote,
   ]);
+
+  const handleRegenApplied = useCallback(() => {
+    setPendingRegen(null);
+  }, []);
 
   const handleTitleChange = useCallback(
     (newTitle: string) => {
@@ -553,13 +567,16 @@ export default function NotePage({
                 className={`${activeTab === "summary" ? "block" : "hidden"} ${shimmerClass}`}
               >
                 <ArtifactEditor
-                  // Remount on regeneration so Lexical re-seeds from the new
-                  // content. `generatedAt` advances on regen but not on user
-                  // edits (updateArtifactContent only touches updated_at), so
-                  // typing won't blow away the editor.
-                  key={`${artifact.id}:${artifact.generatedAt?.getTime() ?? 0}`}
+                  // Remount only when the underlying artifact identity
+                  // changes (e.g. switching notes). Regenerations stay in the
+                  // same Lexical instance and arrive via `pendingRegen`,
+                  // which is applied through editor.update so ⌘Z reverts the
+                  // regen to the prior summary.
+                  key={artifact.id}
                   artifactId={artifact.id}
                   initialContent={artifact.content}
+                  pendingRegen={pendingRegen}
+                  onRegenApplied={handleRegenApplied}
                 />
               </div>
               <div

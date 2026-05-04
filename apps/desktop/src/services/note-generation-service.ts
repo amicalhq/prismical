@@ -12,6 +12,12 @@ import { markdownToLexicalStateJson } from "./notes/markdown-to-lexical";
 
 export interface GeneratedNotesResult {
   artifact: NoteArtifact;
+  /**
+   * Raw markdown returned by the model. Sent back to the renderer so it can
+   * apply the regen via `editor.update(...)` and have the change captured by
+   * Lexical's HistoryPlugin (so ⌘Z reverts to the prior summary).
+   */
+  markdown: string;
   /** Opaque "instanceId::modelId" key suitable for round-tripping back to the picker. */
   modelSelection: string;
   modelId: string;
@@ -97,6 +103,7 @@ export class NoteGenerationService {
 
     return {
       artifact,
+      markdown: result.markdown,
       modelSelection: modelSelectionKey,
       modelId: selection.modelId,
       providerType: instance.provider,

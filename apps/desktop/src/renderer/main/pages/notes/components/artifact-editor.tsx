@@ -11,8 +11,9 @@ import { TabIndentationPlugin } from "@lexical/react/LexicalTabIndentationPlugin
 import { ClickableLinkPlugin } from "@lexical/react/LexicalClickableLinkPlugin";
 import { AutoLinkPlugin } from "@lexical/react/LexicalAutoLinkPlugin";
 import { OnChangePlugin } from "@lexical/react/LexicalOnChangePlugin";
-import { TRANSFORMERS } from "@lexical/markdown";
-import type { EditorState } from "lexical";
+import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
+import { $convertFromMarkdownString, TRANSFORMERS } from "@lexical/markdown";
+import { $getRoot, HISTORY_PUSH_TAG, type EditorState } from "lexical";
 import { useTranslation } from "react-i18next";
 import {
   AUTO_LINK_MATCHERS,
@@ -25,12 +26,25 @@ import { ChecklistShortcutPlugin } from "@/renderer/main/components/editor/check
 import { api } from "@/trpc/react";
 import { debounce } from "@/renderer/main/utils/debounce";
 
+// Imperative trigger for "a regeneration just landed; replay this markdown
+// into the live editor." `token` must change on every regen so identical
+// markdown re-applies; `markdown` is the raw model output.
+export interface PendingRegen {
+  markdown: string;
+  token: number;
+}
+
 interface ArtifactEditorProps {
   artifactId: string;
   // Lexical editor-state JSON string. Used to seed the editor once per
   // artifactId — edits flow forward via the debounced save mutation, not
   // back through this prop.
   initialContent: string;
+  // When set (and the token differs from the last applied), the editor
+  // replaces its content via editor.update with HISTORY_PUSH_TAG, so the
+  // regen lands as a single undoable entry instead of remounting the editor.
+  pendingRegen?: PendingRegen | null;
+  onRegenApplied?: () => void;
 }
 
 function onError(error: Error): void {
@@ -40,6 +54,8 @@ function onError(error: Error): void {
 export function ArtifactEditor({
   artifactId,
   initialContent,
+  pendingRegen,
+  onRegenApplied,
 }: ArtifactEditorProps): React.ReactNode {
   const { t } = useTranslation();
   // `mutate` from react-query is a stable reference across re-renders; the
@@ -110,6 +126,10 @@ export function ArtifactEditor({
           ErrorBoundary={LexicalErrorBoundary}
         />
         <HistoryPlugin />
+        <RegenApplyPlugin
+          pendingRegen={pendingRegen ?? null}
+          onApplied={onRegenApplied}
+        />
         <ListPlugin />
         <CheckListPlugin />
         <TabIndentationPlugin />
@@ -123,4 +143,44 @@ export function ArtifactEditor({
       </div>
     </LexicalComposer>
   );
+}
+
+// Replays a regenerated markdown payload into the live editor through a
+// normal `editor.update`, tagged so HistoryPlugin records it as a single
+// undoable entry. Without this, the previous code path remounted the editor
+// on regen and wiped the undo stack.
+function RegenApplyPlugin({
+  pendingRegen,
+  onApplied,
+}: {
+  pendingRegen: PendingRegen | null;
+  onApplied?: () => void;
+}): null {
+  const [editor] = useLexicalComposerContext();
+  // Initialize from the pendingRegen present at mount: on first-time
+  // generation, the editor seeds with `editorState: initialContent` (the
+  // generated content) and we'd otherwise re-clear+re-render the same text.
+  // Treating the initial token as already applied skips that wasted work.
+  const lastTokenRef = useRef<number | null>(pendingRegen?.token ?? null);
+
+  useEffect(() => {
+    if (!pendingRegen) return;
+
+    const alreadyApplied = lastTokenRef.current === pendingRegen.token;
+    lastTokenRef.current = pendingRegen.token;
+
+    if (!alreadyApplied) {
+      editor.update(
+        () => {
+          $getRoot().clear();
+          $convertFromMarkdownString(pendingRegen.markdown, TRANSFORMERS);
+        },
+        { tag: HISTORY_PUSH_TAG, discrete: true },
+      );
+    }
+
+    onApplied?.();
+  }, [editor, pendingRegen, onApplied]);
+
+  return null;
 }
