@@ -42,7 +42,7 @@ export default function AIModelsSettingsPage() {
           <DefaultCard
             useCase="transcription"
             title="Transcription"
-            description="Converts speech to text in recordings, dictation, and meetings."
+            description="Converts speech to text in your meeting recordings, dictation flows, and any other audio prismical captures."
             Icon={Mic}
             onChange={() => setChangeTarget("transcription")}
           />
