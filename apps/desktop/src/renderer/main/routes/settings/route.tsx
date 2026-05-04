@@ -4,6 +4,7 @@ import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { SettingsSidebar } from "../../components/settings-sidebar";
 import { SiteHeader } from "@/components/site-header";
 import { MeetingRecordingBanner } from "../../components/meeting-recording-banner";
+import { RecordingBottomCluster } from "@/renderer/main/components/recording-bottom-cluster";
 import { useLocation, useNavigate, useRouter } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
 import {
@@ -201,6 +202,7 @@ function SettingsLayoutContent() {
               </div>
             </div>
           </div>
+          <RecordingBottomCluster />
         </SidebarInset>
       </div>
     </SidebarProvider>

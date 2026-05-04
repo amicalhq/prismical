@@ -511,8 +511,6 @@ export default function NotePage({
         noteFolder={noteFolder}
         folderOptions={folderOptions}
         isLoading={isLoading}
-        activeAsset={activeAsset}
-        onToggleAsset={handleToggleAsset}
         onTitleChange={handleTitleChange}
         onDelete={handleDelete}
         onEmojiChange={handleEmojiChange}
@@ -520,18 +518,7 @@ export default function NotePage({
         onFolderChange={handleFolderChange}
         noteUpdatedAt={note?.updatedAt ?? new Date()}
         eventData={note?.eventData ?? null}
-        meetingState={meetingState}
-        transcript={transcript}
-        onStartMeeting={handleStartMeeting}
-        onStopMeeting={handleStopMeeting}
-        onGenerateNotes={handleGenerateNotes}
-        isGeneratingNotes={generateNotesMutation.isPending}
         isDeleting={deleteMutation.isPending}
-        activeTab={activeTab}
-        onActiveTabChange={setActiveTab}
-        showTabSwitcher={Boolean(artifact)}
-        isTranscriptionExpanded={isTranscriptionExpanded}
-        onSetTranscriptionExpanded={setIsTranscriptionExpanded}
       >
         {(() => {
           // Drives the same-hue text shimmer (see .ai-generating-text in

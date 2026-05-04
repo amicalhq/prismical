@@ -9,7 +9,6 @@ import {
   Trash2,
 } from "lucide-react";
 import EmojiPicker, { Theme } from "emoji-picker-react";
-import { IconNotes, IconSparkles } from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
@@ -46,10 +45,6 @@ import { CreateFolderDialog } from "@/renderer/main/components/create-folder-dia
 import { FolderPickerDialog } from "@/renderer/main/components/folder-picker-dialog";
 import { useSettingsHeaderActions } from "@/renderer/main/routes/settings/header-actions-context";
 
-import { NoteAssetsPanel } from "./note-assets-panel";
-import { NoteRecordingDock } from "./note-recording-dock";
-import type { NoteAssetKind } from "../types";
-import type { MeetingRuntimeState, TranscriptEvent } from "@/types/meeting";
 import { formatEventTimeRange, getEventDateLabel } from "@/utils/event-time";
 import {
   getMeetingIcon,
@@ -78,24 +73,11 @@ export type NotePageUIProps = {
   eventData: NoteEventData | null;
   folderOptions: string[];
   isLoading: boolean;
-  activeAsset: NoteAssetKind | null;
-  onToggleAsset: (asset: NoteAssetKind) => void;
   onTitleChange: (value: string) => void;
   onDelete: () => void;
   onEmojiChange: (emoji: string | null) => void;
   onStarredChange: (starred: boolean) => void;
   onFolderChange: (folder: string | null) => void;
-  meetingState: MeetingRuntimeState;
-  transcript: TranscriptEvent[];
-  onStartMeeting: () => void;
-  onStopMeeting: () => void;
-  onGenerateNotes: () => void;
-  isGeneratingNotes: boolean;
-  activeTab: NoteTab;
-  onActiveTabChange: (tab: NoteTab) => void;
-  showTabSwitcher: boolean;
-  isTranscriptionExpanded: boolean;
-  onSetTranscriptionExpanded: (expanded: boolean) => void;
   isDeleting?: boolean;
   children?: ReactNode;
 };
@@ -142,24 +124,11 @@ export default function Note({
   eventData,
   folderOptions,
   isLoading,
-  activeAsset,
-  onToggleAsset,
   onTitleChange,
   onDelete,
   onEmojiChange,
   onStarredChange,
   onFolderChange,
-  meetingState,
-  transcript,
-  onStartMeeting,
-  onStopMeeting,
-  onGenerateNotes,
-  isGeneratingNotes,
-  activeTab,
-  onActiveTabChange,
-  showTabSwitcher,
-  isTranscriptionExpanded,
-  onSetTranscriptionExpanded,
   isDeleting = false,
   children,
 }: NotePageUIProps) {
@@ -285,8 +254,6 @@ export default function Note({
       </div>
     );
   }
-
-  const isTranscriptionOpen = activeAsset === "transcription";
 
   const notePane = (
     <div className="relative h-full min-h-0 bg-background">
@@ -536,83 +503,6 @@ export default function Note({
           {children}
         </div>
       </ScrollArea>
-
-      <div className="pointer-events-none absolute inset-x-0 bottom-4 z-10">
-        <div className="mx-auto flex w-full max-w-4xl flex-col items-center gap-2 px-6">
-          <div
-            className={`w-full transition-all duration-200 ease-out ${
-              isTranscriptionExpanded ? "max-w-4xl" : "max-w-xl"
-            } ${
-              isTranscriptionOpen
-                ? `pointer-events-auto opacity-100 ${
-                    isTranscriptionExpanded ? "h-[75vh]" : "h-[50vh]"
-                  }`
-                : "pointer-events-none h-0 opacity-0"
-            }`}
-          >
-            <NoteAssetsPanel
-              activeAsset="transcription"
-              isOpen={isTranscriptionOpen}
-              onClose={() => onToggleAsset("transcription")}
-              isExpanded={isTranscriptionExpanded}
-              onToggleExpanded={() =>
-                onSetTranscriptionExpanded(!isTranscriptionExpanded)
-              }
-              transcript={transcript}
-              meetingState={meetingState}
-              onGenerateNotes={onGenerateNotes}
-              isGeneratingNotes={isGeneratingNotes}
-            />
-          </div>
-          <div className="pointer-events-auto flex items-center gap-2">
-            <NoteRecordingDock
-              isTranscriptionOpen={isTranscriptionOpen}
-              onToggleTranscription={() => onToggleAsset("transcription")}
-              meetingState={meetingState}
-              onStartMeeting={onStartMeeting}
-              onStopMeeting={onStopMeeting}
-            />
-            {showTabSwitcher ? (
-              <div className="flex h-[42px] w-[78px] items-center justify-center gap-1 rounded-full bg-black/80 p-[5px] backdrop-blur-md ring-[1px] ring-black/60 shadow-[0px_0px_15px_0px_rgba(0,0,0,0.40)] transition-all duration-200 ease-out hover:scale-110 dark:bg-black/70">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className={`!h-8 !w-8 rounded-full !p-0 text-white/70 hover:bg-white/15 hover:text-white ${
-                        activeTab === "raw" ? "bg-white/15 text-white" : ""
-                      }`}
-                      onClick={() => onActiveTabChange("raw")}
-                      aria-label="Raw notes"
-                    >
-                      <IconNotes className="!h-[18px] !w-[18px]" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Raw notes</TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className={`!h-8 !w-8 rounded-full !p-0 text-white/70 hover:bg-white/15 hover:text-white ${
-                        activeTab === "summary" ? "bg-white/15 text-white" : ""
-                      }`}
-                      onClick={() => onActiveTabChange("summary")}
-                      aria-label="AI Summary"
-                    >
-                      <IconSparkles className="!h-[18px] !w-[18px]" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>AI Summary</TooltipContent>
-                </Tooltip>
-              </div>
-            ) : null}
-          </div>
-        </div>
-      </div>
     </div>
   );
 
