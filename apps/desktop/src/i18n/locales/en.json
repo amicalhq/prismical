@@ -629,21 +629,6 @@
       "jumpPill": {
         "ariaLabel": "Return to recording: {{title}}"
       },
-      "recordingBanner": {
-        "status": {
-          "starting": "Starting",
-          "recording": "Recording",
-          "stopping": "Finishing",
-          "error": "Needs attention"
-        },
-        "message": {
-          "starting": "Starting meeting recording in {{title}}",
-          "recording": "Meeting recording is ongoing in {{title}}",
-          "stopping": "Finishing meeting recording in {{title}}",
-          "error": "Meeting recording in {{title}} needs attention"
-        },
-        "returnToNote": "Return to note"
-      },
       "empty": {
         "title": "No notes yet",
         "description": "Create your first note to get started"

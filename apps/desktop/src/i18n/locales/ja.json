@@ -710,21 +710,6 @@
       "jumpPill": {
         "ariaLabel": "録音中のノートに戻る: {{title}}"
       },
-      "recordingBanner": {
-        "status": {
-          "starting": "開始中",
-          "recording": "録音中",
-          "stopping": "終了中",
-          "error": "要確認"
-        },
-        "message": {
-          "starting": "{{title}} で会議の録音を開始しています",
-          "recording": "{{title}} で会議の録音が進行中です",
-          "stopping": "{{title}} で会議の録音を終了しています",
-          "error": "{{title}} の会議録音で確認が必要です"
-        },
-        "returnToNote": "ノートに戻る"
-      },
       "empty": {
         "title": "ノートはまだありません",
         "description": "最初のノートを作成して始めましょう"

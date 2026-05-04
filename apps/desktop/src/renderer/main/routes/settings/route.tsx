@@ -3,7 +3,6 @@ import { createFileRoute, Outlet } from "@tanstack/react-router";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { SettingsSidebar } from "../../components/settings-sidebar";
 import { SiteHeader } from "@/components/site-header";
-import { MeetingRecordingBanner } from "../../components/meeting-recording-banner";
 import { RecordingBottomCluster } from "@/renderer/main/components/recording-bottom-cluster";
 import { useLocation, useNavigate, useRouter } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
@@ -165,7 +164,6 @@ function SettingsLayoutContent() {
               </>
             }
           />
-          <MeetingRecordingBanner />
           <div className="flex flex-1 flex-col min-h-0">
             <div className="@container/settings flex flex-1 flex-col min-h-0 overflow-hidden">
               <div
