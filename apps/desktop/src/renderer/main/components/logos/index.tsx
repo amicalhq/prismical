@@ -20,6 +20,12 @@ import openrouterLight from "./svgs/openrouter_light.svg";
 import openrouterDark from "./svgs/openrouter_dark.svg";
 import ollamaLight from "./svgs/ollama_light.svg";
 import ollamaDark from "./svgs/ollama_dark.svg";
+import gemini from "./svgs/gemini.svg";
+import vercelLight from "./svgs/vercel_light.svg";
+import vercelDark from "./svgs/vercel_dark.svg";
+import cloudflare from "./svgs/cloudflare.svg";
+import cerebrasLight from "./svgs/cerebras_light.svg";
+import cerebrasDark from "./svgs/cerebras_dark.svg";
 
 interface LogoProps {
   className?: string;
@@ -93,6 +99,37 @@ export function OllamaLogo({ className }: LogoProps) {
       light={ollamaLight}
       dark={ollamaDark}
       alt="Ollama"
+      className={className}
+    />
+  );
+}
+
+export function GeminiLogo({ className }: LogoProps) {
+  return <img src={gemini} alt="Google Gemini" className={className} />;
+}
+
+export function VercelLogo({ className }: LogoProps) {
+  return (
+    <ThemedLogo
+      light={vercelLight}
+      dark={vercelDark}
+      alt="Vercel"
+      className={className}
+    />
+  );
+}
+
+// Cloudflare's brand mark is fixed orange/black; no theme variant needed.
+export function CloudflareLogo({ className }: LogoProps) {
+  return <img src={cloudflare} alt="Cloudflare" className={className} />;
+}
+
+export function CerebrasLogo({ className }: LogoProps) {
+  return (
+    <ThemedLogo
+      light={cerebrasLight}
+      dark={cerebrasDark}
+      alt="Cerebras"
       className={className}
     />
   );

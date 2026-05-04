@@ -23,6 +23,15 @@ export const PROVIDER_TYPES = {
   openAICompatible: "openai-compatible",
   localWhisper: "local-whisper",
   mock: "mock",
+  // Coming-soon placeholders. Surfaced in the Available tiles
+  // (disabled, with a "Coming soon" tooltip) so users can see
+  // what's on the roadmap without being able to add instances yet.
+  // Catalog fetcher / validator / runtime registries are
+  // intentionally not implemented for these.
+  googleGemini: "google-gemini",
+  vercelAIGateway: "vercel-ai-gateway",
+  cloudflareWorkersAI: "cloudflare-workers-ai",
+  cerebras: "cerebras",
 } as const;
 
 export type ProviderType = (typeof PROVIDER_TYPES)[keyof typeof PROVIDER_TYPES];
@@ -38,6 +47,30 @@ export const PROVIDER_TYPE_LABELS: Record<ProviderType, string> = {
   [PROVIDER_TYPES.openAICompatible]: "OpenAI Compatible",
   [PROVIDER_TYPES.localWhisper]: "Whisper (local)",
   [PROVIDER_TYPES.mock]: "Mock",
+  [PROVIDER_TYPES.googleGemini]: "Google Gemini",
+  [PROVIDER_TYPES.vercelAIGateway]: "Vercel AI Gateway",
+  [PROVIDER_TYPES.cloudflareWorkersAI]: "Cloudflare Workers AI",
+  [PROVIDER_TYPES.cerebras]: "Cerebras",
+};
+
+// Tiles for these providers render disabled in the Available list
+// with a "Coming soon" tooltip. Anthropic and Groq are gated here
+// pending direct AI-SDK integrations; the others are pure roadmap
+// placeholders. Flip to false once each is fully wired (catalog +
+// validator + runtime).
+export const PROVIDER_TYPE_COMING_SOON: Record<ProviderType, boolean> = {
+  [PROVIDER_TYPES.openai]: false,
+  [PROVIDER_TYPES.anthropic]: true,
+  [PROVIDER_TYPES.groq]: true,
+  [PROVIDER_TYPES.openRouter]: false,
+  [PROVIDER_TYPES.ollama]: false,
+  [PROVIDER_TYPES.openAICompatible]: false,
+  [PROVIDER_TYPES.localWhisper]: false,
+  [PROVIDER_TYPES.mock]: false,
+  [PROVIDER_TYPES.googleGemini]: true,
+  [PROVIDER_TYPES.vercelAIGateway]: true,
+  [PROVIDER_TYPES.cloudflareWorkersAI]: true,
+  [PROVIDER_TYPES.cerebras]: true,
 };
 
 // Whether multiple instances of this type are allowed. Singletons
@@ -52,6 +85,11 @@ export const PROVIDER_TYPE_MULTI_INSTANCE: Record<ProviderType, boolean> = {
   [PROVIDER_TYPES.openAICompatible]: true,
   [PROVIDER_TYPES.localWhisper]: false,
   [PROVIDER_TYPES.mock]: false,
+  // Coming-soon — tentative; revisit when implementing.
+  [PROVIDER_TYPES.googleGemini]: true,
+  [PROVIDER_TYPES.vercelAIGateway]: true,
+  [PROVIDER_TYPES.cloudflareWorkersAI]: true,
+  [PROVIDER_TYPES.cerebras]: true,
 };
 
 // Fixed primary keys for the singleton system instances. Must match the
@@ -100,6 +138,13 @@ export const PROVIDER_TYPE_CONFIG_FIELDS: Record<
   ],
   [PROVIDER_TYPES.localWhisper]: [],
   [PROVIDER_TYPES.mock]: [],
+  // Coming-soon types have no form (the tile is disabled, no dialog
+  // ever opens). Empty arrays are placeholders so the registry stays
+  // total over ProviderType.
+  [PROVIDER_TYPES.googleGemini]: [],
+  [PROVIDER_TYPES.vercelAIGateway]: [],
+  [PROVIDER_TYPES.cloudflareWorkersAI]: [],
+  [PROVIDER_TYPES.cerebras]: [],
 };
 
 // Capabilities per provider type. Used by the model picker (and similar
@@ -121,6 +166,12 @@ export const PROVIDER_TYPE_CAPABILITIES: Record<ProviderType, ModelType[]> = {
   [PROVIDER_TYPES.openAICompatible]: ["language", "embedding"],
   [PROVIDER_TYPES.localWhisper]: ["transcription"],
   [PROVIDER_TYPES.mock]: ["transcription", "language", "embedding"],
+  // Coming-soon — empty until each is wired. Picker filters by this
+  // map, so leaving them empty also keeps stray instances out.
+  [PROVIDER_TYPES.googleGemini]: [],
+  [PROVIDER_TYPES.vercelAIGateway]: [],
+  [PROVIDER_TYPES.cloudflareWorkersAI]: [],
+  [PROVIDER_TYPES.cerebras]: [],
 };
 
 // Type guard for narrowing arbitrary strings to ProviderType.

@@ -7,10 +7,14 @@ import {
 } from "@/constants/provider-types";
 import {
   AnthropicLogo,
+  CerebrasLogo,
+  CloudflareLogo,
+  GeminiLogo,
   GroqLogo,
   OllamaLogo,
   OpenAILogo,
   OpenRouterLogo,
+  VercelLogo,
 } from "@/renderer/main/components/logos";
 
 // UI-side metadata for the AI Models settings page. Pulled into its own
@@ -75,6 +79,22 @@ export const PROVIDER_META: Record<ProviderType, ProviderMeta> = {
     label: PROVIDER_TYPE_LABELS[PROVIDER_TYPES.mock],
     Logo: TestTube2,
     tint: "text-zinc-500 dark:text-zinc-400",
+  },
+  [PROVIDER_TYPES.googleGemini]: {
+    label: PROVIDER_TYPE_LABELS[PROVIDER_TYPES.googleGemini],
+    Logo: GeminiLogo,
+  },
+  [PROVIDER_TYPES.vercelAIGateway]: {
+    label: PROVIDER_TYPE_LABELS[PROVIDER_TYPES.vercelAIGateway],
+    Logo: VercelLogo,
+  },
+  [PROVIDER_TYPES.cloudflareWorkersAI]: {
+    label: PROVIDER_TYPE_LABELS[PROVIDER_TYPES.cloudflareWorkersAI],
+    Logo: CloudflareLogo,
+  },
+  [PROVIDER_TYPES.cerebras]: {
+    label: PROVIDER_TYPE_LABELS[PROVIDER_TYPES.cerebras],
+    Logo: CerebrasLogo,
   },
 };
 

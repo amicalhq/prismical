@@ -62,6 +62,16 @@ export async function getCatalog(instance: Instance): Promise<CatalogEntry[]> {
       return fetchLocalWhisperCatalog(instance.config as LocalWhisperConfig);
     case PROVIDER_TYPES.mock:
       return fetchMockCatalog();
+    case PROVIDER_TYPES.googleGemini:
+    case PROVIDER_TYPES.vercelAIGateway:
+    case PROVIDER_TYPES.cloudflareWorkersAI:
+    case PROVIDER_TYPES.cerebras:
+      // Coming-soon placeholders. Tile is disabled in the UI so this
+      // shouldn't be reached, but throw loudly if someone calls in
+      // (corrupted row, programmatic creation, etc.) so we notice.
+      throw new Error(
+        `${type} catalog isn't supported yet — provider listed as "Coming soon"`,
+      );
     default: {
       // Exhaustiveness check — adding a provider type without a catalog
       // fetcher fails the type-check here.

@@ -98,6 +98,17 @@ function parseConfigForType(
       // `Record<string, never>` is structurally `{}`; the cast bridges Zod's
       // inferred `{}` to TS's stricter "no extra keys" alias.
       return EmptyConfigSchema.parse(raw) as InstanceConfig;
+    case PROVIDER_TYPES.googleGemini:
+    case PROVIDER_TYPES.vercelAIGateway:
+    case PROVIDER_TYPES.cloudflareWorkersAI:
+    case PROVIDER_TYPES.cerebras:
+      // Coming-soon placeholders — the tile is disabled in the UI so
+      // create/update can never legitimately reach here. Reject loudly
+      // so a programmatic caller doesn't silently persist a row we
+      // can't act on.
+      throw new Error(
+        `${type} isn't supported yet — provider listed as "Coming soon"`,
+      );
   }
 }
 

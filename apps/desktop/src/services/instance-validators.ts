@@ -54,6 +54,16 @@ export async function validateInstanceConfig(
     case PROVIDER_TYPES.localWhisper:
     case PROVIDER_TYPES.mock:
       return { success: true };
+    case PROVIDER_TYPES.googleGemini:
+    case PROVIDER_TYPES.vercelAIGateway:
+    case PROVIDER_TYPES.cloudflareWorkersAI:
+    case PROVIDER_TYPES.cerebras:
+      // Coming-soon placeholders — UI marks the tile as disabled, but
+      // surface a clear error if someone reaches the validator anyway.
+      return {
+        success: false,
+        error: `${t} isn't supported yet — provider listed as "Coming soon"`,
+      };
     default: {
       const exhaustive: never = t;
       return {
