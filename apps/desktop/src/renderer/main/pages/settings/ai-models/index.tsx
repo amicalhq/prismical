@@ -14,7 +14,7 @@ import InstanceFormDialog from "./components/instance-form-dialog";
 
 type ChangeTarget = "transcription" | "formatting" | null;
 type FormMode =
-  | { kind: "create"; type: ProviderType }
+  | { kind: "create"; provider: ProviderType }
   | { kind: "edit"; id: string }
   | null;
 
@@ -71,7 +71,7 @@ export default function AIModelsSettingsPage() {
           Add a provider
         </h2>
         <AvailableTiles
-          onAddCloud={(type) => setFormMode({ kind: "create", type })}
+          onAddCloud={(provider) => setFormMode({ kind: "create", provider })}
           onOpenWhisperManager={openWhisperManager}
         />
       </section>

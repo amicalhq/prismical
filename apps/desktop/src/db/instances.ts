@@ -14,8 +14,8 @@ import { PROVIDER_TYPES } from "../constants/provider-types";
  * Database operations for the `instances` table (provider connections).
  *
  * Layered separation:
- *   - This file: pure CRUD + type-narrowed config mutations.
- *   - Validation that `config` matches `type`: tRPC router (Zod schemas).
+ *   - This file: pure CRUD + provider-narrowed config mutations.
+ *   - Validation that `config` matches `provider`: tRPC router (Zod schemas).
  *   - Singleton enforcement: bootstrap uses `seedInstanceIfMissing`; the
  *     tRPC router rejects user attempts to add singletons.
  */
@@ -24,8 +24,13 @@ export async function getAllInstances(): Promise<Instance[]> {
   return await db.select().from(instances);
 }
 
-export async function getInstancesByType(type: string): Promise<Instance[]> {
-  return await db.select().from(instances).where(eq(instances.type, type));
+export async function getInstancesByProvider(
+  provider: string,
+): Promise<Instance[]> {
+  return await db
+    .select()
+    .from(instances)
+    .where(eq(instances.provider, provider));
 }
 
 export async function getInstanceById(id: string): Promise<Instance | null> {
@@ -59,14 +64,14 @@ export type InstancePatch = {
 };
 
 /**
- * Update label and/or config. The `type` column is intentionally not
- * patchable — switching an instance's type would invalidate its config
+ * Update label and/or config. The `provider` column is intentionally not
+ * patchable — switching an instance's provider would invalidate its config
  * shape and any defaults pointing at its models.
  *
  * Note: this helper does NOT validate that `patch.config` matches the
- * existing row's type. Per-type config validation belongs to the tRPC
- * router (Zod schemas keyed on type). Callers that bypass tRPC must
- * validate themselves.
+ * existing row's provider. Per-provider config validation belongs to the
+ * tRPC router (Zod schemas keyed on provider). Callers that bypass tRPC
+ * must validate themselves.
  */
 export async function updateInstance(
   id: string,
@@ -111,32 +116,32 @@ export class InstanceNotFoundError extends Error {
   }
 }
 
-export class InstanceTypeMismatchError extends Error {
+export class InstanceProviderMismatchError extends Error {
   constructor(id: string, expected: string, actual: string) {
     super(
-      `Instance ${id} has type "${actual}" but expected "${expected}"`,
+      `Instance ${id} has provider "${actual}" but expected "${expected}"`,
     );
-    this.name = "InstanceTypeMismatchError";
+    this.name = "InstanceProviderMismatchError";
   }
 }
 
-// ---------- Type-narrowing fetch ----------
+// ---------- Provider-narrowing fetch ----------
 
 /**
- * Fetch a row by id while asserting its type. Returns the row on match,
- * `null` if no row exists with that id, and *throws* `InstanceTypeMismatchError`
- * if the row exists but has a different type. This pattern avoids
- * duplicating the disambiguation dance in every caller that needs to
- * narrow `instance.config` to a specific shape.
+ * Fetch a row by id while asserting its provider. Returns the row on match,
+ * `null` if no row exists with that id, and *throws*
+ * `InstanceProviderMismatchError` if the row exists but has a different
+ * provider. This pattern avoids duplicating the disambiguation dance in
+ * every caller that needs to narrow `instance.config` to a specific shape.
  */
-export async function getInstanceByIdAndType(
+export async function getInstanceByIdAndProvider(
   id: string,
-  type: string,
+  provider: string,
 ): Promise<Instance | null> {
   const row = await getInstanceById(id);
   if (!row) return null;
-  if (row.type !== type) {
-    throw new InstanceTypeMismatchError(id, type, row.type);
+  if (row.provider !== provider) {
+    throw new InstanceProviderMismatchError(id, provider, row.provider);
   }
   return row;
 }
@@ -168,24 +173,24 @@ async function loadLocalWhisperRow(
     .where(
       and(
         eq(instances.id, instanceId),
-        eq(instances.type, PROVIDER_TYPES.localWhisper),
+        eq(instances.provider, PROVIDER_TYPES.localWhisper),
       ),
     )
     .limit(1);
 
   if (rows[0]) return rows[0];
 
-  // Disambiguate: missing entirely vs. wrong type.
+  // Disambiguate: missing entirely vs. wrong provider.
   const probe = await tx
-    .select({ type: instances.type })
+    .select({ provider: instances.provider })
     .from(instances)
     .where(eq(instances.id, instanceId))
     .limit(1);
   if (probe.length === 0) throw new InstanceNotFoundError(instanceId);
-  throw new InstanceTypeMismatchError(
+  throw new InstanceProviderMismatchError(
     instanceId,
     PROVIDER_TYPES.localWhisper,
-    probe[0].type,
+    probe[0].provider,
   );
 }
 

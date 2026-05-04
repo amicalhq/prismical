@@ -127,8 +127,8 @@ export default function ChangeDefaultDialog({
   const eligibleInstances = useMemo<Instance[]>(() => {
     if (!instancesQuery.data) return [];
     return instancesQuery.data.filter((i) => {
-      if (!isProviderType(i.type)) return false;
-      return PROVIDER_TYPE_CAPABILITIES[i.type as ProviderType].includes(
+      if (!isProviderType(i.provider)) return false;
+      return PROVIDER_TYPE_CAPABILITIES[i.provider as ProviderType].includes(
         modelType,
       );
     });
@@ -160,7 +160,7 @@ export default function ChangeDefaultDialog({
     ? instancesQuery.data?.find((i) => i.id === chosenInstanceId)
     : undefined;
 
-  const isWhisperInstance = chosenInstance?.type === "local-whisper";
+  const isWhisperInstance = chosenInstance?.provider === "local-whisper";
 
   // Whisper rows whose model file isn't downloaded should be visible
   // but unselectable. We compute this lookup from the same data the
@@ -245,12 +245,12 @@ export default function ChangeDefaultDialog({
             // configured instances.
             <div className="rounded-md border divide-y bg-card max-h-[400px] overflow-y-auto">
               {eligibleInstances.map((instance) => {
-                if (!isProviderType(instance.type)) return null;
-                const meta = PROVIDER_META[instance.type];
+                if (!isProviderType(instance.provider)) return null;
+                const meta = PROVIDER_META[instance.provider];
                 const isCurrent =
                   defaultsQuery.data?.[useCase]?.instanceId === instance.id;
                 const showInstanceLabel =
-                  PROVIDER_TYPE_MULTI_INSTANCE[instance.type];
+                  PROVIDER_TYPE_MULTI_INSTANCE[instance.provider];
                 return (
                   <button
                     key={instance.id}
@@ -296,8 +296,8 @@ export default function ChangeDefaultDialog({
 
   // Step 2 view
   const chosenMeta =
-    chosenInstance && isProviderType(chosenInstance.type)
-      ? PROVIDER_META[chosenInstance.type]
+    chosenInstance && isProviderType(chosenInstance.provider)
+      ? PROVIDER_META[chosenInstance.provider]
       : undefined;
 
   return (

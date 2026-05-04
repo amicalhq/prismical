@@ -140,21 +140,21 @@ export const appSettings = sqliteTable("app_settings", {
 });
 
 // Provider instances — one row per user-configured connection.
-// Multiple rows can share a `type` (e.g. two OpenRouter accounts).
+// Multiple rows can share a `provider` (e.g. two OpenRouter accounts).
 //
 // Singleton enforcement for `local-whisper` and `mock`: there is no
 // schema-level partial unique index. Instead, those rows use fixed primary
 // keys (`system-local-whisper`, `system-mock`) and the bootstrap step seeds
 // them with `INSERT OR IGNORE`. The PK uniqueness then guarantees at most
-// one row per singleton type. tRPC create/update for these types must
-// reject user attempts to add additional ones.
+// one row per singleton provider. tRPC create/update for these providers
+// must reject user attempts to add additional ones.
 export const instances = sqliteTable(
   "instances",
   {
     id: text("id").primaryKey(), // "system-local-whisper" | nanoid for user-created
-    type: text("type").notNull(), // ProviderType: "openai" | "anthropic" | "groq" | "openrouter" | "ollama" | "openai-compatible" | "local-whisper" | "mock"
+    provider: text("provider").notNull(), // ProviderType: "openai" | "anthropic" | "groq" | "openrouter" | "ollama" | "openai-compatible" | "local-whisper" | "mock"
     label: text("label").notNull(), // User-facing name ("Personal OpenAI")
-    config: text("config", { mode: "json" }).$type<InstanceConfig>().notNull(), // shape depends on `type` — see InstanceConfig
+    config: text("config", { mode: "json" }).$type<InstanceConfig>().notNull(), // shape depends on `provider` — see InstanceConfig
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
       .default(sql`(unixepoch())`),
@@ -163,16 +163,19 @@ export const instances = sqliteTable(
       .default(sql`(unixepoch())`),
   },
   (table) => [
-    index("instances_type_idx").on(table.type),
-    // Prevent two instances of the same type from sharing a label —
+    index("instances_provider_idx").on(table.provider),
+    // Prevent two instances of the same provider from sharing a label —
     // otherwise the model picker shows ambiguous "OpenRouter / model-x"
     // entries the user can't disambiguate.
-    uniqueIndex("instances_type_label_unique").on(table.type, table.label),
+    uniqueIndex("instances_provider_label_unique").on(
+      table.provider,
+      table.label,
+    ),
   ],
 );
 
-// Discriminated union of per-type config payloads stored in `instances.config`.
-// The discriminator is the row's `type` column (not a field inside the JSON),
+// Discriminated union of per-provider config payloads stored in `instances.config`.
+// The discriminator is the row's `provider` column (not a field inside the JSON),
 // so the consumer must select the right branch based on the row.
 export type InstanceConfig =
   | ApiKeyConfig // openai, anthropic, groq, openrouter

@@ -530,9 +530,9 @@ class ModelService extends EventEmitter {
 
   private async readLocalWhisperConfig(): Promise<LocalWhisperConfig> {
     const row = await getInstanceById(LOCAL_WHISPER_INSTANCE_ID);
-    if (!row || row.type !== PROVIDER_TYPES.localWhisper) {
+    if (!row || row.provider !== PROVIDER_TYPES.localWhisper) {
       logger.main.warn(
-        "Local-whisper instance row missing or wrong type; bootstrap should have seeded it",
+        "Local-whisper instance row missing or wrong provider; bootstrap should have seeded it",
       );
       return { downloadedModels: [] };
     }

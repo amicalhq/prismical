@@ -13,7 +13,7 @@ import {
   deleteInstance,
   getAllInstances,
   getInstanceById,
-  getInstancesByType,
+  getInstancesByProvider,
   updateInstance,
 } from "../../db/instances";
 import type { InstanceConfig } from "../../db/schema";
@@ -29,12 +29,12 @@ import {
 
 // ---------- Zod schemas ----------
 
-const ProviderTypeSchema = z
+const ProviderSchema = z
   .string()
-  .refine(isProviderType, { message: "Unknown provider type" })
+  .refine(isProviderType, { message: "Unknown provider" })
   .transform((value) => value as ProviderType);
 
-// Per-type config schemas. These are the source of truth for what the
+// Per-provider config schemas. These are the source of truth for what the
 // tRPC layer accepts; the underlying TypeScript types live in db/schema.ts.
 const ApiKeyConfigSchema = z.object({
   apiKey: z.string().min(1, "API key is required"),
@@ -71,14 +71,14 @@ const LocalWhisperConfigSchema = z.object({
 });
 
 /**
- * Discriminated config validation keyed on the row's type. Returns the
+ * Discriminated config validation keyed on the row's provider. Returns the
  * narrowed config or throws a Zod error the tRPC layer surfaces to the UI.
  */
-function parseConfigForType(
-  type: ProviderType,
+function parseConfigForProvider(
+  provider: ProviderType,
   raw: unknown,
 ): InstanceConfig {
-  switch (type) {
+  switch (provider) {
     case PROVIDER_TYPES.openai:
     case PROVIDER_TYPES.anthropic:
     case PROVIDER_TYPES.groq:
@@ -107,7 +107,7 @@ function parseConfigForType(
       // so a programmatic caller doesn't silently persist a row we
       // can't act on.
       throw new Error(
-        `${type} isn't supported yet — provider listed as "Coming soon"`,
+        `${provider} isn't supported yet — provider listed as "Coming soon"`,
       );
   }
 }
@@ -131,10 +131,10 @@ export const instancesRouter = createRouter({
     return await getAllInstances();
   }),
 
-  listByType: procedure
-    .input(z.object({ type: ProviderTypeSchema }))
+  listByProvider: procedure
+    .input(z.object({ provider: ProviderSchema }))
     .query(async ({ input }) => {
-      return await getInstancesByType(input.type);
+      return await getInstancesByProvider(input.provider);
     }),
 
   get: procedure
@@ -149,49 +149,49 @@ export const instancesRouter = createRouter({
    * before the row lands in the DB.
    */
   validate: procedure
-    .input(z.object({ type: ProviderTypeSchema, config: z.unknown() }))
+    .input(z.object({ provider: ProviderSchema, config: z.unknown() }))
     .mutation(async ({ input }): Promise<ValidationResult> => {
       let parsed: InstanceConfig;
       try {
-        parsed = parseConfigForType(input.type, input.config);
+        parsed = parseConfigForProvider(input.provider, input.config);
       } catch (error) {
         return {
           success: false,
           error: error instanceof Error ? error.message : "Invalid config",
         };
       }
-      return await validateInstanceConfig(input.type, parsed);
+      return await validateInstanceConfig(input.provider, parsed);
     }),
 
   /**
-   * Create a new instance. Singleton types (local-whisper, mock) reject
+   * Create a new instance. Singleton providers (local-whisper, mock) reject
    * user creation — those are seeded by bootstrap with fixed ids.
    */
   create: procedure
     .input(
       z.object({
-        type: ProviderTypeSchema,
+        provider: ProviderSchema,
         label: z.string().min(1, "Label is required"),
         config: z.unknown(),
       }),
     )
     .mutation(async ({ input }) => {
-      if (!PROVIDER_TYPE_MULTI_INSTANCE[input.type]) {
+      if (!PROVIDER_TYPE_MULTI_INSTANCE[input.provider]) {
         throw new Error(
-          `${input.type} is a singleton type and is seeded automatically — you can't add another instance`,
+          `${input.provider} is a singleton provider and is seeded automatically — you can't add another instance`,
         );
       }
-      const config = parseConfigForType(input.type, input.config);
+      const config = parseConfigForProvider(input.provider, input.config);
       return await createInstance({
         id: uuid(),
-        type: input.type,
+        provider: input.provider,
         label: input.label.trim(),
         config,
       });
     }),
 
   /**
-   * Update an instance's label and/or config. Type is immutable.
+   * Update an instance's label and/or config. Provider is immutable.
    * Caller should re-validate via `validate` before calling this if the
    * config changed.
    *
@@ -220,16 +220,16 @@ export const instancesRouter = createRouter({
       if (!existing) {
         throw new Error(`Instance not found: ${input.id}`);
       }
-      if (!isProviderType(existing.type)) {
+      if (!isProviderType(existing.provider)) {
         throw new Error(
-          `Instance ${input.id} has unknown type "${existing.type}"`,
+          `Instance ${input.id} has unknown provider "${existing.provider}"`,
         );
       }
 
       const patch: { label?: string; config?: InstanceConfig } = {};
       if (input.label !== undefined) patch.label = input.label.trim();
       if (input.config !== undefined) {
-        patch.config = parseConfigForType(existing.type, input.config);
+        patch.config = parseConfigForProvider(existing.provider, input.config);
       }
       return await updateInstance(input.id, patch);
     }),

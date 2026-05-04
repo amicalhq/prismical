@@ -26,19 +26,19 @@ export interface ValidationResult {
 
 /**
  * Validate an instance config against the provider's live endpoint.
- * Dispatches by type and narrows the JSON config to the expected shape.
- * Singleton system types (local-whisper, mock) always succeed — there's
- * nothing remote to validate.
+ * Dispatches by provider and narrows the JSON config to the expected
+ * shape. Singleton providers (local-whisper, mock) always succeed —
+ * there's nothing remote to validate.
  */
 export async function validateInstanceConfig(
-  type: string,
+  provider: string,
   config: InstanceConfig,
 ): Promise<ValidationResult> {
-  if (!isProviderType(type)) {
-    return { success: false, error: `Unknown provider type: ${type}` };
+  if (!isProviderType(provider)) {
+    return { success: false, error: `Unknown provider: ${provider}` };
   }
-  const t: ProviderType = type;
-  switch (t) {
+  const p: ProviderType = provider;
+  switch (p) {
     case PROVIDER_TYPES.openai:
       return validateOpenAI(config as ApiKeyConfig);
     case PROVIDER_TYPES.anthropic:
@@ -62,13 +62,13 @@ export async function validateInstanceConfig(
       // surface a clear error if someone reaches the validator anyway.
       return {
         success: false,
-        error: `${t} isn't supported yet — provider listed as "Coming soon"`,
+        error: `${p} isn't supported yet — provider listed as "Coming soon"`,
       };
     default: {
-      const exhaustive: never = t;
+      const exhaustive: never = p;
       return {
         success: false,
-        error: `No validator for provider type: ${exhaustive}`,
+        error: `No validator for provider: ${exhaustive}`,
       };
     }
   }

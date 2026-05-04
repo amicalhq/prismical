@@ -21,7 +21,9 @@ import {
 } from "@/constants/provider-types";
 import { PROVIDER_META } from "@/renderer/main/components/provider-meta";
 
-type Mode = { kind: "create"; type: ProviderType } | { kind: "edit"; id: string };
+type Mode =
+  | { kind: "create"; provider: ProviderType }
+  | { kind: "edit"; id: string };
 
 interface InstanceFormDialogProps {
   open: boolean;
@@ -55,15 +57,15 @@ export default function InstanceFormDialog({
     { enabled: !!editingId },
   );
 
-  const type: ProviderType | null = useMemo(() => {
-    if (mode?.kind === "create") return mode.type;
-    if (existingQuery.data) return existingQuery.data.type as ProviderType;
+  const provider: ProviderType | null = useMemo(() => {
+    if (mode?.kind === "create") return mode.provider;
+    if (existingQuery.data) return existingQuery.data.provider as ProviderType;
     return null;
   }, [mode, existingQuery.data]);
 
   const fields = useMemo(
-    () => (type ? PROVIDER_TYPE_CONFIG_FIELDS[type] : []),
-    [type],
+    () => (provider ? PROVIDER_TYPE_CONFIG_FIELDS[provider] : []),
+    [provider],
   );
 
   const [label, setLabel] = useState("");
@@ -107,15 +109,19 @@ export default function InstanceFormDialog({
     .filter((f) => f.required)
     .every((f) => (values[f.field] ?? "").trim().length > 0);
   const labelFilled = label.trim().length > 0;
-  const canSubmit = type !== null && labelFilled && requiredFilled && !isSaving;
+  const canSubmit =
+    provider !== null && labelFilled && requiredFilled && !isSaving;
 
   const handleSave = async () => {
-    if (!type) return;
+    if (!provider) return;
     setIsSaving(true);
     setError(null);
     const config = buildConfig();
     try {
-      const validation = await validateMutation.mutateAsync({ type, config });
+      const validation = await validateMutation.mutateAsync({
+        provider,
+        config,
+      });
       if (!validation.success) {
         setError(validation.error ?? "Validation failed");
         return;
@@ -123,11 +129,11 @@ export default function InstanceFormDialog({
 
       if (mode?.kind === "create") {
         await createMutation.mutateAsync({
-          type,
+          provider,
           label: label.trim(),
           config,
         });
-        toast.success(`${PROVIDER_META[type].label} instance created`);
+        toast.success(`${PROVIDER_META[provider].label} instance created`);
       } else if (mode?.kind === "edit") {
         await updateMutation.mutateAsync({
           id: mode.id,
@@ -138,7 +144,7 @@ export default function InstanceFormDialog({
       }
 
       utils.instances.list.invalidate();
-      utils.instances.listByType.invalidate();
+      utils.instances.listByProvider.invalidate();
       // After an edit, the picker's per-instance catalog may be cached
       // against stale credentials — force a refetch so the user sees
       // the newly-validated key reflected in the dropdown immediately.
@@ -154,7 +160,7 @@ export default function InstanceFormDialog({
     }
   };
 
-  if (!type) {
+  if (!provider) {
     // Edit mode is loading the instance; render an empty dialog while we wait.
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -170,7 +176,7 @@ export default function InstanceFormDialog({
     );
   }
 
-  const meta = PROVIDER_META[type];
+  const meta = PROVIDER_META[provider];
   const isEditing = mode?.kind === "edit";
 
   return (

@@ -153,8 +153,8 @@
           "notNull": true,
           "autoincrement": false
         },
-        "type": {
-          "name": "type",
+        "provider": {
+          "name": "provider",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
@@ -192,17 +192,17 @@
         }
       },
       "indexes": {
-        "instances_type_idx": {
-          "name": "instances_type_idx",
+        "instances_provider_idx": {
+          "name": "instances_provider_idx",
           "columns": [
-            "type"
+            "provider"
           ],
           "isUnique": false
         },
-        "instances_type_label_unique": {
-          "name": "instances_type_label_unique",
+        "instances_provider_label_unique": {
+          "name": "instances_provider_label_unique",
           "columns": [
-            "type",
+            "provider",
             "label"
           ],
           "isUnique": true

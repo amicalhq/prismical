@@ -61,8 +61,8 @@ export default function DefaultCard({
     : undefined;
 
   const meta =
-    instance && isProviderType(instance.type)
-      ? PROVIDER_META[instance.type]
+    instance && isProviderType(instance.provider)
+      ? PROVIDER_META[instance.provider]
       : undefined;
 
   const isLoading = defaultsQuery.isLoading || instancesQuery.isLoading;
@@ -94,7 +94,7 @@ export default function DefaultCard({
               />
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-semibold truncate">
-                  {modelDisplayName(instance.type, selection.modelId)}
+                  {modelDisplayName(instance.provider, selection.modelId)}
                 </div>
                 <div className="text-xs text-muted-foreground truncate">
                   {meta.label}
@@ -104,8 +104,8 @@ export default function DefaultCard({
                       show the user-supplied label for multi-instance
                       providers where it actually disambiguates. */}
                   {instance &&
-                    isProviderType(instance.type) &&
-                    PROVIDER_TYPE_MULTI_INSTANCE[instance.type] && (
+                    isProviderType(instance.provider) &&
+                    PROVIDER_TYPE_MULTI_INSTANCE[instance.provider] && (
                       <> · {instance.label}</>
                     )}
                 </div>

@@ -100,7 +100,7 @@ export default function ConnectedList({
     onSuccess: () => {
       toast.success("Instance removed");
       utils.instances.list.invalidate();
-      utils.instances.listByType.invalidate();
+      utils.instances.listByProvider.invalidate();
       utils.instances.getDefaults.invalidate();
       setRemoveTarget(null);
     },
@@ -124,8 +124,8 @@ export default function ConnectedList({
   //   - mock outside dev → never shown
   const visible = (instancesQuery.data ?? [])
     .filter((i) => {
-      if (!isProviderType(i.type)) return false;
-      if (i.type === PROVIDER_TYPES.localWhisper) {
+      if (!isProviderType(i.provider)) return false;
+      if (i.provider === PROVIDER_TYPES.localWhisper) {
         const config = i.config;
         const count =
           "downloadedModels" in config
@@ -133,10 +133,10 @@ export default function ConnectedList({
             : 0;
         return count > 0;
       }
-      if (i.type === PROVIDER_TYPES.mock) return isDev;
+      if (i.provider === PROVIDER_TYPES.mock) return isDev;
       return true;
     })
-    .sort((a, b) => connectedRank(a.type) - connectedRank(b.type));
+    .sort((a, b) => connectedRank(a.provider) - connectedRank(b.provider));
 
   if (instancesQuery.isLoading) {
     return null;
@@ -182,9 +182,9 @@ export default function ConnectedList({
     <>
       <div className="rounded-md border divide-y bg-card">
         {visible.map((instance) => {
-          if (!isProviderType(instance.type)) return null;
-          const isSingleton = SINGLETON_TYPES.has(instance.type);
-          const isMock = instance.type === PROVIDER_TYPES.mock;
+          if (!isProviderType(instance.provider)) return null;
+          const isSingleton = SINGLETON_TYPES.has(instance.provider);
+          const isMock = instance.provider === PROVIDER_TYPES.mock;
           if (isMock) {
             return <MockRow key={instance.id} instance={instance} />;
           }
@@ -281,10 +281,10 @@ interface RowProps {
 }
 
 function Row({ instance, onEditClick, onDeleteClick }: RowProps) {
-  if (!isProviderType(instance.type)) return null;
-  const meta = PROVIDER_META[instance.type];
-  const preview = configPreview(instance.type, instance.config);
-  const isSingleton = SINGLETON_TYPES.has(instance.type);
+  if (!isProviderType(instance.provider)) return null;
+  const meta = PROVIDER_META[instance.provider];
+  const preview = configPreview(instance.provider, instance.config);
+  const isSingleton = SINGLETON_TYPES.has(instance.provider);
 
   return (
     <div className="flex items-center gap-3 px-3 py-2.5 hover:bg-muted/40">
@@ -344,9 +344,9 @@ interface MockRowProps {
 // Mock has no actions worth surfacing — it's a dev-only sanity row.
 // Render the row but skip the menu trigger entirely.
 function MockRow({ instance }: MockRowProps) {
-  if (!isProviderType(instance.type)) return null;
-  const meta = PROVIDER_META[instance.type];
-  const preview = configPreview(instance.type, instance.config);
+  if (!isProviderType(instance.provider)) return null;
+  const meta = PROVIDER_META[instance.provider];
+  const preview = configPreview(instance.provider, instance.config);
 
   return (
     <div className="flex items-center gap-3 px-3 py-2.5 hover:bg-muted/40">

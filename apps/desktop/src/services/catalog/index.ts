@@ -27,23 +27,23 @@ export { invalidateModelsDevCache } from "./models-dev";
 
 /**
  * Fetch the model catalog for a single instance. Dispatches to the right
- * per-type fetcher and narrows the JSON config to the expected shape.
+ * per-provider fetcher and narrows the JSON config to the expected shape.
  *
  * Throws on HTTP/parse errors; returns [] for an instance that has nothing
  * to surface (e.g. a fresh local-whisper instance with no downloads).
  *
- * Defends against corrupted rows: if `instance.type` isn't a known
+ * Defends against corrupted rows: if `instance.provider` isn't a known
  * `ProviderType`, throws with the specific row id and value rather than
  * silently dispatching to an unrelated branch.
  */
 export async function getCatalog(instance: Instance): Promise<CatalogEntry[]> {
-  if (!isProviderType(instance.type)) {
+  if (!isProviderType(instance.provider)) {
     throw new Error(
-      `Instance ${instance.id} has unknown provider type: ${instance.type}`,
+      `Instance ${instance.id} has unknown provider: ${instance.provider}`,
     );
   }
-  const type: ProviderType = instance.type;
-  switch (type) {
+  const provider: ProviderType = instance.provider;
+  switch (provider) {
     case PROVIDER_TYPES.openai:
       return fetchOpenAICatalog(instance.config as ApiKeyConfig);
     case PROVIDER_TYPES.anthropic:
@@ -70,13 +70,13 @@ export async function getCatalog(instance: Instance): Promise<CatalogEntry[]> {
       // shouldn't be reached, but throw loudly if someone calls in
       // (corrupted row, programmatic creation, etc.) so we notice.
       throw new Error(
-        `${type} catalog isn't supported yet — provider listed as "Coming soon"`,
+        `${provider} catalog isn't supported yet — provider listed as "Coming soon"`,
       );
     default: {
-      // Exhaustiveness check — adding a provider type without a catalog
+      // Exhaustiveness check — adding a provider without a catalog
       // fetcher fails the type-check here.
-      const exhaustive: never = type;
-      throw new Error(`No catalog fetcher for provider type: ${exhaustive}`);
+      const exhaustive: never = provider;
+      throw new Error(`No catalog fetcher for provider: ${exhaustive}`);
     }
   }
 }

@@ -56,21 +56,22 @@ async function seedSystemInstances(opts: SeedOpts): Promise<void> {
 }
 
 function systemRow<T extends ProviderType>(
-  type: T,
+  provider: T,
   config: NewInstance["config"],
 ): NewInstance {
-  const id = SINGLETON_INSTANCE_IDS[type];
+  const id = SINGLETON_INSTANCE_IDS[provider];
   if (!id) {
-    // Belt-and-braces: SINGLETON_INSTANCE_IDS must cover every type we seed.
-    // If a future change adds a singleton type without an id, fail loudly.
+    // Belt-and-braces: SINGLETON_INSTANCE_IDS must cover every provider we
+    // seed. If a future change adds a singleton provider without an id,
+    // fail loudly.
     throw new Error(
-      `Cannot seed system instance for "${type}" — no SINGLETON_INSTANCE_IDS entry`,
+      `Cannot seed system instance for "${provider}" — no SINGLETON_INSTANCE_IDS entry`,
     );
   }
   return {
     id,
-    type,
-    label: PROVIDER_TYPE_LABELS[type],
+    provider,
+    label: PROVIDER_TYPE_LABELS[provider],
     config,
   };
 }
@@ -93,7 +94,7 @@ async function reconcileLocalWhisperDownloads(): Promise<void> {
 
   const row = await getInstanceById(instanceId);
   if (!row) return; // shouldn't happen — we just seeded above
-  if (row.type !== PROVIDER_TYPES.localWhisper) return;
+  if (row.provider !== PROVIDER_TYPES.localWhisper) return;
 
   const modelsDir = path.join(app.getPath("userData"), "models");
   const filesOnDisk = readDirSafe(modelsDir);

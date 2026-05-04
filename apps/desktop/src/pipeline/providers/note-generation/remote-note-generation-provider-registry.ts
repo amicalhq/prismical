@@ -19,15 +19,15 @@ const GROQ_BASE_URL = "https://api.groq.com/openai/v1";
 
 /**
  * Construct a NoteGenerationProvider for an instance + model. Throws for
- * provider types that don't support note generation (local-whisper) or
- * aren't yet wired up (anthropic — needs the @ai-sdk/anthropic dep), so
- * the caller can surface a clear error.
+ * providers that don't support note generation (local-whisper) or aren't
+ * yet wired up (anthropic — needs the @ai-sdk/anthropic dep), so the
+ * caller can surface a clear error.
  */
 export async function createNoteGenerationProvider(
   instance: Instance,
   modelId: string,
 ): Promise<NoteGenerationProvider> {
-  switch (instance.type) {
+  switch (instance.provider) {
     case PROVIDER_TYPES.openRouter: {
       const config = instance.config as ApiKeyConfig;
       return new OpenRouterNoteGenerationProvider(config.apiKey, modelId);
@@ -72,7 +72,7 @@ export async function createNoteGenerationProvider(
       );
     default: {
       throw new Error(
-        `Note generation isn't configured for provider type: ${instance.type}`,
+        `Note generation isn't configured for provider: ${instance.provider}`,
       );
     }
   }

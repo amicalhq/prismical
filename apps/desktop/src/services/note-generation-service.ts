@@ -78,7 +78,7 @@ export class NoteGenerationService {
       modelId: selection.modelId,
       meta: {
         modelSelection: modelSelectionKey,
-        providerType: instance.type,
+        providerType: instance.provider,
         instanceId: instance.id,
         instanceLabel: instance.label,
         transcriptLength: transcriptText.length,
@@ -90,7 +90,7 @@ export class NoteGenerationService {
       noteId,
       artifactId: artifact.id,
       modelSelection: modelSelectionKey,
-      providerType: instance.type,
+      providerType: instance.provider,
       transcriptLength: transcriptText.length,
       generatedAt: generatedAt.toISOString(),
     });
@@ -99,7 +99,7 @@ export class NoteGenerationService {
       artifact,
       modelSelection: modelSelectionKey,
       modelId: selection.modelId,
-      providerType: instance.type,
+      providerType: instance.provider,
       generatedAt,
     };
   }
