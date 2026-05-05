@@ -63,7 +63,7 @@ export function RecordingPill({
       </AnimatePresence>
 
       <div
-        className={`flex flex-none items-end justify-center gap-[2.5px] ${hovered ? "h-[18px]" : "h-4"}`}
+        className={`flex flex-none items-center justify-center gap-[2.5px] ${hovered ? "h-[18px]" : "h-4"}`}
       >
         {Array.from({
           length: hovered ? NUM_WAVEFORM_BARS_HOVERED : NUM_WAVEFORM_BARS_COLLAPSED,
