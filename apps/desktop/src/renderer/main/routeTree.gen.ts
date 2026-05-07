@@ -13,6 +13,7 @@ import { Route as SettingsRouteRouteImport } from './routes/settings/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SettingsIndexRouteImport } from './routes/settings/index'
 import { Route as SettingsVocabularyRouteImport } from './routes/settings/vocabulary'
+import { Route as SettingsTagsRouteImport } from './routes/settings/tags'
 import { Route as SettingsShortcutsRouteImport } from './routes/settings/shortcuts'
 import { Route as SettingsPreferencesRouteImport } from './routes/settings/preferences'
 import { Route as SettingsNotesRouteImport } from './routes/settings/notes'
@@ -43,6 +44,11 @@ const SettingsIndexRoute = SettingsIndexRouteImport.update({
 const SettingsVocabularyRoute = SettingsVocabularyRouteImport.update({
   id: '/vocabulary',
   path: '/vocabulary',
+  getParentRoute: () => SettingsRouteRoute,
+} as any)
+const SettingsTagsRoute = SettingsTagsRouteImport.update({
+  id: '/tags',
+  path: '/tags',
   getParentRoute: () => SettingsRouteRoute,
 } as any)
 const SettingsShortcutsRoute = SettingsShortcutsRouteImport.update({
@@ -113,6 +119,7 @@ export interface FileRoutesByFullPath {
   '/settings/notes': typeof SettingsNotesRouteWithChildren
   '/settings/preferences': typeof SettingsPreferencesRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
+  '/settings/tags': typeof SettingsTagsRoute
   '/settings/vocabulary': typeof SettingsVocabularyRoute
   '/settings/': typeof SettingsIndexRoute
   '/settings/notes/$noteId': typeof SettingsNotesNoteIdRoute
@@ -128,6 +135,7 @@ export interface FileRoutesByTo {
   '/settings/home': typeof SettingsHomeRoute
   '/settings/preferences': typeof SettingsPreferencesRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
+  '/settings/tags': typeof SettingsTagsRoute
   '/settings/vocabulary': typeof SettingsVocabularyRoute
   '/settings': typeof SettingsIndexRoute
   '/settings/notes/$noteId': typeof SettingsNotesNoteIdRoute
@@ -146,6 +154,7 @@ export interface FileRoutesById {
   '/settings/notes': typeof SettingsNotesRouteWithChildren
   '/settings/preferences': typeof SettingsPreferencesRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
+  '/settings/tags': typeof SettingsTagsRoute
   '/settings/vocabulary': typeof SettingsVocabularyRoute
   '/settings/': typeof SettingsIndexRoute
   '/settings/notes/$noteId': typeof SettingsNotesNoteIdRoute
@@ -165,6 +174,7 @@ export interface FileRouteTypes {
     | '/settings/notes'
     | '/settings/preferences'
     | '/settings/shortcuts'
+    | '/settings/tags'
     | '/settings/vocabulary'
     | '/settings/'
     | '/settings/notes/$noteId'
@@ -180,6 +190,7 @@ export interface FileRouteTypes {
     | '/settings/home'
     | '/settings/preferences'
     | '/settings/shortcuts'
+    | '/settings/tags'
     | '/settings/vocabulary'
     | '/settings'
     | '/settings/notes/$noteId'
@@ -197,6 +208,7 @@ export interface FileRouteTypes {
     | '/settings/notes'
     | '/settings/preferences'
     | '/settings/shortcuts'
+    | '/settings/tags'
     | '/settings/vocabulary'
     | '/settings/'
     | '/settings/notes/$noteId'
@@ -236,6 +248,13 @@ declare module '@tanstack/react-router' {
       path: '/vocabulary'
       fullPath: '/settings/vocabulary'
       preLoaderRoute: typeof SettingsVocabularyRouteImport
+      parentRoute: typeof SettingsRouteRoute
+    }
+    '/settings/tags': {
+      id: '/settings/tags'
+      path: '/tags'
+      fullPath: '/settings/tags'
+      preLoaderRoute: typeof SettingsTagsRouteImport
       parentRoute: typeof SettingsRouteRoute
     }
     '/settings/shortcuts': {
@@ -342,6 +361,7 @@ interface SettingsRouteRouteChildren {
   SettingsNotesRoute: typeof SettingsNotesRouteWithChildren
   SettingsPreferencesRoute: typeof SettingsPreferencesRoute
   SettingsShortcutsRoute: typeof SettingsShortcutsRoute
+  SettingsTagsRoute: typeof SettingsTagsRoute
   SettingsVocabularyRoute: typeof SettingsVocabularyRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
 }
@@ -356,6 +376,7 @@ const SettingsRouteRouteChildren: SettingsRouteRouteChildren = {
   SettingsNotesRoute: SettingsNotesRouteWithChildren,
   SettingsPreferencesRoute: SettingsPreferencesRoute,
   SettingsShortcutsRoute: SettingsShortcutsRoute,
+  SettingsTagsRoute: SettingsTagsRoute,
   SettingsVocabularyRoute: SettingsVocabularyRoute,
   SettingsIndexRoute: SettingsIndexRoute,
 }
