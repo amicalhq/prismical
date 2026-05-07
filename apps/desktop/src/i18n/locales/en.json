@@ -307,7 +307,6 @@
       "subtitle": "Here is what is coming up and what to capture next.",
       "upcoming": {
         "title": "Upcoming",
-
         "today": "Today",
         "tomorrow": "Tomorrow",
         "notes": "Notes",
@@ -670,7 +669,9 @@
           "noFoldersFound": "No folders found.",
           "addTags": "Add tags",
           "removeTag": "Remove tag",
-          "editTag": "Edit tag"
+          "editTag": "Edit tag",
+          "tagsLabel": "Tags",
+          "removeTagNamed": "Remove #{{name}}"
         },
         "deleteDialog": {
           "title": "Delete Note",
@@ -700,7 +701,53 @@
       "sortName": "Name",
       "empty": "No tags yet. Add tags from any note to organize your work.",
       "deleteConfirmTitle": "Delete tag?",
-      "deleteConfirmDescription": "This tag will be removed from {{count}} notes. The notes themselves are not affected. Continue?"
+      "deleteConfirmDescription_one": "This tag will be removed from {{count}} note. The notes themselves are not affected. Continue?",
+      "deleteConfirmDescription_other": "This tag will be removed from {{count}} notes. The notes themselves are not affected. Continue?",
+      "noteCount_one": "{{count}} note",
+      "noteCount_other": "{{count}} notes",
+      "menu": {
+        "favorite": "Favorite",
+        "unfavorite": "Unfavorite",
+        "edit": "Edit",
+        "delete": "Delete"
+      },
+      "picker": {
+        "placeholder": "Search or create a tag…",
+        "noResults": "No tags found.",
+        "recent": "Recent",
+        "all": "All",
+        "create": "Create <1>#{{name}}</1>"
+      },
+      "editDialog": {
+        "title": "Edit tag",
+        "nameLabel": "Name",
+        "colorLabel": "Color",
+        "previewLabel": "Preview",
+        "previewName": "tag",
+        "nameError": "Use lowercase letters, digits, '-' or '_' (max 32 chars).",
+        "nameDuplicate": "A tag named #{{name}} already exists.",
+        "delete": "Delete tag",
+        "cancel": "Cancel",
+        "save": "Save",
+        "customColorAria": "Custom color",
+        "pickColorAria": "Pick {{color}}"
+      },
+      "filterBanner": {
+        "label": "Showing notes tagged",
+        "clear": "Clear"
+      },
+      "emptyFiltered": {
+        "title": "No notes tagged #{{name}} yet",
+        "description": "Tag a note to see it here, or clear the filter."
+      },
+      "errors": {
+        "createFailed": "Failed to create tag: {{message}}",
+        "updateFailed": "Failed to update tag: {{message}}",
+        "deleteFailed": "Failed to delete tag: {{message}}",
+        "attachFailed": "Failed to attach tag: {{message}}",
+        "detachFailed": "Failed to remove tag: {{message}}",
+        "favoriteFailed": "Failed to update favorite: {{message}}"
+      }
     },
     "vocabulary": {
       "title": "Vocabulary",
