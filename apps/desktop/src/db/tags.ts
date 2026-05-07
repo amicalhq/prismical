@@ -11,7 +11,7 @@ export interface ListTagsOptions {
   offset?: number;
 }
 
-export async function insertTag(
+export async function createTag(
   db: DB,
   data: Pick<NewTag, "name" | "color"> & { isFavorite?: boolean },
 ): Promise<Tag> {
@@ -97,14 +97,6 @@ export async function listTagsByNoteId(db: DB, noteId: number): Promise<Tag[]> {
   return rows.map((r) => r.tag);
 }
 
-export async function listNoteIdsByTagId(db: DB, tagId: number): Promise<number[]> {
-  const rows = await db
-    .select({ noteId: noteTags.noteId })
-    .from(noteTags)
-    .where(eq(noteTags.tagId, tagId));
-  return rows.map((r) => r.noteId);
-}
-
 export async function updateTag(
   db: DB,
   id: number,
@@ -119,9 +111,12 @@ export async function updateTag(
 }
 
 export async function deleteTag(db: DB, id: number): Promise<{ detachedNoteCount: number }> {
-  const noteIds = await listNoteIdsByTagId(db, id);
+  const [{ count }] = await db
+    .select({ count: sql<number>`COUNT(*)` })
+    .from(noteTags)
+    .where(eq(noteTags.tagId, id));
   await db.delete(tags).where(eq(tags.id, id));
-  return { detachedNoteCount: noteIds.length };
+  return { detachedNoteCount: Number(count) };
 }
 
 export async function attachTag(db: DB, noteId: number, tagId: number): Promise<void> {

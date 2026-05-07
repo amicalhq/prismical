@@ -70,7 +70,7 @@ export class TagsService {
     const color = input.color
       ? this.validateColor(input.color)
       : await this.pickAutoColor();
-    return await tagDb.insertTag(this.db, { name, color });
+    return await tagDb.createTag(this.db, { name, color });
   }
 
   async updateTag(id: number, patch: UpdateTagInput): Promise<Tag> {

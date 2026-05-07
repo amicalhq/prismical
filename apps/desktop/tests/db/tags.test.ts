@@ -17,9 +17,9 @@ afterEach(async () => {
 });
 
 describe("db/tags", () => {
-  it("insertTag persists and returns the row", async () => {
-    const { insertTag } = await import("@db/tags");
-    const row = await insertTag(testDb.db, { name: "meeting", color: "#f59e0b" });
+  it("persists and returns the row", async () => {
+    const { createTag } = await import("@db/tags");
+    const row = await createTag(testDb.db, { name: "meeting", color: "#f59e0b" });
     expect(row.id).toBeGreaterThan(0);
     expect(row.name).toBe("meeting");
     expect(row.color).toBe("#f59e0b");
@@ -27,18 +27,18 @@ describe("db/tags", () => {
   });
 
   it("getTagByName returns null when missing, row when present", async () => {
-    const { insertTag, getTagByName } = await import("@db/tags");
+    const { createTag, getTagByName } = await import("@db/tags");
     expect(await getTagByName(testDb.db, "absent")).toBeNull();
-    await insertTag(testDb.db, { name: "work", color: "#10b981" });
+    await createTag(testDb.db, { name: "work", color: "#10b981" });
     const got = await getTagByName(testDb.db, "work");
     expect(got?.color).toBe("#10b981");
   });
 
   it("listTagsByNoteId joins through note_tags", async () => {
-    const { insertTag, attachTag, listTagsByNoteId } = await import("@db/tags");
+    const { createTag, attachTag, listTagsByNoteId } = await import("@db/tags");
     const [note] = await testDb.db.insert(notes).values({ title: "n" }).returning();
-    const a = await insertTag(testDb.db, { name: "a", color: "#f59e0b" });
-    const b = await insertTag(testDb.db, { name: "b", color: "#10b981" });
+    const a = await createTag(testDb.db, { name: "a", color: "#f59e0b" });
+    const b = await createTag(testDb.db, { name: "b", color: "#10b981" });
     await attachTag(testDb.db, note.id, a.id);
     await attachTag(testDb.db, note.id, b.id);
     const got = await listTagsByNoteId(testDb.db, note.id);
@@ -46,9 +46,9 @@ describe("db/tags", () => {
   });
 
   it("attachTag is idempotent (INSERT OR IGNORE)", async () => {
-    const { insertTag, attachTag } = await import("@db/tags");
+    const { createTag, attachTag } = await import("@db/tags");
     const [note] = await testDb.db.insert(notes).values({ title: "n" }).returning();
-    const t = await insertTag(testDb.db, { name: "x", color: "#f59e0b" });
+    const t = await createTag(testDb.db, { name: "x", color: "#f59e0b" });
     await attachTag(testDb.db, note.id, t.id);
     await attachTag(testDb.db, note.id, t.id); // must not throw on PK collision
     const rows = await testDb.db.select().from(noteTags);
@@ -56,9 +56,9 @@ describe("db/tags", () => {
   });
 
   it("deleteTag cascades note_tags rows", async () => {
-    const { insertTag, attachTag, deleteTag } = await import("@db/tags");
+    const { createTag, attachTag, deleteTag } = await import("@db/tags");
     const [note] = await testDb.db.insert(notes).values({ title: "n" }).returning();
-    const t = await insertTag(testDb.db, { name: "x", color: "#f59e0b" });
+    const t = await createTag(testDb.db, { name: "x", color: "#f59e0b" });
     await attachTag(testDb.db, note.id, t.id);
     await deleteTag(testDb.db, t.id);
     const rows = await testDb.db.select().from(noteTags);
@@ -66,10 +66,10 @@ describe("db/tags", () => {
   });
 
   it("listAllTagsWithCounts returns counts via group-by", async () => {
-    const { insertTag, attachTag, listAllTagsWithCounts } = await import("@db/tags");
+    const { createTag, attachTag, listAllTagsWithCounts } = await import("@db/tags");
     const [n1] = await testDb.db.insert(notes).values({ title: "n1" }).returning();
     const [n2] = await testDb.db.insert(notes).values({ title: "n2" }).returning();
-    const t = await insertTag(testDb.db, { name: "x", color: "#f59e0b" });
+    const t = await createTag(testDb.db, { name: "x", color: "#f59e0b" });
     await attachTag(testDb.db, n1.id, t.id);
     await attachTag(testDb.db, n2.id, t.id);
     const got = await listAllTagsWithCounts(testDb.db, { sortBy: "createdAt" });
