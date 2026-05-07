@@ -537,6 +537,7 @@ export default function NotePage({
   return (
     <>
       <Note
+        noteId={noteIdNumber}
         noteTitle={noteTitle}
         noteEmoji={noteIcon}
         noteStarred={noteStarred}
