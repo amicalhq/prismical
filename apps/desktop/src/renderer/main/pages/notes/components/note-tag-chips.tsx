@@ -1,11 +1,6 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Plus, Tag as TagIcon } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 import { TagChip } from "@/renderer/main/components/tag/tag-chip";
 import { TagPicker } from "@/renderer/main/components/tag/tag-picker";
 import { api } from "@/trpc/react";
@@ -25,6 +20,7 @@ export function NoteTagChips({ noteId, isNarrow }: NoteTagChipsProps) {
     onSuccess: () => utils.tags.getForNote.invalidate({ noteId }),
   });
   const [pickerOpen, setPickerOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   const tags = tagsQ.data ?? [];
   const visible = tags.slice(0, VISIBLE_LIMIT);
@@ -33,50 +29,50 @@ export function NoteTagChips({ noteId, isNarrow }: NoteTagChipsProps) {
   const goToTag = (tagId: number) =>
     navigate({ to: "/settings/notes", search: { tag: tagId } });
 
+  const togglePicker = () => setPickerOpen((o) => !o);
+
   if (isNarrow) {
     return (
-      <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
-        <PopoverTrigger asChild>
-          <button
-            type="button"
-            className="inline-flex h-[22px] items-center gap-1 rounded-full border border-dashed px-2 text-[11px] text-muted-foreground"
-            aria-label="Tags"
-          >
-            <TagIcon className="h-3 w-3" />
-            {tags.length}
-          </button>
-        </PopoverTrigger>
-        <PopoverContent align="start" className="w-72 p-0">
-          <TagPicker
-            noteId={noteId}
-            open={pickerOpen}
-            onOpenChange={setPickerOpen}
-          />
-        </PopoverContent>
-      </Popover>
+      <>
+        <button
+          ref={triggerRef}
+          type="button"
+          onClick={togglePicker}
+          className="inline-flex h-[22px] items-center gap-1 rounded-full border border-dashed px-2 text-[11px] text-muted-foreground"
+          aria-label="Tags"
+        >
+          <TagIcon className="h-3 w-3" />
+          {tags.length}
+        </button>
+        <TagPicker
+          noteId={noteId}
+          open={pickerOpen}
+          onOpenChange={setPickerOpen}
+          anchor={triggerRef}
+        />
+      </>
     );
   }
 
   if (tags.length === 0) {
     return (
-      <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
-        <PopoverTrigger asChild>
-          <button
-            type="button"
-            className="inline-flex h-[22px] items-center gap-1 rounded-full border border-dashed px-2 text-[11px] text-muted-foreground hover:text-foreground"
-          >
-            <Plus className="h-3 w-3" />
-            tags
-          </button>
-        </PopoverTrigger>
-        <PopoverContent align="start" className="w-72 p-0">
-          <TagPicker
-            noteId={noteId}
-            open={pickerOpen}
-            onOpenChange={setPickerOpen}
-          />
-        </PopoverContent>
-      </Popover>
+      <>
+        <button
+          ref={triggerRef}
+          type="button"
+          onClick={togglePicker}
+          className="inline-flex h-[22px] items-center gap-1 rounded-full border border-dashed px-2 text-[11px] text-muted-foreground hover:text-foreground"
+        >
+          <Plus className="h-3 w-3" />
+          tags
+        </button>
+        <TagPicker
+          noteId={noteId}
+          open={pickerOpen}
+          onOpenChange={setPickerOpen}
+          anchor={triggerRef}
+        />
+      </>
     );
   }
 
@@ -102,24 +98,21 @@ export function NoteTagChips({ noteId, isNarrow }: NoteTagChipsProps) {
           +{overflow}
         </span>
       )}
-      <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
-        <PopoverTrigger asChild>
-          <button
-            type="button"
-            aria-label="Add tag"
-            className="inline-flex h-[22px] w-[22px] items-center justify-center rounded-full border border-dashed text-muted-foreground hover:text-foreground"
-          >
-            <Plus className="h-3 w-3" />
-          </button>
-        </PopoverTrigger>
-        <PopoverContent align="start" className="w-72 p-0">
-          <TagPicker
-            noteId={noteId}
-            open={pickerOpen}
-            onOpenChange={setPickerOpen}
-          />
-        </PopoverContent>
-      </Popover>
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={togglePicker}
+        aria-label="Add tag"
+        className="inline-flex h-[22px] w-[22px] items-center justify-center rounded-full border border-dashed text-muted-foreground hover:text-foreground"
+      >
+        <Plus className="h-3 w-3" />
+      </button>
+      <TagPicker
+        noteId={noteId}
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        anchor={triggerRef}
+      />
     </div>
   );
 }

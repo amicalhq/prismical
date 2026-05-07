@@ -20,11 +20,10 @@ export interface TagPickerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /**
-   * Optional anchor / trigger that the parent renders inside the Combobox root.
-   * Typically the parent wraps `<TagPicker>` inside its own popover frame and
-   * leaves this undefined; the prop is here for future flexibility.
+   * Element to anchor the Combobox popup to. The picker positions itself
+   * against this element via base-ui's positioner.
    */
-  trigger?: React.ReactNode;
+  anchor: React.RefObject<HTMLElement | null>;
 }
 
 /**
@@ -39,7 +38,7 @@ export function TagPicker({
   noteId,
   open,
   onOpenChange,
-  trigger,
+  anchor,
 }: TagPickerProps) {
   const utils = api.useUtils();
   const [query, setQuery] = React.useState("");
@@ -110,8 +109,7 @@ export function TagPicker({
       onInputValueChange={(value) => setQuery(value)}
       filter={null}
     >
-      {trigger}
-      <ComboboxContent className="w-72">
+      <ComboboxContent className="w-72" anchor={() => anchor.current}>
         <ComboboxInput placeholder="Search or create a tag…" />
         <ComboboxList>
           {noResults && (
