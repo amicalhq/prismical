@@ -1,5 +1,7 @@
 import * as React from "react";
 import { Check } from "lucide-react";
+import { Trans, useTranslation } from "react-i18next";
+import { toast } from "sonner";
 
 import {
   Combobox,
@@ -40,6 +42,7 @@ export function TagPicker({
   onOpenChange,
   anchor,
 }: TagPickerProps) {
+  const { t } = useTranslation();
   const utils = api.useUtils();
   const [query, setQuery] = React.useState("");
 
@@ -48,32 +51,79 @@ export function TagPicker({
   const noteTags = api.tags.getForNote.useQuery({ noteId });
 
   const attached = React.useMemo(
-    () => new Set((noteTags.data ?? []).map((t) => t.id)),
+    () => new Set((noteTags.data ?? []).map((tag) => tag.id)),
     [noteTags.data],
   );
 
-  const create = api.tags.create.useMutation();
+  type Tag = NonNullable<typeof allTags.data>[number];
+
   const invalidateAll = () => {
     utils.tags.invalidate();
     utils.notes.getNotes.invalidate();
   };
-  const attach = api.tags.attach.useMutation({ onSuccess: invalidateAll });
-  const detach = api.tags.detach.useMutation({ onSuccess: invalidateAll });
+
+  const attach = api.tags.attach.useMutation({
+    onMutate: async ({ tagId }) => {
+      await utils.tags.getForNote.cancel({ noteId });
+      const previous = utils.tags.getForNote.getData({ noteId });
+      const lookup =
+        recentTags.data?.find((tag) => tag.id === tagId) ??
+        allTags.data?.find((tag) => tag.id === tagId);
+      if (lookup) {
+        utils.tags.getForNote.setData({ noteId }, (prev) =>
+          prev ? [lookup, ...prev.filter((tag) => tag.id !== tagId)] : [lookup],
+        );
+      }
+      return { previous };
+    },
+    onError: (error, _vars, ctx) => {
+      if (ctx?.previous) utils.tags.getForNote.setData({ noteId }, ctx.previous);
+      toast.error(
+        t("settings.tags.errors.attachFailed", { message: error.message }),
+      );
+    },
+    onSettled: invalidateAll,
+  });
+
+  const detach = api.tags.detach.useMutation({
+    onMutate: async ({ tagId }) => {
+      await utils.tags.getForNote.cancel({ noteId });
+      const previous = utils.tags.getForNote.getData({ noteId });
+      utils.tags.getForNote.setData({ noteId }, (prev) =>
+        (prev ?? []).filter((tag) => tag.id !== tagId),
+      );
+      return { previous };
+    },
+    onError: (error, _vars, ctx) => {
+      if (ctx?.previous) utils.tags.getForNote.setData({ noteId }, ctx.previous);
+      toast.error(
+        t("settings.tags.errors.detachFailed", { message: error.message }),
+      );
+    },
+    onSettled: invalidateAll,
+  });
+
+  const create = api.tags.create.useMutation({
+    onError: (error) => {
+      toast.error(
+        t("settings.tags.errors.createFailed", { message: error.message }),
+      );
+    },
+  });
 
   const lc = query.trim().toLowerCase();
-  const exact = (allTags.data ?? []).find((t) => t.name === lc);
+  const exact = (allTags.data ?? []).find((tag) => tag.name === lc);
   const showCreate = lc.length > 0 && TAG_NAME_RE.test(lc) && !exact;
 
-  type Tag = NonNullable<typeof allTags.data>[number];
   const filterByQuery = (rows: readonly Tag[] | undefined): Tag[] => {
     if (!rows) return [];
     if (!lc) return [...rows];
-    return rows.filter((t) => t.name.includes(lc));
+    return rows.filter((tag) => tag.name.includes(lc));
   };
 
   const recent = filterByQuery(recentTags.data);
   const all = filterByQuery(allTags.data).filter(
-    (t) => !recent.some((r) => r.id === t.id),
+    (tag) => !recent.some((r) => r.id === tag.id),
   );
 
   const noResults = recent.length === 0 && all.length === 0 && !showCreate;
@@ -104,20 +154,20 @@ export function TagPicker({
     >
       <ComboboxContent className="w-72" anchor={() => anchor.current}>
         <ComboboxInput
-          placeholder="Search or create a tag…"
+          placeholder={t("settings.tags.picker.placeholder")}
           showTrigger={false}
         />
         <ComboboxList>
           {noResults && (
             <div className="px-2 py-2 text-center text-sm text-muted-foreground">
-              No tags found.
+              {t("settings.tags.picker.noResults")}
             </div>
           )}
 
           {recent.length > 0 && (
             <ComboboxGroup>
               <ComboboxLabel className="px-2 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                Recent
+                {t("settings.tags.picker.recent")}
               </ComboboxLabel>
               {recent.map((t) => (
                 <ComboboxItem
@@ -137,7 +187,7 @@ export function TagPicker({
           {all.length > 0 && (
             <ComboboxGroup>
               <ComboboxLabel className="px-2 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                All
+                {t("settings.tags.picker.all")}
               </ComboboxLabel>
               {all.map((t) => (
                 <ComboboxItem
@@ -164,7 +214,11 @@ export function TagPicker({
               >
                 <span className="font-mono">+</span>
                 <span className="ml-1">
-                  Create <strong>#{lc}</strong>
+                  <Trans
+                    i18nKey="settings.tags.picker.create"
+                    values={{ name: lc }}
+                    components={{ 1: <strong /> }}
+                  />
                 </span>
               </ComboboxItem>
             </div>

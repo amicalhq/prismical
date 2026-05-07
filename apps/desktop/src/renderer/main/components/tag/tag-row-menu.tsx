@@ -1,4 +1,6 @@
 import { MoreHorizontal, Star, StarOff, Pencil, Trash2 } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,9 +24,15 @@ export function TagRowMenu({
   onDelete,
   triggerClassName,
 }: TagRowMenuProps) {
+  const { t } = useTranslation();
   const utils = api.useUtils();
   const update = api.tags.update.useMutation({
     onSuccess: () => utils.tags.invalidate(),
+    onError: (error) => {
+      toast.error(
+        t("settings.tags.errors.favoriteFailed", { message: error.message }),
+      );
+    },
   });
 
   return (
@@ -32,7 +40,7 @@ export function TagRowMenu({
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          aria-label={`More actions for ${tag.name}`}
+          aria-label={`#${tag.name}`}
           className={
             triggerClassName ??
             "rounded p-1 text-muted-foreground hover:bg-muted"
@@ -44,27 +52,25 @@ export function TagRowMenu({
       <DropdownMenuContent align="end">
         {tag.isFavorite ? (
           <DropdownMenuItem
-            onSelect={() =>
-              update.mutate({ id: tag.id, isFavorite: false })
-            }
+            onSelect={() => update.mutate({ id: tag.id, isFavorite: false })}
           >
-            <StarOff className="mr-2 h-4 w-4" /> Unfavorite
+            <StarOff className="mr-2 h-4 w-4" />{" "}
+            {t("settings.tags.menu.unfavorite")}
           </DropdownMenuItem>
         ) : (
           <DropdownMenuItem
-            onSelect={() =>
-              update.mutate({ id: tag.id, isFavorite: true })
-            }
+            onSelect={() => update.mutate({ id: tag.id, isFavorite: true })}
           >
-            <Star className="mr-2 h-4 w-4" /> Favorite
+            <Star className="mr-2 h-4 w-4" />{" "}
+            {t("settings.tags.menu.favorite")}
           </DropdownMenuItem>
         )}
         <DropdownMenuItem onSelect={onEdit}>
-          <Pencil className="mr-2 h-4 w-4" /> Edit
+          <Pencil className="mr-2 h-4 w-4" /> {t("settings.tags.menu.edit")}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem variant="destructive" onSelect={onDelete ?? onEdit}>
-          <Trash2 className="mr-2 h-4 w-4" /> Delete
+          <Trash2 className="mr-2 h-4 w-4" /> {t("settings.tags.menu.delete")}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

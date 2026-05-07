@@ -1,4 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
@@ -49,7 +51,10 @@ export function TagEditDialog({
   open,
   onOpenChange,
 }: TagEditDialogProps) {
+  const { t } = useTranslation();
   const utils = api.useUtils();
+  const nameId = useId();
+  const colorId = useId();
   const [name, setName] = useState(tag.name);
   const [color, setColor] = useState(tag.color);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -65,12 +70,26 @@ export function TagEditDialog({
   const lcName = name.trim().toLowerCase();
   const nameValid = NAME_RE.test(lcName);
   const colorValid = isValidHex(color);
+  const showGhost = nameValid && lcName !== name;
+
+  const allTagsQ = api.tags.list.useQuery({ sortBy: "name" });
+  const duplicateTag = useMemo(() => {
+    if (!nameValid || lcName === tag.name) return undefined;
+    return (allTagsQ.data ?? []).find(
+      (other) => other.name === lcName && other.id !== tag.id,
+    );
+  }, [allTagsQ.data, lcName, nameValid, tag.id, tag.name]);
 
   const update = api.tags.update.useMutation({
     onSuccess: () => {
       utils.tags.invalidate();
       utils.notes.getNotes.invalidate();
       onOpenChange(false);
+    },
+    onError: (error) => {
+      toast.error(
+        t("settings.tags.errors.updateFailed", { message: error.message }),
+      );
     },
   });
   const del = api.tags.delete.useMutation({
@@ -80,39 +99,75 @@ export function TagEditDialog({
       setConfirmDelete(false);
       onOpenChange(false);
     },
+    onError: (error) => {
+      toast.error(
+        t("settings.tags.errors.deleteFailed", { message: error.message }),
+      );
+    },
   });
+
+  const previewName = lcName || t("settings.tags.editDialog.previewName");
+  const canSave =
+    nameValid && colorValid && !duplicateTag && !update.isPending;
 
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Edit tag</DialogTitle>
+            <DialogTitle>{t("settings.tags.editDialog.title")}</DialogTitle>
           </DialogHeader>
 
-          <label className="text-xs uppercase tracking-wider text-muted-foreground">
-            Name
+          <label
+            htmlFor={nameId}
+            className="text-xs uppercase tracking-wider text-muted-foreground"
+          >
+            {t("settings.tags.editDialog.nameLabel")}
           </label>
-          <Input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            aria-invalid={!nameValid}
-          />
+          <div className="relative">
+            <Input
+              id={nameId}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              aria-invalid={!nameValid || !!duplicateTag}
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+            />
+            {showGhost && (
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 font-mono text-xs text-muted-foreground"
+              >
+                #{lcName}
+              </span>
+            )}
+          </div>
           {!nameValid && (
             <p className="text-xs text-destructive">
-              Use lowercase letters, digits, '-' or '_' (max 32 chars).
+              {t("settings.tags.editDialog.nameError")}
+            </p>
+          )}
+          {nameValid && duplicateTag && (
+            <p className="text-xs text-destructive">
+              {t("settings.tags.editDialog.nameDuplicate", { name: lcName })}
             </p>
           )}
 
-          <label className="mt-3 text-xs uppercase tracking-wider text-muted-foreground">
-            Color
-          </label>
-          <div className="grid grid-cols-8 gap-2">
+          <div
+            id={colorId}
+            className="mt-3 text-xs uppercase tracking-wider text-muted-foreground"
+          >
+            {t("settings.tags.editDialog.colorLabel")}
+          </div>
+          <div role="group" aria-labelledby={colorId} className="grid grid-cols-8 gap-2">
             {TAG_PRESETS.map((c) => (
               <button
                 key={c}
                 type="button"
-                aria-label={`Pick ${c}`}
+                aria-label={t("settings.tags.editDialog.pickColorAria", {
+                  color: c,
+                })}
                 onClick={() => setColor(c)}
                 className={`h-8 w-8 rounded-md border-2 ${
                   color === c ? "border-foreground" : "border-transparent"
@@ -124,7 +179,7 @@ export function TagEditDialog({
               <PopoverTrigger asChild>
                 <button
                   type="button"
-                  aria-label="Custom color"
+                  aria-label={t("settings.tags.editDialog.customColorAria")}
                   className={`h-8 w-8 rounded-md border-2 ${
                     !TAG_PRESETS.includes(color as (typeof TAG_PRESETS)[number])
                       ? "border-foreground"
@@ -156,19 +211,13 @@ export function TagEditDialog({
             </Popover>
           </div>
 
-          <label className="mt-3 text-xs uppercase tracking-wider text-muted-foreground">
-            Preview
-          </label>
+          <div className="mt-3 text-xs uppercase tracking-wider text-muted-foreground">
+            {t("settings.tags.editDialog.previewLabel")}
+          </div>
           <div className="flex items-center gap-3 rounded-md border bg-muted/30 p-2">
-            <TagHash
-              color={colorValid ? color : "#888"}
-              name={lcName || "tag"}
-            />
+            <TagHash color={colorValid ? color : "#888"} name={previewName} />
             <span className="ml-auto" />
-            <TagChip
-              color={colorValid ? color : "#888"}
-              name={lcName || "tag"}
-            />
+            <TagChip color={colorValid ? color : "#888"} name={previewName} />
           </div>
 
           <DialogFooter className="mt-4">
@@ -177,18 +226,18 @@ export function TagEditDialog({
               className="mr-auto"
               onClick={() => setConfirmDelete(true)}
             >
-              Delete tag
+              {t("settings.tags.editDialog.delete")}
             </Button>
             <Button variant="ghost" onClick={() => onOpenChange(false)}>
-              Cancel
+              {t("settings.tags.editDialog.cancel")}
             </Button>
             <Button
               onClick={() =>
                 update.mutate({ id: tag.id, name: lcName, color })
               }
-              disabled={!nameValid || !colorValid || update.isPending}
+              disabled={!canSave}
             >
-              Save
+              {t("settings.tags.editDialog.save")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -197,20 +246,24 @@ export function TagEditDialog({
       <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete tag?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {t("settings.tags.deleteConfirmTitle")}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              This tag will be removed from {noteCount} note
-              {noteCount === 1 ? "" : "s"}. The notes themselves are not
-              affected. Continue?
+              {t("settings.tags.deleteConfirmDescription", {
+                count: noteCount,
+              })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>
+              {t("settings.tags.editDialog.cancel")}
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={() => del.mutate({ id: tag.id })}
               className="bg-destructive text-foreground hover:bg-destructive/90"
             >
-              Delete
+              {t("settings.tags.menu.delete")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
