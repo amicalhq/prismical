@@ -1,8 +1,14 @@
-import { and, asc, desc, eq, like, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
 import { tags, noteTags, type Tag, type NewTag } from "./schema";
 
 type DB = LibSQLDatabase<Record<string, unknown>>;
+
+// Treat user-typed `%`, `_`, `\` as literals in LIKE patterns. Pair with
+// `ESCAPE '\'` in the query.
+function escapeLike(input: string): string {
+  return input.replace(/\\/g, "\\\\").replace(/[%_]/g, "\\$&");
+}
 
 export interface ListTagsOptions {
   sortBy?: "createdAt" | "name";
@@ -44,7 +50,10 @@ export async function listTags(db: DB, opts: ListTagsOptions = {}): Promise<Tag[
   const order = sortBy === "name" ? asc(tags.name) : desc(tags.createdAt);
 
   let q = db.select().from(tags).orderBy(order).$dynamic();
-  if (search) q = q.where(like(tags.name, `%${search.toLowerCase()}%`));
+  if (search) {
+    const pattern = `%${escapeLike(search.toLowerCase())}%`;
+    q = q.where(sql`${tags.name} LIKE ${pattern} ESCAPE '\\'`);
+  }
   if (limit !== undefined) q = q.limit(limit);
   if (offset !== undefined) q = q.offset(offset);
   return await q;
@@ -73,6 +82,9 @@ export async function listAllTagsWithCounts(
   const { sortBy = "createdAt", search } = opts;
   const order = sortBy === "name" ? asc(tags.name) : desc(tags.createdAt);
 
+  const searchPattern = search
+    ? `%${escapeLike(search.toLowerCase())}%`
+    : undefined;
   const rows = await db
     .select({
       tag: tags,
@@ -80,7 +92,11 @@ export async function listAllTagsWithCounts(
     })
     .from(tags)
     .leftJoin(noteTags, eq(noteTags.tagId, tags.id))
-    .where(search ? like(tags.name, `%${search.toLowerCase()}%`) : undefined)
+    .where(
+      searchPattern
+        ? sql`${tags.name} LIKE ${searchPattern} ESCAPE '\\'`
+        : undefined,
+    )
     .groupBy(tags.id)
     .orderBy(order);
 
@@ -111,12 +127,14 @@ export async function updateTag(
 }
 
 export async function deleteTag(db: DB, id: number): Promise<{ detachedNoteCount: number }> {
-  const [{ count }] = await db
-    .select({ count: sql<number>`COUNT(*)` })
-    .from(noteTags)
-    .where(eq(noteTags.tagId, id));
-  await db.delete(tags).where(eq(tags.id, id));
-  return { detachedNoteCount: Number(count) };
+  return await db.transaction(async (tx) => {
+    const [{ count }] = await tx
+      .select({ count: sql<number>`COUNT(*)` })
+      .from(noteTags)
+      .where(eq(noteTags.tagId, id));
+    await tx.delete(tags).where(eq(tags.id, id));
+    return { detachedNoteCount: Number(count) };
+  });
 }
 
 export async function attachTag(db: DB, noteId: number, tagId: number): Promise<void> {
