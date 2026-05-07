@@ -10,6 +10,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { TagHash } from "@/renderer/main/components/tag/tag-hash";
 import { TagRowMenu } from "@/renderer/main/components/tag/tag-row-menu";
 import { TagEditDialog } from "@/renderer/main/components/tag/tag-edit-dialog";
@@ -19,13 +29,22 @@ import type { Tag } from "@/db/schema";
 export function AllTagsPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const utils = api.useUtils();
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<"createdAt" | "name">("createdAt");
   const [editing, setEditing] = useState<Tag | null>(null);
+  const [confirming, setConfirming] = useState<Tag | null>(null);
 
   const q = api.tags.listWithCounts.useQuery({
     search: search.trim() || undefined,
     sortBy,
+  });
+  const del = api.tags.delete.useMutation({
+    onSuccess: () => {
+      utils.tags.invalidate();
+      utils.notes.getNotes.invalidate();
+      setConfirming(null);
+    },
   });
   const totalNotes = (q.data ?? []).reduce((s, r) => s + r.noteCount, 0);
 
@@ -91,7 +110,11 @@ export function AllTagsPage() {
                 className="opacity-0 group-hover/row:opacity-100"
                 onClick={(e) => e.stopPropagation()}
               >
-                <TagRowMenu tag={tag} onEdit={() => setEditing(tag)} />
+                <TagRowMenu
+                  tag={tag}
+                  onEdit={() => setEditing(tag)}
+                  onDelete={() => setConfirming(tag)}
+                />
               </div>
             </div>
           ))
@@ -108,6 +131,38 @@ export function AllTagsPage() {
           onOpenChange={(o) => !o && setEditing(null)}
         />
       )}
+
+      <AlertDialog
+        open={confirming !== null}
+        onOpenChange={(o) => !o && setConfirming(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t("settings.tags.deleteConfirmTitle")}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("settings.tags.deleteConfirmDescription", {
+                count: confirming
+                  ? ((q.data ?? []).find((r) => r.id === confirming.id)
+                      ?.noteCount ?? 0)
+                  : 0,
+              })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>
+              {t("settings.notes.note.deleteDialog.cancel")}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => confirming && del.mutate({ id: confirming.id })}
+              className="bg-destructive text-foreground hover:bg-destructive/90"
+            >
+              {t("settings.notes.note.actions.delete")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

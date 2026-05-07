@@ -12,10 +12,16 @@ import { api } from "@/trpc/react";
 interface TagRowMenuProps {
   tag: Tag;
   onEdit: () => void;
+  onDelete?: () => void;
   triggerClassName?: string;
 }
 
-export function TagRowMenu({ tag, onEdit, triggerClassName }: TagRowMenuProps) {
+export function TagRowMenu({
+  tag,
+  onEdit,
+  onDelete,
+  triggerClassName,
+}: TagRowMenuProps) {
   const utils = api.useUtils();
   const update = api.tags.update.useMutation({
     onSuccess: () => utils.tags.invalidate(),
@@ -57,7 +63,7 @@ export function TagRowMenu({ tag, onEdit, triggerClassName }: TagRowMenuProps) {
           <Pencil className="mr-2 h-4 w-4" /> Edit
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem variant="destructive" onSelect={onEdit}>
+        <DropdownMenuItem variant="destructive" onSelect={onDelete ?? onEdit}>
           <Trash2 className="mr-2 h-4 w-4" /> Delete
         </DropdownMenuItem>
       </DropdownMenuContent>
