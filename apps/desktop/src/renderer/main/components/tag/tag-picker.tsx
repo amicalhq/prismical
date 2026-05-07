@@ -57,9 +57,28 @@ export function TagPicker({
 
   type Tag = NonNullable<typeof allTags.data>[number];
 
-  const invalidateAll = () => {
-    utils.tags.invalidate();
+  // Invalidate everything *except* the current note's getForNote — its cache
+  // was just written optimistically and attach/detach return no extra data,
+  // so refetching only races a follow-up toggle. Other notes' getForNote
+  // entries are unaffected by a single-note attach/detach.
+  const invalidateAfterMutate = () => {
+    utils.tags.list.invalidate();
+    utils.tags.listRecent.invalidate();
+    utils.tags.listFavorites.invalidate();
+    utils.tags.listWithCounts.invalidate();
     utils.notes.getNotes.invalidate();
+  };
+
+  const rollbackOrRefetch = (
+    ctx: { previous: Tag[] | undefined } | undefined,
+  ) => {
+    if (ctx?.previous !== undefined) {
+      utils.tags.getForNote.setData({ noteId }, ctx.previous);
+    } else {
+      // No prior cache to restore — clear our optimistic write and force a
+      // fresh fetch so the UI converges instead of sticking on the bad guess.
+      utils.tags.getForNote.invalidate({ noteId });
+    }
   };
 
   const attach = api.tags.attach.useMutation({
@@ -67,6 +86,7 @@ export function TagPicker({
       await utils.tags.getForNote.cancel({ noteId });
       const previous = utils.tags.getForNote.getData({ noteId });
       const lookup =
+        utils.tags.list.getData({ sortBy: "name" })?.find((tag) => tag.id === tagId) ??
         recentTags.data?.find((tag) => tag.id === tagId) ??
         allTags.data?.find((tag) => tag.id === tagId);
       if (lookup) {
@@ -77,12 +97,12 @@ export function TagPicker({
       return { previous };
     },
     onError: (error, _vars, ctx) => {
-      if (ctx?.previous) utils.tags.getForNote.setData({ noteId }, ctx.previous);
+      rollbackOrRefetch(ctx);
       toast.error(
         t("settings.tags.errors.attachFailed", { message: error.message }),
       );
     },
-    onSettled: invalidateAll,
+    onSettled: invalidateAfterMutate,
   });
 
   const detach = api.tags.detach.useMutation({
@@ -95,12 +115,12 @@ export function TagPicker({
       return { previous };
     },
     onError: (error, _vars, ctx) => {
-      if (ctx?.previous) utils.tags.getForNote.setData({ noteId }, ctx.previous);
+      rollbackOrRefetch(ctx);
       toast.error(
         t("settings.tags.errors.detachFailed", { message: error.message }),
       );
     },
-    onSettled: invalidateAll,
+    onSettled: invalidateAfterMutate,
   });
 
   const create = api.tags.create.useMutation({
@@ -137,10 +157,18 @@ export function TagPicker({
   };
 
   const handleCreate = async () => {
-    const tag = await create.mutateAsync({ name: lc });
-    attach.mutate({ noteId, tagId: tag.id });
-    utils.tags.invalidate();
-    setQuery("");
+    try {
+      const tag = await create.mutateAsync({ name: lc });
+      // Seed the list cache so attach.onMutate's lookup finds the new tag and
+      // the optimistic chip shows immediately.
+      utils.tags.list.setData({ sortBy: "name" }, (prev) =>
+        prev ? [...prev, tag] : [tag],
+      );
+      attach.mutate({ noteId, tagId: tag.id });
+      setQuery("");
+    } catch {
+      // create.onError already surfaced a toast.
+    }
   };
 
   return (
