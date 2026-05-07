@@ -75,7 +75,7 @@ export function AllTagsPage() {
               onClick={() =>
                 navigate({
                   to: "/settings/notes",
-                  search: { tag: tag.id } as never,
+                  search: { tag: tag.id },
                 })
               }
             >

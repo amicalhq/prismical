@@ -1,11 +1,12 @@
-import { NotebookText } from "lucide-react";
+import { NotebookText, X } from "lucide-react";
 import { NoteCard } from "./note-card";
 import { api } from "@/trpc/react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { useMemo } from "react";
 import type { Note } from "../types";
+import { TagHash } from "@/renderer/main/components/tag/tag-hash";
 
 interface NotesListProps {
   showPageHeader?: boolean;
@@ -27,11 +28,19 @@ export function NotesList({
 }: NotesListProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const search = useSearch({ strict: false });
+  const tagId = (search as { tag?: number }).tag;
 
   const { data: notes, isLoading } = api.notes.getNotes.useQuery({
     sortBy: "updatedAt",
     sortOrder: "desc",
+    tagId,
   });
+
+  const filterTagQ = api.tags.getById.useQuery(
+    { id: tagId! },
+    { enabled: tagId !== undefined },
+  );
 
   const onNoteClick = (noteId: number) => {
     navigate({
@@ -136,6 +145,24 @@ export function NotesList({
     );
   }
 
+  const filterBanner =
+    tagId !== undefined && filterTagQ.data ? (
+      <div className="mb-3 flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-2 text-sm">
+        <span className="text-muted-foreground">Showing notes tagged</span>
+        <TagHash color={filterTagQ.data.color} name={filterTagQ.data.name} />
+        <span className="text-xs text-muted-foreground">
+          ({notes?.length ?? 0})
+        </span>
+        <button
+          type="button"
+          className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+          onClick={() => navigate({ to: "/settings/notes", search: {} })}
+        >
+          Clear <X className="h-3 w-3" />
+        </button>
+      </div>
+    ) : null;
+
   return (
     <div>
       {showPageHeader ? (
@@ -143,6 +170,8 @@ export function NotesList({
           <h1 className="text-xl font-bold">{t("settings.nav.notes.title")}</h1>
         </div>
       ) : null}
+
+      {filterBanner}
 
       {formattedNotes.length > 0 && (
         <div>

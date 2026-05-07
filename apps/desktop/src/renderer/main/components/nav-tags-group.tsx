@@ -50,8 +50,8 @@ export function NavTagsGroup() {
               >
                 <SidebarMenuButton asChild>
                   <Link
-                    to={"/settings/notes" as never}
-                    search={{ tag: tag.id } as never}
+                    to="/settings/notes"
+                    search={{ tag: tag.id }}
                     aria-label={`#${tag.name}`}
                   >
                     <TagHash color={tag.color} name={tag.name} />
@@ -69,7 +69,7 @@ export function NavTagsGroup() {
               asChild
               className="text-xs text-sidebar-foreground/70"
             >
-              <Link to={"/settings/tags" as never}>
+              <Link to="/settings/tags">
                 {t("settings.sidebar.tagsViewAll")} →
               </Link>
             </SidebarMenuButton>

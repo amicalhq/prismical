@@ -259,8 +259,8 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
             <SidebarMenuItem key={`fav-tag-${tag.id}`}>
               <SidebarMenuButton asChild>
                 <Link
-                  to={"/settings/notes" as never}
-                  search={{ tag: tag.id } as never}
+                  to="/settings/notes"
+                  search={{ tag: tag.id }}
                   aria-label={`#${tag.name}`}
                 >
                   <TagHash color={tag.color} name={tag.name} />

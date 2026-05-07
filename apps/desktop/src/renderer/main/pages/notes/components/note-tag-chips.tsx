@@ -31,7 +31,7 @@ export function NoteTagChips({ noteId, isNarrow }: NoteTagChipsProps) {
   const overflow = tags.length - visible.length;
 
   const goToTag = (tagId: number) =>
-    navigate({ to: "/settings/notes", search: { tag: tagId } as never });
+    navigate({ to: "/settings/notes", search: { tag: tagId } });
 
   if (isNarrow) {
     return (
