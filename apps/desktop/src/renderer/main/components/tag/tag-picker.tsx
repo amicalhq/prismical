@@ -4,12 +4,16 @@ import { Check } from "lucide-react";
 import {
   Combobox,
   ComboboxContent,
+  ComboboxGroup,
   ComboboxInput,
   ComboboxItem,
+  ComboboxLabel,
   ComboboxList,
 } from "@/components/ui/combobox-radix";
 import { api } from "@/trpc/react";
 import { TagHash } from "./tag-hash";
+
+const TAG_NAME_RE = /^[a-z0-9_-]{1,32}$/;
 
 export interface TagPickerProps {
   noteId: number;
@@ -65,7 +69,7 @@ export function TagPicker({
 
   const lc = query.trim().toLowerCase();
   const exact = (allTags.data ?? []).find((t) => t.name === lc);
-  const showCreate = lc.length > 0 && !exact;
+  const showCreate = lc.length > 0 && TAG_NAME_RE.test(lc) && !exact;
 
   type Tag = NonNullable<typeof allTags.data>[number];
   const filterByQuery = (rows: readonly Tag[] | undefined): Tag[] => {
@@ -117,10 +121,10 @@ export function TagPicker({
           )}
 
           {recent.length > 0 && (
-            <div>
-              <div className="px-2 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <ComboboxGroup>
+              <ComboboxLabel className="px-2 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                 Recent
-              </div>
+              </ComboboxLabel>
               {recent.map((t) => (
                 <ComboboxItem
                   key={`r-${t.id}`}
@@ -133,14 +137,14 @@ export function TagPicker({
                   )}
                 </ComboboxItem>
               ))}
-            </div>
+            </ComboboxGroup>
           )}
 
           {all.length > 0 && (
-            <div>
-              <div className="px-2 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <ComboboxGroup>
+              <ComboboxLabel className="px-2 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                 All
-              </div>
+              </ComboboxLabel>
               {all.map((t) => (
                 <ComboboxItem
                   key={`a-${t.id}`}
@@ -153,7 +157,7 @@ export function TagPicker({
                   )}
                 </ComboboxItem>
               ))}
-            </div>
+            </ComboboxGroup>
           )}
 
           {showCreate && (
