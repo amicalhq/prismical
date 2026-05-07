@@ -14,7 +14,7 @@ import { api } from "@/trpc/react";
 interface TagRowMenuProps {
   tag: Tag;
   onEdit: () => void;
-  onDelete?: () => void;
+  onDelete: () => void;
   triggerClassName?: string;
 }
 
@@ -69,7 +69,7 @@ export function TagRowMenu({
           <Pencil className="mr-2 h-4 w-4" /> {t("settings.tags.menu.edit")}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem variant="destructive" onSelect={onDelete ?? onEdit}>
+        <DropdownMenuItem variant="destructive" onSelect={onDelete}>
           <Trash2 className="mr-2 h-4 w-4" /> {t("settings.tags.menu.delete")}
         </DropdownMenuItem>
       </DropdownMenuContent>

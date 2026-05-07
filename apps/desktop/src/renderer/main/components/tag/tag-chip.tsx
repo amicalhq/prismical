@@ -24,41 +24,62 @@ export function TagChip({
   const theme: "light" | "dark" = resolvedTheme === "light" ? "light" : "dark";
   const styles = tagChipStyles(color, theme);
 
+  const wrapperClass = cn(
+    "group/tag inline-flex h-[22px] items-center gap-1 rounded-full border px-2 text-[11px] font-medium",
+    className,
+  );
+  const wrapperStyle = {
+    background: styles.background,
+    borderColor: styles.border,
+    color: styles.foreground,
+  };
+
+  // Read-only: plain inline span.
+  if (!onClick && !onRemove) {
+    return (
+      <span className={wrapperClass} style={wrapperStyle}>
+        #{name}
+      </span>
+    );
+  }
+
+  // Click-only: a single real button, no nested interactive children.
+  if (onClick && !onRemove) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className={cn(
+          wrapperClass,
+          "cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        )}
+        style={wrapperStyle}
+      >
+        #{name}
+      </button>
+    );
+  }
+
+  // Click + remove (or remove-only): two sibling buttons in a presentational wrapper.
   return (
-    <span
-      role={onClick ? "button" : undefined}
-      tabIndex={onClick ? 0 : undefined}
-      onClick={onClick}
-      onKeyDown={
-        onClick
-          ? (e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                onClick();
-              }
-            }
-          : undefined
-      }
-      className={cn(
-        "group/tag inline-flex h-[22px] items-center gap-1 rounded-full border px-2 text-[11px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        onClick && "cursor-pointer",
-        className,
+    <span className={wrapperClass} style={wrapperStyle}>
+      {onClick ? (
+        <button
+          type="button"
+          onClick={onClick}
+          className="cursor-pointer rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          style={{ color: "inherit", background: "transparent" }}
+        >
+          #{name}
+        </button>
+      ) : (
+        <span>#{name}</span>
       )}
-      style={{
-        background: styles.background,
-        borderColor: styles.border,
-        color: styles.foreground,
-      }}
-    >
-      <span>#{name}</span>
       {onRemove && (
         <button
           type="button"
           aria-label={t("settings.notes.note.actions.removeTagNamed", { name })}
-          onClick={(e) => {
-            e.stopPropagation();
-            onRemove();
-          }}
+          onClick={onRemove}
           className="ml-0.5 hidden h-3.5 w-3.5 items-center justify-center rounded-full hover:bg-black/20 focus-visible:flex group-hover/tag:flex group-focus-within/tag:flex"
         >
           <X className="h-2.5 w-2.5" />
