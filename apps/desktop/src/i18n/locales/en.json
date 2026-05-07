@@ -285,7 +285,10 @@
       "favorites": "Favorites",
       "folders": "Folders",
       "noFavorites": "No favorites yet",
-      "noFolders": "No folders yet"
+      "noFolders": "No folders yet",
+      "tags": "Tags",
+      "tagsViewAll": "View all",
+      "noTags": "No tags yet"
     },
     "search": {
       "buttonLabel": "Search",
@@ -664,7 +667,10 @@
           "newFolderPrompt": "Folder name",
           "createFolder": "Create",
           "searchFolders": "Search folders...",
-          "noFoldersFound": "No folders found."
+          "noFoldersFound": "No folders found.",
+          "addTags": "Add tags",
+          "removeTag": "Remove tag",
+          "editTag": "Edit tag"
         },
         "deleteDialog": {
           "title": "Delete Note",
@@ -685,6 +691,16 @@
         }
       },
       "sidebarButtonLabel": "Note"
+    },
+    "tags": {
+      "title": "Tags",
+      "summary": "{{count}} tags · {{noteCount}} notes",
+      "searchPlaceholder": "Search tags…",
+      "sortRecent": "Recent",
+      "sortName": "Name",
+      "empty": "No tags yet. Add tags from any note to organize your work.",
+      "deleteConfirmTitle": "Delete tag?",
+      "deleteConfirmDescription": "This tag will be removed from {{count}} notes. The notes themselves are not affected. Continue?"
     },
     "vocabulary": {
       "title": "Vocabulary",

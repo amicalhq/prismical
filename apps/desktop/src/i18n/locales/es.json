@@ -374,7 +374,10 @@
       "favorites": "Favoritos",
       "folders": "Carpetas",
       "noFavorites": "Aún no hay favoritos",
-      "noFolders": "Aún no hay carpetas"
+      "noFolders": "Aún no hay carpetas",
+      "tags": "Etiquetas",
+      "tagsViewAll": "Ver todas",
+      "noTags": "Aún no hay etiquetas"
     },
     "search": {
       "buttonLabel": "Buscar",
@@ -745,7 +748,10 @@
           "newFolderPrompt": "Nombre de la carpeta",
           "createFolder": "Crear",
           "searchFolders": "Buscar carpetas...",
-          "noFoldersFound": "No se encontraron carpetas."
+          "noFoldersFound": "No se encontraron carpetas.",
+          "addTags": "Añadir etiquetas",
+          "removeTag": "Eliminar etiqueta",
+          "editTag": "Editar etiqueta"
         },
         "deleteDialog": {
           "title": "Eliminar nota",
@@ -766,6 +772,16 @@
         }
       },
       "sidebarButtonLabel": "Nota"
+    },
+    "tags": {
+      "title": "Etiquetas",
+      "summary": "{{count}} etiquetas · {{noteCount}} notas",
+      "searchPlaceholder": "Buscar etiquetas…",
+      "sortRecent": "Recientes",
+      "sortName": "Nombre",
+      "empty": "Aún no hay etiquetas. Añade etiquetas a cualquier nota para organizar tu trabajo.",
+      "deleteConfirmTitle": "¿Eliminar etiqueta?",
+      "deleteConfirmDescription": "Esta etiqueta se eliminará de {{count}} notas. Las notas no se verán afectadas. ¿Continuar?"
     },
     "vocabulary": {
       "title": "Vocabulario",

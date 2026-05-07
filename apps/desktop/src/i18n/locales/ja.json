@@ -374,7 +374,10 @@
       "favorites": "お気に入り",
       "folders": "フォルダー",
       "noFavorites": "お気に入りはまだありません",
-      "noFolders": "フォルダーはまだありません"
+      "noFolders": "フォルダーはまだありません",
+      "tags": "タグ",
+      "tagsViewAll": "すべて表示",
+      "noTags": "タグはまだありません"
     },
     "search": {
       "buttonLabel": "検索",
@@ -745,7 +748,10 @@
           "newFolderPrompt": "フォルダー名",
           "createFolder": "作成",
           "searchFolders": "フォルダーを検索...",
-          "noFoldersFound": "フォルダーが見つかりません。"
+          "noFoldersFound": "フォルダーが見つかりません。",
+          "addTags": "タグを追加",
+          "removeTag": "タグを削除",
+          "editTag": "タグを編集"
         },
         "deleteDialog": {
           "title": "ノートを削除",
@@ -766,6 +772,16 @@
         }
       },
       "sidebarButtonLabel": "ノート"
+    },
+    "tags": {
+      "title": "タグ",
+      "summary": "{{count}} 個のタグ · {{noteCount}} 件のノート",
+      "searchPlaceholder": "タグを検索…",
+      "sortRecent": "新しい順",
+      "sortName": "名前順",
+      "empty": "タグはまだありません。任意のノートからタグを追加して整理しましょう。",
+      "deleteConfirmTitle": "タグを削除しますか?",
+      "deleteConfirmDescription": "このタグは {{count}} 件のノートから削除されます。ノート自体は影響を受けません。続行しますか?"
     },
     "vocabulary": {
       "title": "カスタム辞書",
