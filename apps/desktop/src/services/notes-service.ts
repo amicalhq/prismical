@@ -116,6 +116,7 @@ class NotesService {
     sortOrder?: "asc" | "desc";
     search?: string;
     transcriptionId?: number | null;
+    tagId?: number;
   }) {
     return await getNotes(options);
   }

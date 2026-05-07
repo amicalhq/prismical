@@ -27,6 +27,7 @@ const GetNotesSchema = z.object({
   sortOrder: z.enum(["asc", "desc"]).optional().default("desc"),
   search: z.string().optional(),
   transcriptionId: z.number().nullable().optional(),
+  tagId: z.number().optional(),
 });
 
 const CreateNoteSchema = z.object({
@@ -67,6 +68,7 @@ export const notesRouter = createRouter({
       sortOrder: input.sortOrder,
       search: input.search,
       transcriptionId: input.transcriptionId,
+      tagId: input.tagId,
     });
   }),
 
