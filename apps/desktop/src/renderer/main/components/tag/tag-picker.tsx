@@ -53,18 +53,12 @@ export function TagPicker({
   );
 
   const create = api.tags.create.useMutation();
-  const attach = api.tags.attach.useMutation({
-    onSuccess: () => {
-      utils.tags.getForNote.invalidate({ noteId });
-      utils.notes.getNotes.invalidate();
-    },
-  });
-  const detach = api.tags.detach.useMutation({
-    onSuccess: () => {
-      utils.tags.getForNote.invalidate({ noteId });
-      utils.notes.getNotes.invalidate();
-    },
-  });
+  const invalidateAll = () => {
+    utils.tags.invalidate();
+    utils.notes.getNotes.invalidate();
+  };
+  const attach = api.tags.attach.useMutation({ onSuccess: invalidateAll });
+  const detach = api.tags.detach.useMutation({ onSuccess: invalidateAll });
 
   const lc = query.trim().toLowerCase();
   const exact = (allTags.data ?? []).find((t) => t.name === lc);
@@ -95,8 +89,7 @@ export function TagPicker({
   const handleCreate = async () => {
     const tag = await create.mutateAsync({ name: lc });
     attach.mutate({ noteId, tagId: tag.id });
-    utils.tags.list.invalidate();
-    utils.tags.listRecent.invalidate();
+    utils.tags.invalidate();
     setQuery("");
   };
 
@@ -110,7 +103,10 @@ export function TagPicker({
       filter={null}
     >
       <ComboboxContent className="w-72" anchor={() => anchor.current}>
-        <ComboboxInput placeholder="Search or create a tag…" />
+        <ComboboxInput
+          placeholder="Search or create a tag…"
+          showTrigger={false}
+        />
         <ComboboxList>
           {noResults && (
             <div className="px-2 py-2 text-center text-sm text-muted-foreground">

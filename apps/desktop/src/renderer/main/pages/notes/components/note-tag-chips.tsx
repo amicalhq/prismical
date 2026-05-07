@@ -17,7 +17,10 @@ export function NoteTagChips({ noteId, isNarrow }: NoteTagChipsProps) {
   const utils = api.useUtils();
   const tagsQ = api.tags.getForNote.useQuery({ noteId });
   const detach = api.tags.detach.useMutation({
-    onSuccess: () => utils.tags.getForNote.invalidate({ noteId }),
+    onSuccess: () => {
+      utils.tags.invalidate();
+      utils.notes.getNotes.invalidate();
+    },
   });
   const [pickerOpen, setPickerOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
