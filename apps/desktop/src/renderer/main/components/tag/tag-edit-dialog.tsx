@@ -232,9 +232,19 @@ export function TagEditDialog({
               {t("settings.tags.editDialog.cancel")}
             </Button>
             <Button
-              onClick={() =>
-                update.mutate({ id: tag.id, name: lcName, color })
-              }
+              onClick={() => {
+                const nameChanged = lcName !== tag.name;
+                const colorChanged = color !== tag.color;
+                if (!nameChanged && !colorChanged) {
+                  onOpenChange(false);
+                  return;
+                }
+                update.mutate({
+                  id: tag.id,
+                  ...(nameChanged ? { name: lcName } : {}),
+                  ...(colorChanged ? { color } : {}),
+                });
+              }}
               disabled={!canSave}
             >
               {t("settings.tags.editDialog.save")}

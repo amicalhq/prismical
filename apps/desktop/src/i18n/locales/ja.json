@@ -776,15 +776,13 @@
     },
     "tags": {
       "title": "タグ",
-      "summary": "{{count}} 個のタグ · {{noteCount}} 件のノート",
+      "summary_other": "{{count}} 個のタグ · {{notes}}",
       "searchPlaceholder": "タグを検索…",
       "sortRecent": "新しい順",
       "sortName": "名前順",
       "empty": "タグはまだありません。任意のノートからタグを追加して整理しましょう。",
       "deleteConfirmTitle": "タグを削除しますか?",
-      "deleteConfirmDescription_one": "このタグは {{count}} 件のノートから削除されます。ノート自体は影響を受けません。続行しますか?",
       "deleteConfirmDescription_other": "このタグは {{count}} 件のノートから削除されます。ノート自体は影響を受けません。続行しますか?",
-      "noteCount_one": "{{count}} 件のノート",
       "noteCount_other": "{{count}} 件のノート",
       "menu": {
         "favorite": "お気に入りに追加",

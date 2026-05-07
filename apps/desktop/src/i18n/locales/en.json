@@ -695,7 +695,8 @@
     },
     "tags": {
       "title": "Tags",
-      "summary": "{{count}} tags · {{noteCount}} notes",
+      "summary_one": "{{count}} tag · {{notes}}",
+      "summary_other": "{{count}} tags · {{notes}}",
       "searchPlaceholder": "Search tags…",
       "sortRecent": "Recent",
       "sortName": "Name",
