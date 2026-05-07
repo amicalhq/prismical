@@ -43,7 +43,7 @@ import { api } from "@/trpc/react";
 import { CreateFolderDialog } from "./create-folder-dialog";
 import { FolderPickerDialog } from "./folder-picker-dialog";
 import { NavTagsGroup } from "./nav-tags-group";
-import { TagHash } from "./tag/tag-hash";
+import { TagSidebarRow } from "./tag/tag-sidebar-row";
 
 type NoteNavigationItem = {
   id: number;
@@ -51,6 +51,7 @@ type NoteNavigationItem = {
   icon: string | null;
   starred: boolean;
   folder: string | null;
+  createdAt: Date;
 };
 
 function NoteLeadingIcon({ icon }: { icon: string | null }) {
@@ -188,12 +189,40 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
     setCreateFolderForNoteId(noteId);
   };
 
-  const favorites = React.useMemo(
+  const favoriteNotes = React.useMemo(
     () => notes.filter((note) => note.starred),
     [notes],
   );
 
   const favoriteTagsQ = api.tags.listFavorites.useQuery();
+  const tagCountsQ = api.tags.listWithCounts.useQuery({ sortBy: "createdAt" });
+
+  const tagNoteCountFor = React.useCallback(
+    (tagId: number) =>
+      tagCountsQ.data?.find((c) => c.id === tagId)?.noteCount ?? 0,
+    [tagCountsQ.data],
+  );
+
+  type FavoriteEntry =
+    | { kind: "note"; createdAt: Date; note: NoteNavigationItem }
+    | { kind: "tag"; createdAt: Date; tag: NonNullable<typeof favoriteTagsQ.data>[number] };
+
+  const favoriteEntries = React.useMemo<FavoriteEntry[]>(() => {
+    const entries: FavoriteEntry[] = [
+      ...favoriteNotes.map<FavoriteEntry>((note) => ({
+        kind: "note",
+        createdAt: new Date(note.createdAt),
+        note,
+      })),
+      ...(favoriteTagsQ.data ?? []).map<FavoriteEntry>((tag) => ({
+        kind: "tag",
+        createdAt: new Date(tag.createdAt),
+        tag,
+      })),
+    ];
+    entries.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    return entries;
+  }, [favoriteNotes, favoriteTagsQ.data]);
 
   const folders = React.useMemo(() => {
     const grouped = new Map<string, NoteNavigationItem[]>();
@@ -222,54 +251,7 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
       <SidebarGroup className="pb-0 group-data-[collapsible=icon]:hidden">
         <SidebarGroupLabel>{t("settings.sidebar.favorites")}</SidebarGroupLabel>
         <SidebarMenu>
-          {favorites.map((note) => (
-            <SidebarMenuItem key={`favorite-${note.id}`}>
-              <SidebarMenuButton asChild isActive={isNoteActive(note.id)}>
-                <Link
-                  to="/settings/notes/$noteId"
-                  params={{ noteId: String(note.id) }}
-                  search={{}}
-                  aria-label={note.title}
-                >
-                  <NoteLeadingIcon icon={note.icon} />
-                  <span>{note.title}</span>
-                </Link>
-              </SidebarMenuButton>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <SidebarMenuAction showOnHover>
-                    <MoreHorizontal />
-                    <span className="sr-only">More</span>
-                  </SidebarMenuAction>
-                </DropdownMenuTrigger>
-                <NoteDropdownContent
-                  note={note}
-                  isMobile={isMobile}
-                  t={t}
-                  onStarredChange={(starred) =>
-                    updateOrganization.mutate({ id: note.id, starred })
-                  }
-                  onMoveTo={() => setFolderPickerForNoteId(note.id)}
-                  onDelete={() => handleDelete(note.id)}
-                />
-              </DropdownMenu>
-            </SidebarMenuItem>
-          ))}
-          {(favoriteTagsQ.data ?? []).map((tag) => (
-            <SidebarMenuItem key={`fav-tag-${tag.id}`}>
-              <SidebarMenuButton asChild>
-                <Link
-                  to="/settings/notes"
-                  search={{ tag: tag.id }}
-                  aria-label={`#${tag.name}`}
-                >
-                  <TagHash color={tag.color} name={tag.name} />
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          ))}
-          {favorites.length === 0 &&
-          (favoriteTagsQ.data?.length ?? 0) === 0 ? (
+          {favoriteEntries.length === 0 ? (
             <SidebarMenuItem>
               <SidebarMenuButton
                 disabled
@@ -279,7 +261,55 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
                 <span>{t("settings.sidebar.noFavorites")}</span>
               </SidebarMenuButton>
             </SidebarMenuItem>
-          ) : null}
+          ) : (
+            favoriteEntries.map((entry) =>
+              entry.kind === "note" ? (
+                <SidebarMenuItem key={`favorite-note-${entry.note.id}`}>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={isNoteActive(entry.note.id)}
+                  >
+                    <Link
+                      to="/settings/notes/$noteId"
+                      params={{ noteId: String(entry.note.id) }}
+                      search={{}}
+                      aria-label={entry.note.title}
+                    >
+                      <NoteLeadingIcon icon={entry.note.icon} />
+                      <span>{entry.note.title}</span>
+                    </Link>
+                  </SidebarMenuButton>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <SidebarMenuAction showOnHover>
+                        <MoreHorizontal />
+                        <span className="sr-only">More</span>
+                      </SidebarMenuAction>
+                    </DropdownMenuTrigger>
+                    <NoteDropdownContent
+                      note={entry.note}
+                      isMobile={isMobile}
+                      t={t}
+                      onStarredChange={(starred) =>
+                        updateOrganization.mutate({
+                          id: entry.note.id,
+                          starred,
+                        })
+                      }
+                      onMoveTo={() => setFolderPickerForNoteId(entry.note.id)}
+                      onDelete={() => handleDelete(entry.note.id)}
+                    />
+                  </DropdownMenu>
+                </SidebarMenuItem>
+              ) : (
+                <TagSidebarRow
+                  key={`favorite-tag-${entry.tag.id}`}
+                  tag={entry.tag}
+                  noteCount={tagNoteCountFor(entry.tag.id)}
+                />
+              ),
+            )
+          )}
         </SidebarMenu>
       </SidebarGroup>
 

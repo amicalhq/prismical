@@ -145,10 +145,14 @@ export function NotesList({
     );
   }
 
+  const clearFilter = () => navigate({ to: "/settings/notes", search: {} });
+
   const filterBanner =
     tagId !== undefined && filterTagQ.data ? (
       <div className="mb-3 flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-2 text-sm">
-        <span className="text-muted-foreground">Showing notes tagged</span>
+        <span className="text-muted-foreground">
+          {t("settings.tags.filterBanner.label")}
+        </span>
         <TagHash color={filterTagQ.data.color} name={filterTagQ.data.name} />
         <span className="text-xs text-muted-foreground">
           ({notes?.length ?? 0})
@@ -156,9 +160,9 @@ export function NotesList({
         <button
           type="button"
           className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-          onClick={() => navigate({ to: "/settings/notes", search: {} })}
+          onClick={clearFilter}
         >
-          Clear <X className="h-3 w-3" />
+          {t("settings.tags.filterBanner.clear")} <X className="h-3 w-3" />
         </button>
       </div>
     ) : null;
@@ -181,19 +185,41 @@ export function NotesList({
         </div>
       )}
 
-      {formattedNotes.length === 0 && (
-        <div className="border border-dashed rounded-lg p-6 text-center space-y-4">
-          <NotebookText className="w-8 h-8 text-muted-foreground mx-auto" />
-          <div className="space-y-2">
-            <p className="text-sm text-muted-foreground">
-              {t("settings.notes.empty.title")}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {t("settings.notes.empty.description")}
-            </p>
+      {formattedNotes.length === 0 &&
+        (tagId !== undefined && filterTagQ.data ? (
+          <div className="border border-dashed rounded-lg p-6 text-center space-y-4">
+            <NotebookText className="w-8 h-8 text-muted-foreground mx-auto" />
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">
+                {t("settings.tags.emptyFiltered.title", {
+                  name: filterTagQ.data.name,
+                })}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {t("settings.tags.emptyFiltered.description")}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={clearFilter}
+              className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+            >
+              {t("settings.tags.filterBanner.clear")}
+            </button>
           </div>
-        </div>
-      )}
+        ) : (
+          <div className="border border-dashed rounded-lg p-6 text-center space-y-4">
+            <NotebookText className="w-8 h-8 text-muted-foreground mx-auto" />
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">
+                {t("settings.notes.empty.title")}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {t("settings.notes.empty.description")}
+              </p>
+            </div>
+          </div>
+        ))}
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Star } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -44,6 +45,11 @@ export function AllTagsPage() {
       utils.tags.invalidate();
       utils.notes.getNotes.invalidate();
       setConfirming(null);
+    },
+    onError: (error) => {
+      toast.error(
+        t("settings.tags.errors.deleteFailed", { message: error.message }),
+      );
     },
   });
   const totalNotes = (q.data ?? []).reduce((s, r) => s + r.noteCount, 0);
@@ -90,26 +96,29 @@ export function AllTagsPage() {
           (q.data ?? []).map((tag) => (
             <div
               key={tag.id}
-              className="group/row flex cursor-pointer items-center gap-2 border-b px-4 py-2 last:border-b-0 hover:bg-muted/30"
-              onClick={() =>
-                navigate({
-                  to: "/settings/notes",
-                  search: { tag: tag.id },
-                })
-              }
+              className="group/row flex items-center gap-2 border-b last:border-b-0 hover:bg-muted/30"
             >
-              <TagHash color={tag.color} name={tag.name} />
-              {tag.isFavorite && (
-                <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
-              )}
-              <span className="flex-1" />
-              <span className="tabular-nums text-sm text-muted-foreground">
-                {tag.noteCount} note{tag.noteCount === 1 ? "" : "s"}
-              </span>
-              <div
-                className="opacity-0 group-hover/row:opacity-100"
-                onClick={(e) => e.stopPropagation()}
+              <button
+                type="button"
+                className="flex flex-1 items-center gap-2 px-4 py-2 text-left outline-none focus-visible:bg-muted/50"
+                onClick={() =>
+                  navigate({
+                    to: "/settings/notes",
+                    search: { tag: tag.id },
+                  })
+                }
+                aria-label={`#${tag.name}`}
               >
+                <TagHash color={tag.color} name={tag.name} />
+                {tag.isFavorite && (
+                  <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
+                )}
+                <span className="flex-1" />
+                <span className="tabular-nums text-sm text-muted-foreground">
+                  {t("settings.tags.noteCount", { count: tag.noteCount })}
+                </span>
+              </button>
+              <div className="pr-3 opacity-0 focus-within:opacity-100 group-hover/row:opacity-100">
                 <TagRowMenu
                   tag={tag}
                   onEdit={() => setEditing(tag)}
@@ -152,13 +161,13 @@ export function AllTagsPage() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>
-              {t("settings.notes.note.deleteDialog.cancel")}
+              {t("settings.tags.editDialog.cancel")}
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={() => confirming && del.mutate({ id: confirming.id })}
               className="bg-destructive text-foreground hover:bg-destructive/90"
             >
-              {t("settings.notes.note.actions.delete")}
+              {t("settings.tags.menu.delete")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
