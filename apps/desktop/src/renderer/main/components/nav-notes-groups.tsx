@@ -42,6 +42,8 @@ import {
 import { api } from "@/trpc/react";
 import { CreateFolderDialog } from "./create-folder-dialog";
 import { FolderPickerDialog } from "./folder-picker-dialog";
+import { NavTagsGroup } from "./nav-tags-group";
+import { TagHash } from "./tag/tag-hash";
 
 type NoteNavigationItem = {
   id: number;
@@ -191,6 +193,8 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
     [notes],
   );
 
+  const favoriteTagsQ = api.tags.listFavorites.useQuery();
+
   const folders = React.useMemo(() => {
     const grouped = new Map<string, NoteNavigationItem[]>();
 
@@ -251,7 +255,21 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
               </DropdownMenu>
             </SidebarMenuItem>
           ))}
-          {favorites.length === 0 ? (
+          {(favoriteTagsQ.data ?? []).map((tag) => (
+            <SidebarMenuItem key={`fav-tag-${tag.id}`}>
+              <SidebarMenuButton asChild>
+                <Link
+                  to={"/settings/notes" as never}
+                  search={{ tag: tag.id } as never}
+                  aria-label={`#${tag.name}`}
+                >
+                  <TagHash color={tag.color} name={tag.name} />
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ))}
+          {favorites.length === 0 &&
+          (favoriteTagsQ.data?.length ?? 0) === 0 ? (
             <SidebarMenuItem>
               <SidebarMenuButton
                 disabled
@@ -354,6 +372,8 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
           ) : null}
         </SidebarMenu>
       </SidebarGroup>
+
+      <NavTagsGroup />
 
       <FolderPickerDialog
         open={folderPickerForNoteId !== null}
