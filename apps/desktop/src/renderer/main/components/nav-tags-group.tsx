@@ -1,13 +1,12 @@
 import { Link } from "@tanstack/react-router";
-import { ArrowRight, Tag as TagIcon } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
   SidebarGroup,
   SidebarGroupAction,
+  SidebarGroupContent,
   SidebarGroupLabel,
   SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import { api } from "@/trpc/react";
 import { TagSidebarRow } from "./tag/tag-sidebar-row";
@@ -32,24 +31,23 @@ export function NavTagsGroup() {
           <ArrowRight />
         </Link>
       </SidebarGroupAction>
-      <SidebarMenu>
-        {tags.length === 0 ? (
-          <SidebarMenuItem>
-            <SidebarMenuButton disabled className="text-sidebar-foreground/60">
-              <TagIcon className="size-4" />
-              <span>{t("settings.sidebar.noTags")}</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        ) : (
-          tags.map((tag) => (
+      {tags.length === 0 ? (
+        <SidebarGroupContent>
+          <p className="px-2 py-1 text-xs text-sidebar-foreground/60">
+            {t("settings.sidebar.noTags")}
+          </p>
+        </SidebarGroupContent>
+      ) : (
+        <SidebarMenu>
+          {tags.map((tag) => (
             <TagSidebarRow
               key={`tag-${tag.id}`}
               tag={tag}
               noteCount={noteCountFor(tag.id)}
             />
-          ))
-        )}
-      </SidebarMenu>
+          ))}
+        </SidebarMenu>
+      )}
     </SidebarGroup>
   );
 }
