@@ -771,6 +771,20 @@
         "favoriteFailed": "Failed to update favorite: {{message}}"
       }
     },
+    "folders": {
+      "title": "Folders",
+      "summary": "{{count}} folder(s) · {{notes}}",
+      "noteCount_one": "{{count}} note",
+      "noteCount_other": "{{count}} notes",
+      "searchPlaceholder": "Search folders...",
+      "empty": "No folders yet",
+      "actions": {
+        "create": "New folder"
+      },
+      "errors": {
+        "deleteFailed": "Failed to delete folder: {{message}}"
+      }
+    },
     "vocabulary": {
       "title": "Vocabulary",
       "description": "Add jargon, proper names, or domain-specific terms here so AI picks them up during transcription and note generation.",

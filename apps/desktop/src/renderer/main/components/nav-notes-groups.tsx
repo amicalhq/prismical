@@ -379,9 +379,15 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
                     </SidebarMenuItem>
                   ) : entry.kind === "folder" ? (
                     <SidebarMenuItem key={`favorite-folder-${entry.folder.id}`}>
-                      <SidebarMenuButton>
-                        <FolderOpen className="size-4" />
-                        <span>{entry.folder.name}</span>
+                      <SidebarMenuButton asChild>
+                        <Link
+                          to="/folders"
+                          search={{ folderId: entry.folder.id }}
+                          aria-label={entry.folder.name}
+                        >
+                          <FolderOpen className="size-4" />
+                          <span>{entry.folder.name}</span>
+                        </Link>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
                   ) : (

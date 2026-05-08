@@ -12,15 +12,20 @@ import { SidebarMenuAction } from "@/components/ui/sidebar";
 import { api } from "@/trpc/react";
 import type { Folder } from "@/db/schema";
 
+interface FolderRowMenuProps {
+  folder: Folder;
+  onRename: () => void;
+  onDelete: () => void;
+  /** When provided, renders a plain button instead of SidebarMenuAction */
+  triggerClassName?: string;
+}
+
 export function FolderRowMenu({
   folder,
   onRename,
   onDelete,
-}: {
-  folder: Folder;
-  onRename: () => void;
-  onDelete: () => void;
-}) {
+  triggerClassName,
+}: FolderRowMenuProps) {
   const { t } = useTranslation();
   const utils = api.useUtils();
 
@@ -32,10 +37,20 @@ export function FolderRowMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <SidebarMenuAction showOnHover>
-          <MoreHorizontal />
-          <span className="sr-only">More</span>
-        </SidebarMenuAction>
+        {triggerClassName !== undefined ? (
+          <button
+            type="button"
+            aria-label={folder.name}
+            className={triggerClassName}
+          >
+            <MoreHorizontal className="h-4 w-4" />
+          </button>
+        ) : (
+          <SidebarMenuAction showOnHover>
+            <MoreHorizontal />
+            <span className="sr-only">More</span>
+          </SidebarMenuAction>
+        )}
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-56 rounded-lg" align="start">
         {folder.isFavorite ? (

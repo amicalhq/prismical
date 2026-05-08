@@ -849,6 +849,20 @@
         "favoriteFailed": "お気に入りの更新に失敗しました: {{message}}"
       }
     },
+    "folders": {
+      "title": "Folders",
+      "summary": "{{count}} folder(s) · {{notes}}",
+      "noteCount_one": "{{count}} note",
+      "noteCount_other": "{{count}} notes",
+      "searchPlaceholder": "Search folders...",
+      "empty": "No folders yet",
+      "actions": {
+        "create": "New folder"
+      },
+      "errors": {
+        "deleteFailed": "Failed to delete folder: {{message}}"
+      }
+    },
     "vocabulary": {
       "title": "カスタム辞書",
       "description": "専門用語、固有名詞、業界特有の言葉をここに追加すると、文字起こしやノート生成時にAIが正しく認識します。",

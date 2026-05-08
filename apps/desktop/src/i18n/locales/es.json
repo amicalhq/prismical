@@ -852,6 +852,20 @@
         "favoriteFailed": "No se pudo actualizar el favorito: {{message}}"
       }
     },
+    "folders": {
+      "title": "Folders",
+      "summary": "{{count}} folder(s) · {{notes}}",
+      "noteCount_one": "{{count}} note",
+      "noteCount_other": "{{count}} notes",
+      "searchPlaceholder": "Search folders...",
+      "empty": "No folders yet",
+      "actions": {
+        "create": "New folder"
+      },
+      "errors": {
+        "deleteFailed": "Failed to delete folder: {{message}}"
+      }
+    },
     "vocabulary": {
       "title": "Vocabulario",
       "description": "Agrega aquí jerga, nombres propios o términos específicos del dominio para que la IA los capte durante la transcripción y la generación de notas.",
