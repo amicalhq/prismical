@@ -46,13 +46,21 @@ export class FoldersService {
   }
 
   async updateFolder(id: number, patch: UpdateFolderInput): Promise<Folder> {
+    // Resolve the existing row up front so a missing id surfaces a clear
+    // error rather than triggering a wrong-scope collision check below
+    // (which would happen if `current` were null and `parentId` defaulted
+    // to top-level) or returning undefined out of folderDb.updateFolder.
+    const current = await folderDb.getFolderById(this.db, id);
+    if (!current) throw new Error(`Folder ${id} not found`);
+
     const dbPatch: { name?: string; isFavorite?: boolean } = {};
     if (patch.name !== undefined) {
       const name = this.validateName(patch.name);
-      // Look up the current parent so the collision check is sibling-scoped.
-      const current = await folderDb.getFolderById(this.db, id);
-      const parentId = current?.parentId ?? null;
-      const collision = await folderDb.getFolderByNameAndParent(this.db, name, parentId);
+      const collision = await folderDb.getFolderByNameAndParent(
+        this.db,
+        name,
+        current.parentId,
+      );
       if (collision && collision.id !== id) {
         throw new Error(`A folder named "${collision.name}" already exists`);
       }
@@ -79,12 +87,15 @@ export class FoldersService {
   listWithCounts(opts: folderDb.ListFoldersOptions = {}) {
     return folderDb.listAllFoldersWithCounts(this.db, opts);
   }
-  async getTreeWithCounts() {
-    const [folderRows, unfiledCount] = await Promise.all([
+  async getTreeWithCounts(): Promise<{
+    folders: folderDb.FolderWithCount[];
+    unfiledCount: number;
+  }> {
+    const [rows, unfiledCount] = await Promise.all([
       folderDb.listWithRecursiveCounts(this.db),
       folderDb.countUnfiled(this.db),
     ]);
-    return { folders: folderRows, unfiledCount };
+    return { folders: rows, unfiledCount };
   }
   getById(id: number) {
     return folderDb.getFolderById(this.db, id);

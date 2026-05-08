@@ -69,6 +69,31 @@ describe("FoldersService", () => {
     ).rejects.toThrow(/already exists/i);
   });
 
+  it("updateFolder allows rename to a name used under a different parent", async () => {
+    // sibling-scoped collision: a "Notes" under Work shouldn't block a child
+    // under Personal from also being called "Notes".
+    const work = await service.createFolder({ name: "Work" });
+    const personal = await service.createFolder({ name: "Personal" });
+    await service.createFolder({ name: "Notes", parentId: work.id });
+    const placeholder = await service.createFolder({
+      name: "Drafts",
+      parentId: personal.id,
+    });
+    const renamed = await service.updateFolder(placeholder.id, {
+      name: "Notes",
+    });
+    expect(renamed.name).toBe("Notes");
+  });
+
+  it("updateFolder throws a clear error when the id is missing", async () => {
+    await expect(
+      service.updateFolder(99999, { name: "X" }),
+    ).rejects.toThrow(/not found/i);
+    await expect(
+      service.updateFolder(99999, { isFavorite: true }),
+    ).rejects.toThrow(/not found/i);
+  });
+
   it("toggleFavorite flips isFavorite", async () => {
     const a = await service.createFolder({ name: "A" });
     const f1 = await service.updateFolder(a.id, { isFavorite: true });
