@@ -248,6 +248,11 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
     [allFolders, notesByFolderId],
   );
 
+  const unfiledNotes = React.useMemo(
+    () => notes.filter((note) => note.folderId === null),
+    [notes],
+  );
+
   const isNoteActive = (noteId: number) =>
     location.pathname === `/notes/${noteId}`;
 
@@ -439,7 +444,75 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
                   </SidebarMenuItem>
                 </Collapsible>
               ))}
-              {folderEntries.length === 0 ? (
+              {unfiledNotes.length > 0 ? (
+                <Collapsible
+                  key="unfiled"
+                  defaultOpen={unfiledNotes.some((note) => isNoteActive(note.id))}
+                  className="group/collapsible"
+                >
+                  <SidebarMenuItem>
+                    <CollapsibleTrigger asChild>
+                      <SidebarMenuButton>
+                        <ChevronRight className="size-4 transition-transform group-data-[state=open]/collapsible:rotate-90" />
+                        <span>{t("settings.sidebar.unfiled")}</span>
+                      </SidebarMenuButton>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <SidebarMenuSub className="mr-0 pr-0">
+                        {unfiledNotes.map((note) => (
+                          <SidebarMenuSubItem
+                            key={`unfiled-${note.id}`}
+                            className="group/sub-item relative"
+                          >
+                            <SidebarMenuSubButton
+                              asChild
+                              isActive={isNoteActive(note.id)}
+                              className="pr-6"
+                            >
+                              <Link
+                                to="/notes/$noteId"
+                                params={{ noteId: String(note.id) }}
+                                search={{}}
+                                aria-label={note.title}
+                              >
+                                <NoteLeadingIcon icon={note.icon} />
+                                <span>{note.title}</span>
+                              </Link>
+                            </SidebarMenuSubButton>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <button
+                                  type="button"
+                                  className="absolute right-1 top-1/2 -translate-y-1/2 rounded-md p-0.5 text-sidebar-foreground/70 opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover/sub-item:opacity-100 data-[state=open]:opacity-100"
+                                >
+                                  <MoreHorizontal className="size-4" />
+                                  <span className="sr-only">More</span>
+                                </button>
+                              </DropdownMenuTrigger>
+                              <NoteDropdownContent
+                                note={note}
+                                isMobile={isMobile}
+                                t={t}
+                                onStarredChange={(starred) =>
+                                  updateOrganization.mutate({
+                                    id: note.id,
+                                    starred,
+                                  })
+                                }
+                                onMoveTo={() =>
+                                  setFolderPickerForNoteId(note.id)
+                                }
+                                onDelete={() => handleDelete(note.id)}
+                              />
+                            </DropdownMenu>
+                          </SidebarMenuSubItem>
+                        ))}
+                      </SidebarMenuSub>
+                    </CollapsibleContent>
+                  </SidebarMenuItem>
+                </Collapsible>
+              ) : null}
+              {folderEntries.length === 0 && unfiledNotes.length === 0 ? (
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     disabled

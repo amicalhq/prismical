@@ -286,6 +286,8 @@
       "folders": "Folders",
       "noFavorites": "No favorites yet",
       "noFolders": "No folders yet",
+      "unfiled": "Unfiled",
+      "unfiledHint": "Notes not in any folder",
       "tags": "Tags",
       "tagsViewAll": "View all",
       "noTags": "No tags yet"

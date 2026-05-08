@@ -375,6 +375,8 @@
       "folders": "Carpetas",
       "noFavorites": "Aún no hay favoritos",
       "noFolders": "Aún no hay carpetas",
+      "unfiled": "Unfiled",
+      "unfiledHint": "Notes not in any folder",
       "tags": "Etiquetas",
       "tagsViewAll": "Ver todas",
       "noTags": "Aún no hay etiquetas"

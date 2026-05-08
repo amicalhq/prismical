@@ -375,6 +375,8 @@
       "folders": "フォルダー",
       "noFavorites": "お気に入りはまだありません",
       "noFolders": "フォルダーはまだありません",
+      "unfiled": "Unfiled",
+      "unfiledHint": "Notes not in any folder",
       "tags": "タグ",
       "tagsViewAll": "すべて表示",
       "noTags": "タグはまだありません"
