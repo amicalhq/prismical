@@ -4,7 +4,6 @@ import NotesPage from "../../pages/notes";
 
 const NotesSearch = z.object({
   tag: z.number().int().optional(),
-  folderId: z.number().int().optional(),
 });
 
 export const Route = createFileRoute("/_app/notes/")({
