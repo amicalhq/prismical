@@ -196,6 +196,7 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
   );
 
   const favoriteTagsQ = api.tags.listFavorites.useQuery();
+  const favoriteFoldersQ = api.folders.listFavorites.useQuery();
   const tagCountsQ = api.tags.listWithCounts.useQuery({ sortBy: "createdAt" });
 
   const tagNoteCountFor = React.useCallback(
@@ -206,7 +207,8 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
 
   type FavoriteEntry =
     | { kind: "note"; createdAt: Date; note: NoteNavigationItem }
-    | { kind: "tag"; createdAt: Date; tag: NonNullable<typeof favoriteTagsQ.data>[number] };
+    | { kind: "tag"; createdAt: Date; tag: NonNullable<typeof favoriteTagsQ.data>[number] }
+    | { kind: "folder"; createdAt: Date; folder: NonNullable<typeof favoriteFoldersQ.data>[number] };
 
   const favoriteEntries = React.useMemo<FavoriteEntry[]>(() => {
     const entries: FavoriteEntry[] = [
@@ -220,10 +222,15 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
         createdAt: new Date(tag.createdAt),
         tag,
       })),
+      ...(favoriteFoldersQ.data ?? []).map<FavoriteEntry>((folder) => ({
+        kind: "folder",
+        createdAt: new Date(folder.createdAt),
+        folder,
+      })),
     ];
     entries.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     return entries;
-  }, [favoriteNotes, favoriteTagsQ.data]);
+  }, [favoriteNotes, favoriteTagsQ.data, favoriteFoldersQ.data]);
 
   const foldersQ = api.folders.list.useQuery({ sortBy: "name" });
   const allFolders = foldersQ.data ?? [];
@@ -335,6 +342,13 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
                           onDelete={() => handleDelete(entry.note.id)}
                         />
                       </DropdownMenu>
+                    </SidebarMenuItem>
+                  ) : entry.kind === "folder" ? (
+                    <SidebarMenuItem key={`favorite-folder-${entry.folder.id}`}>
+                      <SidebarMenuButton>
+                        <FolderOpen className="size-4" />
+                        <span>{entry.folder.name}</span>
+                      </SidebarMenuButton>
                     </SidebarMenuItem>
                   ) : (
                     <TagSidebarRow
