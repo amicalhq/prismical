@@ -136,7 +136,7 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
   });
 
   const createNoteMutation = api.notes.createNote.useMutation({
-    onSuccess: async (newNote, _variables, context) => {
+    onSuccess: async (newNote) => {
       utils.notes.getNotes.invalidate();
       navigate({
         to: "/notes/$noteId",
