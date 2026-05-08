@@ -8,6 +8,7 @@ import {
   uniqueIndex,
   blob,
   primaryKey,
+  type AnySQLiteColumn,
 } from "drizzle-orm/sqlite-core";
 
 // Transcriptions table
@@ -450,11 +451,15 @@ export const noteTags = sqliteTable(
 
 // Folders table — first-class folder entity. Notes have a single optional folder via notes.folderId.
 // Names preserve user casing; uniqueness is case-insensitive via a UNIQUE index on LOWER(name).
+// parentId enables nested folders at the schema level; UI is flat for now.
 export const folders = sqliteTable(
   "folders",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
     name: text("name").notNull(),
+    parentId: integer("parent_id").references((): AnySQLiteColumn => folders.id, {
+      onDelete: "set null",
+    }),
     isFavorite: integer("is_favorite", { mode: "boolean" })
       .notNull()
       .default(false),
@@ -469,6 +474,7 @@ export const folders = sqliteTable(
     uniqueIndex("folders_lower_name_unique").on(sql`LOWER(${table.name})`),
     index("folders_created_at_idx").on(table.createdAt),
     index("folders_is_favorite_idx").on(table.isFavorite),
+    index("folders_parent_id_idx").on(table.parentId),
   ],
 );
 
