@@ -77,6 +77,7 @@ export async function createTestDatabase(
       await db.delete(schema.yjsUpdates);
       await db.delete(schema.noteTags);
       await db.delete(schema.tags);
+      await db.delete(schema.folders);
       await db.delete(schema.notes);
     },
   };
