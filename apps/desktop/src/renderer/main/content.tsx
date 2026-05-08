@@ -44,7 +44,7 @@ const App: React.FC = () => {
         requestOpenTranscription(payload.noteId);
       }
       router.navigate({
-        to: "/settings/notes/$noteId",
+        to: "/notes/$noteId",
         params: { noteId: String(payload.noteId) },
       });
     };

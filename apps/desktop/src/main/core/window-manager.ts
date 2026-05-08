@@ -498,7 +498,7 @@ export class WindowManager {
     // For the cold-start path the route still travels via URL hash. The
     // renderer's hash-history parser handles the search portion correctly.
     const search = options.openTranscription ? "?openTranscription=true" : "";
-    const initialRoute = `/settings/notes/${noteId}${search}`;
+    const initialRoute = `/notes/${noteId}${search}`;
 
     await this.createOrShowMainWindow(initialRoute);
 

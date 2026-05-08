@@ -40,7 +40,7 @@ export function CreateNoteProvider({ children }: { children: ReactNode }) {
         }
       }
       navigate({
-        to: "/settings/notes/$noteId",
+        to: "/notes/$noteId",
         params: { noteId: String(newNote.id) },
         search: autoRecord ? { autoRecord: true } : {},
       });

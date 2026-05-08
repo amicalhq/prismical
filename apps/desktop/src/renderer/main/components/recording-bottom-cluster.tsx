@@ -64,7 +64,7 @@ export function RecordingBottomCluster() {
   const handleJump = useCallback(() => {
     if (recordingNoteId === null) return;
     navigate({
-      to: "/settings/notes/$noteId",
+      to: "/notes/$noteId",
       params: { noteId: String(recordingNoteId) },
     });
   }, [navigate, recordingNoteId]);

@@ -116,8 +116,8 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
   const deleteMutation = api.notes.deleteNote.useMutation({
     onSuccess: (_data, variables) => {
       utils.notes.getNotes.invalidate();
-      if (location.pathname === `/settings/notes/${variables.id}`) {
-        navigate({ to: "/settings/notes" });
+      if (location.pathname === `/notes/${variables.id}`) {
+        navigate({ to: "/notes" });
       }
       toast.success(t("settings.notes.toast.deleted"));
     },
@@ -138,7 +138,7 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
     onSuccess: async (newNote, _variables, context) => {
       utils.notes.getNotes.invalidate();
       navigate({
-        to: "/settings/notes/$noteId",
+        to: "/notes/$noteId",
         params: { noteId: String(newNote.id) },
         search: {},
       });
@@ -244,7 +244,7 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
   );
 
   const isNoteActive = (noteId: number) =>
-    location.pathname === `/settings/notes/${noteId}`;
+    location.pathname === `/notes/${noteId}`;
 
   return (
     <>
@@ -270,7 +270,7 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
                     isActive={isNoteActive(entry.note.id)}
                   >
                     <Link
-                      to="/settings/notes/$noteId"
+                      to="/notes/$noteId"
                       params={{ noteId: String(entry.note.id) }}
                       search={{}}
                       aria-label={entry.note.title}
@@ -349,7 +349,7 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
                           className="pr-6"
                         >
                           <Link
-                            to="/settings/notes/$noteId"
+                            to="/notes/$noteId"
                             params={{ noteId: String(note.id) }}
                             search={{}}
                             aria-label={note.title}

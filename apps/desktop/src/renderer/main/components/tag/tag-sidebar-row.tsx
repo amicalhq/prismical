@@ -51,7 +51,7 @@ export function TagSidebarRow({ tag, noteCount }: TagSidebarRowProps) {
       <SidebarMenuItem className="group/tag-item relative">
         <SidebarMenuButton asChild>
           <Link
-            to="/settings/notes"
+            to="/notes"
             search={{ tag: tag.id }}
             aria-label={`#${tag.name}`}
           >

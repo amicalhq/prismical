@@ -48,7 +48,7 @@ export function NavTagsGroup() {
             asChild
             className="text-xs text-sidebar-foreground/70"
           >
-            <Link to="/settings/tags">
+            <Link to="/tags">
               {t("settings.sidebar.tagsViewAll")} →
             </Link>
           </SidebarMenuButton>
