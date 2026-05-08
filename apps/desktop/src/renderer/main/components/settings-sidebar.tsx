@@ -168,6 +168,9 @@ export function SettingsSidebar({
                 </div>
               </SidebarMenuButton>
             </SidebarMenuItem>
+            <SidebarMenuItem>
+              <CommandSearchButton />
+            </SidebarMenuItem>
             {primaryNavItems.map((item) => (
               <SidebarMenuItem key={item.url}>
                 <SidebarMenuButton
@@ -189,9 +192,6 @@ export function SettingsSidebar({
                 </SidebarMenuButton>
               </SidebarMenuItem>
             ))}
-            <SidebarMenuItem>
-              <CommandSearchButton />
-            </SidebarMenuItem>
             {settingsNavItem ? (
               <SidebarMenuItem key={settingsNavItem.url}>
                 <SidebarMenuButton
