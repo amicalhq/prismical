@@ -7,6 +7,7 @@ const MAX_NAME_LEN = 64;
 
 export interface CreateFolderInput {
   name: string;
+  parentId?: number | null;
 }
 export interface UpdateFolderInput {
   name?: string;
@@ -38,16 +39,20 @@ export class FoldersService {
 
   async createFolder(input: CreateFolderInput): Promise<Folder> {
     const name = this.validateName(input.name);
-    const existing = await folderDb.getFolderByLowerName(this.db, name);
+    const parentId = input.parentId ?? null;
+    const existing = await folderDb.getFolderByNameAndParent(this.db, name, parentId);
     if (existing) return existing;
-    return await folderDb.createFolder(this.db, { name });
+    return await folderDb.createFolder(this.db, { name, parentId });
   }
 
   async updateFolder(id: number, patch: UpdateFolderInput): Promise<Folder> {
     const dbPatch: { name?: string; isFavorite?: boolean } = {};
     if (patch.name !== undefined) {
       const name = this.validateName(patch.name);
-      const collision = await folderDb.getFolderByLowerName(this.db, name);
+      // Look up the current parent so the collision check is sibling-scoped.
+      const current = await folderDb.getFolderById(this.db, id);
+      const parentId = current?.parentId ?? null;
+      const collision = await folderDb.getFolderByNameAndParent(this.db, name, parentId);
       if (collision && collision.id !== id) {
         throw new Error(`A folder named "${collision.name}" already exists`);
       }
@@ -73,6 +78,13 @@ export class FoldersService {
   }
   listWithCounts(opts: folderDb.ListFoldersOptions = {}) {
     return folderDb.listAllFoldersWithCounts(this.db, opts);
+  }
+  async getTreeWithCounts() {
+    const [folderRows, unfiledCount] = await Promise.all([
+      folderDb.listWithRecursiveCounts(this.db),
+      folderDb.countUnfiled(this.db),
+    ]);
+    return { folders: folderRows, unfiledCount };
   }
   getById(id: number) {
     return folderDb.getFolderById(this.db, id);

@@ -1,4 +1,4 @@
-import { asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
 import { folders, notes, type Folder, type NewFolder } from "./schema";
 
@@ -46,6 +46,26 @@ export async function getFolderByLowerName(
     .select()
     .from(folders)
     .where(sql`LOWER(${folders.name}) = LOWER(${name})`)
+    .limit(1);
+  return row ?? null;
+}
+
+export async function getFolderByNameAndParent(
+  db: DB,
+  name: string,
+  parentId: number | null,
+): Promise<Folder | null> {
+  const [row] = await db
+    .select()
+    .from(folders)
+    .where(
+      and(
+        sql`LOWER(${folders.name}) = LOWER(${name})`,
+        parentId === null
+          ? isNull(folders.parentId)
+          : eq(folders.parentId, parentId),
+      ),
+    )
     .limit(1);
   return row ?? null;
 }

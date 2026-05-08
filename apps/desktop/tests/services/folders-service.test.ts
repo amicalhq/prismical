@@ -235,6 +235,7 @@ describe("FoldersService", () => {
     });
 
     it("cascading delete drops note tags, artifacts, and yjs updates", async () => {
+
       const root = await service.createFolder({ name: "doomed" });
 
       const [note] = await testDb.db
@@ -282,5 +283,48 @@ describe("FoldersService", () => {
         .where(eq(tags.id, tag.id));
       expect(tagAfter?.id).toBe(tag.id);
     });
+  });
+
+  it("createFolder accepts parentId and creates a child", async () => {
+    const root = await service.createFolder({ name: "Work" });
+    const child = await service.createFolder({ name: "Q4", parentId: root.id });
+    expect(child.parentId).toBe(root.id);
+  });
+
+  it("createFolder is idempotent under same parent (case-insensitive)", async () => {
+    const root = await service.createFolder({ name: "Work" });
+    const a = await service.createFolder({ name: "Notes", parentId: root.id });
+    const b = await service.createFolder({ name: "NOTES", parentId: root.id });
+    expect(a.id).toBe(b.id);
+  });
+
+  it("createFolder allows same name under a different parent", async () => {
+    const a = await service.createFolder({ name: "Work" });
+    const b = await service.createFolder({ name: "Personal" });
+    const ca = await service.createFolder({ name: "Notes", parentId: a.id });
+    const cb = await service.createFolder({ name: "Notes", parentId: b.id });
+    expect(ca.id).not.toBe(cb.id);
+  });
+
+  it("createFolder still rejects duplicate top-level names", async () => {
+    const a = await service.createFolder({ name: "Work" });
+    const b = await service.createFolder({ name: "WORK" });
+    expect(b.id).toBe(a.id);
+  });
+
+  it("getTreeWithCounts returns flat list with recursive counts plus unfiledCount", async () => {
+    const w = await service.createFolder({ name: "W" });
+    const c = await service.createFolder({ name: "C", parentId: w.id });
+    await testDb.db.insert(notes).values({ title: "n", folderId: w.id });
+    await testDb.db.insert(notes).values({ title: "deep", folderId: c.id });
+    await testDb.db.insert(notes).values({ title: "u" });
+
+    const tree = await service.getTreeWithCounts();
+    expect(tree.unfiledCount).toBe(1);
+
+    const wRow = tree.folders.find((f) => f.name === "W")!;
+    expect(wRow.noteCount).toBe(2); // n + deep
+    const cRow = tree.folders.find((f) => f.name === "C")!;
+    expect(cRow.noteCount).toBe(1);
   });
 });
