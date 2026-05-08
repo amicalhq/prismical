@@ -1,7 +1,14 @@
 import { Link } from "@tanstack/react-router";
+import { ChevronRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
   SidebarGroup,
+  SidebarGroupAction,
   SidebarGroupContent,
   SidebarGroupLabel,
   SidebarMenu,
@@ -22,34 +29,45 @@ export function NavTagsGroup() {
   const viewAllLabel = t("settings.sidebar.tagsViewAll");
 
   return (
-    <SidebarGroup className="group/tags pt-0 group-data-[collapsible=icon]:hidden">
-      <SidebarGroupLabel className="justify-between">
-        <span>{t("settings.sidebar.tags")}</span>
-        <Link
-          to="/tags"
-          aria-label={viewAllLabel}
-          className="opacity-0 outline-hidden transition-opacity hover:text-sidebar-accent-foreground focus-visible:opacity-100 group-hover/tags:opacity-100"
+    <Collapsible defaultOpen className="group/tags-collapsible">
+      <SidebarGroup className="group/tags pt-0 group-data-[collapsible=icon]:hidden">
+        <SidebarGroupLabel
+          asChild
+          className="cursor-pointer gap-1 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
         >
-          {viewAllLabel} ›
-        </Link>
-      </SidebarGroupLabel>
-      {tags.length === 0 ? (
-        <SidebarGroupContent>
-          <p className="px-2 py-1 text-xs text-sidebar-foreground/60">
-            {t("settings.sidebar.noTags")}
-          </p>
-        </SidebarGroupContent>
-      ) : (
-        <SidebarMenu>
-          {tags.map((tag) => (
-            <TagSidebarRow
-              key={`tag-${tag.id}`}
-              tag={tag}
-              noteCount={noteCountFor(tag.id)}
-            />
-          ))}
-        </SidebarMenu>
-      )}
-    </SidebarGroup>
+          <CollapsibleTrigger>
+            <span>{t("settings.sidebar.tags")}</span>
+            <ChevronRight className="size-3 transition-transform group-data-[state=open]/tags-collapsible:rotate-90" />
+          </CollapsibleTrigger>
+        </SidebarGroupLabel>
+        <SidebarGroupAction
+          asChild
+          className="top-1.5 right-2 aspect-auto h-5 w-auto px-1.5 text-xs font-medium opacity-0 transition-opacity after:hidden focus-visible:opacity-100 group-hover/tags:opacity-100"
+        >
+          <Link to="/tags" aria-label={viewAllLabel}>
+            {viewAllLabel} ›
+          </Link>
+        </SidebarGroupAction>
+        <CollapsibleContent>
+          {tags.length === 0 ? (
+            <SidebarGroupContent>
+              <p className="px-2 py-1 text-xs text-sidebar-foreground/60">
+                {t("settings.sidebar.noTags")}
+              </p>
+            </SidebarGroupContent>
+          ) : (
+            <SidebarMenu>
+              {tags.map((tag) => (
+                <TagSidebarRow
+                  key={`tag-${tag.id}`}
+                  tag={tag}
+                  noteCount={noteCountFor(tag.id)}
+                />
+              ))}
+            </SidebarMenu>
+          )}
+        </CollapsibleContent>
+      </SidebarGroup>
+    </Collapsible>
   );
 }

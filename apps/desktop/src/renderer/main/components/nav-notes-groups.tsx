@@ -248,160 +248,190 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
 
   return (
     <>
-      <SidebarGroup className="pb-0 group-data-[collapsible=icon]:hidden">
-        <SidebarGroupLabel>{t("settings.sidebar.favorites")}</SidebarGroupLabel>
-        <SidebarMenu>
-          {favoriteEntries.length === 0 ? (
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                disabled
-                className="text-sidebar-foreground/60"
-              >
-                <Star className="size-4" />
-                <span>{t("settings.sidebar.noFavorites")}</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          ) : (
-            favoriteEntries.map((entry) =>
-              entry.kind === "note" ? (
-                <SidebarMenuItem key={`favorite-note-${entry.note.id}`}>
+      <Collapsible defaultOpen className="group/favorites-collapsible">
+        <SidebarGroup className="pb-0 group-data-[collapsible=icon]:hidden">
+          <SidebarGroupLabel
+            asChild
+            className="cursor-pointer gap-1 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          >
+            <CollapsibleTrigger>
+              <span>{t("settings.sidebar.favorites")}</span>
+              <ChevronRight className="size-3 transition-transform group-data-[state=open]/favorites-collapsible:rotate-90" />
+            </CollapsibleTrigger>
+          </SidebarGroupLabel>
+          <CollapsibleContent>
+            <SidebarMenu>
+              {favoriteEntries.length === 0 ? (
+                <SidebarMenuItem>
                   <SidebarMenuButton
-                    asChild
-                    isActive={isNoteActive(entry.note.id)}
+                    disabled
+                    className="text-sidebar-foreground/60"
                   >
-                    <Link
-                      to="/notes/$noteId"
-                      params={{ noteId: String(entry.note.id) }}
-                      search={{}}
-                      aria-label={entry.note.title}
-                    >
-                      <NoteLeadingIcon icon={entry.note.icon} />
-                      <span>{entry.note.title}</span>
-                    </Link>
+                    <Star className="size-4" />
+                    <span>{t("settings.sidebar.noFavorites")}</span>
                   </SidebarMenuButton>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <SidebarMenuAction showOnHover>
-                        <MoreHorizontal />
-                        <span className="sr-only">More</span>
-                      </SidebarMenuAction>
-                    </DropdownMenuTrigger>
-                    <NoteDropdownContent
-                      note={entry.note}
-                      isMobile={isMobile}
-                      t={t}
-                      onStarredChange={(starred) =>
-                        updateOrganization.mutate({
-                          id: entry.note.id,
-                          starred,
-                        })
-                      }
-                      onMoveTo={() => setFolderPickerForNoteId(entry.note.id)}
-                      onDelete={() => handleDelete(entry.note.id)}
-                    />
-                  </DropdownMenu>
                 </SidebarMenuItem>
               ) : (
-                <TagSidebarRow
-                  key={`favorite-tag-${entry.tag.id}`}
-                  tag={entry.tag}
-                  noteCount={tagNoteCountFor(entry.tag.id)}
-                />
-              ),
-            )
-          )}
-        </SidebarMenu>
-      </SidebarGroup>
-
-      <SidebarGroup className="pb-0 pt-0 group-data-[collapsible=icon]:hidden">
-        <SidebarGroupLabel>{t("settings.sidebar.folders")}</SidebarGroupLabel>
-        <SidebarMenu>
-          {folders.map(([folderName, folderNotes]) => (
-            <Collapsible
-              key={folderName}
-              defaultOpen={folderNotes.some((note) => isNoteActive(note.id))}
-              className="group/collapsible"
-            >
-              <SidebarMenuItem>
-                <CollapsibleTrigger asChild>
-                  <SidebarMenuButton>
-                    <ChevronRight className="size-4 transition-transform group-data-[state=open]/collapsible:rotate-90" />
-                    <span>{folderName}</span>
-                  </SidebarMenuButton>
-                </CollapsibleTrigger>
-                <SidebarMenuAction
-                  showOnHover
-                  onClick={() => handleCreateNoteInFolder(folderName)}
-                >
-                  <Plus />
-                  <span className="sr-only">{t("settings.notes.create")}</span>
-                </SidebarMenuAction>
-                <CollapsibleContent>
-                  <SidebarMenuSub className="mr-0 pr-0">
-                    {folderNotes.map((note) => (
-                      <SidebarMenuSubItem
-                        key={`folder-${folderName}-${note.id}`}
-                        className="group/sub-item relative"
+                favoriteEntries.map((entry) =>
+                  entry.kind === "note" ? (
+                    <SidebarMenuItem key={`favorite-note-${entry.note.id}`}>
+                      <SidebarMenuButton
+                        asChild
+                        isActive={isNoteActive(entry.note.id)}
                       >
-                        <SidebarMenuSubButton
-                          asChild
-                          isActive={isNoteActive(note.id)}
-                          className="pr-6"
+                        <Link
+                          to="/notes/$noteId"
+                          params={{ noteId: String(entry.note.id) }}
+                          search={{}}
+                          aria-label={entry.note.title}
                         >
-                          <Link
-                            to="/notes/$noteId"
-                            params={{ noteId: String(note.id) }}
-                            search={{}}
-                            aria-label={note.title}
+                          <NoteLeadingIcon icon={entry.note.icon} />
+                          <span>{entry.note.title}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <SidebarMenuAction showOnHover>
+                            <MoreHorizontal />
+                            <span className="sr-only">More</span>
+                          </SidebarMenuAction>
+                        </DropdownMenuTrigger>
+                        <NoteDropdownContent
+                          note={entry.note}
+                          isMobile={isMobile}
+                          t={t}
+                          onStarredChange={(starred) =>
+                            updateOrganization.mutate({
+                              id: entry.note.id,
+                              starred,
+                            })
+                          }
+                          onMoveTo={() =>
+                            setFolderPickerForNoteId(entry.note.id)
+                          }
+                          onDelete={() => handleDelete(entry.note.id)}
+                        />
+                      </DropdownMenu>
+                    </SidebarMenuItem>
+                  ) : (
+                    <TagSidebarRow
+                      key={`favorite-tag-${entry.tag.id}`}
+                      tag={entry.tag}
+                      noteCount={tagNoteCountFor(entry.tag.id)}
+                    />
+                  ),
+                )
+              )}
+            </SidebarMenu>
+          </CollapsibleContent>
+        </SidebarGroup>
+      </Collapsible>
+
+      <Collapsible defaultOpen className="group/folders-collapsible">
+        <SidebarGroup className="pb-0 pt-0 group-data-[collapsible=icon]:hidden">
+          <SidebarGroupLabel
+            asChild
+            className="cursor-pointer gap-1 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          >
+            <CollapsibleTrigger>
+              <span>{t("settings.sidebar.folders")}</span>
+              <ChevronRight className="size-3 transition-transform group-data-[state=open]/folders-collapsible:rotate-90" />
+            </CollapsibleTrigger>
+          </SidebarGroupLabel>
+          <CollapsibleContent>
+            <SidebarMenu>
+              {folders.map(([folderName, folderNotes]) => (
+                <Collapsible
+                  key={folderName}
+                  defaultOpen={folderNotes.some((note) => isNoteActive(note.id))}
+                  className="group/collapsible"
+                >
+                  <SidebarMenuItem>
+                    <CollapsibleTrigger asChild>
+                      <SidebarMenuButton>
+                        <ChevronRight className="size-4 transition-transform group-data-[state=open]/collapsible:rotate-90" />
+                        <span>{folderName}</span>
+                      </SidebarMenuButton>
+                    </CollapsibleTrigger>
+                    <SidebarMenuAction
+                      showOnHover
+                      onClick={() => handleCreateNoteInFolder(folderName)}
+                    >
+                      <Plus />
+                      <span className="sr-only">
+                        {t("settings.notes.create")}
+                      </span>
+                    </SidebarMenuAction>
+                    <CollapsibleContent>
+                      <SidebarMenuSub className="mr-0 pr-0">
+                        {folderNotes.map((note) => (
+                          <SidebarMenuSubItem
+                            key={`folder-${folderName}-${note.id}`}
+                            className="group/sub-item relative"
                           >
-                            <NoteLeadingIcon icon={note.icon} />
-                            <span>{note.title}</span>
-                          </Link>
-                        </SidebarMenuSubButton>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <button
-                              type="button"
-                              className="absolute right-1 top-1/2 -translate-y-1/2 rounded-md p-0.5 text-sidebar-foreground/70 opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover/sub-item:opacity-100 data-[state=open]:opacity-100"
+                            <SidebarMenuSubButton
+                              asChild
+                              isActive={isNoteActive(note.id)}
+                              className="pr-6"
                             >
-                              <MoreHorizontal className="size-4" />
-                              <span className="sr-only">More</span>
-                            </button>
-                          </DropdownMenuTrigger>
-                          <NoteDropdownContent
-                            note={note}
-                            isMobile={isMobile}
-                            t={t}
-                            onStarredChange={(starred) =>
-                              updateOrganization.mutate({
-                                id: note.id,
-                                starred,
-                              })
-                            }
-                            onMoveTo={() => setFolderPickerForNoteId(note.id)}
-                            onDelete={() => handleDelete(note.id)}
-                          />
-                        </DropdownMenu>
-                      </SidebarMenuSubItem>
-                    ))}
-                  </SidebarMenuSub>
-                </CollapsibleContent>
-              </SidebarMenuItem>
-            </Collapsible>
-          ))}
-          {folders.length === 0 ? (
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                disabled
-                className="text-sidebar-foreground/60"
-              >
-                <Folder className="size-4" />
-                <span>{t("settings.sidebar.noFolders")}</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          ) : null}
-        </SidebarMenu>
-      </SidebarGroup>
+                              <Link
+                                to="/notes/$noteId"
+                                params={{ noteId: String(note.id) }}
+                                search={{}}
+                                aria-label={note.title}
+                              >
+                                <NoteLeadingIcon icon={note.icon} />
+                                <span>{note.title}</span>
+                              </Link>
+                            </SidebarMenuSubButton>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <button
+                                  type="button"
+                                  className="absolute right-1 top-1/2 -translate-y-1/2 rounded-md p-0.5 text-sidebar-foreground/70 opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover/sub-item:opacity-100 data-[state=open]:opacity-100"
+                                >
+                                  <MoreHorizontal className="size-4" />
+                                  <span className="sr-only">More</span>
+                                </button>
+                              </DropdownMenuTrigger>
+                              <NoteDropdownContent
+                                note={note}
+                                isMobile={isMobile}
+                                t={t}
+                                onStarredChange={(starred) =>
+                                  updateOrganization.mutate({
+                                    id: note.id,
+                                    starred,
+                                  })
+                                }
+                                onMoveTo={() =>
+                                  setFolderPickerForNoteId(note.id)
+                                }
+                                onDelete={() => handleDelete(note.id)}
+                              />
+                            </DropdownMenu>
+                          </SidebarMenuSubItem>
+                        ))}
+                      </SidebarMenuSub>
+                    </CollapsibleContent>
+                  </SidebarMenuItem>
+                </Collapsible>
+              ))}
+              {folders.length === 0 ? (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    disabled
+                    className="text-sidebar-foreground/60"
+                  >
+                    <Folder className="size-4" />
+                    <span>{t("settings.sidebar.noFolders")}</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ) : null}
+            </SidebarMenu>
+          </CollapsibleContent>
+        </SidebarGroup>
+      </Collapsible>
 
       <NavTagsGroup />
 
