@@ -1,4 +1,4 @@
-import { Check, FolderPlus } from "lucide-react";
+import { Check, FolderPlus, Folder as FolderIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
   Dialog,
@@ -16,12 +16,13 @@ import {
   CommandList,
   CommandSeparator,
 } from "@/components/ui/command";
+import type { Folder } from "@/db/schema";
 
 type FolderPickerDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   currentFolderId: number | null;
-  folderIds: number[];
+  folders: Folder[];
   onSelect: (folderId: number | null) => void;
   onCreateFolder: () => void;
 };
@@ -30,7 +31,7 @@ export function FolderPickerDialog({
   open,
   onOpenChange,
   currentFolderId,
-  folderIds,
+  folders,
   onSelect,
   onCreateFolder,
 }: FolderPickerDialogProps) {
@@ -72,12 +73,16 @@ export function FolderPickerDialog({
                 />
                 <span>{t("settings.notes.note.actions.noFolder")}</span>
               </CommandItem>
-              {folderIds.map((id) => (
-                <CommandItem key={id} onSelect={() => handleSelect(id)}>
+              {folders.map((f) => (
+                <CommandItem
+                  key={f.id}
+                  onSelect={() => handleSelect(f.id)}
+                >
                   <Check
-                    className={`h-4 w-4 ${currentFolderId === id ? "opacity-100" : "opacity-0"}`}
+                    className={`h-4 w-4 ${currentFolderId === f.id ? "opacity-100" : "opacity-0"}`}
                   />
-                  <span>{String(id)}</span>
+                  <FolderIcon className="h-4 w-4" />
+                  <span>{f.name}</span>
                 </CommandItem>
               ))}
             </CommandGroup>

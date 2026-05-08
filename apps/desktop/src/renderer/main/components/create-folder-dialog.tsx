@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
@@ -25,12 +26,7 @@ export function CreateFolderDialog({
   const { t } = useTranslation();
   const [folderName, setFolderName] = useState("");
   const submittedRef = useRef(false);
-
-  const createFolderMutation = api.folders.create.useMutation({
-    onSuccess: (folder) => {
-      onCreated(folder.id);
-    },
-  });
+  const utils = api.useUtils();
 
   useEffect(() => {
     if (open) {
@@ -39,12 +35,23 @@ export function CreateFolderDialog({
     }
   }, [open]);
 
+  const createMutation = api.folders.create.useMutation({
+    onSuccess: (folder) => {
+      utils.folders.invalidate();
+      onOpenChange(false);
+      onCreated(folder.id);
+    },
+    onError: (error) => {
+      submittedRef.current = false;
+      toast.error(error.message);
+    },
+  });
+
   const handleSubmit = () => {
     const trimmed = folderName.trim();
     if (!trimmed || submittedRef.current) return;
     submittedRef.current = true;
-    onOpenChange(false);
-    createFolderMutation.mutate({ name: trimmed });
+    createMutation.mutate({ name: trimmed });
   };
 
   return (
@@ -67,7 +74,10 @@ export function CreateFolderDialog({
           placeholder={t("settings.notes.note.actions.newFolderPrompt")}
         />
         <DialogFooter>
-          <Button onClick={handleSubmit} disabled={!folderName.trim()}>
+          <Button
+            onClick={handleSubmit}
+            disabled={!folderName.trim() || createMutation.isPending}
+          >
             {t("settings.notes.note.actions.createFolder")}
           </Button>
         </DialogFooter>

@@ -225,22 +225,27 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
     return entries;
   }, [favoriteNotes, favoriteTagsQ.data]);
 
-  const folders = React.useMemo(() => {
-    const grouped = new Map<number, NoteNavigationItem[]>();
+  const foldersQ = api.folders.list.useQuery({ sortBy: "name" });
+  const allFolders = foldersQ.data ?? [];
 
+  const notesByFolderId = React.useMemo(() => {
+    const grouped = new Map<number, NoteNavigationItem[]>();
     for (const note of notes) {
-      if (note.folderId == null) continue;
+      if (note.folderId === null) continue;
       const existing = grouped.get(note.folderId) ?? [];
       existing.push(note);
       grouped.set(note.folderId, existing);
     }
-
-    return Array.from(grouped.entries()).sort(([a], [b]) => a - b);
+    return grouped;
   }, [notes]);
 
-  const folderIds = React.useMemo(
-    () => folders.map(([id]) => id),
-    [folders],
+  const folderEntries = React.useMemo(
+    () =>
+      allFolders.map((f) => ({
+        folder: f,
+        notes: notesByFolderId.get(f.id) ?? [],
+      })),
+    [allFolders, notesByFolderId],
   );
 
   const isNoteActive = (noteId: number) =>
@@ -357,9 +362,9 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
           </SidebarGroupLabel>
           <CollapsibleContent>
             <SidebarMenu>
-              {folders.map(([folderId, folderNotes]) => (
+              {folderEntries.map(({ folder, notes: folderNotes }) => (
                 <Collapsible
-                  key={folderId}
+                  key={`folder-${folder.id}`}
                   defaultOpen={folderNotes.some((note) => isNoteActive(note.id))}
                   className="group/collapsible"
                 >
@@ -367,12 +372,12 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
                     <CollapsibleTrigger asChild>
                       <SidebarMenuButton>
                         <ChevronRight className="size-4 transition-transform group-data-[state=open]/collapsible:rotate-90" />
-                        <span>{String(folderId)}</span>
+                        <span>{folder.name}</span>
                       </SidebarMenuButton>
                     </CollapsibleTrigger>
                     <SidebarMenuAction
                       showOnHover
-                      onClick={() => handleCreateNoteInFolder(folderId)}
+                      onClick={() => handleCreateNoteInFolder(folder.id)}
                     >
                       <Plus />
                       <span className="sr-only">
@@ -383,7 +388,7 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
                       <SidebarMenuSub className="mr-0 pr-0">
                         {folderNotes.map((note) => (
                           <SidebarMenuSubItem
-                            key={`folder-${folderId}-${note.id}`}
+                            key={`folder-${folder.id}-${note.id}`}
                             className="group/sub-item relative"
                           >
                             <SidebarMenuSubButton
@@ -434,7 +439,7 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
                   </SidebarMenuItem>
                 </Collapsible>
               ))}
-              {folders.length === 0 ? (
+              {folderEntries.length === 0 ? (
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     disabled
@@ -460,7 +465,7 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
         currentFolderId={
           notes.find((n) => n.id === folderPickerForNoteId)?.folderId ?? null
         }
-        folderIds={folderIds}
+        folders={allFolders}
         onSelect={(folderId) => {
           if (folderPickerForNoteId !== null) {
             handleFolderChange(folderPickerForNoteId, folderId);

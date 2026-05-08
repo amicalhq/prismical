@@ -428,12 +428,8 @@ export default function NotePage({
     [noteIdNumber, updateNoteOrganizationMutation],
   );
 
-  const folderIds = useMemo(() => {
-    const ids = allNotes
-      .map((entry) => entry.folderId)
-      .filter((id): id is number => id != null);
-    return Array.from(new Set(ids)).sort((a, b) => a - b);
-  }, [allNotes]);
+  const foldersQ = api.folders.list.useQuery({ sortBy: "name" });
+  const allFolders = foldersQ.data ?? [];
 
   const handleToggleAsset = useCallback((asset: NoteAssetKind) => {
     setActiveAsset((currentAsset) => (currentAsset === asset ? null : asset));
@@ -542,7 +538,7 @@ export default function NotePage({
         noteEmoji={noteIcon}
         noteStarred={noteStarred}
         noteFolderId={noteFolderId}
-        folderIds={folderIds}
+        folders={allFolders}
         isLoading={isLoading}
         onTitleChange={handleTitleChange}
         onDelete={handleDelete}

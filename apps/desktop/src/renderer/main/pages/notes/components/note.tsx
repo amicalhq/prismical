@@ -43,6 +43,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { CreateFolderDialog } from "@/renderer/main/components/create-folder-dialog";
 import { FolderPickerDialog } from "@/renderer/main/components/folder-picker-dialog";
+import type { Folder } from "@/db/schema";
 import { useSettingsHeaderActions } from "@/renderer/main/components/settings-header-actions-context";
 import { NoteTagChips } from "./note-tag-chips";
 
@@ -73,7 +74,7 @@ export type NotePageUIProps = {
   noteFolderId: number | null;
   noteUpdatedAt: Date;
   eventData: NoteEventData | null;
-  folderIds: number[];
+  folders: Folder[];
   isLoading: boolean;
   onTitleChange: (value: string) => void;
   onDelete: () => void;
@@ -125,7 +126,7 @@ export default function Note({
   noteFolderId,
   noteUpdatedAt,
   eventData,
-  folderIds,
+  folders,
   isLoading,
   onTitleChange,
   onDelete,
@@ -553,7 +554,7 @@ export default function Note({
         open={showFolderPicker}
         onOpenChange={setShowFolderPicker}
         currentFolderId={noteFolderId}
-        folderIds={folderIds}
+        folders={folders}
         onSelect={onFolderChange}
         onCreateFolder={handleCreateFolder}
       />

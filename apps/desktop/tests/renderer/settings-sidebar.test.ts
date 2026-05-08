@@ -19,6 +19,13 @@ const tagsListRecentUseQuery = vi.hoisted(() => vi.fn(() => ({ data: [] })));
 const tagsListWithCountsUseQuery = vi.hoisted(() =>
   vi.fn(() => ({ data: [] })),
 );
+const foldersListUseQuery = vi.hoisted(() => vi.fn(() => ({ data: [] })));
+const foldersListFavoritesUseQuery = vi.hoisted(() =>
+  vi.fn(() => ({ data: [] })),
+);
+const foldersListWithCountsUseQuery = vi.hoisted(() =>
+  vi.fn(() => ({ data: [] })),
+);
 
 vi.mock("@tanstack/react-router", async () => {
   const React = await import("react");
@@ -69,11 +76,18 @@ vi.mock("@/trpc/react", () => ({
       listRecent: { useQuery: tagsListRecentUseQuery },
       listWithCounts: { useQuery: tagsListWithCountsUseQuery },
     },
+    folders: {
+      list: { useQuery: foldersListUseQuery },
+      listFavorites: { useQuery: foldersListFavoritesUseQuery },
+      listWithCounts: { useQuery: foldersListWithCountsUseQuery },
+      create: { useMutation },
+    },
     useUtils: () => ({
       notes: {
         getNotes: { invalidate: vi.fn() },
       },
       tags: { invalidate: vi.fn() },
+      folders: { invalidate: vi.fn() },
     }),
   },
 }));
@@ -82,6 +96,10 @@ async function renderSidebar(pathname: string) {
   routerState.pathname = pathname;
   vi.stubGlobal("window", {
     electronAPI: { platform: "darwin" },
+    localStorage: {
+      getItem: vi.fn(() => null),
+      setItem: vi.fn(),
+    },
   });
 
   const { SidebarProvider } = await import("@/components/ui/sidebar");
@@ -117,6 +135,8 @@ describe("SettingsSidebar route modes", () => {
     expect(tagsListFavoritesUseQuery).not.toHaveBeenCalled();
     expect(tagsListRecentUseQuery).not.toHaveBeenCalled();
     expect(tagsListWithCountsUseQuery).not.toHaveBeenCalled();
+    expect(foldersListUseQuery).not.toHaveBeenCalled();
+    expect(foldersListFavoritesUseQuery).not.toHaveBeenCalled();
   });
 
   it("loads notes navigation groups on notes routes", async () => {
@@ -135,6 +155,7 @@ describe("SettingsSidebar route modes", () => {
     expect(tagsListWithCountsUseQuery).toHaveBeenCalledWith({
       sortBy: "createdAt",
     });
+    expect(foldersListUseQuery).toHaveBeenCalled();
   });
 
   it("keeps tag navigation available on the tags route", async () => {
@@ -153,5 +174,6 @@ describe("SettingsSidebar route modes", () => {
     expect(tagsListWithCountsUseQuery).toHaveBeenCalledWith({
       sortBy: "createdAt",
     });
+    expect(foldersListUseQuery).toHaveBeenCalled();
   });
 });
