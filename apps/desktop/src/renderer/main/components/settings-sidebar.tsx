@@ -16,6 +16,7 @@ import {
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -270,8 +271,10 @@ export function SettingsSidebar({
       <SidebarContent>
         {!isAppSidebar ? <NavMain items={navMain} /> : null}
         {showNotesNavigation ? <NavNotesGroups notes={notesForGroups} /> : null}
-        <NavSecondary items={navSecondary} className="mt-auto" />
       </SidebarContent>
+      <SidebarFooter className="p-0">
+        <NavSecondary items={navSecondary} />
+      </SidebarFooter>
     </Sidebar>
   );
 }
