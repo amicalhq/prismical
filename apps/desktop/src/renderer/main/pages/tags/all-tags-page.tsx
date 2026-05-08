@@ -96,11 +96,11 @@ export function AllTagsPage() {
           (q.data ?? []).map((tag) => (
             <div
               key={tag.id}
-              className="group/row flex items-center gap-2 border-b last:border-b-0 hover:bg-muted/30"
+              className="group/row flex items-center border-b last:border-b-0 hover:bg-muted/30"
             >
               <button
                 type="button"
-                className="flex flex-1 items-center gap-2 px-4 py-2 text-left outline-none focus-visible:bg-muted/50"
+                className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left outline-none focus-visible:bg-muted/50"
                 onClick={() =>
                   navigate({
                     to: "/notes",
@@ -109,22 +109,24 @@ export function AllTagsPage() {
                 }
                 aria-label={`#${tag.name}`}
               >
-                <TagHash color={tag.color} name={tag.name} />
+                <TagHash
+                  color={tag.color}
+                  name={tag.name}
+                  className="min-w-0 flex-1"
+                />
                 {tag.isFavorite && (
-                  <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
+                  <Star className="h-3 w-3 shrink-0 fill-yellow-400 text-yellow-400" />
                 )}
-                <span className="flex-1" />
-                <span className="tabular-nums text-sm text-muted-foreground">
+                <span className="shrink-0 tabular-nums text-sm text-muted-foreground">
                   {t("settings.tags.noteCount", { count: tag.noteCount })}
                 </span>
               </button>
-              <div className="pr-3 opacity-0 focus-within:opacity-100 group-hover/row:opacity-100">
-                <TagRowMenu
-                  tag={tag}
-                  onEdit={() => setEditing(tag)}
-                  onDelete={() => setConfirming(tag)}
-                />
-              </div>
+              <TagRowMenu
+                tag={tag}
+                onEdit={() => setEditing(tag)}
+                onDelete={() => setConfirming(tag)}
+                triggerClassName="mx-2 inline-flex aspect-square w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 outline-hidden transition-opacity hover:bg-muted focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring group-focus-within/row:opacity-100 group-hover/row:opacity-100 data-[state=open]:opacity-100"
+              />
             </div>
           ))
         )}
