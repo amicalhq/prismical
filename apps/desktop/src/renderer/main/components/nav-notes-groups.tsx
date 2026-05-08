@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {
   SidebarGroup,
+  SidebarGroupAction,
   SidebarGroupLabel,
   SidebarMenu,
   SidebarMenuAction,
@@ -489,7 +490,7 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
         onOpenChange={setFoldersOpen}
         className="group/folders-collapsible"
       >
-        <SidebarGroup className="pb-0 pt-0 group-data-[collapsible=icon]:hidden">
+        <SidebarGroup className="group/folders pb-0 pt-0 group-data-[collapsible=icon]:hidden">
           <SidebarGroupLabel
             asChild
             className="cursor-pointer gap-1 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
@@ -499,6 +500,18 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
               <ChevronRight className="size-3 transition-transform group-data-[state=open]/folders-collapsible:rotate-90" />
             </CollapsibleTrigger>
           </SidebarGroupLabel>
+          <SidebarGroupAction
+            asChild
+            className="top-1.5 right-2 aspect-auto h-5 w-auto px-1.5 text-xs font-medium opacity-0 transition-opacity after:hidden focus-visible:opacity-100 group-hover/folders:opacity-100"
+          >
+            <Link
+              to="/folders"
+              search={{}}
+              aria-label={t("settings.sidebar.viewAllFolders")}
+            >
+              {t("settings.sidebar.viewAllFolders")} ›
+            </Link>
+          </SidebarGroupAction>
           <CollapsibleContent>
             <SidebarMenu>
               {folderEntries.map(({ folder, notes: folderNotes }) => (
@@ -600,16 +613,6 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ) : null}
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild>
-                  <Link to="/folders" search={{}}>
-                    <Folder className="size-4 opacity-60" />
-                    <span className="text-muted-foreground">
-                      {t("settings.sidebar.viewAllFolders")}
-                    </span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
             </SidebarMenu>
           </CollapsibleContent>
         </SidebarGroup>
