@@ -117,7 +117,9 @@ class NotesService {
     search?: string;
     transcriptionId?: number | null;
     tagId?: number;
+    tagIds?: number[];
     folderId?: number | null;
+    folderIds?: number[];
   }) {
     return await getNotes(options);
   }
