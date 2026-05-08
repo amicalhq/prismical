@@ -24,7 +24,7 @@ export function NavTagsGroup() {
   const viewAllLabel = t("settings.sidebar.tagsViewAll");
 
   return (
-    <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+    <SidebarGroup className="pt-0 group-data-[collapsible=icon]:hidden">
       <SidebarGroupLabel>{t("settings.sidebar.tags")}</SidebarGroupLabel>
       <SidebarGroupAction asChild title={viewAllLabel}>
         <Link to="/tags" aria-label={viewAllLabel}>
