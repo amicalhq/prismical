@@ -49,7 +49,7 @@ export function NavTagsGroup() {
         </SidebarGroupLabel>
         <SidebarGroupAction
           asChild
-          className="top-1.5 right-2 aspect-auto h-5 w-auto px-1.5 text-xs font-medium opacity-0 transition-opacity after:hidden focus-visible:opacity-100 group-hover/tags:opacity-100"
+          className="top-1.5 right-2 aspect-auto h-5 w-auto px-1.5 text-xs font-medium text-sidebar-foreground/60 hover:text-sidebar-foreground opacity-0 transition-opacity after:hidden focus-visible:opacity-100 group-hover/tags:opacity-100"
         >
           <Link to="/tags" aria-label={viewAllLabel}>
             {viewAllLabel} ›
