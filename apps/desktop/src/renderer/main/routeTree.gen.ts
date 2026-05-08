@@ -14,6 +14,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppTagsRouteImport } from './routes/_app/tags'
 import { Route as AppNotesRouteImport } from './routes/_app/notes'
 import { Route as AppHomeRouteImport } from './routes/_app/home'
+import { Route as AppFoldersRouteImport } from './routes/_app/folders'
 import { Route as AppEventsRouteImport } from './routes/_app/events'
 import { Route as AppSettingsIndexRouteImport } from './routes/_app/settings/index'
 import { Route as AppNotesIndexRouteImport } from './routes/_app/notes.index'
@@ -48,6 +49,11 @@ const AppNotesRoute = AppNotesRouteImport.update({
 const AppHomeRoute = AppHomeRouteImport.update({
   id: '/home',
   path: '/home',
+  getParentRoute: () => AppRouteRoute,
+} as any)
+const AppFoldersRoute = AppFoldersRouteImport.update({
+  id: '/folders',
+  path: '/folders',
   getParentRoute: () => AppRouteRoute,
 } as any)
 const AppEventsRoute = AppEventsRouteImport.update({
@@ -109,6 +115,7 @@ const AppNotesNoteIdRoute = AppNotesNoteIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/events': typeof AppEventsRoute
+  '/folders': typeof AppFoldersRoute
   '/home': typeof AppHomeRoute
   '/notes': typeof AppNotesRouteWithChildren
   '/tags': typeof AppTagsRoute
@@ -126,6 +133,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/events': typeof AppEventsRoute
+  '/folders': typeof AppFoldersRoute
   '/home': typeof AppHomeRoute
   '/tags': typeof AppTagsRoute
   '/notes/$noteId': typeof AppNotesNoteIdRoute
@@ -144,6 +152,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_app': typeof AppRouteRouteWithChildren
   '/_app/events': typeof AppEventsRoute
+  '/_app/folders': typeof AppFoldersRoute
   '/_app/home': typeof AppHomeRoute
   '/_app/notes': typeof AppNotesRouteWithChildren
   '/_app/tags': typeof AppTagsRoute
@@ -163,6 +172,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/events'
+    | '/folders'
     | '/home'
     | '/notes'
     | '/tags'
@@ -180,6 +190,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/events'
+    | '/folders'
     | '/home'
     | '/tags'
     | '/notes/$noteId'
@@ -197,6 +208,7 @@ export interface FileRouteTypes {
     | '/'
     | '/_app'
     | '/_app/events'
+    | '/_app/folders'
     | '/_app/home'
     | '/_app/notes'
     | '/_app/tags'
@@ -252,6 +264,13 @@ declare module '@tanstack/react-router' {
       path: '/home'
       fullPath: '/home'
       preLoaderRoute: typeof AppHomeRouteImport
+      parentRoute: typeof AppRouteRoute
+    }
+    '/_app/folders': {
+      id: '/_app/folders'
+      path: '/folders'
+      fullPath: '/folders'
+      preLoaderRoute: typeof AppFoldersRouteImport
       parentRoute: typeof AppRouteRoute
     }
     '/_app/events': {
@@ -350,6 +369,7 @@ const AppNotesRouteWithChildren = AppNotesRoute._addFileChildren(
 
 interface AppRouteRouteChildren {
   AppEventsRoute: typeof AppEventsRoute
+  AppFoldersRoute: typeof AppFoldersRoute
   AppHomeRoute: typeof AppHomeRoute
   AppNotesRoute: typeof AppNotesRouteWithChildren
   AppTagsRoute: typeof AppTagsRoute
@@ -365,6 +385,7 @@ interface AppRouteRouteChildren {
 
 const AppRouteRouteChildren: AppRouteRouteChildren = {
   AppEventsRoute: AppEventsRoute,
+  AppFoldersRoute: AppFoldersRoute,
   AppHomeRoute: AppHomeRoute,
   AppNotesRoute: AppNotesRouteWithChildren,
   AppTagsRoute: AppTagsRoute,

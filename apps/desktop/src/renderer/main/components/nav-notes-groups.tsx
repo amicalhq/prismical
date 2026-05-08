@@ -582,6 +582,16 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ) : null}
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild>
+                  <Link to="/folders" search={{}}>
+                    <Folder className="size-4 opacity-60" />
+                    <span className="text-muted-foreground">
+                      {t("settings.sidebar.viewAllFolders")}
+                    </span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
             </SidebarMenu>
           </CollapsibleContent>
         </SidebarGroup>
