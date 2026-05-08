@@ -235,6 +235,13 @@ export async function listWithRecursiveCounts(
   //              descendant row carries the ancestor's root_id.
   // Then we join notes to count per (root_id) and LEFT JOIN back to
   // folders to get 0 for folders with no notes anywhere in their subtree.
+  //
+  // Cycle safety: there is no schema CHECK or app-level guard preventing
+  // a cycle in folders.parent_id (same caveat noted on `subtreeIds`). The
+  // recursive step uses UNION ALL — a cycle would expand forever, but
+  // SQLite caps recursion at SQLITE_MAX_RECURSION_DEPTH (1000), so the
+  // failure mode is a thrown "maximum recursion depth exceeded" rather
+  // than a hang. That's acceptable for a local desktop DB.
   const rows = await db.all<RawFolderWithCount>(sql`
     WITH RECURSIVE descendants(root_id, folder_id) AS (
       SELECT id AS root_id, id AS folder_id FROM folders
