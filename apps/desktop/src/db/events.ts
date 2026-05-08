@@ -236,7 +236,6 @@ export async function seedEventsAndNotes() {
     eventId?: string;
     icon?: string;
     starred?: boolean;
-    folder?: string;
     daysAgo: number;
   }[] = [
     // Event-linked notes
@@ -267,36 +266,30 @@ export async function seedEventsAndNotes() {
     {
       title: "Onboarding flow copy",
       icon: "✍️",
-      folder: "Product",
       daysAgo: 1,
     },
     {
       title: "Q3 roadmap priorities",
       icon: "🗺️",
       starred: true,
-      folder: "Product",
       daysAgo: 3,
     },
     {
       title: "Voice input edge cases",
-      folder: "Engineering",
       daysAgo: 2,
     },
     {
       title: "Release checklist v2.1",
       icon: "🚀",
-      folder: "Engineering",
       daysAgo: 4,
     },
     {
       title: "User interview notes — Sam",
       icon: "🎙️",
-      folder: "Research",
       daysAgo: 5,
     },
     {
       title: "Competitive analysis",
-      folder: "Research",
       daysAgo: 7,
     },
     {
@@ -314,7 +307,6 @@ export async function seedEventsAndNotes() {
         eventId: note.eventId ?? null,
         icon: note.icon ?? null,
         starred: note.starred ?? false,
-        folder: note.folder ?? null,
         createdAt,
         updatedAt: createdAt,
       });

@@ -9,21 +9,28 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { api } from "@/trpc/react";
 
 type CreateFolderDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onConfirm: (folderName: string) => void;
+  onCreated: (folderId: number) => void;
 };
 
 export function CreateFolderDialog({
   open,
   onOpenChange,
-  onConfirm,
+  onCreated,
 }: CreateFolderDialogProps) {
   const { t } = useTranslation();
   const [folderName, setFolderName] = useState("");
   const submittedRef = useRef(false);
+
+  const createFolderMutation = api.folders.create.useMutation({
+    onSuccess: (folder) => {
+      onCreated(folder.id);
+    },
+  });
 
   useEffect(() => {
     if (open) {
@@ -37,7 +44,7 @@ export function CreateFolderDialog({
     if (!trimmed || submittedRef.current) return;
     submittedRef.current = true;
     onOpenChange(false);
-    onConfirm(trimmed);
+    createFolderMutation.mutate({ name: trimmed });
   };
 
   return (

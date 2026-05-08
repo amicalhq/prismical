@@ -51,7 +51,7 @@ type NoteNavigationItem = {
   title: string;
   icon: string | null;
   starred: boolean;
-  folder: string | null;
+  folderId: number | null;
   createdAt: Date;
 };
 
@@ -152,7 +152,7 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
   });
 
   const handleCreateNoteInFolder = useCallback(
-    (folderName: string) => {
+    (folderId: number) => {
       if (createNoteMutation.isPending) return;
       const dateStr = new Date().toLocaleDateString(i18n.language, {
         day: "numeric",
@@ -162,7 +162,7 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
         { title: t("settings.notes.defaultTitleWithDate", { date: dateStr }) },
         {
           onSuccess: (newNote) => {
-            updateOrganization.mutate({ id: newNote.id, folder: folderName });
+            updateOrganization.mutate({ id: newNote.id, folderId });
           },
         },
       );
@@ -174,8 +174,8 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
     deleteMutation.mutate({ id: noteId });
   };
 
-  const handleFolderChange = (noteId: number, folder: string | null) => {
-    updateOrganization.mutate({ id: noteId, folder });
+  const handleFolderChange = (noteId: number, folderId: number | null) => {
+    updateOrganization.mutate({ id: noteId, folderId });
   };
 
   const [createFolderForNoteId, setCreateFolderForNoteId] = React.useState<
@@ -226,21 +226,20 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
   }, [favoriteNotes, favoriteTagsQ.data]);
 
   const folders = React.useMemo(() => {
-    const grouped = new Map<string, NoteNavigationItem[]>();
+    const grouped = new Map<number, NoteNavigationItem[]>();
 
     for (const note of notes) {
-      const name = note.folder?.trim();
-      if (!name) continue;
-      const existing = grouped.get(name) ?? [];
+      if (note.folderId == null) continue;
+      const existing = grouped.get(note.folderId) ?? [];
       existing.push(note);
-      grouped.set(name, existing);
+      grouped.set(note.folderId, existing);
     }
 
-    return Array.from(grouped.entries()).sort(([a], [b]) => a.localeCompare(b));
+    return Array.from(grouped.entries()).sort(([a], [b]) => a - b);
   }, [notes]);
 
-  const folderNames = React.useMemo(
-    () => folders.map(([name]) => name),
+  const folderIds = React.useMemo(
+    () => folders.map(([id]) => id),
     [folders],
   );
 
@@ -358,9 +357,9 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
           </SidebarGroupLabel>
           <CollapsibleContent>
             <SidebarMenu>
-              {folders.map(([folderName, folderNotes]) => (
+              {folders.map(([folderId, folderNotes]) => (
                 <Collapsible
-                  key={folderName}
+                  key={folderId}
                   defaultOpen={folderNotes.some((note) => isNoteActive(note.id))}
                   className="group/collapsible"
                 >
@@ -368,12 +367,12 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
                     <CollapsibleTrigger asChild>
                       <SidebarMenuButton>
                         <ChevronRight className="size-4 transition-transform group-data-[state=open]/collapsible:rotate-90" />
-                        <span>{folderName}</span>
+                        <span>{String(folderId)}</span>
                       </SidebarMenuButton>
                     </CollapsibleTrigger>
                     <SidebarMenuAction
                       showOnHover
-                      onClick={() => handleCreateNoteInFolder(folderName)}
+                      onClick={() => handleCreateNoteInFolder(folderId)}
                     >
                       <Plus />
                       <span className="sr-only">
@@ -384,7 +383,7 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
                       <SidebarMenuSub className="mr-0 pr-0">
                         {folderNotes.map((note) => (
                           <SidebarMenuSubItem
-                            key={`folder-${folderName}-${note.id}`}
+                            key={`folder-${folderId}-${note.id}`}
                             className="group/sub-item relative"
                           >
                             <SidebarMenuSubButton
@@ -458,13 +457,13 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
         onOpenChange={(open) => {
           if (!open) setFolderPickerForNoteId(null);
         }}
-        currentFolder={
-          notes.find((n) => n.id === folderPickerForNoteId)?.folder ?? null
+        currentFolderId={
+          notes.find((n) => n.id === folderPickerForNoteId)?.folderId ?? null
         }
-        folderNames={folderNames}
-        onFolderChange={(folder) => {
+        folderIds={folderIds}
+        onSelect={(folderId) => {
           if (folderPickerForNoteId !== null) {
-            handleFolderChange(folderPickerForNoteId, folder);
+            handleFolderChange(folderPickerForNoteId, folderId);
           }
         }}
         onCreateFolder={() => {
@@ -479,11 +478,11 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
         onOpenChange={(open) => {
           if (!open) setCreateFolderForNoteId(null);
         }}
-        onConfirm={(folderName) => {
+        onCreated={(folderId) => {
           if (createFolderForNoteId !== null) {
             updateOrganization.mutate({
               id: createFolderForNoteId,
-              folder: folderName,
+              folderId,
             });
           }
         }}

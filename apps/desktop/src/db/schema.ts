@@ -351,23 +351,29 @@ export const events = sqliteTable(
 );
 
 // Notes table
-export const notes = sqliteTable("notes", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  title: text("title").notNull(),
-  content: text("content").default(""), // Store the actual text content
-  icon: text("icon"), // Store the icon (emoji) associated with the note
-  starred: integer("starred", { mode: "boolean" }).notNull().default(false),
-  folder: text("folder"),
-  eventId: text("event_id")
-    .references(() => events.id) // No onDelete cascade — events outlive notes so re-linking is possible
-    .unique(),
-  createdAt: integer("created_at", { mode: "timestamp" })
-    .notNull()
-    .default(sql`(unixepoch())`),
-  updatedAt: integer("updated_at", { mode: "timestamp" })
-    .notNull()
-    .default(sql`(unixepoch())`),
-});
+export const notes = sqliteTable(
+  "notes",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    title: text("title").notNull(),
+    content: text("content").default(""), // Store the actual text content
+    icon: text("icon"), // Store the icon (emoji) associated with the note
+    starred: integer("starred", { mode: "boolean" }).notNull().default(false),
+    folderId: integer("folder_id").references(() => folders.id, {
+      onDelete: "set null",
+    }),
+    eventId: text("event_id")
+      .references(() => events.id) // No onDelete cascade — events outlive notes so re-linking is possible
+      .unique(),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (table) => [index("notes_folder_id_idx").on(table.folderId)],
+);
 
 // Note artifacts table — generated / synthesized content attached to a note
 // (AI summaries, action items, etc.). `notes.content` stays as the user's raw

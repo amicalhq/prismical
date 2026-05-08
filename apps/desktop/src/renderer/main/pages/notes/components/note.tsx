@@ -70,16 +70,16 @@ export type NotePageUIProps = {
   noteTitle: string;
   noteEmoji: string | null;
   noteStarred: boolean;
-  noteFolder: string | null;
+  noteFolderId: number | null;
   noteUpdatedAt: Date;
   eventData: NoteEventData | null;
-  folderOptions: string[];
+  folderIds: number[];
   isLoading: boolean;
   onTitleChange: (value: string) => void;
   onDelete: () => void;
   onEmojiChange: (emoji: string | null) => void;
   onStarredChange: (starred: boolean) => void;
-  onFolderChange: (folder: string | null) => void;
+  onFolderChange: (folderId: number | null) => void;
   isDeleting?: boolean;
   children?: ReactNode;
 };
@@ -122,10 +122,10 @@ export default function Note({
   noteTitle,
   noteEmoji,
   noteStarred,
-  noteFolder,
+  noteFolderId,
   noteUpdatedAt,
   eventData,
-  folderOptions,
+  folderIds,
   isLoading,
   onTitleChange,
   onDelete,
@@ -552,16 +552,16 @@ export default function Note({
       <FolderPickerDialog
         open={showFolderPicker}
         onOpenChange={setShowFolderPicker}
-        currentFolder={noteFolder}
-        folderNames={folderOptions}
-        onFolderChange={onFolderChange}
+        currentFolderId={noteFolderId}
+        folderIds={folderIds}
+        onSelect={onFolderChange}
         onCreateFolder={handleCreateFolder}
       />
 
       <CreateFolderDialog
         open={showCreateFolderDialog}
         onOpenChange={setShowCreateFolderDialog}
-        onConfirm={(folderName) => onFolderChange(folderName)}
+        onCreated={(folderId) => onFolderChange(folderId)}
       />
     </div>
   );

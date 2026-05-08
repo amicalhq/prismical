@@ -66,7 +66,7 @@ export default function NotePage({
   const [noteTitle, setNoteTitle] = useState("");
   const [noteIcon, setNoteIcon] = useState<string | null>(null);
   const [noteStarred, setNoteStarred] = useState(false);
-  const [noteFolder, setNoteFolder] = useState<string | null>(null);
+  const [noteFolderId, setNoteFolderId] = useState<number | null>(null);
   const [editorReady, setEditorReady] = useState(false);
   const [activeAsset, setActiveAsset] = useState<NoteAssetKind | null>(null);
   const [meetingState, setMeetingState] = useState<MeetingRuntimeState>("idle");
@@ -202,7 +202,7 @@ export default function NotePage({
       setNoteTitle(note.title);
       setNoteIcon(note.icon || null);
       setNoteStarred(note.starred ?? false);
-      setNoteFolder(note.folder ?? null);
+      setNoteFolderId(note.folderId ?? null);
     }
   }, [note]);
 
@@ -418,21 +418,21 @@ export default function NotePage({
   );
 
   const handleFolderChange = useCallback(
-    (folder: string | null) => {
-      setNoteFolder(folder);
+    (folderId: number | null) => {
+      setNoteFolderId(folderId);
       updateNoteOrganizationMutation.mutate({
         id: noteIdNumber,
-        folder,
+        folderId,
       });
     },
     [noteIdNumber, updateNoteOrganizationMutation],
   );
 
-  const folderOptions = useMemo(() => {
-    const names = allNotes
-      .map((entry) => entry.folder?.trim())
-      .filter((name): name is string => Boolean(name));
-    return Array.from(new Set(names)).sort((a, b) => a.localeCompare(b));
+  const folderIds = useMemo(() => {
+    const ids = allNotes
+      .map((entry) => entry.folderId)
+      .filter((id): id is number => id != null);
+    return Array.from(new Set(ids)).sort((a, b) => a - b);
   }, [allNotes]);
 
   const handleToggleAsset = useCallback((asset: NoteAssetKind) => {
@@ -541,8 +541,8 @@ export default function NotePage({
         noteTitle={noteTitle}
         noteEmoji={noteIcon}
         noteStarred={noteStarred}
-        noteFolder={noteFolder}
-        folderOptions={folderOptions}
+        noteFolderId={noteFolderId}
+        folderIds={folderIds}
         isLoading={isLoading}
         onTitleChange={handleTitleChange}
         onDelete={handleDelete}
