@@ -48,8 +48,8 @@ export function TagSidebarRow({ tag, noteCount }: TagSidebarRowProps) {
 
   return (
     <>
-      <SidebarMenuItem className="group/tag-item relative">
-        <SidebarMenuButton asChild>
+      <SidebarMenuItem className="group/tag-item">
+        <SidebarMenuButton asChild className="pr-8">
           <Link
             to="/notes"
             search={{ tag: tag.id }}
@@ -58,13 +58,12 @@ export function TagSidebarRow({ tag, noteCount }: TagSidebarRowProps) {
             <TagHash color={tag.color} name={tag.name} />
           </Link>
         </SidebarMenuButton>
-        <div className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 focus-within:opacity-100 group-hover/tag-item:opacity-100">
-          <TagRowMenu
-            tag={tag}
-            onEdit={() => setEditing(true)}
-            onDelete={() => setConfirming(true)}
-          />
-        </div>
+        <TagRowMenu
+          tag={tag}
+          onEdit={() => setEditing(true)}
+          onDelete={() => setConfirming(true)}
+          triggerClassName="absolute right-1 top-1/2 flex aspect-square w-7 -translate-y-1/2 items-center justify-center rounded-md text-sidebar-foreground/70 opacity-0 outline-hidden transition-opacity hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-sidebar-ring group-focus-within/tag-item:opacity-100 group-hover/tag-item:opacity-100 data-[state=open]:opacity-100"
+        />
       </SidebarMenuItem>
 
       {editing && (
