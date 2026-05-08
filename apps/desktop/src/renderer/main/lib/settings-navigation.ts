@@ -25,7 +25,7 @@ export interface SettingsNavItem extends SidebarNavItem {
 export const HOME_NAV_ITEMS: SidebarNavItem[] = [
   {
     titleKey: "settings.nav.home.title",
-    url: "/settings/home",
+    url: "/home",
     icon: IconHome,
     shortcutKey: "H",
   },

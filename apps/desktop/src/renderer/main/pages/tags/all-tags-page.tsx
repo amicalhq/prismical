@@ -103,7 +103,7 @@ export function AllTagsPage() {
                 className="flex flex-1 items-center gap-2 px-4 py-2 text-left outline-none focus-visible:bg-muted/50"
                 onClick={() =>
                   navigate({
-                    to: "/settings/notes",
+                    to: "/notes",
                     search: { tag: tag.id },
                   })
                 }

@@ -132,7 +132,7 @@ export const RECORDING_NOTIFICATION_ERROR_CODE_CONFIG: Record<
       label: {
         key: "recordingNotifications.notifications.action.viewHistory",
       },
-      navigateTo: "/settings/notes",
+      navigateTo: "/notes",
     },
   },
   [ErrorCodes.UNKNOWN]: {
@@ -149,7 +149,7 @@ export const RECORDING_NOTIFICATION_ERROR_CODE_CONFIG: Record<
       label: {
         key: "recordingNotifications.notifications.action.viewHistory",
       },
-      navigateTo: "/settings/notes",
+      navigateTo: "/notes",
     },
     secondaryAction: {
       label: { key: "recordingNotifications.notifications.action.support" },
@@ -240,7 +240,7 @@ export const RECORDING_NOTIFICATION_ERROR_CODE_CONFIG: Record<
       label: {
         key: "recordingNotifications.notifications.action.viewHistory",
       },
-      navigateTo: "/settings/notes",
+      navigateTo: "/notes",
     },
     secondaryAction: {
       label: { key: "recordingNotifications.notifications.action.support" },

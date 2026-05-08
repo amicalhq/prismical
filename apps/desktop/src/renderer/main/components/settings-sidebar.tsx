@@ -43,10 +43,15 @@ export function SettingsSidebar({
   const location = useLocation();
   const { isMobile } = useSidebar();
   const sidebarCtaFlag = useFeatureFlag(SIDEBAR_CTA_FEATURE_FLAG);
-  const isHomeSidebar =
-    location.pathname.startsWith("/settings/home") ||
-    location.pathname.startsWith("/settings/notes") ||
-    location.pathname.startsWith("/settings/events");
+  const isAppSidebar =
+    location.pathname.startsWith("/home") ||
+    location.pathname.startsWith("/notes") ||
+    location.pathname.startsWith("/events") ||
+    location.pathname.startsWith("/tags");
+  const showNotesNavigation =
+    location.pathname.startsWith("/home") ||
+    location.pathname.startsWith("/notes") ||
+    location.pathname.startsWith("/tags");
 
   const sidebarCtaPayload = sidebarCtaFlag.enabled
     ? parseSidebarCtaPayload(sidebarCtaFlag.payload)
@@ -59,7 +64,7 @@ export function SettingsSidebar({
       sortOrder: "desc",
     },
     {
-      enabled: isHomeSidebar,
+      enabled: showNotesNavigation,
     },
   );
 
@@ -77,8 +82,8 @@ export function SettingsSidebar({
         : undefined,
     }),
   );
-  const homeNavItem = homeHeaderNav.find(
-    (item) => item.url === "/settings/home",
+  const primaryNavItems = homeHeaderNav.filter(
+    (item) => item.url !== "/settings/preferences",
   );
   const settingsNavItem = homeHeaderNav.find(
     (item) => item.url === "/settings/preferences",
@@ -143,7 +148,7 @@ export function SettingsSidebar({
           />
         ) : null}
       </div>
-      {isHomeSidebar ? (
+      {isAppSidebar ? (
         <SidebarHeader className="py-0 mb-2">
           <SidebarMenu>
             <SidebarMenuItem>
@@ -163,28 +168,27 @@ export function SettingsSidebar({
                 </div>
               </SidebarMenuButton>
             </SidebarMenuItem>
-            {homeNavItem ? (
-              <SidebarMenuItem key={homeNavItem.url}>
+            {primaryNavItems.map((item) => (
+              <SidebarMenuItem key={item.url}>
                 <SidebarMenuButton
                   asChild
-                  isActive={location.pathname.startsWith(homeNavItem.url)}
+                  isActive={location.pathname.startsWith(item.url)}
                 >
                   <Link
-                    to={homeNavItem.url}
-                    aria-label={homeNavItem.title}
+                    to={item.url}
+                    aria-label={item.title}
                     activeProps={{ className: "active" }}
                   >
-                    {homeNavItem.icon && <homeNavItem.icon />}{" "}
-                    <span>{homeNavItem.title}</span>
-                    {homeNavItem.shortcut && (
+                    {item.icon && <item.icon />} <span>{item.title}</span>
+                    {item.shortcut && (
                       <kbd className="pointer-events-none inline-flex h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground ml-auto">
-                        {homeNavItem.shortcut}
+                        {item.shortcut}
                       </kbd>
                     )}
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
-            ) : null}
+            ))}
             <SidebarMenuItem>
               <CommandSearchButton />
             </SidebarMenuItem>
@@ -220,10 +224,7 @@ export function SettingsSidebar({
                 asChild
                 className="data-[slot=sidebar-menu-button]:!p-1.5"
               >
-                <Link
-                  to="/settings/home"
-                  aria-label={t("settings.sidebar.backToHome")}
-                >
+                <Link to="/home" aria-label={t("settings.sidebar.backToHome")}>
                   <IconChevronLeft />
                   <span>{t("settings.sidebar.backToHome")}</span>
                 </Link>
@@ -238,8 +239,8 @@ export function SettingsSidebar({
         </SidebarHeader>
       )}
       <SidebarContent>
-        {!isHomeSidebar ? <NavMain items={navMain} /> : null}
-        {isHomeSidebar ? <NavNotesGroups notes={notesForGroups} /> : null}
+        {!isAppSidebar ? <NavMain items={navMain} /> : null}
+        {showNotesNavigation ? <NavNotesGroups notes={notesForGroups} /> : null}
         <NavSecondary items={navSecondary} className="mt-auto" />
       </SidebarContent>
     </Sidebar>

@@ -70,7 +70,7 @@ describe("MeetingStartNotificationManager.startNoteFromIdle", () => {
 
     expect(result).toEqual({ noteId: 42 });
     expect(windowManager.navigateMainWindow).toHaveBeenCalledWith(
-      "/settings/notes/42?autoRecord=true",
+      "/notes/42?autoRecord=true",
     );
   });
 

@@ -14,7 +14,7 @@ const noteSearchSchema = z.object({
   openTranscription: booleanSearchParam,
 });
 
-export const Route = createFileRoute("/settings/notes/$noteId")({
+export const Route = createFileRoute("/_app/notes/$noteId")({
   component: NotePageWrapper,
   validateSearch: noteSearchSchema,
 });

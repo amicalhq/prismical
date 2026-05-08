@@ -43,7 +43,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { CreateFolderDialog } from "@/renderer/main/components/create-folder-dialog";
 import { FolderPickerDialog } from "@/renderer/main/components/folder-picker-dialog";
-import { useSettingsHeaderActions } from "@/renderer/main/routes/settings/header-actions-context";
+import { useSettingsHeaderActions } from "@/renderer/main/components/settings-header-actions-context";
 import { NoteTagChips } from "./note-tag-chips";
 
 import { formatEventTimeRange, getEventDateLabel } from "@/utils/event-time";

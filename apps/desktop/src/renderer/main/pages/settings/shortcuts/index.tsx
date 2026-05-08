@@ -12,10 +12,10 @@ import { useTranslation } from "react-i18next";
 // see what's already bound — in sync with:
 //   - ⌘/Ctrl+N       → create-note-context.tsx
 //   - ⌘/Ctrl+K       → command-search-button.tsx
-//   - ⌘/Ctrl+H       → routes/settings/route.tsx
-//   - ⌘/Ctrl+,       → routes/settings/route.tsx
+//   - ⌘/Ctrl+H       → routes/_app/route.tsx
+//   - ⌘/Ctrl+,       → routes/_app/route.tsx
 //   - ⌘/Ctrl+B       → components/ui/sidebar.tsx (SIDEBAR_KEYBOARD_SHORTCUT)
-//   - ⌘[/Alt+←, ⌘]/Alt+→ (history back/forward) → routes/settings/route.tsx
+//   - ⌘[/Alt+←, ⌘]/Alt+→ (history back/forward) → routes/_app/route.tsx
 // If you add/move/rename one of those, update this list too.
 const BUILT_IN_SHORTCUTS: Array<{
   labelKey: string;

@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
-import { NotesList } from "../../notes/components/notes-list";
+import { NotesList } from "../notes/components/notes-list";
 import { getMeetingIcon } from "@/utils/meeting-icons";
 import {
   formatEventTimeRange,
@@ -63,7 +63,7 @@ export default function HomePage() {
     onSuccess: (data) => {
       utils.notes.getNotes.invalidate();
       navigate({
-        to: "/settings/notes/$noteId",
+        to: "/notes/$noteId",
         params: { noteId: String(data.note.id) },
       });
     },
@@ -107,7 +107,7 @@ export default function HomePage() {
                 {t("settings.home.upcoming.title")}
               </h2>
               <Link
-                to="/settings/events"
+                to="/events"
                 className="text-xs text-muted-foreground hover:text-foreground transition-colors"
               >
                 {t("settings.home.upcoming.allEvents")} &rsaquo;

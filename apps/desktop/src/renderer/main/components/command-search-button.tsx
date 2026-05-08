@@ -25,14 +25,14 @@ import {
 const isMac = window.electronAPI.platform === "darwin";
 const HOME_SEARCH_ITEM: SettingsNavItem = {
   titleKey: "settings.nav.home.title",
-  url: "/settings/home",
+  url: "/home",
   descriptionKey: "settings.nav.home.description",
   icon: IconHome,
   type: "settings",
 };
 const NOTES_SEARCH_ITEM: SettingsNavItem = {
   titleKey: "settings.nav.notes.title",
-  url: "/settings/notes",
+  url: "/notes",
   descriptionKey: "settings.nav.notes.description",
   icon: IconNotes,
   type: "settings",
@@ -81,7 +81,7 @@ export function CommandSearchButton() {
       ...settingsResults,
       ...noteResults.map((n) => ({
         ...n,
-        url: `/settings/notes/${n.id}`,
+        url: `/notes/${n.id}`,
         description: formatDate(new Date(n.createdAt)),
         type: "note" as const,
         icon: n.icon || "file-text",

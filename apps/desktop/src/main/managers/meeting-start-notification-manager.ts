@@ -165,7 +165,7 @@ export class MeetingStartNotificationManager extends EventEmitter {
     });
 
     await this.deps.windowManager.navigateMainWindow(
-      `/settings/notes/${note.id}?autoRecord=true`,
+      `/notes/${note.id}?autoRecord=true`,
     );
 
     this.clearActiveNotificationWindow();
@@ -192,7 +192,7 @@ export class MeetingStartNotificationManager extends EventEmitter {
     });
 
     await this.deps.windowManager.navigateMainWindow(
-      `/settings/notes/${note.id}?autoRecord=true`,
+      `/notes/${note.id}?autoRecord=true`,
     );
 
     this.clearActiveNotificationWindow();

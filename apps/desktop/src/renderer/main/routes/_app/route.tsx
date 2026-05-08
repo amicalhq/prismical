@@ -11,25 +11,25 @@ import { cn } from "@/lib/utils";
 import {
   SettingsHeaderProvider,
   useSettingsHeaderActions,
-} from "./header-actions-context";
+} from "../../components/settings-header-actions-context";
 import { CreateNoteProvider } from "../../components/create-note-context";
 import { HeaderCreateNoteButton } from "../../components/header-create-note-button";
 
-export const Route = createFileRoute("/settings")({
-  component: SettingsLayout,
+export const Route = createFileRoute("/_app")({
+  component: AppLayout,
 });
 
-function SettingsLayout() {
+function AppLayout() {
   return (
     <SettingsHeaderProvider>
       <CreateNoteProvider>
-        <SettingsLayoutContent />
+        <AppLayoutContent />
       </CreateNoteProvider>
     </SettingsHeaderProvider>
   );
 }
 
-function SettingsLayoutContent() {
+function AppLayoutContent() {
   const location = useLocation();
   const navigate = useNavigate();
   const router = useRouter();
@@ -41,11 +41,11 @@ function SettingsLayoutContent() {
     setHeaderContent,
   } = useSettingsHeaderActions();
   const [isScrolled, setIsScrolled] = useState(false);
-  const isNoteDetailRoute = location.pathname.startsWith("/settings/notes/");
+  const isNoteDetailRoute = location.pathname.startsWith("/notes/");
 
   // Keyboard shortcut: Cmd+H (Mac) / Ctrl+H (Windows/Linux) to navigate home
   const goHome = useCallback(() => {
-    navigate({ to: "/settings/home" });
+    navigate({ to: "/home" });
   }, [navigate]);
 
   // Keyboard shortcut: Cmd+, (Mac) / Ctrl+, (Windows/Linux) to open preferences
@@ -117,16 +117,20 @@ function SettingsLayoutContent() {
   }, [isNoteDetailRoute, location.pathname]);
 
   const getSettingsPageTitle = (pathname: string): string => {
-    if (pathname.startsWith("/settings/home")) {
+    if (pathname.startsWith("/home")) {
       return "Home";
     }
 
-    if (pathname.startsWith("/settings/events")) {
+    if (pathname.startsWith("/events")) {
       return "Events";
     }
 
+    if (pathname.startsWith("/tags")) {
+      return "Tags";
+    }
+
     // Check for dynamic routes first
-    if (pathname.startsWith("/settings/notes")) {
+    if (pathname.startsWith("/notes")) {
       return "Notes";
     }
 

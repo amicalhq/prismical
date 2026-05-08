@@ -173,7 +173,7 @@ export default function NotePage({
       if (onBack) {
         onBack();
       } else {
-        navigate({ to: "/settings/notes" });
+        navigate({ to: "/notes" });
       }
       toast.success(t("settings.notes.toast.deleted"));
     },
@@ -524,7 +524,7 @@ export default function NotePage({
             if (onBack) {
               onBack();
             } else {
-              navigate({ to: "/settings/notes" });
+              navigate({ to: "/notes" });
             }
           }}
         >
