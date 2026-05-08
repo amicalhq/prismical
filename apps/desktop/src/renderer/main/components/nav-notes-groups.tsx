@@ -4,7 +4,6 @@ import {
   ChevronRight,
   FileText,
   Folder,
-  FolderOpen,
   MoreHorizontal,
   Plus,
   Star,
@@ -108,7 +107,7 @@ function NoteDropdownContent({
         </DropdownMenuItem>
       )}
       <DropdownMenuItem onSelect={onMoveTo}>
-        <FolderOpen className="h-4 w-4" />
+        <Folder className="h-4 w-4" />
         <span>{t("settings.notes.note.actions.moveToFolder")}</span>
       </DropdownMenuItem>
       <DropdownMenuSeparator />
@@ -466,7 +465,7 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
                           search={{ folderId: entry.folder.id }}
                           aria-label={entry.folder.name}
                         >
-                          <FolderOpen className="size-4" />
+                          <Folder className="size-4" />
                           <span>{entry.folder.name}</span>
                         </Link>
                       </SidebarMenuButton>
