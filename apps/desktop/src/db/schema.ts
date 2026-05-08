@@ -471,7 +471,10 @@ export const folders = sqliteTable(
       .default(sql`(unixepoch())`),
   },
   (table) => [
-    uniqueIndex("folders_lower_name_unique").on(sql`LOWER(${table.name})`),
+    uniqueIndex("folders_lower_name_parent_unique").on(
+      sql`LOWER(${table.name})`,
+      sql`COALESCE(${table.parentId}, 0)`,
+    ),
     index("folders_created_at_idx").on(table.createdAt),
     index("folders_is_favorite_idx").on(table.isFavorite),
     index("folders_parent_id_idx").on(table.parentId),

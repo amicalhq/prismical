@@ -17,13 +17,14 @@ export interface ListFoldersOptions {
 
 export async function createFolder(
   db: DB,
-  data: Pick<NewFolder, "name"> & { isFavorite?: boolean },
+  data: Pick<NewFolder, "name"> & { parentId?: number | null; isFavorite?: boolean },
 ): Promise<Folder> {
   const now = new Date();
   const [row] = await db
     .insert(folders)
     .values({
       name: data.name,
+      parentId: data.parentId ?? null,
       isFavorite: data.isFavorite ?? false,
       createdAt: now,
       updatedAt: now,

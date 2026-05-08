@@ -67,7 +67,7 @@ describe("db/folders", () => {
     expect(got[0].noteCount).toBe(2);
   });
 
-  it("deleteFolder sets notes.folderId to NULL (no cascade delete)", async () => {
+  it("deleteFolder cascade-deletes contained notes", async () => {
     const { createFolder, deleteFolder } = await import("@db/folders");
     const f = await createFolder(testDb.db, { name: "Work" });
     const [n] = await testDb.db
@@ -75,11 +75,45 @@ describe("db/folders", () => {
       .values({ title: "n", folderId: f.id })
       .returning();
     const result = await deleteFolder(testDb.db, f.id);
-    expect(result.detachedNoteCount).toBe(1);
+    expect(result.deletedNoteCount).toBe(1);
     const [after] = await testDb.db
       .select()
       .from(notes)
       .where(eq(notes.id, n.id));
-    expect(after.folderId).toBeNull();
+    expect(after).toBeUndefined();
+  });
+
+  it("allows same folder name under different parents", async () => {
+    const { createFolder } = await import("@db/folders");
+    const a = await createFolder(testDb.db, { name: "Work" });
+    const b = await createFolder(testDb.db, { name: "Personal" });
+
+    const childA = await createFolder(testDb.db, {
+      name: "Notes",
+      parentId: a.id,
+    });
+    const childB = await createFolder(testDb.db, {
+      name: "Notes",
+      parentId: b.id,
+    });
+
+    expect(childA.parentId).toBe(a.id);
+    expect(childB.parentId).toBe(b.id);
+  });
+
+  it("rejects duplicate folder name under the same parent", async () => {
+    const { createFolder } = await import("@db/folders");
+    const root = await createFolder(testDb.db, { name: "Work" });
+    await createFolder(testDb.db, { name: "Notes", parentId: root.id });
+
+    await expect(
+      createFolder(testDb.db, { name: "notes", parentId: root.id }),
+    ).rejects.toThrow();
+  });
+
+  it("rejects duplicate top-level folder names", async () => {
+    const { createFolder } = await import("@db/folders");
+    await createFolder(testDb.db, { name: "Work" });
+    await expect(createFolder(testDb.db, { name: "WORK" })).rejects.toThrow();
   });
 });
