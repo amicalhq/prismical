@@ -1,4 +1,4 @@
-import { FolderOpen, Plus, X } from "lucide-react";
+import { Folder as FolderIcon, Plus, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { Folder } from "@/db/schema";
 import { cn } from "@/lib/utils";
@@ -32,7 +32,7 @@ export function NoteFolderChip({
         className={cn(PILL_BASE, "border-dashed")}
         aria-label={t("settings.notes.note.actions.folderLabel")}
       >
-        <FolderOpen className="h-3 w-3" />
+        <FolderIcon className="h-3 w-3" />
         {folder ? <span className="truncate">{folder.name}</span> : null}
       </button>
     );
@@ -59,7 +59,7 @@ export function NoteFolderChip({
         onClick={onOpenPicker}
         className="inline-flex min-w-0 items-center gap-1 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <FolderOpen className="h-3 w-3 shrink-0" />
+        <FolderIcon className="h-3 w-3 shrink-0" />
         <span className="truncate">{folder.name}</span>
       </button>
       <button
