@@ -42,9 +42,8 @@ import {
 } from "@/components/ui/sidebar";
 import { useLocalStorageBoolean } from "@/hooks/useLocalStorageBoolean";
 import { api } from "@/trpc/react";
-import { CreateFolderDialog } from "./create-folder-dialog";
-import { FolderPickerDialog } from "./folder-picker-dialog";
 import { FolderEditDialog } from "./folder/folder-edit-dialog";
+import { FolderPicker } from "./folder/folder-picker";
 import { FolderRowMenu } from "./folder/folder-row-menu";
 import { NavTagsGroup } from "./nav-tags-group";
 import { TagSidebarRow } from "./tag/tag-sidebar-row";
@@ -120,6 +119,110 @@ function NoteDropdownContent({
   );
 }
 
+type RowCommon = {
+  note: NoteNavigationItem;
+  isActive: boolean;
+  isMobile: boolean;
+  t: (key: string) => string;
+  onStarredChange: (starred: boolean) => void;
+  onMoveTo: (noteId: number, anchor: HTMLElement) => void;
+  onDelete: () => void;
+};
+
+function FavoriteNoteRow({
+  note,
+  isActive,
+  isMobile,
+  t,
+  onStarredChange,
+  onMoveTo,
+  onDelete,
+}: RowCommon) {
+  const triggerRef = React.useRef<HTMLButtonElement>(null);
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton asChild isActive={isActive}>
+        <Link
+          to="/notes/$noteId"
+          params={{ noteId: String(note.id) }}
+          search={{}}
+          aria-label={note.title}
+        >
+          <NoteLeadingIcon icon={note.icon} />
+          <span>{note.title}</span>
+        </Link>
+      </SidebarMenuButton>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <SidebarMenuAction ref={triggerRef} showOnHover>
+            <MoreHorizontal />
+            <span className="sr-only">More</span>
+          </SidebarMenuAction>
+        </DropdownMenuTrigger>
+        <NoteDropdownContent
+          note={note}
+          isMobile={isMobile}
+          t={t}
+          onStarredChange={onStarredChange}
+          onMoveTo={() => {
+            if (triggerRef.current) onMoveTo(note.id, triggerRef.current);
+          }}
+          onDelete={onDelete}
+        />
+      </DropdownMenu>
+    </SidebarMenuItem>
+  );
+}
+
+function NoteSubRow({
+  note,
+  isActive,
+  isMobile,
+  t,
+  onStarredChange,
+  onMoveTo,
+  onDelete,
+}: RowCommon) {
+  const triggerRef = React.useRef<HTMLButtonElement>(null);
+  return (
+    <SidebarMenuSubItem className="group/sub-item relative">
+      <SidebarMenuSubButton asChild isActive={isActive} className="pr-6">
+        <Link
+          to="/notes/$noteId"
+          params={{ noteId: String(note.id) }}
+          search={{}}
+          aria-label={note.title}
+        >
+          <NoteLeadingIcon icon={note.icon} />
+          <span>{note.title}</span>
+        </Link>
+      </SidebarMenuSubButton>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            ref={triggerRef}
+            type="button"
+            className="absolute right-1 top-1/2 -translate-y-1/2 rounded-md p-0.5 text-sidebar-foreground/70 opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover/sub-item:opacity-100 data-[state=open]:opacity-100"
+          >
+            <MoreHorizontal className="size-4" />
+            <span className="sr-only">More</span>
+          </button>
+        </DropdownMenuTrigger>
+        <NoteDropdownContent
+          note={note}
+          isMobile={isMobile}
+          t={t}
+          onStarredChange={onStarredChange}
+          onMoveTo={() => {
+            if (triggerRef.current) onMoveTo(note.id, triggerRef.current);
+          }}
+          onDelete={onDelete}
+        />
+      </DropdownMenu>
+    </SidebarMenuSubItem>
+  );
+}
+
 export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
   const { t, i18n } = useTranslation();
   const location = useLocation();
@@ -191,13 +294,18 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
     updateOrganization.mutate({ id: noteId, folderId });
   };
 
-  const [createFolderForNoteId, setCreateFolderForNoteId] = React.useState<
-    number | null
-  >(null);
-
   const [folderPickerForNoteId, setFolderPickerForNoteId] = React.useState<
     number | null
   >(null);
+  const folderPickerAnchorRef = React.useRef<HTMLElement | null>(null);
+
+  const handleRequestMove = React.useCallback(
+    (noteId: number, anchor: HTMLElement) => {
+      folderPickerAnchorRef.current = anchor;
+      setFolderPickerForNoteId(noteId);
+    },
+    [],
+  );
 
   const [editingFolder, setEditingFolder] =
     React.useState<FolderRecord | null>(null);
@@ -219,10 +327,6 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
       toast.error(error.message);
     },
   });
-
-  const handleCreateFolder = (noteId: number) => {
-    setCreateFolderForNoteId(noteId);
-  };
 
   const favoriteNotes = React.useMemo(
     () => notes.filter((note) => note.starred),
@@ -338,45 +442,21 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
               ) : (
                 favoriteEntries.map((entry) =>
                   entry.kind === "note" ? (
-                    <SidebarMenuItem key={`favorite-note-${entry.note.id}`}>
-                      <SidebarMenuButton
-                        asChild
-                        isActive={isNoteActive(entry.note.id)}
-                      >
-                        <Link
-                          to="/notes/$noteId"
-                          params={{ noteId: String(entry.note.id) }}
-                          search={{}}
-                          aria-label={entry.note.title}
-                        >
-                          <NoteLeadingIcon icon={entry.note.icon} />
-                          <span>{entry.note.title}</span>
-                        </Link>
-                      </SidebarMenuButton>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <SidebarMenuAction showOnHover>
-                            <MoreHorizontal />
-                            <span className="sr-only">More</span>
-                          </SidebarMenuAction>
-                        </DropdownMenuTrigger>
-                        <NoteDropdownContent
-                          note={entry.note}
-                          isMobile={isMobile}
-                          t={t}
-                          onStarredChange={(starred) =>
-                            updateOrganization.mutate({
-                              id: entry.note.id,
-                              starred,
-                            })
-                          }
-                          onMoveTo={() =>
-                            setFolderPickerForNoteId(entry.note.id)
-                          }
-                          onDelete={() => handleDelete(entry.note.id)}
-                        />
-                      </DropdownMenu>
-                    </SidebarMenuItem>
+                    <FavoriteNoteRow
+                      key={`favorite-note-${entry.note.id}`}
+                      note={entry.note}
+                      isActive={isNoteActive(entry.note.id)}
+                      isMobile={isMobile}
+                      t={t}
+                      onStarredChange={(starred) =>
+                        updateOrganization.mutate({
+                          id: entry.note.id,
+                          starred,
+                        })
+                      }
+                      onMoveTo={handleRequestMove}
+                      onDelete={() => handleDelete(entry.note.id)}
+                    />
                   ) : entry.kind === "folder" ? (
                     <SidebarMenuItem key={`favorite-folder-${entry.folder.id}`}>
                       <SidebarMenuButton asChild>
@@ -451,52 +531,21 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
                     <CollapsibleContent>
                       <SidebarMenuSub className="mr-0 pr-0">
                         {folderNotes.map((note) => (
-                          <SidebarMenuSubItem
+                          <NoteSubRow
                             key={`folder-${folder.id}-${note.id}`}
-                            className="group/sub-item relative"
-                          >
-                            <SidebarMenuSubButton
-                              asChild
-                              isActive={isNoteActive(note.id)}
-                              className="pr-6"
-                            >
-                              <Link
-                                to="/notes/$noteId"
-                                params={{ noteId: String(note.id) }}
-                                search={{}}
-                                aria-label={note.title}
-                              >
-                                <NoteLeadingIcon icon={note.icon} />
-                                <span>{note.title}</span>
-                              </Link>
-                            </SidebarMenuSubButton>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <button
-                                  type="button"
-                                  className="absolute right-1 top-1/2 -translate-y-1/2 rounded-md p-0.5 text-sidebar-foreground/70 opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover/sub-item:opacity-100 data-[state=open]:opacity-100"
-                                >
-                                  <MoreHorizontal className="size-4" />
-                                  <span className="sr-only">More</span>
-                                </button>
-                              </DropdownMenuTrigger>
-                              <NoteDropdownContent
-                                note={note}
-                                isMobile={isMobile}
-                                t={t}
-                                onStarredChange={(starred) =>
-                                  updateOrganization.mutate({
-                                    id: note.id,
-                                    starred,
-                                  })
-                                }
-                                onMoveTo={() =>
-                                  setFolderPickerForNoteId(note.id)
-                                }
-                                onDelete={() => handleDelete(note.id)}
-                              />
-                            </DropdownMenu>
-                          </SidebarMenuSubItem>
+                            note={note}
+                            isActive={isNoteActive(note.id)}
+                            isMobile={isMobile}
+                            t={t}
+                            onStarredChange={(starred) =>
+                              updateOrganization.mutate({
+                                id: note.id,
+                                starred,
+                              })
+                            }
+                            onMoveTo={handleRequestMove}
+                            onDelete={() => handleDelete(note.id)}
+                          />
                         ))}
                       </SidebarMenuSub>
                     </CollapsibleContent>
@@ -519,52 +568,21 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
                     <CollapsibleContent>
                       <SidebarMenuSub className="mr-0 pr-0">
                         {unfiledNotes.map((note) => (
-                          <SidebarMenuSubItem
+                          <NoteSubRow
                             key={`unfiled-${note.id}`}
-                            className="group/sub-item relative"
-                          >
-                            <SidebarMenuSubButton
-                              asChild
-                              isActive={isNoteActive(note.id)}
-                              className="pr-6"
-                            >
-                              <Link
-                                to="/notes/$noteId"
-                                params={{ noteId: String(note.id) }}
-                                search={{}}
-                                aria-label={note.title}
-                              >
-                                <NoteLeadingIcon icon={note.icon} />
-                                <span>{note.title}</span>
-                              </Link>
-                            </SidebarMenuSubButton>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <button
-                                  type="button"
-                                  className="absolute right-1 top-1/2 -translate-y-1/2 rounded-md p-0.5 text-sidebar-foreground/70 opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover/sub-item:opacity-100 data-[state=open]:opacity-100"
-                                >
-                                  <MoreHorizontal className="size-4" />
-                                  <span className="sr-only">More</span>
-                                </button>
-                              </DropdownMenuTrigger>
-                              <NoteDropdownContent
-                                note={note}
-                                isMobile={isMobile}
-                                t={t}
-                                onStarredChange={(starred) =>
-                                  updateOrganization.mutate({
-                                    id: note.id,
-                                    starred,
-                                  })
-                                }
-                                onMoveTo={() =>
-                                  setFolderPickerForNoteId(note.id)
-                                }
-                                onDelete={() => handleDelete(note.id)}
-                              />
-                            </DropdownMenu>
-                          </SidebarMenuSubItem>
+                            note={note}
+                            isActive={isNoteActive(note.id)}
+                            isMobile={isMobile}
+                            t={t}
+                            onStarredChange={(starred) =>
+                              updateOrganization.mutate({
+                                id: note.id,
+                                starred,
+                              })
+                            }
+                            onMoveTo={handleRequestMove}
+                            onDelete={() => handleDelete(note.id)}
+                          />
                         ))}
                       </SidebarMenuSub>
                     </CollapsibleContent>
@@ -599,7 +617,7 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
 
       <NavTagsGroup />
 
-      <FolderPickerDialog
+      <FolderPicker
         open={folderPickerForNoteId !== null}
         onOpenChange={(open) => {
           if (!open) setFolderPickerForNoteId(null);
@@ -607,32 +625,12 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
         currentFolderId={
           notes.find((n) => n.id === folderPickerForNoteId)?.folderId ?? null
         }
-        folders={allFolders}
         onSelect={(folderId) => {
           if (folderPickerForNoteId !== null) {
             handleFolderChange(folderPickerForNoteId, folderId);
           }
         }}
-        onCreateFolder={() => {
-          if (folderPickerForNoteId !== null) {
-            handleCreateFolder(folderPickerForNoteId);
-          }
-        }}
-      />
-
-      <CreateFolderDialog
-        open={createFolderForNoteId !== null}
-        onOpenChange={(open) => {
-          if (!open) setCreateFolderForNoteId(null);
-        }}
-        onCreated={(folderId) => {
-          if (createFolderForNoteId !== null) {
-            updateOrganization.mutate({
-              id: createFolderForNoteId,
-              folderId,
-            });
-          }
-        }}
+        anchor={folderPickerAnchorRef}
       />
 
       <FolderEditDialog

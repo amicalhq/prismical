@@ -784,6 +784,10 @@
           "title": "Delete \"{{name}}\"?",
           "description": "Notes in this folder will be moved to Unfiled. {{count}} note(s) will be unfiled.",
           "confirm": "Delete folder"
+        },
+        "picker": {
+          "placeholder": "Buscar o crear una carpeta…",
+          "create": "Crear carpeta <1>{{name}}</1>"
         }
       },
       "upcomingEvents": {
@@ -866,7 +870,8 @@
         "create": "New folder"
       },
       "errors": {
-        "deleteFailed": "Failed to delete folder: {{message}}"
+        "deleteFailed": "Failed to delete folder: {{message}}",
+        "createFailed": "Failed to create folder: {{message}}"
       }
     },
     "vocabulary": {

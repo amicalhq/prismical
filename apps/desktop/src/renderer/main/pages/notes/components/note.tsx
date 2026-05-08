@@ -2,7 +2,6 @@ import { useEffect, useState, type ReactNode } from "react";
 import {
   Calendar,
   FileTextIcon,
-  FolderOpen,
   Loader2,
   MoreHorizontal,
   Star,
@@ -17,7 +16,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -41,8 +39,6 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { CreateFolderDialog } from "@/renderer/main/components/create-folder-dialog";
-import { FolderPickerDialog } from "@/renderer/main/components/folder-picker-dialog";
 import type { Folder } from "@/db/schema";
 import { useSettingsHeaderActions } from "@/renderer/main/components/settings-header-actions-context";
 import { NoteFolderChip } from "./note-folder-chip";
@@ -141,8 +137,6 @@ export default function Note({
   const { setActions, setHeaderContent } = useSettingsHeaderActions();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  const [showCreateFolderDialog, setShowCreateFolderDialog] = useState(false);
-  const [showFolderPicker, setShowFolderPicker] = useState(false);
   // Re-render once a minute so the "Edited X ago" label stays fresh without
   // each edit having to round-trip through state.
   const [, setRelativeTimeTick] = useState(0);
@@ -210,14 +204,6 @@ export default function Note({
           </DropdownMenuItem>
           <DropdownMenuItem
             className="gap-2"
-            onSelect={() => setShowFolderPicker(true)}
-          >
-            <FolderOpen className="h-4 w-4" />
-            {t("settings.notes.note.actions.moveToFolder")}
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            className="gap-2"
             variant="destructive"
             onSelect={() => setShowDeleteDialog(true)}
           >
@@ -246,10 +232,6 @@ export default function Note({
   const handleDeleteClick = () => {
     setShowDeleteDialog(false);
     onDelete();
-  };
-
-  const handleCreateFolder = () => {
-    setShowCreateFolderDialog(true);
   };
 
   if (isLoading) {
@@ -335,8 +317,7 @@ export default function Note({
               <NoteFolderChip
                 noteFolderId={noteFolderId}
                 folders={folders}
-                onOpenPicker={() => setShowFolderPicker(true)}
-                onClear={() => onFolderChange(null)}
+                onSelect={onFolderChange}
                 isNarrow={isNarrow}
               />
 
@@ -550,21 +531,6 @@ export default function Note({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      <FolderPickerDialog
-        open={showFolderPicker}
-        onOpenChange={setShowFolderPicker}
-        currentFolderId={noteFolderId}
-        folders={folders}
-        onSelect={onFolderChange}
-        onCreateFolder={handleCreateFolder}
-      />
-
-      <CreateFolderDialog
-        open={showCreateFolderDialog}
-        onOpenChange={setShowCreateFolderDialog}
-        onCreated={(folderId) => onFolderChange(folderId)}
-      />
     </div>
   );
 }
