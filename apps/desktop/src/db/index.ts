@@ -58,6 +58,10 @@ export async function initializeDatabase() {
       throw new Error(`Journal file not found at: ${journalPath}`);
     }
 
+    // SQLite defaults to foreign_keys=OFF; enable so ON DELETE SET NULL /
+    // CASCADE actually fire on this connection.
+    await db.$client.execute("PRAGMA foreign_keys = ON");
+
     // Run migrations to ensure database is up to date
     await migrate(db, {
       migrationsFolder: migrationsPath,
