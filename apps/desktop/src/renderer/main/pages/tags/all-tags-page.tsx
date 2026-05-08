@@ -55,7 +55,7 @@ export function AllTagsPage() {
   const totalNotes = (q.data ?? []).reduce((s, r) => s + r.noteCount, 0);
 
   return (
-    <div className="mx-auto max-w-3xl p-6">
+    <div className="mx-auto w-full max-w-[720px] p-6">
       <h1 className="text-xl font-semibold">{t("settings.tags.title")}</h1>
       <p className="text-sm text-muted-foreground">
         {t("settings.tags.summary", {
