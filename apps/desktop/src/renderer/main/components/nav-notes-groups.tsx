@@ -535,6 +535,7 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
                     <SidebarMenuAction
                       showOnHover
                       onClick={() => handleCreateNoteInFolder(folder.id)}
+                      className="right-7"
                     >
                       <Plus />
                       <span className="sr-only">
