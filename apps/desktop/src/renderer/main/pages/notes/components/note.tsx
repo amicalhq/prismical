@@ -45,6 +45,7 @@ import { CreateFolderDialog } from "@/renderer/main/components/create-folder-dia
 import { FolderPickerDialog } from "@/renderer/main/components/folder-picker-dialog";
 import type { Folder } from "@/db/schema";
 import { useSettingsHeaderActions } from "@/renderer/main/components/settings-header-actions-context";
+import { NoteFolderChip } from "./note-folder-chip";
 import { NoteTagChips } from "./note-tag-chips";
 
 import { formatEventTimeRange, getEventDateLabel } from "@/utils/event-time";
@@ -331,6 +332,14 @@ export default function Note({
 
               <NoteTagChips noteId={noteId} isNarrow={isNarrow} />
 
+              <NoteFolderChip
+                noteFolderId={noteFolderId}
+                folders={folders}
+                onOpenPicker={() => setShowFolderPicker(true)}
+                onClear={() => onFolderChange(null)}
+                isNarrow={isNarrow}
+              />
+
               {!isNarrow && (
                 <>
                   <Tooltip>
@@ -362,14 +371,6 @@ export default function Note({
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem
-                        className="gap-2"
-                        onSelect={() => setShowFolderPicker(true)}
-                      >
-                        <FolderOpen className="h-4 w-4" />
-                        {t("settings.notes.note.actions.moveToFolder")}
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
                       <DropdownMenuItem
                         className="gap-2"
                         variant="destructive"
