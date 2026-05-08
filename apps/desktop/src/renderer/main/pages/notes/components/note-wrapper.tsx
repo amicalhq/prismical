@@ -75,6 +75,7 @@ export default function NotePage({
 
   const noteRef = useRef<typeof note>(null);
   const autoRecordTriggeredRef = useRef(false);
+  const titleInitializedForIdRef = useRef<number | null>(null);
 
   // Active artifact (latest "summary" for this note). Drives tab visibility
   // and the AI Summary tab's content.
@@ -189,15 +190,18 @@ export default function NotePage({
     [updateTitleMutation],
   );
 
-  // Update note-derived state
+  // Title syncs once per noteId — re-syncing on every refetch would clobber
+  // characters typed during a title mutation's roundtrip.
   useEffect(() => {
     noteRef.current = note;
-    if (note) {
+    if (!note) return;
+    if (titleInitializedForIdRef.current !== note.id) {
+      titleInitializedForIdRef.current = note.id;
       setNoteTitle(note.title);
-      setNoteIcon(note.icon || null);
-      setNoteStarred(note.starred ?? false);
-      setNoteFolderId(note.folderId ?? null);
     }
+    setNoteIcon(note.icon || null);
+    setNoteStarred(note.starred ?? false);
+    setNoteFolderId(note.folderId ?? null);
   }, [note]);
 
   // Reset state when noteId changes
