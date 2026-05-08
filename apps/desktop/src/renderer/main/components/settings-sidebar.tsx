@@ -70,6 +70,27 @@ export function SettingsSidebar({
 
   const isMac =
     typeof window !== "undefined" && window.electronAPI?.platform === "darwin";
+
+  const [modifierPressed, setModifierPressed] = React.useState(false);
+  React.useEffect(() => {
+    const isModifier = (e: KeyboardEvent) =>
+      isMac ? e.key === "Meta" : e.key === "Control";
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (isModifier(e)) setModifierPressed(true);
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (isModifier(e)) setModifierPressed(false);
+    };
+    const onBlur = () => setModifierPressed(false);
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onBlur);
+    };
+  }, [isMac]);
   const homeHeaderNav = HOME_NAV_ITEMS.map(
     ({ titleKey, url, icon, shortcutKey }) => ({
       title: t(titleKey),
@@ -184,7 +205,11 @@ export function SettingsSidebar({
                   >
                     {item.icon && <item.icon />} <span>{item.title}</span>
                     {item.shortcut && (
-                      <kbd className="pointer-events-none inline-flex h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground ml-auto">
+                      <kbd
+                        className={`pointer-events-none ml-auto inline-flex h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground transition-opacity ${
+                          modifierPressed ? "opacity-100" : "opacity-0"
+                        }`}
+                      >
                         {item.shortcut}
                       </kbd>
                     )}
@@ -206,7 +231,11 @@ export function SettingsSidebar({
                     {settingsNavItem.icon && <settingsNavItem.icon />}{" "}
                     <span>{settingsNavItem.title}</span>
                     {settingsNavItem.shortcut && (
-                      <kbd className="pointer-events-none inline-flex h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground ml-auto">
+                      <kbd
+                        className={`pointer-events-none ml-auto inline-flex h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground transition-opacity ${
+                          modifierPressed ? "opacity-100" : "opacity-0"
+                        }`}
+                      >
                         {settingsNavItem.shortcut}
                       </kbd>
                     )}
