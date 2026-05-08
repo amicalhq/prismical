@@ -1,9 +1,7 @@
 import { Link } from "@tanstack/react-router";
-import { ArrowRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
   SidebarGroup,
-  SidebarGroupAction,
   SidebarGroupContent,
   SidebarGroupLabel,
   SidebarMenu,
@@ -24,13 +22,17 @@ export function NavTagsGroup() {
   const viewAllLabel = t("settings.sidebar.tagsViewAll");
 
   return (
-    <SidebarGroup className="pt-0 group-data-[collapsible=icon]:hidden">
-      <SidebarGroupLabel>{t("settings.sidebar.tags")}</SidebarGroupLabel>
-      <SidebarGroupAction asChild title={viewAllLabel}>
-        <Link to="/tags" aria-label={viewAllLabel}>
-          <ArrowRight />
+    <SidebarGroup className="group/tags pt-0 group-data-[collapsible=icon]:hidden">
+      <SidebarGroupLabel className="justify-between">
+        <span>{t("settings.sidebar.tags")}</span>
+        <Link
+          to="/tags"
+          aria-label={viewAllLabel}
+          className="opacity-0 outline-hidden transition-opacity hover:text-sidebar-accent-foreground focus-visible:opacity-100 group-hover/tags:opacity-100"
+        >
+          {viewAllLabel} ›
         </Link>
-      </SidebarGroupAction>
+      </SidebarGroupLabel>
       {tags.length === 0 ? (
         <SidebarGroupContent>
           <p className="px-2 py-1 text-xs text-sidebar-foreground/60">
