@@ -133,6 +133,7 @@ export function TagEditDialog({
               autoCapitalize="off"
               autoCorrect="off"
               spellCheck={false}
+              maxLength={32}
             />
             {showGhost && (
               <span
@@ -214,9 +215,12 @@ export function TagEditDialog({
           <div className="mt-3 text-xs uppercase tracking-wider text-muted-foreground">
             {t("settings.tags.editDialog.previewLabel")}
           </div>
-          <div className="flex items-center gap-3 rounded-md border bg-muted/30 p-2">
-            <TagHash color={colorValid ? color : "#888"} name={previewName} />
-            <span className="ml-auto" />
+          <div className="flex min-w-0 flex-col gap-2 rounded-md border bg-muted/30 p-2 sm:flex-row sm:items-center sm:justify-between">
+            <TagHash
+              color={colorValid ? color : "#888"}
+              name={previewName}
+              className="min-w-0"
+            />
             <TagChip color={colorValid ? color : "#888"} name={previewName} />
           </div>
 

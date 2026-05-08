@@ -25,7 +25,7 @@ export function TagChip({
   const styles = tagChipStyles(color, theme);
 
   const wrapperClass = cn(
-    "group/tag inline-flex h-[22px] items-center gap-1 rounded-full border px-2 text-[11px] font-medium",
+    "group/tag inline-flex h-[22px] min-w-0 max-w-full items-center gap-1 rounded-full border px-2 text-[11px] font-medium",
     className,
   );
   const wrapperStyle = {
@@ -38,7 +38,7 @@ export function TagChip({
   if (!onClick && !onRemove) {
     return (
       <span className={wrapperClass} style={wrapperStyle}>
-        #{name}
+        <span className="truncate">#{name}</span>
       </span>
     );
   }
@@ -55,7 +55,7 @@ export function TagChip({
         )}
         style={wrapperStyle}
       >
-        #{name}
+        <span className="truncate">#{name}</span>
       </button>
     );
   }
@@ -67,20 +67,20 @@ export function TagChip({
         <button
           type="button"
           onClick={onClick}
-          className="cursor-pointer rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="min-w-0 cursor-pointer truncate rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
           style={{ color: "inherit", background: "transparent" }}
         >
           #{name}
         </button>
       ) : (
-        <span>#{name}</span>
+        <span className="min-w-0 truncate">#{name}</span>
       )}
       {onRemove && (
         <button
           type="button"
           aria-label={t("settings.notes.note.actions.removeTagNamed", { name })}
           onClick={onRemove}
-          className="ml-0.5 hidden h-3.5 w-3.5 items-center justify-center rounded-full hover:bg-black/20 focus-visible:flex group-hover/tag:flex group-focus-within/tag:flex"
+          className="ml-0.5 hidden h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full hover:bg-black/20 focus-visible:flex group-hover/tag:flex group-focus-within/tag:flex"
         >
           <X className="h-2.5 w-2.5" />
         </button>
