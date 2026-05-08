@@ -731,7 +731,8 @@
         "deleteFailed": "No se pudo eliminar la nota: {{message}}",
         "saveFailed": "No se pudieron guardar los cambios",
         "upgradedToRichNotes": "Tus notas han sido actualizadas a notas enriquecidas con formato markdown.",
-        "loadFailed": "No se pudo cargar la nota"
+        "loadFailed": "No se pudo cargar la nota",
+        "folderDeleted": "Folder deleted. {{count}} note(s) moved to Unfiled."
       },
       "note": {
         "removeEmoji": "Quitar emoji",
@@ -763,6 +764,23 @@
           "cancel": "Cancelar",
           "deleting": "Eliminando...",
           "confirm": "Eliminar nota"
+        }
+      },
+      "folder": {
+        "actions": {
+          "rename": "Rename folder",
+          "delete": "Delete folder",
+          "addToFavorites": "Add to favorites",
+          "removeFromFavorites": "Remove from favorites"
+        },
+        "rename": {
+          "title": "Rename folder",
+          "placeholder": "Folder name"
+        },
+        "delete": {
+          "title": "Delete \"{{name}}\"?",
+          "description": "Notes in this folder will be moved to Unfiled. {{count}} note(s) will be unfiled.",
+          "confirm": "Delete folder"
         }
       },
       "upcomingEvents": {

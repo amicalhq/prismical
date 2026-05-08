@@ -731,7 +731,8 @@
         "deleteFailed": "ノートの削除に失敗しました: {{message}}",
         "saveFailed": "変更の保存に失敗しました",
         "upgradedToRichNotes": "ノートがマークダウンフォーマット対応のリッチノートにアップグレードされました。",
-        "loadFailed": "ノートの読み込みに失敗しました"
+        "loadFailed": "ノートの読み込みに失敗しました",
+        "folderDeleted": "Folder deleted. {{count}} note(s) moved to Unfiled."
       },
       "note": {
         "removeEmoji": "絵文字を削除",
@@ -763,6 +764,23 @@
           "cancel": "キャンセル",
           "deleting": "削除中...",
           "confirm": "ノートを削除"
+        }
+      },
+      "folder": {
+        "actions": {
+          "rename": "Rename folder",
+          "delete": "Delete folder",
+          "addToFavorites": "Add to favorites",
+          "removeFromFavorites": "Remove from favorites"
+        },
+        "rename": {
+          "title": "Rename folder",
+          "placeholder": "Folder name"
+        },
+        "delete": {
+          "title": "Delete \"{{name}}\"?",
+          "description": "Notes in this folder will be moved to Unfiled. {{count}} note(s) will be unfiled.",
+          "confirm": "Delete folder"
         }
       },
       "upcomingEvents": {

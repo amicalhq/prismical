@@ -11,6 +11,7 @@ import {
   StarOff,
   Trash2,
 } from "lucide-react";
+import type { Folder as FolderRecord } from "@/db/schema";
 import { useTranslation } from "react-i18next";
 import { useCallback } from "react";
 import { toast } from "sonner";
@@ -43,8 +44,20 @@ import { useLocalStorageBoolean } from "@/hooks/useLocalStorageBoolean";
 import { api } from "@/trpc/react";
 import { CreateFolderDialog } from "./create-folder-dialog";
 import { FolderPickerDialog } from "./folder-picker-dialog";
+import { FolderEditDialog } from "./folder/folder-edit-dialog";
+import { FolderRowMenu } from "./folder/folder-row-menu";
 import { NavTagsGroup } from "./nav-tags-group";
 import { TagSidebarRow } from "./tag/tag-sidebar-row";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 type NoteNavigationItem = {
   id: number;
@@ -185,6 +198,27 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
   const [folderPickerForNoteId, setFolderPickerForNoteId] = React.useState<
     number | null
   >(null);
+
+  const [editingFolder, setEditingFolder] =
+    React.useState<FolderRecord | null>(null);
+  const [deletingFolder, setDeletingFolder] =
+    React.useState<FolderRecord | null>(null);
+
+  const deleteFolderMutation = api.folders.delete.useMutation({
+    onSuccess: (result) => {
+      utils.folders.invalidate();
+      utils.notes.getNotes.invalidate();
+      setDeletingFolder(null);
+      toast.success(
+        t("settings.notes.toast.folderDeleted", {
+          count: result.detachedNoteCount,
+        }),
+      );
+    },
+    onError: (error) => {
+      toast.error(error.message);
+    },
+  });
 
   const handleCreateFolder = (noteId: number) => {
     setCreateFolderForNoteId(noteId);
@@ -394,6 +428,11 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
                         <span>{folder.name}</span>
                       </SidebarMenuButton>
                     </CollapsibleTrigger>
+                    <FolderRowMenu
+                      folder={folder}
+                      onRename={() => setEditingFolder(folder)}
+                      onDelete={() => setDeletingFolder(folder)}
+                    />
                     <SidebarMenuAction
                       showOnHover
                       onClick={() => handleCreateNoteInFolder(folder.id)}
@@ -579,6 +618,51 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
           }
         }}
       />
+
+      <FolderEditDialog
+        folder={editingFolder}
+        open={editingFolder !== null}
+        onOpenChange={(open) => {
+          if (!open) setEditingFolder(null);
+        }}
+      />
+
+      <AlertDialog
+        open={deletingFolder !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeletingFolder(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t("settings.notes.folder.delete.title", {
+                name: deletingFolder?.name ?? "",
+              })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("settings.notes.folder.delete.description", {
+                count:
+                  notes.filter((n) => n.folderId === deletingFolder?.id).length,
+              })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>
+              {t("settings.tags.editDialog.cancel")}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (deletingFolder) {
+                  deleteFolderMutation.mutate({ id: deletingFolder.id });
+                }
+              }}
+            >
+              {t("settings.notes.folder.delete.confirm")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

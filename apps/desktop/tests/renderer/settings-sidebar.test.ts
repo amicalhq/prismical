@@ -81,6 +81,8 @@ vi.mock("@/trpc/react", () => ({
       listFavorites: { useQuery: foldersListFavoritesUseQuery },
       listWithCounts: { useQuery: foldersListWithCountsUseQuery },
       create: { useMutation },
+      update: { useMutation },
+      delete: { useMutation },
     },
     useUtils: () => ({
       notes: {
