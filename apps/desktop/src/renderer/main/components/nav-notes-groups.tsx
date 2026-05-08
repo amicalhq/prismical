@@ -314,19 +314,38 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
 
   const deleteFolderMutation = api.folders.delete.useMutation({
     onSuccess: (result) => {
+      // Cascade wipes notes, which transitively wipes their tags / artifacts
+      // / meetings via FK. Invalidate every namespace whose cache could now
+      // contain rows that point at deleted notes.
       utils.folders.invalidate();
-      utils.notes.getNotes.invalidate();
+      utils.notes.invalidate();
+      utils.tags.invalidate();
+      utils.artifacts.invalidate();
+      utils.meetings.invalidate();
       setDeletingFolder(null);
       toast.success(
         t("settings.notes.toast.folderDeleted", {
-          count: result.detachedNoteCount,
+          noteCount: result.deletedNoteCount,
+          folderCount: result.deletedSubfolderCount,
         }),
       );
     },
     onError: (error) => {
-      toast.error(error.message);
+      toast.error(
+        t("settings.folders.errors.deleteFailed", { message: error.message }),
+      );
     },
   });
+
+  const deletePreviewQ = api.folders.getDeletePreview.useQuery(
+    { id: deletingFolder?.id ?? 0 },
+    {
+      enabled: deletingFolder !== null,
+      // The dialog drives a destructive action — never serve a stale count.
+      staleTime: 0,
+      gcTime: 0,
+    },
+  );
 
   const favoriteNotes = React.useMemo(
     () => notes.filter((note) => note.starred),
@@ -391,11 +410,6 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
         notes: notesByFolderId.get(f.id) ?? [],
       })),
     [allFolders, notesByFolderId],
-  );
-
-  const unfiledNotes = React.useMemo(
-    () => notes.filter((note) => note.folderId === null),
-    [notes],
   );
 
   const isNoteActive = (noteId: number) =>
@@ -565,44 +579,7 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
                   </SidebarMenuItem>
                 </Collapsible>
               ))}
-              {unfiledNotes.length > 0 ? (
-                <Collapsible
-                  key="unfiled"
-                  defaultOpen={unfiledNotes.some((note) => isNoteActive(note.id))}
-                  className="group/collapsible"
-                >
-                  <SidebarMenuItem>
-                    <CollapsibleTrigger asChild>
-                      <SidebarMenuButton>
-                        <ChevronRight className="size-4 transition-transform group-data-[state=open]/collapsible:rotate-90" />
-                        <span>{t("settings.sidebar.unfiled")}</span>
-                      </SidebarMenuButton>
-                    </CollapsibleTrigger>
-                    <CollapsibleContent>
-                      <SidebarMenuSub className="mr-0 pr-0">
-                        {unfiledNotes.map((note) => (
-                          <NoteSubRow
-                            key={`unfiled-${note.id}`}
-                            note={note}
-                            isActive={isNoteActive(note.id)}
-                            isMobile={isMobile}
-                            t={t}
-                            onStarredChange={(starred) =>
-                              updateOrganization.mutate({
-                                id: note.id,
-                                starred,
-                              })
-                            }
-                            onMoveTo={handleRequestMove}
-                            onDelete={() => handleDelete(note.id)}
-                          />
-                        ))}
-                      </SidebarMenuSub>
-                    </CollapsibleContent>
-                  </SidebarMenuItem>
-                </Collapsible>
-              ) : null}
-              {folderEntries.length === 0 && unfiledNotes.length === 0 ? (
+              {folderEntries.length === 0 ? (
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     disabled
@@ -659,8 +636,8 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
             </AlertDialogTitle>
             <AlertDialogDescription>
               {t("settings.notes.folder.delete.description", {
-                count:
-                  notes.filter((n) => n.folderId === deletingFolder?.id).length,
+                noteCount: deletePreviewQ.data?.noteCount ?? 0,
+                folderCount: deletePreviewQ.data?.subfolderCount ?? 0,
               })}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -669,6 +646,7 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
               {t("settings.tags.editDialog.cancel")}
             </AlertDialogCancel>
             <AlertDialogAction
+              disabled={!deletePreviewQ.isSuccess}
               onClick={() => {
                 if (deletingFolder) {
                   deleteFolderMutation.mutate({ id: deletingFolder.id });

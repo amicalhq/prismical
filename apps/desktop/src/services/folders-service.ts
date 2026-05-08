@@ -57,9 +57,12 @@ export class FoldersService {
     return await folderDb.updateFolder(this.db, id, dbPatch);
   }
 
-  async deleteFolder(id: number): Promise<{ ok: true; detachedNoteCount: number }> {
-    const { detachedNoteCount } = await folderDb.deleteFolder(this.db, id);
-    return { ok: true, detachedNoteCount };
+  async deleteFolder(id: number): Promise<folderDb.FolderDeleteResult> {
+    return await folderDb.deleteFolder(this.db, id);
+  }
+
+  getDeletePreview(id: number): Promise<folderDb.FolderDeletePreview> {
+    return folderDb.getFolderDeletePreview(this.db, id);
   }
 
   list(opts: folderDb.ListFoldersOptions = {}) {

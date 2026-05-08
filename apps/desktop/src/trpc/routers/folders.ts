@@ -19,7 +19,7 @@ export const foldersRouter = createRouter({
     .query(({ input }) => service().listWithCounts(input)),
 
   getById: procedure
-    .input(z.object({ id: z.number().int() }))
+    .input(z.object({ id: z.number().int().positive() }))
     .query(async ({ input }) => {
       const f = await service().getById(input.id);
       if (!f) throw new Error("Folder not found");
@@ -33,7 +33,7 @@ export const foldersRouter = createRouter({
   update: procedure
     .input(
       z.object({
-        id: z.number().int(),
+        id: z.number().int().positive(),
         name: z.string().optional(),
         isFavorite: z.boolean().optional(),
       }),
@@ -43,6 +43,10 @@ export const foldersRouter = createRouter({
     ),
 
   delete: procedure
-    .input(z.object({ id: z.number().int() }))
+    .input(z.object({ id: z.number().int().positive() }))
     .mutation(({ input }) => service().deleteFolder(input.id)),
+
+  getDeletePreview: procedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .query(({ input }) => service().getDeletePreview(input.id)),
 });

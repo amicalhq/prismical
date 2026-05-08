@@ -42,16 +42,30 @@ export function AllFoldersPage() {
   });
 
   const deleteMutation = api.folders.delete.useMutation({
-    onSuccess: () => {
+    onSuccess: (result) => {
       utils.folders.invalidate();
-      utils.notes.getNotes.invalidate();
+      utils.notes.invalidate();
+      utils.tags.invalidate();
+      utils.artifacts.invalidate();
+      utils.meetings.invalidate();
       setConfirming(null);
+      toast.success(
+        t("settings.notes.toast.folderDeleted", {
+          noteCount: result.deletedNoteCount,
+          folderCount: result.deletedSubfolderCount,
+        }),
+      );
     },
     onError: (error) =>
       toast.error(
         t("settings.folders.errors.deleteFailed", { message: error.message }),
       ),
   });
+
+  const deletePreviewQ = api.folders.getDeletePreview.useQuery(
+    { id: confirming?.id ?? 0 },
+    { enabled: confirming !== null, staleTime: 0, gcTime: 0 },
+  );
 
   const totalNotes = (q.data ?? []).reduce((s, r) => s + r.noteCount, 0);
 
@@ -161,10 +175,8 @@ export function AllFoldersPage() {
             </AlertDialogTitle>
             <AlertDialogDescription>
               {t("settings.notes.folder.delete.description", {
-                count: confirming
-                  ? ((q.data ?? []).find((f) => f.id === confirming.id)
-                      ?.noteCount ?? 0)
-                  : 0,
+                noteCount: deletePreviewQ.data?.noteCount ?? 0,
+                folderCount: deletePreviewQ.data?.subfolderCount ?? 0,
               })}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -173,6 +185,7 @@ export function AllFoldersPage() {
               {t("settings.tags.editDialog.cancel")}
             </AlertDialogCancel>
             <AlertDialogAction
+              disabled={!deletePreviewQ.isSuccess}
               onClick={() => {
                 if (confirming) {
                   deleteMutation.mutate({ id: confirming.id });

@@ -375,7 +375,6 @@
       "folders": "Carpetas",
       "noFavorites": "Aún no hay favoritos",
       "noFolders": "Aún no hay carpetas",
-      "unfiled": "Unfiled",
       "viewAllFolders": "Ver todo",
       "tags": "Etiquetas",
       "tagsViewAll": "Ver todas",
@@ -732,7 +731,7 @@
         "saveFailed": "No se pudieron guardar los cambios",
         "upgradedToRichNotes": "Tus notas han sido actualizadas a notas enriquecidas con formato markdown.",
         "loadFailed": "No se pudo cargar la nota",
-        "folderDeleted": "Folder deleted. {{count}} note(s) moved to Unfiled."
+        "folderDeleted": "Carpeta eliminada. Se han borrado {{noteCount}} nota(s) y {{folderCount}} subcarpeta(s)."
       },
       "note": {
         "removeEmoji": "Quitar emoji",
@@ -781,9 +780,9 @@
           "placeholder": "Folder name"
         },
         "delete": {
-          "title": "Delete \"{{name}}\"?",
-          "description": "Notes in this folder will be moved to Unfiled. {{count}} note(s) will be unfiled.",
-          "confirm": "Delete folder"
+          "title": "¿Eliminar \"{{name}}\"?",
+          "description": "Se eliminará la carpeta junto con {{noteCount}} nota(s) y {{folderCount}} subcarpeta(s) que contiene. Esta acción no se puede deshacer.",
+          "confirm": "Eliminar carpeta"
         },
         "picker": {
           "placeholder": "Buscar o crear una carpeta…",

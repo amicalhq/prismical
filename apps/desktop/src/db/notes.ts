@@ -71,7 +71,7 @@ export async function getNotes(
     sortOrder?: "asc" | "desc";
     search?: string;
     tagId?: number;
-    folderId?: number | null; // null = unfiled-only
+    folderId?: number | null; // null = notes with no folder
   } = {},
 ): Promise<NoteWithEvent[]> {
   const {

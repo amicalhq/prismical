@@ -375,7 +375,6 @@
       "folders": "フォルダー",
       "noFavorites": "お気に入りはまだありません",
       "noFolders": "フォルダーはまだありません",
-      "unfiled": "Unfiled",
       "viewAllFolders": "すべて表示",
       "tags": "タグ",
       "tagsViewAll": "すべて表示",
@@ -732,7 +731,7 @@
         "saveFailed": "変更の保存に失敗しました",
         "upgradedToRichNotes": "ノートがマークダウンフォーマット対応のリッチノートにアップグレードされました。",
         "loadFailed": "ノートの読み込みに失敗しました",
-        "folderDeleted": "Folder deleted. {{count}} note(s) moved to Unfiled."
+        "folderDeleted": "フォルダーを削除しました。{{noteCount}} 件のノートと {{folderCount}} 件のサブフォルダーを削除しました。"
       },
       "note": {
         "removeEmoji": "絵文字を削除",
@@ -781,9 +780,9 @@
           "placeholder": "Folder name"
         },
         "delete": {
-          "title": "Delete \"{{name}}\"?",
-          "description": "Notes in this folder will be moved to Unfiled. {{count}} note(s) will be unfiled.",
-          "confirm": "Delete folder"
+          "title": "「{{name}}」を削除しますか?",
+          "description": "このフォルダーと、含まれる {{noteCount}} 件のノートおよび {{folderCount}} 件のサブフォルダーを完全に削除します。この操作は元に戻せません。",
+          "confirm": "フォルダーを削除"
         },
         "picker": {
           "placeholder": "フォルダーを検索または作成…",

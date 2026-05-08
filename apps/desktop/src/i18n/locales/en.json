@@ -286,7 +286,6 @@
       "folders": "Folders",
       "noFavorites": "No favorites yet",
       "noFolders": "No folders yet",
-      "unfiled": "Unfiled",
       "viewAllFolders": "View all",
       "tags": "Tags",
       "tagsViewAll": "View all",
@@ -651,7 +650,7 @@
         "saveFailed": "Failed to save changes",
         "upgradedToRichNotes": "Your notes have been upgraded to rich notes with markdown formatting.",
         "loadFailed": "Failed to load note",
-        "folderDeleted": "Folder deleted. {{count}} note(s) moved to Unfiled."
+        "folderDeleted": "Folder deleted. Removed {{noteCount}} note(s) and {{folderCount}} subfolder(s)."
       },
       "note": {
         "removeEmoji": "Remove emoji",
@@ -701,7 +700,7 @@
         },
         "delete": {
           "title": "Delete \"{{name}}\"?",
-          "description": "Notes in this folder will be moved to Unfiled. {{count}} note(s) will be unfiled.",
+          "description": "This will permanently delete the folder along with {{noteCount}} note(s) and {{folderCount}} subfolder(s) inside. This cannot be undone.",
           "confirm": "Delete folder"
         },
         "picker": {
