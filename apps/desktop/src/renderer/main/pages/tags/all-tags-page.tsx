@@ -100,7 +100,7 @@ export function AllTagsPage() {
             >
               <button
                 type="button"
-                className="flex min-w-0 flex-1 items-center gap-4 px-5 py-3 text-left outline-none focus-visible:bg-muted/50"
+                className="flex min-w-0 flex-1 cursor-pointer items-center gap-4 px-5 py-3 text-left outline-none focus-visible:bg-muted/50"
                 onClick={() =>
                   navigate({
                     to: "/notes",
@@ -117,15 +117,15 @@ export function AllTagsPage() {
                 {tag.isFavorite && (
                   <Star className="h-3 w-3 shrink-0 fill-yellow-400 text-yellow-400" />
                 )}
-                <span className="shrink-0 tabular-nums text-sm text-muted-foreground">
-                  {t("settings.tags.noteCount", { count: tag.noteCount })}
-                </span>
               </button>
+              <span className="shrink-0 tabular-nums text-sm text-muted-foreground">
+                {t("settings.tags.noteCount", { count: tag.noteCount })}
+              </span>
               <TagRowMenu
                 tag={tag}
                 onEdit={() => setEditing(tag)}
                 onDelete={() => setConfirming(tag)}
-                triggerClassName="mx-3 inline-flex aspect-square w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 outline-hidden transition-opacity hover:bg-muted focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring group-focus-within/row:opacity-100 group-hover/row:opacity-100 data-[state=open]:opacity-100"
+                triggerClassName="mx-3 inline-flex aspect-square w-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground opacity-0 outline-hidden transition-opacity hover:bg-muted focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring group-focus-within/row:opacity-100 group-hover/row:opacity-100 data-[state=open]:opacity-100"
               />
             </div>
           ))
