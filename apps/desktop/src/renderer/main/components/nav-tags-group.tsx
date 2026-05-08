@@ -1,8 +1,9 @@
 import { Link } from "@tanstack/react-router";
-import { Tag as TagIcon } from "lucide-react";
+import { ArrowRight, Tag as TagIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
   SidebarGroup,
+  SidebarGroupAction,
   SidebarGroupLabel,
   SidebarMenu,
   SidebarMenuButton,
@@ -21,10 +22,16 @@ export function NavTagsGroup() {
   const tags = recent.data ?? [];
   const noteCountFor = (tagId: number) =>
     counts.data?.find((c) => c.id === tagId)?.noteCount ?? 0;
+  const viewAllLabel = t("settings.sidebar.tagsViewAll");
 
   return (
     <SidebarGroup className="group-data-[collapsible=icon]:hidden">
       <SidebarGroupLabel>{t("settings.sidebar.tags")}</SidebarGroupLabel>
+      <SidebarGroupAction asChild title={viewAllLabel}>
+        <Link to="/tags" aria-label={viewAllLabel}>
+          <ArrowRight />
+        </Link>
+      </SidebarGroupAction>
       <SidebarMenu>
         {tags.length === 0 ? (
           <SidebarMenuItem>
@@ -42,17 +49,6 @@ export function NavTagsGroup() {
             />
           ))
         )}
-
-        <SidebarMenuItem>
-          <SidebarMenuButton
-            asChild
-            className="text-xs text-sidebar-foreground/70"
-          >
-            <Link to="/tags">
-              {t("settings.sidebar.tagsViewAll")} →
-            </Link>
-          </SidebarMenuButton>
-        </SidebarMenuItem>
       </SidebarMenu>
     </SidebarGroup>
   );
