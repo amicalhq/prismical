@@ -113,7 +113,7 @@ export default function EventsPage() {
   }, [allMeetings, t]);
 
   return (
-    <div className="w-full max-w-4xl">
+    <div className="mx-auto w-full max-w-4xl">
       <div className="mb-8">
         <h1 className="text-xl font-bold">{t("settings.events.title")}</h1>
       </div>

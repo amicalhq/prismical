@@ -92,7 +92,7 @@ export default function HomePage() {
   };
 
   return (
-    <div className="w-full max-w-4xl">
+    <div className="mx-auto w-full max-w-4xl">
       <div className="mb-8">
         <h1 className="text-xl font-bold">
           👋 {t(`settings.home.greeting.${greetingPeriod}`)}
