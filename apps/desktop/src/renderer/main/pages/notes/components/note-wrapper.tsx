@@ -124,12 +124,6 @@ export default function NotePage({
     },
   );
 
-  const { data: allNotes = [] } = api.notes.getNotes.useQuery({
-    limit: 500,
-    sortBy: "updatedAt",
-    sortOrder: "desc",
-  });
-
   const updateTitleMutation = api.notes.updateNoteTitle.useMutation({
     onSuccess: () => {
       utils.notes.getNotes.invalidate();
