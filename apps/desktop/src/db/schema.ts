@@ -7,6 +7,7 @@ import {
   index,
   uniqueIndex,
   blob,
+  primaryKey,
 } from "drizzle-orm/sqlite-core";
 
 // Transcriptions table
@@ -396,6 +397,51 @@ export const noteArtifacts = sqliteTable(
   ],
 );
 
+// Tags table — flat, many-to-many with notes.
+// Names are lowercased on write; uniqueness is enforced by a plain UNIQUE index.
+export const tags = sqliteTable(
+  "tags",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    name: text("name").notNull(),
+    color: text("color").notNull(),
+    isFavorite: integer("is_favorite", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (table) => [
+    uniqueIndex("tags_name_unique").on(table.name),
+    index("tags_created_at_idx").on(table.createdAt),
+    index("tags_is_favorite_idx").on(table.isFavorite),
+  ],
+);
+
+// Join table linking notes ⇔ tags. Composite PK + tag_id index for "notes by tag".
+export const noteTags = sqliteTable(
+  "note_tags",
+  {
+    noteId: integer("note_id")
+      .notNull()
+      .references(() => notes.id, { onDelete: "cascade" }),
+    tagId: integer("tag_id")
+      .notNull()
+      .references(() => tags.id, { onDelete: "cascade" }),
+    addedAt: integer("added_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (table) => [
+    primaryKey({ columns: [table.noteId, table.tagId] }),
+    index("note_tags_tag_id_idx").on(table.tagId),
+  ],
+);
+
 // Yjs updates table for persistence
 export const yjsUpdates = sqliteTable(
   "yjs_updates",
@@ -438,3 +484,7 @@ export type NoteArtifact = typeof noteArtifacts.$inferSelect;
 export type NewNoteArtifact = typeof noteArtifacts.$inferInsert;
 export type YjsUpdate = typeof yjsUpdates.$inferSelect;
 export type NewYjsUpdate = typeof yjsUpdates.$inferInsert;
+export type Tag = typeof tags.$inferSelect;
+export type NewTag = typeof tags.$inferInsert;
+export type NoteTag = typeof noteTags.$inferSelect;
+export type NewNoteTag = typeof noteTags.$inferInsert;

@@ -44,6 +44,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { CreateFolderDialog } from "@/renderer/main/components/create-folder-dialog";
 import { FolderPickerDialog } from "@/renderer/main/components/folder-picker-dialog";
 import { useSettingsHeaderActions } from "@/renderer/main/routes/settings/header-actions-context";
+import { NoteTagChips } from "./note-tag-chips";
 
 import { formatEventTimeRange, getEventDateLabel } from "@/utils/event-time";
 import {
@@ -65,6 +66,7 @@ export type NoteEventData = {
 };
 
 export type NotePageUIProps = {
+  noteId: number;
   noteTitle: string;
   noteEmoji: string | null;
   noteStarred: boolean;
@@ -116,6 +118,7 @@ function formatRelativeTime(date: Date, locale: string): string {
 }
 
 export default function Note({
+  noteId,
   noteTitle,
   noteEmoji,
   noteStarred,
@@ -324,6 +327,8 @@ export default function Note({
                   date: formatRelativeTime(noteUpdatedAt, i18n.language),
                 })}
               </span>
+
+              <NoteTagChips noteId={noteId} isNarrow={isNarrow} />
 
               {!isNarrow && (
                 <>

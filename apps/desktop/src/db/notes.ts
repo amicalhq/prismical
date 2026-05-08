@@ -1,9 +1,10 @@
-import { eq, desc, asc, like, and } from "drizzle-orm";
+import { eq, desc, asc, like, and, inArray } from "drizzle-orm";
 import { db } from "./index";
 import {
   notes,
   events,
   yjsUpdates,
+  noteTags,
   type Note,
   type NewNote,
   type YjsUpdate,
@@ -69,6 +70,7 @@ export async function getNotes(
     sortBy?: "title" | "updatedAt" | "createdAt";
     sortOrder?: "asc" | "desc";
     search?: string;
+    tagId?: number;
   } = {},
 ): Promise<NoteWithEvent[]> {
   const {
@@ -77,7 +79,19 @@ export async function getNotes(
     sortBy = "updatedAt",
     sortOrder = "desc",
     search,
+    tagId,
   } = options;
+
+  // If filtering by tag, pre-fetch the matching note ids.
+  let restrictToNoteIds: number[] | null = null;
+  if (tagId !== undefined) {
+    const rows = await db
+      .select({ id: noteTags.noteId })
+      .from(noteTags)
+      .where(eq(noteTags.tagId, tagId));
+    restrictToNoteIds = rows.map((r) => r.id);
+    if (restrictToNoteIds.length === 0) return [];
+  }
 
   // Build query with LEFT JOIN
   let query = db
@@ -89,6 +103,9 @@ export async function getNotes(
   const conditions = [];
   if (search) {
     conditions.push(like(notes.title, `%${search}%`));
+  }
+  if (restrictToNoteIds !== null) {
+    conditions.push(inArray(notes.id, restrictToNoteIds));
   }
 
   if (conditions.length > 0) {

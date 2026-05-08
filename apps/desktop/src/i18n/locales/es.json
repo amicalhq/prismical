@@ -374,7 +374,10 @@
       "favorites": "Favoritos",
       "folders": "Carpetas",
       "noFavorites": "Aún no hay favoritos",
-      "noFolders": "Aún no hay carpetas"
+      "noFolders": "Aún no hay carpetas",
+      "tags": "Etiquetas",
+      "tagsViewAll": "Ver todas",
+      "noTags": "Aún no hay etiquetas"
     },
     "search": {
       "buttonLabel": "Buscar",
@@ -393,7 +396,6 @@
       "subtitle": "Esto es lo que viene y lo que puedes capturar a continuación.",
       "upcoming": {
         "title": "Próximos eventos",
-
         "today": "Hoy",
         "tomorrow": "Mañana",
         "notes": "Notas",
@@ -745,7 +747,12 @@
           "newFolderPrompt": "Nombre de la carpeta",
           "createFolder": "Crear",
           "searchFolders": "Buscar carpetas...",
-          "noFoldersFound": "No se encontraron carpetas."
+          "noFoldersFound": "No se encontraron carpetas.",
+          "addTags": "Añadir etiquetas",
+          "removeTag": "Eliminar etiqueta",
+          "editTag": "Editar etiqueta",
+          "tagsLabel": "Etiquetas",
+          "removeTagNamed": "Quitar #{{name}}"
         },
         "deleteDialog": {
           "title": "Eliminar nota",
@@ -766,6 +773,62 @@
         }
       },
       "sidebarButtonLabel": "Nota"
+    },
+    "tags": {
+      "title": "Etiquetas",
+      "summary": "{{count}} etiquetas · {{noteCount}} notas",
+      "searchPlaceholder": "Buscar etiquetas…",
+      "sortRecent": "Recientes",
+      "sortName": "Nombre",
+      "empty": "Aún no hay etiquetas. Añade etiquetas a cualquier nota para organizar tu trabajo.",
+      "deleteConfirmTitle": "¿Eliminar etiqueta?",
+      "deleteConfirmDescription_one": "Esta etiqueta se eliminará de {{count}} nota. La nota no se verá afectada. ¿Continuar?",
+      "deleteConfirmDescription_other": "Esta etiqueta se eliminará de {{count}} notas. Las notas no se verán afectadas. ¿Continuar?",
+      "noteCount_one": "{{count}} nota",
+      "noteCount_other": "{{count}} notas",
+      "menu": {
+        "favorite": "Favorita",
+        "unfavorite": "Quitar favorita",
+        "edit": "Editar",
+        "delete": "Eliminar"
+      },
+      "picker": {
+        "placeholder": "Buscar o crear una etiqueta…",
+        "noResults": "No se encontraron etiquetas.",
+        "recent": "Recientes",
+        "all": "Todas",
+        "create": "Crear <1>#{{name}}</1>"
+      },
+      "editDialog": {
+        "title": "Editar etiqueta",
+        "nameLabel": "Nombre",
+        "colorLabel": "Color",
+        "previewLabel": "Vista previa",
+        "previewName": "etiqueta",
+        "nameError": "Usa minúsculas, dígitos, '-' o '_' (máx. 32 caracteres).",
+        "nameDuplicate": "Ya existe una etiqueta llamada #{{name}}.",
+        "delete": "Eliminar etiqueta",
+        "cancel": "Cancelar",
+        "save": "Guardar",
+        "customColorAria": "Color personalizado",
+        "pickColorAria": "Elegir {{color}}"
+      },
+      "filterBanner": {
+        "label": "Mostrando notas etiquetadas",
+        "clear": "Limpiar"
+      },
+      "emptyFiltered": {
+        "title": "Aún no hay notas etiquetadas con #{{name}}",
+        "description": "Etiqueta una nota para verla aquí, o quita el filtro."
+      },
+      "errors": {
+        "createFailed": "No se pudo crear la etiqueta: {{message}}",
+        "updateFailed": "No se pudo actualizar la etiqueta: {{message}}",
+        "deleteFailed": "No se pudo eliminar la etiqueta: {{message}}",
+        "attachFailed": "No se pudo adjuntar la etiqueta: {{message}}",
+        "detachFailed": "No se pudo quitar la etiqueta: {{message}}",
+        "favoriteFailed": "No se pudo actualizar el favorito: {{message}}"
+      }
     },
     "vocabulary": {
       "title": "Vocabulario",

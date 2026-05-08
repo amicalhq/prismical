@@ -14,6 +14,7 @@ import { meetingsRouter } from "./routers/meetings";
 import { meetingWidgetRouter } from "./routers/meeting-widget";
 import { eventsRouter } from "./routers/events";
 import { artifactsRouter } from "./routers/artifacts";
+import { tagsRouter } from "./routers/tags";
 import { createRouter, procedure } from "./trpc";
 
 export const router = createRouter({
@@ -85,6 +86,9 @@ export const router = createRouter({
 
   // Note artifacts router
   artifacts: artifactsRouter,
+
+  // Tags router
+  tags: tagsRouter,
 });
 
 export type AppRouter = typeof router;

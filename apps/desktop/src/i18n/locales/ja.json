@@ -374,7 +374,10 @@
       "favorites": "お気に入り",
       "folders": "フォルダー",
       "noFavorites": "お気に入りはまだありません",
-      "noFolders": "フォルダーはまだありません"
+      "noFolders": "フォルダーはまだありません",
+      "tags": "タグ",
+      "tagsViewAll": "すべて表示",
+      "noTags": "タグはまだありません"
     },
     "search": {
       "buttonLabel": "検索",
@@ -393,7 +396,6 @@
       "subtitle": "今日の予定と次に記録する内容です。",
       "upcoming": {
         "title": "予定",
-
         "today": "今日",
         "tomorrow": "明日",
         "notes": "ノート",
@@ -745,7 +747,12 @@
           "newFolderPrompt": "フォルダー名",
           "createFolder": "作成",
           "searchFolders": "フォルダーを検索...",
-          "noFoldersFound": "フォルダーが見つかりません。"
+          "noFoldersFound": "フォルダーが見つかりません。",
+          "addTags": "タグを追加",
+          "removeTag": "タグを削除",
+          "editTag": "タグを編集",
+          "tagsLabel": "タグ",
+          "removeTagNamed": "#{{name}} を削除"
         },
         "deleteDialog": {
           "title": "ノートを削除",
@@ -766,6 +773,62 @@
         }
       },
       "sidebarButtonLabel": "ノート"
+    },
+    "tags": {
+      "title": "タグ",
+      "summary": "{{count}} 個のタグ · {{noteCount}} 件のノート",
+      "searchPlaceholder": "タグを検索…",
+      "sortRecent": "新しい順",
+      "sortName": "名前順",
+      "empty": "タグはまだありません。任意のノートからタグを追加して整理しましょう。",
+      "deleteConfirmTitle": "タグを削除しますか?",
+      "deleteConfirmDescription_one": "このタグは {{count}} 件のノートから削除されます。ノート自体は影響を受けません。続行しますか?",
+      "deleteConfirmDescription_other": "このタグは {{count}} 件のノートから削除されます。ノート自体は影響を受けません。続行しますか?",
+      "noteCount_one": "{{count}} 件のノート",
+      "noteCount_other": "{{count}} 件のノート",
+      "menu": {
+        "favorite": "お気に入りに追加",
+        "unfavorite": "お気に入りから削除",
+        "edit": "編集",
+        "delete": "削除"
+      },
+      "picker": {
+        "placeholder": "タグを検索または作成…",
+        "noResults": "タグが見つかりません。",
+        "recent": "新しい順",
+        "all": "すべて",
+        "create": "<1>#{{name}}</1> を作成"
+      },
+      "editDialog": {
+        "title": "タグを編集",
+        "nameLabel": "名前",
+        "colorLabel": "色",
+        "previewLabel": "プレビュー",
+        "previewName": "タグ",
+        "nameError": "小文字、数字、'-'、'_' のみ使用可能 (最大 32 文字)。",
+        "nameDuplicate": "#{{name}} という名前のタグは既に存在します。",
+        "delete": "タグを削除",
+        "cancel": "キャンセル",
+        "save": "保存",
+        "customColorAria": "カスタム色",
+        "pickColorAria": "{{color}} を選択"
+      },
+      "filterBanner": {
+        "label": "タグでフィルター中:",
+        "clear": "クリア"
+      },
+      "emptyFiltered": {
+        "title": "#{{name}} のタグが付いたノートはまだありません",
+        "description": "ノートにタグを付けてここに表示するか、フィルターをクリアしてください。"
+      },
+      "errors": {
+        "createFailed": "タグの作成に失敗しました: {{message}}",
+        "updateFailed": "タグの更新に失敗しました: {{message}}",
+        "deleteFailed": "タグの削除に失敗しました: {{message}}",
+        "attachFailed": "タグの追加に失敗しました: {{message}}",
+        "detachFailed": "タグの削除に失敗しました: {{message}}",
+        "favoriteFailed": "お気に入りの更新に失敗しました: {{message}}"
+      }
     },
     "vocabulary": {
       "title": "カスタム辞書",
