@@ -39,6 +39,7 @@ import {
   SidebarMenuSubItem,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { useLocalStorageBoolean } from "@/hooks/useLocalStorageBoolean";
 import { api } from "@/trpc/react";
 import { CreateFolderDialog } from "./create-folder-dialog";
 import { FolderPickerDialog } from "./folder-picker-dialog";
@@ -246,9 +247,22 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
   const isNoteActive = (noteId: number) =>
     location.pathname === `/notes/${noteId}`;
 
+  const [favoritesOpen, setFavoritesOpen] = useLocalStorageBoolean(
+    "sidebar:favorites:open",
+    true,
+  );
+  const [foldersOpen, setFoldersOpen] = useLocalStorageBoolean(
+    "sidebar:folders:open",
+    true,
+  );
+
   return (
     <>
-      <Collapsible defaultOpen className="group/favorites-collapsible">
+      <Collapsible
+        open={favoritesOpen}
+        onOpenChange={setFavoritesOpen}
+        className="group/favorites-collapsible"
+      >
         <SidebarGroup className="pb-0 group-data-[collapsible=icon]:hidden">
           <SidebarGroupLabel
             asChild
@@ -327,7 +341,11 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
         </SidebarGroup>
       </Collapsible>
 
-      <Collapsible defaultOpen className="group/folders-collapsible">
+      <Collapsible
+        open={foldersOpen}
+        onOpenChange={setFoldersOpen}
+        className="group/folders-collapsible"
+      >
         <SidebarGroup className="pb-0 pt-0 group-data-[collapsible=icon]:hidden">
           <SidebarGroupLabel
             asChild

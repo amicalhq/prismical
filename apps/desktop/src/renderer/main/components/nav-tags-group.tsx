@@ -13,6 +13,7 @@ import {
   SidebarGroupLabel,
   SidebarMenu,
 } from "@/components/ui/sidebar";
+import { useLocalStorageBoolean } from "@/hooks/useLocalStorageBoolean";
 import { api } from "@/trpc/react";
 import { TagSidebarRow } from "./tag/tag-sidebar-row";
 
@@ -28,8 +29,14 @@ export function NavTagsGroup() {
     counts.data?.find((c) => c.id === tagId)?.noteCount ?? 0;
   const viewAllLabel = t("settings.sidebar.tagsViewAll");
 
+  const [open, setOpen] = useLocalStorageBoolean("sidebar:tags:open", true);
+
   return (
-    <Collapsible defaultOpen className="group/tags-collapsible">
+    <Collapsible
+      open={open}
+      onOpenChange={setOpen}
+      className="group/tags-collapsible"
+    >
       <SidebarGroup className="group/tags pt-0 group-data-[collapsible=icon]:hidden">
         <SidebarGroupLabel
           asChild
