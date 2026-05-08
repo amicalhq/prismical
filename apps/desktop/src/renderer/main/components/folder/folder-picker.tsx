@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Check, Folder as FolderIcon } from "lucide-react";
+import { Folder as FolderIcon } from "lucide-react";
 import { Trans, useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
@@ -83,10 +83,14 @@ export function FolderPicker({
 
   const noResults = filtered.length === 0 && !showCreate;
 
+  const selectedValue =
+    currentFolderId === null ? "__none" : `f-${currentFolderId}`;
+
   return (
     <Combobox
       open={open}
       onOpenChange={(nextOpen) => onOpenChange(nextOpen)}
+      value={selectedValue}
       inputValue={query}
       onInputValueChange={(value) => setQuery(value)}
       filter={null}
@@ -110,9 +114,6 @@ export function FolderPicker({
             >
               <span className="inline-flex h-4 w-4 items-center justify-center" />
               <span>{t("settings.notes.note.actions.noFolder")}</span>
-              {currentFolderId === null && (
-                <Check className="ml-auto h-3.5 w-3.5" />
-              )}
             </ComboboxItem>
             {filtered.map((f) => (
               <ComboboxItem
@@ -122,9 +123,6 @@ export function FolderPicker({
               >
                 <FolderIcon className="h-4 w-4" />
                 <span className="truncate">{f.name}</span>
-                {currentFolderId === f.id && (
-                  <Check className="ml-auto h-3.5 w-3.5" />
-                )}
               </ComboboxItem>
             ))}
           </ComboboxGroup>

@@ -24,82 +24,59 @@ export function NoteFolderChip({
   const { t } = useTranslation();
   const folder = folders.find((f) => f.id === noteFolderId) ?? null;
   const [pickerOpen, setPickerOpen] = useState(false);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const removeRef = useRef<HTMLButtonElement>(null);
+  // Single stable wrapper element so base-ui's positioner anchor never
+  // detaches mid-close. Selecting a folder both closes the popup AND flips
+  // the chip's state — if the trigger were a fresh element per branch, the
+  // ref would briefly resolve to null while the popup is still animating
+  // closed and the popup would flicker at (0,0).
+  const triggerRef = useRef<HTMLSpanElement>(null);
 
   const togglePicker = () => setPickerOpen((o) => !o);
 
-  const picker = (
-    <FolderPicker
-      currentFolderId={noteFolderId}
-      open={pickerOpen}
-      onOpenChange={setPickerOpen}
-      onSelect={onSelect}
-      anchor={triggerRef}
-    />
-  );
-
-  if (isNarrow) {
-    return (
-      <>
-        <button
-          ref={triggerRef}
-          type="button"
-          onClick={togglePicker}
-          className={cn(PILL_BASE, "border-dashed")}
-          aria-label={t("settings.notes.note.actions.folderLabel")}
-        >
-          <FolderIcon className="h-3 w-3" />
-          {folder ? <span className="truncate">{folder.name}</span> : null}
-        </button>
-        {picker}
-      </>
-    );
-  }
-
-  if (!folder) {
-    return (
-      <>
-        <button
-          ref={triggerRef}
-          type="button"
-          onClick={togglePicker}
-          aria-label={t("settings.notes.note.actions.addToFolder")}
-          className={cn(PILL_BASE, "border-dashed")}
-        >
-          <Plus className="h-3 w-3" />
-          {t("settings.notes.note.actions.addToFolder")}
-        </button>
-        {picker}
-      </>
-    );
-  }
+  const showLabel = !(isNarrow && !folder);
+  const Icon = !folder && !isNarrow ? Plus : FolderIcon;
+  const labelText = folder
+    ? folder.name
+    : t("settings.notes.note.actions.addToFolder");
+  const ariaLabel = folder
+    ? t("settings.notes.note.actions.folderLabel")
+    : t("settings.notes.note.actions.addToFolder");
 
   return (
     <>
-      <span className={cn(PILL_BASE, "bg-muted/50")}>
+      <span
+        ref={triggerRef}
+        className={cn(PILL_BASE, folder ? "bg-muted/50" : "border-dashed")}
+      >
         <button
-          ref={triggerRef}
           type="button"
           onClick={togglePicker}
+          aria-label={ariaLabel}
           className="inline-flex min-w-0 items-center gap-1 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <FolderIcon className="h-3 w-3 shrink-0" />
-          <span className="truncate">{folder.name}</span>
+          <Icon className="h-3 w-3 shrink-0" />
+          {showLabel ? <span className="truncate">{labelText}</span> : null}
         </button>
-        <button
-          ref={removeRef}
-          type="button"
-          aria-label={t("settings.notes.note.actions.removeFromFolderNamed", {
-            name: folder.name,
-          })}
-          onClick={() => onSelect(null)}
-          className="ml-0.5 hidden h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full hover:bg-black/20 focus-visible:flex group-hover/folder-chip:flex group-focus-within/folder-chip:flex"
-        >
-          <X className="h-2.5 w-2.5" />
-        </button>
+        {folder && !isNarrow ? (
+          <button
+            type="button"
+            aria-label={t("settings.notes.note.actions.removeFromFolderNamed", {
+              name: folder.name,
+            })}
+            onClick={() => onSelect(null)}
+            className="ml-0.5 hidden h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full hover:bg-black/20 focus-visible:flex group-hover/folder-chip:flex"
+          >
+            <X className="h-2.5 w-2.5" />
+          </button>
+        ) : null}
       </span>
-      {picker}
+      <FolderPicker
+        currentFolderId={noteFolderId}
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        onSelect={onSelect}
+        anchor={triggerRef}
+      />
     </>
   );
 }
