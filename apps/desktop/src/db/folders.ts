@@ -67,6 +67,19 @@ export async function listFolders(
   return await q;
 }
 
+export async function listAllForTree(db: DB): Promise<Folder[]> {
+  // Ordering puts top-level rows (parent_id NULL) first, then groups by parent
+  // id so children appear after their parent, with siblings sorted by name.
+  return await db
+    .select()
+    .from(folders)
+    .orderBy(
+      sql`(${folders.parentId} IS NOT NULL)`,
+      sql`COALESCE(${folders.parentId}, 0)`,
+      asc(folders.name),
+    );
+}
+
 export async function listFavoriteFolders(db: DB): Promise<Folder[]> {
   return await db
     .select()
@@ -134,7 +147,7 @@ const MAX_SUBTREE_BFS_LEVELS = 1024;
  * [rootId, ...descendants] in discovery order, or [] if `rootId` doesn't
  * exist. Cycle-safe via a visited Set.
  */
-async function getFolderSubtreeIds(
+export async function subtreeIds(
   db: DBOrTx,
   rootId: number,
 ): Promise<number[]> {
@@ -176,16 +189,16 @@ export async function getFolderDeletePreview(
   db: DB,
   rootId: number,
 ): Promise<FolderDeletePreview> {
-  const subtreeIds = await getFolderSubtreeIds(db, rootId);
-  if (subtreeIds.length === 0) {
+  const ids = await subtreeIds(db, rootId);
+  if (ids.length === 0) {
     return { subfolderCount: 0, noteCount: 0 };
   }
   const [{ count }] = await db
     .select({ count: sql<number>`COUNT(*)` })
     .from(notes)
-    .where(inArray(notes.folderId, subtreeIds));
+    .where(inArray(notes.folderId, ids));
   return {
-    subfolderCount: subtreeIds.length - 1,
+    subfolderCount: ids.length - 1,
     noteCount: Number(count),
   };
 }
@@ -202,24 +215,24 @@ export async function deleteFolder(
   rootId: number,
 ): Promise<FolderDeleteResult> {
   return await db.transaction(async (tx) => {
-    const subtreeIds = await getFolderSubtreeIds(tx, rootId);
-    if (subtreeIds.length === 0) {
+    const ids = await subtreeIds(tx, rootId);
+    if (ids.length === 0) {
       return { deletedSubfolderCount: 0, deletedNoteCount: 0 };
     }
     const [{ count }] = await tx
       .select({ count: sql<number>`COUNT(*)` })
       .from(notes)
-      .where(inArray(notes.folderId, subtreeIds));
+      .where(inArray(notes.folderId, ids));
     // Order is load-bearing: notes.folderId is ON DELETE SET NULL, so if we
     // deleted folders first the cascade would null out every contained
     // note's folder_id and the subsequent inArray(notes.folderId, …) match
     // would find nothing — those notes would survive as unfiled. Delete
     // notes first; FK cascades on note_artifacts / note_tags / yjs_updates
     // / meetings fire off the note ids regardless of folder existence.
-    await tx.delete(notes).where(inArray(notes.folderId, subtreeIds));
-    await tx.delete(folders).where(inArray(folders.id, subtreeIds));
+    await tx.delete(notes).where(inArray(notes.folderId, ids));
+    await tx.delete(folders).where(inArray(folders.id, ids));
     return {
-      deletedSubfolderCount: subtreeIds.length - 1,
+      deletedSubfolderCount: ids.length - 1,
       deletedNoteCount: Number(count),
     };
   });

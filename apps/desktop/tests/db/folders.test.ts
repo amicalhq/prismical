@@ -116,4 +116,36 @@ describe("db/folders", () => {
     await createFolder(testDb.db, { name: "Work" });
     await expect(createFolder(testDb.db, { name: "WORK" })).rejects.toThrow();
   });
+
+  it("listAllForTree returns every folder ordered by parent then name", async () => {
+    const { createFolder, listAllForTree } = await import("@db/folders");
+    const work = await createFolder(testDb.db, { name: "Work" });
+    const personal = await createFolder(testDb.db, { name: "Personal" });
+    await createFolder(testDb.db, { name: "Hiring", parentId: work.id });
+    await createFolder(testDb.db, { name: "Q4", parentId: work.id });
+
+    const got = await listAllForTree(testDb.db);
+    const names = got.map((f) => f.name);
+    expect(names).toContain("Work");
+    expect(names).toContain("Personal");
+    expect(names).toContain("Hiring");
+    expect(names).toContain("Q4");
+    // Top-level rows precede their children
+    const workIdx = names.indexOf("Work");
+    const hiringIdx = names.indexOf("Hiring");
+    expect(workIdx).toBeLessThan(hiringIdx);
+    void personal;
+  });
+
+  it("subtreeIds returns root + descendants", async () => {
+    const { createFolder, subtreeIds } = await import("@db/folders");
+    const root = await createFolder(testDb.db, { name: "Root" });
+    const child = await createFolder(testDb.db, { name: "C", parentId: root.id });
+    const grand = await createFolder(testDb.db, { name: "G", parentId: child.id });
+    const sibling = await createFolder(testDb.db, { name: "S" });
+
+    const ids = await subtreeIds(testDb.db, root.id);
+    expect(new Set(ids)).toEqual(new Set([root.id, child.id, grand.id]));
+    expect(ids).not.toContain(sibling.id);
+  });
 });
