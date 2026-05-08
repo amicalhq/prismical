@@ -39,6 +39,9 @@ export async function createTestDatabase(
     },
   });
 
+  // Enable foreign key enforcement (required for ON DELETE SET NULL etc.)
+  await db.$client.execute("PRAGMA foreign_keys = ON");
+
   // Run migrations if not skipped
   if (!skipMigrations) {
     const migrationsPath = path.join(process.cwd(), "src", "db", "migrations");
@@ -77,6 +80,7 @@ export async function createTestDatabase(
       await db.delete(schema.yjsUpdates);
       await db.delete(schema.noteTags);
       await db.delete(schema.tags);
+      await db.delete(schema.folders);
       await db.delete(schema.notes);
     },
   };

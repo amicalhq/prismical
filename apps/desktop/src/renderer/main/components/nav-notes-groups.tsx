@@ -11,6 +11,7 @@ import {
   StarOff,
   Trash2,
 } from "lucide-react";
+import type { Folder as FolderRecord } from "@/db/schema";
 import { useTranslation } from "react-i18next";
 import { useCallback } from "react";
 import { toast } from "sonner";
@@ -43,15 +44,27 @@ import { useLocalStorageBoolean } from "@/hooks/useLocalStorageBoolean";
 import { api } from "@/trpc/react";
 import { CreateFolderDialog } from "./create-folder-dialog";
 import { FolderPickerDialog } from "./folder-picker-dialog";
+import { FolderEditDialog } from "./folder/folder-edit-dialog";
+import { FolderRowMenu } from "./folder/folder-row-menu";
 import { NavTagsGroup } from "./nav-tags-group";
 import { TagSidebarRow } from "./tag/tag-sidebar-row";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 type NoteNavigationItem = {
   id: number;
   title: string;
   icon: string | null;
   starred: boolean;
-  folder: string | null;
+  folderId: number | null;
   createdAt: Date;
 };
 
@@ -136,7 +149,7 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
   });
 
   const createNoteMutation = api.notes.createNote.useMutation({
-    onSuccess: async (newNote, _variables, context) => {
+    onSuccess: async (newNote) => {
       utils.notes.getNotes.invalidate();
       navigate({
         to: "/notes/$noteId",
@@ -152,7 +165,7 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
   });
 
   const handleCreateNoteInFolder = useCallback(
-    (folderName: string) => {
+    (folderId: number) => {
       if (createNoteMutation.isPending) return;
       const dateStr = new Date().toLocaleDateString(i18n.language, {
         day: "numeric",
@@ -162,7 +175,7 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
         { title: t("settings.notes.defaultTitleWithDate", { date: dateStr }) },
         {
           onSuccess: (newNote) => {
-            updateOrganization.mutate({ id: newNote.id, folder: folderName });
+            updateOrganization.mutate({ id: newNote.id, folderId });
           },
         },
       );
@@ -174,8 +187,8 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
     deleteMutation.mutate({ id: noteId });
   };
 
-  const handleFolderChange = (noteId: number, folder: string | null) => {
-    updateOrganization.mutate({ id: noteId, folder });
+  const handleFolderChange = (noteId: number, folderId: number | null) => {
+    updateOrganization.mutate({ id: noteId, folderId });
   };
 
   const [createFolderForNoteId, setCreateFolderForNoteId] = React.useState<
@@ -185,6 +198,27 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
   const [folderPickerForNoteId, setFolderPickerForNoteId] = React.useState<
     number | null
   >(null);
+
+  const [editingFolder, setEditingFolder] =
+    React.useState<FolderRecord | null>(null);
+  const [deletingFolder, setDeletingFolder] =
+    React.useState<FolderRecord | null>(null);
+
+  const deleteFolderMutation = api.folders.delete.useMutation({
+    onSuccess: (result) => {
+      utils.folders.invalidate();
+      utils.notes.getNotes.invalidate();
+      setDeletingFolder(null);
+      toast.success(
+        t("settings.notes.toast.folderDeleted", {
+          count: result.detachedNoteCount,
+        }),
+      );
+    },
+    onError: (error) => {
+      toast.error(error.message);
+    },
+  });
 
   const handleCreateFolder = (noteId: number) => {
     setCreateFolderForNoteId(noteId);
@@ -196,6 +230,7 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
   );
 
   const favoriteTagsQ = api.tags.listFavorites.useQuery();
+  const favoriteFoldersQ = api.folders.listFavorites.useQuery();
   const tagCountsQ = api.tags.listWithCounts.useQuery({ sortBy: "createdAt" });
 
   const tagNoteCountFor = React.useCallback(
@@ -206,7 +241,8 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
 
   type FavoriteEntry =
     | { kind: "note"; createdAt: Date; note: NoteNavigationItem }
-    | { kind: "tag"; createdAt: Date; tag: NonNullable<typeof favoriteTagsQ.data>[number] };
+    | { kind: "tag"; createdAt: Date; tag: NonNullable<typeof favoriteTagsQ.data>[number] }
+    | { kind: "folder"; createdAt: Date; folder: NonNullable<typeof favoriteFoldersQ.data>[number] };
 
   const favoriteEntries = React.useMemo<FavoriteEntry[]>(() => {
     const entries: FavoriteEntry[] = [
@@ -220,28 +256,42 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
         createdAt: new Date(tag.createdAt),
         tag,
       })),
+      ...(favoriteFoldersQ.data ?? []).map<FavoriteEntry>((folder) => ({
+        kind: "folder",
+        createdAt: new Date(folder.createdAt),
+        folder,
+      })),
     ];
     entries.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     return entries;
-  }, [favoriteNotes, favoriteTagsQ.data]);
+  }, [favoriteNotes, favoriteTagsQ.data, favoriteFoldersQ.data]);
 
-  const folders = React.useMemo(() => {
-    const grouped = new Map<string, NoteNavigationItem[]>();
+  const foldersQ = api.folders.list.useQuery({ sortBy: "name" });
+  const allFolders = foldersQ.data ?? [];
 
+  const notesByFolderId = React.useMemo(() => {
+    const grouped = new Map<number, NoteNavigationItem[]>();
     for (const note of notes) {
-      const name = note.folder?.trim();
-      if (!name) continue;
-      const existing = grouped.get(name) ?? [];
+      if (note.folderId === null) continue;
+      const existing = grouped.get(note.folderId) ?? [];
       existing.push(note);
-      grouped.set(name, existing);
+      grouped.set(note.folderId, existing);
     }
-
-    return Array.from(grouped.entries()).sort(([a], [b]) => a.localeCompare(b));
+    return grouped;
   }, [notes]);
 
-  const folderNames = React.useMemo(
-    () => folders.map(([name]) => name),
-    [folders],
+  const folderEntries = React.useMemo(
+    () =>
+      allFolders.map((f) => ({
+        folder: f,
+        notes: notesByFolderId.get(f.id) ?? [],
+      })),
+    [allFolders, notesByFolderId],
+  );
+
+  const unfiledNotes = React.useMemo(
+    () => notes.filter((note) => note.folderId === null),
+    [notes],
   );
 
   const isNoteActive = (noteId: number) =>
@@ -327,6 +377,19 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
                         />
                       </DropdownMenu>
                     </SidebarMenuItem>
+                  ) : entry.kind === "folder" ? (
+                    <SidebarMenuItem key={`favorite-folder-${entry.folder.id}`}>
+                      <SidebarMenuButton asChild>
+                        <Link
+                          to="/folders"
+                          search={{ folderId: entry.folder.id }}
+                          aria-label={entry.folder.name}
+                        >
+                          <FolderOpen className="size-4" />
+                          <span>{entry.folder.name}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
                   ) : (
                     <TagSidebarRow
                       key={`favorite-tag-${entry.tag.id}`}
@@ -358,9 +421,9 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
           </SidebarGroupLabel>
           <CollapsibleContent>
             <SidebarMenu>
-              {folders.map(([folderName, folderNotes]) => (
+              {folderEntries.map(({ folder, notes: folderNotes }) => (
                 <Collapsible
-                  key={folderName}
+                  key={`folder-${folder.id}`}
                   defaultOpen={folderNotes.some((note) => isNoteActive(note.id))}
                   className="group/collapsible"
                 >
@@ -368,12 +431,17 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
                     <CollapsibleTrigger asChild>
                       <SidebarMenuButton>
                         <ChevronRight className="size-4 transition-transform group-data-[state=open]/collapsible:rotate-90" />
-                        <span>{folderName}</span>
+                        <span>{folder.name}</span>
                       </SidebarMenuButton>
                     </CollapsibleTrigger>
+                    <FolderRowMenu
+                      folder={folder}
+                      onRename={() => setEditingFolder(folder)}
+                      onDelete={() => setDeletingFolder(folder)}
+                    />
                     <SidebarMenuAction
                       showOnHover
-                      onClick={() => handleCreateNoteInFolder(folderName)}
+                      onClick={() => handleCreateNoteInFolder(folder.id)}
                     >
                       <Plus />
                       <span className="sr-only">
@@ -384,7 +452,7 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
                       <SidebarMenuSub className="mr-0 pr-0">
                         {folderNotes.map((note) => (
                           <SidebarMenuSubItem
-                            key={`folder-${folderName}-${note.id}`}
+                            key={`folder-${folder.id}-${note.id}`}
                             className="group/sub-item relative"
                           >
                             <SidebarMenuSubButton
@@ -435,7 +503,75 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
                   </SidebarMenuItem>
                 </Collapsible>
               ))}
-              {folders.length === 0 ? (
+              {unfiledNotes.length > 0 ? (
+                <Collapsible
+                  key="unfiled"
+                  defaultOpen={unfiledNotes.some((note) => isNoteActive(note.id))}
+                  className="group/collapsible"
+                >
+                  <SidebarMenuItem>
+                    <CollapsibleTrigger asChild>
+                      <SidebarMenuButton>
+                        <ChevronRight className="size-4 transition-transform group-data-[state=open]/collapsible:rotate-90" />
+                        <span>{t("settings.sidebar.unfiled")}</span>
+                      </SidebarMenuButton>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <SidebarMenuSub className="mr-0 pr-0">
+                        {unfiledNotes.map((note) => (
+                          <SidebarMenuSubItem
+                            key={`unfiled-${note.id}`}
+                            className="group/sub-item relative"
+                          >
+                            <SidebarMenuSubButton
+                              asChild
+                              isActive={isNoteActive(note.id)}
+                              className="pr-6"
+                            >
+                              <Link
+                                to="/notes/$noteId"
+                                params={{ noteId: String(note.id) }}
+                                search={{}}
+                                aria-label={note.title}
+                              >
+                                <NoteLeadingIcon icon={note.icon} />
+                                <span>{note.title}</span>
+                              </Link>
+                            </SidebarMenuSubButton>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <button
+                                  type="button"
+                                  className="absolute right-1 top-1/2 -translate-y-1/2 rounded-md p-0.5 text-sidebar-foreground/70 opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover/sub-item:opacity-100 data-[state=open]:opacity-100"
+                                >
+                                  <MoreHorizontal className="size-4" />
+                                  <span className="sr-only">More</span>
+                                </button>
+                              </DropdownMenuTrigger>
+                              <NoteDropdownContent
+                                note={note}
+                                isMobile={isMobile}
+                                t={t}
+                                onStarredChange={(starred) =>
+                                  updateOrganization.mutate({
+                                    id: note.id,
+                                    starred,
+                                  })
+                                }
+                                onMoveTo={() =>
+                                  setFolderPickerForNoteId(note.id)
+                                }
+                                onDelete={() => handleDelete(note.id)}
+                              />
+                            </DropdownMenu>
+                          </SidebarMenuSubItem>
+                        ))}
+                      </SidebarMenuSub>
+                    </CollapsibleContent>
+                  </SidebarMenuItem>
+                </Collapsible>
+              ) : null}
+              {folderEntries.length === 0 && unfiledNotes.length === 0 ? (
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     disabled
@@ -446,6 +582,16 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ) : null}
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild>
+                  <Link to="/folders" search={{}}>
+                    <Folder className="size-4 opacity-60" />
+                    <span className="text-muted-foreground">
+                      {t("settings.sidebar.viewAllFolders")}
+                    </span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
             </SidebarMenu>
           </CollapsibleContent>
         </SidebarGroup>
@@ -458,13 +604,13 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
         onOpenChange={(open) => {
           if (!open) setFolderPickerForNoteId(null);
         }}
-        currentFolder={
-          notes.find((n) => n.id === folderPickerForNoteId)?.folder ?? null
+        currentFolderId={
+          notes.find((n) => n.id === folderPickerForNoteId)?.folderId ?? null
         }
-        folderNames={folderNames}
-        onFolderChange={(folder) => {
+        folders={allFolders}
+        onSelect={(folderId) => {
           if (folderPickerForNoteId !== null) {
-            handleFolderChange(folderPickerForNoteId, folder);
+            handleFolderChange(folderPickerForNoteId, folderId);
           }
         }}
         onCreateFolder={() => {
@@ -479,15 +625,60 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
         onOpenChange={(open) => {
           if (!open) setCreateFolderForNoteId(null);
         }}
-        onConfirm={(folderName) => {
+        onCreated={(folderId) => {
           if (createFolderForNoteId !== null) {
             updateOrganization.mutate({
               id: createFolderForNoteId,
-              folder: folderName,
+              folderId,
             });
           }
         }}
       />
+
+      <FolderEditDialog
+        folder={editingFolder}
+        open={editingFolder !== null}
+        onOpenChange={(open) => {
+          if (!open) setEditingFolder(null);
+        }}
+      />
+
+      <AlertDialog
+        open={deletingFolder !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeletingFolder(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t("settings.notes.folder.delete.title", {
+                name: deletingFolder?.name ?? "",
+              })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("settings.notes.folder.delete.description", {
+                count:
+                  notes.filter((n) => n.folderId === deletingFolder?.id).length,
+              })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>
+              {t("settings.tags.editDialog.cancel")}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (deletingFolder) {
+                  deleteFolderMutation.mutate({ id: deletingFolder.id });
+                }
+              }}
+            >
+              {t("settings.notes.folder.delete.confirm")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

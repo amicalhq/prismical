@@ -66,7 +66,7 @@ export default function NotePage({
   const [noteTitle, setNoteTitle] = useState("");
   const [noteIcon, setNoteIcon] = useState<string | null>(null);
   const [noteStarred, setNoteStarred] = useState(false);
-  const [noteFolder, setNoteFolder] = useState<string | null>(null);
+  const [noteFolderId, setNoteFolderId] = useState<number | null>(null);
   const [editorReady, setEditorReady] = useState(false);
   const [activeAsset, setActiveAsset] = useState<NoteAssetKind | null>(null);
   const [meetingState, setMeetingState] = useState<MeetingRuntimeState>("idle");
@@ -123,12 +123,6 @@ export default function NotePage({
       enabled: !!noteId,
     },
   );
-
-  const { data: allNotes = [] } = api.notes.getNotes.useQuery({
-    limit: 500,
-    sortBy: "updatedAt",
-    sortOrder: "desc",
-  });
 
   const updateTitleMutation = api.notes.updateNoteTitle.useMutation({
     onSuccess: () => {
@@ -202,7 +196,7 @@ export default function NotePage({
       setNoteTitle(note.title);
       setNoteIcon(note.icon || null);
       setNoteStarred(note.starred ?? false);
-      setNoteFolder(note.folder ?? null);
+      setNoteFolderId(note.folderId ?? null);
     }
   }, [note]);
 
@@ -418,22 +412,18 @@ export default function NotePage({
   );
 
   const handleFolderChange = useCallback(
-    (folder: string | null) => {
-      setNoteFolder(folder);
+    (folderId: number | null) => {
+      setNoteFolderId(folderId);
       updateNoteOrganizationMutation.mutate({
         id: noteIdNumber,
-        folder,
+        folderId,
       });
     },
     [noteIdNumber, updateNoteOrganizationMutation],
   );
 
-  const folderOptions = useMemo(() => {
-    const names = allNotes
-      .map((entry) => entry.folder?.trim())
-      .filter((name): name is string => Boolean(name));
-    return Array.from(new Set(names)).sort((a, b) => a.localeCompare(b));
-  }, [allNotes]);
+  const foldersQ = api.folders.list.useQuery({ sortBy: "name" });
+  const allFolders = foldersQ.data ?? [];
 
   const handleToggleAsset = useCallback((asset: NoteAssetKind) => {
     setActiveAsset((currentAsset) => (currentAsset === asset ? null : asset));
@@ -541,8 +531,8 @@ export default function NotePage({
         noteTitle={noteTitle}
         noteEmoji={noteIcon}
         noteStarred={noteStarred}
-        noteFolder={noteFolder}
-        folderOptions={folderOptions}
+        noteFolderId={noteFolderId}
+        folders={allFolders}
         isLoading={isLoading}
         onTitleChange={handleTitleChange}
         onDelete={handleDelete}

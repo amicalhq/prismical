@@ -43,6 +43,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { CreateFolderDialog } from "@/renderer/main/components/create-folder-dialog";
 import { FolderPickerDialog } from "@/renderer/main/components/folder-picker-dialog";
+import type { Folder } from "@/db/schema";
 import { useSettingsHeaderActions } from "@/renderer/main/components/settings-header-actions-context";
 import { NoteTagChips } from "./note-tag-chips";
 
@@ -70,16 +71,16 @@ export type NotePageUIProps = {
   noteTitle: string;
   noteEmoji: string | null;
   noteStarred: boolean;
-  noteFolder: string | null;
+  noteFolderId: number | null;
   noteUpdatedAt: Date;
   eventData: NoteEventData | null;
-  folderOptions: string[];
+  folders: Folder[];
   isLoading: boolean;
   onTitleChange: (value: string) => void;
   onDelete: () => void;
   onEmojiChange: (emoji: string | null) => void;
   onStarredChange: (starred: boolean) => void;
-  onFolderChange: (folder: string | null) => void;
+  onFolderChange: (folderId: number | null) => void;
   isDeleting?: boolean;
   children?: ReactNode;
 };
@@ -122,10 +123,10 @@ export default function Note({
   noteTitle,
   noteEmoji,
   noteStarred,
-  noteFolder,
+  noteFolderId,
   noteUpdatedAt,
   eventData,
-  folderOptions,
+  folders,
   isLoading,
   onTitleChange,
   onDelete,
@@ -552,16 +553,16 @@ export default function Note({
       <FolderPickerDialog
         open={showFolderPicker}
         onOpenChange={setShowFolderPicker}
-        currentFolder={noteFolder}
-        folderNames={folderOptions}
-        onFolderChange={onFolderChange}
+        currentFolderId={noteFolderId}
+        folders={folders}
+        onSelect={onFolderChange}
         onCreateFolder={handleCreateFolder}
       />
 
       <CreateFolderDialog
         open={showCreateFolderDialog}
         onOpenChange={setShowCreateFolderDialog}
-        onConfirm={(folderName) => onFolderChange(folderName)}
+        onCreated={(folderId) => onFolderChange(folderId)}
       />
     </div>
   );

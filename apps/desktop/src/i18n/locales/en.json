@@ -286,6 +286,8 @@
       "folders": "Folders",
       "noFavorites": "No favorites yet",
       "noFolders": "No folders yet",
+      "unfiled": "Unfiled",
+      "viewAllFolders": "View all folders",
       "tags": "Tags",
       "tagsViewAll": "View all",
       "noTags": "No tags yet"
@@ -648,7 +650,8 @@
         "deleteFailed": "Failed to delete note: {{message}}",
         "saveFailed": "Failed to save changes",
         "upgradedToRichNotes": "Your notes have been upgraded to rich notes with markdown formatting.",
-        "loadFailed": "Failed to load note"
+        "loadFailed": "Failed to load note",
+        "folderDeleted": "Folder deleted. {{count}} note(s) moved to Unfiled."
       },
       "note": {
         "removeEmoji": "Remove emoji",
@@ -680,6 +683,23 @@
           "cancel": "Cancel",
           "deleting": "Deleting...",
           "confirm": "Delete Note"
+        }
+      },
+      "folder": {
+        "actions": {
+          "rename": "Rename folder",
+          "delete": "Delete folder",
+          "addToFavorites": "Add to favorites",
+          "removeFromFavorites": "Remove from favorites"
+        },
+        "rename": {
+          "title": "Rename folder",
+          "placeholder": "Folder name"
+        },
+        "delete": {
+          "title": "Delete \"{{name}}\"?",
+          "description": "Notes in this folder will be moved to Unfiled. {{count}} note(s) will be unfiled.",
+          "confirm": "Delete folder"
         }
       },
       "upcomingEvents": {
@@ -749,6 +769,20 @@
         "attachFailed": "Failed to attach tag: {{message}}",
         "detachFailed": "Failed to remove tag: {{message}}",
         "favoriteFailed": "Failed to update favorite: {{message}}"
+      }
+    },
+    "folders": {
+      "title": "Folders",
+      "summary": "{{count}} folder(s) · {{notes}}",
+      "noteCount_one": "{{count}} note",
+      "noteCount_other": "{{count}} notes",
+      "searchPlaceholder": "Search folders...",
+      "empty": "No folders yet",
+      "actions": {
+        "create": "New folder"
+      },
+      "errors": {
+        "deleteFailed": "Failed to delete folder: {{message}}"
       }
     },
     "vocabulary": {

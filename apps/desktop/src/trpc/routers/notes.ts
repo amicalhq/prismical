@@ -28,6 +28,7 @@ const GetNotesSchema = z.object({
   search: z.string().optional(),
   transcriptionId: z.number().nullable().optional(),
   tagId: z.number().optional(),
+  folderId: z.number().nullable().optional(),
 });
 
 const CreateNoteSchema = z.object({
@@ -49,10 +50,10 @@ const UpdateNoteOrganizationSchema = z
   .object({
     id: z.number(),
     starred: z.boolean().optional(),
-    folder: z.string().trim().min(1).nullable().optional(),
+    folderId: z.number().int().nullable().optional(),
   })
   .refine(
-    (input) => input.starred !== undefined || input.folder !== undefined,
+    (input) => input.starred !== undefined || input.folderId !== undefined,
     {
       message: "At least one organization field must be provided",
     },
@@ -69,6 +70,7 @@ export const notesRouter = createRouter({
       search: input.search,
       transcriptionId: input.transcriptionId,
       tagId: input.tagId,
+      folderId: input.folderId,
     });
   }),
 
@@ -193,7 +195,7 @@ export const notesRouter = createRouter({
     .mutation(async ({ input }) => {
       const updated = await notesService.updateNote(input.id, {
         starred: input.starred,
-        folder: input.folder,
+        folderId: input.folderId,
       });
       if (!updated) {
         throw new Error("Failed to update note organization");

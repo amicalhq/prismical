@@ -375,6 +375,8 @@
       "folders": "フォルダー",
       "noFavorites": "お気に入りはまだありません",
       "noFolders": "フォルダーはまだありません",
+      "unfiled": "Unfiled",
+      "viewAllFolders": "View all folders",
       "tags": "タグ",
       "tagsViewAll": "すべて表示",
       "noTags": "タグはまだありません"
@@ -729,7 +731,8 @@
         "deleteFailed": "ノートの削除に失敗しました: {{message}}",
         "saveFailed": "変更の保存に失敗しました",
         "upgradedToRichNotes": "ノートがマークダウンフォーマット対応のリッチノートにアップグレードされました。",
-        "loadFailed": "ノートの読み込みに失敗しました"
+        "loadFailed": "ノートの読み込みに失敗しました",
+        "folderDeleted": "Folder deleted. {{count}} note(s) moved to Unfiled."
       },
       "note": {
         "removeEmoji": "絵文字を削除",
@@ -761,6 +764,23 @@
           "cancel": "キャンセル",
           "deleting": "削除中...",
           "confirm": "ノートを削除"
+        }
+      },
+      "folder": {
+        "actions": {
+          "rename": "Rename folder",
+          "delete": "Delete folder",
+          "addToFavorites": "Add to favorites",
+          "removeFromFavorites": "Remove from favorites"
+        },
+        "rename": {
+          "title": "Rename folder",
+          "placeholder": "Folder name"
+        },
+        "delete": {
+          "title": "Delete \"{{name}}\"?",
+          "description": "Notes in this folder will be moved to Unfiled. {{count}} note(s) will be unfiled.",
+          "confirm": "Delete folder"
         }
       },
       "upcomingEvents": {
@@ -827,6 +847,20 @@
         "attachFailed": "タグの追加に失敗しました: {{message}}",
         "detachFailed": "タグの削除に失敗しました: {{message}}",
         "favoriteFailed": "お気に入りの更新に失敗しました: {{message}}"
+      }
+    },
+    "folders": {
+      "title": "Folders",
+      "summary": "{{count}} folder(s) · {{notes}}",
+      "noteCount_one": "{{count}} note",
+      "noteCount_other": "{{count}} notes",
+      "searchPlaceholder": "Search folders...",
+      "empty": "No folders yet",
+      "actions": {
+        "create": "New folder"
+      },
+      "errors": {
+        "deleteFailed": "Failed to delete folder: {{message}}"
       }
     },
     "vocabulary": {

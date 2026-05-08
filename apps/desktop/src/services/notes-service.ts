@@ -22,7 +22,7 @@ export interface NoteCreateOptions {
   title: string;
   icon?: string | null;
   starred?: boolean;
-  folder?: string | null;
+  folderId?: number | null;
   eventId?: string | null;
 }
 
@@ -31,7 +31,7 @@ export interface NoteUpdateOptions {
   transcriptionId?: number | null;
   icon?: string | null;
   starred?: boolean;
-  folder?: string | null;
+  folderId?: number | null;
 }
 
 class NotesService {
@@ -89,7 +89,7 @@ class NotesService {
       title: options.title,
       icon: options.icon,
       starred: options.starred,
-      folder: options.folder,
+      folderId: options.folderId,
       eventId: options.eventId,
     });
 
@@ -117,6 +117,7 @@ class NotesService {
     search?: string;
     transcriptionId?: number | null;
     tagId?: number;
+    folderId?: number | null;
   }) {
     return await getNotes(options);
   }

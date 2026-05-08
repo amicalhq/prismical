@@ -8,6 +8,7 @@ import {
   uniqueIndex,
   blob,
   primaryKey,
+  type AnySQLiteColumn,
 } from "drizzle-orm/sqlite-core";
 
 // Transcriptions table
@@ -351,23 +352,29 @@ export const events = sqliteTable(
 );
 
 // Notes table
-export const notes = sqliteTable("notes", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  title: text("title").notNull(),
-  content: text("content").default(""), // Store the actual text content
-  icon: text("icon"), // Store the icon (emoji) associated with the note
-  starred: integer("starred", { mode: "boolean" }).notNull().default(false),
-  folder: text("folder"),
-  eventId: text("event_id")
-    .references(() => events.id) // No onDelete cascade — events outlive notes so re-linking is possible
-    .unique(),
-  createdAt: integer("created_at", { mode: "timestamp" })
-    .notNull()
-    .default(sql`(unixepoch())`),
-  updatedAt: integer("updated_at", { mode: "timestamp" })
-    .notNull()
-    .default(sql`(unixepoch())`),
-});
+export const notes = sqliteTable(
+  "notes",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    title: text("title").notNull(),
+    content: text("content").default(""), // Store the actual text content
+    icon: text("icon"), // Store the icon (emoji) associated with the note
+    starred: integer("starred", { mode: "boolean" }).notNull().default(false),
+    folderId: integer("folder_id").references(() => folders.id, {
+      onDelete: "set null",
+    }),
+    eventId: text("event_id")
+      .references(() => events.id) // No onDelete cascade — events outlive notes so re-linking is possible
+      .unique(),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (table) => [index("notes_folder_id_idx").on(table.folderId)],
+);
 
 // Note artifacts table — generated / synthesized content attached to a note
 // (AI summaries, action items, etc.). `notes.content` stays as the user's raw
@@ -442,6 +449,35 @@ export const noteTags = sqliteTable(
   ],
 );
 
+// Folders table — first-class folder entity. Notes have a single optional folder via notes.folderId.
+// Names preserve user casing; uniqueness is case-insensitive via a UNIQUE index on LOWER(name).
+// parentId enables nested folders at the schema level; UI is flat for now.
+export const folders = sqliteTable(
+  "folders",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    name: text("name").notNull(),
+    parentId: integer("parent_id").references((): AnySQLiteColumn => folders.id, {
+      onDelete: "set null",
+    }),
+    isFavorite: integer("is_favorite", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (table) => [
+    uniqueIndex("folders_lower_name_unique").on(sql`LOWER(${table.name})`),
+    index("folders_created_at_idx").on(table.createdAt),
+    index("folders_is_favorite_idx").on(table.isFavorite),
+    index("folders_parent_id_idx").on(table.parentId),
+  ],
+);
+
 // Yjs updates table for persistence
 export const yjsUpdates = sqliteTable(
   "yjs_updates",
@@ -488,3 +524,5 @@ export type Tag = typeof tags.$inferSelect;
 export type NewTag = typeof tags.$inferInsert;
 export type NoteTag = typeof noteTags.$inferSelect;
 export type NewNoteTag = typeof noteTags.$inferInsert;
+export type Folder = typeof folders.$inferSelect;
+export type NewFolder = typeof folders.$inferInsert;

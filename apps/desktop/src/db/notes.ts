@@ -1,4 +1,4 @@
-import { eq, desc, asc, like, and, inArray } from "drizzle-orm";
+import { eq, desc, asc, like, and, inArray, isNull } from "drizzle-orm";
 import { db } from "./index";
 import {
   notes,
@@ -71,6 +71,7 @@ export async function getNotes(
     sortOrder?: "asc" | "desc";
     search?: string;
     tagId?: number;
+    folderId?: number | null; // null = unfiled-only
   } = {},
 ): Promise<NoteWithEvent[]> {
   const {
@@ -80,6 +81,7 @@ export async function getNotes(
     sortOrder = "desc",
     search,
     tagId,
+    folderId,
   } = options;
 
   // If filtering by tag, pre-fetch the matching note ids.
@@ -106,6 +108,11 @@ export async function getNotes(
   }
   if (restrictToNoteIds !== null) {
     conditions.push(inArray(notes.id, restrictToNoteIds));
+  }
+  if (folderId !== undefined) {
+    conditions.push(
+      folderId === null ? isNull(notes.folderId) : eq(notes.folderId, folderId),
+    );
   }
 
   if (conditions.length > 0) {

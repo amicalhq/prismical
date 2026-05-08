@@ -375,6 +375,8 @@
       "folders": "Carpetas",
       "noFavorites": "Aún no hay favoritos",
       "noFolders": "Aún no hay carpetas",
+      "unfiled": "Unfiled",
+      "viewAllFolders": "View all folders",
       "tags": "Etiquetas",
       "tagsViewAll": "Ver todas",
       "noTags": "Aún no hay etiquetas"
@@ -729,7 +731,8 @@
         "deleteFailed": "No se pudo eliminar la nota: {{message}}",
         "saveFailed": "No se pudieron guardar los cambios",
         "upgradedToRichNotes": "Tus notas han sido actualizadas a notas enriquecidas con formato markdown.",
-        "loadFailed": "No se pudo cargar la nota"
+        "loadFailed": "No se pudo cargar la nota",
+        "folderDeleted": "Folder deleted. {{count}} note(s) moved to Unfiled."
       },
       "note": {
         "removeEmoji": "Quitar emoji",
@@ -761,6 +764,23 @@
           "cancel": "Cancelar",
           "deleting": "Eliminando...",
           "confirm": "Eliminar nota"
+        }
+      },
+      "folder": {
+        "actions": {
+          "rename": "Rename folder",
+          "delete": "Delete folder",
+          "addToFavorites": "Add to favorites",
+          "removeFromFavorites": "Remove from favorites"
+        },
+        "rename": {
+          "title": "Rename folder",
+          "placeholder": "Folder name"
+        },
+        "delete": {
+          "title": "Delete \"{{name}}\"?",
+          "description": "Notes in this folder will be moved to Unfiled. {{count}} note(s) will be unfiled.",
+          "confirm": "Delete folder"
         }
       },
       "upcomingEvents": {
@@ -830,6 +850,20 @@
         "attachFailed": "No se pudo adjuntar la etiqueta: {{message}}",
         "detachFailed": "No se pudo quitar la etiqueta: {{message}}",
         "favoriteFailed": "No se pudo actualizar el favorito: {{message}}"
+      }
+    },
+    "folders": {
+      "title": "Folders",
+      "summary": "{{count}} folder(s) · {{notes}}",
+      "noteCount_one": "{{count}} note",
+      "noteCount_other": "{{count}} notes",
+      "searchPlaceholder": "Search folders...",
+      "empty": "No folders yet",
+      "actions": {
+        "create": "New folder"
+      },
+      "errors": {
+        "deleteFailed": "Failed to delete folder: {{message}}"
       }
     },
     "vocabulary": {
