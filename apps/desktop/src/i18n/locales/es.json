@@ -776,7 +776,8 @@
     },
     "tags": {
       "title": "Etiquetas",
-      "summary": "{{count}} etiquetas · {{noteCount}} notas",
+      "summary_one": "{{count}} etiqueta · {{notes}}",
+      "summary_other": "{{count}} etiquetas · {{notes}}",
       "searchPlaceholder": "Buscar etiquetas…",
       "sortRecent": "Recientes",
       "sortName": "Nombre",

@@ -19,14 +19,25 @@ describe("tag-colors", () => {
   });
 
   describe("nextAutoColor", () => {
-    it("rotates through the 7 presets", () => {
-      for (let i = 0; i < 7; i++) {
-        expect(nextAutoColor(i)).toBe(TAG_PRESETS[i]);
-      }
+    it("returns the first preset when nothing is in use", () => {
+      expect(nextAutoColor([])).toBe(TAG_PRESETS[0]);
     });
-    it("wraps after 7", () => {
-      expect(nextAutoColor(7)).toBe(TAG_PRESETS[0]);
-      expect(nextAutoColor(15)).toBe(TAG_PRESETS[1]);
+    it("skips a preset that is already in use once", () => {
+      expect(nextAutoColor([TAG_PRESETS[0]])).toBe(TAG_PRESETS[1]);
+    });
+    it("picks the lowest-frequency preset", () => {
+      // Presets 0..5 each used once; preset 6 used zero times → preset 6 wins.
+      const colors = TAG_PRESETS.slice(0, 6);
+      expect(nextAutoColor(colors)).toBe(TAG_PRESETS[6]);
+    });
+    it("ignores non-preset colors when computing frequency", () => {
+      const colors = ["#000000", "#ffffff", TAG_PRESETS[0]];
+      expect(nextAutoColor(colors)).toBe(TAG_PRESETS[1]);
+    });
+    it("breaks ties toward the lower-index preset", () => {
+      // All zero-use → first preset; all used once → first preset.
+      const oneEach = [...TAG_PRESETS];
+      expect(nextAutoColor(oneEach)).toBe(TAG_PRESETS[0]);
     });
   });
 

@@ -60,7 +60,7 @@ export function AllTagsPage() {
       <p className="text-sm text-muted-foreground">
         {t("settings.tags.summary", {
           count: q.data?.length ?? 0,
-          noteCount: totalNotes,
+          notes: t("settings.tags.noteCount", { count: totalNotes }),
         })}
       </p>
 

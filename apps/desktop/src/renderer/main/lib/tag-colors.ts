@@ -19,11 +19,25 @@ export function normalizeHex(s: string): string | null {
   return isValidHex(lower) ? lower : null;
 }
 
-export function nextAutoColor(existingTagCount: number): string {
-  const i =
-    ((existingTagCount % TAG_PRESETS.length) + TAG_PRESETS.length) %
-    TAG_PRESETS.length;
-  return TAG_PRESETS[i];
+/**
+ * Pick the preset that's used by the fewest existing tags. Ties go to the
+ * preset with the lowest index in TAG_PRESETS for stability.
+ */
+export function nextAutoColor(existingColors: readonly string[]): string {
+  const usage = new Map<string, number>(TAG_PRESETS.map((c) => [c, 0]));
+  for (const c of existingColors) {
+    if (usage.has(c)) usage.set(c, (usage.get(c) ?? 0) + 1);
+  }
+  let best: (typeof TAG_PRESETS)[number] = TAG_PRESETS[0];
+  let bestCount = usage.get(best) ?? 0;
+  for (const c of TAG_PRESETS) {
+    const n = usage.get(c) ?? 0;
+    if (n < bestCount) {
+      best = c;
+      bestCount = n;
+    }
+  }
+  return best;
 }
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } {

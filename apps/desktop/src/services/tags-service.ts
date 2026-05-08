@@ -2,7 +2,6 @@ import type { LibSQLDatabase } from "drizzle-orm/libsql";
 import * as tagDb from "../db/tags";
 import { db as defaultDb } from "../db";
 import { tags as tagsTable } from "../db/schema";
-import { sql } from "drizzle-orm";
 import { normalizeHex, nextAutoColor } from "../renderer/main/lib/tag-colors";
 import type { Tag } from "../db/schema";
 
@@ -54,10 +53,10 @@ export class TagsService {
   }
 
   private async pickAutoColor(): Promise<string> {
-    const [{ count }] = await this.db
-      .select({ count: sql<number>`COUNT(*)` })
+    const rows = await this.db
+      .select({ color: tagsTable.color })
       .from(tagsTable);
-    return nextAutoColor(Number(count));
+    return nextAutoColor(rows.map((r) => r.color));
   }
 
   async createTag(input: CreateTagInput): Promise<Tag> {
