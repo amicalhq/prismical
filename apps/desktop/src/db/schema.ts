@@ -442,6 +442,30 @@ export const noteTags = sqliteTable(
   ],
 );
 
+// Folders table — first-class folder entity. Notes have a single optional folder via notes.folderId.
+// Names preserve user casing; uniqueness is case-insensitive via a UNIQUE index on LOWER(name).
+export const folders = sqliteTable(
+  "folders",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    name: text("name").notNull(),
+    isFavorite: integer("is_favorite", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (table) => [
+    uniqueIndex("folders_lower_name_unique").on(sql`LOWER(${table.name})`),
+    index("folders_created_at_idx").on(table.createdAt),
+    index("folders_is_favorite_idx").on(table.isFavorite),
+  ],
+);
+
 // Yjs updates table for persistence
 export const yjsUpdates = sqliteTable(
   "yjs_updates",
@@ -488,3 +512,5 @@ export type Tag = typeof tags.$inferSelect;
 export type NewTag = typeof tags.$inferInsert;
 export type NoteTag = typeof noteTags.$inferSelect;
 export type NewNoteTag = typeof noteTags.$inferInsert;
+export type Folder = typeof folders.$inferSelect;
+export type NewFolder = typeof folders.$inferInsert;
