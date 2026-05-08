@@ -450,8 +450,10 @@ export const noteTags = sqliteTable(
 );
 
 // Folders table — first-class folder entity. Notes have a single optional folder via notes.folderId.
-// Names preserve user casing; uniqueness is case-insensitive via a UNIQUE index on LOWER(name).
-// parentId enables nested folders at the schema level; UI is flat for now.
+// Names preserve user casing; uniqueness is sibling-scoped via a composite UNIQUE index on
+// (LOWER(name), COALESCE(parent_id, 0)) — two folders can share a name under different parents,
+// but two top-level folders or two siblings under the same parent cannot.
+// parentId enables nested folders at the schema level.
 export const folders = sqliteTable(
   "folders",
   {
