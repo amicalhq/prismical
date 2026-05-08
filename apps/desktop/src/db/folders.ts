@@ -1,4 +1,4 @@
-import { asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
 import { folders, notes, type Folder, type NewFolder } from "./schema";
 
@@ -205,6 +205,81 @@ export async function getFolderDeletePreview(
     subfolderCount: ids.length - 1,
     noteCount: Number(count),
   };
+}
+
+// Raw shape returned by db.all() for the recursive CTE — all values are
+// SQLite primitives (integers for timestamps and booleans, null for NULLs).
+interface RawFolderWithCount {
+  id: number;
+  name: string;
+  parent_id: number | null;
+  is_favorite: number; // 0 | 1
+  created_at: number; // Unix seconds
+  updated_at: number; // Unix seconds
+  note_count: number;
+}
+
+/**
+ * Returns every folder with a recursive descendant note count — i.e. the
+ * count includes notes in the folder itself AND in any nested subfolder.
+ *
+ * Implemented via a `WITH RECURSIVE` CTE because SQLite doesn't support
+ * hierarchical aggregation through the regular query builder.
+ */
+export async function listWithRecursiveCounts(
+  db: DB,
+): Promise<FolderWithCount[]> {
+  // The CTE walks the folder tree top-down:
+  //   anchor:    seed with every folder as its own root
+  //   recursive: extend by following parent_id upward so that each
+  //              descendant row carries the ancestor's root_id.
+  // Then we join notes to count per (root_id) and LEFT JOIN back to
+  // folders to get 0 for folders with no notes anywhere in their subtree.
+  const rows = await db.all<RawFolderWithCount>(sql`
+    WITH RECURSIVE descendants(root_id, folder_id) AS (
+      SELECT id AS root_id, id AS folder_id FROM folders
+      UNION ALL
+      SELECT d.root_id, f.id
+      FROM folders f
+      INNER JOIN descendants d ON f.parent_id = d.folder_id
+    )
+    SELECT
+      f.id,
+      f.name,
+      f.parent_id,
+      f.is_favorite,
+      f.created_at,
+      f.updated_at,
+      COUNT(n.id) AS note_count
+    FROM folders f
+    LEFT JOIN descendants d ON d.root_id = f.id
+    LEFT JOIN notes n ON n.folder_id = d.folder_id
+    GROUP BY f.id
+  `);
+
+  return rows.map(
+    (r): FolderWithCount => ({
+      id: r.id,
+      name: r.name,
+      parentId: r.parent_id,
+      isFavorite: r.is_favorite === 1,
+      createdAt: new Date(r.created_at * 1000),
+      updatedAt: new Date(r.updated_at * 1000),
+      noteCount: Number(r.note_count),
+    }),
+  );
+}
+
+/**
+ * Returns the count of notes that have no folder (folderId IS NULL).
+ * These appear as the "Unfiled" pseudo-row in the notes browser.
+ */
+export async function countUnfiled(db: DB): Promise<number> {
+  const [{ count }] = await db
+    .select({ count: sql<number>`COUNT(*)` })
+    .from(notes)
+    .where(isNull(notes.folderId));
+  return Number(count);
 }
 
 export interface FolderDeleteResult {

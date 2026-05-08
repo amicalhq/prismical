@@ -147,4 +147,31 @@ describe("db/folders", () => {
     expect(new Set(ids)).toEqual(new Set([root.id, child.id, grand.id]));
     expect(ids).not.toContain(sibling.id);
   });
+
+  it("listWithRecursiveCounts returns descendant note counts", async () => {
+    const { createFolder, listWithRecursiveCounts } = await import("@db/folders");
+    const work = await createFolder(testDb.db, { name: "Work" });
+    const q4 = await createFolder(testDb.db, { name: "Q4", parentId: work.id });
+    await createFolder(testDb.db, { name: "Personal" });
+
+    await testDb.db.insert(notes).values({ title: "n1", folderId: work.id });
+    await testDb.db.insert(notes).values({ title: "n2", folderId: q4.id });
+    await testDb.db.insert(notes).values({ title: "orphan" });
+
+    const got = await listWithRecursiveCounts(testDb.db);
+    const byName = Object.fromEntries(got.map((r) => [r.name, r.noteCount]));
+    expect(byName.Work).toBe(2); // n1 in Work + n2 in Q4
+    expect(byName.Q4).toBe(1);
+    expect(byName.Personal).toBe(0);
+  });
+
+  it("countUnfiled returns notes with NULL folderId", async () => {
+    const { createFolder, countUnfiled } = await import("@db/folders");
+    await testDb.db.insert(notes).values({ title: "u1" });
+    await testDb.db.insert(notes).values({ title: "u2" });
+    const f = await createFolder(testDb.db, { name: "F" });
+    await testDb.db.insert(notes).values({ title: "filed", folderId: f.id });
+
+    expect(await countUnfiled(testDb.db)).toBe(2);
+  });
 });
