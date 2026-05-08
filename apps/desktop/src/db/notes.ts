@@ -88,7 +88,14 @@ export async function getNotes(
     folderIds,
   } = options;
 
-  // Resolve tag filter: tagIds wins over tagId. Empty tagIds = no filter.
+  // Resolve tag filter. Precedence:
+  //   - tagIds non-empty   → AND-filter on those ids
+  //   - tagIds empty / undefined AND tagId set → legacy single-tag filter
+  //   - both empty / undefined → no tag filter
+  // Note: passing { tagId: 5, tagIds: [] } falls back to tagId=5. Callers
+  // that want to clear a tag filter should pass neither field rather than
+  // an explicit empty array alongside a legacy tagId. Once every caller
+  // uses tagIds, tagId can be removed.
   let restrictToNoteIds: number[] | null = null;
   const effectiveTagIds =
     tagIds && tagIds.length > 0
