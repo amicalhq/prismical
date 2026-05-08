@@ -315,7 +315,8 @@
       },
       "notes": {
         "today": "Today",
-        "earlier": "Earlier"
+        "earlier": "Earlier",
+        "all": "Notes"
       }
     },
     "preferences": {

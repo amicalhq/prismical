@@ -132,7 +132,11 @@ export function NotesList({
         {earlierNotes.length > 0 && (
           <section className="space-y-2">
             <h2 className="text-sm font-medium text-muted-foreground px-3">
-              {t("settings.home.notes.earlier")}
+              {t(
+                todayNotes.length > 0
+                  ? "settings.home.notes.earlier"
+                  : "settings.home.notes.all",
+              )}
             </h2>
             <div>
               {earlierNotes.map((note) => (

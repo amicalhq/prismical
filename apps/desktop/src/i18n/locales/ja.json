@@ -403,7 +403,8 @@
       },
       "notes": {
         "today": "今日",
-        "earlier": "以前"
+        "earlier": "以前",
+        "all": "ノート"
       }
     },
     "preferences": {

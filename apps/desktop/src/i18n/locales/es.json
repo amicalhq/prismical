@@ -403,7 +403,8 @@
       },
       "notes": {
         "today": "Hoy",
-        "earlier": "Anteriores"
+        "earlier": "Anteriores",
+        "all": "Notas"
       }
     },
     "preferences": {
