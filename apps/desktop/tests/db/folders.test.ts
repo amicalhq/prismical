@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import { folders, notes } from "@db/schema";
+import { notes } from "@db/schema";
 import {
   createTestDatabase,
   deleteTestDatabase,
