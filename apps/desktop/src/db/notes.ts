@@ -1,4 +1,4 @@
-import { eq, desc, asc, like, and, inArray, isNull } from "drizzle-orm";
+import { eq, desc, asc, like, and, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "./index";
 import {
   notes,
@@ -70,8 +70,10 @@ export async function getNotes(
     sortBy?: "title" | "updatedAt" | "createdAt";
     sortOrder?: "asc" | "desc";
     search?: string;
-    tagId?: number;
-    folderId?: number | null; // null = notes with no folder
+    tagId?: number;             // legacy single-tag filter
+    tagIds?: number[];          // NEW: AND-mode multi-tag filter
+    folderId?: number | null;   // legacy single-folder filter; null = unfiled
+    folderIds?: number[];       // NEW: IN-mode multi-folder filter
   } = {},
 ): Promise<NoteWithEvent[]> {
   const {
@@ -81,16 +83,27 @@ export async function getNotes(
     sortOrder = "desc",
     search,
     tagId,
+    tagIds,
     folderId,
+    folderIds,
   } = options;
 
-  // If filtering by tag, pre-fetch the matching note ids.
+  // Resolve tag filter: tagIds wins over tagId. Empty tagIds = no filter.
   let restrictToNoteIds: number[] | null = null;
-  if (tagId !== undefined) {
+  const effectiveTagIds =
+    tagIds && tagIds.length > 0
+      ? tagIds
+      : tagId !== undefined
+        ? [tagId]
+        : null;
+
+  if (effectiveTagIds !== null) {
     const rows = await db
       .select({ id: noteTags.noteId })
       .from(noteTags)
-      .where(eq(noteTags.tagId, tagId));
+      .where(inArray(noteTags.tagId, effectiveTagIds))
+      .groupBy(noteTags.noteId)
+      .having(sql`COUNT(DISTINCT ${noteTags.tagId}) = ${effectiveTagIds.length}`);
     restrictToNoteIds = rows.map((r) => r.id);
     if (restrictToNoteIds.length === 0) return [];
   }
@@ -109,7 +122,9 @@ export async function getNotes(
   if (restrictToNoteIds !== null) {
     conditions.push(inArray(notes.id, restrictToNoteIds));
   }
-  if (folderId !== undefined) {
+  if (folderIds && folderIds.length > 0) {
+    conditions.push(inArray(notes.folderId, folderIds));
+  } else if (folderId !== undefined) {
     conditions.push(
       folderId === null ? isNull(notes.folderId) : eq(notes.folderId, folderId),
     );
