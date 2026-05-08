@@ -117,24 +117,23 @@ describe("db/folders", () => {
     await expect(createFolder(testDb.db, { name: "WORK" })).rejects.toThrow();
   });
 
-  it("listAllForTree returns every folder ordered by parent then name", async () => {
+  it("listAllForTree returns top-level rows first, then siblings grouped by parent and sorted by name", async () => {
     const { createFolder, listAllForTree } = await import("@db/folders");
     const work = await createFolder(testDb.db, { name: "Work" });
-    const personal = await createFolder(testDb.db, { name: "Personal" });
-    await createFolder(testDb.db, { name: "Hiring", parentId: work.id });
+    await createFolder(testDb.db, { name: "Personal" });
     await createFolder(testDb.db, { name: "Q4", parentId: work.id });
+    await createFolder(testDb.db, { name: "Hiring", parentId: work.id });
 
     const got = await listAllForTree(testDb.db);
-    const names = got.map((f) => f.name);
-    expect(names).toContain("Work");
-    expect(names).toContain("Personal");
-    expect(names).toContain("Hiring");
-    expect(names).toContain("Q4");
-    // Top-level rows precede their children
-    const workIdx = names.indexOf("Work");
-    const hiringIdx = names.indexOf("Hiring");
-    expect(workIdx).toBeLessThan(hiringIdx);
-    void personal;
+    // Pin the full order: top-level rows alphabetical first (Personal, Work),
+    // then Work's children alphabetical (Hiring, Q4). A regression in any of
+    // the three ORDER BY terms changes this sequence.
+    expect(got.map((f) => f.name)).toEqual([
+      "Personal",
+      "Work",
+      "Hiring",
+      "Q4",
+    ]);
   });
 
   it("subtreeIds returns root + descendants", async () => {

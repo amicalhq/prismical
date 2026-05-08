@@ -68,8 +68,12 @@ export async function listFolders(
 }
 
 export async function listAllForTree(db: DB): Promise<Folder[]> {
-  // Ordering puts top-level rows (parent_id NULL) first, then groups by parent
-  // id so children appear after their parent, with siblings sorted by name.
+  // Ordering puts top-level rows (parent_id NULL) first, then groups siblings
+  // by direct parent_id, then sorts each group by name. NOTE: this is not a
+  // depth-ordered traversal — it interleaves descendants by their direct
+  // parent's id, not by ancestry. Callers building a tree should walk
+  // parent_id pointers themselves; this query exists to fetch every row in
+  // one round-trip, not to provide a guaranteed pre-order.
   return await db
     .select()
     .from(folders)
