@@ -1,4 +1,3 @@
-import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { MoreHorizontal, Pencil, Star, StarOff, Trash2 } from "lucide-react";
