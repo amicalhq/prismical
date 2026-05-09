@@ -783,7 +783,8 @@
       "filterBar": {
         "placeholder": "Filter by tag…",
         "overflow": "{{count}} more selected",
-        "manage": "Manage tags…"
+        "manage": "Manage tags…",
+        "clear": "Clear tag filter"
       },
       "emptyFiltered": {
         "title": "No notes tagged #{{name}} yet",

@@ -864,7 +864,8 @@
       "filterBar": {
         "placeholder": "Filtrar por etiqueta…",
         "overflow": "{{count}} más seleccionadas",
-        "manage": "Gestionar etiquetas…"
+        "manage": "Gestionar etiquetas…",
+        "clear": "Limpiar filtro de etiquetas"
       },
       "emptyFiltered": {
         "title": "Aún no hay notas etiquetadas con #{{name}}",

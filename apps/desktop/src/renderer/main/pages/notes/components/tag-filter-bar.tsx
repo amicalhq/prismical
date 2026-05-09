@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Plus, Settings2, Star } from "lucide-react";
+import { Plus, Settings2, Star, X } from "lucide-react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { Trans, useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -22,14 +22,125 @@ import { ManageTagsDialog } from "./manage-tags-dialog";
 
 const TAG_NAME_RE = /^[a-z0-9_-]{1,32}$/;
 
-// Cap visible chips so the bar doesn't sprawl. Hidden chips remain selected
-// — users see/manage them via the dropdown (each row checks when selected).
-const MAX_VISIBLE_CHIPS = 2;
-
 // Sentinel values for non-tag actions inside the combobox list. They're
-// strings cast to satisfy the Combobox<number, true> generic — see comments
-// at each call site.
+// strings cast to satisfy the Combobox<number, true> generic and intercepted
+// in handleValueChange so they never leak into the URL's number[] tags param.
 const MANAGE_VALUE = "__manage_tags__";
+
+// Reserved space inside the chips container (in px) for the typeahead input
+// and the "+N" overflow indicator (when needed). Tuned against the visual
+// design — adjust if you change `min-w-12` on the input or the indicator's
+// padding/font.
+const INPUT_RESERVE = 56;
+const INDICATOR_RESERVE = 32;
+const CHIP_GAP = 6;
+const CLEAR_RESERVE = 24;
+
+function ChipBody({ tag }: { tag: { color: string; name: string } }) {
+  return (
+    <span className="flex items-baseline gap-0.5">
+      <span className="font-mono font-bold leading-none">#</span>
+      <span className="truncate">{tag.name}</span>
+    </span>
+  );
+}
+
+/**
+ * Plain-div chip used in a hidden mirror layer to measure each chip's
+ * natural width. Mirrors `ComboboxChip`'s default classes plus an X-button
+ * placeholder so its `offsetWidth` matches the rendered chip.
+ */
+function MeasureChip({ tag }: { tag: { color: string; name: string } }) {
+  return (
+    <div
+      className="flex h-[calc(--spacing(5.5))] w-fit items-center gap-1 rounded-sm bg-transparent px-1.5 text-xs font-medium whitespace-nowrap"
+      style={{ backgroundColor: `${tag.color}26`, color: tag.color }}
+    >
+      <ChipBody tag={tag} />
+      {/* Width-parity placeholder for the chip-remove icon-xs Button. */}
+      <span aria-hidden="true" className="-ml-1 inline-block size-6" />
+    </div>
+  );
+}
+
+/**
+ * Dynamic chip overflow: render every selected chip in an off-screen
+ * measurement layer to read each `offsetWidth`, then greedy-fit them
+ * against the container's available inner width minus space reserved for
+ * the input, indicator, and clear button. Re-runs on container resize and
+ * when the chip set itself changes (add/remove/rename/recolor).
+ *
+ * Returns the count of chips that fit visibly. The remainder collapse into
+ * a "+N" indicator so the bar never overflows or clips.
+ */
+function useChipOverflow(
+  containerRef: React.RefObject<HTMLDivElement | null>,
+  measureRef: React.RefObject<HTMLDivElement | null>,
+  totalChips: number,
+  hasClear: boolean,
+): number {
+  const [visibleCount, setVisibleCount] = React.useState(totalChips);
+
+  React.useLayoutEffect(() => {
+    const container = containerRef.current;
+    const measure = measureRef.current;
+    if (!container || !measure) return;
+
+    const compute = () => {
+      const chips = Array.from(measure.children) as HTMLElement[];
+      if (chips.length === 0) {
+        setVisibleCount(0);
+        return;
+      }
+
+      const cs = getComputedStyle(container);
+      const innerWidth =
+        container.clientWidth -
+        parseFloat(cs.paddingLeft || "0") -
+        parseFloat(cs.paddingRight || "0");
+
+      const baseReserve = INPUT_RESERVE + (hasClear ? CLEAR_RESERVE : 0);
+
+      // Pass 1: do all chips fit without an overflow indicator?
+      let allTotal = 0;
+      for (let i = 0; i < chips.length; i++) {
+        allTotal += chips[i].offsetWidth + (i > 0 ? CHIP_GAP : 0);
+      }
+      if (allTotal + baseReserve <= innerWidth) {
+        setVisibleCount(chips.length);
+        return;
+      }
+
+      // Pass 2: reserve room for the indicator and greedy-fit the rest.
+      const limit = innerWidth - baseReserve - INDICATOR_RESERVE;
+      let used = 0;
+      let count = 0;
+      for (let i = 0; i < chips.length; i++) {
+        const w = chips[i].offsetWidth + (i > 0 ? CHIP_GAP : 0);
+        if (used + w > limit) break;
+        used += w;
+        count++;
+      }
+      setVisibleCount(count);
+    };
+
+    compute();
+    // Re-fit on container width changes.
+    const containerObserver = new ResizeObserver(compute);
+    containerObserver.observe(container);
+    // Re-fit when measurement chips themselves change size (e.g. tag
+    // rename or recolor while the bar is mounted).
+    const measureObserver = new ResizeObserver(compute);
+    measureObserver.observe(measure);
+    return () => {
+      containerObserver.disconnect();
+      measureObserver.disconnect();
+    };
+  }, [containerRef, measureRef, totalChips, hasClear]);
+
+  // Clamp in case the chip count shrank between effect runs.
+  return Math.min(visibleCount, totalChips);
+}
 
 /**
  * Tag filter for the /notes browser. Renders an integrated chip-input
@@ -47,7 +158,19 @@ export function TagFilterBar() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const utils = api.useUtils();
+
+  // base-ui anchor (RefObject) for popover positioning. We share the same
+  // DOM node with our own ResizeObserver via a callback ref below.
   const anchor = useComboboxAnchor();
+  const containerRef = React.useRef<HTMLDivElement | null>(null);
+  const setContainerRef = React.useCallback(
+    (node: HTMLDivElement | null) => {
+      anchor.current = node;
+      containerRef.current = node;
+    },
+    [anchor],
+  );
+  const measureRef = React.useRef<HTMLDivElement>(null);
 
   const search = useSearch({ strict: false }) as { tags?: number[] };
   const selectedIds = React.useMemo(() => search.tags ?? [], [search.tags]);
@@ -79,6 +202,24 @@ export function TagFilterBar() {
   const exact = all.find((tag) => tag.name.toLowerCase() === lc);
   const showCreate = lc.length > 0 && TAG_NAME_RE.test(lc) && !exact;
 
+  // Resolve which selected ids correspond to known tags right now (data may
+  // not be loaded on first render). The measurement layer renders these.
+  const resolved = React.useMemo(
+    () =>
+      selectedIds
+        .map((id) => tagById.get(id))
+        .filter((t): t is NonNullable<typeof t> => !!t),
+    [selectedIds, tagById],
+  );
+
+  const hasClear = selectedIds.length > 0 || query.length > 0;
+  const visibleCount = useChipOverflow(
+    containerRef,
+    measureRef,
+    resolved.length,
+    hasClear,
+  );
+
   const createTag = api.tags.create.useMutation({
     onSuccess: (created) => {
       utils.tags.invalidate();
@@ -91,21 +232,16 @@ export function TagFilterBar() {
       ),
   });
 
-  // Picking a tag normally fires onValueChange with the new array. The
-  // create / manage rows aren't real tag values; we intercept them here
-  // and reset their state-leak before the array roundtrip lands.
+  // Tag picks fire onValueChange with the new array. The "create" and
+  // "manage" sentinels piggyback on that signal — we intercept and strip
+  // them so they never reach the URL.
   const handleValueChange = (next: unknown) => {
     const ids = (next as Array<number | string>) ?? [];
-    // If the manage sentinel was added by a click, swallow it and open
-    // the dialog instead — never write it into the URL.
     if (ids.includes(MANAGE_VALUE)) {
       setManageOpen(true);
-      // Drop both sentinels to keep selection clean.
       setTags(ids.filter((v): v is number => typeof v === "number"));
       return;
     }
-    // If a "__create_<name>" sentinel was added, fire createTag and
-    // strip the sentinel — the new id is added in createTag.onSuccess.
     if (ids.some((v) => typeof v === "string" && v.startsWith("__create_"))) {
       if (showCreate && !createTag.isPending) {
         createTag.mutate({ name: lc });
@@ -116,8 +252,26 @@ export function TagFilterBar() {
     setTags(ids as number[]);
   };
 
+  const handleClear = () => {
+    setTags([]);
+    setQuery("");
+  };
+
   return (
     <>
+      {/* Hidden measurement mirror — renders every selected chip with the
+          same visual structure as the visible chips so we can read each
+          one's offsetWidth and decide which fit the container. */}
+      <div
+        ref={measureRef}
+        aria-hidden="true"
+        className="pointer-events-none fixed -top-[9999px] -left-[9999px] flex gap-1.5"
+      >
+        {resolved.map((tag) => (
+          <MeasureChip key={tag.id} tag={tag} />
+        ))}
+      </div>
+
       <Combobox<number, true>
         multiple
         value={selectedIds}
@@ -127,41 +281,32 @@ export function TagFilterBar() {
         filter={null}
       >
         <ComboboxChips
-          ref={anchor}
+          ref={setContainerRef}
           className="h-9 w-56 flex-nowrap overflow-clip rounded-lg border-transparent bg-accent/40 px-2 hover:bg-accent/60 dark:bg-accent/30 dark:hover:bg-accent/50"
         >
           <ComboboxValue>
             {(values) => {
               const ids = (values as number[]) ?? [];
-              const visible = ids.slice(0, MAX_VISIBLE_CHIPS);
+              // Visible ids = the leading slice that fits, intersected with
+              // ids the data layer knows about (avoids rendering empty chips
+              // for stale ids while the list query is loading).
+              const knownIds = ids.filter((id) => tagById.has(id));
+              const visible = knownIds.slice(0, visibleCount);
               const overflow = ids.length - visible.length;
               return (
                 <>
                   {visible.map((id) => {
-                    const tag = tagById.get(id);
+                    const tag = tagById.get(id)!;
                     return (
                       <ComboboxChip
                         key={id}
                         className="gap-1 bg-transparent px-1.5"
-                        style={
-                          tag
-                            ? {
-                                backgroundColor: `${tag.color}26`,
-                                color: tag.color,
-                              }
-                            : undefined
-                        }
+                        style={{
+                          backgroundColor: `${tag.color}26`,
+                          color: tag.color,
+                        }}
                       >
-                        {tag ? (
-                          <span className="flex max-w-[80px] items-baseline gap-0.5">
-                            <span className="font-mono font-bold leading-none">
-                              #
-                            </span>
-                            <span className="truncate">{tag.name}</span>
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">#…</span>
-                        )}
+                        <ChipBody tag={tag} />
                       </ComboboxChip>
                     );
                   })}
@@ -187,6 +332,16 @@ export function TagFilterBar() {
               );
             }}
           </ComboboxValue>
+          {hasClear && (
+            <button
+              type="button"
+              onClick={handleClear}
+              aria-label={t("settings.tags.filterBar.clear")}
+              className="ml-auto inline-flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
         </ComboboxChips>
 
         <ComboboxContent anchor={anchor} className="w-72">
@@ -213,8 +368,8 @@ export function TagFilterBar() {
 
             {showCreate && (
               <ComboboxItem
-                // Cast: Combobox is generic over number, but this row's
-                // value is a string sentinel intercepted in handleValueChange.
+                // Cast: Combobox is generic over number, but this row's value
+                // is a string sentinel intercepted in handleValueChange.
                 value={`__create_${lc}` as unknown as number}
                 className="text-muted-foreground"
               >

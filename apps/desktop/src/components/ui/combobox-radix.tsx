@@ -293,6 +293,7 @@ function useComboboxAnchor() {
 export {
   Combobox,
   ComboboxInput,
+  ComboboxClear,
   ComboboxContent,
   ComboboxList,
   ComboboxItem,
