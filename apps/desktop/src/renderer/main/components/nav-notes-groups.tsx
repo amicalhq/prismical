@@ -475,8 +475,8 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
                     <SidebarMenuItem key={`favorite-folder-${entry.folder.id}`}>
                       <SidebarMenuButton asChild>
                         <Link
-                          to="/folders"
-                          search={{ folderId: entry.folder.id }}
+                          to="/notes"
+                          search={{ folder: entry.folder.id }}
                           aria-label={entry.folder.name}
                         >
                           <Folder className="size-4" />
@@ -518,7 +518,7 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
             className="top-1.5 right-2 aspect-auto h-5 w-auto px-1.5 text-xs font-medium text-sidebar-foreground/60 hover:text-sidebar-foreground opacity-0 transition-opacity after:hidden focus-visible:opacity-100 group-hover/folders:opacity-100"
           >
             <Link
-              to="/folders"
+              to="/notes"
               search={{}}
               aria-label={t("settings.sidebar.viewAllFolders")}
             >
