@@ -769,12 +769,16 @@
           "confirm": "Eliminar nota"
         }
       },
+      "unfiled": {
+        "label": "Sin archivar"
+      },
       "folder": {
         "actions": {
           "rename": "Rename folder",
           "delete": "Delete folder",
           "addToFavorites": "Add to favorites",
-          "removeFromFavorites": "Remove from favorites"
+          "removeFromFavorites": "Remove from favorites",
+          "newSubfolder": "Nueva subcarpeta"
         },
         "rename": {
           "title": "Rename folder",

@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { MoreHorizontal, Pencil, Star, StarOff, Trash2 } from "lucide-react";
+import { FolderPlus, MoreHorizontal, Pencil, Star, StarOff, Trash2 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,6 +18,7 @@ interface FolderRowMenuProps {
   onDelete: () => void;
   /** When provided, renders a plain button instead of SidebarMenuAction */
   triggerClassName?: string;
+  onCreateSubfolder?: () => void;
 }
 
 export function FolderRowMenu({
@@ -25,6 +26,7 @@ export function FolderRowMenu({
   onRename,
   onDelete,
   triggerClassName,
+  onCreateSubfolder,
 }: FolderRowMenuProps) {
   const { t } = useTranslation();
   const utils = api.useUtils();
@@ -76,6 +78,12 @@ export function FolderRowMenu({
           <Pencil />
           <span>{t("settings.notes.folder.actions.rename")}</span>
         </DropdownMenuItem>
+        {onCreateSubfolder && (
+          <DropdownMenuItem onSelect={onCreateSubfolder}>
+            <FolderPlus className="h-4 w-4" />
+            <span>{t("settings.notes.folder.actions.newSubfolder")}</span>
+          </DropdownMenuItem>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem variant="destructive" onSelect={onDelete}>
           <Trash2 />

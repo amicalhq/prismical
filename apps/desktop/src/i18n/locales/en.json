@@ -688,12 +688,16 @@
           "confirm": "Delete Note"
         }
       },
+      "unfiled": {
+        "label": "Unfiled"
+      },
       "folder": {
         "actions": {
           "rename": "Rename folder",
           "delete": "Delete folder",
           "addToFavorites": "Add to favorites",
-          "removeFromFavorites": "Remove from favorites"
+          "removeFromFavorites": "Remove from favorites",
+          "newSubfolder": "New subfolder"
         },
         "rename": {
           "title": "Rename folder",
