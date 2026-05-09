@@ -11,6 +11,7 @@ import {
   ComboboxList,
   ComboboxSeparator,
 } from "@/components/ui/combobox-radix";
+import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/trpc/react";
 import { ManageFoldersDialog } from "./manage-folders-dialog";
 
@@ -91,6 +92,10 @@ export function FolderPicker() {
 
   const [query, setQuery] = React.useState("");
   const [manageOpen, setManageOpen] = React.useState(false);
+
+  if (treeQ.isLoading) {
+    return <Skeleton className="h-9 w-44 shrink-0 rounded-lg" />;
+  }
 
   const lc = query.trim().toLowerCase();
   const filtered = lc

@@ -17,6 +17,7 @@ import {
   ComboboxValue,
   useComboboxAnchor,
 } from "@/components/ui/combobox-radix";
+import { Skeleton } from "@/components/ui/skeleton";
 import { TagHash } from "@/renderer/main/components/tag/tag-hash";
 import { api } from "@/trpc/react";
 import { ManageTagsDialog } from "./manage-tags-dialog";
@@ -241,6 +242,12 @@ export function TagFilterBar() {
         t("settings.tags.errors.createFailed", { message: e.message }),
       ),
   });
+
+  if (tagsQ.isLoading) {
+    return (
+      <Skeleton className="h-9 min-w-[180px] max-w-[260px] flex-1 rounded-lg" />
+    );
+  }
 
   // Tag picks fire onValueChange with the new array. The "create" and
   // "manage" sentinels piggyback on that signal — we intercept and strip
