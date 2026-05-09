@@ -110,7 +110,7 @@ export function FolderTreeRow({
             className={`h-3 w-3 transition-transform ${isOpen ? "rotate-90" : ""}`}
           />
         </button>
-        <Folder className="h-4 w-4 shrink-0 text-amber-500/80" />
+        <Folder className="h-4 w-4 shrink-0" />
         <span className="min-w-0 flex-1 truncate">{node.name}</span>
         <span className="shrink-0 text-xs tabular-nums opacity-60">
           {node.noteCount}
