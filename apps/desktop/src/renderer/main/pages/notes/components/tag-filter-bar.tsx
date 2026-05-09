@@ -2,6 +2,11 @@ import * as React from "react";
 import { Plus, Star } from "lucide-react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { Trans, useTranslation } from "react-i18next";
+
+// Cap visible chips so the bar doesn't sprawl when many tags are selected.
+// Hidden chips remain selected — users see/manage them by opening the
+// dropdown (each row shows a checkmark when selected).
+const MAX_VISIBLE_CHIPS = 3;
 import { toast } from "sonner";
 import {
   Combobox,
@@ -127,14 +132,16 @@ export function TagFilterBar() {
       >
         <ComboboxChips
           ref={anchor}
-          className="w-full max-w-md min-h-9 flex-wrap items-center gap-1.5 rounded-lg border-transparent bg-accent/40 hover:bg-accent/60 dark:bg-accent/30 dark:hover:bg-accent/50"
+          className="h-9 w-72 flex-nowrap overflow-hidden rounded-lg border-transparent bg-accent/40 px-2 hover:bg-accent/60 dark:bg-accent/30 dark:hover:bg-accent/50"
         >
           <ComboboxValue>
             {(values) => {
               const ids = (values as number[]) ?? [];
+              const visible = ids.slice(0, MAX_VISIBLE_CHIPS);
+              const overflow = ids.length - visible.length;
               return (
                 <>
-                  {ids.map((id) => {
+                  {visible.map((id) => {
                     const tag = tagById.get(id);
                     return (
                       <ComboboxChip
@@ -157,12 +164,23 @@ export function TagFilterBar() {
                       </ComboboxChip>
                     );
                   })}
+                  {overflow > 0 && (
+                    <span
+                      className="shrink-0 px-1 text-xs text-muted-foreground"
+                      aria-label={t("settings.tags.filterBar.overflow", {
+                        count: overflow,
+                      })}
+                    >
+                      +{overflow}
+                    </span>
+                  )}
                   <ComboboxChipsInput
                     placeholder={
                       ids.length === 0
                         ? t("settings.tags.filterBar.placeholder")
                         : ""
                     }
+                    className="min-w-12"
                   />
                 </>
               );

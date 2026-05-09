@@ -858,7 +858,8 @@
         "clear": "クリア"
       },
       "filterBar": {
-        "placeholder": "タグで絞り込む…"
+        "placeholder": "タグで絞り込む…",
+        "overflow": "他に{{count}}個選択中"
       },
       "emptyFiltered": {
         "title": "#{{name}} のタグが付いたノートはまだありません",

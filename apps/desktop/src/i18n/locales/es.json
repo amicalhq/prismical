@@ -861,7 +861,8 @@
         "clear": "Limpiar"
       },
       "filterBar": {
-        "placeholder": "Filtrar por etiqueta…"
+        "placeholder": "Filtrar por etiqueta…",
+        "overflow": "{{count}} más seleccionadas"
       },
       "emptyFiltered": {
         "title": "Aún no hay notas etiquetadas con #{{name}}",

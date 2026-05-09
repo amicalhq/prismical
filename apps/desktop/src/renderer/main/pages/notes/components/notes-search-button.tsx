@@ -30,13 +30,13 @@ export function NotesSearchButton() {
     <button
       type="button"
       onClick={open}
-      className="flex flex-1 max-w-md items-center gap-2 rounded-lg bg-accent/40 px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent/60 dark:bg-accent/30 dark:hover:bg-accent/50"
+      className="flex h-9 w-72 shrink-0 items-center gap-2 rounded-lg bg-accent/40 px-3 text-sm text-muted-foreground transition-colors hover:bg-accent/60 dark:bg-accent/30 dark:hover:bg-accent/50"
     >
-      <Search className="h-4 w-4" />
-      <span className="flex-1 text-left">
+      <Search className="h-4 w-4 shrink-0" />
+      <span className="flex-1 truncate whitespace-nowrap text-left">
         {t("settings.notes.searchButtonLabel")}
       </span>
-      <kbd className="rounded bg-accent/60 px-1.5 py-0.5 font-mono text-xs dark:bg-accent/40">
+      <kbd className="shrink-0 rounded bg-accent/60 px-1.5 py-0.5 font-mono text-xs dark:bg-accent/40">
         {shortcut}
       </kbd>
     </button>

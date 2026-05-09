@@ -780,7 +780,8 @@
         "clear": "Clear"
       },
       "filterBar": {
-        "placeholder": "Filter by tag…"
+        "placeholder": "Filter by tag…",
+        "overflow": "{{count}} more selected"
       },
       "emptyFiltered": {
         "title": "No notes tagged #{{name}} yet",
