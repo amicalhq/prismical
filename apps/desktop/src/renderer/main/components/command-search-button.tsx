@@ -76,6 +76,28 @@ export function CommandSearchButton() {
     },
   );
 
+  const { data: folderResults = [] } = api.folders.listWithCounts.useQuery(
+    { search, sortBy: "name" },
+    {
+      enabled: open,
+      staleTime: 1000 * 60 * 5,
+    },
+  );
+
+  const { data: tagResults = [] } = api.tags.listWithCounts.useQuery(
+    { search, sortBy: "name" },
+    {
+      enabled: open,
+      staleTime: 1000 * 60 * 5,
+    },
+  );
+
+  const topFolders = React.useMemo(
+    () => folderResults.slice(0, 8),
+    [folderResults],
+  );
+  const topTags = React.useMemo(() => tagResults.slice(0, 8), [tagResults]);
+
   const searchResults = React.useMemo(() => {
     return [
       ...settingsResults,
