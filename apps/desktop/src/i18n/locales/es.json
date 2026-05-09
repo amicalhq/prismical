@@ -750,6 +750,7 @@
           "folderLabel": "Carpeta",
           "noFolder": "Sin carpeta",
           "newFolder": "Nueva carpeta...",
+          "newSubfolder": "Nueva subcarpeta de \"{{parent}}\"",
           "newFolderPrompt": "Nombre de la carpeta",
           "createFolder": "Crear",
           "searchFolders": "Buscar carpetas...",

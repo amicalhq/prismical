@@ -15,13 +15,16 @@ import { api } from "@/trpc/react";
 type CreateFolderDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onCreated: (folderId: number) => void;
+  onCreated?: (folderId: number) => void;
+  /** When set, the new folder is created as a child of this folder. */
+  parentId?: number;
 };
 
 export function CreateFolderDialog({
   open,
   onOpenChange,
   onCreated,
+  parentId,
 }: CreateFolderDialogProps) {
   const { t } = useTranslation();
   const [folderName, setFolderName] = useState("");
@@ -35,11 +38,16 @@ export function CreateFolderDialog({
     }
   }, [open]);
 
+  const parentQ = api.folders.getById.useQuery(
+    { id: parentId ?? 0 },
+    { enabled: parentId !== undefined },
+  );
+
   const createMutation = api.folders.create.useMutation({
     onSuccess: (folder) => {
       utils.folders.invalidate();
       onOpenChange(false);
-      onCreated(folder.id);
+      onCreated?.(folder.id);
     },
     onError: (error) => {
       submittedRef.current = false;
@@ -51,16 +59,21 @@ export function CreateFolderDialog({
     const trimmed = folderName.trim();
     if (!trimmed || submittedRef.current) return;
     submittedRef.current = true;
-    createMutation.mutate({ name: trimmed });
+    createMutation.mutate({ name: trimmed, parentId });
   };
+
+  const title =
+    parentId !== undefined && parentQ.data
+      ? t("settings.notes.note.actions.newSubfolder", {
+          parent: parentQ.data.name,
+        })
+      : t("settings.notes.note.actions.newFolder");
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>
-            {t("settings.notes.note.actions.newFolder")}
-          </DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
         <Input
           autoFocus

@@ -750,6 +750,7 @@
           "folderLabel": "フォルダー",
           "noFolder": "フォルダーなし",
           "newFolder": "新しいフォルダー...",
+          "newSubfolder": "「{{parent}}」のサブフォルダーを新規作成",
           "newFolderPrompt": "フォルダー名",
           "createFolder": "作成",
           "searchFolders": "フォルダーを検索...",

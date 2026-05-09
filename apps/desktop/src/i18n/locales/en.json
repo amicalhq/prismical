@@ -669,6 +669,7 @@
           "folderLabel": "Folder",
           "noFolder": "No folder",
           "newFolder": "New folder...",
+          "newSubfolder": "New subfolder of \"{{parent}}\"",
           "newFolderPrompt": "Folder name",
           "createFolder": "Create",
           "searchFolders": "Search folders...",
