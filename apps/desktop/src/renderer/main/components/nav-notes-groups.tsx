@@ -569,23 +569,31 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
                     </SidebarMenuAction>
                     <CollapsibleContent>
                       <SidebarMenuSub className="mr-0 pr-0">
-                        {folderNotes.map((note) => (
-                          <NoteSubRow
-                            key={`folder-${folder.id}-${note.id}`}
-                            note={note}
-                            isActive={isNoteActive(note.id)}
-                            isMobile={isMobile}
-                            t={t}
-                            onStarredChange={(starred) =>
-                              updateOrganization.mutate({
-                                id: note.id,
-                                starred,
-                              })
-                            }
-                            onMoveTo={handleRequestMove}
-                            onDelete={() => handleDelete(note.id)}
-                          />
-                        ))}
+                        {folderNotes.length === 0 ? (
+                          <SidebarMenuSubItem>
+                            <div className="flex h-7 items-center px-2 text-xs italic text-sidebar-foreground/60">
+                              {t("settings.sidebar.folderEmpty")}
+                            </div>
+                          </SidebarMenuSubItem>
+                        ) : (
+                          folderNotes.map((note) => (
+                            <NoteSubRow
+                              key={`folder-${folder.id}-${note.id}`}
+                              note={note}
+                              isActive={isNoteActive(note.id)}
+                              isMobile={isMobile}
+                              t={t}
+                              onStarredChange={(starred) =>
+                                updateOrganization.mutate({
+                                  id: note.id,
+                                  starred,
+                                })
+                              }
+                              onMoveTo={handleRequestMove}
+                              onDelete={() => handleDelete(note.id)}
+                            />
+                          ))
+                        )}
                       </SidebarMenuSub>
                     </CollapsibleContent>
                   </SidebarMenuItem>

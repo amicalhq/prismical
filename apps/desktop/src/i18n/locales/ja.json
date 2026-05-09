@@ -375,6 +375,7 @@
       "folders": "フォルダー",
       "noFavorites": "お気に入りはまだありません",
       "noFolders": "フォルダーはまだありません",
+      "folderEmpty": "ノートはありません",
       "viewAllFolders": "すべて表示",
       "tags": "タグ",
       "tagsViewAll": "すべて表示",

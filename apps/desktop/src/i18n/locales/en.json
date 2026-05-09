@@ -286,6 +286,7 @@
       "folders": "Folders",
       "noFavorites": "No favorites yet",
       "noFolders": "No folders yet",
+      "folderEmpty": "No notes",
       "viewAllFolders": "View all",
       "tags": "Tags",
       "tagsViewAll": "View all",
