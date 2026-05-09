@@ -27,14 +27,23 @@ const TAG_NAME_RE = /^[a-z0-9_-]{1,32}$/;
 // in handleValueChange so they never leak into the URL's number[] tags param.
 const MANAGE_VALUE = "__manage_tags__";
 
-// Reserved space inside the chips container (in px) for the typeahead input
-// and the "+N" overflow indicator (when needed). Tuned against the visual
-// design — adjust if you change `min-w-12` on the input or the indicator's
-// padding/font.
-const INPUT_RESERVE = 56;
-const INDICATOR_RESERVE = 32;
-const CHIP_GAP = 6;
+// Reserved space inside the chips container (in px). Tuned against the
+// rendered widths of each fixed-position element:
+//   INPUT_RESERVE     — matches `min-w-12` (48px) on ComboboxChipsInput, with
+//                       a small slack so the cursor isn't flush against the
+//                       previous chip.
+//   INDICATOR_RESERVE — covers the widest realistic "+N" pill (e.g. "+99")
+//                       at text-xs with px-1 padding.
+//   CLEAR_RESERVE     — matches the size-5 (20px) clear button + the gap
+//                       between it and the input.
+//   CHIP_GAP          — `gap-1.5` (6px) between flex children, applied between
+//                       chips and between chips/indicator/input.
+// Trim these if you tighten the typography; widen if you make any of those
+// elements bigger.
+const INPUT_RESERVE = 40;
+const INDICATOR_RESERVE = 28;
 const CLEAR_RESERVE = 24;
+const CHIP_GAP = 6;
 
 function ChipBody({ tag }: { tag: { color: string; name: string } }) {
   return (
@@ -282,7 +291,7 @@ export function TagFilterBar() {
       >
         <ComboboxChips
           ref={setContainerRef}
-          className="h-9 w-56 flex-nowrap overflow-clip rounded-lg border-transparent bg-accent/40 px-2 hover:bg-accent/60 dark:bg-accent/30 dark:hover:bg-accent/50"
+          className="h-9 w-72 flex-nowrap overflow-clip rounded-lg border-transparent bg-accent/40 px-2 hover:bg-accent/60 dark:bg-accent/30 dark:hover:bg-accent/50"
         >
           <ComboboxValue>
             {(values) => {
