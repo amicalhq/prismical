@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { createRootRoute, Outlet } from "@tanstack/react-router";
 import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -23,6 +24,15 @@ export const Route = createRootRoute({
 // Inner component that uses hooks requiring provider context
 function AppShell() {
   usePostHog(); // Initialize and sync telemetry
+
+  // Warm the cache for global toolbar data so the first /notes visit
+  // doesn't flash empty controls. Sync layers can invalidate these keys
+  // later without a stale-time tradeoff.
+  const utils = api.useUtils();
+  useEffect(() => {
+    void utils.folders.tree.prefetch();
+    void utils.tags.listWithCounts.prefetch({ sortBy: "name" });
+  }, [utils]);
 
   return (
     <>
