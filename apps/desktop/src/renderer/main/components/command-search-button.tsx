@@ -194,7 +194,11 @@ export function CommandSearchButton() {
                   onSelect={() => handleSelectUrl(`/notes/${note.id}`)}
                   className="cursor-pointer"
                 >
-                  <FileTextIcon className="mr-2 h-4 w-4" />
+                  {note.icon ? (
+                    <span className="mr-2 text-base leading-none">{note.icon}</span>
+                  ) : (
+                    <FileTextIcon className="mr-2 h-4 w-4" />
+                  )}
                   <div className="flex flex-col">
                     <span className="font-medium">{note.title}</span>
                     <span className="text-xs text-muted-foreground">

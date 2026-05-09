@@ -235,7 +235,7 @@ export const notesRouter = createRouter({
         id: note.id,
         title: note.title,
         createdAt: note.createdAt,
-        icon: note.icon || "file-text",
+        icon: note.icon ?? null,
       }));
     }),
 
