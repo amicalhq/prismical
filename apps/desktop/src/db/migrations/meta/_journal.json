@@ -57,6 +57,13 @@
       "when": 1778265327981,
       "tag": "0007_sad_tyger_tiger",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1778281682036,
+      "tag": "0008_cute_mongoose",
+      "breakpoints": true
     }
   ]
 }

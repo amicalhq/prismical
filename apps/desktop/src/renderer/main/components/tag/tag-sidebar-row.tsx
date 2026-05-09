@@ -52,7 +52,7 @@ export function TagSidebarRow({ tag, noteCount }: TagSidebarRowProps) {
         <SidebarMenuButton asChild className="pr-8">
           <Link
             to="/notes"
-            search={{ tag: tag.id }}
+            search={{ tags: [tag.id] }}
             aria-label={`#${tag.name}`}
           >
             <TagHash color={tag.color} name={tag.name} />

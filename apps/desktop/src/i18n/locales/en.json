@@ -669,6 +669,7 @@
           "folderLabel": "Folder",
           "noFolder": "No folder",
           "newFolder": "New folder...",
+          "newSubfolder": "New subfolder of \"{{parent}}\"",
           "newFolderPrompt": "Folder name",
           "createFolder": "Create",
           "searchFolders": "Search folders...",
@@ -687,12 +688,16 @@
           "confirm": "Delete Note"
         }
       },
+      "unfiled": {
+        "label": "Unfiled"
+      },
       "folder": {
         "actions": {
           "rename": "Rename folder",
           "delete": "Delete folder",
           "addToFavorites": "Add to favorites",
-          "removeFromFavorites": "Remove from favorites"
+          "removeFromFavorites": "Remove from favorites",
+          "newSubfolder": "New subfolder"
         },
         "rename": {
           "title": "Rename folder",
@@ -718,7 +723,18 @@
           "button": "Connect calendar"
         }
       },
-      "sidebarButtonLabel": "Note"
+      "sidebarButtonLabel": "Note",
+      "searchButtonLabel": "Search",
+      "sort": {
+        "aria": "Sort notes",
+        "updatedAt": "Updated",
+        "createdAt": "Created",
+        "title": "Title"
+      },
+      "scope": {
+        "all": "All notes",
+        "tagsSuffix": "tags"
+      }
     },
     "tags": {
       "title": "Tags",
@@ -764,9 +780,19 @@
         "label": "Showing notes tagged",
         "clear": "Clear"
       },
+      "filterBar": {
+        "placeholder": "Filter by tag…",
+        "overflow": "{{count}} more selected",
+        "manage": "Manage tags…",
+        "clear": "Clear tag filter"
+      },
       "emptyFiltered": {
         "title": "No notes tagged #{{name}} yet",
         "description": "Tag a note to see it here, or clear the filter."
+      },
+      "create": "Create \"{{name}}\"",
+      "toast": {
+        "deleted": "Deleted #{{name}}"
       },
       "errors": {
         "createFailed": "Failed to create tag: {{message}}",
@@ -786,6 +812,14 @@
       "empty": "No folders yet",
       "actions": {
         "create": "New folder"
+      },
+      "picker": {
+        "placeholder": "Pick folder",
+        "empty": "No folders found.",
+        "manage": "Manage folders…"
+      },
+      "manage": {
+        "title": "Manage folders"
       },
       "errors": {
         "deleteFailed": "Failed to delete folder: {{message}}",

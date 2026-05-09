@@ -67,7 +67,7 @@ describe("db/folders", () => {
     expect(got[0].noteCount).toBe(2);
   });
 
-  it("deleteFolder sets notes.folderId to NULL (no cascade delete)", async () => {
+  it("deleteFolder cascade-deletes contained notes", async () => {
     const { createFolder, deleteFolder } = await import("@db/folders");
     const f = await createFolder(testDb.db, { name: "Work" });
     const [n] = await testDb.db
@@ -75,11 +75,103 @@ describe("db/folders", () => {
       .values({ title: "n", folderId: f.id })
       .returning();
     const result = await deleteFolder(testDb.db, f.id);
-    expect(result.detachedNoteCount).toBe(1);
+    expect(result.deletedNoteCount).toBe(1);
     const [after] = await testDb.db
       .select()
       .from(notes)
       .where(eq(notes.id, n.id));
-    expect(after.folderId).toBeNull();
+    expect(after).toBeUndefined();
+  });
+
+  it("allows same folder name under different parents", async () => {
+    const { createFolder } = await import("@db/folders");
+    const a = await createFolder(testDb.db, { name: "Work" });
+    const b = await createFolder(testDb.db, { name: "Personal" });
+
+    const childA = await createFolder(testDb.db, {
+      name: "Notes",
+      parentId: a.id,
+    });
+    const childB = await createFolder(testDb.db, {
+      name: "Notes",
+      parentId: b.id,
+    });
+
+    expect(childA.parentId).toBe(a.id);
+    expect(childB.parentId).toBe(b.id);
+  });
+
+  it("rejects duplicate folder name under the same parent", async () => {
+    const { createFolder } = await import("@db/folders");
+    const root = await createFolder(testDb.db, { name: "Work" });
+    await createFolder(testDb.db, { name: "Notes", parentId: root.id });
+
+    await expect(
+      createFolder(testDb.db, { name: "notes", parentId: root.id }),
+    ).rejects.toThrow();
+  });
+
+  it("rejects duplicate top-level folder names", async () => {
+    const { createFolder } = await import("@db/folders");
+    await createFolder(testDb.db, { name: "Work" });
+    await expect(createFolder(testDb.db, { name: "WORK" })).rejects.toThrow();
+  });
+
+  it("listAllForTree returns top-level rows first, then siblings grouped by parent and sorted by name", async () => {
+    const { createFolder, listAllForTree } = await import("@db/folders");
+    const work = await createFolder(testDb.db, { name: "Work" });
+    await createFolder(testDb.db, { name: "Personal" });
+    await createFolder(testDb.db, { name: "Q4", parentId: work.id });
+    await createFolder(testDb.db, { name: "Hiring", parentId: work.id });
+
+    const got = await listAllForTree(testDb.db);
+    // Pin the full order: top-level rows alphabetical first (Personal, Work),
+    // then Work's children alphabetical (Hiring, Q4). A regression in any of
+    // the three ORDER BY terms changes this sequence.
+    expect(got.map((f) => f.name)).toEqual([
+      "Personal",
+      "Work",
+      "Hiring",
+      "Q4",
+    ]);
+  });
+
+  it("subtreeIds returns root + descendants", async () => {
+    const { createFolder, subtreeIds } = await import("@db/folders");
+    const root = await createFolder(testDb.db, { name: "Root" });
+    const child = await createFolder(testDb.db, { name: "C", parentId: root.id });
+    const grand = await createFolder(testDb.db, { name: "G", parentId: child.id });
+    const sibling = await createFolder(testDb.db, { name: "S" });
+
+    const ids = await subtreeIds(testDb.db, root.id);
+    expect(new Set(ids)).toEqual(new Set([root.id, child.id, grand.id]));
+    expect(ids).not.toContain(sibling.id);
+  });
+
+  it("listWithRecursiveCounts returns descendant note counts", async () => {
+    const { createFolder, listWithRecursiveCounts } = await import("@db/folders");
+    const work = await createFolder(testDb.db, { name: "Work" });
+    const q4 = await createFolder(testDb.db, { name: "Q4", parentId: work.id });
+    await createFolder(testDb.db, { name: "Personal" });
+
+    await testDb.db.insert(notes).values({ title: "n1", folderId: work.id });
+    await testDb.db.insert(notes).values({ title: "n2", folderId: q4.id });
+    await testDb.db.insert(notes).values({ title: "orphan" });
+
+    const got = await listWithRecursiveCounts(testDb.db);
+    const byName = Object.fromEntries(got.map((r) => [r.name, r.noteCount]));
+    expect(byName.Work).toBe(2); // n1 in Work + n2 in Q4
+    expect(byName.Q4).toBe(1);
+    expect(byName.Personal).toBe(0);
+  });
+
+  it("countUnfiled returns notes with NULL folderId", async () => {
+    const { createFolder, countUnfiled } = await import("@db/folders");
+    await testDb.db.insert(notes).values({ title: "u1" });
+    await testDb.db.insert(notes).values({ title: "u2" });
+    const f = await createFolder(testDb.db, { name: "F" });
+    await testDb.db.insert(notes).values({ title: "filed", folderId: f.id });
+
+    expect(await countUnfiled(testDb.db)).toBe(2);
   });
 });

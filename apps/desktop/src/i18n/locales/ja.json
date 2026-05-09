@@ -750,6 +750,7 @@
           "folderLabel": "フォルダー",
           "noFolder": "フォルダーなし",
           "newFolder": "新しいフォルダー...",
+          "newSubfolder": "「{{parent}}」のサブフォルダーを新規作成",
           "newFolderPrompt": "フォルダー名",
           "createFolder": "作成",
           "searchFolders": "フォルダーを検索...",
@@ -768,12 +769,16 @@
           "confirm": "ノートを削除"
         }
       },
+      "unfiled": {
+        "label": "未整理"
+      },
       "folder": {
         "actions": {
           "rename": "Rename folder",
           "delete": "Delete folder",
           "addToFavorites": "Add to favorites",
-          "removeFromFavorites": "Remove from favorites"
+          "removeFromFavorites": "Remove from favorites",
+          "newSubfolder": "新しいサブフォルダー"
         },
         "rename": {
           "title": "Rename folder",
@@ -799,7 +804,18 @@
           "button": "カレンダーを接続"
         }
       },
-      "sidebarButtonLabel": "ノート"
+      "sidebarButtonLabel": "ノート",
+      "searchButtonLabel": "検索",
+      "sort": {
+        "aria": "ノートを並び替え",
+        "updatedAt": "更新日",
+        "createdAt": "作成日",
+        "title": "タイトル"
+      },
+      "scope": {
+        "all": "すべてのノート",
+        "tagsSuffix": "タグ"
+      }
     },
     "tags": {
       "title": "タグ",
@@ -842,9 +858,19 @@
         "label": "タグでフィルター中:",
         "clear": "クリア"
       },
+      "filterBar": {
+        "placeholder": "タグで絞り込む…",
+        "overflow": "他に{{count}}個選択中",
+        "manage": "タグを管理…",
+        "clear": "タグフィルターをクリア"
+      },
       "emptyFiltered": {
         "title": "#{{name}} のタグが付いたノートはまだありません",
         "description": "ノートにタグを付けてここに表示するか、フィルターをクリアしてください。"
+      },
+      "create": "Create \"{{name}}\"",
+      "toast": {
+        "deleted": "Deleted #{{name}}"
       },
       "errors": {
         "createFailed": "タグの作成に失敗しました: {{message}}",
@@ -864,6 +890,14 @@
       "empty": "No folders yet",
       "actions": {
         "create": "New folder"
+      },
+      "picker": {
+        "placeholder": "フォルダーを選択",
+        "empty": "フォルダーが見つかりません。",
+        "manage": "フォルダーを管理…"
+      },
+      "manage": {
+        "title": "フォルダーを管理"
       },
       "errors": {
         "deleteFailed": "Failed to delete folder: {{message}}",
