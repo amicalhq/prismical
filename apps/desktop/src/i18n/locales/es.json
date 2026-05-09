@@ -805,7 +805,7 @@
         }
       },
       "sidebarButtonLabel": "Nota",
-      "searchButtonLabel": "Search notes, folders, tags…",
+      "searchButtonLabel": "Buscar",
       "sort": {
         "updatedAt": "Actualizado",
         "createdAt": "Creado",

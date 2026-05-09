@@ -805,7 +805,7 @@
         }
       },
       "sidebarButtonLabel": "ノート",
-      "searchButtonLabel": "Search notes, folders, tags…",
+      "searchButtonLabel": "検索",
       "sort": {
         "updatedAt": "更新日",
         "createdAt": "作成日",
