@@ -297,6 +297,7 @@
       "buttonPlaceholder": "Search...",
       "inputPlaceholder": "Search notes, folders, tags, settings...",
       "noResults": "No results found.",
+      "recentHeading": "Recent",
       "settingsHeading": "Settings",
       "notesHeading": "Notes",
       "foldersHeading": "Folders",

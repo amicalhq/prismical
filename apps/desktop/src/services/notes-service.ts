@@ -3,6 +3,7 @@ import {
   createNote,
   getNotes,
   getNoteById,
+  getNotesByIds,
   getNoteByEventId,
   updateNote,
   deleteNote,
@@ -107,6 +108,10 @@ class NotesService {
   async getNote(id: number) {
     const note = await getNoteById(id);
     return note;
+  }
+
+  async getNotesByIds(ids: number[]) {
+    return await getNotesByIds(ids);
   }
 
   async listNotes(options?: {

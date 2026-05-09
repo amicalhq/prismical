@@ -386,6 +386,7 @@
       "buttonPlaceholder": "検索...",
       "inputPlaceholder": "ノート、フォルダー、タグ、設定を検索...",
       "noResults": "結果が見つかりません。",
+      "recentHeading": "最近",
       "settingsHeading": "設定",
       "notesHeading": "ノート",
       "foldersHeading": "フォルダー",

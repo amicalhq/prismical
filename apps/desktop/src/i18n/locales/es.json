@@ -386,6 +386,7 @@
       "buttonPlaceholder": "Buscar...",
       "inputPlaceholder": "Buscar notas, carpetas, etiquetas, configuración...",
       "noResults": "No se encontraron resultados.",
+      "recentHeading": "Reciente",
       "settingsHeading": "Configuración",
       "notesHeading": "Notas",
       "foldersHeading": "Carpetas",

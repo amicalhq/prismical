@@ -23,6 +23,7 @@ import {
   type SettingsNavItem,
 } from "../lib/settings-navigation";
 import { TagHash } from "@/renderer/main/components/tag/tag-hash";
+import { getRecentNoteIds } from "../lib/recent-notes";
 
 // Detect platform for keyboard shortcuts
 const isMac = window.electronAPI.platform === "darwin";
@@ -80,10 +81,35 @@ export function CommandSearchButton() {
     });
   }, [search, localizedSettings]);
 
+  const hasQuery = search.trim().length > 0;
+
+  const [recentNoteIds, setRecentNoteIds] = React.useState<number[]>(() =>
+    getRecentNoteIds(),
+  );
+
+  React.useEffect(() => {
+    if (open) setRecentNoteIds(getRecentNoteIds());
+  }, [open]);
+
+  const recentIdsForFetch = React.useMemo(
+    () => recentNoteIds.slice(0, 5),
+    [recentNoteIds],
+  );
+
   const { data: noteResults = [] } = api.notes.searchNotes.useQuery(
     { query: search },
     {
-      enabled: open,
+      // Fetch when there's a query, or when no recents exist (fallback for
+      // the empty state).
+      enabled: open && (hasQuery || recentNoteIds.length === 0),
+      staleTime: 1000 * 60 * 5,
+    },
+  );
+
+  const { data: recentNotesData = [] } = api.notes.getNotesByIds.useQuery(
+    { ids: recentIdsForFetch },
+    {
+      enabled: open && !hasQuery && recentIdsForFetch.length > 0,
       staleTime: 1000 * 60 * 5,
     },
   );
@@ -91,7 +117,7 @@ export function CommandSearchButton() {
   const { data: folderResults = [] } = api.folders.listWithCounts.useQuery(
     { search, sortBy: "name" },
     {
-      enabled: open,
+      enabled: open && hasQuery,
       staleTime: 1000 * 60 * 5,
     },
   );
@@ -99,7 +125,7 @@ export function CommandSearchButton() {
   const { data: tagResults = [] } = api.tags.listWithCounts.useQuery(
     { search, sortBy: "name" },
     {
-      enabled: open,
+      enabled: open && hasQuery,
       staleTime: 1000 * 60 * 5,
     },
   );
@@ -109,6 +135,17 @@ export function CommandSearchButton() {
     [folderResults],
   );
   const topTags = React.useMemo(() => tagResults.slice(0, 8), [tagResults]);
+
+  const recentNotes = React.useMemo(() => {
+    if (recentNoteIds.length === 0) {
+      return noteResults.slice(0, 5);
+    }
+    const byId = new Map(recentNotesData.map((note) => [note.id, note]));
+    return recentNoteIds
+      .map((id) => byId.get(id))
+      .filter((note): note is NonNullable<typeof note> => note != null)
+      .slice(0, 5);
+  }, [recentNoteIds, recentNotesData, noteResults]);
 
   React.useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -187,7 +224,30 @@ export function CommandSearchButton() {
         />
         <CommandList className="max-h-[440px]">
           <CommandEmpty>{t("settings.search.noResults")}</CommandEmpty>
-          {settingsResults.length > 0 && (
+          {!hasQuery && recentNotes.length > 0 && (
+            <CommandGroup heading={t("settings.search.recentHeading")}>
+              {recentNotes.map((note) => (
+                <CommandItem
+                  key={`recent:${note.id}`}
+                  value={`recent-${note.id}`}
+                  keywords={[note.title]}
+                  onSelect={() => handleSelectUrl(`/notes/${note.id}`)}
+                  className="cursor-pointer"
+                >
+                  {note.icon ? (
+                    <span className="mr-2 text-base leading-none">{note.icon}</span>
+                  ) : (
+                    <FileTextIcon className="mr-2 h-4 w-4" />
+                  )}
+                  <span className="flex-1 truncate">{note.title}</span>
+                  <span className="ml-2 shrink-0 text-xs text-muted-foreground">
+                    {formatDate(new Date(note.createdAt))}
+                  </span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          )}
+          {hasQuery && settingsResults.length > 0 && (
             <CommandGroup heading={t("settings.search.settingsHeading")}>
               {settingsResults.map((page) => {
                 const shortcutKey = SHORTCUT_KEY_BY_URL.get(page.url);
@@ -211,7 +271,7 @@ export function CommandSearchButton() {
               })}
             </CommandGroup>
           )}
-          {noteResults.length > 0 && (
+          {hasQuery && noteResults.length > 0 && (
             <CommandGroup heading={t("settings.search.notesHeading")}>
               {noteResults.map((note) => (
                 <CommandItem
@@ -234,7 +294,7 @@ export function CommandSearchButton() {
               ))}
             </CommandGroup>
           )}
-          {topFolders.length > 0 && (
+          {hasQuery && topFolders.length > 0 && (
             <CommandGroup heading={t("settings.search.foldersHeading")}>
               {topFolders.map((folder) => (
                 <CommandItem
@@ -255,7 +315,7 @@ export function CommandSearchButton() {
               ))}
             </CommandGroup>
           )}
-          {topTags.length > 0 && (
+          {hasQuery && topTags.length > 0 && (
             <CommandGroup heading={t("settings.search.tagsHeading")}>
               {topTags.map((tag) => (
                 <CommandItem

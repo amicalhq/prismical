@@ -164,6 +164,18 @@ export async function getNoteById(id: number): Promise<NoteWithEvent | null> {
   return toNoteWithEvent(result[0]);
 }
 
+// Get multiple notes by ID (single query). Order is not preserved — callers
+// that care should reorder client-side. Missing IDs are silently dropped.
+export async function getNotesByIds(ids: number[]): Promise<NoteWithEvent[]> {
+  if (ids.length === 0) return [];
+  const rows = await db
+    .select()
+    .from(notes)
+    .leftJoin(events, eq(notes.eventId, events.id))
+    .where(inArray(notes.id, ids));
+  return rows.map(toNoteWithEvent);
+}
+
 // Get note by event ID (FK column)
 export async function getNoteByEventId(
   eventId: string,
