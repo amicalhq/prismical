@@ -1,4 +1,5 @@
 import { NotebookText } from "lucide-react";
+import { keepPreviousData } from "@tanstack/react-query";
 import { NoteCard } from "./note-card";
 import { api } from "@/trpc/react";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -41,13 +42,16 @@ export function NotesList({
   const { t } = useTranslation();
   const navigate = useNavigate();
 
-  const { data: notes, isLoading } = api.notes.getNotes.useQuery({
-    sortBy,
-    sortOrder,
-    tagIds: tagIds && tagIds.length > 0 ? tagIds : undefined,
-    folderIds: folderIds && folderIds.length > 0 ? folderIds : undefined,
-    folderId: unfiled ? null : undefined,
-  });
+  const { data: notes, isLoading } = api.notes.getNotes.useQuery(
+    {
+      sortBy,
+      sortOrder,
+      tagIds: tagIds && tagIds.length > 0 ? tagIds : undefined,
+      folderIds: folderIds && folderIds.length > 0 ? folderIds : undefined,
+      folderId: unfiled ? null : undefined,
+    },
+    { placeholderData: keepPreviousData },
+  );
 
   const onNoteClick = (noteId: number) => {
     navigate({
