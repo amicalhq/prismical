@@ -291,7 +291,7 @@ export function TagFilterBar() {
       >
         <ComboboxChips
           ref={setContainerRef}
-          className="h-9 w-72 flex-nowrap overflow-clip rounded-lg border-transparent bg-accent/40 px-2 hover:bg-accent/60 dark:bg-accent/30 dark:hover:bg-accent/50"
+          className="h-9 min-w-[180px] max-w-[260px] flex-1 flex-nowrap overflow-clip rounded-lg border-transparent bg-accent/40 px-2 hover:bg-accent/60 dark:bg-accent/30 dark:hover:bg-accent/50"
         >
           <ComboboxValue>
             {(values) => {
