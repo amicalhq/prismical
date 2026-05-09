@@ -135,7 +135,7 @@ export function FolderPicker() {
         <ComboboxInput
           placeholder={t("settings.folders.picker.placeholder")}
           showClear
-          className="h-9 min-w-[180px] max-w-[260px] flex-1 rounded-lg border-transparent bg-accent/40 px-3 text-sm shadow-none hover:bg-accent/60 dark:bg-accent/30 dark:hover:bg-accent/50"
+          className="h-9 w-44 shrink-0 rounded-lg border-transparent bg-accent/40 px-3 text-sm shadow-none hover:bg-accent/60 dark:bg-accent/30 dark:hover:bg-accent/50"
         />
         <ComboboxContent className="w-72">
           <ComboboxList>
