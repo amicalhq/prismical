@@ -5,7 +5,7 @@ import {
   IconChevronLeft,
   IconInfoCircle,
 } from "@tabler/icons-react";
-import { Link, useLocation } from "@tanstack/react-router";
+import { Link, useLocation, useSearch } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 
 import { NavMain } from "@/components/nav-main";
@@ -42,6 +42,18 @@ export function SettingsSidebar({
 }: React.ComponentProps<typeof Sidebar>) {
   const { t } = useTranslation();
   const location = useLocation();
+  const search = useSearch({ strict: false }) as {
+    folder?: number;
+    tags?: number[];
+  };
+  // The top-level "Notes" nav item represents the unfiltered browser, so it
+  // should only highlight when we're on /notes with no folder/tag filter —
+  // otherwise the active folder/tag row in the sidebar should claim the
+  // selection.
+  const isAllNotesView =
+    location.pathname === "/notes" &&
+    search.folder === undefined &&
+    (search.tags?.length ?? 0) === 0;
   const { isMobile } = useSidebar();
   const sidebarCtaFlag = useFeatureFlag(SIDEBAR_CTA_FEATURE_FLAG);
   const isAppSidebar =
@@ -197,7 +209,11 @@ export function SettingsSidebar({
               <SidebarMenuItem key={item.url}>
                 <SidebarMenuButton
                   asChild
-                  isActive={location.pathname === item.url}
+                  isActive={
+                    item.url === "/notes"
+                      ? isAllNotesView
+                      : location.pathname === item.url
+                  }
                 >
                   <Link
                     to={item.url}

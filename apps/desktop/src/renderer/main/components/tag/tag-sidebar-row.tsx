@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "@tanstack/react-router";
+import { Link, useLocation, useSearch } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import {
@@ -30,6 +30,10 @@ interface TagSidebarRowProps {
 export function TagSidebarRow({ tag, noteCount }: TagSidebarRowProps) {
   const { t } = useTranslation();
   const utils = api.useUtils();
+  const location = useLocation();
+  const search = useSearch({ strict: false }) as { tags?: number[] };
+  const isActive =
+    location.pathname === "/notes" && (search.tags ?? []).includes(tag.id);
   const [editing, setEditing] = useState(false);
   const [confirming, setConfirming] = useState(false);
 
@@ -49,7 +53,7 @@ export function TagSidebarRow({ tag, noteCount }: TagSidebarRowProps) {
   return (
     <>
       <SidebarMenuItem className="group/tag-item">
-        <SidebarMenuButton asChild className="pr-8">
+        <SidebarMenuButton asChild isActive={isActive} className="pr-8">
           <Link
             to="/notes"
             search={{ tags: [tag.id] }}

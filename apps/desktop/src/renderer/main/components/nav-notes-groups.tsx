@@ -1,5 +1,10 @@
 import * as React from "react";
-import { Link, useLocation, useNavigate } from "@tanstack/react-router";
+import {
+  Link,
+  useLocation,
+  useNavigate,
+  useSearch,
+} from "@tanstack/react-router";
 import {
   ChevronRight,
   FileText,
@@ -415,6 +420,10 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
   const isNoteActive = (noteId: number) =>
     location.pathname === `/notes/${noteId}`;
 
+  const search = useSearch({ strict: false }) as { folder?: number };
+  const isFolderActive = (folderId: number) =>
+    location.pathname === "/notes" && search.folder === folderId;
+
   const [favoritesOpen, setFavoritesOpen] = useLocalStorageBoolean(
     "sidebar:favorites:open",
     true,
@@ -473,7 +482,10 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
                     />
                   ) : entry.kind === "folder" ? (
                     <SidebarMenuItem key={`favorite-folder-${entry.folder.id}`}>
-                      <SidebarMenuButton asChild>
+                      <SidebarMenuButton
+                        asChild
+                        isActive={isFolderActive(entry.folder.id)}
+                      >
                         <Link
                           to="/notes"
                           search={{ folder: entry.folder.id }}
