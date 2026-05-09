@@ -134,12 +134,26 @@ export function CommandSearchButton() {
 
   const handleSelectFolder = (id: number) => {
     closeAndReset();
-    navigate({ to: "/notes", search: { folder: id } });
+    navigate({
+      to: "/notes",
+      search: ((prev: Record<string, unknown>) => ({
+        ...prev,
+        folder: id,
+        tags: undefined,
+      })) as never,
+    });
   };
 
   const handleSelectTag = (id: number) => {
     closeAndReset();
-    navigate({ to: "/notes", search: { tags: [id] } });
+    navigate({
+      to: "/notes",
+      search: ((prev: Record<string, unknown>) => ({
+        ...prev,
+        tags: [id],
+        folder: undefined,
+      })) as never,
+    });
   };
 
   return (
