@@ -159,7 +159,8 @@ export function CommandSearchButton() {
               {settingsResults.map((page) => (
                 <CommandItem
                   key={page.url}
-                  value={`settings:${page.url}`}
+                  value={`settings-${page.url}`}
+                  keywords={[page.title, page.description]}
                   onSelect={() => handleSelectUrl(page.url)}
                   className="cursor-pointer"
                 >
@@ -179,7 +180,8 @@ export function CommandSearchButton() {
               {noteResults.map((note) => (
                 <CommandItem
                   key={`note:${note.id}`}
-                  value={`note:${note.title}:${note.id}`}
+                  value={`note-${note.id}`}
+                  keywords={[note.title]}
                   onSelect={() => handleSelectUrl(`/notes/${note.id}`)}
                   className="cursor-pointer"
                 >
@@ -199,7 +201,8 @@ export function CommandSearchButton() {
               {topFolders.map((folder) => (
                 <CommandItem
                   key={`folder:${folder.id}`}
-                  value={`folder:${folder.name}:${folder.id}`}
+                  value={`folder-${folder.id}`}
+                  keywords={[folder.name]}
                   onSelect={() => handleSelectFolder(folder.id)}
                   className="cursor-pointer"
                 >
@@ -219,7 +222,8 @@ export function CommandSearchButton() {
               {topTags.map((tag) => (
                 <CommandItem
                   key={`tag:${tag.id}`}
-                  value={`tag:${tag.name}:${tag.id}`}
+                  value={`tag-${tag.id}`}
+                  keywords={[tag.name]}
                   onSelect={() => handleSelectTag(tag.id)}
                   className="cursor-pointer"
                 >
