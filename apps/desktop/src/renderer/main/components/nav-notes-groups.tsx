@@ -237,7 +237,7 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
 
   const deleteMutation = api.notes.deleteNote.useMutation({
     onSuccess: (_data, variables) => {
-      utils.notes.getNotes.invalidate();
+      utils.notes.invalidate();
       if (location.pathname === `/notes/${variables.id}`) {
         navigate({ to: "/notes" });
       }
@@ -252,13 +252,13 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
 
   const updateOrganization = api.notes.updateNoteOrganization.useMutation({
     onSuccess: () => {
-      utils.notes.getNotes.invalidate();
+      utils.notes.invalidate();
     },
   });
 
   const createNoteMutation = api.notes.createNote.useMutation({
     onSuccess: async (newNote) => {
-      utils.notes.getNotes.invalidate();
+      utils.notes.invalidate();
       navigate({
         to: "/notes/$noteId",
         params: { noteId: String(newNote.id) },

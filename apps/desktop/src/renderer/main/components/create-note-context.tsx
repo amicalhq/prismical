@@ -29,7 +29,7 @@ export function CreateNoteProvider({ children }: { children: ReactNode }) {
 
   const mutation = api.notes.createNote.useMutation({
     onSuccess: async (newNote) => {
-      utils.notes.getNotes.invalidate();
+      utils.notes.invalidate();
       let autoRecord = preferencesQuery.data?.autoTranscribeOnNewNote;
       if (autoRecord === undefined) {
         try {
