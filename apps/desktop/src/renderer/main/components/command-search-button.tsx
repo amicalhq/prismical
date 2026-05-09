@@ -69,18 +69,6 @@ export function CommandSearchButton() {
     [t, i18n.language],
   );
 
-  // Client-side filtering for settings
-  const settingsResults = React.useMemo(() => {
-    const query = search.toLowerCase().trim();
-    if (!query) {
-      return localizedSettings;
-    }
-    return localizedSettings.filter((page) => {
-      const searchText = [page.title, page.description].join(" ").toLowerCase();
-      return searchText.includes(query);
-    });
-  }, [search, localizedSettings]);
-
   const hasQuery = search.trim().length > 0;
 
   const [recentNoteIds, setRecentNoteIds] = React.useState<number[]>(() =>
@@ -130,11 +118,14 @@ export function CommandSearchButton() {
     },
   );
 
+  // Server already filters by query; cmdk's filter then prunes by fuzzy
+  // score and reorders. Cap is generous so good matches aren't lost to
+  // alphabetical truncation.
   const topFolders = React.useMemo(
-    () => folderResults.slice(0, 8),
+    () => folderResults.slice(0, 30),
     [folderResults],
   );
-  const topTags = React.useMemo(() => tagResults.slice(0, 8), [tagResults]);
+  const topTags = React.useMemo(() => tagResults.slice(0, 30), [tagResults]);
 
   const recentNotes = React.useMemo(() => {
     if (recentNoteIds.length === 0) {
@@ -164,6 +155,13 @@ export function CommandSearchButton() {
   const filter = React.useCallback(
     (_value: string, search: string, keywords?: string[]) => {
       if (!keywords || keywords.length === 0) return 0;
+      const q = search.toLowerCase().trim();
+      if (!q) return 1;
+      // Exact match on the primary keyword (the item's title/name) always
+      // wins so e.g. a folder named "Work" beats a fuzzy-matching note when
+      // the query is "work".
+      const primary = keywords[0]?.toLowerCase() ?? "";
+      if (primary === q) return 1;
       return defaultFilter(keywords.join(" "), search, undefined) ?? 0;
     },
     [],
@@ -247,13 +245,13 @@ export function CommandSearchButton() {
               ))}
             </CommandGroup>
           )}
-          {hasQuery && settingsResults.length > 0 && (
-            <CommandGroup heading={t("settings.search.settingsHeading")}>
-              {settingsResults.map((page) => {
+          {hasQuery && (
+            <CommandGroup>
+              {localizedSettings.map((page) => {
                 const shortcutKey = SHORTCUT_KEY_BY_URL.get(page.url);
                 return (
                   <CommandItem
-                    key={page.url}
+                    key={`settings:${page.url}`}
                     value={`settings-${page.url}`}
                     keywords={[page.title, page.description]}
                     onSelect={() => handleSelectUrl(page.url)}
@@ -269,10 +267,6 @@ export function CommandSearchButton() {
                   </CommandItem>
                 );
               })}
-            </CommandGroup>
-          )}
-          {hasQuery && noteResults.length > 0 && (
-            <CommandGroup heading={t("settings.search.notesHeading")}>
               {noteResults.map((note) => (
                 <CommandItem
                   key={`note:${note.id}`}
@@ -292,10 +286,6 @@ export function CommandSearchButton() {
                   </span>
                 </CommandItem>
               ))}
-            </CommandGroup>
-          )}
-          {hasQuery && topFolders.length > 0 && (
-            <CommandGroup heading={t("settings.search.foldersHeading")}>
               {topFolders.map((folder) => (
                 <CommandItem
                   key={`folder:${folder.id}`}
@@ -305,18 +295,12 @@ export function CommandSearchButton() {
                   className="cursor-pointer"
                 >
                   <FolderIcon className="mr-2 h-4 w-4" />
-                  <div className="flex flex-1 items-center justify-between">
-                    <span className="font-medium">{folder.name}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {folder.noteCount}
-                    </span>
-                  </div>
+                  <span className="flex-1 truncate">{folder.name}</span>
+                  <span className="ml-2 shrink-0 text-xs text-muted-foreground">
+                    {folder.noteCount}
+                  </span>
                 </CommandItem>
               ))}
-            </CommandGroup>
-          )}
-          {hasQuery && topTags.length > 0 && (
-            <CommandGroup heading={t("settings.search.tagsHeading")}>
               {topTags.map((tag) => (
                 <CommandItem
                   key={`tag:${tag.id}`}
@@ -325,12 +309,14 @@ export function CommandSearchButton() {
                   onSelect={() => handleSelectTag(tag.id)}
                   className="cursor-pointer"
                 >
-                  <div className="flex flex-1 items-center justify-between">
-                    <TagHash color={tag.color} name={tag.name} />
-                    <span className="text-xs text-muted-foreground">
-                      {tag.noteCount}
-                    </span>
-                  </div>
+                  <TagHash
+                    color={tag.color}
+                    name={tag.name}
+                    className="flex-1"
+                  />
+                  <span className="ml-2 shrink-0 text-xs text-muted-foreground">
+                    {tag.noteCount}
+                  </span>
                 </CommandItem>
               ))}
             </CommandGroup>
