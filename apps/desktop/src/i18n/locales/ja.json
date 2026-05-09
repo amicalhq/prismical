@@ -892,7 +892,7 @@
         "create": "New folder"
       },
       "picker": {
-        "placeholder": "すべてのノート",
+        "placeholder": "フォルダーを選択",
         "empty": "フォルダーが見つかりません。",
         "manage": "フォルダーを管理…"
       },

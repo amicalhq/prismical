@@ -814,7 +814,7 @@
         "create": "New folder"
       },
       "picker": {
-        "placeholder": "All notes",
+        "placeholder": "Pick folder",
         "empty": "No folders found.",
         "manage": "Manage folders…"
       },

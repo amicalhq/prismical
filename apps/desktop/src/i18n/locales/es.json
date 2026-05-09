@@ -895,7 +895,7 @@
         "create": "New folder"
       },
       "picker": {
-        "placeholder": "Todas las notas",
+        "placeholder": "Elegir carpeta",
         "empty": "No se encontraron carpetas.",
         "manage": "Gestionar carpetas…"
       },
