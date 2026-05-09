@@ -3,11 +3,9 @@ import { useTranslation } from "react-i18next";
 import { api } from "@/trpc/react";
 import { NotesList } from "./components/notes-list";
 import { NotesSearchButton } from "./components/notes-search-button";
+import { FolderPicker } from "./components/folder-picker";
 import { TagFilterBar } from "./components/tag-filter-bar";
 import { SortMenu } from "./components/sort-menu";
-import { FolderTreeRail } from "./components/folder-tree-rail";
-
-const UNFILED = 0;
 
 type Sort = "updatedAt" | "createdAt" | "title";
 type SortOrder = "asc" | "desc";
@@ -28,10 +26,10 @@ export default function Notes() {
   // the selected folder client-side.
   const treeQ = api.folders.tree.useQuery();
 
-  // Compute the subtree ids for `folderId` (a real folder, not null/UNFILED).
-  // Returns null when no folder filter applies (All notes / Unfiled).
+  // Subtree ids for `folderId`. Returns null when no folder filter applies
+  // (= "All notes", show everything).
   const subtreeIds = (() => {
-    if (folderId === null || folderId === UNFILED) return null;
+    if (folderId === null) return null;
     const flat = treeQ.data?.folders ?? [];
     const childrenOf = new Map<number, number[]>();
     for (const f of flat) {
@@ -52,15 +50,6 @@ export default function Notes() {
     return out;
   })();
 
-  const folderName = (() => {
-    if (folderId === UNFILED) return t("settings.notes.unfiled.label");
-    if (folderId === null) return t("settings.notes.scope.all");
-    return (
-      treeQ.data?.folders.find((f) => f.id === folderId)?.name ??
-      t("settings.notes.scope.all")
-    );
-  })();
-
   return (
     <div className="mx-auto w-full max-w-6xl px-9 pt-7 pb-8">
       <h1 className="mb-6 text-xl font-bold">
@@ -69,32 +58,18 @@ export default function Notes() {
 
       <div className="mb-6 flex flex-wrap items-center gap-2">
         <NotesSearchButton />
+        <FolderPicker />
         <TagFilterBar />
         <SortMenu />
       </div>
 
-      <div className="grid grid-cols-[240px_1fr] gap-7">
-        <FolderTreeRail />
-        <div>
-          <p className="mb-2 px-1 text-sm text-muted-foreground">
-            {folderName}
-            {tagIds.length > 0 && (
-              <>
-                {" · "}
-                {tagIds.length} {t("settings.notes.scope.tagsSuffix")}
-              </>
-            )}
-          </p>
-          <NotesList
-            showPageHeader={false}
-            folderIds={subtreeIds ?? undefined}
-            unfiled={folderId === UNFILED}
-            tagIds={tagIds.length > 0 ? tagIds : undefined}
-            sortBy={search.sort ?? "updatedAt"}
-            sortOrder={search.sortOrder ?? "desc"}
-          />
-        </div>
-      </div>
+      <NotesList
+        showPageHeader={false}
+        folderIds={subtreeIds ?? undefined}
+        tagIds={tagIds.length > 0 ? tagIds : undefined}
+        sortBy={search.sort ?? "updatedAt"}
+        sortOrder={search.sortOrder ?? "desc"}
+      />
     </div>
   );
 }

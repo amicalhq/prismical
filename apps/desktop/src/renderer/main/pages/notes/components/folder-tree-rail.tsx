@@ -7,8 +7,6 @@ import { api } from "@/trpc/react";
 import type { Folder as FolderRecord } from "@/db/schema";
 import { FolderTreeRow, type FolderTreeNode } from "./folder-tree-row";
 
-const UNFILED = 0;
-
 type FlatFolder = FolderRecord & { noteCount: number };
 
 function buildTree(flat: FlatFolder[]): FolderTreeNode[] {
@@ -80,31 +78,6 @@ export function FolderTreeRail() {
       </div>
 
       <div className="rounded-xl bg-accent/40 p-2 dark:bg-accent/30">
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={() => selectFolder(UNFILED)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              selectFolder(UNFILED);
-            }
-          }}
-          className={`flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-sm ${
-            selected === UNFILED
-              ? "bg-accent text-foreground"
-              : "text-muted-foreground hover:bg-accent/40 hover:text-foreground"
-          }`}
-        >
-          <span className="font-mono text-base leading-none">/</span>
-          <span className="flex-1 italic">
-            {t("settings.notes.unfiled.label")}
-          </span>
-          <span className="text-xs tabular-nums opacity-60">
-            {treeQ.data?.unfiledCount ?? 0}
-          </span>
-        </div>
-
         {tree.map((node) => (
           <FolderTreeRow
             key={node.id}

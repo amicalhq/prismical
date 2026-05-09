@@ -813,6 +813,14 @@
       "actions": {
         "create": "New folder"
       },
+      "picker": {
+        "placeholder": "All notes",
+        "empty": "No folders found.",
+        "manage": "Manage folders…"
+      },
+      "manage": {
+        "title": "Manage folders"
+      },
       "errors": {
         "deleteFailed": "Failed to delete folder: {{message}}",
         "createFailed": "Failed to create folder: {{message}}"

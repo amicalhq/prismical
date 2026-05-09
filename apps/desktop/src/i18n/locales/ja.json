@@ -891,6 +891,14 @@
       "actions": {
         "create": "New folder"
       },
+      "picker": {
+        "placeholder": "すべてのノート",
+        "empty": "フォルダーが見つかりません。",
+        "manage": "フォルダーを管理…"
+      },
+      "manage": {
+        "title": "フォルダーを管理"
+      },
       "errors": {
         "deleteFailed": "Failed to delete folder: {{message}}",
         "createFailed": "Failed to create folder: {{message}}"

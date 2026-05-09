@@ -894,6 +894,14 @@
       "actions": {
         "create": "New folder"
       },
+      "picker": {
+        "placeholder": "Todas las notas",
+        "empty": "No se encontraron carpetas.",
+        "manage": "Gestionar carpetas…"
+      },
+      "manage": {
+        "title": "Gestionar carpetas"
+      },
       "errors": {
         "deleteFailed": "Failed to delete folder: {{message}}",
         "createFailed": "Failed to create folder: {{message}}"
