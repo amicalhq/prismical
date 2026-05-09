@@ -28,7 +28,9 @@ const GetNotesSchema = z.object({
   search: z.string().optional(),
   transcriptionId: z.number().nullable().optional(),
   tagId: z.number().optional(),
+  tagIds: z.array(z.number()).optional(),
   folderId: z.number().nullable().optional(),
+  folderIds: z.array(z.number()).optional(),
 });
 
 const CreateNoteSchema = z.object({
@@ -70,7 +72,9 @@ export const notesRouter = createRouter({
       search: input.search,
       transcriptionId: input.transcriptionId,
       tagId: input.tagId,
+      tagIds: input.tagIds,
       folderId: input.folderId,
+      folderIds: input.folderIds,
     });
   }),
 

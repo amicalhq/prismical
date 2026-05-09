@@ -18,6 +18,8 @@ export const foldersRouter = createRouter({
     .input(ListSchema)
     .query(({ input }) => service().listWithCounts(input)),
 
+  tree: procedure.query(() => service().getTreeWithCounts()),
+
   getById: procedure
     .input(z.object({ id: z.number().int().positive() }))
     .query(async ({ input }) => {
@@ -27,7 +29,12 @@ export const foldersRouter = createRouter({
     }),
 
   create: procedure
-    .input(z.object({ name: z.string() }))
+    .input(
+      z.object({
+        name: z.string(),
+        parentId: z.number().int().positive().nullish(),
+      }),
+    )
     .mutation(({ input }) => service().createFolder(input)),
 
   update: procedure
