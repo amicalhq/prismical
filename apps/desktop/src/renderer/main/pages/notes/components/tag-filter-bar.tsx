@@ -128,7 +128,7 @@ export function TagFilterBar() {
       >
         <ComboboxChips
           ref={anchor}
-          className="h-9 w-56 flex-nowrap overflow-hidden rounded-lg border-transparent bg-accent/40 px-2 hover:bg-accent/60 dark:bg-accent/30 dark:hover:bg-accent/50"
+          className="h-9 w-56 flex-nowrap overflow-clip rounded-lg border-transparent bg-accent/40 px-2 hover:bg-accent/60 dark:bg-accent/30 dark:hover:bg-accent/50"
         >
           <ComboboxValue>
             {(values) => {
@@ -142,7 +142,7 @@ export function TagFilterBar() {
                     return (
                       <ComboboxChip
                         key={id}
-                        className="bg-transparent px-2"
+                        className="gap-1 bg-transparent px-1.5"
                         style={
                           tag
                             ? {
@@ -153,7 +153,12 @@ export function TagFilterBar() {
                         }
                       >
                         {tag ? (
-                          <TagHash color={tag.color} name={tag.name} />
+                          <span className="flex max-w-[80px] items-baseline gap-0.5">
+                            <span className="font-mono font-bold leading-none">
+                              #
+                            </span>
+                            <span className="truncate">{tag.name}</span>
+                          </span>
                         ) : (
                           <span className="text-muted-foreground">#…</span>
                         )}
