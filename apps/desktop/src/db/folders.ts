@@ -75,7 +75,7 @@ export async function listFolders(
   opts: ListFoldersOptions = {},
 ): Promise<Folder[]> {
   const { sortBy = "createdAt", search, limit, offset } = opts;
-  const order = sortBy === "name" ? asc(folders.name) : desc(folders.createdAt);
+  const order = sortBy === "name" ? sql`LOWER(${folders.name}) ASC` : desc(folders.createdAt);
 
   let q = db.select().from(folders).orderBy(order).$dynamic();
   if (search) {
@@ -121,7 +121,7 @@ export async function listAllFoldersWithCounts(
   opts: ListFoldersOptions = {},
 ): Promise<FolderWithCount[]> {
   const { sortBy = "createdAt", search } = opts;
-  const order = sortBy === "name" ? asc(folders.name) : desc(folders.createdAt);
+  const order = sortBy === "name" ? sql`LOWER(${folders.name}) ASC` : desc(folders.createdAt);
 
   const searchPattern = search ? `%${escapeLike(search)}%` : undefined;
   const rows = await db

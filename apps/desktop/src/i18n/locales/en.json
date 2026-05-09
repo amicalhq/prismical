@@ -294,10 +294,12 @@
     "search": {
       "buttonLabel": "Search",
       "buttonPlaceholder": "Search...",
-      "inputPlaceholder": "Search settings and notes...",
+      "inputPlaceholder": "Search notes, folders, tags, settings...",
       "noResults": "No results found.",
       "settingsHeading": "Settings",
-      "notesHeading": "Notes"
+      "notesHeading": "Notes",
+      "foldersHeading": "Folders",
+      "tagsHeading": "Tags"
     },
     "home": {
       "greeting": {
