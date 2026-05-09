@@ -18,6 +18,7 @@ import { api } from "@/trpc/react";
 import { FileTextIcon, Folder as FolderIcon } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import {
+  HOME_NAV_ITEMS,
   SETTINGS_NAV_ITEMS,
   type SettingsNavItem,
 } from "../lib/settings-navigation";
@@ -25,6 +26,15 @@ import { TagHash } from "@/renderer/main/components/tag/tag-hash";
 
 // Detect platform for keyboard shortcuts
 const isMac = window.electronAPI.platform === "darwin";
+
+const SHORTCUT_KEY_BY_URL = new Map(
+  HOME_NAV_ITEMS.filter((item) => item.shortcutKey).map((item) => [
+    item.url,
+    item.shortcutKey as string,
+  ]),
+);
+
+const formatShortcut = (key: string) => (isMac ? `⌘ ${key}` : `Ctrl ${key}`);
 const HOME_SEARCH_ITEM: SettingsNavItem = {
   titleKey: "settings.nav.home.title",
   url: "/home",
@@ -175,27 +185,30 @@ export function CommandSearchButton() {
           value={search}
           onValueChange={setSearch}
         />
-        <CommandList>
+        <CommandList className="max-h-[440px]">
           <CommandEmpty>{t("settings.search.noResults")}</CommandEmpty>
           {settingsResults.length > 0 && (
             <CommandGroup heading={t("settings.search.settingsHeading")}>
-              {settingsResults.map((page) => (
-                <CommandItem
-                  key={page.url}
-                  value={`settings-${page.url}`}
-                  keywords={[page.title, page.description]}
-                  onSelect={() => handleSelectUrl(page.url)}
-                  className="cursor-pointer"
-                >
-                  <page.icon className="mr-2 h-4 w-4" />
-                  <div className="flex flex-col">
-                    <span className="font-medium">{page.title}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {page.description}
-                    </span>
-                  </div>
-                </CommandItem>
-              ))}
+              {settingsResults.map((page) => {
+                const shortcutKey = SHORTCUT_KEY_BY_URL.get(page.url);
+                return (
+                  <CommandItem
+                    key={page.url}
+                    value={`settings-${page.url}`}
+                    keywords={[page.title, page.description]}
+                    onSelect={() => handleSelectUrl(page.url)}
+                    className="cursor-pointer"
+                  >
+                    <page.icon className="mr-2 h-4 w-4" />
+                    <span className="flex-1 truncate">{page.title}</span>
+                    {shortcutKey && (
+                      <kbd className="pointer-events-none ml-2 inline-flex h-5 select-none items-center rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
+                        {formatShortcut(shortcutKey)}
+                      </kbd>
+                    )}
+                  </CommandItem>
+                );
+              })}
             </CommandGroup>
           )}
           {noteResults.length > 0 && (
@@ -213,12 +226,10 @@ export function CommandSearchButton() {
                   ) : (
                     <FileTextIcon className="mr-2 h-4 w-4" />
                   )}
-                  <div className="flex flex-col">
-                    <span className="font-medium">{note.title}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {formatDate(new Date(note.createdAt))}
-                    </span>
-                  </div>
+                  <span className="flex-1 truncate">{note.title}</span>
+                  <span className="ml-2 shrink-0 text-xs text-muted-foreground">
+                    {formatDate(new Date(note.createdAt))}
+                  </span>
                 </CommandItem>
               ))}
             </CommandGroup>
@@ -265,6 +276,20 @@ export function CommandSearchButton() {
             </CommandGroup>
           )}
         </CommandList>
+        <div className="flex items-center justify-end gap-3 border-t px-3 py-1.5 text-[11px] text-muted-foreground">
+          <span className="flex items-center gap-1">
+            <kbd className="rounded border bg-muted px-1 font-mono text-[10px]">↵</kbd>
+            {t("settings.search.hintOpen")}
+          </span>
+          <span className="flex items-center gap-1">
+            <kbd className="rounded border bg-muted px-1 font-mono text-[10px]">↑↓</kbd>
+            {t("settings.search.hintNavigate")}
+          </span>
+          <span className="flex items-center gap-1">
+            <kbd className="rounded border bg-muted px-1 font-mono text-[10px]">Esc</kbd>
+            {t("settings.search.hintClose")}
+          </span>
+        </div>
       </CommandDialog>
     </>
   );

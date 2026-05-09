@@ -300,7 +300,10 @@
       "settingsHeading": "Settings",
       "notesHeading": "Notes",
       "foldersHeading": "Folders",
-      "tagsHeading": "Tags"
+      "tagsHeading": "Tags",
+      "hintOpen": "Open",
+      "hintNavigate": "Navigate",
+      "hintClose": "Close"
     },
     "home": {
       "greeting": {

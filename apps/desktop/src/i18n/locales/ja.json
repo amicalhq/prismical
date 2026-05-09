@@ -389,7 +389,10 @@
       "settingsHeading": "設定",
       "notesHeading": "ノート",
       "foldersHeading": "フォルダー",
-      "tagsHeading": "タグ"
+      "tagsHeading": "タグ",
+      "hintOpen": "開く",
+      "hintNavigate": "移動",
+      "hintClose": "閉じる"
     },
     "home": {
       "greeting": {

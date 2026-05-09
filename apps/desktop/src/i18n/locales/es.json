@@ -389,7 +389,10 @@
       "settingsHeading": "Configuración",
       "notesHeading": "Notas",
       "foldersHeading": "Carpetas",
-      "tagsHeading": "Etiquetas"
+      "tagsHeading": "Etiquetas",
+      "hintOpen": "Abrir",
+      "hintNavigate": "Navegar",
+      "hintClose": "Cerrar"
     },
     "home": {
       "greeting": {
