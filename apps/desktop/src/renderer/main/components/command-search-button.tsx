@@ -331,97 +331,107 @@ export function CommandSearchButton() {
             </CommandGroup>
           )}
           {hasQuery && (
-            <CommandGroup>
-              {quickActions.map((action) => (
-                <CommandItem
-                  key={`action:${action.id}`}
-                  value={`action-${action.id}`}
-                  keywords={action.keywords}
-                  onSelect={action.onSelect}
-                  className="cursor-pointer"
-                >
-                  <action.icon className="mr-2 h-4 w-4" />
-                  <span className="flex-1 truncate">{action.title}</span>
-                  {action.shortcutKey && (
-                    <kbd className="pointer-events-none ml-2 inline-flex h-5 select-none items-center rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
-                      {formatShortcut(action.shortcutKey)}
-                    </kbd>
-                  )}
-                </CommandItem>
-              ))}
-              {localizedSettings.map((page) => {
-                const shortcutKey = SHORTCUT_KEY_BY_URL.get(page.url);
-                return (
+            <>
+              <CommandGroup heading={t("settings.search.notesHeading")}>
+                {noteResults.map((note) => (
                   <CommandItem
-                    key={`settings:${page.url}`}
-                    value={`settings-${page.url}`}
-                    keywords={[page.title, page.description]}
-                    onSelect={() => handleSelectUrl(page.url)}
+                    key={`note:${note.id}`}
+                    value={`note-${note.id}`}
+                    keywords={[note.title]}
+                    onSelect={() => handleSelectUrl(`/notes/${note.id}`)}
                     className="cursor-pointer"
                   >
-                    <page.icon className="mr-2 h-4 w-4" />
-                    <span className="flex-1 truncate">{page.title}</span>
-                    {shortcutKey && (
+                    {note.icon ? (
+                      <span className="mr-2 text-base leading-none">{note.icon}</span>
+                    ) : (
+                      <FileTextIcon className="mr-2 h-4 w-4" />
+                    )}
+                    <span className="flex-1 truncate">{note.title}</span>
+                    <span className="ml-2 shrink-0 text-xs text-muted-foreground">
+                      {formatDate(new Date(note.createdAt))}
+                    </span>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+              <CommandGroup heading={t("settings.search.foldersHeading")}>
+                {topFolders.map((folder) => (
+                  <CommandItem
+                    key={`folder:${folder.id}`}
+                    value={`folder-${folder.id}`}
+                    keywords={[folder.name]}
+                    onSelect={() => handleSelectFolder(folder.id)}
+                    className="cursor-pointer"
+                  >
+                    <FolderIcon className="mr-2 h-4 w-4" />
+                    <span className="flex-1 truncate">{folder.name}</span>
+                    <span className="ml-2 shrink-0 text-xs text-muted-foreground">
+                      {folder.noteCount}
+                    </span>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+              <CommandGroup heading={t("settings.search.tagsHeading")}>
+                {topTags.map((tag) => (
+                  <CommandItem
+                    key={`tag:${tag.id}`}
+                    value={`tag-${tag.id}`}
+                    keywords={[tag.name]}
+                    onSelect={() => handleSelectTag(tag.id)}
+                    className="cursor-pointer"
+                  >
+                    <TagHash
+                      color={tag.color}
+                      name={tag.name}
+                      className="flex-1"
+                    />
+                    <span className="ml-2 shrink-0 text-xs text-muted-foreground">
+                      {tag.noteCount}
+                    </span>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+              <CommandGroup heading={t("settings.search.settingsHeading")}>
+                {localizedSettings.map((page) => {
+                  const shortcutKey = SHORTCUT_KEY_BY_URL.get(page.url);
+                  return (
+                    <CommandItem
+                      key={`settings:${page.url}`}
+                      value={`settings-${page.url}`}
+                      keywords={[page.title, page.description]}
+                      onSelect={() => handleSelectUrl(page.url)}
+                      className="cursor-pointer"
+                    >
+                      <page.icon className="mr-2 h-4 w-4" />
+                      <span className="flex-1 truncate">{page.title}</span>
+                      {shortcutKey && (
+                        <kbd className="pointer-events-none ml-2 inline-flex h-5 select-none items-center rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
+                          {formatShortcut(shortcutKey)}
+                        </kbd>
+                      )}
+                    </CommandItem>
+                  );
+                })}
+              </CommandGroup>
+              <CommandGroup heading={t("settings.search.actionsHeading")}>
+                {quickActions.map((action) => (
+                  <CommandItem
+                    key={`action:${action.id}`}
+                    value={`action-${action.id}`}
+                    keywords={action.keywords}
+                    onSelect={action.onSelect}
+                    className="cursor-pointer"
+                  >
+                    <action.icon className="mr-2 h-4 w-4" />
+                    <span className="flex-1 truncate">{action.title}</span>
+                    {action.shortcutKey && (
                       <kbd className="pointer-events-none ml-2 inline-flex h-5 select-none items-center rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
-                        {formatShortcut(shortcutKey)}
+                        {formatShortcut(action.shortcutKey)}
                       </kbd>
                     )}
                   </CommandItem>
-                );
-              })}
-              {noteResults.map((note) => (
-                <CommandItem
-                  key={`note:${note.id}`}
-                  value={`note-${note.id}`}
-                  keywords={[note.title]}
-                  onSelect={() => handleSelectUrl(`/notes/${note.id}`)}
-                  className="cursor-pointer"
-                >
-                  {note.icon ? (
-                    <span className="mr-2 text-base leading-none">{note.icon}</span>
-                  ) : (
-                    <FileTextIcon className="mr-2 h-4 w-4" />
-                  )}
-                  <span className="flex-1 truncate">{note.title}</span>
-                  <span className="ml-2 shrink-0 text-xs text-muted-foreground">
-                    {formatDate(new Date(note.createdAt))}
-                  </span>
-                </CommandItem>
-              ))}
-              {topFolders.map((folder) => (
-                <CommandItem
-                  key={`folder:${folder.id}`}
-                  value={`folder-${folder.id}`}
-                  keywords={[folder.name]}
-                  onSelect={() => handleSelectFolder(folder.id)}
-                  className="cursor-pointer"
-                >
-                  <FolderIcon className="mr-2 h-4 w-4" />
-                  <span className="flex-1 truncate">{folder.name}</span>
-                  <span className="ml-2 shrink-0 text-xs text-muted-foreground">
-                    {folder.noteCount}
-                  </span>
-                </CommandItem>
-              ))}
-              {topTags.map((tag) => (
-                <CommandItem
-                  key={`tag:${tag.id}`}
-                  value={`tag-${tag.id}`}
-                  keywords={[tag.name]}
-                  onSelect={() => handleSelectTag(tag.id)}
-                  className="cursor-pointer"
-                >
-                  <TagHash
-                    color={tag.color}
-                    name={tag.name}
-                    className="flex-1"
-                  />
-                  <span className="ml-2 shrink-0 text-xs text-muted-foreground">
-                    {tag.noteCount}
-                  </span>
-                </CommandItem>
-              ))}
-            </CommandGroup>
+                ))}
+              </CommandGroup>
+            </>
           )}
         </CommandList>
         <div className="flex items-center justify-end gap-3 border-t px-3 py-1.5 text-[11px] text-muted-foreground">
