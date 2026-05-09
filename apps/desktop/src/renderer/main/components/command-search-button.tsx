@@ -15,7 +15,12 @@ import {
 } from "@/components/ui/command";
 import { SidebarMenuButton } from "@/components/ui/sidebar";
 import { api } from "@/trpc/react";
-import { FileTextIcon, Folder as FolderIcon } from "lucide-react";
+import {
+  FilePlus,
+  FileTextIcon,
+  Folder as FolderIcon,
+  FolderPlus,
+} from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import {
   HOME_NAV_ITEMS,
@@ -24,6 +29,8 @@ import {
 } from "../lib/settings-navigation";
 import { TagHash } from "@/renderer/main/components/tag/tag-hash";
 import { getRecentNoteIds } from "../lib/recent-notes";
+import { useCreateNoteAction } from "./create-note-context";
+import { CreateFolderDialog } from "./create-folder-dialog";
 
 // Detect platform for keyboard shortcuts
 const isMac = window.electronAPI.platform === "darwin";
@@ -51,11 +58,22 @@ const NOTES_SEARCH_ITEM: SettingsNavItem = {
   type: "settings",
 };
 
+type QuickAction = {
+  id: string;
+  title: string;
+  keywords: string[];
+  icon: React.ComponentType<{ className?: string }>;
+  shortcutKey?: string;
+  onSelect: () => void;
+};
+
 export function CommandSearchButton() {
   const { t, i18n } = useTranslation();
   const [open, setOpen] = React.useState(false);
   const [search, setSearch] = React.useState("");
+  const [createFolderOpen, setCreateFolderOpen] = React.useState(false);
   const navigate = useNavigate();
+  const { createNote } = useCreateNoteAction();
 
   const localizedSettings = React.useMemo(
     () =>
@@ -201,6 +219,52 @@ export function CommandSearchButton() {
     });
   };
 
+  const quickActions = React.useMemo<QuickAction[]>(() => {
+    const newNoteTitle = t("settings.search.actions.newNote");
+    const newFolderTitle = t("settings.search.actions.newFolder");
+    return [
+      {
+        id: "new-note",
+        title: newNoteTitle,
+        keywords: [newNoteTitle, t("settings.search.actions.newNoteAlt"), "new"],
+        icon: FilePlus,
+        shortcutKey: "N",
+        onSelect: () => {
+          closeAndReset();
+          createNote();
+        },
+      },
+      {
+        id: "new-folder",
+        title: newFolderTitle,
+        keywords: [
+          newFolderTitle,
+          t("settings.search.actions.newFolderAlt"),
+          "new",
+        ],
+        icon: FolderPlus,
+        onSelect: () => {
+          closeAndReset();
+          setCreateFolderOpen(true);
+        },
+      },
+    ];
+  }, [t, closeAndReset, createNote]);
+
+  const handleFolderCreated = React.useCallback(
+    (folderId: number) => {
+      navigate({
+        to: "/notes",
+        search: ((prev: Record<string, unknown>) => ({
+          ...prev,
+          folder: folderId,
+          tags: undefined,
+        })) as never,
+      });
+    },
+    [navigate],
+  );
+
   return (
     <>
       <SidebarMenuButton
@@ -245,8 +309,46 @@ export function CommandSearchButton() {
               ))}
             </CommandGroup>
           )}
+          {!hasQuery && (
+            <CommandGroup heading={t("settings.search.actionsHeading")}>
+              {quickActions.map((action) => (
+                <CommandItem
+                  key={`action:${action.id}`}
+                  value={`action-${action.id}`}
+                  keywords={action.keywords}
+                  onSelect={action.onSelect}
+                  className="cursor-pointer"
+                >
+                  <action.icon className="mr-2 h-4 w-4" />
+                  <span className="flex-1 truncate">{action.title}</span>
+                  {action.shortcutKey && (
+                    <kbd className="pointer-events-none ml-2 inline-flex h-5 select-none items-center rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
+                      {formatShortcut(action.shortcutKey)}
+                    </kbd>
+                  )}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          )}
           {hasQuery && (
             <CommandGroup>
+              {quickActions.map((action) => (
+                <CommandItem
+                  key={`action:${action.id}`}
+                  value={`action-${action.id}`}
+                  keywords={action.keywords}
+                  onSelect={action.onSelect}
+                  className="cursor-pointer"
+                >
+                  <action.icon className="mr-2 h-4 w-4" />
+                  <span className="flex-1 truncate">{action.title}</span>
+                  {action.shortcutKey && (
+                    <kbd className="pointer-events-none ml-2 inline-flex h-5 select-none items-center rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
+                      {formatShortcut(action.shortcutKey)}
+                    </kbd>
+                  )}
+                </CommandItem>
+              ))}
               {localizedSettings.map((page) => {
                 const shortcutKey = SHORTCUT_KEY_BY_URL.get(page.url);
                 return (
@@ -337,6 +439,11 @@ export function CommandSearchButton() {
           </span>
         </div>
       </CommandDialog>
+      <CreateFolderDialog
+        open={createFolderOpen}
+        onOpenChange={setCreateFolderOpen}
+        onCreated={handleFolderCreated}
+      />
     </>
   );
 }
