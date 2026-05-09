@@ -769,6 +769,10 @@
         "title": "No notes tagged #{{name}} yet",
         "description": "Tag a note to see it here, or clear the filter."
       },
+      "create": "Create \"{{name}}\"",
+      "toast": {
+        "deleted": "Deleted #{{name}}"
+      },
       "errors": {
         "createFailed": "Failed to create tag: {{message}}",
         "updateFailed": "Failed to update tag: {{message}}",

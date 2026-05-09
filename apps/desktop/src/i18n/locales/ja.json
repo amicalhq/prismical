@@ -847,6 +847,10 @@
         "title": "#{{name}} のタグが付いたノートはまだありません",
         "description": "ノートにタグを付けてここに表示するか、フィルターをクリアしてください。"
       },
+      "create": "Create \"{{name}}\"",
+      "toast": {
+        "deleted": "Deleted #{{name}}"
+      },
       "errors": {
         "createFailed": "タグの作成に失敗しました: {{message}}",
         "updateFailed": "タグの更新に失敗しました: {{message}}",

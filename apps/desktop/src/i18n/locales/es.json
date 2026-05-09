@@ -850,6 +850,10 @@
         "title": "Aún no hay notas etiquetadas con #{{name}}",
         "description": "Etiqueta una nota para verla aquí, o quita el filtro."
       },
+      "create": "Create \"{{name}}\"",
+      "toast": {
+        "deleted": "Deleted #{{name}}"
+      },
       "errors": {
         "createFailed": "No se pudo crear la etiqueta: {{message}}",
         "updateFailed": "No se pudo actualizar la etiqueta: {{message}}",
