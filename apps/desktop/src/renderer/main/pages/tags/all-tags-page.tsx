@@ -104,7 +104,7 @@ export function AllTagsPage() {
                 onClick={() =>
                   navigate({
                     to: "/notes",
-                    search: { tag: tag.id },
+                    search: { tags: [tag.id] },
                   })
                 }
                 aria-label={`#${tag.name}`}

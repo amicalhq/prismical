@@ -40,7 +40,7 @@ export function NoteTagChips({ noteId, isNarrow }: NoteTagChipsProps) {
   const overflow = tags.length - visible.length;
 
   const goToTag = (tagId: number) =>
-    navigate({ to: "/notes", search: { tag: tagId } });
+    navigate({ to: "/notes", search: { tags: [tagId] } });
 
   const togglePicker = () => setPickerOpen((o) => !o);
 
