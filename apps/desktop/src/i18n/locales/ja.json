@@ -383,10 +383,12 @@
     "search": {
       "buttonLabel": "検索",
       "buttonPlaceholder": "検索...",
-      "inputPlaceholder": "設定とノートを検索...",
+      "inputPlaceholder": "ノート、フォルダ、タグ、設定を検索...",
       "noResults": "結果が見つかりません。",
       "settingsHeading": "設定",
-      "notesHeading": "ノート"
+      "notesHeading": "ノート",
+      "foldersHeading": "フォルダ",
+      "tagsHeading": "タグ"
     },
     "home": {
       "greeting": {

@@ -383,10 +383,12 @@
     "search": {
       "buttonLabel": "Buscar",
       "buttonPlaceholder": "Buscar...",
-      "inputPlaceholder": "Buscar en configuración y notas...",
+      "inputPlaceholder": "Buscar notas, carpetas, etiquetas, ajustes...",
       "noResults": "No se encontraron resultados.",
       "settingsHeading": "Configuración",
-      "notesHeading": "Notas"
+      "notesHeading": "Notas",
+      "foldersHeading": "Carpetas",
+      "tagsHeading": "Etiquetas"
     },
     "home": {
       "greeting": {
