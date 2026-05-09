@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
 import { tags, noteTags, type Tag, type NewTag } from "./schema";
 
@@ -47,7 +47,7 @@ export async function getTagByName(db: DB, name: string): Promise<Tag | null> {
 
 export async function listTags(db: DB, opts: ListTagsOptions = {}): Promise<Tag[]> {
   const { sortBy = "createdAt", search, limit, offset } = opts;
-  const order = sortBy === "name" ? asc(tags.name) : desc(tags.createdAt);
+  const order = sortBy === "name" ? sql`LOWER(${tags.name}) ASC` : desc(tags.createdAt);
 
   let q = db.select().from(tags).orderBy(order).$dynamic();
   if (search) {
@@ -80,7 +80,7 @@ export async function listAllTagsWithCounts(
   opts: ListTagsOptions = {},
 ): Promise<TagWithCount[]> {
   const { sortBy = "createdAt", search } = opts;
-  const order = sortBy === "name" ? asc(tags.name) : desc(tags.createdAt);
+  const order = sortBy === "name" ? sql`LOWER(${tags.name}) ASC` : desc(tags.createdAt);
 
   const searchPattern = search
     ? `%${escapeLike(search.toLowerCase())}%`
