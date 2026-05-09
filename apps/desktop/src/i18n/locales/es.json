@@ -805,7 +805,16 @@
         }
       },
       "sidebarButtonLabel": "Nota",
-      "searchButtonLabel": "Search notes, folders, tags…"
+      "searchButtonLabel": "Search notes, folders, tags…",
+      "sort": {
+        "updatedAt": "Actualizado",
+        "createdAt": "Creado",
+        "title": "Título"
+      },
+      "scope": {
+        "all": "Todas las notas",
+        "tagsSuffix": "etiquetas"
+      }
     },
     "tags": {
       "title": "Etiquetas",

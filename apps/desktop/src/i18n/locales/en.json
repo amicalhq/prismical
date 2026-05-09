@@ -724,7 +724,16 @@
         }
       },
       "sidebarButtonLabel": "Note",
-      "searchButtonLabel": "Search notes, folders, tags…"
+      "searchButtonLabel": "Search notes, folders, tags…",
+      "sort": {
+        "updatedAt": "Updated",
+        "createdAt": "Created",
+        "title": "Title"
+      },
+      "scope": {
+        "all": "All notes",
+        "tagsSuffix": "tags"
+      }
     },
     "tags": {
       "title": "Tags",
