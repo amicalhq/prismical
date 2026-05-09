@@ -70,9 +70,7 @@ export default function Notes() {
       <div className="mb-6 flex flex-wrap items-center gap-2">
         <NotesSearchButton />
         <TagFilterBar />
-        <div className="ml-auto">
-          <SortMenu />
-        </div>
+        <SortMenu />
       </div>
 
       <div className="grid grid-cols-[240px_1fr] gap-7">
