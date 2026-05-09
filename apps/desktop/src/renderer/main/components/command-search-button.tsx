@@ -14,12 +14,13 @@ import {
 } from "@/components/ui/command";
 import { SidebarMenuButton } from "@/components/ui/sidebar";
 import { api } from "@/trpc/react";
-import { FileTextIcon } from "lucide-react";
+import { FileTextIcon, Folder as FolderIcon } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import {
   SETTINGS_NAV_ITEMS,
   type SettingsNavItem,
 } from "../lib/settings-navigation";
+import { TagHash } from "@/renderer/main/components/tag/tag-hash";
 
 // Detect platform for keyboard shortcuts
 const isMac = window.electronAPI.platform === "darwin";
@@ -98,19 +99,6 @@ export function CommandSearchButton() {
   );
   const topTags = React.useMemo(() => tagResults.slice(0, 8), [tagResults]);
 
-  const searchResults = React.useMemo(() => {
-    return [
-      ...settingsResults,
-      ...noteResults.map((n) => ({
-        ...n,
-        url: `/notes/${n.id}`,
-        description: formatDate(new Date(n.createdAt)),
-        type: "note" as const,
-        icon: n.icon || "file-text",
-      })),
-    ];
-  }, [settingsResults, noteResults]);
-
   React.useEffect(() => {
     const down = (e: KeyboardEvent) => {
       if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
@@ -125,10 +113,24 @@ export function CommandSearchButton() {
 
   const shortcutDisplay = isMac ? "⌘ K" : "Ctrl+K";
 
-  const handleSelect = (url: string) => {
+  const closeAndReset = React.useCallback(() => {
     setOpen(false);
     setSearch("");
+  }, []);
+
+  const handleSelectUrl = (url: string) => {
+    closeAndReset();
     navigate({ to: url });
+  };
+
+  const handleSelectFolder = (id: number) => {
+    closeAndReset();
+    navigate({ to: "/notes", search: { folder: id } });
+  };
+
+  const handleSelectTag = (id: number) => {
+    closeAndReset();
+    navigate({ to: "/notes", search: { tags: [id] } });
   };
 
   return (
@@ -152,68 +154,85 @@ export function CommandSearchButton() {
         />
         <CommandList>
           <CommandEmpty>{t("settings.search.noResults")}</CommandEmpty>
-          {(() => {
-            // Separate results by type
-            const noteResults = searchResults.filter(
-              (item) => item.type === "note",
-            );
-            const settingsResults = searchResults.filter(
-              (item) => item.type === "settings",
-            );
-
-            return (
-              <>
-                {settingsResults.length > 0 && (
-                  <CommandGroup heading={t("settings.search.settingsHeading")}>
-                    {settingsResults.map((page) => (
-                      <CommandItem
-                        key={page.url}
-                        value={page.title}
-                        onSelect={() => handleSelect(page.url)}
-                        className="cursor-pointer"
-                      >
-                        {typeof page.icon === "string" ? (
-                          <span className="mr-2 text-xl">{page.icon}</span>
-                        ) : (
-                          <page.icon className="mr-2 h-4 w-4" />
-                        )}
-                        <div className="flex flex-col">
-                          <span className="font-medium">{page.title}</span>
-                          <span className="text-xs text-muted-foreground">
-                            {page.description}
-                          </span>
-                        </div>
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                )}
-                {noteResults.length > 0 && (
-                  <CommandGroup heading={t("settings.search.notesHeading")}>
-                    {noteResults.map((note) => (
-                      <CommandItem
-                        key={note.url}
-                        value={note.title}
-                        onSelect={() => handleSelect(note.url)}
-                        className="cursor-pointer"
-                      >
-                        {note.icon ? (
-                          <FileTextIcon className="mr-2 h-4 w-4" />
-                        ) : (
-                          <span className="mr-2 text-xl">{note.icon}</span>
-                        )}
-                        <div className="flex flex-col">
-                          <span className="font-medium">{note.title}</span>
-                          <span className="text-xs text-muted-foreground">
-                            {note.description}
-                          </span>
-                        </div>
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                )}
-              </>
-            );
-          })()}
+          {settingsResults.length > 0 && (
+            <CommandGroup heading={t("settings.search.settingsHeading")}>
+              {settingsResults.map((page) => (
+                <CommandItem
+                  key={page.url}
+                  value={`settings:${page.url}`}
+                  onSelect={() => handleSelectUrl(page.url)}
+                  className="cursor-pointer"
+                >
+                  <page.icon className="mr-2 h-4 w-4" />
+                  <div className="flex flex-col">
+                    <span className="font-medium">{page.title}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {page.description}
+                    </span>
+                  </div>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          )}
+          {noteResults.length > 0 && (
+            <CommandGroup heading={t("settings.search.notesHeading")}>
+              {noteResults.map((note) => (
+                <CommandItem
+                  key={`note:${note.id}`}
+                  value={`note:${note.title}:${note.id}`}
+                  onSelect={() => handleSelectUrl(`/notes/${note.id}`)}
+                  className="cursor-pointer"
+                >
+                  <FileTextIcon className="mr-2 h-4 w-4" />
+                  <div className="flex flex-col">
+                    <span className="font-medium">{note.title}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {formatDate(new Date(note.createdAt))}
+                    </span>
+                  </div>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          )}
+          {topFolders.length > 0 && (
+            <CommandGroup heading={t("settings.search.foldersHeading")}>
+              {topFolders.map((folder) => (
+                <CommandItem
+                  key={`folder:${folder.id}`}
+                  value={`folder:${folder.name}:${folder.id}`}
+                  onSelect={() => handleSelectFolder(folder.id)}
+                  className="cursor-pointer"
+                >
+                  <FolderIcon className="mr-2 h-4 w-4" />
+                  <div className="flex flex-1 items-center justify-between">
+                    <span className="font-medium">{folder.name}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {folder.noteCount}
+                    </span>
+                  </div>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          )}
+          {topTags.length > 0 && (
+            <CommandGroup heading={t("settings.search.tagsHeading")}>
+              {topTags.map((tag) => (
+                <CommandItem
+                  key={`tag:${tag.id}`}
+                  value={`tag:${tag.name}:${tag.id}`}
+                  onSelect={() => handleSelectTag(tag.id)}
+                  className="cursor-pointer"
+                >
+                  <div className="flex flex-1 items-center justify-between">
+                    <TagHash color={tag.color} name={tag.name} />
+                    <span className="text-xs text-muted-foreground">
+                      {tag.noteCount}
+                    </span>
+                  </div>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          )}
         </CommandList>
       </CommandDialog>
     </>
