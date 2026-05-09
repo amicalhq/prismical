@@ -386,10 +386,21 @@
       "buttonPlaceholder": "検索...",
       "inputPlaceholder": "ノート、フォルダー、タグ、設定を検索...",
       "noResults": "結果が見つかりません。",
+      "recentHeading": "最近",
+      "actionsHeading": "クイックアクション",
       "settingsHeading": "設定",
       "notesHeading": "ノート",
       "foldersHeading": "フォルダー",
-      "tagsHeading": "タグ"
+      "tagsHeading": "タグ",
+      "hintOpen": "開く",
+      "hintNavigate": "移動",
+      "hintClose": "閉じる",
+      "actions": {
+        "newNote": "新しいノート",
+        "newNoteAlt": "ノートを作成",
+        "newFolder": "新しいフォルダー",
+        "newFolderAlt": "フォルダーを作成"
+      }
     },
     "home": {
       "greeting": {

@@ -127,15 +127,13 @@ export default function NotePage({
 
   const updateTitleMutation = api.notes.updateNoteTitle.useMutation({
     onSuccess: () => {
-      utils.notes.getNotes.invalidate();
-      utils.notes.getNoteById.invalidate({ id: noteIdNumber });
+      utils.notes.invalidate();
     },
   });
 
   const updateNoteIconMutation = api.notes.updateNoteIcon.useMutation({
     onSuccess: () => {
-      utils.notes.getNotes.invalidate();
-      utils.notes.getNoteById.invalidate({ id: noteIdNumber });
+      utils.notes.invalidate();
       toast.success(t("settings.notes.toast.emojiUpdated"));
     },
     onError: (error) => {
@@ -148,8 +146,7 @@ export default function NotePage({
   const updateNoteOrganizationMutation =
     api.notes.updateNoteOrganization.useMutation({
       onSuccess: () => {
-        utils.notes.getNotes.invalidate();
-        utils.notes.getNoteById.invalidate({ id: noteIdNumber });
+        utils.notes.invalidate();
       },
       onError: (error) => {
         toast.error(
@@ -163,7 +160,7 @@ export default function NotePage({
   // Delete mutation
   const deleteMutation = api.notes.deleteNote.useMutation({
     onSuccess: () => {
-      utils.notes.getNotes.invalidate();
+      utils.notes.invalidate();
       // Use onBack if provided, otherwise navigate
       if (onBack) {
         onBack();

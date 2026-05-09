@@ -239,6 +239,20 @@ export const notesRouter = createRouter({
       }));
     }),
 
+  // Hydrate a list of note IDs for the command palette's recents.
+  // Order is not preserved; the client reorders to match the recents list.
+  getNotesByIds: procedure
+    .input(z.object({ ids: z.array(z.number().int()) }))
+    .query(async ({ input }) => {
+      const notes = await notesService.getNotesByIds(input.ids);
+      return notes.map((note) => ({
+        id: note.id,
+        title: note.title,
+        createdAt: note.createdAt,
+        icon: note.icon ?? null,
+      }));
+    }),
+
   generateNotesFromTranscript: procedure
     .input(z.object({ noteId: z.number() }))
     .mutation(async ({ input, ctx }) => {

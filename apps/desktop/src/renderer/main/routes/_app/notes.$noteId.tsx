@@ -1,6 +1,8 @@
+import { useEffect } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import NotePage from "../../pages/notes/components/note-wrapper";
+import { recordNoteVisit } from "../../lib/recent-notes";
 
 const booleanSearchParam = z.preprocess((value) => {
   if (value === undefined) return undefined;
@@ -22,6 +24,13 @@ export const Route = createFileRoute("/_app/notes/$noteId")({
 function NotePageWrapper() {
   const { noteId } = Route.useParams();
   const { autoRecord, openTranscription } = Route.useSearch();
+
+  useEffect(() => {
+    const numericId = Number(noteId);
+    if (Number.isFinite(numericId)) {
+      recordNoteVisit(numericId);
+    }
+  }, [noteId]);
 
   return (
     <NotePage

@@ -297,10 +297,21 @@
       "buttonPlaceholder": "Search...",
       "inputPlaceholder": "Search notes, folders, tags, settings...",
       "noResults": "No results found.",
+      "recentHeading": "Recent",
+      "actionsHeading": "Quick actions",
       "settingsHeading": "Settings",
       "notesHeading": "Notes",
       "foldersHeading": "Folders",
-      "tagsHeading": "Tags"
+      "tagsHeading": "Tags",
+      "hintOpen": "Open",
+      "hintNavigate": "Navigate",
+      "hintClose": "Close",
+      "actions": {
+        "newNote": "New note",
+        "newNoteAlt": "Create note",
+        "newFolder": "New folder",
+        "newFolderAlt": "Create folder"
+      }
     },
     "home": {
       "greeting": {

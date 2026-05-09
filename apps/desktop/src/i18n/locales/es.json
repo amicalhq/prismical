@@ -386,10 +386,21 @@
       "buttonPlaceholder": "Buscar...",
       "inputPlaceholder": "Buscar notas, carpetas, etiquetas, configuración...",
       "noResults": "No se encontraron resultados.",
+      "recentHeading": "Reciente",
+      "actionsHeading": "Acciones rápidas",
       "settingsHeading": "Configuración",
       "notesHeading": "Notas",
       "foldersHeading": "Carpetas",
-      "tagsHeading": "Etiquetas"
+      "tagsHeading": "Etiquetas",
+      "hintOpen": "Abrir",
+      "hintNavigate": "Navegar",
+      "hintClose": "Cerrar",
+      "actions": {
+        "newNote": "Nueva nota",
+        "newNoteAlt": "Crear nota",
+        "newFolder": "Nueva carpeta",
+        "newFolderAlt": "Crear carpeta"
+      }
     },
     "home": {
       "greeting": {

@@ -3,7 +3,7 @@
 import * as React from "react";
 import { defaultFilter } from "cmdk";
 import { IconHome, IconNotes, IconSearch } from "@tabler/icons-react";
-import { useNavigate } from "@tanstack/react-router";
+import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import {
   CommandDialog,
@@ -15,16 +15,34 @@ import {
 } from "@/components/ui/command";
 import { SidebarMenuButton } from "@/components/ui/sidebar";
 import { api } from "@/trpc/react";
-import { FileTextIcon, Folder as FolderIcon } from "lucide-react";
+import {
+  FilePlus,
+  FileTextIcon,
+  Folder as FolderIcon,
+  FolderPlus,
+} from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import {
+  HOME_NAV_ITEMS,
   SETTINGS_NAV_ITEMS,
   type SettingsNavItem,
 } from "../lib/settings-navigation";
 import { TagHash } from "@/renderer/main/components/tag/tag-hash";
+import { getRecentNoteIds } from "../lib/recent-notes";
+import { useCreateNoteAction } from "./create-note-context";
+import { CreateFolderDialog } from "./create-folder-dialog";
 
 // Detect platform for keyboard shortcuts
 const isMac = window.electronAPI.platform === "darwin";
+
+const SHORTCUT_KEY_BY_URL = new Map(
+  HOME_NAV_ITEMS.filter((item) => item.shortcutKey).map((item) => [
+    item.url,
+    item.shortcutKey as string,
+  ]),
+);
+
+const formatShortcut = (key: string) => (isMac ? `⌘ ${key}` : `Ctrl ${key}`);
 const HOME_SEARCH_ITEM: SettingsNavItem = {
   titleKey: "settings.nav.home.title",
   url: "/home",
@@ -40,11 +58,28 @@ const NOTES_SEARCH_ITEM: SettingsNavItem = {
   type: "settings",
 };
 
+type QuickAction = {
+  id: string;
+  title: string;
+  keywords: string[];
+  icon: React.ComponentType<{ className?: string }>;
+  shortcutKey?: string;
+  onSelect: () => void;
+};
+
 export function CommandSearchButton() {
   const { t, i18n } = useTranslation();
   const [open, setOpen] = React.useState(false);
   const [search, setSearch] = React.useState("");
+  const [createFolderOpen, setCreateFolderOpen] = React.useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
+  const { createNote } = useCreateNoteAction();
+
+  const currentNoteId = React.useMemo(() => {
+    const match = location.pathname.match(/^\/notes\/(\d+)$/);
+    return match ? Number(match[1]) : null;
+  }, [location.pathname]);
 
   const localizedSettings = React.useMemo(
     () =>
@@ -58,22 +93,35 @@ export function CommandSearchButton() {
     [t, i18n.language],
   );
 
-  // Client-side filtering for settings
-  const settingsResults = React.useMemo(() => {
-    const query = search.toLowerCase().trim();
-    if (!query) {
-      return localizedSettings;
-    }
-    return localizedSettings.filter((page) => {
-      const searchText = [page.title, page.description].join(" ").toLowerCase();
-      return searchText.includes(query);
-    });
-  }, [search, localizedSettings]);
+  const hasQuery = search.trim().length > 0;
+
+  const [recentNoteIds, setRecentNoteIds] = React.useState<number[]>(() =>
+    getRecentNoteIds(),
+  );
+
+  React.useEffect(() => {
+    if (open) setRecentNoteIds(getRecentNoteIds());
+  }, [open]);
+
+  const recentIdsForFetch = React.useMemo(
+    () => recentNoteIds.slice(0, 5),
+    [recentNoteIds],
+  );
 
   const { data: noteResults = [] } = api.notes.searchNotes.useQuery(
     { query: search },
     {
-      enabled: open,
+      // Fetch when there's a query, or when no recents exist (fallback for
+      // the empty state).
+      enabled: open && (hasQuery || recentNoteIds.length === 0),
+      staleTime: 1000 * 60 * 5,
+    },
+  );
+
+  const { data: recentNotesData = [] } = api.notes.getNotesByIds.useQuery(
+    { ids: recentIdsForFetch },
+    {
+      enabled: open && !hasQuery && recentIdsForFetch.length > 0,
       staleTime: 1000 * 60 * 5,
     },
   );
@@ -81,7 +129,7 @@ export function CommandSearchButton() {
   const { data: folderResults = [] } = api.folders.listWithCounts.useQuery(
     { search, sortBy: "name" },
     {
-      enabled: open,
+      enabled: open && hasQuery,
       staleTime: 1000 * 60 * 5,
     },
   );
@@ -89,16 +137,34 @@ export function CommandSearchButton() {
   const { data: tagResults = [] } = api.tags.listWithCounts.useQuery(
     { search, sortBy: "name" },
     {
-      enabled: open,
+      enabled: open && hasQuery,
       staleTime: 1000 * 60 * 5,
     },
   );
 
+  // Server already filters by query; cmdk's filter then prunes by fuzzy
+  // score and reorders. Cap is generous so good matches aren't lost to
+  // alphabetical truncation.
   const topFolders = React.useMemo(
-    () => folderResults.slice(0, 8),
+    () => folderResults.slice(0, 30),
     [folderResults],
   );
-  const topTags = React.useMemo(() => tagResults.slice(0, 8), [tagResults]);
+  const topTags = React.useMemo(() => tagResults.slice(0, 30), [tagResults]);
+
+  const recentNotes = React.useMemo(() => {
+    // Skip the currently-open note: it's redundant to show it as a
+    // suggestion when the user is already on it.
+    const exclude = (note: { id: number }) => note.id !== currentNoteId;
+    if (recentNoteIds.length === 0) {
+      return noteResults.filter(exclude).slice(0, 5);
+    }
+    const byId = new Map(recentNotesData.map((note) => [note.id, note]));
+    return recentNoteIds
+      .map((id) => byId.get(id))
+      .filter((note): note is NonNullable<typeof note> => note != null)
+      .filter(exclude)
+      .slice(0, 5);
+  }, [recentNoteIds, recentNotesData, noteResults, currentNoteId]);
 
   React.useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -117,6 +183,13 @@ export function CommandSearchButton() {
   const filter = React.useCallback(
     (_value: string, search: string, keywords?: string[]) => {
       if (!keywords || keywords.length === 0) return 0;
+      const q = search.toLowerCase().trim();
+      if (!q) return 1;
+      // Exact match on the primary keyword (the item's title/name) always
+      // wins so e.g. a folder named "Work" beats a fuzzy-matching note when
+      // the query is "work".
+      const primary = keywords[0]?.toLowerCase() ?? "";
+      if (primary === q) return 1;
       return defaultFilter(keywords.join(" "), search, undefined) ?? 0;
     },
     [],
@@ -156,6 +229,52 @@ export function CommandSearchButton() {
     });
   };
 
+  const quickActions = React.useMemo<QuickAction[]>(() => {
+    const newNoteTitle = t("settings.search.actions.newNote");
+    const newFolderTitle = t("settings.search.actions.newFolder");
+    return [
+      {
+        id: "new-note",
+        title: newNoteTitle,
+        keywords: [newNoteTitle, t("settings.search.actions.newNoteAlt"), "new"],
+        icon: FilePlus,
+        shortcutKey: "N",
+        onSelect: () => {
+          closeAndReset();
+          createNote();
+        },
+      },
+      {
+        id: "new-folder",
+        title: newFolderTitle,
+        keywords: [
+          newFolderTitle,
+          t("settings.search.actions.newFolderAlt"),
+          "new",
+        ],
+        icon: FolderPlus,
+        onSelect: () => {
+          closeAndReset();
+          setCreateFolderOpen(true);
+        },
+      },
+    ];
+  }, [t, closeAndReset, createNote]);
+
+  const handleFolderCreated = React.useCallback(
+    (folderId: number) => {
+      navigate({
+        to: "/notes",
+        search: ((prev: Record<string, unknown>) => ({
+          ...prev,
+          folder: folderId,
+          tags: undefined,
+        })) as never,
+      });
+    },
+    [navigate],
+  );
+
   return (
     <>
       <SidebarMenuButton
@@ -175,35 +294,14 @@ export function CommandSearchButton() {
           value={search}
           onValueChange={setSearch}
         />
-        <CommandList>
+        <CommandList className="max-h-[440px]">
           <CommandEmpty>{t("settings.search.noResults")}</CommandEmpty>
-          {settingsResults.length > 0 && (
-            <CommandGroup heading={t("settings.search.settingsHeading")}>
-              {settingsResults.map((page) => (
+          {!hasQuery && recentNotes.length > 0 && (
+            <CommandGroup heading={t("settings.search.recentHeading")}>
+              {recentNotes.map((note) => (
                 <CommandItem
-                  key={page.url}
-                  value={`settings-${page.url}`}
-                  keywords={[page.title, page.description]}
-                  onSelect={() => handleSelectUrl(page.url)}
-                  className="cursor-pointer"
-                >
-                  <page.icon className="mr-2 h-4 w-4" />
-                  <div className="flex flex-col">
-                    <span className="font-medium">{page.title}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {page.description}
-                    </span>
-                  </div>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          )}
-          {noteResults.length > 0 && (
-            <CommandGroup heading={t("settings.search.notesHeading")}>
-              {noteResults.map((note) => (
-                <CommandItem
-                  key={`note:${note.id}`}
-                  value={`note-${note.id}`}
+                  key={`recent:${note.id}`}
+                  value={`recent-${note.id}`}
                   keywords={[note.title]}
                   onSelect={() => handleSelectUrl(`/notes/${note.id}`)}
                   className="cursor-pointer"
@@ -213,59 +311,159 @@ export function CommandSearchButton() {
                   ) : (
                     <FileTextIcon className="mr-2 h-4 w-4" />
                   )}
-                  <div className="flex flex-col">
-                    <span className="font-medium">{note.title}</span>
-                    <span className="text-xs text-muted-foreground">
+                  <span className="flex-1 truncate">{note.title}</span>
+                  <span className="ml-2 shrink-0 text-xs text-muted-foreground">
+                    {formatDate(new Date(note.createdAt))}
+                  </span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          )}
+          {!hasQuery && (
+            <CommandGroup heading={t("settings.search.actionsHeading")}>
+              {quickActions.map((action) => (
+                <CommandItem
+                  key={`action:${action.id}`}
+                  value={`action-${action.id}`}
+                  keywords={action.keywords}
+                  onSelect={action.onSelect}
+                  className="cursor-pointer"
+                >
+                  <action.icon className="mr-2 h-4 w-4" />
+                  <span className="flex-1 truncate">{action.title}</span>
+                  {action.shortcutKey && (
+                    <kbd className="pointer-events-none ml-2 inline-flex h-5 select-none items-center rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
+                      {formatShortcut(action.shortcutKey)}
+                    </kbd>
+                  )}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          )}
+          {hasQuery && (
+            <>
+              <CommandGroup heading={t("settings.search.notesHeading")}>
+                {noteResults.map((note) => (
+                  <CommandItem
+                    key={`note:${note.id}`}
+                    value={`note-${note.id}`}
+                    keywords={[note.title]}
+                    onSelect={() => handleSelectUrl(`/notes/${note.id}`)}
+                    className="cursor-pointer"
+                  >
+                    {note.icon ? (
+                      <span className="mr-2 text-base leading-none">{note.icon}</span>
+                    ) : (
+                      <FileTextIcon className="mr-2 h-4 w-4" />
+                    )}
+                    <span className="flex-1 truncate">{note.title}</span>
+                    <span className="ml-2 shrink-0 text-xs text-muted-foreground">
                       {formatDate(new Date(note.createdAt))}
                     </span>
-                  </div>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          )}
-          {topFolders.length > 0 && (
-            <CommandGroup heading={t("settings.search.foldersHeading")}>
-              {topFolders.map((folder) => (
-                <CommandItem
-                  key={`folder:${folder.id}`}
-                  value={`folder-${folder.id}`}
-                  keywords={[folder.name]}
-                  onSelect={() => handleSelectFolder(folder.id)}
-                  className="cursor-pointer"
-                >
-                  <FolderIcon className="mr-2 h-4 w-4" />
-                  <div className="flex flex-1 items-center justify-between">
-                    <span className="font-medium">{folder.name}</span>
-                    <span className="text-xs text-muted-foreground">
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+              <CommandGroup heading={t("settings.search.foldersHeading")}>
+                {topFolders.map((folder) => (
+                  <CommandItem
+                    key={`folder:${folder.id}`}
+                    value={`folder-${folder.id}`}
+                    keywords={[folder.name]}
+                    onSelect={() => handleSelectFolder(folder.id)}
+                    className="cursor-pointer"
+                  >
+                    <FolderIcon className="mr-2 h-4 w-4" />
+                    <span className="flex-1 truncate">{folder.name}</span>
+                    <span className="ml-2 shrink-0 text-xs text-muted-foreground">
                       {folder.noteCount}
                     </span>
-                  </div>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          )}
-          {topTags.length > 0 && (
-            <CommandGroup heading={t("settings.search.tagsHeading")}>
-              {topTags.map((tag) => (
-                <CommandItem
-                  key={`tag:${tag.id}`}
-                  value={`tag-${tag.id}`}
-                  keywords={[tag.name]}
-                  onSelect={() => handleSelectTag(tag.id)}
-                  className="cursor-pointer"
-                >
-                  <div className="flex flex-1 items-center justify-between">
-                    <TagHash color={tag.color} name={tag.name} />
-                    <span className="text-xs text-muted-foreground">
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+              <CommandGroup heading={t("settings.search.tagsHeading")}>
+                {topTags.map((tag) => (
+                  <CommandItem
+                    key={`tag:${tag.id}`}
+                    value={`tag-${tag.id}`}
+                    keywords={[tag.name]}
+                    onSelect={() => handleSelectTag(tag.id)}
+                    className="cursor-pointer"
+                  >
+                    <TagHash
+                      color={tag.color}
+                      name={tag.name}
+                      className="flex-1"
+                    />
+                    <span className="ml-2 shrink-0 text-xs text-muted-foreground">
                       {tag.noteCount}
                     </span>
-                  </div>
-                </CommandItem>
-              ))}
-            </CommandGroup>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+              <CommandGroup heading={t("settings.search.settingsHeading")}>
+                {localizedSettings.map((page) => {
+                  const shortcutKey = SHORTCUT_KEY_BY_URL.get(page.url);
+                  return (
+                    <CommandItem
+                      key={`settings:${page.url}`}
+                      value={`settings-${page.url}`}
+                      keywords={[page.title, page.description]}
+                      onSelect={() => handleSelectUrl(page.url)}
+                      className="cursor-pointer"
+                    >
+                      <page.icon className="mr-2 h-4 w-4" />
+                      <span className="flex-1 truncate">{page.title}</span>
+                      {shortcutKey && (
+                        <kbd className="pointer-events-none ml-2 inline-flex h-5 select-none items-center rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
+                          {formatShortcut(shortcutKey)}
+                        </kbd>
+                      )}
+                    </CommandItem>
+                  );
+                })}
+              </CommandGroup>
+              <CommandGroup heading={t("settings.search.actionsHeading")}>
+                {quickActions.map((action) => (
+                  <CommandItem
+                    key={`action:${action.id}`}
+                    value={`action-${action.id}`}
+                    keywords={action.keywords}
+                    onSelect={action.onSelect}
+                    className="cursor-pointer"
+                  >
+                    <action.icon className="mr-2 h-4 w-4" />
+                    <span className="flex-1 truncate">{action.title}</span>
+                    {action.shortcutKey && (
+                      <kbd className="pointer-events-none ml-2 inline-flex h-5 select-none items-center rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
+                        {formatShortcut(action.shortcutKey)}
+                      </kbd>
+                    )}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </>
           )}
         </CommandList>
+        <div className="flex items-center justify-end gap-3 border-t px-3 py-1.5 text-[11px] text-muted-foreground">
+          <span className="flex items-center gap-1">
+            <kbd className="rounded border bg-muted px-1 font-mono text-[10px]">↵</kbd>
+            {t("settings.search.hintOpen")}
+          </span>
+          <span className="flex items-center gap-1">
+            <kbd className="rounded border bg-muted px-1 font-mono text-[10px]">↑↓</kbd>
+            {t("settings.search.hintNavigate")}
+          </span>
+          <span className="flex items-center gap-1">
+            <kbd className="rounded border bg-muted px-1 font-mono text-[10px]">Esc</kbd>
+            {t("settings.search.hintClose")}
+          </span>
+        </div>
       </CommandDialog>
+      <CreateFolderDialog
+        open={createFolderOpen}
+        onOpenChange={setCreateFolderOpen}
+        onCreated={handleFolderCreated}
+      />
     </>
   );
 }
