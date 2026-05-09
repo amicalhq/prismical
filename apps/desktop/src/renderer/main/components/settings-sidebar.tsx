@@ -197,7 +197,7 @@ export function SettingsSidebar({
               <SidebarMenuItem key={item.url}>
                 <SidebarMenuButton
                   asChild
-                  isActive={location.pathname.startsWith(item.url)}
+                  isActive={location.pathname === item.url}
                 >
                   <Link
                     to={item.url}
@@ -222,7 +222,7 @@ export function SettingsSidebar({
               <SidebarMenuItem key={settingsNavItem.url}>
                 <SidebarMenuButton
                   asChild
-                  isActive={location.pathname.startsWith(settingsNavItem.url)}
+                  isActive={location.pathname === settingsNavItem.url}
                 >
                   <Link
                     to={settingsNavItem.url}
