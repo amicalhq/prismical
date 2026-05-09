@@ -860,6 +860,9 @@
         "label": "Mostrando notas etiquetadas",
         "clear": "Limpiar"
       },
+      "filterBar": {
+        "placeholder": "Filtrar por etiqueta…"
+      },
       "emptyFiltered": {
         "title": "Aún no hay notas etiquetadas con #{{name}}",
         "description": "Etiqueta una nota para verla aquí, o quita el filtro."

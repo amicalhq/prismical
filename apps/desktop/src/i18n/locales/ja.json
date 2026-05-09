@@ -857,6 +857,9 @@
         "label": "タグでフィルター中:",
         "clear": "クリア"
       },
+      "filterBar": {
+        "placeholder": "タグで絞り込む…"
+      },
       "emptyFiltered": {
         "title": "#{{name}} のタグが付いたノートはまだありません",
         "description": "ノートにタグを付けてここに表示するか、フィルターをクリアしてください。"

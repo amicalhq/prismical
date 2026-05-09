@@ -779,6 +779,9 @@
         "label": "Showing notes tagged",
         "clear": "Clear"
       },
+      "filterBar": {
+        "placeholder": "Filter by tag…"
+      },
       "emptyFiltered": {
         "title": "No notes tagged #{{name}} yet",
         "description": "Tag a note to see it here, or clear the filter."
