@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Plus, Settings2, Star, X } from "lucide-react";
+import { Plus, Settings2, Star } from "lucide-react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { Trans, useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -8,6 +8,7 @@ import {
   ComboboxChip,
   ComboboxChips,
   ComboboxChipsInput,
+  ComboboxClear,
   ComboboxContent,
   ComboboxEmpty,
   ComboboxItem,
@@ -261,11 +262,6 @@ export function TagFilterBar() {
     setTags(ids as number[]);
   };
 
-  const handleClear = () => {
-    setTags([]);
-    setQuery("");
-  };
-
   return (
     <>
       {/* Hidden measurement mirror — renders every selected chip with the
@@ -341,16 +337,10 @@ export function TagFilterBar() {
               );
             }}
           </ComboboxValue>
-          {hasClear && (
-            <button
-              type="button"
-              onClick={handleClear}
-              aria-label={t("settings.tags.filterBar.clear")}
-              className="ml-auto inline-flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent/60 hover:text-foreground"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
+          <ComboboxClear
+            aria-label={t("settings.tags.filterBar.clear")}
+            className="ml-auto size-5 shrink-0"
+          />
         </ComboboxChips>
 
         <ComboboxContent anchor={anchor} className="w-72">
