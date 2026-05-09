@@ -1,4 +1,5 @@
 import { useNavigate, useSearch } from "@tanstack/react-router";
+import { ArrowUpDown } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -29,7 +30,11 @@ export function SortMenu() {
         })
       }
     >
-      <SelectTrigger className="h-9 w-36 rounded-lg border-transparent bg-accent/40 px-3 text-sm text-muted-foreground shadow-none transition-colors hover:bg-accent/60 focus-visible:ring-0 dark:bg-accent/30 dark:hover:bg-accent/50">
+      <SelectTrigger
+        aria-label={t("settings.notes.sort.aria")}
+        className="h-9 w-40 gap-2 rounded-lg border-transparent bg-accent/40 px-3 text-sm text-muted-foreground shadow-none transition-colors hover:bg-accent/60 focus-visible:ring-0 dark:bg-accent/30 dark:hover:bg-accent/50"
+      >
+        <ArrowUpDown className="h-4 w-4 shrink-0" />
         <SelectValue />
       </SelectTrigger>
       <SelectContent>

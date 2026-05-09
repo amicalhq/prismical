@@ -807,6 +807,7 @@
       "sidebarButtonLabel": "ノート",
       "searchButtonLabel": "検索",
       "sort": {
+        "aria": "ノートを並び替え",
         "updatedAt": "更新日",
         "createdAt": "作成日",
         "title": "タイトル"

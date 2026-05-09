@@ -807,6 +807,7 @@
       "sidebarButtonLabel": "Nota",
       "searchButtonLabel": "Buscar",
       "sort": {
+        "aria": "Ordenar notas",
         "updatedAt": "Actualizado",
         "createdAt": "Creado",
         "title": "Título"

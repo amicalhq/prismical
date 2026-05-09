@@ -726,6 +726,7 @@
       "sidebarButtonLabel": "Note",
       "searchButtonLabel": "Search",
       "sort": {
+        "aria": "Sort notes",
         "updatedAt": "Updated",
         "createdAt": "Created",
         "title": "Title"
