@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { defaultFilter } from "cmdk";
 import { IconHome, IconNotes, IconSearch } from "@tabler/icons-react";
 import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
@@ -113,6 +114,14 @@ export function CommandSearchButton() {
 
   const shortcutDisplay = isMac ? "⌘ K" : "Ctrl+K";
 
+  const filter = React.useCallback(
+    (_value: string, search: string, keywords?: string[]) => {
+      if (!keywords || keywords.length === 0) return 0;
+      return defaultFilter(keywords.join(" "), search, undefined) ?? 0;
+    },
+    [],
+  );
+
   const closeAndReset = React.useCallback(() => {
     setOpen(false);
     setSearch("");
@@ -146,7 +155,7 @@ export function CommandSearchButton() {
         </kbd>
       </SidebarMenuButton>
 
-      <CommandDialog open={open} onOpenChange={setOpen}>
+      <CommandDialog open={open} onOpenChange={setOpen} filter={filter}>
         <CommandInput
           placeholder={t("settings.search.inputPlaceholder")}
           value={search}
