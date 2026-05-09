@@ -3,7 +3,7 @@
 import * as React from "react";
 import { defaultFilter } from "cmdk";
 import { IconHome, IconNotes, IconSearch } from "@tabler/icons-react";
-import { useNavigate } from "@tanstack/react-router";
+import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import {
   CommandDialog,
@@ -73,7 +73,13 @@ export function CommandSearchButton() {
   const [search, setSearch] = React.useState("");
   const [createFolderOpen, setCreateFolderOpen] = React.useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
   const { createNote } = useCreateNoteAction();
+
+  const currentNoteId = React.useMemo(() => {
+    const match = location.pathname.match(/^\/notes\/(\d+)$/);
+    return match ? Number(match[1]) : null;
+  }, [location.pathname]);
 
   const localizedSettings = React.useMemo(
     () =>
@@ -146,15 +152,19 @@ export function CommandSearchButton() {
   const topTags = React.useMemo(() => tagResults.slice(0, 30), [tagResults]);
 
   const recentNotes = React.useMemo(() => {
+    // Skip the currently-open note: it's redundant to show it as a
+    // suggestion when the user is already on it.
+    const exclude = (note: { id: number }) => note.id !== currentNoteId;
     if (recentNoteIds.length === 0) {
-      return noteResults.slice(0, 5);
+      return noteResults.filter(exclude).slice(0, 5);
     }
     const byId = new Map(recentNotesData.map((note) => [note.id, note]));
     return recentNoteIds
       .map((id) => byId.get(id))
       .filter((note): note is NonNullable<typeof note> => note != null)
+      .filter(exclude)
       .slice(0, 5);
-  }, [recentNoteIds, recentNotesData, noteResults]);
+  }, [recentNoteIds, recentNotesData, noteResults, currentNoteId]);
 
   React.useEffect(() => {
     const down = (e: KeyboardEvent) => {
