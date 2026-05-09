@@ -863,7 +863,8 @@
       },
       "filterBar": {
         "placeholder": "Filtrar por etiqueta…",
-        "overflow": "{{count}} más seleccionadas"
+        "overflow": "{{count}} más seleccionadas",
+        "manage": "Gestionar etiquetas…"
       },
       "emptyFiltered": {
         "title": "Aún no hay notas etiquetadas con #{{name}}",

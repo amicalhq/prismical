@@ -860,7 +860,8 @@
       },
       "filterBar": {
         "placeholder": "タグで絞り込む…",
-        "overflow": "他に{{count}}個選択中"
+        "overflow": "他に{{count}}個選択中",
+        "manage": "タグを管理…"
       },
       "emptyFiltered": {
         "title": "#{{name}} のタグが付いたノートはまだありません",
