@@ -799,7 +799,8 @@
           "button": "カレンダーを接続"
         }
       },
-      "sidebarButtonLabel": "ノート"
+      "sidebarButtonLabel": "ノート",
+      "searchButtonLabel": "Search notes, folders, tags…"
     },
     "tags": {
       "title": "タグ",

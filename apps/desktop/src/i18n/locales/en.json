@@ -718,7 +718,8 @@
           "button": "Connect calendar"
         }
       },
-      "sidebarButtonLabel": "Note"
+      "sidebarButtonLabel": "Note",
+      "searchButtonLabel": "Search notes, folders, tags…"
     },
     "tags": {
       "title": "Tags",

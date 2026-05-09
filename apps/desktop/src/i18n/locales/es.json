@@ -799,7 +799,8 @@
           "button": "Conectar calendario"
         }
       },
-      "sidebarButtonLabel": "Nota"
+      "sidebarButtonLabel": "Nota",
+      "searchButtonLabel": "Search notes, folders, tags…"
     },
     "tags": {
       "title": "Etiquetas",
