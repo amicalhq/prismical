@@ -376,13 +376,19 @@ export const notes = sqliteTable(
   (table) => [index("notes_folder_id_idx").on(table.folderId)],
 );
 
+export type ArtifactMode = "append-section" | "replace-doc" | "inline-rewrite";
+
 // Artifacts table — append-only audit / eval log of every accepted skill run.
 // One row per accepted run; never read back into the editor. The Yjs doc is
 // canonical for content in all modes.
 //
 // `mode` records the editing_options used (`append-section` | `replace-doc`
-// | `inline-rewrite`). `skill_id` stores the skill slug — survives skill
-// renames at the UUID level, since slug is the stable human key.
+// | `inline-rewrite`). `skill_id` stores the skill **slug** (not a FK to
+// `skills.id`): the audit log must survive skill deletion, slug renames, and
+// export/import roundtrips — none of which a UUID FK would tolerate. The
+// trade-off is that nothing in the DB enforces that `skill_id` refers to an
+// existing skill; that's accepted because audit rows outlive their producers
+// by design.
 //
 // No uniqueness on (note_id, skill_id) — rows accumulate per pair (regen
 // history is the audit log).
@@ -419,8 +425,6 @@ export const artifacts = sqliteTable(
     ),
   ],
 );
-
-export type ArtifactMode = "append-section" | "replace-doc" | "inline-rewrite";
 
 // Tags table — flat, many-to-many with notes.
 // Names are lowercased on write; uniqueness is enforced by a plain UNIQUE index.
@@ -576,6 +580,10 @@ export interface SkillMetadata {
 }
 
 export interface SkillConfig {
+  // The skill's **default** mode. Users can pick a different mode for a
+  // single run via the picker's `⋯` overflow menu (per spec §2 "Mode override
+  // at pick time"); that override is held in-memory and not persisted on the
+  // skill row.
   editingOptions: ArtifactMode;
   surface: SkillSurface[];
   modelPreference?: ModelSelection;
