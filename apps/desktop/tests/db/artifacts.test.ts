@@ -101,6 +101,33 @@ describe("db/artifacts (append-only audit log)", () => {
     expect(inline1.version).toBe(1);
   });
 
+  it("replace-doc rows for the same skillId do not inflate the append-section counter", async () => {
+    const { appendArtifact } = await import("@db/artifacts");
+    const noteId = await insertNote();
+    await appendArtifact(testDb.db, {
+      noteId,
+      skillId: "enhance",
+      mode: "replace-doc",
+      content: "r1",
+      generator: "ai",
+    });
+    await appendArtifact(testDb.db, {
+      noteId,
+      skillId: "enhance",
+      mode: "replace-doc",
+      content: "r2",
+      generator: "ai",
+    });
+    const first = await appendArtifact(testDb.db, {
+      noteId,
+      skillId: "enhance",
+      mode: "append-section",
+      content: "a1",
+      generator: "ai",
+    });
+    expect(first.version).toBe(1);
+  });
+
   it("version sequence is per (noteId, skillId) — different skills do not share counters", async () => {
     const { appendArtifact } = await import("@db/artifacts");
     const noteId = await insertNote();
