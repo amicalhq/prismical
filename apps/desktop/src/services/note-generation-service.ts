@@ -5,13 +5,13 @@ import { getNoteById } from "@/db/notes";
 import { logger } from "@/main/logger";
 import { createNoteGenerationProvider } from "@/pipeline/providers/note-generation/remote-note-generation-provider-registry";
 import type { NoteGenerationResult } from "@/pipeline/providers/note-generation/types";
-import type { NoteArtifact } from "@/db/schema";
+import type { Artifact } from "@/db/schema";
 import type { SettingsService } from "./settings-service";
 import { selectionToKey } from "@/utils/model-selection";
 import { markdownToLexicalStateJson } from "./notes/markdown-to-lexical";
 
 export interface GeneratedNotesResult {
-  artifact: NoteArtifact;
+  artifact: Artifact;
   /**
    * Raw markdown returned by the model. Sent back to the renderer so it can
    * apply the regen via `editor.update(...)` and have the change captured by
