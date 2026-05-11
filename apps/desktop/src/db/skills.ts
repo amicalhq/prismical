@@ -96,7 +96,7 @@ export interface ListSkillsOptions {
 
 export async function listSkills(
   db: DB,
-  opts: ListSkillsOptions,
+  opts: ListSkillsOptions = {},
 ): Promise<Skill[]> {
   let q = db.select().from(skills).orderBy(desc(skills.createdAt)).$dynamic();
   if (opts.onlyEnabled) {
@@ -154,6 +154,9 @@ export async function updateSkill(
     })
     .where(eq(skills.id, id))
     .returning();
+  if (!row) {
+    throw new Error(`Skill not found: ${id}`);
+  }
   return row;
 }
 
