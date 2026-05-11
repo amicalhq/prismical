@@ -16,15 +16,15 @@ type DB = LibSQLDatabase<Record<string, unknown>>;
 //
 // The note-wrapper "AI Summary" tab and `note-generation-service.ts` predate
 // PRSM-2 Skills and read/write artifacts via these three functions. They
-// stay alive through Plan 1 so the v0.3 surface keeps running unchanged.
-// Plan 5 (invocation surfaces) replaces this surface with the sparkle
-// button; at that point these three functions and the corresponding tRPC
-// endpoints can be deleted.
+// stay alive until Plan 5 (invocation surfaces), which replaces this surface
+// with the sparkle button; at that point these three functions and the
+// corresponding tRPC endpoints can be deleted.
 //
 // `kind` is the legacy parameter name (now stored as `skill_id` after the
-// rename). `mode` is always `replace-doc` and `version` is always 1 for
-// rows written through this layer — these legacy rows are not part of the
-// new append-only audit semantics.
+// rename). Reads and writes through this layer are scoped to `mode =
+// 'replace-doc'` and `version = 1` — the legacy surface is symmetric, so
+// future append-section / inline-rewrite audit rows that happen to share a
+// `skill_id` cannot leak into the v0.3 reader.
 // -------------------------------------------------------------------------
 
 export async function getLatestArtifactByNote(
@@ -34,7 +34,13 @@ export async function getLatestArtifactByNote(
   const [row] = await defaultDb
     .select()
     .from(artifacts)
-    .where(and(eq(artifacts.noteId, noteId), eq(artifacts.skillId, kind)))
+    .where(
+      and(
+        eq(artifacts.noteId, noteId),
+        eq(artifacts.skillId, kind),
+        eq(artifacts.mode, "replace-doc"),
+      ),
+    )
     .orderBy(desc(artifacts.updatedAt))
     .limit(1);
   return row ?? null;
