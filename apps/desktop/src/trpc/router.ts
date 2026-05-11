@@ -16,6 +16,7 @@ import { eventsRouter } from "./routers/events";
 import { artifactsRouter } from "./routers/artifacts";
 import { tagsRouter } from "./routers/tags";
 import { foldersRouter } from "./routers/folders";
+import { skillsRouter } from "./routers/skills";
 import { createRouter, procedure } from "./trpc";
 
 export const router = createRouter({
@@ -93,6 +94,9 @@ export const router = createRouter({
 
   // Folders router
   folders: foldersRouter,
+
+  // Skills router (PRSM-2)
+  skills: skillsRouter,
 });
 
 export type AppRouter = typeof router;
