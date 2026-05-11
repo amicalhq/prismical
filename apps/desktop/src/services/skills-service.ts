@@ -59,14 +59,24 @@ export class SkillsService {
     return config;
   }
 
-  async createSkill(input: CreateSkillInput): Promise<Skill> {
-    const slug = this.validateSlug(input.slug);
-    const name = input.name.trim();
-    const body = input.body.trim();
+  private validateName(raw: string): string {
+    const name = raw.trim();
     if (name.length === 0) throw new Error("name is required");
     if (name.length > MAX_NAME_LEN)
       throw new Error(`name must be ${MAX_NAME_LEN} characters or fewer`);
+    return name;
+  }
+
+  private validateBody(raw: string): string {
+    const body = raw.trim();
     if (body.length === 0) throw new Error("body is required");
+    return body;
+  }
+
+  async createSkill(input: CreateSkillInput): Promise<Skill> {
+    const slug = this.validateSlug(input.slug);
+    const name = this.validateName(input.name);
+    const body = this.validateBody(input.body);
     const config = this.validateConfig(input.config);
 
     return await skillsDb.createSkill(this.db, {
@@ -88,10 +98,10 @@ export class SkillsService {
       throw new Error("Cannot disable a system skill");
     }
     const dbPatch: skillsDb.UpdateSkillPatch = {};
-    if (patch.name !== undefined) dbPatch.name = patch.name.trim();
+    if (patch.name !== undefined) dbPatch.name = this.validateName(patch.name);
     if (patch.description !== undefined) dbPatch.description = patch.description;
     if (patch.iconUrl !== undefined) dbPatch.iconUrl = patch.iconUrl;
-    if (patch.body !== undefined) dbPatch.body = patch.body.trim();
+    if (patch.body !== undefined) dbPatch.body = this.validateBody(patch.body);
     if (patch.config !== undefined)
       dbPatch.config = this.validateConfig(patch.config);
     if (patch.enabled !== undefined) dbPatch.enabled = patch.enabled;
