@@ -56,7 +56,7 @@ export class SkillsService {
     if (!config.surface || config.surface.length === 0) {
       throw new Error("config.surface must include at least one surface");
     }
-    return config;
+    return { ...config, surface: [...new Set(config.surface)] };
   }
 
   private validateName(raw: string): string {
@@ -94,8 +94,16 @@ export class SkillsService {
   async updateSkill(id: string, patch: UpdateSkillInput): Promise<Skill> {
     const existing = await skillsDb.getSkillById(this.db, id);
     if (!existing) throw new Error("Skill not found");
-    if (existing.system && patch.enabled === false) {
-      throw new Error("Cannot disable a system skill");
+    // System skills are fully read-only via the service. Spec §4 says
+    // "undeletable, undisableable" — we extend that to "unmodifiable"
+    // because the original prompt body / config lives only in source code
+    // (services/skills-bootstrap.ts), so a Plan-6 UI mistake or rogue
+    // tRPC call could otherwise replace `enhance`'s prompt with no recovery
+    // path. Users who want a tweaked variant should fork instead — the
+    // `parent_skill_id` column on `skills` carries lineage; the fork UI
+    // ships with Plan 6.
+    if (existing.system) {
+      throw new Error("Cannot modify a system skill");
     }
     const dbPatch: skillsDb.UpdateSkillPatch = {};
     if (patch.name !== undefined) dbPatch.name = this.validateName(patch.name);

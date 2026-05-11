@@ -8,7 +8,7 @@ import {
 import { FoldersService } from "@/services/folders-service";
 import {
   folders,
-  noteArtifacts,
+  artifacts,
   notes,
   noteTags,
   tags,
@@ -274,10 +274,12 @@ describe("FoldersService", () => {
       await testDb.db
         .insert(noteTags)
         .values({ noteId: note.id, tagId: tag.id });
-      await testDb.db.insert(noteArtifacts).values({
+      await testDb.db.insert(artifacts).values({
         id: "doomed-artifact",
         noteId: note.id,
-        kind: "summary",
+        skillId: "summary",
+        mode: "replace-doc",
+        version: 1,
         content: "{}",
         generator: "user",
       });
@@ -292,7 +294,7 @@ describe("FoldersService", () => {
         await testDb.db.select({ id: noteTags.noteId }).from(noteTags)
       ).length;
       const artifactCount = (
-        await testDb.db.select({ id: noteArtifacts.id }).from(noteArtifacts)
+        await testDb.db.select({ id: artifacts.id }).from(artifacts)
       ).length;
       const yjsCount = (
         await testDb.db.select({ id: yjsUpdates.noteId }).from(yjsUpdates)

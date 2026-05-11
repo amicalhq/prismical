@@ -74,7 +74,7 @@ describe("services/skills-service", () => {
     await expect(svc.deleteSkill(row.id)).rejects.toThrow(/system/i);
   });
 
-  it("system skills cannot be disabled (enabled is forced true)", async () => {
+  it("system skills are fully read-only — disable, body, and config edits all rejected", async () => {
     const { SkillsService } = await import("@/services/skills-service");
     const svc = new SkillsService(testDb.db);
     const row = await svc.createSkill({
@@ -86,6 +86,14 @@ describe("services/skills-service", () => {
     });
     await expect(
       svc.updateSkill(row.id, { enabled: false }),
+    ).rejects.toThrow(/system/i);
+    await expect(
+      svc.updateSkill(row.id, { body: "rewritten prompt" }),
+    ).rejects.toThrow(/system/i);
+    await expect(
+      svc.updateSkill(row.id, {
+        config: { editingOptions: "replace-doc", surface: ["dock"] },
+      }),
     ).rejects.toThrow(/system/i);
   });
 

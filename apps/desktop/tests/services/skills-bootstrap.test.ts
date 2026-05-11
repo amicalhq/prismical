@@ -28,7 +28,8 @@ describe("services/skills-bootstrap", () => {
     expect(enhance!.name).toBe("Enhance");
     expect(enhance!.system).toBe(true);
     expect(enhance!.enabled).toBe(true);
-    expect(enhance!.body.length).toBeGreaterThan(20);
+    expect(enhance!.body).toMatch(/write_section/);
+    expect(enhance!.body).toMatch(/read_note/);
     expect(enhance!.config.editingOptions).toBe("append-section");
     expect(enhance!.config.surface.sort()).toEqual(["dock", "inline"]);
     expect(enhance!.config.defaultSkill).toBe(true);
