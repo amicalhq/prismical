@@ -1,0 +1,21 @@
+:root {
+  --diff-insert: oklch(0.6 0.18 240);
+  --diff-delete: oklch(0.6 0.18 25);
+}
+
+.prismical-diff-insert {
+  color: var(--diff-insert);
+  background: color-mix(in oklch, var(--diff-insert) 12%, transparent);
+}
+
+.prismical-diff-delete {
+  color: var(--diff-delete);
+  text-decoration: line-through;
+  text-decoration-color: var(--diff-delete);
+  background: color-mix(in oklch, var(--diff-delete) 12%, transparent);
+}
+
+.prismical-artifact-node--proposed {
+  border-color: var(--diff-insert);
+  border-style: dashed;
+}

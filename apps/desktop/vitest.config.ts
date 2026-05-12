@@ -5,7 +5,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: "node",
-    include: ["tests/**/*.{test,spec}.{js,ts}"],
+    include: ["tests/**/*.{test,spec}.{js,ts,jsx,tsx}"],
     exclude: ["node_modules", ".vite", "out"],
     setupFiles: ["./tests/setup.ts"],
     testTimeout: 30000, // 30 seconds for full app initialization
