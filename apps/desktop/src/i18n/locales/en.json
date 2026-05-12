@@ -1049,5 +1049,30 @@
         }
       }
     }
+  },
+  "common": {
+    "loading": "Loading..."
+  },
+  "skills": {
+    "page": {
+      "title": "Skills",
+      "newSkill": "New Skill",
+      "installedSection": "Installed",
+      "empty": "No skills installed yet."
+    },
+    "form": {
+      "name": "Name",
+      "slug": "Slug",
+      "description": "Description",
+      "mode": "Mode",
+      "surfaces": "Surfaces",
+      "body": "Prompt body",
+      "create": "Create",
+      "save": "Save",
+      "cancel": "Cancel"
+    },
+    "row": {
+      "enableAriaLabel": "Enable {{name}}"
+    }
   }
 }
