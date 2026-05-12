@@ -216,6 +216,7 @@ export function RecordingBottomCluster() {
 
         <div className="pointer-events-auto flex items-center gap-2">
           <NoteRecordingDock
+            noteId={currentNote?.noteId}
             isTranscriptionOpen={
               currentNote ? currentNote.isTranscriptionOpen : false
             }
