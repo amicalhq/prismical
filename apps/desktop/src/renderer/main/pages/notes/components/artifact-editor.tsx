@@ -23,6 +23,7 @@ import {
 } from "../utils/editor-shared";
 import { CodeBlockShortcutPlugin } from "@/renderer/main/components/editor/code-block-plugin";
 import { ChecklistShortcutPlugin } from "@/renderer/main/components/editor/checklist-shortcut-plugin";
+import { ArtifactNodeCommandsPlugin } from "@/renderer/main/components/editor/commands/artifact-commands";
 import { api } from "@/trpc/react";
 import { debounce } from "@/renderer/main/utils/debounce";
 
@@ -138,6 +139,7 @@ export function ArtifactEditor({
         <CodeHighlightPlugin />
         <CodeBlockShortcutPlugin />
         <ChecklistShortcutPlugin />
+        <ArtifactNodeCommandsPlugin />
         <MarkdownShortcutPlugin transformers={TRANSFORMERS} />
         <OnChangePlugin onChange={handleChange} ignoreSelectionChange />
       </div>

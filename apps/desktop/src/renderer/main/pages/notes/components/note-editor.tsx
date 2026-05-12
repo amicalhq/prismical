@@ -17,6 +17,7 @@ import { NoteSyncProvider } from "@/renderer/main/providers/sync-provider";
 import { YjsSyncPlugin } from "@/renderer/main/components/editor/yjs-sync-plugin";
 import { CodeBlockShortcutPlugin } from "@/renderer/main/components/editor/code-block-plugin";
 import { ChecklistShortcutPlugin } from "@/renderer/main/components/editor/checklist-shortcut-plugin";
+import { ArtifactNodeCommandsPlugin } from "@/renderer/main/components/editor/commands/artifact-commands";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import {
@@ -195,6 +196,7 @@ export function NoteEditor({
         <CodeHighlightPlugin />
         <CodeBlockShortcutPlugin />
         <ChecklistShortcutPlugin />
+        <ArtifactNodeCommandsPlugin />
         <MarkdownShortcutPlugin transformers={TRANSFORMERS} />
         <YjsSyncPlugin
           yText={syncProvider.getText()}

@@ -10,6 +10,7 @@ body {
 
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "../renderer/main/components/editor/nodes/artifact-node.css";
 
 @custom-variant dark (&:is(.dark *));
 
