@@ -22,7 +22,6 @@ export function SkillForm({ mode, existing }: Props) {
   const utils = api.useUtils();
 
   const [name, setName] = useState(existing?.name ?? "");
-  const [slug, setSlug] = useState(existing?.slug ?? "");
   const [description, setDescription] = useState(existing?.description ?? "");
   const [body, setBody] = useState(existing?.body ?? "");
   const [editingOptions, setEditingOptions] = useState<ArtifactMode>(
@@ -77,7 +76,7 @@ export function SkillForm({ mode, existing }: Props) {
     };
     if (mode === "new") {
       create.mutate({
-        slug: slug.trim().toLowerCase() || autoSlug(name),
+        slug: autoSlug(name),
         name: name.trim(),
         description: description.trim() || null,
         body,
@@ -111,23 +110,6 @@ export function SkillForm({ mode, existing }: Props) {
         <Label htmlFor="name">Name</Label>
         <Input id="name" value={name} onChange={(e) => setName(e.target.value)} disabled={isReadOnly} maxLength={80} />
       </div>
-
-      {mode === "new" ? (
-        <div className="space-y-2">
-          <Label htmlFor="slug">Slug</Label>
-          <Input
-            id="slug"
-            value={slug}
-            onChange={(e) => setSlug(e.target.value)}
-            placeholder="auto-generated from name"
-            disabled={isReadOnly}
-            pattern="[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?"
-          />
-          <p className="text-xs text-muted-foreground">
-            Lowercase letters, digits, and hyphens. Auto-generated if blank.
-          </p>
-        </div>
-      ) : null}
 
       <div className="space-y-2">
         <Label htmlFor="description">Description</Label>
