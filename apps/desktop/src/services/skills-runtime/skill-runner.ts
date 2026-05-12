@@ -25,9 +25,11 @@ export async function runSkill(
   options: { db?: LibSQLDatabase<Record<string, unknown>> } = {},
 ): Promise<SkillRunResult> {
   const db = options.db ?? (defaultDb as unknown as LibSQLDatabase<Record<string, unknown>>);
-  let captured: WriteSectionPayload | null = null;
+  // Use a box so TypeScript doesn't narrow `captured` to `never` across the
+  // async boundary / closure mutation.
+  const box: { captured: WriteSectionPayload | null } = { captured: null };
   const capture = (payload: WriteSectionPayload) => {
-    captured = payload;
+    box.captured = payload;
   };
 
   const tools = buildToolRegistry(db, ctx, capture);
@@ -87,11 +89,13 @@ export async function runSkill(
     );
   }
 
-  if (!captured) {
+  if (!box.captured) {
     throw new WriteToolMissingError();
   }
 
-  const content = markdownToChildren(captured.markdown);
+  const capturedPayload = box.captured;
+
+  const content = markdownToChildren(capturedPayload.markdown);
   if (content.length === 0) {
     throw new SkillRunError("Agent emitted markdown that produced empty content");
   }
@@ -127,7 +131,7 @@ export async function runSkill(
     generatedAt: auditRow.generatedAt!.toISOString(),
     modelId: ctx.modelId,
     content,
-    rawMarkdown: captured.markdown,
+    rawMarkdown: capturedPayload.markdown, // capturedPayload narrowed by the if (!box.captured) guard above
   };
 }
 

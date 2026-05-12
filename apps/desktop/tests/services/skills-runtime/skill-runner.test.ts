@@ -7,11 +7,13 @@ import {
   vi,
   type MockInstance,
 } from "vitest";
-import {
-  createTestDatabase,
-  deleteTestDatabase,
-  type TestDatabase,
-} from "../../helpers/test-db";
+import { drizzle } from "drizzle-orm/libsql";
+import { migrate } from "drizzle-orm/libsql/migrator";
+import * as schema from "@db/schema";
+import path from "node:path";
+import os from "node:os";
+import fs from "fs-extra";
+import { deleteTestDatabase, type TestDatabase } from "../../helpers/test-db";
 import { setTestDatabase } from "../../setup";
 import { notes, skills, instances, artifacts } from "@db/schema";
 import type { SkillRunContext } from "@/services/skills-runtime/skill-context";
@@ -109,11 +111,30 @@ function makeCtx(
 // ---------------------------------------------------------------------------
 
 let testDb: TestDatabase;
-let testCounter = 0;
 let generateTextMock: MockInstance;
 
+// Create an isolated test DB outside TEST_USER_DATA_PATH to avoid
+// SQLITE_READONLY_DBMOVED errors caused by setup.ts afterAll cleanup
+// deleting the shared temp directory between test files.
+async function createIsolatedTestDb(): Promise<TestDatabase> {
+  const { randomUUID } = await import("crypto");
+  const dbDir = path.join(os.tmpdir(), `skill-runner-isolated-${randomUUID()}`);
+  await fs.ensureDir(dbDir);
+  const dbPath = path.join(dbDir, "test.db");
+  const db = drizzle(`file:${dbPath}`, { schema: { ...schema } });
+  await db.$client.execute("PRAGMA foreign_keys = ON");
+  const migrationsPath = path.join(process.cwd(), "src", "db", "migrations");
+  await migrate(db, { migrationsFolder: migrationsPath });
+  return {
+    db,
+    dbPath,
+    close: async () => { db.$client.close(); },
+    clear: async () => {},
+  };
+}
+
 beforeEach(async () => {
-  testDb = await createTestDatabase({ name: `skill-runner-${Date.now()}-${testCounter++}.db` });
+  testDb = await createIsolatedTestDb();
   setTestDatabase(testDb.db);
 
   // Get the mock reference after modules are loaded
@@ -124,7 +145,8 @@ beforeEach(async () => {
 afterEach(async () => {
   vi.resetAllMocks();
   await testDb.close();
-  await deleteTestDatabase(testDb.dbPath);
+  // Remove the isolated DB directory (parent of dbPath)
+  await fs.remove(path.dirname(testDb.dbPath));
 });
 
 describe("skills-runtime/skill-runner", () => {
