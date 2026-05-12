@@ -112,6 +112,9 @@ export class ArtifactNode extends ElementNode {
   }
 
   // Children render into the content container, not the header.
+  // We delegate to the base class and redirect it to the content div so that
+  // Lexical's reconciler places child nodes inside `.prismical-artifact-node__content`
+  // rather than the wrapper itself.
   getDOMSlot(elementDOM: HTMLElement) {
     const content = elementDOM.querySelector(
       ".prismical-artifact-node__content",
@@ -121,7 +124,7 @@ export class ArtifactNode extends ElementNode {
         "ArtifactNode DOM is missing __content child — createDOM contract broken",
       );
     }
-    return { element: content };
+    return super.getDOMSlot(elementDOM).withElement(content);
   }
 
   // -------------------------------------------------------------------
