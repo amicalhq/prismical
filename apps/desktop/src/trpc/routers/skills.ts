@@ -1,6 +1,12 @@
 import { z } from "zod";
 import { createRouter, procedure } from "../trpc";
 import SkillsService from "../../services/skills-service";
+import {
+  skillToJson,
+  skillFromJson,
+  skillToMarkdown,
+  skillFromMarkdown,
+} from "../../services/skills-portability";
 
 const service = () => SkillsService.getInstance();
 
@@ -89,4 +95,35 @@ export const skillsRouter = createRouter({
     .mutation(({ input }) =>
       service().updateSkill(input.id, { enabled: input.enabled }),
     ),
+
+  exportAsJson: procedure
+    .input(z.object({ id: z.string().min(1) }))
+    .query(async ({ input }) => {
+      const s = await service().getById(input.id);
+      if (!s) throw new Error("Skill not found");
+      return { json: skillToJson(s) };
+    }),
+
+  exportAsMarkdown: procedure
+    .input(z.object({ id: z.string().min(1) }))
+    .query(async ({ input }) => {
+      const s = await service().getById(input.id);
+      if (!s) throw new Error("Skill not found");
+      return { markdown: skillToMarkdown(s) };
+    }),
+
+  import: procedure
+    .input(
+      z.object({
+        format: z.enum(["json", "markdown"]),
+        content: z.string().min(1),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      const createInput =
+        input.format === "json"
+          ? skillFromJson(JSON.parse(input.content))
+          : skillFromMarkdown(input.content);
+      return await service().createSkill(createInput);
+    }),
 });
