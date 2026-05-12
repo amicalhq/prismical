@@ -1,4 +1,23 @@
-interface Props { mode: "new" | "edit"; skillId?: string }
+import { api } from "@/trpc/react";
+import { Navigate } from "@tanstack/react-router";
+import { SkillForm } from "./components/skill-form";
+
+interface Props {
+  mode: "new" | "edit";
+  skillId?: string;
+}
+
 export function SkillEditorPage({ mode, skillId }: Props) {
-  return <div className="p-8">Skill editor ({mode}{skillId ? `: ${skillId}` : ""}) (coming soon)</div>;
+  if (mode === "new") return <SkillForm mode="new" />;
+
+  if (!skillId) return <Navigate to="/skills" />;
+
+  const { data: existing, isLoading, error } = api.skills.getById.useQuery(
+    { id: skillId },
+  );
+
+  if (isLoading) return <div className="p-8">Loading…</div>;
+  if (error || !existing) return <Navigate to="/skills" />;
+
+  return <SkillForm mode="edit" existing={existing} />;
 }

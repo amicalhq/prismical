@@ -40,6 +40,14 @@ export const skillsRouter = createRouter({
       return s;
     }),
 
+  getById: procedure
+    .input(z.object({ id: z.string().min(1) }))
+    .query(async ({ input }) => {
+      const s = await service().getById(input.id);
+      if (!s) throw new Error("Skill not found");
+      return s;
+    }),
+
   create: procedure
     .input(
       z.object({

@@ -115,4 +115,22 @@ describe("services/skills-service", () => {
     const dock = await svc.listForSurface("dock");
     expect(dock.map((s) => s.slug)).toEqual(["dock-only"]);
   });
+
+  it("getById returns the skill when it exists, null for unknown id", async () => {
+    const { SkillsService } = await import("@/services/skills-service");
+    const svc = new SkillsService(testDb.db);
+    const created = await svc.createSkill({
+      slug: "find-me",
+      name: "Find Me",
+      body: "body text",
+      config: baseConfig,
+    });
+    const found = await svc.getById(created.id);
+    expect(found).not.toBeNull();
+    expect(found!.id).toBe(created.id);
+    expect(found!.slug).toBe("find-me");
+
+    const missing = await svc.getById("nonexistent-id");
+    expect(missing).toBeNull();
+  });
 });
