@@ -1,110 +1,13 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
 import { v4 as uuid } from "uuid";
-import { db as defaultDb } from "./index";
 import {
   artifacts,
   type ArtifactMode,
   type Artifact,
-  type NewArtifact,
 } from "./schema";
 
 type DB = LibSQLDatabase<Record<string, unknown>>;
-
-// -------------------------------------------------------------------------
-// v0.3 compat layer
-//
-// The note-wrapper "AI Summary" tab and `note-generation-service.ts` predate
-// PRSM-2 Skills and read/write artifacts via these three functions. They
-// stay alive until Plan 5 (invocation surfaces), which replaces this surface
-// with the sparkle button; at that point these three functions and the
-// corresponding tRPC endpoints can be deleted.
-//
-// `kind` is the legacy parameter name (now stored as `skill_id` after the
-// rename). Reads and writes through this layer are scoped to `mode =
-// 'replace-doc'` and `version = 1` — the legacy surface is symmetric, so
-// future append-section / inline-rewrite audit rows that happen to share a
-// `skill_id` cannot leak into the v0.3 reader.
-// -------------------------------------------------------------------------
-
-export async function getLatestArtifactByNote(
-  noteId: number,
-  kind = "summary",
-): Promise<Artifact | null> {
-  const [row] = await defaultDb
-    .select()
-    .from(artifacts)
-    .where(
-      and(
-        eq(artifacts.noteId, noteId),
-        eq(artifacts.skillId, kind),
-        eq(artifacts.mode, "replace-doc"),
-      ),
-    )
-    .orderBy(desc(artifacts.updatedAt))
-    .limit(1);
-  return row ?? null;
-}
-
-export async function createOrReplaceArtifact(
-  data: Omit<
-    NewArtifact,
-    "id" | "createdAt" | "updatedAt" | "skillId" | "mode" | "version"
-  > & {
-    kind?: string;
-  },
-): Promise<Artifact> {
-  const kind = data.kind ?? "summary";
-  const existing = await getLatestArtifactByNote(data.noteId, kind);
-  const now = new Date();
-
-  if (existing) {
-    const [updated] = await defaultDb
-      .update(artifacts)
-      .set({
-        content: data.content,
-        generator: data.generator,
-        modelId: data.modelId ?? null,
-        meta: data.meta ?? null,
-        generatedAt: data.generatedAt ?? now,
-        updatedAt: now,
-      })
-      .where(eq(artifacts.id, existing.id))
-      .returning();
-    return updated;
-  }
-
-  const [inserted] = await defaultDb
-    .insert(artifacts)
-    .values({
-      id: uuid(),
-      noteId: data.noteId,
-      skillId: kind,
-      mode: "replace-doc",
-      version: 1,
-      content: data.content,
-      generator: data.generator,
-      modelId: data.modelId ?? null,
-      meta: data.meta ?? null,
-      generatedAt: data.generatedAt ?? now,
-      createdAt: now,
-      updatedAt: now,
-    })
-    .returning();
-  return inserted;
-}
-
-export async function updateArtifactContent(
-  artifactId: string,
-  content: string,
-): Promise<Artifact | null> {
-  const [updated] = await defaultDb
-    .update(artifacts)
-    .set({ content, updatedAt: new Date() })
-    .where(eq(artifacts.id, artifactId))
-    .returning();
-  return updated ?? null;
-}
 
 // -------------------------------------------------------------------------
 // PRSM-2 append-only audit layer

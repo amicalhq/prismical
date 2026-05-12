@@ -6,7 +6,6 @@ import {
   type ReactNode,
 } from "react";
 import type { MeetingRuntimeState, TranscriptEvent } from "@/types/meeting";
-import type { NoteTab } from "@/renderer/main/pages/notes/components/note";
 
 export type CurrentNoteContextValue = {
   noteId: number;
@@ -26,13 +25,6 @@ export type CurrentNoteContextValue = {
 
   onStartMeeting: () => void;
   onStopMeeting: () => void;
-
-  hasArtifact: boolean;
-  activeTab: NoteTab;
-  onActiveTabChange: (tab: NoteTab) => void;
-
-  onGenerateNotes: () => void;
-  isGeneratingNotes: boolean;
 };
 
 type Setter = (noteId: number, value: CurrentNoteContextValue | null) => void;

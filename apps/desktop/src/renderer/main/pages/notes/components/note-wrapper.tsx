@@ -9,17 +9,6 @@ import {
 } from "@/renderer/main/utils/transcription-request";
 import Note from "./note";
 import { NoteEditor } from "./note-editor";
-import { ArtifactEditor, type PendingRegen } from "./artifact-editor";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { FileTextIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTranslation } from "react-i18next";
@@ -29,7 +18,6 @@ import {
 } from "@/renderer/main/components/current-note-context";
 import { useMeetingSnapshot } from "@/renderer/main/components/meeting-snapshot-context";
 import type { NoteAssetKind } from "../types";
-import type { NoteTab } from "./note";
 import type { MeetingRuntimeState, TranscriptEvent } from "@/types/meeting";
 
 type NotePageProps = {
@@ -50,11 +38,8 @@ export default function NotePage({
   const utils = api.useUtils();
   const startMeetingMutation = api.meetings.startMeeting.useMutation();
   const stopMeetingMutation = api.meetings.stopMeeting.useMutation();
-  const generateNotesMutation =
-    api.notes.generateNotesFromTranscript.useMutation();
   const noteIdNumber = Number.parseInt(noteId, 10);
-  const defaultsQuery = api.instances.getDefaults.useQuery();
-  const hasFormattingDefault = !!defaultsQuery.data?.formatting;
+
   const noteTranscriptQuery = api.meetings.getNoteTranscript.useQuery(
     { noteId: noteIdNumber },
     {
@@ -76,46 +61,6 @@ export default function NotePage({
   const noteRef = useRef<typeof note>(null);
   const autoRecordTriggeredRef = useRef(false);
   const titleInitializedForIdRef = useRef<number | null>(null);
-
-  // Active artifact (latest "summary" for this note). Drives tab visibility
-  // and the AI Summary tab's content.
-  const artifactQuery = api.artifacts.getByNote.useQuery(
-    { noteId: noteIdNumber, kind: "summary" },
-    { enabled: Number.isFinite(noteIdNumber) && noteIdNumber > 0 },
-  );
-  const artifact = artifactQuery.data ?? null;
-
-  // Active tab. Defaults to AI Summary when an artifact exists, otherwise Raw.
-  const [activeTab, setActiveTab] = useState<NoteTab>("summary");
-  const lastSeenArtifactUpdatedAtRef = useRef<number | null>(null);
-
-  // Set when a regen completes so ArtifactEditor can replay the new markdown
-  // through editor.update() — keeps the editor mounted so ⌘Z reverts to the
-  // pre-regen content. Cleared once the editor reports it has applied.
-  const [pendingRegen, setPendingRegen] = useState<PendingRegen | null>(null);
-
-  // Surfaced when the user clicks "Generate notes" without a default language
-  // model configured — dialog routes them to the settings page.
-  const [showNoLanguageModelDialog, setShowNoLanguageModelDialog] =
-    useState(false);
-
-  // Auto-switch to AI Summary when a new/updated artifact arrives.
-  useEffect(() => {
-    if (!artifact) {
-      lastSeenArtifactUpdatedAtRef.current = null;
-      return;
-    }
-    const updatedAtMs = artifact.updatedAt.getTime();
-    if (lastSeenArtifactUpdatedAtRef.current === null) {
-      lastSeenArtifactUpdatedAtRef.current = updatedAtMs;
-      setActiveTab("summary");
-      return;
-    }
-    if (updatedAtMs > lastSeenArtifactUpdatedAtRef.current) {
-      lastSeenArtifactUpdatedAtRef.current = updatedAtMs;
-      setActiveTab("summary");
-    }
-  }, [artifact]);
 
   // Fetch note data
   const { data: note, isLoading } = api.notes.getNoteById.useQuery(
@@ -207,7 +152,6 @@ export default function NotePage({
     autoRecordTriggeredRef.current = false;
     setMeetingState("idle");
     setTranscript([]);
-    setPendingRegen(null);
   }, [noteId]);
 
   useEffect(() => {
@@ -355,39 +299,6 @@ export default function NotePage({
       });
   }, [meetingState, refreshNoteTranscript, stopMeetingMutation]);
 
-  const handleGenerateNotes = useCallback(() => {
-    if (!hasFormattingDefault) {
-      setShowNoLanguageModelDialog(true);
-      return;
-    }
-
-    generateNotesMutation
-      .mutateAsync({ noteId: noteIdNumber })
-      .then((res) => {
-        // Trigger an in-place editor.update in ArtifactEditor so the change
-        // is captured by HistoryPlugin (⌘Z reverts). Date.now() ensures the
-        // token differs even when consecutive regens produce identical text.
-        setPendingRegen({ markdown: res.markdown, token: Date.now() });
-        utils.artifacts.getByNote.invalidate({
-          noteId: noteIdNumber,
-          kind: "summary",
-        });
-        toast.success("AI Summary generated.");
-      })
-      .catch((error) => {
-        toast.error(`Failed to generate notes: ${error.message}`);
-      });
-  }, [
-    hasFormattingDefault,
-    generateNotesMutation,
-    noteIdNumber,
-    utils.artifacts.getByNote,
-  ]);
-
-  const handleRegenApplied = useCallback(() => {
-    setPendingRegen(null);
-  }, []);
-
   const handleTitleChange = useCallback(
     (newTitle: string) => {
       setNoteTitle(newTitle);
@@ -457,11 +368,6 @@ export default function NotePage({
       meetingState,
       onStartMeeting: handleStartMeeting,
       onStopMeeting: handleStopMeeting,
-      hasArtifact: Boolean(artifact),
-      activeTab,
-      onActiveTabChange: setActiveTab,
-      onGenerateNotes: handleGenerateNotes,
-      isGeneratingNotes: generateNotesMutation.isPending,
     };
   }, [
     noteIdNumber,
@@ -474,10 +380,6 @@ export default function NotePage({
     meetingState,
     handleStartMeeting,
     handleStopMeeting,
-    artifact,
-    activeTab,
-    handleGenerateNotes,
-    generateNotesMutation.isPending,
   ]);
 
   const handleEmojiChange = useCallback(
@@ -526,92 +428,24 @@ export default function NotePage({
   }
   // Use the presentational component
   return (
-    <>
-      <Note
-        noteId={noteIdNumber}
-        noteTitle={noteTitle}
-        noteEmoji={noteIcon}
-        noteStarred={noteStarred}
-        noteFolderId={noteFolderId}
-        folders={allFolders}
-        isLoading={isLoading}
-        onTitleChange={handleTitleChange}
-        onDelete={handleDelete}
-        onEmojiChange={handleEmojiChange}
-        onStarredChange={handleStarredChange}
-        onFolderChange={handleFolderChange}
-        noteUpdatedAt={note?.updatedAt ?? new Date()}
-        eventData={note?.eventData ?? null}
-        isDeleting={deleteMutation.isPending}
-      >
-        {(() => {
-          // Drives the same-hue text shimmer (see .ai-generating-text in
-          // globals.css). Wrappers below opt in while regeneration is in flight.
-          const shimmerClass = generateNotesMutation.isPending
-            ? "ai-generating-text"
-            : "";
-          return artifact ? (
-            // Both editors stay mounted so switching tabs doesn't tear down the
-            // Yjs editor (slow to re-init) or discard in-flight artifact edits.
-            // The inactive one is hidden via CSS.
-            <>
-              <div
-                className={`${activeTab === "summary" ? "block" : "hidden"} ${shimmerClass}`}
-              >
-                <ArtifactEditor
-                  // Remount only when the underlying artifact identity
-                  // changes (e.g. switching notes). Regenerations stay in the
-                  // same Lexical instance and arrive via `pendingRegen`,
-                  // which is applied through editor.update so ⌘Z reverts the
-                  // regen to the prior summary.
-                  key={artifact.id}
-                  artifactId={artifact.id}
-                  initialContent={artifact.content}
-                  pendingRegen={pendingRegen}
-                  onRegenApplied={handleRegenApplied}
-                />
-              </div>
-              <div
-                className={`${activeTab === "raw" ? "block" : "hidden"} ${shimmerClass}`}
-              >
-                <NoteEditor noteId={noteIdNumber} onReady={handleEditorReady} />
-              </div>
-            </>
-          ) : (
-            <div className={shimmerClass}>
-              <NoteEditor noteId={noteIdNumber} onReady={handleEditorReady} />
-            </div>
-          );
-        })()}
-      </Note>
-      <AlertDialog
-        open={showNoLanguageModelDialog}
-        onOpenChange={setShowNoLanguageModelDialog}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Set a default language model</AlertDialogTitle>
-            <AlertDialogDescription>
-              Generating an AI summary needs a language model. Pick one in
-              Settings → AI Models and try again.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                setShowNoLanguageModelDialog(false);
-                navigate({
-                  to: "/settings/ai-models",
-                  search: { tab: "language" },
-                });
-              }}
-            >
-              Open settings
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
+    <Note
+      noteId={noteIdNumber}
+      noteTitle={noteTitle}
+      noteEmoji={noteIcon}
+      noteStarred={noteStarred}
+      noteFolderId={noteFolderId}
+      folders={allFolders}
+      isLoading={isLoading}
+      onTitleChange={handleTitleChange}
+      onDelete={handleDelete}
+      onEmojiChange={handleEmojiChange}
+      onStarredChange={handleStarredChange}
+      onFolderChange={handleFolderChange}
+      noteUpdatedAt={note?.updatedAt ?? new Date()}
+      eventData={note?.eventData ?? null}
+      isDeleting={deleteMutation.isPending}
+    >
+      <NoteEditor noteId={noteIdNumber} onReady={handleEditorReady} />
+    </Note>
   );
 }

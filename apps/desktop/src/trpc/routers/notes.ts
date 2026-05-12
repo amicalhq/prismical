@@ -253,14 +253,4 @@ export const notesRouter = createRouter({
       }));
     }),
 
-  generateNotesFromTranscript: procedure
-    .input(z.object({ noteId: z.number() }))
-    .mutation(async ({ input, ctx }) => {
-      const noteGenerationService = ctx.serviceManager.getService(
-        "noteGenerationService",
-      );
-      return await noteGenerationService.generateNotesFromTranscript(
-        input.noteId,
-      );
-    }),
 });
