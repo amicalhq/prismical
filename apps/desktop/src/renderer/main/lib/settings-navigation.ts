@@ -8,6 +8,7 @@ import {
   IconAdjustments,
   IconHome,
   IconNotebook,
+  IconSparkles,
   type Icon,
 } from "@tabler/icons-react";
 
@@ -34,6 +35,11 @@ export const HOME_NAV_ITEMS: SidebarNavItem[] = [
     titleKey: "settings.nav.notes.title",
     url: "/notes",
     icon: IconNotebook,
+  },
+  {
+    titleKey: "settings.nav.skills.title",
+    url: "/skills",
+    icon: IconSparkles,
   },
   {
     titleKey: "menu.settings",

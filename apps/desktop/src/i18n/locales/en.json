@@ -242,6 +242,9 @@
         "title": "Notes",
         "description": "Manage your notes"
       },
+      "skills": {
+        "title": "Skills"
+      },
       "preferences": {
         "title": "Preferences",
         "description": "Configure general application preferences and behavior"

@@ -12,11 +12,14 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as AppRouteRouteImport } from './routes/_app/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppTagsRouteImport } from './routes/_app/tags'
+import { Route as AppSkillsRouteImport } from './routes/_app/skills'
 import { Route as AppNotesRouteImport } from './routes/_app/notes'
 import { Route as AppHomeRouteImport } from './routes/_app/home'
 import { Route as AppFoldersRouteImport } from './routes/_app/folders'
 import { Route as AppEventsRouteImport } from './routes/_app/events'
 import { Route as AppSettingsIndexRouteImport } from './routes/_app/settings/index'
+import { Route as AppSkillsNewRouteImport } from './routes/_app/skills/new'
+import { Route as AppSkillsSkillIdRouteImport } from './routes/_app/skills/$skillId'
 import { Route as AppNotesIndexRouteImport } from './routes/_app/notes.index'
 import { Route as AppSettingsVocabularyRouteImport } from './routes/_app/settings/vocabulary'
 import { Route as AppSettingsShortcutsRouteImport } from './routes/_app/settings/shortcuts'
@@ -35,6 +38,21 @@ const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AppSkillsRoute = AppSkillsRouteImport.update({
+  id: '/skills',
+  path: '/skills',
+  getParentRoute: () => AppRouteRoute,
+} as any)
+const AppSkillsNewRoute = AppSkillsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => AppSkillsRoute,
+} as any)
+const AppSkillsSkillIdRoute = AppSkillsSkillIdRouteImport.update({
+  id: '/$skillId',
+  path: '/$skillId',
+  getParentRoute: () => AppSkillsRoute,
 } as any)
 const AppTagsRoute = AppTagsRouteImport.update({
   id: '/tags',
@@ -118,8 +136,11 @@ export interface FileRoutesByFullPath {
   '/folders': typeof AppFoldersRoute
   '/home': typeof AppHomeRoute
   '/notes': typeof AppNotesRouteWithChildren
+  '/skills': typeof AppSkillsRouteWithChildren
   '/tags': typeof AppTagsRoute
   '/notes/$noteId': typeof AppNotesNoteIdRoute
+  '/skills/new': typeof AppSkillsNewRoute
+  '/skills/$skillId': typeof AppSkillsSkillIdRoute
   '/settings/about': typeof AppSettingsAboutRoute
   '/settings/advanced': typeof AppSettingsAdvancedRoute
   '/settings/ai-models': typeof AppSettingsAiModelsRoute
@@ -137,6 +158,8 @@ export interface FileRoutesByTo {
   '/home': typeof AppHomeRoute
   '/tags': typeof AppTagsRoute
   '/notes/$noteId': typeof AppNotesNoteIdRoute
+  '/skills/new': typeof AppSkillsNewRoute
+  '/skills/$skillId': typeof AppSkillsSkillIdRoute
   '/settings/about': typeof AppSettingsAboutRoute
   '/settings/advanced': typeof AppSettingsAdvancedRoute
   '/settings/ai-models': typeof AppSettingsAiModelsRoute
@@ -145,6 +168,7 @@ export interface FileRoutesByTo {
   '/settings/shortcuts': typeof AppSettingsShortcutsRoute
   '/settings/vocabulary': typeof AppSettingsVocabularyRoute
   '/notes': typeof AppNotesIndexRoute
+  '/skills': typeof AppSkillsRouteWithChildren
   '/settings': typeof AppSettingsIndexRoute
 }
 export interface FileRoutesById {
@@ -155,8 +179,11 @@ export interface FileRoutesById {
   '/_app/folders': typeof AppFoldersRoute
   '/_app/home': typeof AppHomeRoute
   '/_app/notes': typeof AppNotesRouteWithChildren
+  '/_app/skills': typeof AppSkillsRouteWithChildren
   '/_app/tags': typeof AppTagsRoute
   '/_app/notes/$noteId': typeof AppNotesNoteIdRoute
+  '/_app/skills/new': typeof AppSkillsNewRoute
+  '/_app/skills/$skillId': typeof AppSkillsSkillIdRoute
   '/_app/settings/about': typeof AppSettingsAboutRoute
   '/_app/settings/advanced': typeof AppSettingsAdvancedRoute
   '/_app/settings/ai-models': typeof AppSettingsAiModelsRoute
@@ -175,8 +202,11 @@ export interface FileRouteTypes {
     | '/folders'
     | '/home'
     | '/notes'
+    | '/skills'
     | '/tags'
     | '/notes/$noteId'
+    | '/skills/new'
+    | '/skills/$skillId'
     | '/settings/about'
     | '/settings/advanced'
     | '/settings/ai-models'
@@ -194,6 +224,9 @@ export interface FileRouteTypes {
     | '/home'
     | '/tags'
     | '/notes/$noteId'
+    | '/skills'
+    | '/skills/new'
+    | '/skills/$skillId'
     | '/settings/about'
     | '/settings/advanced'
     | '/settings/ai-models'
@@ -211,8 +244,11 @@ export interface FileRouteTypes {
     | '/_app/folders'
     | '/_app/home'
     | '/_app/notes'
+    | '/_app/skills'
     | '/_app/tags'
     | '/_app/notes/$noteId'
+    | '/_app/skills/new'
+    | '/_app/skills/$skillId'
     | '/_app/settings/about'
     | '/_app/settings/advanced'
     | '/_app/settings/ai-models'
@@ -244,6 +280,27 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_app/skills': {
+      id: '/_app/skills'
+      path: '/skills'
+      fullPath: '/skills'
+      preLoaderRoute: typeof AppSkillsRouteImport
+      parentRoute: typeof AppRouteRoute
+    }
+    '/_app/skills/new': {
+      id: '/_app/skills/new'
+      path: '/new'
+      fullPath: '/skills/new'
+      preLoaderRoute: typeof AppSkillsNewRouteImport
+      parentRoute: typeof AppSkillsRoute
+    }
+    '/_app/skills/$skillId': {
+      id: '/_app/skills/$skillId'
+      path: '/$skillId'
+      fullPath: '/skills/$skillId'
+      preLoaderRoute: typeof AppSkillsSkillIdRouteImport
+      parentRoute: typeof AppSkillsRoute
     }
     '/_app/tags': {
       id: '/_app/tags'
@@ -353,6 +410,20 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface AppSkillsRouteChildren {
+  AppSkillsNewRoute: typeof AppSkillsNewRoute
+  AppSkillsSkillIdRoute: typeof AppSkillsSkillIdRoute
+}
+
+const AppSkillsRouteChildren: AppSkillsRouteChildren = {
+  AppSkillsNewRoute: AppSkillsNewRoute,
+  AppSkillsSkillIdRoute: AppSkillsSkillIdRoute,
+}
+
+const AppSkillsRouteWithChildren = AppSkillsRoute._addFileChildren(
+  AppSkillsRouteChildren,
+)
+
 interface AppNotesRouteChildren {
   AppNotesNoteIdRoute: typeof AppNotesNoteIdRoute
   AppNotesIndexRoute: typeof AppNotesIndexRoute
@@ -372,6 +443,7 @@ interface AppRouteRouteChildren {
   AppFoldersRoute: typeof AppFoldersRoute
   AppHomeRoute: typeof AppHomeRoute
   AppNotesRoute: typeof AppNotesRouteWithChildren
+  AppSkillsRoute: typeof AppSkillsRouteWithChildren
   AppTagsRoute: typeof AppTagsRoute
   AppSettingsAboutRoute: typeof AppSettingsAboutRoute
   AppSettingsAdvancedRoute: typeof AppSettingsAdvancedRoute
@@ -388,6 +460,7 @@ const AppRouteRouteChildren: AppRouteRouteChildren = {
   AppFoldersRoute: AppFoldersRoute,
   AppHomeRoute: AppHomeRoute,
   AppNotesRoute: AppNotesRouteWithChildren,
+  AppSkillsRoute: AppSkillsRouteWithChildren,
   AppTagsRoute: AppTagsRoute,
   AppSettingsAboutRoute: AppSettingsAboutRoute,
   AppSettingsAdvancedRoute: AppSettingsAdvancedRoute,

@@ -55,6 +55,8 @@ amical.db
 prismical.db
 AGENTS.md
 skills/
+!apps/desktop/src/renderer/main/pages/skills/
+!apps/desktop/src/renderer/main/routes/_app/skills/
 agents/
 
 # Temp files
