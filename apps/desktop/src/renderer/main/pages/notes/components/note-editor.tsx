@@ -19,6 +19,7 @@ import { CodeBlockShortcutPlugin } from "@/renderer/main/components/editor/code-
 import { ChecklistShortcutPlugin } from "@/renderer/main/components/editor/checklist-shortcut-plugin";
 import { ArtifactNodeCommandsPlugin } from "@/renderer/main/components/editor/commands/artifact-commands";
 import { SkillDiffActionBar } from "@/renderer/main/components/editor/diff/skill-diff-action-bar";
+import { InlineSkillPopoverPlugin } from "@/renderer/main/components/editor/inline-skill-popover/inline-skill-popover-plugin";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import {
@@ -200,6 +201,7 @@ export function NoteEditor({
         <ArtifactNodeCommandsPlugin />
         <MarkdownShortcutPlugin transformers={TRANSFORMERS} />
         <SkillDiffActionBar noteId={noteId} />
+        <InlineSkillPopoverPlugin noteId={noteId} />
         <YjsSyncPlugin
           yText={syncProvider.getText()}
           onSyncStatusChange={handleSyncStatusChange}
