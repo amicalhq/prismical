@@ -73,6 +73,141 @@ describe("editor/commands/artifact-commands", () => {
     }
   });
 
+  it("INSERT_ARTIFACT_NODE_COMMAND replaces the existing ArtifactNode in-place when one matches the skillId (regen invariant)", async () => {
+    const { ArtifactNode } = await import(
+      "@/renderer/main/components/editor/nodes/artifact-node"
+    );
+    const {
+      INSERT_ARTIFACT_NODE_COMMAND,
+      registerArtifactNodeCommands,
+    } = await import(
+      "@/renderer/main/components/editor/commands/artifact-commands"
+    );
+
+    const editor = createHeadlessEditor({ nodes: [ArtifactNode] });
+    const dispose = registerArtifactNodeCommands(editor);
+
+    try {
+      const v1Content = [
+        {
+          type: "paragraph",
+          version: 1,
+          children: [
+            { type: "text", version: 1, text: "First gen", format: 0, detail: 0, mode: "normal", style: "" },
+          ],
+          direction: null,
+          format: "",
+          indent: 0,
+        },
+      ];
+      const v2Content = [
+        {
+          type: "paragraph",
+          version: 1,
+          children: [
+            { type: "text", version: 1, text: "Regenerated", format: 0, detail: 0, mode: "normal", style: "" },
+          ],
+          direction: null,
+          format: "",
+          indent: 0,
+        },
+      ];
+
+      editor.dispatchCommand(INSERT_ARTIFACT_NODE_COMMAND, {
+        artifactId: "first",
+        skillId: "enhance",
+        skillName: "Enhance",
+        version: 1,
+        generatedAt: "2026-05-01T00:00:00.000Z",
+        modelId: "model-A",
+        content: v1Content,
+      });
+
+      let firstKey = "";
+      editor.read(() => {
+        const root = $getRoot();
+        expect(root.getChildrenSize()).toBe(1);
+        const node = root.getFirstChildOrThrow();
+        firstKey = node.getKey();
+      });
+
+      editor.dispatchCommand(INSERT_ARTIFACT_NODE_COMMAND, {
+        artifactId: "second",
+        skillId: "enhance",
+        skillName: "Enhance",
+        version: 2,
+        generatedAt: "2026-05-02T00:00:00.000Z",
+        modelId: "model-B",
+        content: v2Content,
+      });
+
+      editor.read(() => {
+        const root = $getRoot();
+        // Spec §1: re-running the same skill MUST NOT duplicate — there must
+        // still be exactly one node, with the same key, but new metadata + body.
+        expect(root.getChildrenSize()).toBe(1);
+        const node = root.getFirstChildOrThrow() as InstanceType<typeof ArtifactNode>;
+        expect(node.getKey()).toBe(firstKey);
+        expect(node.getVersion()).toBe(2);
+        expect(node.getModelId()).toBe("model-B");
+        expect(node.getGeneratedAt()).toBe("2026-05-02T00:00:00.000Z");
+        expect(node.getTextContent()).toBe("Regenerated");
+      });
+    } finally {
+      dispose();
+    }
+  });
+
+  it("INSERT_ARTIFACT_NODE_COMMAND appends when no matching ArtifactNode exists, even with another skill present", async () => {
+    const { ArtifactNode } = await import(
+      "@/renderer/main/components/editor/nodes/artifact-node"
+    );
+    const {
+      INSERT_ARTIFACT_NODE_COMMAND,
+      registerArtifactNodeCommands,
+    } = await import(
+      "@/renderer/main/components/editor/commands/artifact-commands"
+    );
+
+    const editor = createHeadlessEditor({ nodes: [ArtifactNode] });
+    const dispose = registerArtifactNodeCommands(editor);
+
+    try {
+      const makeContent = (text: string) => [
+        {
+          type: "paragraph",
+          version: 1,
+          children: [
+            { type: "text", version: 1, text, format: 0, detail: 0, mode: "normal", style: "" },
+          ],
+          direction: null,
+          format: "",
+          indent: 0,
+        },
+      ];
+
+      editor.dispatchCommand(INSERT_ARTIFACT_NODE_COMMAND, {
+        artifactId: "a1", skillId: "enhance", skillName: "Enhance",
+        version: 1, generatedAt: "2026-05-01T00:00:00.000Z", modelId: "m",
+        content: makeContent("E"),
+      });
+      editor.dispatchCommand(INSERT_ARTIFACT_NODE_COMMAND, {
+        artifactId: "a2", skillId: "action-items", skillName: "Action items",
+        version: 1, generatedAt: "2026-05-02T00:00:00.000Z", modelId: "m",
+        content: makeContent("A"),
+      });
+
+      editor.read(() => {
+        const root = $getRoot();
+        expect(root.getChildrenSize()).toBe(2);
+        const skills = root.getChildren().map((c) => (c as InstanceType<typeof ArtifactNode>).getSkillId());
+        expect(skills.sort()).toEqual(["action-items", "enhance"]);
+      });
+    } finally {
+      dispose();
+    }
+  });
+
   it("INSERT_ARTIFACT_INLINE_NODE_COMMAND wraps the current selection in an ArtifactInlineNode", async () => {
     const { ArtifactInlineNode } = await import(
       "@/renderer/main/components/editor/nodes/artifact-inline-node"

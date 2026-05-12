@@ -1,6 +1,24 @@
 import { create } from "zustand";
-import type { SerializedLexicalNode } from "lexical";
+import type { NodeKey, SerializedLexicalNode } from "lexical";
 import type { ArtifactMode } from "@/db/schema";
+
+/**
+ * Captured selection endpoint at skill-run time. Used for `inline-rewrite`
+ * mode so the action bar can restore the original range before dispatching
+ * the insert command — by accept-time the live editor selection has moved
+ * to the action bar / popover / elsewhere and `$getSelection()` would
+ * return a stale or null range.
+ */
+export interface SerializedSelectionPoint {
+  key: NodeKey;
+  offset: number;
+  type: "text" | "element";
+}
+
+export interface SerializedSelectionPoints {
+  anchor: SerializedSelectionPoint;
+  focus: SerializedSelectionPoint;
+}
 
 export interface SkillDiffCandidate {
   noteId: number;
@@ -14,8 +32,10 @@ export interface SkillDiffCandidate {
   /** For append-section / inline-rewrite: the Lexical children. */
   content: SerializedLexicalNode[];
   rawMarkdown: string;
-  /** For replace-doc and inline-rewrite: the "before" text we diff against. */
+  /** For replace-doc / inline-rewrite: the "before" text we diff against. */
   beforeText?: string;
+  /** Captured for inline-rewrite so accept can restore the selection. */
+  selectionPoints?: SerializedSelectionPoints;
 }
 
 interface SkillDiffState {

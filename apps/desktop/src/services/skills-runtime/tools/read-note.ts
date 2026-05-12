@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
 import { notes } from "@/db/schema";
+import { extractPlainText } from "../extract-plain-text";
 
 interface CreateReadNoteToolOpts {
   db: LibSQLDatabase<Record<string, unknown>>;
@@ -35,33 +36,3 @@ export function createReadNoteTool(opts: CreateReadNoteToolOpts) {
   });
 }
 
-// Walks a Lexical editor-state JSON and returns its concatenated text.
-// Paragraph / heading nodes are separated by "\n\n"; list items by "\n".
-function extractPlainText(stateJson: string): string {
-  try {
-    const parsed = JSON.parse(stateJson);
-    const root = parsed?.root;
-    if (!root || !Array.isArray(root.children)) return "";
-    return root.children
-      .map((child: unknown) => extractNodeText(child as LexicalNodeLike))
-      .filter((text: string) => text.length > 0)
-      .join("\n\n");
-  } catch {
-    return "";
-  }
-}
-
-interface LexicalNodeLike {
-  type?: string;
-  text?: string;
-  children?: LexicalNodeLike[];
-}
-
-function extractNodeText(node: LexicalNodeLike): string {
-  if (typeof node.text === "string") return node.text;
-  if (Array.isArray(node.children)) {
-    const inner = node.children.map(extractNodeText).join("");
-    return inner;
-  }
-  return "";
-}

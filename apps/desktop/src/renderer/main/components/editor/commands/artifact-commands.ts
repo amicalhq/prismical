@@ -12,6 +12,7 @@ import {
 } from "lexical";
 import {
   $createArtifactNode,
+  $isArtifactNode,
   type ArtifactNodeMetadata,
 } from "../nodes/artifact-node";
 import {
@@ -50,6 +51,42 @@ export function registerArtifactNodeCommands(editor: LexicalEditor): () => void 
   const unregisterBlock = editor.registerCommand<InsertArtifactNodePayload>(
     INSERT_ARTIFACT_NODE_COMMAND,
     (payload) => {
+      const root = $getRoot();
+      const children = payload.content.map((serialized) =>
+        $parseSerializedNode(serialized),
+      );
+
+      // Spec §1 regen invariant: re-running an `append-section` skill walks
+      // the doc for an existing `ArtifactNode` with matching `skill_id` and
+      // replaces its children + bumps its metadata in place. This keeps the
+      // node's identity stable (Yjs key, cursor position, scroll anchor)
+      // and ensures the same skill never produces duplicate blocks in the
+      // doc. If no matching node exists (first run), fall through to append.
+      const existing = root
+        .getChildren()
+        .find(
+          (child): child is ReturnType<typeof $createArtifactNode> =>
+            $isArtifactNode(child) && child.getSkillId() === payload.skillId,
+        );
+
+      if (existing) {
+        existing.updateMetadata({
+          version: payload.version,
+          generatedAt: payload.generatedAt,
+          modelId: payload.modelId,
+        });
+        // Replace children: remove all current children, then append the new
+        // ones. Lexical's ElementNode doesn't expose `clear()` directly, so
+        // walk and remove.
+        for (const child of existing.getChildren()) {
+          child.remove();
+        }
+        for (const child of children) {
+          existing.append(child);
+        }
+        return true;
+      }
+
       const node = $createArtifactNode({
         artifactId: payload.artifactId,
         skillId: payload.skillId,
@@ -58,13 +95,10 @@ export function registerArtifactNodeCommands(editor: LexicalEditor): () => void 
         generatedAt: payload.generatedAt,
         modelId: payload.modelId,
       });
-      const children = payload.content.map((serialized) =>
-        $parseSerializedNode(serialized),
-      );
       for (const child of children) {
         node.append(child);
       }
-      $getRoot().append(node);
+      root.append(node);
       return true;
     },
     0, // priority: low — feature plugins (lists, code blocks) take precedence

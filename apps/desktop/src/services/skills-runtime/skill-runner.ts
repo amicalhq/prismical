@@ -2,10 +2,14 @@ import { generateText, stepCountIs } from "ai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
 
+import { eq } from "drizzle-orm";
+
 import { logger } from "@/main/logger";
 import { db as defaultDb } from "@/db";
 import { appendArtifact } from "@/db/artifacts";
 import { getInstanceById } from "@/db/instances";
+import { notes } from "@/db/schema";
+import { extractPlainText } from "./extract-plain-text";
 
 import type {
   SkillRunContext,
@@ -123,6 +127,21 @@ export async function runSkill(
     version: auditRow.version,
   });
 
+  // Populate `beforeText` for replace-doc so the diff overlay can render
+  // a real char-level diff. Skipped for append-section (additive, no diff)
+  // and inline-rewrite (client supplies it from the selection).
+  let beforeText: string | undefined;
+  if (ctx.mode === "replace-doc") {
+    const [row] = await db
+      .select({ content: notes.content })
+      .from(notes)
+      .where(eq(notes.id, ctx.noteId))
+      .limit(1);
+    if (row?.content) {
+      beforeText = extractPlainText(row.content);
+    }
+  }
+
   return {
     artifactId: auditRow.id,
     mode: ctx.mode,
@@ -132,7 +151,8 @@ export async function runSkill(
     generatedAt: auditRow.generatedAt!.toISOString(),
     modelId: ctx.modelId,
     content,
-    rawMarkdown: capturedPayload.markdown, // capturedPayload narrowed by the if (!box.captured) guard above
+    rawMarkdown: capturedPayload.markdown,
+    beforeText,
   };
 }
 

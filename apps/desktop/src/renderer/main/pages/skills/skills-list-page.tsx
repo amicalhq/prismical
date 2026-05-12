@@ -41,7 +41,21 @@ export function SkillsListPage() {
     if (!file) return;
 
     const ext = file.name.split(".").pop()?.toLowerCase();
-    const format = ext === "md" ? "markdown" : "json";
+    // Explicit whitelist — earlier "anything-not-.md → JSON" rule turned
+    // unsupported extensions (e.g. .txt, .markdown) into a confusing JSON
+    // parse error toast. Reject upfront with a clear message instead.
+    let format: "json" | "markdown";
+    if (ext === "md" || ext === "markdown") {
+      format = "markdown";
+    } else if (ext === "json") {
+      format = "json";
+    } else {
+      toast.error(
+        `Unsupported file type ".${ext ?? ""}" — choose a .json or .md file.`,
+      );
+      event.target.value = "";
+      return;
+    }
 
     const content = await file.text();
     importMutation.mutate({ format, content });

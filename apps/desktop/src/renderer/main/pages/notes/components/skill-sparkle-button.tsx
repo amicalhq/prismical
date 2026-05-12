@@ -25,9 +25,13 @@ interface Props {
 
 export function SkillSparkleButton({ noteId }: Props) {
   const { data: skills = [] } = api.skills.listForSurface.useQuery({ surface: "dock" });
+  // Poll only while a run is suspected in-flight to avoid background spam
+  // when the user is idle. Once `data` is null, polling stops; it re-engages
+  // automatically when a `run` mutation invalidates this query and the next
+  // refetch lands a truthy value.
   const { data: inFlight } = api.skillRuns.getInFlight.useQuery(
     { noteId },
-    { refetchInterval: 1000 },
+    { refetchInterval: (q) => (q.state.data ? 1000 : false) },
   );
   const utils = api.useUtils();
   const cancel = api.skillRuns.cancel.useMutation({

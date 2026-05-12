@@ -61,4 +61,11 @@ export interface SkillRunResult {
   // The raw markdown the agent emitted — useful for refine flows
   // (passed back into a re-run as previousOutput).
   rawMarkdown: string;
+  // Pre-run snapshot used by the diff overlay as the "before" side of the
+  // char-level diff. Populated by the runner for `replace-doc` (the full
+  // note body) and left undefined for `append-section` (the candidate is
+  // purely additive — nothing to diff against). For `inline-rewrite` the
+  // client supplies `beforeText` from the selection, so the runner does
+  // not set it.
+  beforeText?: string;
 }

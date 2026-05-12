@@ -22,6 +22,7 @@ import {
 const dispatchCommand = vi.hoisted(() => vi.fn());
 const editorUpdate = vi.hoisted(() => vi.fn());
 const runMutate = vi.hoisted(() => vi.fn());
+const cancelMutate = vi.hoisted(() => vi.fn());
 
 // Hoisted store state — controls what the mock selector returns
 const mockCandidate = vi.hoisted<{ value: SkillDiffCandidate | null }>(() => ({
@@ -46,6 +47,12 @@ vi.mock("@/trpc/react", () => ({
       run: {
         useMutation: vi.fn(() => ({
           mutate: runMutate,
+          isPending: false,
+        })),
+      },
+      cancel: {
+        useMutation: vi.fn(() => ({
+          mutate: cancelMutate,
           isPending: false,
         })),
       },

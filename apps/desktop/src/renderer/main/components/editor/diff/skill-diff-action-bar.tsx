@@ -1,6 +1,13 @@
 import { useState } from "react";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
 import {
+  $createRangeSelection,
+  $getRoot,
+  $parseSerializedNode,
+  $setSelection,
+} from "lexical";
+import { toast } from "sonner";
+import {
   INSERT_ARTIFACT_NODE_COMMAND,
   INSERT_ARTIFACT_INLINE_NODE_COMMAND,
 } from "@/renderer/main/components/editor/commands/artifact-commands";
@@ -21,6 +28,7 @@ export function SkillDiffActionBar({ noteId }: Props) {
   const clear = useSkillDiffStore((s) => s.clear);
   const stage = useSkillDiffStore((s) => s.stage);
   const run = api.skillRuns.run.useMutation();
+  const cancel = api.skillRuns.cancel.useMutation();
 
   const [refineMode, setRefineMode] = useState(false);
   const [refineText, setRefineText] = useState("");
@@ -39,6 +47,19 @@ export function SkillDiffActionBar({ noteId }: Props) {
         content: candidate.content,
       });
     } else if (candidate.mode === "inline-rewrite") {
+      // Restore the original selection range before dispatching — by the time
+      // the user clicks Accept the editor selection has long since moved
+      // (popover dismissed, action bar clicked, etc.). Without this restore,
+      // `INSERT_ARTIFACT_INLINE_NODE_COMMAND`'s handler sees no range
+      // selection and silently returns false.
+      const restored = restoreInlineSelection(editor, candidate);
+      if (!restored) {
+        toast.error(
+          "The selection where this rewrite was run no longer exists. Re-highlight and try again.",
+        );
+        clear(noteId);
+        return;
+      }
       editor.dispatchCommand(INSERT_ARTIFACT_INLINE_NODE_COMMAND, {
         artifactId: candidate.artifactId,
         skillId: candidate.skillId,
@@ -46,15 +67,30 @@ export function SkillDiffActionBar({ noteId }: Props) {
         content: candidate.content,
       });
     } else {
-      // replace-doc: deferred to Plan-4 follow-up.
+      // replace-doc: clear the root + append the candidate's children.
       editor.update(() => {
-        console.warn("replace-doc accept not yet implemented");
+        const root = $getRoot();
+        root.clear();
+        for (const serialized of candidate.content) {
+          root.append($parseSerializedNode(serialized));
+        }
       });
     }
     clear(noteId);
   };
 
   const reject = () => clear(noteId);
+
+  const cancelRefine = () => {
+    // If a refine call is mid-flight, abort it via the server so the
+    // in-flight registry entry is freed and the eventual response doesn't
+    // re-stage a candidate the user thought they cancelled.
+    if (run.isPending) {
+      cancel.mutate({ noteId });
+    }
+    setRefineMode(false);
+    setRefineText("");
+  };
 
   const submitRefine = () => {
     if (!refineText.trim()) return;
@@ -71,6 +107,9 @@ export function SkillDiffActionBar({ noteId }: Props) {
           stage({ ...result, noteId });
           setRefineMode(false);
           setRefineText("");
+        },
+        onError: (err) => {
+          toast.error(`Couldn't refine ${candidate.skillName} — ${err.message}`);
         },
       },
     );
@@ -102,7 +141,7 @@ export function SkillDiffActionBar({ noteId }: Props) {
           <Button onClick={submitRefine} disabled={run.isPending}>
             Submit
           </Button>
-          <Button variant="ghost" onClick={() => setRefineMode(false)}>
+          <Button variant="ghost" onClick={cancelRefine}>
             Cancel
           </Button>
         </div>
@@ -119,6 +158,39 @@ export function SkillDiffActionBar({ noteId }: Props) {
       )}
     </div>
   );
+}
+
+/**
+ * Restore the original Lexical range selection captured when this candidate
+ * was staged. Returns true on success, false if the underlying nodes have
+ * been deleted (in which case the caller should reject the accept).
+ */
+function restoreInlineSelection(
+  editor: ReturnType<typeof useLexicalComposerContext>[0],
+  candidate: { selectionPoints?: import("./skill-diff-store").SerializedSelectionPoints },
+): boolean {
+  const points = candidate.selectionPoints;
+  if (!points) return false;
+  let ok = false;
+  editor.update(
+    () => {
+      const sel = $createRangeSelection();
+      sel.anchor.set(points.anchor.key, points.anchor.offset, points.anchor.type);
+      sel.focus.set(points.focus.key, points.focus.offset, points.focus.type);
+      // Lexical sets the selection's anchor/focus even if the keys are stale;
+      // verify the nodes still exist by walking them up via getNodes().
+      try {
+        const nodes = sel.getNodes();
+        if (nodes.length === 0) return;
+        $setSelection(sel);
+        ok = true;
+      } catch {
+        ok = false;
+      }
+    },
+    { discrete: true },
+  );
+  return ok;
 }
 
 function renderInlineDiff(before: string, after: string): React.ReactNode {
