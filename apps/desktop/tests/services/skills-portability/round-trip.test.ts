@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { skillToJson } from "@/services/skills-portability/skill-to-json";
 import { skillFromJson } from "@/services/skills-portability/skill-from-json";
+import { skillToMarkdown } from "@/services/skills-portability/skill-to-markdown";
+import { skillFromMarkdown } from "@/services/skills-portability/skill-from-markdown";
 import type { Skill } from "@db/schema";
 
 function makeSkill(overrides: Partial<Skill> = {}): Skill {
@@ -104,5 +106,80 @@ describe("JSON round-trip", () => {
         config: { editingOptions: "append-section", surface: ["dock"] },
       }),
     ).toThrow();
+  });
+});
+
+describe("Markdown + frontmatter round-trip", () => {
+  it("skillToMarkdown produces a markdown document with YAML frontmatter", () => {
+    const skill = makeSkill();
+    const md = skillToMarkdown(skill);
+    expect(md).toContain("---");
+    expect(md).toContain("slug: my-skill");
+    expect(md).toContain("name: My Skill");
+    expect(md).toContain("editingOptions: append-section");
+    expect(md).toContain("You are a helpful assistant");
+  });
+
+  it("round-trips through markdown serialization", () => {
+    const skill = makeSkill();
+    const md = skillToMarkdown(skill);
+    const imported = skillFromMarkdown(md);
+    expect(imported.slug).toBe(skill.slug);
+    expect(imported.name).toBe(skill.name);
+    expect(imported.body.trim()).toBe(skill.body.trim());
+    expect(imported.config.editingOptions).toBe(skill.config.editingOptions);
+    expect(imported.config.surface).toEqual(skill.config.surface);
+  });
+
+  it("round-trips a skill with description", () => {
+    const skill = makeSkill({ description: "My description" });
+    const md = skillToMarkdown(skill);
+    const imported = skillFromMarkdown(md);
+    expect(imported.description).toBe("My description");
+  });
+
+  it("parses a hand-authored markdown file with YAML frontmatter", () => {
+    const handAuthored = `---
+slug: summarize
+name: Summarize
+editingOptions: replace-doc
+surface:
+  - dock
+  - inline
+---
+
+Summarize the given note in 3 bullet points.
+`;
+    const imported = skillFromMarkdown(handAuthored);
+    expect(imported.slug).toBe("summarize");
+    expect(imported.name).toBe("Summarize");
+    expect(imported.config.editingOptions).toBe("replace-doc");
+    expect(imported.config.surface).toEqual(["dock", "inline"]);
+    expect(imported.body).toContain("Summarize the given note");
+  });
+
+  it("throws when required frontmatter is missing (no slug)", () => {
+    const badMd = `---
+name: No Slug Skill
+editingOptions: append-section
+surface:
+  - dock
+---
+
+Some body here.
+`;
+    expect(() => skillFromMarkdown(badMd)).toThrow();
+  });
+
+  it("throws when body is empty", () => {
+    const badMd = `---
+slug: empty-body
+name: Empty Body
+editingOptions: append-section
+surface:
+  - dock
+---
+`;
+    expect(() => skillFromMarkdown(badMd)).toThrow();
   });
 });
