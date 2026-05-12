@@ -4,7 +4,6 @@ import { createReadNoteTool } from "./read-note";
 import { createReadTranscriptTool } from "./read-transcript";
 import { createWriteSectionTool } from "./write-section";
 import { createReplaceSelectionTool } from "./replace-selection";
-import { createWebSearchTool } from "./web-search";
 
 export function buildToolRegistry(
   db: LibSQLDatabase<Record<string, unknown>>,
@@ -14,7 +13,6 @@ export function buildToolRegistry(
   const base = {
     read_note: createReadNoteTool({ db, noteId: ctx.noteId }),
     read_transcript: createReadTranscriptTool({ db, noteId: ctx.noteId }),
-    web_search: createWebSearchTool(),
   };
 
   if (ctx.mode === "inline-rewrite") {
