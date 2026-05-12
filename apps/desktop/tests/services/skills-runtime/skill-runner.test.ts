@@ -13,7 +13,7 @@ import * as schema from "@db/schema";
 import path from "node:path";
 import os from "node:os";
 import fs from "fs-extra";
-import { deleteTestDatabase, type TestDatabase } from "../../helpers/test-db";
+import { type TestDatabase } from "../../helpers/test-db";
 import { setTestDatabase } from "../../setup";
 import { notes, skills, instances, artifacts } from "@db/schema";
 import type { SkillRunContext } from "@/services/skills-runtime/skill-context";
