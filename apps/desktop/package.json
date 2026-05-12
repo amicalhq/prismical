@@ -168,6 +168,7 @@
     "embla-carousel-react": "^8.6.0",
     "emoji-picker-react": "^4.13.3",
     "framer-motion": "^12.10.5",
+    "gray-matter": "^4.0.3",
     "i18next": "^25.8.0",
     "input-otp": "^1.4.2",
     "jest-worker": "^29.7.0",
