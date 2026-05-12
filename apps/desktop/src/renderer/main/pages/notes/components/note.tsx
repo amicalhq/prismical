@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import {
   Calendar,
+  ClipboardCopy,
   FileTextIcon,
   Loader2,
   MoreHorizontal,
@@ -40,7 +41,9 @@ import {
 } from "@/components/ui/tooltip";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { Folder } from "@/db/schema";
+import { toast } from "sonner";
 import { useSettingsHeaderActions } from "@/renderer/main/components/settings-header-actions-context";
+import { api } from "@/trpc/react";
 import { NoteFolderChip } from "./note-folder-chip";
 import { NoteTagChips } from "./note-tag-chips";
 
@@ -135,6 +138,7 @@ export default function Note({
 }: NotePageUIProps) {
   const { t, i18n } = useTranslation();
   const { setActions, setHeaderContent } = useSettingsHeaderActions();
+  const utils = api.useUtils();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   // Re-render once a minute so the "Edited X ago" label stays fresh without
@@ -201,6 +205,17 @@ export default function Note({
             {noteStarred
               ? t("settings.notes.note.actions.removeFromFavorites")
               : t("settings.notes.note.actions.addToFavorites")}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            className="gap-2"
+            onSelect={async () => {
+              const result = await utils.notes.exportAsMarkdown.fetch({ noteId });
+              await navigator.clipboard.writeText(result.markdown);
+              toast.success("Copied as markdown");
+            }}
+          >
+            <ClipboardCopy className="h-4 w-4" />
+            Copy as markdown
           </DropdownMenuItem>
           <DropdownMenuItem
             className="gap-2"
@@ -352,6 +367,17 @@ export default function Note({
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        className="gap-2"
+                        onSelect={async () => {
+                          const result = await utils.notes.exportAsMarkdown.fetch({ noteId });
+                          await navigator.clipboard.writeText(result.markdown);
+                          toast.success("Copied as markdown");
+                        }}
+                      >
+                        <ClipboardCopy className="h-4 w-4" />
+                        Copy as markdown
+                      </DropdownMenuItem>
                       <DropdownMenuItem
                         className="gap-2"
                         variant="destructive"
