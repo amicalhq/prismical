@@ -65,6 +65,7 @@
     "@electron-forge/plugin-vite": "7.8.2",
     "@electron-forge/publisher-github": "7.8.2",
     "@electron/fuses": "^1.8.0",
+    "@lexical/headless": "^0.38.2",
     "@prismical/audio-capture": "workspace:*",
     "@prismical/mic-detector": "workspace:*",
     "@rollup/plugin-commonjs": "^28.0.6",
