@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { IconPlus } from "@tabler/icons-react";
+import { IconPlus, IconUpload } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { api } from "@/trpc/react";
 import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 import { SkillRow } from "./components/skill-row";
 import { DeleteSkillDialog } from "./components/delete-skill-dialog";
 import type { Skill } from "@/db/schema";
@@ -17,6 +18,38 @@ export function SkillsListPage() {
     onSettled: () => utils.skills.list.invalidate(),
   });
 
+  const importMutation = api.skills.import.useMutation({
+    onSuccess: () => {
+      void utils.skills.list.invalidate();
+      toast.success("Skill imported successfully");
+    },
+    onError: (error) => {
+      toast.error(`Import failed: ${error.message}`);
+    },
+  });
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleImportClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const ext = file.name.split(".").pop()?.toLowerCase();
+    const format = ext === "md" ? "markdown" : "json";
+
+    const content = await file.text();
+    importMutation.mutate({ format, content });
+
+    // Reset input so the same file can be re-imported if needed
+    event.target.value = "";
+  };
+
   const [pendingDelete, setPendingDelete] = useState<Skill | null>(null);
 
   // Sort: system skills first (descending), then user-created by createdAt desc.
@@ -29,12 +62,30 @@ export function SkillsListPage() {
     <div className="max-w-3xl mx-auto p-8 space-y-6">
       <header className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">{t("skills.page.title")}</h1>
-        <Button asChild>
-          <Link to="/skills/new">
-            <IconPlus size={18} className="mr-1" />
-            {t("skills.page.newSkill")}
-          </Link>
-        </Button>
+        <div className="flex items-center gap-2">
+          {/* Hidden file input for importing skills */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json,.md"
+            className="hidden"
+            onChange={handleFileChange}
+          />
+          <Button
+            variant="outline"
+            onClick={handleImportClick}
+            disabled={importMutation.isPending}
+          >
+            <IconUpload size={18} className="mr-1" />
+            Import skill
+          </Button>
+          <Button asChild>
+            <Link to="/skills/new">
+              <IconPlus size={18} className="mr-1" />
+              {t("skills.page.newSkill")}
+            </Link>
+          </Button>
+        </div>
       </header>
 
       <section className="rounded-lg border bg-card">

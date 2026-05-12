@@ -1,7 +1,14 @@
-import { IconLock, IconPencil, IconTrash } from "@tabler/icons-react";
+import { IconDotsVertical, IconLock, IconPencil, IconTrash } from "@tabler/icons-react";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Link } from "@tanstack/react-router";
+import { api } from "@/trpc/react";
 import type { Skill } from "@/db/schema";
 
 interface Props {
@@ -11,8 +18,34 @@ interface Props {
   busy?: boolean;
 }
 
+function triggerDownload(content: string, filename: string, mimeType: string) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export function SkillRow({ skill, onToggleEnabled, onDelete, busy }: Props) {
   const surfaces = skill.config.surface.join(" · ");
+  const utils = api.useUtils();
+
+  const handleExportJson = async () => {
+    const result = await utils.skills.exportAsJson.fetch({ id: skill.id });
+    triggerDownload(
+      JSON.stringify(result.json, null, 2),
+      `${skill.slug}.json`,
+      "application/json",
+    );
+  };
+
+  const handleExportMarkdown = async () => {
+    const result = await utils.skills.exportAsMarkdown.fetch({ id: skill.id });
+    triggerDownload(result.markdown, `${skill.slug}.md`, "text/markdown");
+  };
+
   return (
     <div className="flex items-center gap-3 px-4 py-3 border-b last:border-b-0">
       <div className="text-lg">✨</div>
@@ -60,6 +93,22 @@ export function SkillRow({ skill, onToggleEnabled, onDelete, busy }: Props) {
             </Button>
           </>
         ) : null}
+        {/* Export menu — available for all skills (system and user) */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" aria-label="More options">
+              <IconDotsVertical size={18} />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onSelect={handleExportJson}>
+              Export as JSON
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={handleExportMarkdown}>
+              Export as Markdown
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </div>
   );
