@@ -323,9 +323,9 @@ export class MeetingManager extends EventEmitter {
     try {
       await this.captureClient?.stop();
       await this.frameWriteChain;
+      await this.finalizeArtifacts();
       await Promise.all(Object.values(this.transcriptionChains));
       await this.flushTranscriptionRuntimes();
-      await this.finalizeArtifacts();
       await this.traceWriter?.recordEvent("meeting_stop_completed", {
         meetingId,
         transcriptSegmentCount: this.lastTranscript.length,

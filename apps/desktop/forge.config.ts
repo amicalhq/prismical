@@ -30,6 +30,12 @@ import { Walker, DepType, type Module } from "flora-colossus";
 
 let nativeModuleDependenciesToPackage: string[] = [];
 
+const windowsWebRtcAec3Resource =
+  "../../packages/native-helpers/audio-capture/bin/prismical_webrtc_aec3.dll";
+const hasWindowsWebRtcAec3Resource =
+  process.platform === "win32" &&
+  existsSync(join(__dirname, windowsWebRtcAec3Resource));
+
 export const EXTERNAL_DEPENDENCIES = [
   "electron-squirrel-startup",
   "@libsql/client",
@@ -412,8 +418,13 @@ const config: ForgeConfig = {
       `./node-binaries/${process.platform}-${process.arch}/node${
         process.platform === "win32" ? ".exe" : ""
       }`,
-      "../../packages/native-helpers/audio-capture/bin/audio-capture",
-      "../../packages/native-helpers/mic-detector/bin/prismical-mic-detector",
+      `../../packages/native-helpers/audio-capture/bin/audio-capture${
+        process.platform === "win32" ? ".exe" : ""
+      }`,
+      ...(hasWindowsWebRtcAec3Resource ? [windowsWebRtcAec3Resource] : []),
+      `../../packages/native-helpers/mic-detector/bin/prismical-mic-detector${
+        process.platform === "win32" ? ".exe" : ""
+      }`,
       "./models",
       "./assets",
     ],

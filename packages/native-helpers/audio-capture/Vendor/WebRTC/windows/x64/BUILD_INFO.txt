@@ -1,0 +1,6 @@
+platform=windows
+arch=x64
+revision=373edbca7233475487f419c9aea6238e05853dd9
+generated_at=2026-05-12T10:49:37.084Z
+dll=C:\Users\harit\prismical\packages\webrtc-aec3-builder\build\windows\x64\prismical_webrtc_aec3.dll
+import_lib=C:\Users\harit\prismical\packages\webrtc-aec3-builder\build\windows\x64\prismical_webrtc_aec3.lib

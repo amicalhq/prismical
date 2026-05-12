@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import { spawn, type ChildProcessByStdio } from "node:child_process";
-import type { Readable } from "node:stream";
+import type { Readable, Writable } from "node:stream";
 import { logger } from "../logger";
 import type {
   AudioFrame,
@@ -21,7 +21,8 @@ interface NativeAudioCaptureEvents {
 }
 
 export class NativeAudioCaptureClient extends EventEmitter {
-  private process: ChildProcessByStdio<null, Readable, Readable> | null = null;
+  private process: ChildProcessByStdio<Writable, Readable, Readable> | null =
+    null;
   private pending = Buffer.alloc(0);
   private stderrPending = "";
 
@@ -88,9 +89,15 @@ export class NativeAudioCaptureClient extends EventEmitter {
     }
 
     const captureProcess = spawn(binaryPath, args, {
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["pipe", "pipe", "pipe"],
     });
     this.process = captureProcess;
+
+    captureProcess.stdin.on("error", (error) => {
+      logger.audio.warn("Native audio capture stdin error", {
+        error: error.message,
+      });
+    });
 
     captureProcess.stdout.on("data", (data: Buffer) => {
       this.handleStdoutData(data);
@@ -127,7 +134,11 @@ export class NativeAudioCaptureClient extends EventEmitter {
         resolve();
       });
 
-      captureProcess.kill("SIGTERM");
+      if (process.platform === "win32") {
+        captureProcess.stdin.end("stop\n");
+      } else {
+        captureProcess.kill("SIGTERM");
+      }
     });
   }
 
@@ -161,7 +172,7 @@ export class NativeAudioCaptureClient extends EventEmitter {
         continue;
       }
 
-      logger.swift.info(trimmed);
+      logger.audio.info(trimmed);
       this.maybeEmitAecMode(trimmed);
     }
   }

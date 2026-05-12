@@ -4,11 +4,21 @@
   "tasks": {
     "build": {
       "dependsOn": [],
-      "outputs": [".build/**", "bin/audio-capture"]
+      "outputs": [
+        ".build/**",
+        "bin/audio-capture",
+        "bin/audio-capture.exe",
+        "bin/prismical_webrtc_aec3.dll"
+      ]
     },
     "build:native": {
       "dependsOn": [],
-      "outputs": [".build/**", "bin/audio-capture"]
+      "outputs": [
+        ".build/**",
+        "bin/audio-capture",
+        "bin/audio-capture.exe",
+        "bin/prismical_webrtc_aec3.dll"
+      ]
     },
     "dev": {
       "cache": false,

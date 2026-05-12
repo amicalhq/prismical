@@ -4,12 +4,20 @@
   "tasks": {
     "build": {
       "dependsOn": [],
-      "outputs": [".build/**", "bin/prismical-mic-detector"]
+      "outputs": [
+        ".build/**",
+        "bin/prismical-mic-detector",
+        "bin/prismical-mic-detector.exe"
+      ]
     },
     "dev": {
       "cache": false,
       "persistent": false,
-      "outputs": [".build/**", "bin/prismical-mic-detector"]
+      "outputs": [
+        ".build/**",
+        "bin/prismical-mic-detector",
+        "bin/prismical-mic-detector.exe"
+      ]
     },
     "clean": {
       "cache": false

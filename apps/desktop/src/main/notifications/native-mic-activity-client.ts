@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import { spawn, type ChildProcessByStdio } from "node:child_process";
-import type { Readable } from "node:stream";
+import type { Readable, Writable } from "node:stream";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import split2 from "split2";
@@ -31,7 +31,8 @@ interface NativeMicActivityClientEvents {
 }
 
 export class NativeMicActivityClient extends EventEmitter {
-  private process: ChildProcessByStdio<null, Readable, Readable> | null = null;
+  private process: ChildProcessByStdio<Writable, Readable, Readable> | null =
+    null;
 
   on<U extends keyof NativeMicActivityClientEvents>(
     event: U,
@@ -68,9 +69,15 @@ export class NativeMicActivityClient extends EventEmitter {
 
     logger.info("Starting native mic detector", { binaryPath });
     const child = spawn(binaryPath, [], {
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["pipe", "pipe", "pipe"],
     });
     this.process = child;
+
+    child.stdin.on("error", (error) => {
+      logger.warn("Native mic detector stdin error", {
+        error: error.message,
+      });
+    });
 
     child.stdout.pipe(split2()).on("data", (line: string) => {
       if (!line.trim()) {
@@ -131,7 +138,11 @@ export class NativeMicActivityClient extends EventEmitter {
         resolve();
       });
 
-      child.kill("SIGTERM");
+      if (process.platform === "win32") {
+        child.stdin.end("stop\n");
+      } else {
+        child.kill("SIGTERM");
+      }
     });
   }
 

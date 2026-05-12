@@ -1,18 +1,19 @@
 {
   "name": "@prismical/mic-detector",
   "version": "1.0.0",
-  "description": "Dedicated macOS native microphone activity detector for Prismical meeting notifications",
+  "description": "Dedicated native microphone activity detector for Prismical meeting notifications",
   "private": true,
   "scripts": {
-    "build": "swift build --configuration release && mkdir -p bin && cp .build/release/prismical-mic-detector bin/prismical-mic-detector && codesign --force --sign - bin/prismical-mic-detector",
-    "clean": "rm -rf .build bin .turbo",
-    "dev": "swift build --configuration debug && mkdir -p bin && cp .build/debug/prismical-mic-detector bin/prismical-mic-detector && codesign --force --sign - bin/prismical-mic-detector"
+    "build": "node scripts/build.cjs build",
+    "clean": "node scripts/build.cjs clean",
+    "dev": "node scripts/build.cjs dev"
   },
   "files": [
     "bin/*"
   ],
   "os": [
-    "darwin"
+    "darwin",
+    "win32"
   ],
   "cpu": [
     "x64",

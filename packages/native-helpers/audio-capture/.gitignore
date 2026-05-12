@@ -4,7 +4,9 @@
 Package.resolved
 
 # Built executables
-bin/
+/bin/
+/windows/bin/
+/windows/obj/
 *.dSYM
 *.dSYM.zip
 

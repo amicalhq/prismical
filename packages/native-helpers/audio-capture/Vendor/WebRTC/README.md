@@ -1,6 +1,6 @@
 # WebRTC Vendor Bundle
 
-Prismical's macOS meeting AEC path is designed to use Google's WebRTC audio
+Prismical's meeting AEC path is designed to use Google's WebRTC audio
 processing implementation through a small native bridge target.
 
 This package currently ships a pass-through bridge implementation so the helper
@@ -12,7 +12,9 @@ instead.
 
 ## Intended Bundle Shape
 
-Place a reproducible, pinned macOS bundle here:
+Place reproducible, pinned bundles here.
+
+macOS:
 
 - `macOS/lib/libprismical_webrtc_aec3.a`
 - `macOS/include/prismical_aec3.h`
@@ -22,6 +24,13 @@ The static library should be a universal or fat archive that contains both:
 
 - `arm64`
 - `x86_64`
+
+Windows:
+
+- `windows/x64/bin/prismical_webrtc_aec3.dll`
+- `windows/x64/lib/prismical_webrtc_aec3.lib`
+- `windows/include/prismical_aec3.h`
+- `windows/x64/BUILD_INFO.txt`
 
 The archive must export the C symbols declared in
 `Sources/Aec3Bridge/include/prismical_aec3.h`. That keeps Prismical's
@@ -40,15 +49,17 @@ Prismical should not depend on runtime downloads for this library.
 
 The preferred path is the dedicated workspace package:
 
-`pnpm --filter @prismical/webrtc-aec3-builder build:bundle`
+- macOS: `pnpm --filter @prismical/webrtc-aec3-builder build:bundle`
+- Windows: `pnpm --filter @prismical/webrtc-aec3-builder build:windows`
 
 That package:
 
 - bootstraps `depot_tools`
 - fetches a pinned official WebRTC checkout into local ignored state
 - generates Prismical's GN overlay target
-- builds `arm64` and `x86_64` archives
-- writes the final universal bundle into `Vendor/WebRTC/macOS/`
+- builds `arm64` and `x86_64` archives on macOS
+- builds a Windows `x64` DLL on Windows
+- writes the final bundles into `Vendor/WebRTC/macOS/` or `Vendor/WebRTC/windows/`
 
 There is also a lower-level helper script:
 
