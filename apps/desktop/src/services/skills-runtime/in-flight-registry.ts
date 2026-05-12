@@ -41,9 +41,15 @@ export class InFlightRegistry {
   }
 
   // Called by skill-runner in a try/finally to clear the entry on
-  // normal completion or error.
-  finish(noteId: number): void {
-    this.entries.delete(noteId);
+  // normal completion or error. Identity-checks the controller so a
+  // late finish() from a cancelled run can't wipe a freshly-started one
+  // (race: cancel → user-restarts → original handler's finally clears
+  // the new entry, leaving the new run untracked and uncancellable).
+  finish(noteId: number, expected: AbortController): void {
+    const entry = this.entries.get(noteId);
+    if (entry?.controller === expected) {
+      this.entries.delete(noteId);
+    }
   }
 
   getInFlight(noteId: number): { skillSlug: string; startedAt: Date } | null {

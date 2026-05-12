@@ -79,7 +79,7 @@ export class SkillsService {
     const body = this.validateBody(input.body);
     const config = this.validateConfig(input.config);
 
-    return await skillsDb.createSkill(this.db, {
+    const row = await skillsDb.createSkill(this.db, {
       slug,
       name,
       description: input.description,
@@ -89,6 +89,12 @@ export class SkillsService {
       metadata: input.metadata,
       system: input.system ?? false,
     });
+    // At-most-one defaultSkill invariant — clear the flag on every other row
+    // when this new one claims it.
+    if (config.defaultSkill === true) {
+      await skillsDb.clearDefaultSkillExcept(this.db, row.id);
+    }
+    return row;
   }
 
   async updateSkill(id: string, patch: UpdateSkillInput): Promise<Skill> {
@@ -114,7 +120,13 @@ export class SkillsService {
       dbPatch.config = this.validateConfig(patch.config);
     if (patch.enabled !== undefined) dbPatch.enabled = patch.enabled;
     if (patch.metadata !== undefined) dbPatch.metadata = patch.metadata;
-    return await skillsDb.updateSkill(this.db, id, dbPatch);
+    const row = await skillsDb.updateSkill(this.db, id, dbPatch);
+    // At-most-one defaultSkill invariant — clear the flag on every other row
+    // when this update sets it.
+    if (patch.config?.defaultSkill === true) {
+      await skillsDb.clearDefaultSkillExcept(this.db, id);
+    }
+    return row;
   }
 
   async deleteSkill(id: string): Promise<void> {

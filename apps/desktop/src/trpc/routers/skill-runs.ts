@@ -57,7 +57,7 @@ export const skillRunsRouter = createRouter({
           signal: controller.signal,
         });
       } finally {
-        registry.finish(input.noteId);
+        registry.finish(input.noteId, controller);
       }
     }),
 

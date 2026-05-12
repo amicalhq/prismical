@@ -163,3 +163,24 @@ export async function updateSkill(
 export async function deleteSkill(db: DB, id: string): Promise<void> {
   await db.delete(skills).where(eq(skills.id, id));
 }
+
+// Spec invariant: at most one skill has `config.defaultSkill === true`. Strips
+// the flag from every enabled skill except `keepId`. Called by the service
+// layer whenever a skill is created/updated with `defaultSkill: true` so the
+// sparkle button picker remains deterministic. JSON-side `json_set` is the
+// cheapest single-statement way to do this in SQLite.
+export async function clearDefaultSkillExcept(
+  db: DB,
+  keepId: string,
+): Promise<void> {
+  // SQLite JSON1: json_extract returns integer 1/0 for JSON booleans;
+  // json_set(..., 'false') would store the string "false" so we use the
+  // explicit JSON literal via json('false') which yields a real JSON boolean.
+  await db.run(
+    sql`UPDATE skills
+        SET config = json_set(config, '$.defaultSkill', json('false')),
+            updated_at = unixepoch()
+        WHERE id != ${keepId}
+          AND json_extract(config, '$.defaultSkill') = 1`,
+  );
+}

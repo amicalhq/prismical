@@ -55,15 +55,15 @@ describe("skills-runtime/in-flight-registry", () => {
     expect(registry.cancel(99)).toBe(false);
   });
 
-  it("finish clears the entry", () => {
-    registry.start(1, "enhance");
+  it("finish clears the entry when controllers match", () => {
+    const controller = registry.start(1, "enhance");
     expect(registry.getInFlight(1)).not.toBeNull();
-    registry.finish(1);
+    registry.finish(1, controller);
     expect(registry.getInFlight(1)).toBeNull();
   });
 
   it("finish on a non-existent entry is a no-op", () => {
-    expect(() => registry.finish(99)).not.toThrow();
+    expect(() => registry.finish(99, new AbortController())).not.toThrow();
   });
 
   it("signal propagates abort via the controller returned from start", () => {
@@ -75,9 +75,22 @@ describe("skills-runtime/in-flight-registry", () => {
   });
 
   it("after finish, the same note can be started again", () => {
-    registry.start(1, "enhance");
-    registry.finish(1);
+    const c1 = registry.start(1, "enhance");
+    registry.finish(1, c1);
     expect(() => registry.start(1, "cleanup")).not.toThrow();
     expect(registry.getInFlight(1)?.skillSlug).toBe("cleanup");
+  });
+
+  // Race regression: cancel → user restarts immediately → original handler's
+  // `finally finish()` runs after the new entry is in place. Without identity
+  // check the new entry would be wiped, orphaning the second run. With the
+  // identity check, the late finish() is a no-op and the new entry is preserved.
+  it("finish with a stale controller does NOT clear a freshly-started entry", () => {
+    const c1 = registry.start(1, "enhance");
+    registry.cancel(1); // entry deleted, c1 aborted
+    const c2 = registry.start(1, "cleanup"); // new run, new controller
+    registry.finish(1, c1); // late finish from the cancelled run
+    expect(registry.getInFlight(1)?.skillSlug).toBe("cleanup");
+    expect(c2.signal.aborted).toBe(false);
   });
 });

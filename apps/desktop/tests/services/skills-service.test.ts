@@ -133,4 +133,51 @@ describe("services/skills-service", () => {
     const missing = await svc.getById("nonexistent-id");
     expect(missing).toBeNull();
   });
+
+  it("createSkill with defaultSkill=true clears the flag on previous defaults", async () => {
+    const { SkillsService } = await import("@/services/skills-service");
+    const { getSkillBySlug } = await import("@db/skills");
+    const svc = new SkillsService(testDb.db);
+    await svc.createSkill({
+      slug: "first-default",
+      name: "First",
+      body: "x",
+      config: { ...baseConfig, defaultSkill: true },
+    });
+    await svc.createSkill({
+      slug: "second-default",
+      name: "Second",
+      body: "x",
+      config: { ...baseConfig, defaultSkill: true },
+    });
+    const first = await getSkillBySlug(testDb.db, "first-default");
+    const second = await getSkillBySlug(testDb.db, "second-default");
+    expect(first?.config.defaultSkill).toBe(false);
+    expect(second?.config.defaultSkill).toBe(true);
+  });
+
+  it("updateSkill setting defaultSkill=true clears the flag on previous defaults", async () => {
+    const { SkillsService } = await import("@/services/skills-service");
+    const { getSkillBySlug } = await import("@db/skills");
+    const svc = new SkillsService(testDb.db);
+    await svc.createSkill({
+      slug: "alpha",
+      name: "Alpha",
+      body: "x",
+      config: { ...baseConfig, defaultSkill: true },
+    });
+    const beta = await svc.createSkill({
+      slug: "beta",
+      name: "Beta",
+      body: "x",
+      config: baseConfig,
+    });
+    await svc.updateSkill(beta.id, {
+      config: { ...baseConfig, defaultSkill: true },
+    });
+    const alpha = await getSkillBySlug(testDb.db, "alpha");
+    const betaAfter = await getSkillBySlug(testDb.db, "beta");
+    expect(alpha?.config.defaultSkill).toBe(false);
+    expect(betaAfter?.config.defaultSkill).toBe(true);
+  });
 });

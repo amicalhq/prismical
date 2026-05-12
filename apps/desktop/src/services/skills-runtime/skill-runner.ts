@@ -110,7 +110,8 @@ export async function runSkill(
     meta: {
       instanceId: instance.id,
       providerType: instance.provider,
-      refine: ctx.refineInstruction ? true : false,
+      refineInstruction: ctx.refineInstruction ?? null,
+      selectionText: ctx.selectionText ?? null,
     },
   });
 

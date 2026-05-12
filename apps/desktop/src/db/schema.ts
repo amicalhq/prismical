@@ -419,6 +419,16 @@ export const artifacts = sqliteTable(
   },
   (table) => [
     index("artifacts_note_id_skill_id_idx").on(table.noteId, table.skillId),
+    // Partial unique index — for `append-section` mode the runtime computes
+    // `version = MAX(version) + 1` per (note_id, skill_id). The single-in-flight
+    // invariant from `InFlightRegistry` prevents the race in normal operation,
+    // but a partial unique constraint is belt-and-suspenders against any future
+    // caller that bypasses the registry (background eval re-runner, batch import,
+    // etc.). `replace-doc` and `inline-rewrite` always write version=1 so they
+    // would conflict here; scope the constraint to append-section only.
+    uniqueIndex("artifacts_note_id_skill_id_version_append_unique")
+      .on(table.noteId, table.skillId, table.version)
+      .where(sql`mode = 'append-section'`),
     index("artifacts_note_id_generated_at_idx").on(
       table.noteId,
       table.generatedAt,
