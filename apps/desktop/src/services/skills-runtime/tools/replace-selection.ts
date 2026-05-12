@@ -10,11 +10,11 @@ export interface CreateReplaceSelectionToolOpts {
 export function createReplaceSelectionTool(opts: CreateReplaceSelectionToolOpts) {
   return tool({
     description: `Replace the user's selected text with rewritten markdown. The original selection was: ${JSON.stringify(opts.selectionText)}. Call this exactly once.`,
-    parameters: z.object({
+    inputSchema: z.object({
       markdown: z.string().min(1),
     }),
-    execute: async ({ markdown }) => {
-      opts.capture({ markdown });
+    execute: async (input) => {
+      opts.capture({ markdown: input.markdown });
       return { ok: true };
     },
   });

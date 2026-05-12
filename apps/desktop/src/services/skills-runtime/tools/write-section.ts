@@ -24,14 +24,14 @@ export function createWriteSectionTool(opts: CreateWriteSectionToolOpts) {
       : "Replace the entire note body.";
   return tool({
     description: `Write the final output for this skill run as markdown. ${modeHint} Call this exactly once.`,
-    parameters: z.object({
+    inputSchema: z.object({
       markdown: z
         .string()
         .min(1)
         .describe("The markdown content the user will see."),
     }),
-    execute: async ({ markdown }) => {
-      opts.capture({ markdown });
+    execute: async (input) => {
+      opts.capture({ markdown: input.markdown });
       return { ok: true };
     },
   });

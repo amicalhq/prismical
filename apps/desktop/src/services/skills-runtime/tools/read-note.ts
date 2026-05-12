@@ -17,7 +17,7 @@ export function createReadNoteTool(opts: CreateReadNoteToolOpts) {
   return tool({
     description:
       "Read the current note's title and body text. Returns { title, body }.",
-    parameters: z.object({}),
+    inputSchema: z.object({}),
     execute: async () => {
       const [row] = await opts.db
         .select({ title: notes.title, content: notes.content })

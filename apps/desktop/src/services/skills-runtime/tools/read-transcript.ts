@@ -19,7 +19,7 @@ export function createReadTranscriptTool(opts: CreateReadTranscriptToolOpts) {
   return tool({
     description:
       "Read the meeting transcript linked to this note. Returns { transcript } where transcript is the concatenated text of all transcript segments, or null if no meeting is linked.",
-    parameters: z.object({}),
+    inputSchema: z.object({}),
     execute: async () => {
       // Find meetings linked to this note
       const linkedMeetings = await opts.db
