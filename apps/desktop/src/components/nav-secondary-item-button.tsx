@@ -134,7 +134,10 @@ export function NavSecondaryItemButton({
   isActive: boolean;
 }) {
   const ctaClasses = getCtaClasses(item.ctaStyle);
-  const buttonClassName = cn(ctaClasses.buttonClassName);
+  const buttonClassName = cn(
+    !item.ctaStyle && "text-sidebar-foreground-muted",
+    ctaClasses.buttonClassName,
+  );
   const content = renderItemContent(item, ctaClasses);
 
   if (!isInternalUrl(item.url)) {

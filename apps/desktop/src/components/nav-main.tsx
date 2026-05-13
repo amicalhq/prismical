@@ -28,6 +28,8 @@ export function NavMain({
             <SidebarMenuItem key={item.url}>
               <SidebarMenuButton
                 asChild
+                size="sm"
+                className="text-sm text-sidebar-foreground-muted"
                 tooltip={item.title}
                 isActive={location.pathname.startsWith(item.url)}
               >

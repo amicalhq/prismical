@@ -146,7 +146,12 @@ function FavoriteNoteRow({
   const triggerRef = React.useRef<HTMLButtonElement>(null);
   return (
     <SidebarMenuItem>
-      <SidebarMenuButton asChild isActive={isActive}>
+      <SidebarMenuButton
+        asChild
+        size="sm"
+        className="text-sm text-sidebar-foreground-muted"
+        isActive={isActive}
+      >
         <Link
           to="/notes/$noteId"
           params={{ noteId: String(note.id) }}
@@ -191,7 +196,12 @@ function NoteSubRow({
   const triggerRef = React.useRef<HTMLButtonElement>(null);
   return (
     <SidebarMenuSubItem className="group/sub-item relative">
-      <SidebarMenuSubButton asChild isActive={isActive} className="pr-6">
+      <SidebarMenuSubButton
+        asChild
+        size="sm"
+        isActive={isActive}
+        className="pr-6 text-sm text-sidebar-foreground-muted"
+      >
         <Link
           to="/notes/$noteId"
           params={{ noteId: String(note.id) }}
@@ -456,6 +466,7 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     disabled
+                    size="sm"
                     className="text-sidebar-foreground/60"
                   >
                     <Star className="size-4" />
@@ -484,6 +495,8 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
                     <SidebarMenuItem key={`favorite-folder-${entry.folder.id}`}>
                       <SidebarMenuButton
                         asChild
+                        size="sm"
+                        className="text-sm text-sidebar-foreground-muted"
                         isActive={isFolderActive(entry.folder.id)}
                       >
                         <Link
@@ -547,7 +560,10 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
                 >
                   <SidebarMenuItem>
                     <CollapsibleTrigger asChild>
-                      <SidebarMenuButton>
+                      <SidebarMenuButton
+                        size="sm"
+                        className="text-sm text-sidebar-foreground-muted"
+                      >
                         <ChevronRight className="size-4 transition-transform group-data-[state=open]/collapsible:rotate-90" />
                         <span>{folder.name}</span>
                       </SidebarMenuButton>
@@ -603,6 +619,7 @@ export function NavNotesGroups({ notes }: { notes: NoteNavigationItem[] }) {
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     disabled
+                    size="sm"
                     className="text-sidebar-foreground/60"
                   >
                     <Folder className="size-4" />

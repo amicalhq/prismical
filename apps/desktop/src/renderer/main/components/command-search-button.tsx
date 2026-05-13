@@ -279,7 +279,8 @@ export function CommandSearchButton() {
     <>
       <SidebarMenuButton
         onClick={() => setOpen(true)}
-        className="cursor-pointer"
+        size="sm"
+        className="cursor-pointer text-sm text-sidebar-foreground-muted"
       >
         <IconSearch />
         <span>{t("settings.search.buttonLabel")}</span>

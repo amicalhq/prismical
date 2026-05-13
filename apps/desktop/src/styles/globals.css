@@ -43,6 +43,7 @@ body {
   --radius: 0.625rem;
   --sidebar: #f4f5f6;
   --sidebar-foreground: oklch(0.25 0 0);
+  --sidebar-foreground-muted: oklch(0.33 0 0);
   --sidebar-primary: oklch(0.205 0 0);
   --sidebar-primary-foreground: oklch(0.985 0 0);
   --sidebar-accent: #0d0d0d0d;
@@ -87,6 +88,7 @@ body {
   --chart-5: oklch(0.645 0.246 16.439);
   --sidebar: #222526;
   --sidebar-foreground: oklch(0.95 0 0);
+  --sidebar-foreground-muted: oklch(0.85 0 0);
   --sidebar-primary: oklch(0.488 0.243 264.376);
   --sidebar-primary-foreground: oklch(0.985 0 0);
   --sidebar-accent: #ffffff0a;
@@ -179,6 +181,7 @@ html.vibrancy [data-slot="sidebar-inner"] {
   --radius-xl: calc(var(--radius) + 4px);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-foreground-muted: var(--sidebar-foreground-muted);
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
   --color-sidebar-accent: var(--sidebar-accent);

@@ -53,7 +53,12 @@ export function TagSidebarRow({ tag, noteCount }: TagSidebarRowProps) {
   return (
     <>
       <SidebarMenuItem className="group/tag-item">
-        <SidebarMenuButton asChild isActive={isActive} className="pr-8">
+        <SidebarMenuButton
+          asChild
+          size="sm"
+          isActive={isActive}
+          className="pr-8 text-sm text-sidebar-foreground-muted"
+        >
           <Link
             to="/notes"
             search={{ tags: [tag.id] }}

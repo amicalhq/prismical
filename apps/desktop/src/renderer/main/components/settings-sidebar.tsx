@@ -209,6 +209,8 @@ export function SettingsSidebar({
               <SidebarMenuItem key={item.url}>
                 <SidebarMenuButton
                   asChild
+                  size="sm"
+                  className="text-sm text-sidebar-foreground-muted"
                   isActive={
                     item.url === "/notes"
                       ? isAllNotesView
@@ -238,6 +240,8 @@ export function SettingsSidebar({
               <SidebarMenuItem key={settingsNavItem.url}>
                 <SidebarMenuButton
                   asChild
+                  size="sm"
+                  className="text-sm text-sidebar-foreground-muted"
                   isActive={location.pathname === settingsNavItem.url}
                 >
                   <Link
@@ -268,7 +272,8 @@ export function SettingsSidebar({
             <SidebarMenuItem>
               <SidebarMenuButton
                 asChild
-                className="data-[slot=sidebar-menu-button]:!p-1.5"
+                size="sm"
+                className="text-sm text-sidebar-foreground-muted data-[slot=sidebar-menu-button]:!p-1.5"
               >
                 <Link to="/home" aria-label={t("settings.sidebar.backToHome")}>
                   <IconChevronLeft />
