@@ -1,45 +1,37 @@
-import { generateText, stepCountIs } from "ai";
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { generateText, Output } from "ai";
+import { z } from "zod";
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
-
-import { eq } from "drizzle-orm";
 
 import { logger } from "@/main/logger";
 import { db as defaultDb } from "@/db";
 import { appendArtifact } from "@/db/artifacts";
 import { getInstanceById } from "@/db/instances";
-import { notes } from "@/db/schema";
-import { extractPlainText } from "./extract-plain-text";
-
-import type {
-  SkillRunContext,
-  SkillRunResult,
-  WriteSectionPayload,
-} from "./skill-context";
-import type { ApiKeyConfig, OpenAICompatibleConfig } from "@/db/schema";
+import type { SkillRunContext, SkillRunResult } from "./skill-context";
 import { buildSystemPrompt } from "./build-system-prompt";
-import { buildToolRegistry } from "./tools";
+import { collectInput } from "./collect-input";
+import { resolveSkillModel } from "./resolve-model";
 import { markdownToChildren } from "./markdown-to-children";
-import { WriteToolMissingError, SkillRunError, SkillCancelledError } from "./errors";
+import { SkillRunError, SkillCancelledError } from "./errors";
 
-const MAX_STEPS = 8;
+// The model returns one JSON object per run. We deliberately don't expose
+// tools in v1 — the runner injects everything the skill needs (note,
+// transcript, selection, refine context) into the system prompt, and the
+// model just transforms. Tool-loop / MCP support can opt-in via
+// `skill.allowedTools` later without changing this default path.
+const OUTPUT_SCHEMA = z.object({
+  markdown: z.string().min(1, "must produce non-empty markdown"),
+  // Optional model-supplied notes. Stored in the audit meta for eval/debug;
+  // never shown to the user.
+  reasoning: z.string().optional(),
+});
 
 export async function runSkill(
   ctx: SkillRunContext,
   options: { db?: LibSQLDatabase<Record<string, unknown>> } = {},
 ): Promise<SkillRunResult> {
-  const db = options.db ?? (defaultDb as unknown as LibSQLDatabase<Record<string, unknown>>);
-  // Use a box so TypeScript doesn't narrow `captured` to `never` across the
-  // async boundary / closure mutation.
-  const box: { captured: WriteSectionPayload | null } = { captured: null };
-  const capture = (payload: WriteSectionPayload) => {
-    box.captured = payload;
-  };
+  const db =
+    options.db ?? (defaultDb as unknown as LibSQLDatabase<Record<string, unknown>>);
 
-  const tools = buildToolRegistry(db, ctx, capture);
-  const systemPrompt = buildSystemPrompt(ctx);
-
-  // Resolve the model instance.
   const instance = await getInstanceById(ctx.modelInstanceId);
   if (!instance) {
     throw new SkillRunError(
@@ -47,61 +39,31 @@ export async function runSkill(
     );
   }
 
-  if (
-    instance.provider !== "openai-compatible" &&
-    instance.provider !== "openai" &&
-    instance.provider !== "groq" &&
-    instance.provider !== "openrouter"
-  ) {
-    throw new SkillRunError(
-      `Skill runtime only supports openai-compatible providers in v1 (got ${instance.provider})`,
-    );
-  }
+  const model = resolveSkillModel(instance, ctx.modelId);
+  const input = await collectInput(db, ctx);
+  const systemPrompt = buildSystemPrompt(ctx, input);
 
-  // Cast to the union of configs that carry apiKey. Both ApiKeyConfig and
-  // OpenAICompatibleConfig have apiKey; only OpenAICompatibleConfig has baseURL.
-  const config = instance.config as ApiKeyConfig | OpenAICompatibleConfig;
-  const apiKey = config.apiKey;
-  const baseURL =
-    "baseURL" in config && config.baseURL
-      ? config.baseURL
-      : resolveDefaultBaseURL(instance.provider);
-
-  const provider = createOpenAICompatible({ apiKey, baseURL, name: "skills-runtime" });
-
+  let object: z.infer<typeof OUTPUT_SCHEMA>;
   try {
-    await generateText({
-      model: provider(ctx.modelId),
+    const result = await generateText({
+      model,
       system: systemPrompt,
-      messages: [
-        {
-          role: "user",
-          content: "Run the skill as instructed in the system prompt.",
-        },
-      ],
-      tools,
-      stopWhen: stepCountIs(MAX_STEPS),
+      prompt: "Run the skill as instructed in the system prompt.",
+      output: Output.object({ schema: OUTPUT_SCHEMA }),
       abortSignal: ctx.signal,
     });
+    object = result.output;
   } catch (err) {
-    if (ctx.signal.aborted) {
-      throw new SkillCancelledError();
-    }
+    if (ctx.signal.aborted) throw new SkillCancelledError();
     throw new SkillRunError(
       err instanceof Error ? err.message : String(err),
       err,
     );
   }
 
-  if (!box.captured) {
-    throw new WriteToolMissingError();
-  }
-
-  const capturedPayload = box.captured;
-
-  const content = markdownToChildren(capturedPayload.markdown);
+  const content = markdownToChildren(object.markdown);
   if (content.length === 0) {
-    throw new SkillRunError("Agent emitted markdown that produced empty content");
+    throw new SkillRunError("Model emitted markdown that produced empty content");
   }
 
   const auditRow = await appendArtifact(db, {
@@ -116,6 +78,7 @@ export async function runSkill(
       providerType: instance.provider,
       refineInstruction: ctx.refineInstruction ?? null,
       selectionText: ctx.selectionText ?? null,
+      reasoning: object.reasoning ?? null,
     },
   });
 
@@ -127,20 +90,11 @@ export async function runSkill(
     version: auditRow.version,
   });
 
-  // Populate `beforeText` for replace-doc so the diff overlay can render
-  // a real char-level diff. Skipped for append-section (additive, no diff)
-  // and inline-rewrite (client supplies it from the selection).
-  let beforeText: string | undefined;
-  if (ctx.mode === "replace-doc") {
-    const [row] = await db
-      .select({ content: notes.content })
-      .from(notes)
-      .where(eq(notes.id, ctx.noteId))
-      .limit(1);
-    if (row?.content) {
-      beforeText = extractPlainText(row.content);
-    }
-  }
+  // beforeText is the "before" side of the char-level diff overlay for
+  // replace-doc. append-section is additive (no diff). inline-rewrite gets
+  // beforeText from the client's selection.
+  const beforeText =
+    ctx.mode === "replace-doc" ? input.notePlainText : undefined;
 
   return {
     artifactId: auditRow.id,
@@ -151,20 +105,7 @@ export async function runSkill(
     generatedAt: auditRow.generatedAt!.toISOString(),
     modelId: ctx.modelId,
     content,
-    rawMarkdown: capturedPayload.markdown,
+    rawMarkdown: object.markdown,
     beforeText,
   };
-}
-
-function resolveDefaultBaseURL(provider: string): string {
-  switch (provider) {
-    case "openai":
-      return "https://api.openai.com/v1";
-    case "groq":
-      return "https://api.groq.com/openai/v1";
-    case "openrouter":
-      return "https://openrouter.ai/api/v1";
-    default:
-      return "https://api.openai.com/v1";
-  }
 }

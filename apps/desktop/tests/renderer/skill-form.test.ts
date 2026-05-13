@@ -88,7 +88,11 @@ describe("SkillForm", () => {
     const html = await renderForm({ mode: "new" });
     expect(html).toContain('id="name"');
     expect(html).toContain('id="body"');
-    expect(html).toContain('id="slug"');
+  });
+
+  it("does NOT expose a slug input — slug auto-derives from name", async () => {
+    const html = await renderForm({ mode: "new" });
+    expect(html).not.toContain('id="slug"');
   });
 
   it("renders Create button in new mode", async () => {

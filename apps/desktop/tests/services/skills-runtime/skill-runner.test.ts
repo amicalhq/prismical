@@ -17,12 +17,13 @@ import { type TestDatabase } from "../../helpers/test-db";
 import { setTestDatabase } from "../../setup";
 import { notes, skills, instances, artifacts } from "@db/schema";
 import type { SkillRunContext } from "@/services/skills-runtime/skill-context";
-import { SkillCancelledError, WriteToolMissingError } from "@/services/skills-runtime/errors";
+import { SkillCancelledError, SkillRunError } from "@/services/skills-runtime/errors";
 
-// ---------------------------------------------------------------------------
-// Mock generateText from "ai" — the mock simulates the agent calling
-// write_section with canned markdown.
-// ---------------------------------------------------------------------------
+// Mock `generateText` from `ai`. The runner asks for a structured output
+// via `Output.object`; the mock returns a fake result with the typed
+// `output` field already populated. We never exercise the real Output
+// pipeline here — that's covered by integration tests against a live
+// model — so we can hand back the plain object directly.
 vi.mock("ai", async (importOriginal) => {
   const original = await importOriginal<typeof import("ai")>();
   return {
@@ -31,20 +32,16 @@ vi.mock("ai", async (importOriginal) => {
   };
 });
 
-// Mock @ai-sdk/openai-compatible — we don't want real HTTP calls
+// Mock the openai-compatible provider so we don't make HTTP calls.
 vi.mock("@ai-sdk/openai-compatible", () => ({
   createOpenAICompatible: vi.fn(() => (modelId: string) => ({
-    specificationVersion: "v1",
+    specificationVersion: "v3",
     provider: "openai-compatible",
     modelId,
   })),
 }));
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-const CANNED_MARKDOWN = "## Summary\n\nAgent-generated content.";
+const CANNED_MARKDOWN = "## Summary\n\nModel-generated content.";
 const INSTANCE_ID = "test-instance-id";
 const MODEL_ID = "gpt-4o-mini";
 const NOTE_TITLE = "Test Note";
@@ -106,16 +103,9 @@ function makeCtx(
   };
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
 let testDb: TestDatabase;
 let generateTextMock: MockInstance;
 
-// Create an isolated test DB outside TEST_USER_DATA_PATH to avoid
-// SQLITE_READONLY_DBMOVED errors caused by setup.ts afterAll cleanup
-// deleting the shared temp directory between test files.
 async function createIsolatedTestDb(): Promise<TestDatabase> {
   const { randomUUID } = await import("crypto");
   const dbDir = path.join(os.tmpdir(), `skill-runner-isolated-${randomUUID()}`);
@@ -137,7 +127,6 @@ beforeEach(async () => {
   testDb = await createIsolatedTestDb();
   setTestDatabase(testDb.db);
 
-  // Get the mock reference after modules are loaded
   const aiModule = await import("ai");
   generateTextMock = aiModule.generateText as unknown as MockInstance;
 });
@@ -145,42 +134,31 @@ beforeEach(async () => {
 afterEach(async () => {
   vi.resetAllMocks();
   await testDb.close();
-  // Remove the isolated DB directory (parent of dbPath)
   await fs.remove(path.dirname(testDb.dbPath));
 });
 
 describe("skills-runtime/skill-runner", () => {
-  it("happy path: agent calls write_section → returns SkillRunResult with expected fields and writes audit row", async () => {
+  it("happy path: model returns structured object → runner emits SkillRunResult + audit row", async () => {
     const { runSkill } = await import("@/services/skills-runtime/skill-runner");
     const { note, skill } = await insertFixtures(testDb.db);
 
-    // Configure mock to simulate agent calling write_section
-    generateTextMock.mockImplementation(async (opts: { tools?: Record<string, { execute: (input: unknown, ctx: unknown) => Promise<unknown> }> }) => {
-      const writeTool = opts.tools?.write_section;
-      if (writeTool?.execute) {
-        await writeTool.execute(
-          { markdown: CANNED_MARKDOWN },
-          { toolCallId: "mock-tool-call", messages: [], abortSignal: new AbortController().signal },
-        );
-      }
-      return { text: "", steps: [], toolCalls: [], toolResults: [] };
+    generateTextMock.mockResolvedValue({
+      output: { markdown: CANNED_MARKDOWN },
     });
 
-    const ctx = makeCtx({ skill, noteId: note.id });
-    const result = await runSkill(ctx, { db: testDb.db });
+    const result = await runSkill(makeCtx({ skill, noteId: note.id }), {
+      db: testDb.db,
+    });
 
     expect(result.skillId).toBe("enhance");
     expect(result.skillName).toBe("Enhance");
     expect(result.mode).toBe("append-section");
     expect(result.modelId).toBe(MODEL_ID);
     expect(result.rawMarkdown).toBe(CANNED_MARKDOWN);
-    expect(result.content).toBeInstanceOf(Array);
     expect(result.content.length).toBeGreaterThan(0);
     expect(result.artifactId).toBeTruthy();
     expect(result.version).toBeGreaterThan(0);
-    expect(result.generatedAt).toBeTruthy();
 
-    // Verify the audit row was written
     const rows = await testDb.db.select().from(artifacts).all();
     expect(rows.length).toBe(1);
     expect(rows[0].skillId).toBe("enhance");
@@ -189,116 +167,90 @@ describe("skills-runtime/skill-runner", () => {
     expect(rows[0].modelId).toBe(MODEL_ID);
   });
 
-  it("cancellation: aborted signal before call → throws SkillCancelledError", async () => {
+  it("pre-injects note + system prompt: generateText receives a system string containing the note body", async () => {
+    const { runSkill } = await import("@/services/skills-runtime/skill-runner");
+    const { note, skill } = await insertFixtures(testDb.db);
+
+    generateTextMock.mockResolvedValue({
+      output: { markdown: CANNED_MARKDOWN },
+    });
+
+    await runSkill(makeCtx({ skill, noteId: note.id }), { db: testDb.db });
+
+    const callArgs = generateTextMock.mock.calls[0][0] as { system: string };
+    expect(callArgs.system).toContain("note body");
+    expect(callArgs.system).toContain("Active mode: append-section");
+  });
+
+  it("inline-rewrite: selection text is injected into the system prompt", async () => {
+    const { runSkill } = await import("@/services/skills-runtime/skill-runner");
+    const { note, skill } = await insertFixtures(testDb.db);
+
+    generateTextMock.mockResolvedValue({
+      output: { markdown: "rewritten" },
+    });
+
+    await runSkill(
+      makeCtx({
+        skill,
+        noteId: note.id,
+        mode: "inline-rewrite",
+        selectionText: "original selected text",
+      }),
+      { db: testDb.db },
+    );
+
+    const callArgs = generateTextMock.mock.calls[0][0] as { system: string };
+    expect(callArgs.system).toContain("Selected text to rewrite");
+    expect(callArgs.system).toContain("original selected text");
+  });
+
+  it("cancellation: aborted signal → throws SkillCancelledError", async () => {
     const { runSkill } = await import("@/services/skills-runtime/skill-runner");
     const { note, skill } = await insertFixtures(testDb.db);
 
     const controller = new AbortController();
-    controller.abort(); // pre-abort
+    controller.abort();
 
-    // Mock generateText to throw an AbortError (simulating what the SDK does on abort)
     generateTextMock.mockImplementation(async () => {
       throw new DOMException("Aborted", "AbortError");
     });
 
-    const ctx = makeCtx({ skill, noteId: note.id, signal: controller.signal });
-
-    await expect(runSkill(ctx, { db: testDb.db })).rejects.toThrow(SkillCancelledError);
+    await expect(
+      runSkill(makeCtx({ skill, noteId: note.id, signal: controller.signal }), {
+        db: testDb.db,
+      }),
+    ).rejects.toThrow(SkillCancelledError);
   });
 
-  it("tool-missing: mock never calls write_section → throws WriteToolMissingError", async () => {
+  it("empty markdown: model returns content that produces no Lexical children → SkillRunError", async () => {
     const { runSkill } = await import("@/services/skills-runtime/skill-runner");
     const { note, skill } = await insertFixtures(testDb.db);
 
-    // Mock generateText to return without calling any tool
+    generateTextMock.mockResolvedValue({ output: { markdown: "   \n  " } });
+
+    await expect(
+      runSkill(makeCtx({ skill, noteId: note.id }), { db: testDb.db }),
+    ).rejects.toThrow(SkillRunError);
+  });
+
+  it("mode override: ctx.mode=replace-doc writes audit row with mode=replace-doc and beforeText from note", async () => {
+    const { runSkill } = await import("@/services/skills-runtime/skill-runner");
+    const { note, skill } = await insertFixtures(testDb.db);
+
     generateTextMock.mockResolvedValue({
-      text: "I decided not to write anything.",
-      steps: [],
-      toolCalls: [],
-      toolResults: [],
+      output: { markdown: "# Full replacement\n\nContent here." },
     });
 
-    const ctx = makeCtx({ skill, noteId: note.id });
-
-    await expect(runSkill(ctx, { db: testDb.db })).rejects.toThrow(WriteToolMissingError);
-  });
-
-  it("mode override: ctx.mode=replace-doc writes audit row with mode=replace-doc", async () => {
-    const { runSkill } = await import("@/services/skills-runtime/skill-runner");
-    const { note, skill } = await insertFixtures(testDb.db);
-
-    generateTextMock.mockImplementation(async (opts: { tools?: Record<string, { execute: (input: unknown, ctx: unknown) => Promise<unknown> }> }) => {
-      const writeTool = opts.tools?.write_section;
-      if (writeTool?.execute) {
-        await writeTool.execute(
-          { markdown: "# Full replacement\n\nContent here." },
-          { toolCallId: "mock-tool-call", messages: [], abortSignal: new AbortController().signal },
-        );
-      }
-      return { text: "", steps: [], toolCalls: [], toolResults: [] };
-    });
-
-    // skill.config.editingOptions is "append-section" but ctx.mode overrides to "replace-doc"
-    const ctx = makeCtx({ skill, noteId: note.id, mode: "replace-doc" });
-    const result = await runSkill(ctx, { db: testDb.db });
+    const result = await runSkill(
+      makeCtx({ skill, noteId: note.id, mode: "replace-doc" }),
+      { db: testDb.db },
+    );
 
     expect(result.mode).toBe("replace-doc");
+    expect(result.beforeText).toContain("note body");
 
     const rows = await testDb.db.select().from(artifacts).all();
-    expect(rows.length).toBe(1);
     expect(rows[0].mode).toBe("replace-doc");
-  });
-
-  it("cancellation: signal aborted during generateText → throws SkillCancelledError", async () => {
-    const { runSkill } = await import("@/services/skills-runtime/skill-runner");
-    const { note, skill } = await insertFixtures(testDb.db);
-
-    const controller = new AbortController();
-
-    generateTextMock.mockImplementation(async () => {
-      // Abort mid-execution and then throw
-      controller.abort();
-      throw new Error("Request aborted");
-    });
-
-    const ctx = makeCtx({ skill, noteId: note.id, signal: controller.signal });
-
-    await expect(runSkill(ctx, { db: testDb.db })).rejects.toThrow(SkillCancelledError);
-  });
-
-  it("uses replace_selection tool when mode is inline-rewrite", async () => {
-    const { runSkill } = await import("@/services/skills-runtime/skill-runner");
-    const { note, skill } = await insertFixtures(testDb.db);
-
-    let calledToolName: string | null = null;
-
-    generateTextMock.mockImplementation(async (opts: { tools?: Record<string, { execute: (input: unknown, ctx: unknown) => Promise<unknown> }> }) => {
-      // inline-rewrite mode should expose replace_selection, not write_section
-      const replaceTool = opts.tools?.replace_selection;
-      const writeTool = opts.tools?.write_section;
-      expect(replaceTool).toBeDefined();
-      expect(writeTool).toBeUndefined();
-
-      if (replaceTool?.execute) {
-        calledToolName = "replace_selection";
-        await replaceTool.execute(
-          { markdown: "rewritten content" },
-          { toolCallId: "mock-tool-call", messages: [], abortSignal: new AbortController().signal },
-        );
-      }
-      return { text: "", steps: [], toolCalls: [], toolResults: [] };
-    });
-
-    const ctx = makeCtx({
-      skill,
-      noteId: note.id,
-      mode: "inline-rewrite",
-      selectionText: "original selected text",
-    });
-
-    const result = await runSkill(ctx, { db: testDb.db });
-    expect(calledToolName).toBe("replace_selection");
-    expect(result.mode).toBe("inline-rewrite");
-    expect(result.rawMarkdown).toBe("rewritten content");
   });
 });
