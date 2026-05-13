@@ -78,12 +78,6 @@ export async function runSkill(
     );
   }
 
-  logger.pipeline.info("Skill run produced candidate (unpersisted)", {
-    noteId: ctx.noteId,
-    skill: ctx.skill.slug,
-    mode: ctx.mode,
-  });
-
   // beforeText is the "before" side of the char-level diff overlay for
   // replace-doc. We use the markdown rendering of the note (not plain text)
   // because the candidate's `rawMarkdown` is markdown — diffing plain-vs-md
@@ -92,6 +86,12 @@ export async function runSkill(
   // gets beforeText from the client's selection.
   const beforeText =
     ctx.mode === "replace-doc" ? input.noteMarkdown : undefined;
+
+  logger.pipeline.info("Skill run produced candidate (unpersisted)", {
+    noteId: ctx.noteId,
+    skill: ctx.skill.slug,
+    mode: ctx.mode,
+  });
 
   return {
     mode: ctx.mode,

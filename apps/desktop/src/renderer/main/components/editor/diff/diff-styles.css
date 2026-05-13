@@ -15,6 +15,18 @@
   background: color-mix(in oklch, var(--diff-delete) 12%, transparent);
 }
 
+/*
+ * Word-level diff regularly produces adjacent <del><ins> (or <ins><del>) pairs
+ * where the equal whitespace token gets assigned to ONE side, leaving no space
+ * between the swapped words. Without this rule, "Walk through" → "## Mock"
+ * renders as "Walk##​ throughMock" — words mashed together. A small horizontal
+ * gap restores readability without changing the diff semantics.
+ */
+.prismical-diff-delete + .prismical-diff-insert,
+.prismical-diff-insert + .prismical-diff-delete {
+  margin-left: 0.35em;
+}
+
 .prismical-artifact-node--proposed {
   border-color: var(--diff-insert);
   border-style: dashed;
