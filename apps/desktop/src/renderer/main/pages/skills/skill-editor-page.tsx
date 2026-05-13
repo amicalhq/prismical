@@ -10,14 +10,14 @@ interface Props {
 export function SkillEditorPage({ mode, skillId }: Props) {
   if (mode === "new") return <SkillForm mode="new" />;
 
-  if (!skillId) return <Navigate to="/skills" />;
+  if (!skillId) return <Navigate to="/settings/skills" />;
 
   const { data: existing, isLoading, error } = api.skills.getById.useQuery(
     { id: skillId },
   );
 
   if (isLoading) return <div className="p-8">Loading…</div>;
-  if (error || !existing) return <Navigate to="/skills" />;
+  if (error || !existing) return <Navigate to="/settings/skills" />;
 
   return <SkillForm mode="edit" existing={existing} />;
 }

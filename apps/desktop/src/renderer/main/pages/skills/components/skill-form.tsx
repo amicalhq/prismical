@@ -61,7 +61,7 @@ export function SkillForm({ mode, existing }: Props) {
   const create = api.skills.create.useMutation({
     onSuccess: async () => {
       await utils.skills.list.invalidate();
-      navigate({ to: "/skills" });
+      navigate({ to: "/settings/skills" });
     },
     onError: (err) => setError(err.message),
   });
@@ -69,7 +69,7 @@ export function SkillForm({ mode, existing }: Props) {
   const update = api.skills.update.useMutation({
     onSuccess: async () => {
       await utils.skills.list.invalidate();
-      navigate({ to: "/skills" });
+      navigate({ to: "/settings/skills" });
     },
     onError: (err) => setError(err.message),
   });
@@ -77,7 +77,10 @@ export function SkillForm({ mode, existing }: Props) {
   const clone = api.skills.clone.useMutation({
     onSuccess: async (cloned) => {
       await utils.skills.list.invalidate();
-      navigate({ to: "/skills/$skillId", params: { skillId: cloned.id } });
+      navigate({
+        to: "/settings/skills/$skillId",
+        params: { skillId: cloned.id },
+      });
     },
     onError: (err) => setError(err.message),
   });
@@ -329,7 +332,7 @@ export function SkillForm({ mode, existing }: Props) {
         <Button
           type="button"
           variant="ghost"
-          onClick={() => navigate({ to: "/skills" })}
+          onClick={() => navigate({ to: "/settings/skills" })}
         >
           Cancel
         </Button>
@@ -338,7 +341,7 @@ export function SkillForm({ mode, existing }: Props) {
       <DeleteSkillDialog
         skill={pendingDelete && existing ? existing : null}
         onCancel={() => setPendingDelete(false)}
-        onDeleted={() => navigate({ to: "/skills" })}
+        onDeleted={() => navigate({ to: "/settings/skills" })}
       />
     </form>
   );

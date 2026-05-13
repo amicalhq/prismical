@@ -8,7 +8,7 @@ interface Props {
 export function SkillCard({ skill }: Props) {
   return (
     <Link
-      to="/skills/$skillId"
+      to="/settings/skills/$skillId"
       params={{ skillId: skill.id }}
       // h-full + flex-col so the grid's auto-rows-fr keeps every card at the
       // same height; the description's two-line clamp prevents reflow.

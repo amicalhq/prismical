@@ -86,7 +86,7 @@ export function SkillsListPage() {
             Import skill
           </Button>
           <Button asChild>
-            <Link to="/skills/new">
+            <Link to="/settings/skills/new">
               <IconPlus size={18} className="mr-1" />
               {t("skills.page.newSkill")}
             </Link>

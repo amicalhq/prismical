@@ -243,7 +243,8 @@
         "description": "Manage your notes"
       },
       "skills": {
-        "title": "Skills"
+        "title": "Skills",
+        "description": "Manage AI prompts that transform your notes — append sections, rewrite selections, replace the whole document"
       },
       "preferences": {
         "title": "Preferences",

@@ -57,6 +57,7 @@ AGENTS.md
 skills/
 !apps/desktop/src/renderer/main/pages/skills/
 !apps/desktop/src/renderer/main/routes/_app/skills/
+!apps/desktop/src/renderer/main/routes/_app/settings/skills/
 agents/
 
 # Temp files
