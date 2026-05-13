@@ -31,27 +31,24 @@ describe("computeTextDiff", () => {
     expect(equalSpans.map((s) => s.text).join("")).toBe("hello world");
   });
 
-  it("char substitution → one delete + one insert for changed char", () => {
-    // "hello" vs "hallo": 'e' removed, 'a' inserted
-    const spans = computeTextDiff("hello", "hallo");
+  it("word substitution → whole word replaced (word-level diff, not char-level)", () => {
+    // Word-level diff treats "hello" and "hallo" as different tokens entirely:
+    // the whole word is one delete + one insert, not a per-char swap. This is
+    // intentional — char-level produces interleaved scribbles on real prose.
+    const spans = computeTextDiff("hello world", "hallo world");
 
     const deletes = spans.filter((s) => s.kind === "delete");
     const inserts = spans.filter((s) => s.kind === "insert");
 
     expect(deletes).toHaveLength(1);
-    expect(deletes[0].text).toBe("e");
+    expect(deletes[0].text).toBe("hello");
 
     expect(inserts).toHaveLength(1);
-    expect(inserts[0].text).toBe("a");
+    expect(inserts[0].text).toBe("hallo");
 
-    // Verify order: equal "h", delete "e", insert "a", equal "llo"
-    const kinds = spans.map((s) => s.kind);
-    expect(kinds[0]).toBe("equal"); // "h"
-    // delete and insert may appear in either order depending on diff algo
-    const middleKinds = new Set(kinds.slice(1, -1));
-    expect(middleKinds.has("delete")).toBe(true);
-    expect(middleKinds.has("insert")).toBe(true);
-    expect(kinds[kinds.length - 1]).toBe("equal"); // "llo"
+    // The unchanged " world" survives as an equal span.
+    const equalText = spans.filter((s) => s.kind === "equal").map((s) => s.text).join("");
+    expect(equalText).toBe(" world");
   });
 
   it("completely different strings → no equal spans", () => {
