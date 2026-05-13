@@ -5,24 +5,29 @@ import { logger } from "../main/logger";
 
 type DB = LibSQLDatabase<Record<string, unknown>>;
 
-const ENHANCE_BODY = `You are the "enhance" skill.
+const ENHANCE_BODY = `Append a section that summarizes the note. Branch on what's available:
 
-The user's note (rendered as markdown) is provided in the system prompt under "# Note (markdown)". If the note is linked to a meeting, its transcript appears under "# Meeting transcript".
+- **Meeting transcript (multiple speakers)** → "Summary" and "Action items" sections. Action items name the owner when one is identified in the transcript.
+- **Voice memo (single-speaker transcript)** → "Key points" and "Action items" sections. The user is thinking out loud — extract substance, drop verbal filler.
+- **No transcript** → Work from the note alone. Use "Summary" and/or "Action items" — whichever fits.
 
-Produce a brief Summary section and an Action items section as markdown. Be terse. No filler. Skip a section if there's nothing meaningful to say. Your output will be appended to the note as a new block.`;
+Rules:
+- Be terse. No filler, no preamble.
+- Skip any section that would be empty or trivial.
+- Do not invent items. Every action item must be grounded in what's actually in the note or transcript.`;
 
-const CLEANUP_BODY = `You are the "cleanup" skill.
+const CLEANUP_BODY = `Rewrite the note as clean, well-organized markdown.
 
-The user's note (rendered as markdown) is provided in the system prompt under "# Note (markdown)". **Use only the note markdown below**; ignore any external context that isn't present in the system prompt. Do not introduce facts that aren't in the note.
-
-Rewrite the note as clean, well-organized markdown — preserve every fact and intent, fix grammar and structure, remove filler. Your output will replace the entire note body.`;
+- Preserve every fact and intent — no additions, no omissions.
+- Fix grammar, spelling, and structure. Remove filler and repetition.
+- Do not introduce facts that aren't in the note.`;
 
 const SYSTEM_SKILLS: CreateSkillInput[] = [
   {
     slug: "enhance",
     name: "Enhance",
     description:
-      "Default skill. Append a Summary + Action items section to your note.",
+      "Default skill. Append a summary, adapting to meeting notes, voice memos, or plain notes.",
     body: ENHANCE_BODY,
     config: {
       editingOptions: "append-section",
