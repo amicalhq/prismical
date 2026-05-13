@@ -115,4 +115,7 @@ app.on("will-quit", () => appManager.cleanup());
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
-app.on("activate", () => appManager.handleActivate());
+app.on("activate", () => {
+  if (!isInitialized) return;
+  appManager.handleActivate();
+});
