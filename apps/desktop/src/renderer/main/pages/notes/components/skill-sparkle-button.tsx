@@ -104,8 +104,11 @@ export function SkillSparkleButton({ noteId }: Props) {
               })
             }
           >
-            <IconSparkles size={18} />
-            {defaultSkill.name}
+            <IconSparkles size={18} className="shrink-0" />
+            {/* Cap the skill name so a user-named skill like "Convert to
+                exec-summary bullets" doesn't blow the pill out across the
+                editor — full name still shows in the tooltip below. */}
+            <span className="max-w-[140px] truncate">{defaultSkill.name}</span>
           </button>
         </TooltipTrigger>
         <TooltipContent>Run {defaultSkill.name}</TooltipContent>
@@ -149,8 +152,12 @@ interface SkillDropdownRowProps {
 function SkillDropdownRow({ skill, onRun }: SkillDropdownRowProps) {
   return (
     <div className="flex items-center">
-      <DropdownMenuItem className="flex-1" onClick={() => onRun(undefined)}>
-        {skill.name}
+      <DropdownMenuItem
+        className="min-w-0 flex-1"
+        onClick={() => onRun(undefined)}
+        title={skill.name}
+      >
+        <span className="truncate">{skill.name}</span>
       </DropdownMenuItem>
       <DropdownMenuSub>
         {/* Hide the auto-appended ChevronRightIcon (it's the last svg child of
