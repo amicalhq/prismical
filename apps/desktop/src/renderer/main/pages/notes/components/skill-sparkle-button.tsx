@@ -110,7 +110,6 @@ export function SkillSparkleButton({ noteId }: Props) {
         </TooltipTrigger>
         <TooltipContent>Run {defaultSkill.name}</TooltipContent>
       </Tooltip>
-      <span className="h-5 w-px bg-white/15" aria-hidden="true" />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
@@ -154,7 +153,10 @@ function SkillDropdownRow({ skill, onRun }: SkillDropdownRowProps) {
         {skill.name}
       </DropdownMenuItem>
       <DropdownMenuSub>
-        <DropdownMenuSubTrigger className="px-2">
+        {/* Hide the auto-appended ChevronRightIcon (it's the last svg child of
+            the trigger) so the dots stand alone — no double "more options"
+            iconography per row. */}
+        <DropdownMenuSubTrigger className="px-2 [&>svg:last-child]:hidden">
           <IconDots size={14} />
         </DropdownMenuSubTrigger>
         <DropdownMenuSubContent>
