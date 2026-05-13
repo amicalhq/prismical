@@ -1,6 +1,12 @@
 import { eq, asc } from "drizzle-orm";
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
-import { notes, meetings, transcriptSegments } from "@/db/schema";
+import * as Y from "yjs";
+import {
+  notes,
+  meetings,
+  transcriptSegments,
+  yjsUpdates,
+} from "@/db/schema";
 import { lexicalStateToMarkdown } from "@/services/notes/lexical-to-markdown";
 import { extractPlainText } from "./extract-plain-text";
 import type { SkillRunContext } from "./skill-context";
@@ -25,13 +31,12 @@ export async function collectInput(
   db: LibSQLDatabase<Record<string, unknown>>,
   ctx: SkillRunContext,
 ): Promise<SkillInput> {
-  const [noteRow] = await db
-    .select({ content: notes.content })
-    .from(notes)
-    .where(eq(notes.id, ctx.noteId))
-    .limit(1);
-
-  const stateJson = noteRow?.content ?? "";
+  // `notes.content` is a one-time seed snapshot — it's set at note creation
+  // and never updated. The live editor state lives in `yjs_updates` (the
+  // editor reads/writes via Yjs). Materializing here ensures every skill
+  // run sees the current note, including content from previously-accepted
+  // skill runs that wrote via the editor's Yjs sync.
+  const stateJson = await materializeNoteContent(db, ctx.noteId);
   const noteMarkdown = stateJson ? lexicalStateToMarkdown(stateJson) : "";
   const notePlainText = stateJson ? extractPlainText(stateJson) : "";
 
@@ -43,6 +48,43 @@ export async function collectInput(
     transcript,
     selectionText: ctx.selectionText ?? null,
   };
+}
+
+// Reconstruct the note's live Lexical state JSON by applying all stored Yjs
+// updates. The editor's YjsSyncPlugin stores the Lexical editor-state JSON
+// as a plain string inside a Y.Text named "content"; replaying the deltas
+// gives us the current value. Falls back to the `notes.content` snapshot
+// for notes that have no Yjs updates (e.g., freshly seeded fixtures).
+async function materializeNoteContent(
+  db: LibSQLDatabase<Record<string, unknown>>,
+  noteId: number,
+): Promise<string> {
+  const updates = await db
+    .select({ data: yjsUpdates.updateData })
+    .from(yjsUpdates)
+    .where(eq(yjsUpdates.noteId, noteId))
+    .orderBy(asc(yjsUpdates.id));
+
+  if (updates.length > 0) {
+    const ydoc = new Y.Doc();
+    try {
+      for (const row of updates) {
+        Y.applyUpdate(ydoc, new Uint8Array(row.data as Buffer));
+      }
+      const live = ydoc.getText("content").toString();
+      if (live.length > 0) return live;
+    } finally {
+      ydoc.destroy();
+    }
+  }
+
+  // Fall back to the snapshot for never-edited notes.
+  const [row] = await db
+    .select({ content: notes.content })
+    .from(notes)
+    .where(eq(notes.id, noteId))
+    .limit(1);
+  return row?.content ?? "";
 }
 
 async function loadTranscript(
