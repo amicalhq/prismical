@@ -109,8 +109,9 @@ describe("SkillSparkleButton", () => {
     listForSurfaceUseQuery.mockReturnValue({ data: [makeSkill()] });
     getInFlightUseQuery.mockReturnValue({ data: null });
     const html = await renderButton();
-    // The split button has two parts; the chevron is the right part
-    expect(html).toContain("rounded-l-none");
+    // The split pill has two interactive zones; the chevron is the right one.
+    expect(html).toContain('aria-label="Pick a different skill"');
+    expect(html).toContain("tabler-icon-chevron-up");
   });
 
   it("renders skill names in the dropdown when multiple dock skills exist", async () => {
@@ -145,8 +146,9 @@ describe("SkillSparkleButton", () => {
     });
     const html = await renderButton(1);
     expect(html).toContain("Stop");
-    // Sparkle button should NOT be present
-    expect(html).not.toContain("rounded-r-none");
+    // The default-skill button should NOT be present while a run is in flight —
+    // only the Stop button remains.
+    expect(html).not.toContain("tabler-icon-sparkles");
   });
 
   it("queries listForSurface with dock surface", async () => {

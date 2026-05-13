@@ -1,5 +1,9 @@
-import { IconSparkles, IconChevronDown, IconDots, IconPlayerStop } from "@tabler/icons-react";
-import { Button } from "@/components/ui/button";
+import {
+  IconSparkles,
+  IconChevronUp,
+  IconDots,
+  IconPlayerStop,
+} from "@tabler/icons-react";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -9,6 +13,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuSubContent,
 } from "@/components/ui/dropdown-menu";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { api } from "@/trpc/react";
 import { useRunSkill } from "@/renderer/main/hooks/use-run-skill";
 import type { ArtifactMode } from "@/db/schema";
@@ -19,6 +24,20 @@ const MODE_LABELS: Record<ArtifactMode, string> = {
   "inline-rewrite": "Inline rewrite",
 };
 
+// Visual language matches NoteRecordingDock: 42px-tall dark pill, rounded-28,
+// backdrop-blur, ring + soft shadow. The sparkle sits immediately to the right
+// of the recording pill — same height, same chrome — so the two read as a
+// pair rather than disparate buttons.
+const PILL_OUTER =
+  "group h-[42px] bg-black/80 dark:bg-black/70 rounded-[28px] backdrop-blur-md " +
+  "ring-[1px] ring-black/60 shadow-[0px_0px_15px_0px_rgba(0,0,0,0.40)] " +
+  "select-none flex items-center transition-all duration-200 ease-out hover:scale-110";
+
+const INNER_BTN =
+  "flex h-8 shrink-0 items-center justify-center rounded-full cursor-pointer " +
+  "text-white/80 transition-colors hover:bg-white/15 hover:text-white " +
+  "active:scale-95 disabled:cursor-not-allowed disabled:opacity-60";
+
 interface Props {
   noteId: number;
 }
@@ -27,9 +46,7 @@ export function SkillSparkleButton({ noteId }: Props) {
   const { data: skills = [] } = api.skills.listForSurface.useQuery({ surface: "dock" });
   // Poll every second so cross-component consumers (e.g. inline popover when
   // sparkle initiates a run) see the server-side in-flight state without
-  // depending on a race-prone pre-mutate invalidate. The 1s cadence is cheap
-  // (one request per active note view) and gives the Stop button a reliable
-  // cross-component signal.
+  // depending on a race-prone pre-mutate invalidate.
   const { data: inFlight } = api.skillRuns.getInFlight.useQuery(
     { noteId },
     { refetchInterval: 1000 },
@@ -48,38 +65,61 @@ export function SkillSparkleButton({ noteId }: Props) {
   // cases (e.g., run initiated from another surface).
   if (isPending || inFlight) {
     return (
-      <Button variant="outline" size="sm" onClick={() => cancel.mutate({ noteId })}>
-        <IconPlayerStop size={16} className="mr-1" /> Stop
-      </Button>
+      <div className={`${PILL_OUTER} px-1`}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              aria-label="Stop skill run"
+              className={`${INNER_BTN} gap-1 px-3 text-sm font-medium`}
+              onClick={() => cancel.mutate({ noteId })}
+            >
+              <IconPlayerStop size={16} />
+              Stop
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>Stop running skill</TooltipContent>
+        </Tooltip>
+      </div>
     );
   }
 
   if (!defaultSkill) {
-    return null; // no dock-surface skill enabled; show nothing
+    return null; // no dock-surface skill enabled
   }
 
   return (
-    <div className="flex items-center">
-      <Button
-        variant="outline"
-        size="sm"
-        className="rounded-r-none"
-        onClick={() =>
-          runSkill({
-            noteId,
-            skillSlug: defaultSkill.slug,
-            skillName: defaultSkill.name,
-          })
-        }
-      >
-        <IconSparkles size={16} className="mr-1" />
-        {defaultSkill.name}
-      </Button>
+    <div className={`${PILL_OUTER} pl-1 pr-1 gap-0.5`}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            aria-label={`Run ${defaultSkill.name}`}
+            className={`${INNER_BTN} gap-1.5 px-3 text-sm font-medium`}
+            onClick={() =>
+              runSkill({
+                noteId,
+                skillSlug: defaultSkill.slug,
+                skillName: defaultSkill.name,
+              })
+            }
+          >
+            <IconSparkles size={18} />
+            {defaultSkill.name}
+          </button>
+        </TooltipTrigger>
+        <TooltipContent>Run {defaultSkill.name}</TooltipContent>
+      </Tooltip>
+      <span className="h-5 w-px bg-white/15" aria-hidden="true" />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm" className="rounded-l-none border-l-0 px-1">
-            <IconChevronDown size={16} />
-          </Button>
+          <button
+            type="button"
+            aria-label="Pick a different skill"
+            className={`${INNER_BTN} w-8`}
+          >
+            <IconChevronUp size={14} />
+          </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="min-w-[220px]">
           {skills.map((s) => (

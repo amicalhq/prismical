@@ -55,9 +55,6 @@ export function NoteRecordingDock({
 
   return (
     <>
-    {noteId !== undefined && !isRecording && (
-      <SkillSparkleButton noteId={noteId} />
-    )}
     <div
       className={`
         group
@@ -154,6 +151,9 @@ export function NoteRecordingDock({
         </Tooltip>
       </div>
     </div>
+    {noteId !== undefined && !isRecording && (
+      <SkillSparkleButton noteId={noteId} />
+    )}
     </>
   );
 }
