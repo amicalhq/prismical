@@ -114,6 +114,15 @@ export class ArtifactInlineNode extends ElementNode {
   getSkillName(): string {
     return this.getLatest().__skillName;
   }
+
+  // Mutator — used by the runtime when an inline-rewrite regen replaces this
+  // node in place. Only `artifactId` changes; `skillId` / `skillName` are
+  // identity (a regen of the same skill, not a different skill).
+  updateArtifactId(artifactId: string): this {
+    const writable = this.getWritable();
+    writable.__artifactId = artifactId;
+    return writable;
+  }
 }
 
 export function $createArtifactInlineNode(

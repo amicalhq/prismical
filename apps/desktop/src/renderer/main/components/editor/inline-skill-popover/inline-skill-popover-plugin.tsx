@@ -35,12 +35,14 @@ export function InlineSkillPopoverPlugin({ noteId }: Props) {
   });
   // Hide the popover while a skill is already running on this note —
   // clicking an inline skill mid-run would otherwise surface a generic
-  // "A skill is already running" error toast.
+  // "A skill is already running" error toast. Poll at a steady 1s so we
+  // pick up runs initiated from other surfaces (sparkle button, etc.)
+  // without depending on a race-prone optimistic invalidate.
   const { data: inFlight } = api.skillRuns.getInFlight.useQuery(
     { noteId },
-    { refetchInterval: (q) => (q.state.data ? 1000 : false) },
+    { refetchInterval: 1000 },
   );
-  const { runSkill } = useRunSkill();
+  const { runSkill, isPending } = useRunSkill();
   const [popover, setPopover] = useState<PopoverState | null>(null);
 
   useEffect(() => {
@@ -98,7 +100,7 @@ export function InlineSkillPopoverPlugin({ noteId }: Props) {
     );
   }, [editor]);
 
-  if (!popover || skills.length === 0 || inFlight) return null;
+  if (!popover || skills.length === 0 || inFlight || isPending) return null;
 
   return (
     <div

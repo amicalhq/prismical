@@ -5,6 +5,8 @@ import { runSkill } from "@/services/skills-runtime/skill-runner";
 import { InFlightRegistry } from "@/services/skills-runtime/in-flight-registry";
 import { getSettingsSection } from "@/db/app-settings";
 import { SkillRunError } from "@/services/skills-runtime/errors";
+import { appendArtifact } from "@/db/artifacts";
+import { db } from "@/db";
 
 const ModeSchema = z.enum([
   "append-section",
@@ -28,6 +30,11 @@ export const skillRunsRouter = createRouter({
       const skill = await SkillsService.getInstance().getBySlug(input.skillSlug);
       if (!skill) {
         throw new SkillRunError(`Skill not found: ${input.skillSlug}`);
+      }
+      if (!skill.enabled) {
+        // Defense-in-depth: the UI filters out disabled skills, but stale
+        // clients or direct tRPC calls shouldn't execute them.
+        throw new SkillRunError(`Skill is disabled: ${input.skillSlug}`);
       }
 
       // Resolve the model: skill.config.modelPreference wins; user default fallback.
@@ -59,6 +66,49 @@ export const skillRunsRouter = createRouter({
       } finally {
         registry.finish(input.noteId, controller);
       }
+    }),
+
+  // Writes the audit row for a candidate the user has accepted. Spec §1+§2:
+  // only accepted runs land in `artifacts`. The runner emits unpersisted
+  // candidates; this mutation finalizes them. Reject is a client-only no-op.
+  accept: procedure
+    .input(
+      z.object({
+        noteId: z.number().int().positive(),
+        skillSlug: z.string().min(1),
+        mode: ModeSchema,
+        // Lexical children array (already JSON-serialized by the client).
+        content: z.string().min(1),
+        rawMarkdown: z.string().min(1),
+        modelId: z.string().min(1),
+        modelInstanceId: z.string().min(1),
+        providerType: z.string().min(1),
+        refineInstruction: z.string().nullable(),
+        selectionText: z.string().nullable(),
+        reasoning: z.string().nullable(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      const row = await appendArtifact(db, {
+        noteId: input.noteId,
+        skillId: input.skillSlug,
+        mode: input.mode,
+        content: input.content,
+        generator: "ai",
+        modelId: input.modelId,
+        meta: {
+          instanceId: input.modelInstanceId,
+          providerType: input.providerType,
+          refineInstruction: input.refineInstruction,
+          selectionText: input.selectionText,
+          reasoning: input.reasoning,
+        },
+      });
+      return {
+        artifactId: row.id,
+        version: row.version,
+        generatedAt: row.generatedAt!.toISOString(),
+      };
     }),
 
   cancel: procedure

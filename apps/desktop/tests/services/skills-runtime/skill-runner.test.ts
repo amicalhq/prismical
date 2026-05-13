@@ -138,7 +138,7 @@ afterEach(async () => {
 });
 
 describe("skills-runtime/skill-runner", () => {
-  it("happy path: model returns structured object → runner emits SkillRunResult + audit row", async () => {
+  it("happy path: model returns structured object → runner emits an unpersisted SkillRunResult", async () => {
     const { runSkill } = await import("@/services/skills-runtime/skill-runner");
     const { note, skill } = await insertFixtures(testDb.db);
 
@@ -154,17 +154,14 @@ describe("skills-runtime/skill-runner", () => {
     expect(result.skillName).toBe("Enhance");
     expect(result.mode).toBe("append-section");
     expect(result.modelId).toBe(MODEL_ID);
+    expect(result.modelInstanceId).toBe(INSTANCE_ID);
+    expect(result.providerType).toBe("openai-compatible");
     expect(result.rawMarkdown).toBe(CANNED_MARKDOWN);
     expect(result.content.length).toBeGreaterThan(0);
-    expect(result.artifactId).toBeTruthy();
-    expect(result.version).toBeGreaterThan(0);
 
+    // Spec §1+§2: the runner MUST NOT write the audit row. Accept does that.
     const rows = await testDb.db.select().from(artifacts).all();
-    expect(rows.length).toBe(1);
-    expect(rows[0].skillId).toBe("enhance");
-    expect(rows[0].mode).toBe("append-section");
-    expect(rows[0].noteId).toBe(note.id);
-    expect(rows[0].modelId).toBe(MODEL_ID);
+    expect(rows.length).toBe(0);
   });
 
   it("pre-injects note + system prompt: generateText receives a system string containing the note body", async () => {
@@ -234,7 +231,7 @@ describe("skills-runtime/skill-runner", () => {
     ).rejects.toThrow(SkillRunError);
   });
 
-  it("mode override: ctx.mode=replace-doc writes audit row with mode=replace-doc and beforeText from note", async () => {
+  it("mode override: ctx.mode=replace-doc populates beforeText with plain-text snapshot; still no audit row written", async () => {
     const { runSkill } = await import("@/services/skills-runtime/skill-runner");
     const { note, skill } = await insertFixtures(testDb.db);
 
@@ -251,6 +248,6 @@ describe("skills-runtime/skill-runner", () => {
     expect(result.beforeText).toContain("note body");
 
     const rows = await testDb.db.select().from(artifacts).all();
-    expect(rows[0].mode).toBe("replace-doc");
+    expect(rows.length).toBe(0);
   });
 });

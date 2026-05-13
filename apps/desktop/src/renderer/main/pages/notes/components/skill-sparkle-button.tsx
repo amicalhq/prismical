@@ -25,24 +25,28 @@ interface Props {
 
 export function SkillSparkleButton({ noteId }: Props) {
   const { data: skills = [] } = api.skills.listForSurface.useQuery({ surface: "dock" });
-  // Poll only while a run is suspected in-flight to avoid background spam
-  // when the user is idle. Once `data` is null, polling stops; it re-engages
-  // automatically when a `run` mutation invalidates this query and the next
-  // refetch lands a truthy value.
+  // Poll every second so cross-component consumers (e.g. inline popover when
+  // sparkle initiates a run) see the server-side in-flight state without
+  // depending on a race-prone pre-mutate invalidate. The 1s cadence is cheap
+  // (one request per active note view) and gives the Stop button a reliable
+  // cross-component signal.
   const { data: inFlight } = api.skillRuns.getInFlight.useQuery(
     { noteId },
-    { refetchInterval: (q) => (q.state.data ? 1000 : false) },
+    { refetchInterval: 1000 },
   );
   const utils = api.useUtils();
   const cancel = api.skillRuns.cancel.useMutation({
     onSettled: () => utils.skillRuns.getInFlight.invalidate({ noteId }),
   });
-  const { runSkill } = useRunSkill();
+  const { runSkill, isPending } = useRunSkill();
 
   const defaultSkill =
     skills.find((s) => s.config.defaultSkill === true) ?? skills[0];
 
-  if (inFlight) {
+  // Show Stop the instant the initiator's mutation is pending — don't wait
+  // for the polled query to catch up. `inFlight` still covers cross-component
+  // cases (e.g., run initiated from another surface).
+  if (isPending || inFlight) {
     return (
       <Button variant="outline" size="sm" onClick={() => cancel.mutate({ noteId })}>
         <IconPlayerStop size={16} className="mr-1" /> Stop

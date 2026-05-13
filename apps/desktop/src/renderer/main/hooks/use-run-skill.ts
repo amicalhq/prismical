@@ -24,12 +24,12 @@ export function useRunSkill() {
 
   const runSkill = useCallback(
     (args: RunSkillArgs) => {
-      // Surface in-flight state immediately so consumers polling
-      // `getInFlight` (sparkle button, inline popover gate) flip to
-      // "running" without waiting for the next interval tick — those
-      // queries gate refetching on `data` being truthy, so a fresh
-      // invalidation is how we kick them out of the idle no-poll state.
-      void utils.skillRuns.getInFlight.invalidate({ noteId: args.noteId });
+      // Don't pre-invalidate `getInFlight` here — that races: the refetch
+      // can complete BEFORE the mutation reaches the server, leaving the
+      // query stuck at null while the run is in flight. Instead, consumers
+      // gate the Stop button on either `isPending` (the initiator gets an
+      // instant signal) OR the polled `getInFlight` value (cross-component
+      // consumers see the server-side registry once polling picks it up).
       run.mutate(
         {
           noteId: args.noteId,

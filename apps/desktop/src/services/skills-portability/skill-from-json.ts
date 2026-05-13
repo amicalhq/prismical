@@ -32,5 +32,6 @@ export function skillFromJson(raw: unknown): CreateSkillInput {
     body: parsed.body,
     config: parsed.config,
     metadata: parsed.metadata,
+    allowedTools: parsed.allowedTools ?? null,
   };
 }

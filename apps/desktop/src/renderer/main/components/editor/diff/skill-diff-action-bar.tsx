@@ -28,6 +28,7 @@ export function SkillDiffActionBar({ noteId }: Props) {
   const clear = useSkillDiffStore((s) => s.clear);
   const stage = useSkillDiffStore((s) => s.stage);
   const run = api.skillRuns.run.useMutation();
+  const accept = api.skillRuns.accept.useMutation();
   const cancel = api.skillRuns.cancel.useMutation();
 
   const [refineMode, setRefineMode] = useState(false);
@@ -35,23 +36,11 @@ export function SkillDiffActionBar({ noteId }: Props) {
 
   if (!candidate) return null;
 
-  const accept = () => {
-    if (candidate.mode === "append-section") {
-      editor.dispatchCommand(INSERT_ARTIFACT_NODE_COMMAND, {
-        artifactId: candidate.artifactId,
-        skillId: candidate.skillId,
-        skillName: candidate.skillName,
-        version: candidate.version,
-        generatedAt: candidate.generatedAt,
-        modelId: candidate.modelId,
-        content: candidate.content,
-      });
-    } else if (candidate.mode === "inline-rewrite") {
-      // Restore the original selection range before dispatching — by the time
-      // the user clicks Accept the editor selection has long since moved
-      // (popover dismissed, action bar clicked, etc.). Without this restore,
-      // `INSERT_ARTIFACT_INLINE_NODE_COMMAND`'s handler sees no range
-      // selection and silently returns false.
+  const onAccept = async () => {
+    // Inline-rewrite needs the original range restored BEFORE we write the
+    // audit row — if the underlying nodes are gone, surface an error and
+    // skip the DB write entirely.
+    if (candidate.mode === "inline-rewrite") {
       const restored = restoreInlineSelection(editor, candidate);
       if (!restored) {
         toast.error(
@@ -60,8 +49,45 @@ export function SkillDiffActionBar({ noteId }: Props) {
         clear(noteId);
         return;
       }
+    }
+
+    let auditMeta: { artifactId: string; version: number; generatedAt: string };
+    try {
+      auditMeta = await accept.mutateAsync({
+        noteId,
+        skillSlug: candidate.skillId,
+        mode: candidate.mode,
+        content: JSON.stringify(candidate.content),
+        rawMarkdown: candidate.rawMarkdown,
+        modelId: candidate.modelId,
+        modelInstanceId: candidate.modelInstanceId,
+        providerType: candidate.providerType,
+        refineInstruction: candidate.refineInstruction,
+        selectionText: candidate.selectionText,
+        reasoning: candidate.reasoning,
+      });
+    } catch (err) {
+      toast.error(
+        `Couldn't save ${candidate.skillName} run — ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      return;
+    }
+
+    if (candidate.mode === "append-section") {
+      editor.dispatchCommand(INSERT_ARTIFACT_NODE_COMMAND, {
+        artifactId: auditMeta.artifactId,
+        skillId: candidate.skillId,
+        skillName: candidate.skillName,
+        version: auditMeta.version,
+        generatedAt: auditMeta.generatedAt,
+        modelId: candidate.modelId,
+        content: candidate.content,
+      });
+    } else if (candidate.mode === "inline-rewrite") {
       editor.dispatchCommand(INSERT_ARTIFACT_INLINE_NODE_COMMAND, {
-        artifactId: candidate.artifactId,
+        artifactId: auditMeta.artifactId,
         skillId: candidate.skillId,
         skillName: candidate.skillName,
         content: candidate.content,
@@ -94,6 +120,9 @@ export function SkillDiffActionBar({ noteId }: Props) {
 
   const submitRefine = () => {
     if (!refineText.trim()) return;
+    // Carry the original selectionText (model context) AND selectionPoints
+    // (accept-time selection restore) through refine — otherwise refined
+    // inline rewrites lose their anchor and can't be accepted.
     run.mutate(
       {
         noteId,
@@ -101,10 +130,21 @@ export function SkillDiffActionBar({ noteId }: Props) {
         modeOverride: candidate.mode,
         refineInstruction: refineText,
         previousOutput: candidate.rawMarkdown,
+        selectionText: candidate.selectionText ?? undefined,
       },
       {
         onSuccess: (result) => {
-          stage({ ...result, noteId });
+          stage({
+            ...result,
+            noteId,
+            // Server populates beforeText for replace-doc; for inline-rewrite
+            // we keep the original selection text as the diff anchor.
+            beforeText:
+              result.mode === "inline-rewrite"
+                ? candidate.selectionText ?? undefined
+                : result.beforeText,
+            selectionPoints: candidate.selectionPoints,
+          });
           setRefineMode(false);
           setRefineText("");
         },
@@ -118,7 +158,7 @@ export function SkillDiffActionBar({ noteId }: Props) {
   return (
     <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 rounded-lg border bg-popover shadow-lg p-3 flex flex-col gap-2 max-w-xl">
       <div className="text-xs text-muted-foreground">
-        ✨ {candidate.skillName} · v{candidate.version}
+        ✨ {candidate.skillName}
       </div>
       <div className="rounded-md bg-card p-3 max-h-64 overflow-y-auto text-sm whitespace-pre-wrap">
         {candidate.mode === "replace-doc" && candidate.beforeText ? (
@@ -150,8 +190,10 @@ export function SkillDiffActionBar({ noteId }: Props) {
           <Button variant="outline" onClick={() => setRefineMode(true)}>
             ✦ Refine
           </Button>
-          <Button onClick={accept}>✓ Accept</Button>
-          <Button variant="ghost" onClick={reject}>
+          <Button onClick={onAccept} disabled={accept.isPending}>
+            ✓ Accept
+          </Button>
+          <Button variant="ghost" onClick={reject} disabled={accept.isPending}>
             ✗ Reject
           </Button>
         </div>

@@ -22,13 +22,16 @@ export interface SerializedSelectionPoints {
 
 export interface SkillDiffCandidate {
   noteId: number;
-  artifactId: string;
   skillId: string;
   skillName: string;
   mode: ArtifactMode;
-  version: number;
-  generatedAt: string;
   modelId: string;
+  /** Audit-meta we pass back to `skillRuns.accept` so it can write the row. */
+  modelInstanceId: string;
+  providerType: string;
+  refineInstruction: string | null;
+  selectionText: string | null;
+  reasoning: string | null;
   /** For append-section / inline-rewrite: the Lexical children. */
   content: SerializedLexicalNode[];
   rawMarkdown: string;

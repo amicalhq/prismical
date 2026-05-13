@@ -4,18 +4,20 @@ import {
   type SkillDiffCandidate,
 } from "../../../src/renderer/main/components/editor/diff/skill-diff-store";
 
-function makeCandidate(noteId: number, version = 1): SkillDiffCandidate {
+function makeCandidate(noteId: number, tag = "v1"): SkillDiffCandidate {
   return {
     noteId,
-    artifactId: `artifact-${noteId}-${version}`,
     skillId: "my-skill",
     skillName: "My Skill",
     mode: "append-section",
-    version,
-    generatedAt: "2026-05-11T00:00:00.000Z",
     modelId: "claude-sonnet-4",
+    modelInstanceId: "instance-1",
+    providerType: "openai-compatible",
+    refineInstruction: null,
+    selectionText: null,
+    reasoning: null,
     content: [],
-    rawMarkdown: `Candidate for note ${noteId} v${version}`,
+    rawMarkdown: `Candidate for note ${noteId} ${tag}`,
   };
 }
 
@@ -40,13 +42,12 @@ describe("useSkillDiffStore", () => {
   it("stage twice for same note — second overwrites first", () => {
     const { stage, getCandidate } = useSkillDiffStore.getState();
 
-    stage(makeCandidate(1, 1));
-    stage(makeCandidate(1, 2));
+    stage(makeCandidate(1, "first"));
+    stage(makeCandidate(1, "second"));
 
     const candidate = getCandidate(1);
     expect(candidate).toBeDefined();
-    expect(candidate?.version).toBe(2);
-    expect(candidate?.artifactId).toBe("artifact-1-2");
+    expect(candidate?.rawMarkdown).toBe("Candidate for note 1 second");
   });
 
   it("clear removes only that note's candidate", () => {

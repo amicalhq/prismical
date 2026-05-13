@@ -17,6 +17,12 @@ export interface CreateSkillInput {
   config: SkillConfig;
   metadata?: Record<string, unknown>;
   system?: boolean;
+  /**
+   * Optional tool allowlist (v1: inert; reserved for MCP / per-skill tools).
+   * Threaded through here so JSON import round-trips lossless and the field
+   * is ready when we light up the tool-loop path.
+   */
+  allowedTools?: string[] | null;
 }
 
 export interface UpdateSkillInput {
@@ -88,6 +94,7 @@ export class SkillsService {
       config,
       metadata: input.metadata,
       system: input.system ?? false,
+      allowedTools: input.allowedTools ?? null,
     });
     // At-most-one defaultSkill invariant — clear the flag on every other row
     // when this new one claims it.

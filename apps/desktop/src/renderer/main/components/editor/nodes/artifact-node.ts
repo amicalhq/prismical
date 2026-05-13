@@ -184,14 +184,21 @@ export class ArtifactNode extends ElementNode {
   }
 
   // Mutator — used by the runtime when a skill regen completes. Replaces
-  // version / generatedAt / modelId in place. Children are replaced via
-  // normal Lexical writes by the runtime, not here.
+  // artifactId / version / generatedAt / modelId in place. Children are
+  // replaced via normal Lexical writes by the runtime, not here.
+  //
+  // Updating `artifactId` is required: each accepted run gets a fresh audit
+  // row, so the node must point at the latest row's id (the regenerate /
+  // hover-chip-to-audit affordances would otherwise reference v1's row
+  // while the node displays v2's metadata).
   updateMetadata(patch: {
+    artifactId: string;
     version: number;
     generatedAt: string;
     modelId: string;
   }): this {
     const writable = this.getWritable();
+    writable.__artifactId = patch.artifactId;
     writable.__version = patch.version;
     writable.__generatedAt = patch.generatedAt;
     writable.__modelId = patch.modelId;

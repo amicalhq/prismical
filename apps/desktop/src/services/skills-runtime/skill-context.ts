@@ -35,26 +35,35 @@ export interface SkillRunContext {
   signal: AbortSignal;
 }
 
-// Final result returned to the tRPC caller. Plan 4 stages this as a diff
-// candidate; Plan 5 dispatches INSERT_*_COMMAND on accept.
+// Final result returned to the tRPC caller. Spec §1+§2: "Every **accepted**
+// run writes a new artifacts row" — so the runner emits an unpersisted
+// candidate and the audit row is written separately by `skillRuns.accept`
+// after the user clicks Accept. Reject is a no-op DB-wise.
+//
+// Audit-meta fields (`modelInstanceId`, `providerType`, `refineInstruction`,
+// `selectionText`, `reasoning`) are propagated through here so the accept
+// mutation has everything it needs without a second model call or another
+// db lookup.
 export interface SkillRunResult {
-  artifactId: string;
   mode: ArtifactMode;
-  skillId: string;     // slug; matches the artifacts.skill_id column
+  skillId: string;     // slug; matches artifacts.skill_id when written
   skillName: string;
-  version: number;     // pulled from the newly-inserted audit row
-  generatedAt: string; // ISO 8601
   modelId: string;
+  modelInstanceId: string;
+  providerType: string;
   // The Lexical children that will become the node body when accepted.
   content: SerializedLexicalNode[];
-  // The raw markdown the agent emitted — useful for refine flows
-  // (passed back into a re-run as previousOutput).
+  // The raw markdown the model emitted — kept around for the refine flow
+  // (passed back as previousOutput) and stored on the audit row at accept.
   rawMarkdown: string;
   // Pre-run snapshot used by the diff overlay as the "before" side of the
   // char-level diff. Populated by the runner for `replace-doc` (the full
-  // note body) and left undefined for `append-section` (the candidate is
-  // purely additive — nothing to diff against). For `inline-rewrite` the
-  // client supplies `beforeText` from the selection, so the runner does
-  // not set it.
+  // note body) and left undefined for `append-section` (purely additive).
+  // For `inline-rewrite` the client supplies `beforeText` from the
+  // selection, so the runner does not set it.
   beforeText?: string;
+  // Audit-meta fields, propagated to the accept mutation.
+  refineInstruction: string | null;
+  selectionText: string | null;
+  reasoning: string | null;
 }

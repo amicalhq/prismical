@@ -17,6 +17,8 @@ import {
 } from "../nodes/artifact-node";
 import {
   $createArtifactInlineNode,
+  $isArtifactInlineNode,
+  type ArtifactInlineNode,
   type ArtifactInlineNodeMetadata,
 } from "../nodes/artifact-inline-node";
 
@@ -71,6 +73,7 @@ export function registerArtifactNodeCommands(editor: LexicalEditor): () => void 
 
       if (existing) {
         existing.updateMetadata({
+          artifactId: payload.artifactId,
           version: payload.version,
           generatedAt: payload.generatedAt,
           modelId: payload.modelId,
@@ -110,14 +113,31 @@ export function registerArtifactNodeCommands(editor: LexicalEditor): () => void 
       const selection = $getSelection();
       if (!$isRangeSelection(selection)) return false;
 
+      const children = payload.content.map((serialized) =>
+        $parseSerializedNode(serialized),
+      );
+
+      // Spec §1 regen invariant (inline): re-running the same inline-rewrite
+      // skill should replace the existing wrapper in place rather than nest
+      // or insert a sibling. Look for an `ArtifactInlineNode` ancestor of the
+      // selection's anchor or focus whose `skillId` matches the payload.
+      const existing = findInlineAncestorForSkill(selection, payload.skillId);
+      if (existing) {
+        existing.updateArtifactId(payload.artifactId);
+        for (const child of existing.getChildren()) {
+          child.remove();
+        }
+        for (const child of children) {
+          existing.append(child);
+        }
+        return true;
+      }
+
       const inline = $createArtifactInlineNode({
         artifactId: payload.artifactId,
         skillId: payload.skillId,
         skillName: payload.skillName,
       });
-      const children = payload.content.map((serialized) =>
-        $parseSerializedNode(serialized),
-      );
       for (const child of children) {
         inline.append(child);
       }
@@ -134,6 +154,29 @@ export function registerArtifactNodeCommands(editor: LexicalEditor): () => void 
     unregisterBlock();
     unregisterInline();
   };
+}
+
+// Walk up from the selection's anchor and focus, looking for the nearest
+// `ArtifactInlineNode` ancestor whose `skillId` matches `skillId`. Returns
+// the first match (anchor wins if both ancestors match different artifacts —
+// extremely unlikely in practice). Returns null if neither side is inside
+// any inline artifact of this skill.
+function findInlineAncestorForSkill(
+  selection: ReturnType<typeof $getSelection>,
+  skillId: string,
+): ArtifactInlineNode | null {
+  if (!selection || !$isRangeSelection(selection)) return null;
+  for (const endpoint of [selection.anchor, selection.focus]) {
+    let node: ReturnType<typeof selection.anchor.getNode> | null =
+      endpoint.getNode();
+    while (node) {
+      if ($isArtifactInlineNode(node) && node.getSkillId() === skillId) {
+        return node;
+      }
+      node = node.getParent();
+    }
+  }
+  return null;
 }
 
 // -------------------------------------------------------------------------

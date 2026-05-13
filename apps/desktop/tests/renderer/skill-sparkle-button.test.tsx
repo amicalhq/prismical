@@ -156,19 +156,15 @@ describe("SkillSparkleButton", () => {
     expect(listForSurfaceUseQuery).toHaveBeenCalledWith({ surface: "dock" });
   });
 
-  it("queries getInFlight with the given noteId, polling only while a run is in flight", async () => {
+  it("queries getInFlight with the given noteId, polling every 1s so cross-component consumers stay in sync", async () => {
     listForSurfaceUseQuery.mockReturnValue({ data: [] });
     getInFlightUseQuery.mockReturnValue({ data: null });
     await renderButton(42);
     const calls = getInFlightUseQuery.mock.calls;
     const lastCall = calls[calls.length - 1];
     expect(lastCall?.[0]).toEqual({ noteId: 42 });
-    // The refetchInterval is a function gating on whether a run is in flight —
-    // returns 1000 when there's a run, false otherwise, so the query stops
-    // polling when idle. Exercise both branches.
-    const refetchInterval = lastCall?.[1]?.refetchInterval;
-    expect(typeof refetchInterval).toBe("function");
-    expect(refetchInterval({ state: { data: { skillSlug: "x", startedAt: new Date() } } })).toBe(1000);
-    expect(refetchInterval({ state: { data: null } })).toBe(false);
+    // Constant 1s cadence — the prior data-gated function was race-prone
+    // (initial null result would stop polling for the whole run).
+    expect(lastCall?.[1]?.refetchInterval).toBe(1000);
   });
 });

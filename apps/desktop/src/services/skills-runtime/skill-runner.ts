@@ -4,13 +4,15 @@ import type { LibSQLDatabase } from "drizzle-orm/libsql";
 
 import { logger } from "@/main/logger";
 import { db as defaultDb } from "@/db";
-import { appendArtifact } from "@/db/artifacts";
 import { getInstanceById } from "@/db/instances";
 import type { SkillRunContext, SkillRunResult } from "./skill-context";
 import { buildSystemPrompt } from "./build-system-prompt";
 import { collectInput } from "./collect-input";
 import { resolveSkillModel } from "./resolve-model";
-import { markdownToChildren } from "./markdown-to-children";
+import {
+  markdownToChildren,
+  markdownToInlineChildren,
+} from "./markdown-to-children";
 import { SkillRunError, SkillCancelledError } from "./errors";
 
 // The model returns one JSON object per run. We deliberately don't expose
@@ -61,33 +63,25 @@ export async function runSkill(
     );
   }
 
-  const content = markdownToChildren(object.markdown);
+  // Inline-rewrite wraps the output in an ArtifactInlineNode, which can only
+  // contain inline children. Use a stricter converter that flattens a single
+  // paragraph and rejects multi-block / non-paragraph output.
+  const content =
+    ctx.mode === "inline-rewrite"
+      ? markdownToInlineChildren(object.markdown)
+      : markdownToChildren(object.markdown);
   if (content.length === 0) {
-    throw new SkillRunError("Model emitted markdown that produced empty content");
+    throw new SkillRunError(
+      ctx.mode === "inline-rewrite"
+        ? "Model returned unexpected output for an inline rewrite (expected a single short replacement)"
+        : "Model emitted markdown that produced empty content",
+    );
   }
 
-  const auditRow = await appendArtifact(db, {
-    noteId: ctx.noteId,
-    skillId: ctx.skill.slug,
-    mode: ctx.mode,
-    content: JSON.stringify(content),
-    generator: "ai",
-    modelId: ctx.modelId,
-    meta: {
-      instanceId: instance.id,
-      providerType: instance.provider,
-      refineInstruction: ctx.refineInstruction ?? null,
-      selectionText: ctx.selectionText ?? null,
-      reasoning: object.reasoning ?? null,
-    },
-  });
-
-  logger.pipeline.info("Skill run completed", {
+  logger.pipeline.info("Skill run produced candidate (unpersisted)", {
     noteId: ctx.noteId,
     skill: ctx.skill.slug,
     mode: ctx.mode,
-    artifactId: auditRow.id,
-    version: auditRow.version,
   });
 
   // beforeText is the "before" side of the char-level diff overlay for
@@ -97,15 +91,17 @@ export async function runSkill(
     ctx.mode === "replace-doc" ? input.notePlainText : undefined;
 
   return {
-    artifactId: auditRow.id,
     mode: ctx.mode,
     skillId: ctx.skill.slug,
     skillName: ctx.skill.name,
-    version: auditRow.version,
-    generatedAt: auditRow.generatedAt!.toISOString(),
     modelId: ctx.modelId,
+    modelInstanceId: instance.id,
+    providerType: instance.provider,
     content,
     rawMarkdown: object.markdown,
     beforeText,
+    refineInstruction: ctx.refineInstruction ?? null,
+    selectionText: ctx.selectionText ?? null,
+    reasoning: object.reasoning ?? null,
   };
 }

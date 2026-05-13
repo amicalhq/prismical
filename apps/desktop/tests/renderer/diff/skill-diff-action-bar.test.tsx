@@ -22,6 +22,7 @@ import {
 const dispatchCommand = vi.hoisted(() => vi.fn());
 const editorUpdate = vi.hoisted(() => vi.fn());
 const runMutate = vi.hoisted(() => vi.fn());
+const acceptMutate = vi.hoisted(() => vi.fn());
 const cancelMutate = vi.hoisted(() => vi.fn());
 
 // Hoisted store state — controls what the mock selector returns
@@ -47,6 +48,13 @@ vi.mock("@/trpc/react", () => ({
       run: {
         useMutation: vi.fn(() => ({
           mutate: runMutate,
+          isPending: false,
+        })),
+      },
+      accept: {
+        useMutation: vi.fn(() => ({
+          mutate: acceptMutate,
+          mutateAsync: acceptMutate,
           isPending: false,
         })),
       },
@@ -123,13 +131,15 @@ function makeCandidate(
 ): SkillDiffCandidate {
   return {
     noteId: 42,
-    artifactId: "art-001",
     skillId: "my-skill",
     skillName: "My Skill",
     mode: "append-section",
-    version: 1,
-    generatedAt: "2026-05-11T00:00:00.000Z",
     modelId: "claude-sonnet-4",
+    modelInstanceId: "instance-1",
+    providerType: "openai-compatible",
+    refineInstruction: null,
+    selectionText: null,
+    reasoning: null,
     content: [],
     rawMarkdown: "## New Section\n\nHere is the proposed content.",
     ...overrides,
@@ -183,11 +193,12 @@ describe("SkillDiffActionBar", () => {
     expect(html).toContain("Reject");
   });
 
-  it("shows skill name and version in header", async () => {
-    mockCandidate.value = makeCandidate({ skillName: "Summary Bot", version: 3 });
+  it("shows skill name in header (no version chip pre-accept — audit row not yet written)", async () => {
+    mockCandidate.value = makeCandidate({ skillName: "Summary Bot" });
     const html = await renderBar(42);
     expect(html).toContain("Summary Bot");
-    expect(html).toContain("v3");
+    // Version is allocated server-side at accept time; not surfaced pre-accept.
+    expect(html).not.toMatch(/v\d+/);
   });
 
   it("renders replace-doc diff spans when beforeText is set", async () => {
@@ -213,7 +224,7 @@ describe("SkillDiffActionBar", () => {
 
   // --- Behavioral: accept ---
 
-  it("accept path: dispatches INSERT_ARTIFACT_NODE_COMMAND and clears store for append-section", async () => {
+  it("accept path: dispatches INSERT_ARTIFACT_NODE_COMMAND with server-allocated audit ids and clears store", async () => {
     const candidate = makeCandidate({ mode: "append-section" });
 
     const {
@@ -222,13 +233,20 @@ describe("SkillDiffActionBar", () => {
       "../../../src/renderer/main/components/editor/commands/artifact-commands"
     );
 
-    // Simulate what the accept() handler does
+    // The accept mutation returns server-allocated metadata. The action bar
+    // dispatches INSERT with those ids — not anything carried on the
+    // unpersisted candidate (which deliberately has no artifactId/version).
+    const auditMeta = {
+      artifactId: "art-001",
+      version: 1,
+      generatedAt: "2026-05-11T00:00:00.000Z",
+    };
     dispatchCommand(INSERT_ARTIFACT_NODE_COMMAND, {
-      artifactId: candidate.artifactId,
+      artifactId: auditMeta.artifactId,
       skillId: candidate.skillId,
       skillName: candidate.skillName,
-      version: candidate.version,
-      generatedAt: candidate.generatedAt,
+      version: auditMeta.version,
+      generatedAt: auditMeta.generatedAt,
       modelId: candidate.modelId,
       content: candidate.content,
     });
@@ -239,6 +257,7 @@ describe("SkillDiffActionBar", () => {
       expect.objectContaining({
         artifactId: "art-001",
         skillId: "my-skill",
+        version: 1,
       }),
     );
     expect(mockClear).toHaveBeenCalledWith(42);
@@ -283,13 +302,13 @@ describe("SkillDiffActionBar", () => {
   // --- Refine: new candidate is staged on success ---
 
   it("refine onSuccess: stages the new result with the same noteId", () => {
-    const newResult = makeCandidate({ version: 2, rawMarkdown: "Shorter." });
+    const newResult = makeCandidate({ rawMarkdown: "Shorter." });
 
     // Simulate onSuccess callback: stage({ ...result, noteId })
     mockStage({ ...newResult, noteId: 42 });
 
     expect(mockStage).toHaveBeenCalledWith(
-      expect.objectContaining({ noteId: 42, version: 2 }),
+      expect.objectContaining({ noteId: 42, rawMarkdown: "Shorter." }),
     );
   });
 });

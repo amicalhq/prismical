@@ -405,7 +405,10 @@ export const artifacts = sqliteTable(
     skillId: text("skill_id").notNull(),
     mode: text("mode").notNull().$type<ArtifactMode>(),
     version: integer("version").notNull().default(1),
-    content: text("content").notNull(), // Lexical state JSON; audit snapshot at write time
+    // JSON-stringified Lexical *children* array (not a full editor state).
+    // Reconstructable into a state JSON by wrapping in `{ root: { children: [...] } }`.
+    // Audit-only snapshot at accept time; never read back into the live editor.
+    content: text("content").notNull(),
     generator: text("generator").notNull(), // "ai" | "user" | "imported"
     modelId: text("model_id"),
     meta: text("meta", { mode: "json" }).$type<Record<string, unknown>>(),
