@@ -1,22 +1,16 @@
-import { useRef, useState } from "react";
+import { useRef } from "react";
 import { Link } from "@tanstack/react-router";
 import { IconPlus, IconUpload } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { api } from "@/trpc/react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { SkillRow } from "./components/skill-row";
-import { DeleteSkillDialog } from "./components/delete-skill-dialog";
-import type { Skill } from "@/db/schema";
+import { SkillCard } from "./components/skill-card";
 
 export function SkillsListPage() {
   const { t } = useTranslation();
   const { data: skills = [], isLoading } = api.skills.list.useQuery({});
   const utils = api.useUtils();
-
-  const setEnabled = api.skills.setEnabled.useMutation({
-    onSettled: () => utils.skills.list.invalidate(),
-  });
 
   const importMutation = api.skills.import.useMutation({
     onSuccess: () => {
@@ -64,8 +58,6 @@ export function SkillsListPage() {
     event.target.value = "";
   };
 
-  const [pendingDelete, setPendingDelete] = useState<Skill | null>(null);
-
   // Sort: system skills first (descending), then user-created by createdAt desc.
   const sorted = [...skills].sort((a, b) => {
     if (a.system !== b.system) return a.system ? -1 : 1;
@@ -73,7 +65,7 @@ export function SkillsListPage() {
   });
 
   return (
-    <div className="max-w-3xl mx-auto p-8 space-y-6">
+    <div className="max-w-5xl mx-auto p-8 space-y-6">
       <header className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">{t("skills.page.title")}</h1>
         <div className="flex items-center gap-2">
@@ -102,38 +94,26 @@ export function SkillsListPage() {
         </div>
       </header>
 
-      <section className="rounded-lg border bg-card">
-        <div className="px-4 py-3 border-b">
-          <h2 className="font-medium">{t("skills.page.installedSection")}</h2>
-        </div>
+      <section>
+        <h2 className="mb-3 font-medium">
+          {t("skills.page.installedSection")}
+        </h2>
         {isLoading ? (
-          <div className="px-4 py-8 text-center text-muted-foreground">
+          <div className="rounded-lg border bg-card px-4 py-8 text-center text-muted-foreground">
             {t("common.loading")}
           </div>
         ) : sorted.length === 0 ? (
-          <div className="px-4 py-8 text-center text-muted-foreground">
+          <div className="rounded-lg border bg-card px-4 py-8 text-center text-muted-foreground">
             {t("skills.page.empty")}
           </div>
         ) : (
-          sorted.map((s) => (
-            <SkillRow
-              key={s.id}
-              skill={s}
-              onToggleEnabled={(id, next) => setEnabled.mutate({ id, enabled: next })}
-              onDelete={(skill) => setPendingDelete(skill)}
-              busy={setEnabled.isPending}
-            />
-          ))
+          <div className="grid auto-rows-fr grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {sorted.map((s) => (
+              <SkillCard key={s.id} skill={s} />
+            ))}
+          </div>
         )}
       </section>
-
-      {/* Library section — hidden in v1 (Plan 1 schema is inert until cloud sync ships). */}
-
-      <DeleteSkillDialog
-        skill={pendingDelete}
-        onCancel={() => setPendingDelete(null)}
-        onDeleted={() => setPendingDelete(null)}
-      />
     </div>
   );
 }

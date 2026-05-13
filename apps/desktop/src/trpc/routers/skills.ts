@@ -90,6 +90,10 @@ export const skillsRouter = createRouter({
       return { ok: true as const };
     }),
 
+  clone: procedure
+    .input(z.object({ id: z.string().min(1) }))
+    .mutation(({ input }) => service().cloneSkill(input.id)),
+
   setEnabled: procedure
     .input(z.object({ id: z.string().min(1), enabled: z.boolean() }))
     .mutation(({ input }) =>

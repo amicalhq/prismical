@@ -104,6 +104,39 @@ export class SkillsService {
     return row;
   }
 
+  // Duplicate an existing skill (system or user). The clone is always a
+  // user-owned skill; system flag is cleared so the result is editable.
+  // Generates a unique slug by appending "-copy" and a numeric suffix when
+  // the basic form already exists.
+  async cloneSkill(id: string): Promise<Skill> {
+    const source = await skillsDb.getSkillById(this.db, id);
+    if (!source) throw new Error("Skill not found");
+
+    const baseSlug = `${source.slug}-copy`.slice(0, 60);
+    let slug = baseSlug;
+    let suffix = 2;
+    while (await skillsDb.getSkillBySlug(this.db, slug)) {
+      slug = `${baseSlug}-${suffix}`.slice(0, 64);
+      suffix++;
+    }
+    const baseName = `${source.name} (Copy)`.slice(0, MAX_NAME_LEN);
+
+    return this.createSkill({
+      slug,
+      name: baseName,
+      description: source.description,
+      iconUrl: source.iconUrl,
+      body: source.body,
+      // Clones can't inherit the default-sparkle flag — only one skill holds
+      // it at a time, and stealing it from the source on every clone would
+      // surprise the user.
+      config: { ...source.config, defaultSkill: false },
+      system: false,
+      allowedTools: source.allowedTools,
+      metadata: source.metadata as Record<string, unknown> | undefined,
+    });
+  }
+
   async updateSkill(id: string, patch: UpdateSkillInput): Promise<Skill> {
     const existing = await skillsDb.getSkillById(this.db, id);
     if (!existing) throw new Error("Skill not found");
