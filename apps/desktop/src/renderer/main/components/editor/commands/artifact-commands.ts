@@ -27,8 +27,8 @@ import {
 // -------------------------------------------------------------------------
 
 // `content` is the array of serialized Lexical children that will become the
-// node's body. The runtime (Plan 3) produces this by piping the agent's
-// markdown output through markdownToLexicalStateJson and extracting its
+// node's body. The runtime produces this by piping the agent's markdown
+// output through markdownToLexicalStateJson and extracting its
 // `root.children`.
 export interface InsertArtifactNodePayload extends ArtifactNodeMetadata {
   content: SerializedLexicalNode[];
@@ -58,10 +58,10 @@ export function registerArtifactNodeCommands(editor: LexicalEditor): () => void 
         $parseSerializedNode(serialized),
       );
 
-      // Spec §1 regen invariant: re-running an `append-section` skill walks
-      // the doc for an existing `ArtifactNode` with matching `skill_id` and
-      // replaces its children + bumps its metadata in place. This keeps the
-      // node's identity stable (Yjs key, cursor position, scroll anchor)
+      // Regen invariant: re-running an `append-section` skill walks the doc
+      // for an existing `ArtifactNode` with matching `skill_id` and replaces
+      // its children + bumps its metadata in place. This keeps the node's
+      // identity stable (Yjs key, cursor position, scroll anchor)
       // and ensures the same skill never produces duplicate blocks in the
       // doc. If no matching node exists (first run), fall through to append.
       const existing = root
@@ -117,9 +117,9 @@ export function registerArtifactNodeCommands(editor: LexicalEditor): () => void 
         $parseSerializedNode(serialized),
       );
 
-      // Spec §1 regen invariant (inline): re-running the same inline-rewrite
-      // skill should replace the existing wrapper in place rather than nest
-      // or insert a sibling. Look for an `ArtifactInlineNode` ancestor of the
+      // Regen invariant (inline): re-running the same inline-rewrite skill
+      // should replace the existing wrapper in place rather than nest or
+      // insert a sibling. Look for an `ArtifactInlineNode` ancestor of the
       // selection's anchor or focus whose `skillId` matches the payload.
       const existing = findInlineAncestorForSkill(selection, payload.skillId);
       if (existing) {

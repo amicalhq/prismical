@@ -7,7 +7,6 @@ import {
 import { db } from "../../db";
 
 export const artifactsRouter = createRouter({
-  // PRSM-2 audit-log queries — used by Plan 3 runtime and Plan 6 Skills page.
   listByNote: procedure
     .input(z.object({ noteId: z.number().int().positive() }))
     .query(async ({ input }) => {

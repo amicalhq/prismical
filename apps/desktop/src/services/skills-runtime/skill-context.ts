@@ -12,11 +12,11 @@ export interface SkillRunContext {
   noteId: number;
 
   // Active mode for this run — equals skill.config.editingOptions unless the
-  // user overrode via the picker's `⋯` menu (Plan 5).
+  // user overrode via the picker's `⋯` menu.
   mode: ArtifactMode;
 
   // Optional refine prompt — when present, the system prompt includes the
-  // previous output plus this instruction (spec §2: "Refine context").
+  // previous output plus this instruction.
   refineInstruction?: string;
 
   // The previous output for refine flows. Plain markdown text.
@@ -35,10 +35,10 @@ export interface SkillRunContext {
   signal: AbortSignal;
 }
 
-// Final result returned to the tRPC caller. Spec §1+§2: "Every **accepted**
-// run writes a new artifacts row" — so the runner emits an unpersisted
-// candidate and the audit row is written separately by `skillRuns.accept`
-// after the user clicks Accept. Reject is a no-op DB-wise.
+// Final result returned to the tRPC caller. Every **accepted** run writes a
+// new artifacts row, so the runner emits an unpersisted candidate and the
+// audit row is written separately by `skillRuns.accept` after the user
+// clicks Accept. Reject is a no-op DB-wise.
 //
 // Audit-meta fields (`modelInstanceId`, `providerType`, `refineInstruction`,
 // `selectionText`, `reasoning`) are propagated through here so the accept

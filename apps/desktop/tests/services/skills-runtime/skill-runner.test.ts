@@ -159,7 +159,7 @@ describe("skills-runtime/skill-runner", () => {
     expect(result.rawMarkdown).toBe(CANNED_MARKDOWN);
     expect(result.content.length).toBeGreaterThan(0);
 
-    // Spec §1+§2: the runner MUST NOT write the audit row. Accept does that.
+    // The runner MUST NOT write the audit row. Accept does that.
     const rows = await testDb.db.select().from(artifacts).all();
     expect(rows.length).toBe(0);
   });

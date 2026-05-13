@@ -10,10 +10,8 @@ import {
 type DB = LibSQLDatabase<Record<string, unknown>>;
 
 // -------------------------------------------------------------------------
-// PRSM-2 append-only audit layer
-//
-// New code (skill runtime in Plan 3, Skills page in Plan 6) uses these.
-// Db handle is injected so tests can use createTestDatabase().
+// Append-only audit layer. Db handle is injected so tests can use
+// createTestDatabase().
 // -------------------------------------------------------------------------
 
 export interface AppendArtifactInput {

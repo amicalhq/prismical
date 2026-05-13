@@ -1,4 +1,4 @@
-/* Chrome for the block-level ArtifactNode (Plan 2). The artifact blends
+/* Chrome for the block-level ArtifactNode. The artifact blends
  * into surrounding note content — only a small sparkle in the left gutter
  * signals its AI origin. On hover the sparkle shows a "Generated using
  * <skill>" chip. The .prismical-artifact-inline class below is the inline

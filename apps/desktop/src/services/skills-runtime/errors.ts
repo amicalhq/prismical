@@ -7,7 +7,7 @@ export class SkillCancelledError extends Error {
 }
 
 // Generic wrapper for model / runtime errors. Surfaces a single string to
-// the tRPC caller for the toast (spec §2: "Couldn't run <skill> — <reason>").
+// the tRPC caller for the "Couldn't run <skill> — <reason>" toast.
 export class SkillRunError extends Error {
   constructor(message: string, public cause?: unknown) {
     super(message);

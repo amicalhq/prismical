@@ -35,9 +35,9 @@ describe("editor/commands/artifact-commands", () => {
         { discrete: true },
       );
 
-      // The `content` field carries a fully-formed children array — paragraphs,
-      // lists, etc. — already converted from markdown by the caller (Plan 3
-      // runtime). For this test we use a single paragraph.
+      // The `content` field carries a fully-formed children array —
+      // paragraphs, lists, etc. — already converted from markdown by the
+      // caller (the runtime). For this test we use a single paragraph.
       const childContent = [
         {
           type: "paragraph",
@@ -143,8 +143,8 @@ describe("editor/commands/artifact-commands", () => {
 
       editor.read(() => {
         const root = $getRoot();
-        // Spec §1: re-running the same skill MUST NOT duplicate — there must
-        // still be exactly one node, with the same key, but new metadata + body.
+        // Re-running the same skill MUST NOT duplicate — there must still be
+        // exactly one node, with the same key, but new metadata + body.
         expect(root.getChildrenSize()).toBe(1);
         const node = root.getFirstChildOrThrow() as InstanceType<typeof ArtifactNode>;
         expect(node.getKey()).toBe(firstKey);

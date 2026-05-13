@@ -140,14 +140,12 @@ export class SkillsService {
   async updateSkill(id: string, patch: UpdateSkillInput): Promise<Skill> {
     const existing = await skillsDb.getSkillById(this.db, id);
     if (!existing) throw new Error("Skill not found");
-    // System skills are fully read-only via the service. Spec §4 says
-    // "undeletable, undisableable" — we extend that to "unmodifiable"
-    // because the original prompt body / config lives only in source code
-    // (services/skills-bootstrap.ts), so a Plan-6 UI mistake or rogue
-    // tRPC call could otherwise replace `enhance`'s prompt with no recovery
-    // path. Users who want a tweaked variant should fork instead — the
-    // `parent_skill_id` column on `skills` carries lineage; the fork UI
-    // ships with Plan 6.
+    // System skills are fully read-only via the service — undeletable,
+    // undisableable, and unmodifiable. The original prompt body / config
+    // lives only in source code (services/skills-bootstrap.ts), so a UI
+    // mistake or rogue tRPC call could otherwise replace `enhance`'s prompt
+    // with no recovery path. Users who want a tweaked variant should clone
+    // instead — the `parent_skill_id` column on `skills` carries lineage.
     if (existing.system) {
       throw new Error("Cannot modify a system skill");
     }

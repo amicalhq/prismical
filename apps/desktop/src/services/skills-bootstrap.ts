@@ -52,8 +52,8 @@ const SYSTEM_SKILLS: CreateSkillInput[] = [
 /**
  * Idempotent: safe to run on every launch. Seeds the v1 system skills if
  * they do not already exist. Existing rows are never mutated by this
- * function — to update a seeded skill, edit it via the Skills page (Plan 6)
- * or via a dedicated migration.
+ * function — to update a seeded skill, edit it via the Skills page or via
+ * a dedicated migration.
  */
 export async function bootstrapSkills(
   db: DB = defaultDb as unknown as DB,

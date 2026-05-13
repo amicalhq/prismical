@@ -68,9 +68,9 @@ export const skillRunsRouter = createRouter({
       }
     }),
 
-  // Writes the audit row for a candidate the user has accepted. Spec §1+§2:
-  // only accepted runs land in `artifacts`. The runner emits unpersisted
-  // candidates; this mutation finalizes them. Reject is a client-only no-op.
+  // Writes the audit row for a candidate the user has accepted. Only accepted
+  // runs land in `artifacts`; the runner emits unpersisted candidates and this
+  // mutation finalizes them. Reject is a client-only no-op.
   accept: procedure
     .input(
       z.object({

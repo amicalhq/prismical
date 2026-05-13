@@ -93,9 +93,9 @@ describe("skills-runtime/build-system-prompt", () => {
   });
 
   it("omits the transcript even when one is available if the skill hasn't opted in (default off)", () => {
-    // Spec §3 input policy: transcript injection is opt-in per skill. The
-    // model can't ignore data once it's in-context, so "don't use it" prompts
-    // aren't sufficient — the runtime must withhold the block.
+    // Input policy: transcript injection is opt-in per skill. The model can't
+    // ignore data once it's in-context, so "don't use it" prompts aren't
+    // sufficient — the runtime must withhold the block.
     const prompt = buildSystemPrompt(
       makeCtx(), // no inputs.transcript
       makeInput({ transcript: "alice: hi\nbob: hello" }),

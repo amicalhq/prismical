@@ -594,9 +594,8 @@ export interface SkillMetadata {
 
 export interface SkillConfig {
   // The skill's **default** mode. Users can pick a different mode for a
-  // single run via the picker's `⋯` overflow menu (per spec §2 "Mode override
-  // at pick time"); that override is held in-memory and not persisted on the
-  // skill row.
+  // single run via the picker's `⋯` overflow menu; that override is held
+  // in-memory and not persisted on the skill row.
   editingOptions: ArtifactMode;
   surface: SkillSurface[];
   modelPreference?: ModelSelection;

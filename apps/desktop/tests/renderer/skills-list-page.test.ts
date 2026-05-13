@@ -40,9 +40,9 @@ vi.mock("@/trpc/react", () => ({
       list: { useQuery: skillsListUseQuery },
       setEnabled: { useMutation },
       delete: { useMutation },
-      // Plan 8 added the Import button; the list page wires
-      // api.skills.import.useMutation. Mock to avoid TypeError in tests
-      // that don't exercise import behavior.
+      // The list page wires api.skills.import.useMutation for the Import
+      // button. Mock to avoid TypeError in tests that don't exercise import
+      // behavior.
       import: { useMutation },
     },
     useUtils: () => ({
