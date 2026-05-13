@@ -1,0 +1,69 @@
+import type { ArtifactMode, Skill } from "@/db/schema";
+import type { SerializedLexicalNode } from "lexical";
+
+// The runtime is stateless per call. All inputs the runner needs are bound
+// into this context object once. The runner deterministically gathers
+// note/transcript/selection from these — the model never picks what to read.
+export interface SkillRunContext {
+  // The skill being run. Loaded once via SkillsService.getBySlug.
+  skill: Skill;
+
+  // The note this run targets. Used by collectInput + the audit write path.
+  noteId: number;
+
+  // Active mode for this run — equals skill.config.editingOptions unless the
+  // user overrode via the picker's `⋯` menu.
+  mode: ArtifactMode;
+
+  // Optional refine prompt — when present, the system prompt includes the
+  // previous output plus this instruction.
+  refineInstruction?: string;
+
+  // The previous output for refine flows. Plain markdown text.
+  previousOutput?: string;
+
+  // For inline-rewrite mode: the selection range as plain text the model
+  // should rewrite. The other modes leave this null.
+  selectionText?: string;
+
+  // Model selection — falls through to skill.config.modelPreference, then
+  // the user's `modelDefaults.formatting`. Resolved by the runner.
+  modelInstanceId: string;
+  modelId: string;
+
+  // Cancellation signal — wired to the in-flight registry / stop button.
+  signal: AbortSignal;
+}
+
+// Final result returned to the tRPC caller. Every **accepted** run writes a
+// new artifacts row, so the runner emits an unpersisted candidate and the
+// audit row is written separately by `skillRuns.accept` after the user
+// clicks Accept. Reject is a no-op DB-wise.
+//
+// Audit-meta fields (`modelInstanceId`, `providerType`, `refineInstruction`,
+// `selectionText`, `reasoning`) are propagated through here so the accept
+// mutation has everything it needs without a second model call or another
+// db lookup.
+export interface SkillRunResult {
+  mode: ArtifactMode;
+  skillId: string;     // slug; matches artifacts.skill_id when written
+  skillName: string;
+  modelId: string;
+  modelInstanceId: string;
+  providerType: string;
+  // The Lexical children that will become the node body when accepted.
+  content: SerializedLexicalNode[];
+  // The raw markdown the model emitted — kept around for the refine flow
+  // (passed back as previousOutput) and stored on the audit row at accept.
+  rawMarkdown: string;
+  // Pre-run snapshot used by the diff overlay as the "before" side of the
+  // char-level diff. Populated by the runner for `replace-doc` (the full
+  // note body) and left undefined for `append-section` (purely additive).
+  // For `inline-rewrite` the client supplies `beforeText` from the
+  // selection, so the runner does not set it.
+  beforeText?: string;
+  // Audit-meta fields, propagated to the accept mutation.
+  refineInstruction: string | null;
+  selectionText: string | null;
+  reasoning: string | null;
+}

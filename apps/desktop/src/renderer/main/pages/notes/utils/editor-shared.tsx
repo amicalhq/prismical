@@ -13,6 +13,8 @@ import { ListItemNode, ListNode } from "@lexical/list";
 import { HorizontalRuleNode } from "@lexical/react/LexicalHorizontalRuleNode";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
 import { HeadingNode, QuoteNode } from "@lexical/rich-text";
+import { ArtifactNode } from "@/renderer/main/components/editor/nodes/artifact-node";
+import { ArtifactInlineNode } from "@/renderer/main/components/editor/nodes/artifact-inline-node";
 
 export const editorTheme = {
   paragraph: "mb-0.5",
@@ -77,6 +79,8 @@ export const editorTheme = {
     code: "bg-muted px-1 py-0.5 rounded font-mono text-sm",
   },
   hr: "my-4 border-t border-border",
+  artifact: "prismical-artifact-node-theme",
+  artifactInline: "prismical-artifact-inline-theme",
 };
 
 export const EDITOR_NODES = [
@@ -89,6 +93,8 @@ export const EDITOR_NODES = [
   LinkNode,
   AutoLinkNode,
   HorizontalRuleNode,
+  ArtifactNode,
+  ArtifactInlineNode,
 ];
 
 // URL and email matchers for AutoLinkPlugin

@@ -35,7 +35,7 @@ describe("Database Bootstrap", () => {
         "instances",
         "meeting_artifacts",
         "meetings",
-        "note_artifacts",
+        "artifacts",
         "notes",
         "transcript_segments",
         "transcriptions",

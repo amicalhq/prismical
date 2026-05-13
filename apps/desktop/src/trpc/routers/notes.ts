@@ -2,6 +2,7 @@ import { z } from "zod";
 import { createRouter, procedure } from "../trpc";
 import NotesService from "../../services/notes-service";
 import { ServiceManager } from "../../main/managers/service-manager";
+import { lexicalStateToMarkdown } from "../../services/notes/lexical-to-markdown";
 
 const notesService = NotesService.getInstance();
 
@@ -253,14 +254,16 @@ export const notesRouter = createRouter({
       }));
     }),
 
-  generateNotesFromTranscript: procedure
-    .input(z.object({ noteId: z.number() }))
-    .mutation(async ({ input, ctx }) => {
-      const noteGenerationService = ctx.serviceManager.getService(
-        "noteGenerationService",
-      );
-      return await noteGenerationService.generateNotesFromTranscript(
-        input.noteId,
-      );
+  // Export a note as GitHub-flavored markdown (ArtifactNode/ArtifactInlineNode unwrapped).
+  exportAsMarkdown: procedure
+    .input(z.object({ noteId: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const note = await notesService.getNote(input.noteId);
+      if (!note) throw new Error("Note not found");
+      const markdown = note.content
+        ? lexicalStateToMarkdown(note.content)
+        : "";
+      return { markdown, title: note.title };
     }),
+
 });

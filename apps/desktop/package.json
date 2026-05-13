@@ -65,6 +65,7 @@
     "@electron-forge/plugin-vite": "7.8.2",
     "@electron-forge/publisher-github": "7.8.2",
     "@electron/fuses": "^1.8.0",
+    "@lexical/headless": "^0.38.2",
     "@prismical/audio-capture": "workspace:*",
     "@prismical/mic-detector": "workspace:*",
     "@rollup/plugin-commonjs": "^28.0.6",
@@ -156,6 +157,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "date-fns": "^4.1.0",
+    "diff": "^7.0.0",
     "dotenv": "^16.5.0",
     "drizzle-kit": "^0.31.1",
     "drizzle-orm": "^0.43.1",
@@ -165,6 +167,7 @@
     "embla-carousel-react": "^8.6.0",
     "emoji-picker-react": "^4.13.3",
     "framer-motion": "^12.10.5",
+    "gray-matter": "^4.0.3",
     "i18next": "^25.8.0",
     "input-otp": "^1.4.2",
     "jest-worker": "^29.7.0",
@@ -197,6 +200,7 @@
     "uuid": "^11.1.0",
     "vaul": "^1.1.2",
     "yjs": "^13.6.27",
-    "zod": "^3.25.76"
+    "zod": "^3.25.76",
+    "zustand": "^5.0.13"
   }
 }

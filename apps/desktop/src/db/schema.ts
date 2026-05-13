@@ -376,18 +376,39 @@ export const notes = sqliteTable(
   (table) => [index("notes_folder_id_idx").on(table.folderId)],
 );
 
-// Note artifacts table — generated / synthesized content attached to a note
-// (AI summaries, action items, etc.). `notes.content` stays as the user's raw
-// input; artifacts are produced outputs.
-export const noteArtifacts = sqliteTable(
-  "note_artifacts",
+export type ArtifactMode = "append-section" | "replace-doc" | "inline-rewrite";
+
+// Artifacts table — append-only audit / eval log of every accepted skill run.
+// One row per accepted run; never read back into the editor. The Yjs doc is
+// canonical for content in all modes.
+//
+// `mode` records the editing_options used (`append-section` | `replace-doc`
+// | `inline-rewrite`). `skill_id` stores the skill **slug** (not a FK to
+// `skills.id`): the audit log must survive skill deletion, slug renames, and
+// export/import roundtrips — none of which a UUID FK would tolerate. The
+// trade-off is that nothing in the DB enforces that `skill_id` refers to an
+// existing skill; that's accepted because audit rows outlive their producers
+// by design.
+//
+// No uniqueness on (note_id, skill_id) — rows accumulate per pair (regen
+// history is the audit log).
+//
+// `note_id` is non-null in v1; the `note_` prefix was dropped from the table
+// name to leave room for standalone, non-note-scoped artifacts later.
+export const artifacts = sqliteTable(
+  "artifacts",
   {
     id: text("id").primaryKey(),
     noteId: integer("note_id")
       .notNull()
       .references(() => notes.id, { onDelete: "cascade" }),
-    kind: text("kind").notNull().default("summary"),
-    content: text("content").notNull(), // Lexical editor state JSON
+    skillId: text("skill_id").notNull(),
+    mode: text("mode").notNull().$type<ArtifactMode>(),
+    version: integer("version").notNull().default(1),
+    // JSON-stringified Lexical *children* array (not a full editor state).
+    // Reconstructable into a state JSON by wrapping in `{ root: { children: [...] } }`.
+    // Audit-only snapshot at accept time; never read back into the live editor.
+    content: text("content").notNull(),
     generator: text("generator").notNull(), // "ai" | "user" | "imported"
     modelId: text("model_id"),
     meta: text("meta", { mode: "json" }).$type<Record<string, unknown>>(),
@@ -400,7 +421,21 @@ export const noteArtifacts = sqliteTable(
       .default(sql`(unixepoch())`),
   },
   (table) => [
-    index("note_artifacts_note_id_kind_idx").on(table.noteId, table.kind),
+    index("artifacts_note_id_skill_id_idx").on(table.noteId, table.skillId),
+    // Partial unique index — for `append-section` mode the runtime computes
+    // `version = MAX(version) + 1` per (note_id, skill_id). The single-in-flight
+    // invariant from `InFlightRegistry` prevents the race in normal operation,
+    // but a partial unique constraint is belt-and-suspenders against any future
+    // caller that bypasses the registry (background eval re-runner, batch import,
+    // etc.). `replace-doc` and `inline-rewrite` always write version=1 so they
+    // would conflict here; scope the constraint to append-section only.
+    uniqueIndex("artifacts_note_id_skill_id_version_append_unique")
+      .on(table.noteId, table.skillId, table.version)
+      .where(sql`mode = 'append-section'`),
+    index("artifacts_note_id_generated_at_idx").on(
+      table.noteId,
+      table.generatedAt,
+    ),
   ],
 );
 
@@ -502,6 +537,119 @@ export const yjsUpdates = sqliteTable(
   ],
 );
 
+// Skills table — agentic AI enhancements applied to notes. v1 ships two
+// system skills (`enhance`, `cleanup`); users can author their own.
+//
+// `slug` is the stable human key (survives export/import); `id` is internal.
+// `body` is the agent prompt. `config` carries editing_options, surface,
+// model_preference, default_skill. `allowed_tools` is null in v1 (all tools
+// available); cloud-deferred fields (`created_by`, `org_id`, `public`,
+// `featured`, `parent_skill_id`) are nullable and inert in v1.
+export const skills = sqliteTable(
+  "skills",
+  {
+    id: text("id").primaryKey(), // uuid v4
+    slug: text("slug").notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    iconUrl: text("icon_url"),
+    body: text("body").notNull(),
+    metadata: text("metadata", { mode: "json" })
+      .$type<SkillMetadata>()
+      .notNull()
+      .default(sql`'{}'`),
+    config: text("config", { mode: "json" }).$type<SkillConfig>().notNull(),
+    allowedTools: text("allowed_tools", { mode: "json" }).$type<
+      string[] | null
+    >(),
+    createdBy: text("created_by"),
+    orgId: text("org_id"),
+    system: integer("system", { mode: "boolean" }).notNull().default(false),
+    public: integer("public", { mode: "boolean" }).notNull().default(false),
+    featured: integer("featured", { mode: "boolean" }).notNull().default(false),
+    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+    parentSkillId: text("parent_skill_id").references(
+      (): AnySQLiteColumn => skills.id,
+      { onDelete: "set null" },
+    ),
+    version: integer("version").notNull().default(1),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (table) => [
+    uniqueIndex("skills_slug_unique").on(table.slug),
+    index("skills_enabled_idx").on(table.enabled),
+  ],
+);
+
+export interface SkillMetadata {
+  author?: string;
+  tags?: string[];
+  sourceUrl?: string;
+}
+
+export interface SkillConfig {
+  // The skill's **default** mode. Users can pick a different mode for a
+  // single run via the picker's `⋯` overflow menu; that override is held
+  // in-memory and not persisted on the skill row.
+  editingOptions: ArtifactMode;
+  surface: SkillSurface[];
+  modelPreference?: ModelSelection;
+  defaultSkill?: boolean;
+  /**
+   * Per-skill input policy. Each flag opts the skill into having that piece
+   * of context injected into the system prompt by the runner. Note markdown
+   * + selection text are always injected (they're the substrate the skill
+   * transforms); only optional context is gated here.
+   *
+   * Default if omitted: every flag is `false`. Cleanup-style skills that
+   * should only see the note body must NOT set `transcript: true` — once
+   * the transcript is in-context the model can't unsee it, and any
+   * "don't use the transcript" instruction in the body is unenforceable.
+   */
+  inputs?: {
+    transcript?: boolean;
+  };
+}
+
+export type SkillSurface = "dock" | "inline";
+
+// Junction: per-user skill preferences. Inert in v1 (single-user local app);
+// lights up when cloud sync ships.
+export const userSkillPreferences = sqliteTable(
+  "user_skill_preferences",
+  {
+    userId: text("user_id").notNull(),
+    skillId: text("skill_id")
+      .notNull()
+      .references(() => skills.id, { onDelete: "cascade" }),
+    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.skillId] })],
+);
+
+// Junction: per-org skill installations. Inert in v1; cloud-only.
+export const orgSkillInstallations = sqliteTable(
+  "org_skill_installations",
+  {
+    orgId: text("org_id").notNull(),
+    skillId: text("skill_id")
+      .notNull()
+      .references(() => skills.id, { onDelete: "cascade" }),
+    installedAt: integer("installed_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (table) => [primaryKey({ columns: [table.orgId, table.skillId] })],
+);
+
 // Export types for TypeScript
 export type Transcription = typeof transcriptions.$inferSelect;
 export type NewTranscription = typeof transcriptions.$inferInsert;
@@ -521,8 +669,15 @@ export type Event = typeof events.$inferSelect;
 export type NewEvent = typeof events.$inferInsert;
 export type Note = typeof notes.$inferSelect;
 export type NewNote = typeof notes.$inferInsert;
-export type NoteArtifact = typeof noteArtifacts.$inferSelect;
-export type NewNoteArtifact = typeof noteArtifacts.$inferInsert;
+export type Artifact = typeof artifacts.$inferSelect;
+export type NewArtifact = typeof artifacts.$inferInsert;
+export type Skill = typeof skills.$inferSelect;
+export type NewSkill = typeof skills.$inferInsert;
+export type UserSkillPreference = typeof userSkillPreferences.$inferSelect;
+export type NewUserSkillPreference = typeof userSkillPreferences.$inferInsert;
+export type OrgSkillInstallation = typeof orgSkillInstallations.$inferSelect;
+export type NewOrgSkillInstallation =
+  typeof orgSkillInstallations.$inferInsert;
 export type YjsUpdate = typeof yjsUpdates.$inferSelect;
 export type NewYjsUpdate = typeof yjsUpdates.$inferInsert;
 export type Tag = typeof tags.$inferSelect;

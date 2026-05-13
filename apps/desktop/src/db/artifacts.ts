@@ -1,94 +1,100 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
+import type { LibSQLDatabase } from "drizzle-orm/libsql";
 import { v4 as uuid } from "uuid";
-import { db } from "./index";
 import {
-  noteArtifacts,
-  type NewNoteArtifact,
-  type NoteArtifact,
+  artifacts,
+  type ArtifactMode,
+  type Artifact,
 } from "./schema";
 
-// Returns the most-recently-touched artifact for a given note + kind, or null.
-// `updated_at` is the tiebreaker (not `generated_at`) so that in-place user
-// edits naturally promote the edited artifact to "latest." When versioning
-// lands, this should switch to `ORDER BY version DESC` and the index should
-// extend to `(note_id, kind, version DESC)`.
-export async function getLatestArtifactByNote(
-  noteId: number,
-  kind = "summary",
-): Promise<NoteArtifact | null> {
-  const [row] = await db
-    .select()
-    .from(noteArtifacts)
-    .where(
-      and(eq(noteArtifacts.noteId, noteId), eq(noteArtifacts.kind, kind)),
-    )
-    .orderBy(desc(noteArtifacts.updatedAt))
-    .limit(1);
+type DB = LibSQLDatabase<Record<string, unknown>>;
 
-  return row ?? null;
+// -------------------------------------------------------------------------
+// Append-only audit layer. Db handle is injected so tests can use
+// createTestDatabase().
+// -------------------------------------------------------------------------
+
+export interface AppendArtifactInput {
+  noteId: number;
+  skillId: string;
+  mode: ArtifactMode;
+  content: string;
+  generator: string;
+  modelId?: string | null;
+  meta?: Record<string, unknown> | null;
+  generatedAt?: Date;
 }
 
-// Replaces the single artifact for (noteId, kind) with new generated content,
-// or inserts one if it doesn't exist yet. v1 invariant: at most one row per
-// (noteId, kind). When versioning lands this becomes INSERT-with-version-bump.
-export async function createOrReplaceArtifact(
-  data: Omit<NewNoteArtifact, "id" | "createdAt" | "updatedAt"> & {
-    kind?: string;
-  },
-): Promise<NoteArtifact> {
-  const kind = data.kind ?? "summary";
-  const existing = await getLatestArtifactByNote(data.noteId, kind);
+export async function appendArtifact(
+  db: DB,
+  input: AppendArtifactInput,
+): Promise<Artifact> {
+  // For append-section, version monotonically increases within (noteId,
+  // skillId). For replace-doc / inline-rewrite each row stands alone so
+  // version stays at 1.
+  const version =
+    input.mode === "append-section"
+      ? await nextVersionForAppendSection(db, input.noteId, input.skillId)
+      : 1;
+
   const now = new Date();
-
-  if (existing) {
-    const [updated] = await db
-      .update(noteArtifacts)
-      .set({
-        content: data.content,
-        generator: data.generator,
-        modelId: data.modelId ?? null,
-        meta: data.meta ?? null,
-        generatedAt: data.generatedAt ?? now,
-        updatedAt: now,
-      })
-      .where(eq(noteArtifacts.id, existing.id))
-      .returning();
-    return updated;
-  }
-
-  const [inserted] = await db
-    .insert(noteArtifacts)
+  const [row] = await db
+    .insert(artifacts)
     .values({
       id: uuid(),
-      noteId: data.noteId,
-      kind,
-      content: data.content,
-      generator: data.generator,
-      modelId: data.modelId ?? null,
-      meta: data.meta ?? null,
-      generatedAt: data.generatedAt ?? now,
+      noteId: input.noteId,
+      skillId: input.skillId,
+      mode: input.mode,
+      version,
+      content: input.content,
+      generator: input.generator,
+      modelId: input.modelId ?? null,
+      meta: input.meta ?? null,
+      generatedAt: input.generatedAt ?? now,
       createdAt: now,
       updatedAt: now,
     })
     .returning();
-  return inserted;
+  return row;
 }
 
-// Updates only the `content` field of an existing artifact — used by the
-// editor's debounced save when the user edits the AI Summary surface. Doesn't
-// touch generator/modelId/meta/generated_at since edits aren't regenerations.
-export async function updateArtifactContent(
-  artifactId: string,
-  content: string,
-): Promise<NoteArtifact | null> {
-  const [updated] = await db
-    .update(noteArtifacts)
-    .set({
-      content,
-      updatedAt: new Date(),
-    })
-    .where(eq(noteArtifacts.id, artifactId))
-    .returning();
+async function nextVersionForAppendSection(
+  db: DB,
+  noteId: number,
+  skillId: string,
+): Promise<number> {
+  const [row] = await db
+    .select({ max: sql<number | null>`MAX(${artifacts.version})` })
+    .from(artifacts)
+    .where(
+      and(
+        eq(artifacts.noteId, noteId),
+        eq(artifacts.skillId, skillId),
+        eq(artifacts.mode, "append-section"),
+      ),
+    );
+  return (row?.max ?? 0) + 1;
+}
 
-  return updated ?? null;
+export async function listArtifactsByNote(
+  db: DB,
+  noteId: number,
+): Promise<Artifact[]> {
+  return await db
+    .select()
+    .from(artifacts)
+    .where(eq(artifacts.noteId, noteId))
+    .orderBy(desc(artifacts.generatedAt));
+}
+
+export async function listArtifactsByNoteAndSkill(
+  db: DB,
+  noteId: number,
+  skillId: string,
+): Promise<Artifact[]> {
+  return await db
+    .select()
+    .from(artifacts)
+    .where(and(eq(artifacts.noteId, noteId), eq(artifacts.skillId, skillId)))
+    .orderBy(desc(artifacts.version), desc(artifacts.generatedAt));
 }

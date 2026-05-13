@@ -8,6 +8,7 @@ import {
   IconAdjustments,
   IconHome,
   IconNotebook,
+  IconSparkles,
   type Icon,
 } from "@tabler/icons-react";
 
@@ -34,6 +35,11 @@ export const HOME_NAV_ITEMS: SidebarNavItem[] = [
     titleKey: "settings.nav.notes.title",
     url: "/notes",
     icon: IconNotebook,
+  },
+  {
+    titleKey: "settings.nav.skills.title",
+    url: "/settings/skills",
+    icon: IconSparkles,
   },
   {
     titleKey: "menu.settings",
@@ -77,6 +83,13 @@ export const SETTINGS_NAV_ITEMS: SettingsNavItem[] = [
     url: "/settings/ai-models",
     descriptionKey: "settings.nav.aiModels.description",
     icon: IconBrain,
+    type: "settings",
+  },
+  {
+    titleKey: "settings.nav.skills.title",
+    url: "/settings/skills",
+    descriptionKey: "settings.nav.skills.description",
+    icon: IconSparkles,
     type: "settings",
   },
   {

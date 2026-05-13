@@ -6,10 +6,12 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import type { MeetingRuntimeState } from "@/types/meeting";
+import { SkillSparkleButton } from "./skill-sparkle-button";
 
 const NUM_WAVEFORM_BARS = 6;
 
 type NoteRecordingDockProps = {
+  noteId?: number;
   isTranscriptionOpen?: boolean;
   onToggleTranscription?: () => void;
   meetingState: MeetingRuntimeState;
@@ -22,6 +24,7 @@ type NoteRecordingDockProps = {
 };
 
 export function NoteRecordingDock({
+  noteId,
   isTranscriptionOpen = false,
   onToggleTranscription,
   meetingState,
@@ -51,6 +54,7 @@ export function NoteRecordingDock({
   };
 
   return (
+    <>
     <div
       className={`
         group
@@ -147,5 +151,9 @@ export function NoteRecordingDock({
         </Tooltip>
       </div>
     </div>
+    {noteId !== undefined && !isRecording && (
+      <SkillSparkleButton noteId={noteId} />
+    )}
+    </>
   );
 }

@@ -77,6 +77,10 @@ export async function createTestDatabase(
       await db.delete(schema.vocabulary);
       await db.delete(schema.models);
       await db.delete(schema.appSettings);
+      await db.delete(schema.orgSkillInstallations);
+      await db.delete(schema.userSkillPreferences);
+      await db.delete(schema.artifacts);
+      await db.delete(schema.skills);
       await db.delete(schema.yjsUpdates);
       await db.delete(schema.noteTags);
       await db.delete(schema.tags);

@@ -15,7 +15,6 @@ import { OnboardingService } from "../../services/onboarding-service";
 import { FeatureFlagService } from "../../services/feature-flag-service";
 import { MeetingManager } from "./meeting-manager";
 import { MeetingStartNotificationManager } from "./meeting-start-notification-manager";
-import { NoteGenerationService } from "../../services/note-generation-service";
 import { MeetingRecordingWidgetManager } from "./meeting-recording-widget-manager";
 
 /**
@@ -35,7 +34,6 @@ export interface ServiceMap {
   meetingManager: MeetingManager;
   meetingRecordingWidgetManager: MeetingRecordingWidgetManager;
   meetingStartNotificationManager: MeetingStartNotificationManager;
-  noteGenerationService: NoteGenerationService;
   shortcutManager: ShortcutManager;
   openAppShortcutManager: OpenAppShortcutManager;
   windowManager: WindowManager;
@@ -66,7 +64,6 @@ export class ServiceManager {
     null;
   private meetingStartNotificationManager: MeetingStartNotificationManager | null =
     null;
-  private noteGenerationService: NoteGenerationService | null = null;
   private shortcutManager: ShortcutManager | null = null;
   private openAppShortcutManager: OpenAppShortcutManager | null = null;
   private windowManager: WindowManager | null = null;
@@ -164,9 +161,6 @@ export class ServiceManager {
     if (!this.settingsService) {
       throw new Error("Settings service not initialized");
     }
-
-    this.noteGenerationService = new NoteGenerationService(this.settingsService);
-    logger.pipeline.info("Note generation service initialized");
 
     try {
       this.transcriptionService = new TranscriptionService(
@@ -317,7 +311,6 @@ export class ServiceManager {
       meetingManager: this.meetingManager!,
       meetingRecordingWidgetManager: this.meetingRecordingWidgetManager!,
       meetingStartNotificationManager: this.meetingStartNotificationManager!,
-      noteGenerationService: this.noteGenerationService!,
       shortcutManager: this.shortcutManager!,
       openAppShortcutManager: this.openAppShortcutManager!,
       windowManager: this.windowManager!,

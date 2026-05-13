@@ -242,6 +242,10 @@
         "title": "Notes",
         "description": "Manage your notes"
       },
+      "skills": {
+        "title": "Skills",
+        "description": "Manage AI prompts that transform your notes — append sections, rewrite selections, replace the whole document"
+      },
       "preferences": {
         "title": "Preferences",
         "description": "Configure general application preferences and behavior"
@@ -1045,6 +1049,31 @@
           "loginSuccess": "Login successful!"
         }
       }
+    }
+  },
+  "common": {
+    "loading": "Loading..."
+  },
+  "skills": {
+    "page": {
+      "title": "Skills",
+      "newSkill": "New Skill",
+      "installedSection": "Installed",
+      "empty": "No skills installed yet."
+    },
+    "form": {
+      "name": "Name",
+      "slug": "Slug",
+      "description": "Description",
+      "mode": "Mode",
+      "surfaces": "Surfaces",
+      "body": "Prompt body",
+      "create": "Create",
+      "save": "Save",
+      "cancel": "Cancel"
+    },
+    "row": {
+      "enableAriaLabel": "Enable {{name}}"
     }
   }
 }

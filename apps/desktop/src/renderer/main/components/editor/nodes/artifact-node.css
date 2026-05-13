@@ -1,0 +1,65 @@
+/* Chrome for the block-level ArtifactNode. The artifact blends
+ * into surrounding note content — only a small sparkle in the left gutter
+ * signals its AI origin. On hover the sparkle shows a "Generated using
+ * <skill>" chip. The .prismical-artifact-inline class below is the inline
+ * counterpart with the same hover-only treatment. */
+
+.prismical-artifact-node {
+  position: relative;
+  display: block;
+}
+
+.prismical-artifact-node__sparkle {
+  position: absolute;
+  top: 0.125rem;
+  left: -1.9rem;
+  font-size: 1.15rem;
+  line-height: 1;
+  opacity: 0.65;
+  user-select: none;
+  cursor: default;
+  transition: opacity 120ms ease;
+}
+
+.prismical-artifact-node__sparkle:hover {
+  opacity: 1;
+}
+
+.prismical-artifact-node__sparkle:hover::after {
+  content: "Generated using " attr(data-skill-name);
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  white-space: nowrap;
+  padding: 0.125rem 0.5rem;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border-radius: 0.375rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  font-size: 0.75rem;
+  pointer-events: none;
+  z-index: 50;
+}
+
+/* Inline-level wrapper — no visible chrome. The hover chip is rendered via
+ * a CSS ::after pseudo-element so we don't add extra DOM nodes into the
+ * editor's text flow. */
+.prismical-artifact-inline {
+  position: relative;
+}
+
+.prismical-artifact-inline:hover::after {
+  content: "✨ " attr(data-skill-name);
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  white-space: nowrap;
+  padding: 0.125rem 0.5rem;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border-radius: 0.375rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  font-size: 0.75rem;
+  pointer-events: none;
+  z-index: 50;
+}

@@ -6,7 +6,7 @@ import { saveYjsUpdate } from "./notes";
 import {
   events,
   meetings,
-  noteArtifacts,
+  artifacts,
   notes,
   transcriptSegments,
   type NewEvent,
@@ -480,10 +480,12 @@ async function seedCustomerSyncMeeting(noteId: number, now: Date) {
     "Should the summary auto-regenerate when action items are edited in place?",
   ].join("\n");
 
-  await db.insert(noteArtifacts).values({
+  await db.insert(artifacts).values({
     id: uuid(),
     noteId,
-    kind: "summary",
+    skillId: "summary",
+    mode: "replace-doc",
+    version: 1,
     content: serializePlainTextToLexicalEditorStateJson(summaryText),
     generator: "ai",
     modelId: "claude-opus-4-7",
