@@ -231,7 +231,7 @@ describe("skills-runtime/skill-runner", () => {
     ).rejects.toThrow(SkillRunError);
   });
 
-  it("mode override: ctx.mode=replace-doc populates beforeText with plain-text snapshot; still no audit row written", async () => {
+  it("mode override: ctx.mode=replace-doc populates beforeText with the note's markdown rendering; still no audit row written", async () => {
     const { runSkill } = await import("@/services/skills-runtime/skill-runner");
     const { note, skill } = await insertFixtures(testDb.db);
 

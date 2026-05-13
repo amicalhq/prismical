@@ -85,10 +85,13 @@ export async function runSkill(
   });
 
   // beforeText is the "before" side of the char-level diff overlay for
-  // replace-doc. append-section is additive (no diff). inline-rewrite gets
-  // beforeText from the client's selection.
+  // replace-doc. We use the markdown rendering of the note (not plain text)
+  // because the candidate's `rawMarkdown` is markdown — diffing plain-vs-md
+  // makes every `##`, `**`, `-` look like an insert even when the content
+  // hasn't changed. append-section is additive (no diff); inline-rewrite
+  // gets beforeText from the client's selection.
   const beforeText =
-    ctx.mode === "replace-doc" ? input.notePlainText : undefined;
+    ctx.mode === "replace-doc" ? input.noteMarkdown : undefined;
 
   return {
     mode: ctx.mode,
