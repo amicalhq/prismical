@@ -75,10 +75,12 @@ function openAICompatibleModel(
 }
 
 // Canned structured output for dev/test runs against the Mock provider.
-// Returns valid JSON that matches the runner's output schema. Latency is
-// short so iteration stays snappy.
+// Returns valid JSON that matches the runner's output schema. The shape is
+// mode-aware — inline-rewrite gets a single short replacement (block-shaped
+// output would be rejected by markdownToInlineChildren), block modes get
+// the full multi-paragraph canned response.
 function createMockModel(modelId: string): LanguageModelV3 {
-  const canned = {
+  const blockCanned = {
     markdown:
       "## Mock skill output\n\n" +
       "This was produced by the **Mock** language model. It does not reflect " +
@@ -88,26 +90,47 @@ function createMockModel(modelId: string): LanguageModelV3 {
       "- Skill prompt was rendered with injected context\n" +
       "- Output schema accepted the result\n",
   };
+  const inlineCanned = {
+    markdown:
+      "[mock rewrite — switch to a real provider for actual output]",
+  };
   return new MockLanguageModelV3({
     modelId,
-    doGenerate: async () => ({
-      content: [{ type: "text" as const, text: JSON.stringify(canned) }],
-      finishReason: { unified: "stop" as const, raw: "stop" },
-      usage: {
-        inputTokens: {
-          total: undefined,
-          noCache: undefined,
-          cacheRead: undefined,
-          cacheWrite: undefined,
+    doGenerate: async (options) => {
+      // The system prompt embeds the active mode; peek at it to pick the
+      // right canned shape. (We don't have direct access to ctx.mode here.)
+      const systemText =
+        options.prompt
+          .filter((m) => m.role === "system")
+          .map((m) =>
+            Array.isArray(m.content)
+              ? m.content
+                  .map((p) => (p.type === "text" ? p.text : ""))
+                  .join("")
+              : "",
+          )
+          .join("\n") ?? "";
+      const isInline = /Active mode: inline-rewrite/.test(systemText);
+      const canned = isInline ? inlineCanned : blockCanned;
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(canned) }],
+        finishReason: { unified: "stop" as const, raw: "stop" },
+        usage: {
+          inputTokens: {
+            total: undefined,
+            noCache: undefined,
+            cacheRead: undefined,
+            cacheWrite: undefined,
+          },
+          outputTokens: {
+            total: undefined,
+            text: undefined,
+            reasoning: undefined,
+          },
+          totalTokens: undefined,
         },
-        outputTokens: {
-          total: undefined,
-          text: undefined,
-          reasoning: undefined,
-        },
-        totalTokens: undefined,
-      },
-      warnings: [],
-    }),
+        warnings: [],
+      };
+    },
   });
 }
