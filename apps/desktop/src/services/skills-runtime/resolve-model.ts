@@ -98,18 +98,12 @@ function createMockModel(modelId: string): LanguageModelV3 {
     modelId,
     doGenerate: async (options) => {
       // The system prompt embeds the active mode; peek at it to pick the
-      // right canned shape. (We don't have direct access to ctx.mode here.)
-      const systemText =
-        options.prompt
-          .filter((m) => m.role === "system")
-          .map((m) =>
-            Array.isArray(m.content)
-              ? m.content
-                  .map((p) => (p.type === "text" ? p.text : ""))
-                  .join("")
-              : "",
-          )
-          .join("\n") ?? "";
+      // right canned shape. LanguageModelV3 system messages carry a plain
+      // string in `content`, so we don't need the part-array dance.
+      const systemText = options.prompt
+        .filter((m) => m.role === "system")
+        .map((m) => (typeof m.content === "string" ? m.content : ""))
+        .join("\n");
       const isInline = /Active mode: inline-rewrite/.test(systemText);
       const canned = isInline ? inlineCanned : blockCanned;
       return {
