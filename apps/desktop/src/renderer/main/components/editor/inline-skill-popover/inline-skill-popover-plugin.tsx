@@ -104,13 +104,13 @@ export function InlineSkillPopoverPlugin({ noteId }: Props) {
 
   return (
     <div
-      className="fixed z-50 rounded-md border bg-popover shadow-lg p-1 flex items-center gap-1"
+      className="fixed z-50 rounded-md bg-primary text-primary-foreground shadow-lg p-1 flex items-center gap-1"
       style={{ top: popover.top, left: popover.left }}
     >
       {skills.map((s) => (
         <button
           key={s.id}
-          className="px-2 py-1 text-xs rounded hover:bg-muted"
+          className="px-2 py-1 text-xs rounded hover:bg-primary-foreground/10"
           onClick={() => {
             runSkill({
               noteId,
