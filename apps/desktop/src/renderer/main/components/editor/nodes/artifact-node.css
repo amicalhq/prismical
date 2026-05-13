@@ -1,41 +1,44 @@
-/* Chrome for the block-level ArtifactNode (Plan 2). Renders the AI badge,
- * version pill, and a content area where Lexical writes the generated
- * children. The .prismical-artifact-inline class is the inline counterpart
- * with a hover-only chip and no visible chrome. */
+/* Chrome for the block-level ArtifactNode (Plan 2). The artifact blends
+ * into surrounding note content — only a small sparkle in the left gutter
+ * signals its AI origin. On hover the sparkle shows a "Generated using
+ * <skill>" chip. The .prismical-artifact-inline class below is the inline
+ * counterpart with the same hover-only treatment. */
 
 .prismical-artifact-node {
+  position: relative;
   display: block;
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
-  margin: 0.75rem 0;
-  background: var(--card);
-  color: var(--card-foreground);
 }
 
-.prismical-artifact-node__header {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 0.75rem;
-  border-bottom: 1px solid var(--border);
-  font-size: 0.75rem;
-  color: var(--muted-foreground);
+.prismical-artifact-node__sparkle {
+  position: absolute;
+  top: 0.125rem;
+  left: -1.9rem;
+  font-size: 1.15rem;
+  line-height: 1;
+  opacity: 0.65;
   user-select: none;
+  cursor: default;
+  transition: opacity 120ms ease;
 }
 
-.prismical-artifact-node__badge {
-  font-weight: 500;
+.prismical-artifact-node__sparkle:hover {
+  opacity: 1;
 }
 
-.prismical-artifact-node__version {
+.prismical-artifact-node__sparkle:hover::after {
+  content: "Generated using " attr(data-skill-name);
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  white-space: nowrap;
   padding: 0.125rem 0.5rem;
-  border-radius: 9999px;
-  background: var(--muted);
-  font-feature-settings: "tnum" 1;
-}
-
-.prismical-artifact-node__content {
-  padding: 0.5rem 0.75rem;
+  background: var(--popover);
+  color: var(--popover-foreground);
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  pointer-events: none;
+  z-index: 50;
 }
 
 /* Inline-level wrapper — no visible chrome. The hover chip is rendered via

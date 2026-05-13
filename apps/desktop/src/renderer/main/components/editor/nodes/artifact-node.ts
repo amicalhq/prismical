@@ -74,24 +74,19 @@ export class ArtifactNode extends ElementNode {
     wrapper.dataset.skillId = this.__skillId;
     wrapper.dataset.version = String(this.__version);
 
-    // Chrome: header bar. Note these are non-editable visual elements;
-    // children flow into a separate content container that Lexical writes to.
-    const header = document.createElement("div");
-    header.className = "prismical-artifact-node__header";
-    header.contentEditable = "false";
-    header.setAttribute("data-lexical-decorator", "true");
-
-    const badge = document.createElement("span");
-    badge.className = "prismical-artifact-node__badge";
-    badge.textContent = `✨ ${this.__skillName}`;
-    header.appendChild(badge);
-
-    const versionPill = document.createElement("span");
-    versionPill.className = "prismical-artifact-node__version";
-    versionPill.textContent = `v${this.__version}`;
-    header.appendChild(versionPill);
-
-    wrapper.appendChild(header);
+    // Persistent sparkle in the left gutter — the only visible affordance.
+    // On hover, a CSS ::after chip reads `data-skill-name` to show
+    // "Generated using <skill>". No click behavior; no expanded chrome.
+    // mousedown.preventDefault stops the editor from placing the caret
+    // inside the decorator when the gutter is clicked accidentally.
+    const sparkle = document.createElement("span");
+    sparkle.className = "prismical-artifact-node__sparkle";
+    sparkle.textContent = "✨";
+    sparkle.dataset.skillName = this.__skillName;
+    sparkle.contentEditable = "false";
+    sparkle.setAttribute("data-lexical-decorator", "true");
+    sparkle.addEventListener("mousedown", (e) => e.preventDefault());
+    wrapper.appendChild(sparkle);
 
     // Content container — Lexical writes children here.
     const content = document.createElement("div");
@@ -101,14 +96,11 @@ export class ArtifactNode extends ElementNode {
     return wrapper;
   }
 
-  // Updates to internal metadata are reflected by re-rendering the chrome.
-  // Returning `true` tells Lexical to call `createDOM` again on the next
-  // reconciliation. We do this only when chrome-visible fields changed.
+  // Only the skill-name label on the hover chip is user-visible chrome —
+  // re-render when it changes so the tooltip stays accurate. Version changes
+  // alone don't surface in the DOM anymore.
   updateDOM(prevNode: ArtifactNode, _dom: HTMLElement): boolean {
-    return (
-      prevNode.__skillName !== this.__skillName ||
-      prevNode.__version !== this.__version
-    );
+    return prevNode.__skillName !== this.__skillName;
   }
 
   // Children render into the content container, not the header.
