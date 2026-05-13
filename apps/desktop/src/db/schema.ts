@@ -601,6 +601,20 @@ export interface SkillConfig {
   surface: SkillSurface[];
   modelPreference?: ModelSelection;
   defaultSkill?: boolean;
+  /**
+   * Per-skill input policy. Each flag opts the skill into having that piece
+   * of context injected into the system prompt by the runner. Note markdown
+   * + selection text are always injected (they're the substrate the skill
+   * transforms); only optional context is gated here.
+   *
+   * Default if omitted: every flag is `false`. Cleanup-style skills that
+   * should only see the note body must NOT set `transcript: true` — once
+   * the transcript is in-context the model can't unsee it, and any
+   * "don't use the transcript" instruction in the body is unenforceable.
+   */
+  inputs?: {
+    transcript?: boolean;
+  };
 }
 
 export type SkillSurface = "dock" | "inline";

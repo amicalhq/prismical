@@ -177,7 +177,7 @@ export function SkillForm({ mode, existing }: Props) {
           onChange={(e) => setBody(e.target.value)}
           rows={16}
           className="font-mono"
-          placeholder="You are the &ldquo;…&rdquo; skill. Read the user&rsquo;s note via read_note&hellip;"
+          placeholder="You are the &ldquo;…&rdquo; skill. The note (and any linked transcript) is provided as markdown in the system prompt &mdash; transform it and emit clean markdown back."
           disabled={isReadOnly}
         />
       </div>

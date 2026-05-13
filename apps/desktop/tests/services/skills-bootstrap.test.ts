@@ -28,19 +28,27 @@ describe("services/skills-bootstrap", () => {
     expect(enhance!.name).toBe("Enhance");
     expect(enhance!.system).toBe(true);
     expect(enhance!.enabled).toBe(true);
-    expect(enhance!.body).toMatch(/write_section/);
-    expect(enhance!.body).toMatch(/read_note/);
+    // Prompts describe the structured-output contract (no tool refs).
+    expect(enhance!.body).toMatch(/Summary/);
+    expect(enhance!.body).toMatch(/Action items/);
+    expect(enhance!.body).not.toMatch(/write_section/);
+    expect(enhance!.body).not.toMatch(/read_note/);
     expect(enhance!.config.editingOptions).toBe("append-section");
     expect(enhance!.config.surface.sort()).toEqual(["dock", "inline"]);
     expect(enhance!.config.defaultSkill).toBe(true);
+    // Enhance opts into transcript injection; cleanup does not.
+    expect(enhance!.config.inputs?.transcript).toBe(true);
 
     const cleanup = await getSkillBySlug(testDb.db, "cleanup");
     expect(cleanup).not.toBeNull();
     expect(cleanup!.name).toBe("Cleanup");
     expect(cleanup!.system).toBe(true);
+    expect(cleanup!.body).not.toMatch(/write_section/);
+    expect(cleanup!.body).not.toMatch(/read_transcript/);
     expect(cleanup!.config.editingOptions).toBe("replace-doc");
     expect(cleanup!.config.surface).toEqual(["dock"]);
     expect(cleanup!.config.defaultSkill ?? false).toBe(false);
+    expect(cleanup!.config.inputs?.transcript ?? false).toBe(false);
   });
 
   it("is idempotent — running twice does not duplicate or mutate seeded rows", async () => {

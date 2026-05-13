@@ -5,13 +5,17 @@ import { logger } from "../main/logger";
 
 type DB = LibSQLDatabase<Record<string, unknown>>;
 
-const ENHANCE_BODY = `You are the "enhance" skill. Read the user's raw note (read_note) and, if present, the meeting transcript (read_transcript).
+const ENHANCE_BODY = `You are the "enhance" skill.
 
-Produce structured markdown — a brief Summary section and an Action items section — by calling write_section once with mode "append-section". Be terse. No filler. Skip a section if there's nothing meaningful to say.`;
+The user's note (rendered as markdown) is provided in the system prompt under "# Note (markdown)". If the note is linked to a meeting, its transcript appears under "# Meeting transcript".
 
-const CLEANUP_BODY = `You are the "cleanup" skill. Read the user's note (read_note).
+Produce a brief Summary section and an Action items section as markdown. Be terse. No filler. Skip a section if there's nothing meaningful to say. Your output will be appended to the note as a new block.`;
 
-Rewrite it as clean, well-organized markdown — preserve every fact and intent, fix grammar and structure, remove filler. Output the full rewritten document by calling write_section once with mode "replace-doc". Do NOT call read_transcript.`;
+const CLEANUP_BODY = `You are the "cleanup" skill.
+
+The user's note (rendered as markdown) is provided in the system prompt under "# Note (markdown)". **Use only the note markdown below**; ignore any external context that isn't present in the system prompt. Do not introduce facts that aren't in the note.
+
+Rewrite the note as clean, well-organized markdown — preserve every fact and intent, fix grammar and structure, remove filler. Your output will replace the entire note body.`;
 
 const SYSTEM_SKILLS: CreateSkillInput[] = [
   {
@@ -24,6 +28,9 @@ const SYSTEM_SKILLS: CreateSkillInput[] = [
       editingOptions: "append-section",
       surface: ["dock", "inline"],
       defaultSkill: true,
+      // Enhance can pull from the meeting transcript when one is linked —
+      // that's where most of the value lives for recorded notes.
+      inputs: { transcript: true },
     },
     system: true,
   },
@@ -35,6 +42,8 @@ const SYSTEM_SKILLS: CreateSkillInput[] = [
     config: {
       editingOptions: "replace-doc",
       surface: ["dock"],
+      // Cleanup is note-only by design — never see the transcript so we
+      // can't accidentally add facts the user didn't write.
     },
     system: true,
   },

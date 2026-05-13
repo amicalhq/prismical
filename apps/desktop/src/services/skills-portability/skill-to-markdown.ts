@@ -16,5 +16,10 @@ export function skillToMarkdown(skill: Skill): string {
   if (skill.config.defaultSkill != null) {
     frontmatter.defaultSkill = skill.config.defaultSkill;
   }
+  // Per-skill input policy — only emit the keys that are explicitly set, so
+  // the YAML stays minimal for the common "no opt-ins" case.
+  if (skill.config.inputs?.transcript != null) {
+    frontmatter.inputs = { transcript: skill.config.inputs.transcript };
+  }
   return matter.stringify(skill.body, frontmatter);
 }

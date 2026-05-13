@@ -81,17 +81,36 @@ describe("skills-runtime/build-system-prompt", () => {
     expect(prompt).toContain("(empty — no content yet)");
   });
 
-  it("injects the transcript when present", () => {
+  it("injects the transcript when the skill opts in via inputs.transcript", () => {
+    const skill = makeSkill("body");
+    skill.config = { ...skill.config, inputs: { transcript: true } };
     const prompt = buildSystemPrompt(
-      makeCtx(),
+      makeCtx({ skill }),
       makeInput({ transcript: "alice: hi\nbob: hello" }),
     );
     expect(prompt).toContain("# Meeting transcript");
     expect(prompt).toContain("alice: hi");
   });
 
+  it("omits the transcript even when one is available if the skill hasn't opted in (default off)", () => {
+    // Spec §3 input policy: transcript injection is opt-in per skill. The
+    // model can't ignore data once it's in-context, so "don't use it" prompts
+    // aren't sufficient — the runtime must withhold the block.
+    const prompt = buildSystemPrompt(
+      makeCtx(), // no inputs.transcript
+      makeInput({ transcript: "alice: hi\nbob: hello" }),
+    );
+    expect(prompt).not.toContain("# Meeting transcript");
+    expect(prompt).not.toContain("alice: hi");
+  });
+
   it("omits the transcript block when none is linked", () => {
-    const prompt = buildSystemPrompt(makeCtx(), makeInput({ transcript: null }));
+    const skill = makeSkill("body");
+    skill.config = { ...skill.config, inputs: { transcript: true } };
+    const prompt = buildSystemPrompt(
+      makeCtx({ skill }),
+      makeInput({ transcript: null }),
+    );
     expect(prompt).not.toContain("# Meeting transcript");
   });
 

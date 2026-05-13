@@ -14,6 +14,7 @@ export function skillFromMarkdown(content: string): CreateSkillInput {
       editingOptions: data.editingOptions,
       surface: data.surface ?? ["dock"],
       defaultSkill: data.defaultSkill,
+      inputs: data.inputs,
     },
     metadata: data.metadata,
     allowedTools: data.allowedTools,

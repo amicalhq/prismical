@@ -32,7 +32,11 @@ export function buildSystemPrompt(
     out.push(input.selectionText);
   }
 
-  if (input.transcript) {
+  // Gate transcript on the skill's explicit input policy. Default is OFF —
+  // cleanup-style skills that only ever look at the note must not see the
+  // transcript, because once it's in-context "don't use it" is just a hint
+  // the model can ignore.
+  if (input.transcript && ctx.skill.config.inputs?.transcript === true) {
     out.push("");
     out.push("# Meeting transcript");
     out.push(input.transcript);
