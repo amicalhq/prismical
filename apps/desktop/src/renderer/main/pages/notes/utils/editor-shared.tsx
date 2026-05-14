@@ -9,6 +9,11 @@ import { TaskList } from "@tiptap/extension-task-list";
 import { TaskItem } from "@tiptap/extension-task-item";
 import { CodeBlockLowlight } from "@tiptap/extension-code-block-lowlight";
 import { Placeholder } from "@tiptap/extension-placeholder";
+import { Table } from "@tiptap/extension-table";
+import { TableRow } from "@tiptap/extension-table-row";
+import { TableHeader } from "@tiptap/extension-table-header";
+import { TableCell } from "@tiptap/extension-table-cell";
+import { Emoji, gitHubEmojis } from "@tiptap/extension-emoji";
 import { Markdown } from "tiptap-markdown";
 import { createLowlight, common } from "lowlight";
 import { mergeAttributes, type Extensions } from "@tiptap/core";
@@ -110,6 +115,22 @@ export function buildRendererExtensions(
     ArtifactNode,
     ArtifactInlineNode,
     ArtifactEscape,
+    Table.configure({
+      resizable: false,
+      HTMLAttributes: { class: "border-collapse my-2 w-full" },
+    }),
+    TableRow,
+    TableHeader.configure({
+      HTMLAttributes: {
+        class: "border border-border px-2 py-1 bg-muted font-medium text-sm text-left",
+      },
+    }),
+    TableCell.configure({
+      HTMLAttributes: {
+        class: "border border-border px-2 py-1 align-top text-sm",
+      },
+    }),
+    Emoji.configure({ emojis: gitHubEmojis, enableEmoticons: false }),
     SkillDiffPlugin,
     Placeholder.configure({
       placeholder: opts.placeholder ?? "",

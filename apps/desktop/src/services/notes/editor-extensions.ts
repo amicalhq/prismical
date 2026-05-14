@@ -7,6 +7,11 @@ import { StarterKit } from "@tiptap/starter-kit";
 import { TaskList } from "@tiptap/extension-task-list";
 import { TaskItem } from "@tiptap/extension-task-item";
 import { CodeBlockLowlight } from "@tiptap/extension-code-block-lowlight";
+import { Table } from "@tiptap/extension-table";
+import { TableRow } from "@tiptap/extension-table-row";
+import { TableHeader } from "@tiptap/extension-table-header";
+import { TableCell } from "@tiptap/extension-table-cell";
+import { Emoji, gitHubEmojis } from "@tiptap/extension-emoji";
 import { createLowlight } from "lowlight";
 import type { Extensions } from "@tiptap/core";
 import { ArtifactNode } from "@/renderer/main/components/editor/nodes/artifact-node";
@@ -55,6 +60,11 @@ export function buildEditorExtensions(opts?: {
     ArtifactNode,
     ArtifactInlineNode,
     ArtifactEscape,
+    Table.configure({ resizable: false }),
+    TableRow,
+    TableHeader,
+    TableCell,
+    Emoji.configure({ emojis: gitHubEmojis, enableEmoticons: false }),
     // NOTE: tiptap-markdown is NOT included here on purpose. The renderer
     // adds it (in editor-shared.tsx) for in-editor paste/copy, but the
     // headless schema this function builds is used by the main-process

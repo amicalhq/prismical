@@ -116,6 +116,16 @@ const api: ElectronAPI = {
   // synchronously in direct response to a user gesture (click/keypress).
   openExternal: (url: string) => ipcRenderer.invoke("open-external", url),
 
+  findInPage: {
+    start: (query: string, opts?: { forward?: boolean; findNext?: boolean }) =>
+      ipcRenderer.invoke("find-in-page:start", {
+        query,
+        forward: opts?.forward ?? true,
+        findNext: opts?.findNext ?? false,
+      }),
+    stop: () => ipcRenderer.invoke("find-in-page:stop"),
+  },
+
   // Notes API - Yjs synchronization only
   notes: {
     saveYjsUpdate: (noteId: number, update: ArrayBuffer) =>

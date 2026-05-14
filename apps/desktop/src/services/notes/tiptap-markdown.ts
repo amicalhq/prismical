@@ -11,13 +11,59 @@ import {
   defaultMarkdownSerializer,
 } from "prosemirror-markdown";
 import MarkdownIt from "markdown-it";
+import { gitHubEmojis, shortcodeToEmoji } from "@tiptap/extension-emoji";
 import { buildEditorExtensions } from "./editor-extensions";
 
 // Built once — the schema is pure (no DOM, no editor instance) so it's safe
 // to memoize across the whole process.
 const schema = getSchema(buildEditorExtensions());
 
-const md = MarkdownIt("commonmark", { html: false });
+const md = MarkdownIt("commonmark", { html: false }).enable("table");
+
+// Wrap inline children of th/td cells in paragraph tokens so they hydrate
+// into TipTap's strict `tableCell`/`tableHeader` schema (which requires
+// `block+` content). Without this, prosemirror-markdown's addNode silently
+// drops cell content because Node.createAndFill can't materialize a cell
+// with raw inline children.
+md.core.ruler.after("inline", "wrap-table-cells", (state) => {
+  const tokens = state.tokens;
+  for (let i = 0; i < tokens.length; i++) {
+    const open = tokens[i];
+    if (open.type !== "th_open" && open.type !== "td_open") continue;
+    // Find the matching close at the same nesting level.
+    const closeType = open.type === "th_open" ? "th_close" : "td_close";
+    let depth = 1;
+    let closeIdx = -1;
+    for (let j = i + 1; j < tokens.length; j++) {
+      const t = tokens[j];
+      if (t.type === open.type) depth++;
+      else if (t.type === closeType) {
+        depth--;
+        if (depth === 0) {
+          closeIdx = j;
+          break;
+        }
+      }
+    }
+    if (closeIdx === -1) continue;
+    // Empty cell or already wrapped — leave alone.
+    if (closeIdx === i + 1 || tokens[i + 1].type === "paragraph_open") {
+      continue;
+    }
+    const pOpen = new state.Token("paragraph_open", "p", 1);
+    pOpen.block = true;
+    const pClose = new state.Token("paragraph_close", "p", -1);
+    pClose.block = true;
+    // Splice paragraph_open after the cell-open and paragraph_close before
+    // the cell-close.
+    tokens.splice(i + 1, 0, pOpen);
+    tokens.splice(closeIdx + 1, 0, pClose);
+    // Advance past the newly-inserted close so the outer loop doesn't
+    // re-scan the same cell.
+    i = closeIdx + 1;
+  }
+  return true;
+});
 
 // Token-to-node mapping for markdown-it tokens. Node/mark names use TipTap's
 // camelCase convention (NOT prosemirror-markdown's defaultParser snake_case).
@@ -66,6 +112,12 @@ const parser = new MarkdownParser(
       }),
     },
     code_inline: { mark: "code", noCloseToken: true },
+    table: { block: "table" },
+    thead: { ignore: true },
+    tbody: { ignore: true },
+    tr: { block: "tableRow" },
+    th: { block: "tableHeader" },
+    td: { block: "tableCell" },
   },
 );
 
@@ -123,6 +175,63 @@ const serializerNodes: MarkdownSerializer["nodes"] = {
   },
   "artifact-inline": (state, node) => {
     state.renderInline(node);
+  },
+  // Emoji nodes only carry the shortcode `name` attribute; the unicode glyph
+  // lives in the emoji set itself. Look it up and emit the native character;
+  // fall back to `:name:` so unsupported shortcodes survive a round-trip.
+  emoji: (state, node) => {
+    const name = node.attrs.name as string | undefined;
+    if (!name) {
+      return;
+    }
+    const item = shortcodeToEmoji(name, gitHubEmojis);
+    if (item?.emoji) {
+      state.text(item.emoji, false);
+      return;
+    }
+    state.text(`:${name}:`, false);
+  },
+  table: (state, node) => {
+    const rows: string[] = [];
+    let colCount = 0;
+    let hasExplicitHeader = false;
+    node.forEach((row, _offset, i) => {
+      const cells: string[] = [];
+      let rowHasHeader = false;
+      row.forEach((cell) => {
+        if (cell.type.name === "tableHeader") rowHasHeader = true;
+        const text = cell.textContent.replace(/\|/g, "\\|").trim() || " ";
+        cells.push(text);
+      });
+      if (i === 0) {
+        colCount = cells.length;
+        hasExplicitHeader = rowHasHeader;
+      }
+      rows.push(`| ${cells.join(" | ")} |`);
+    });
+    if (rows.length === 0) {
+      state.closeBlock(node);
+      return;
+    }
+    const sep = `| ${Array.from({ length: colCount }, () => "---").join(" | ")} |`;
+    if (hasExplicitHeader) {
+      state.write([rows[0], sep, ...rows.slice(1)].join("\n"));
+    } else {
+      // Synthesize an empty header row so the GFM table stays well-formed.
+      const emptyHeader = `| ${Array.from({ length: colCount }, () => " ").join(" | ")} |`;
+      state.write([emptyHeader, sep, ...rows].join("\n"));
+    }
+    state.closeBlock(node);
+  },
+  tableRow: () => {
+    // Handled inside the `table` serializer; this entry is required by
+    // MarkdownSerializer's type but is never invoked for table-row children.
+  },
+  tableHeader: () => {
+    // Same — consumed by the `table` serializer.
+  },
+  tableCell: () => {
+    // Same.
   },
 };
 

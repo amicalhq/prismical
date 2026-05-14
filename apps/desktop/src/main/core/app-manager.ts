@@ -15,6 +15,7 @@ import type { OnboardingService } from "../../services/onboarding-service";
 import type { ShortcutManager } from "../managers/shortcut-manager";
 import type { SettingsService } from "../../services/settings-service";
 import { initMainI18n } from "../../i18n/main";
+import { registerFindInPageHandlers } from "../find-in-page";
 
 export class AppManager {
   private windowManager!: WindowManager;
@@ -134,6 +135,7 @@ export class AppManager {
       await shell.openExternal(url);
       logger.main.debug("Opening external URL", { url });
     });
+    registerFindInPageHandlers();
 
     logger.main.info("Application initialized successfully");
   }

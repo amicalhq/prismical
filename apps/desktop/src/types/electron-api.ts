@@ -41,6 +41,14 @@ export interface ElectronAPI {
   // External link handling
   openExternal: (url: string) => Promise<void>;
 
+  findInPage: {
+    start: (
+      query: string,
+      opts?: { forward?: boolean; findNext?: boolean },
+    ) => Promise<void>;
+    stop: () => Promise<void>;
+  };
+
   // Notes API - Yjs synchronization only
   notes: {
     saveYjsUpdate: (noteId: number, update: ArrayBuffer) => Promise<void>;

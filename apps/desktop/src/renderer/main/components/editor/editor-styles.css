@@ -163,3 +163,27 @@
 .hljs-emphasis {
   font-style: italic;
 }
+
+/* ----------------------------------------------------------------------
+ * Drag handle — rendered as a portal element by
+ * `@tiptap/extension-drag-handle-react`. The component applies
+ * `position: absolute` and `visibility: hidden`/`visible` inline; this
+ * class only styles the visible chrome (the grip icon container).
+ * -------------------------------------------------------------------- */
+
+.prismical-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  cursor: grab;
+  color: var(--muted-foreground);
+  border-radius: 4px;
+}
+.prismical-drag-handle:hover {
+  background: var(--muted);
+}
+.prismical-drag-handle:active {
+  cursor: grabbing;
+}

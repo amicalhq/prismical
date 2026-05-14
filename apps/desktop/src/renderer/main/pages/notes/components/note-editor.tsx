@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
-import { Loader2 } from "lucide-react";
+import { DragHandle } from "@tiptap/extension-drag-handle-react";
+import { Loader2, GripVertical } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { NoteSyncProvider } from "@/renderer/main/providers/sync-provider";
@@ -10,6 +11,7 @@ import { SkillDiffEditorLock } from "@/renderer/main/components/editor/diff/skil
 import { useSkillDiffStore } from "@/renderer/main/components/editor/diff/skill-diff-store";
 import { useSkillDiffToastStore } from "@/renderer/main/components/editor/diff/skill-diff-toast-store";
 import { InlineSkillPopoverPlugin } from "@/renderer/main/components/editor/inline-skill-popover/inline-skill-popover-plugin";
+import { FindInPagePlugin } from "@/renderer/main/components/editor/find-in-page-plugin";
 import { useRegisterNoteEditor } from "@/renderer/main/components/note-editor-context";
 import { buildRendererExtensions } from "../utils/editor-shared";
 
@@ -238,8 +240,14 @@ export function NoteEditor({
     <div className="relative">
       <EditorContent editor={editor} />
       {editor ? (
+        <DragHandle editor={editor} className="prismical-drag-handle">
+          <GripVertical className="size-3" />
+        </DragHandle>
+      ) : null}
+      {editor ? (
         <InlineSkillPopoverPlugin editor={editor} noteId={noteId} />
       ) : null}
+      {editor ? <FindInPagePlugin editor={editor} /> : null}
     </div>
   );
 }
