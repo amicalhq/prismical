@@ -319,7 +319,7 @@ export default function Note({
             </div>
           )}
 
-          <div className="mb-6 flex flex-col gap-0.5 pl-4">
+          <div className="mb-2 flex flex-col gap-0.5 pl-4">
             <div className="flex flex-wrap items-center gap-1">
               <span className="mr-1 text-sm text-muted-foreground">
                 {t("settings.notes.note.edited", {
