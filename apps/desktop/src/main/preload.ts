@@ -133,6 +133,9 @@ const api: ElectronAPI = {
 
     loadYjsUpdates: (noteId: number) =>
       ipcRenderer.invoke("notes:loadYjsUpdates", noteId),
+
+    setNoteMarkdown: (noteId: number, markdown: string) =>
+      ipcRenderer.invoke("notes:setNoteMarkdown", noteId, markdown),
   },
 
   recordingWidget: {

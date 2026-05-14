@@ -12,6 +12,7 @@ import {
   getUniqueNoteIds,
   getYjsUpdatesByNoteId,
   compactUpToId,
+  setNoteMarkdown as setNoteMarkdownInDb,
 } from "../db/notes";
 import { db } from "../db/index";
 import { upsertEvent } from "../db/events";
@@ -76,6 +77,22 @@ class NotesService {
         throw error;
       }
     });
+
+    ipcMain.handle(
+      "notes:setNoteMarkdown",
+      async (_event, noteId: number, markdown: string) => {
+        try {
+          await this.setNoteMarkdown(noteId, markdown);
+          logger.main.debug("Set note markdown sidecar", {
+            noteId,
+            markdownLength: markdown.length,
+          });
+        } catch (error) {
+          logger.main.error("Failed to set note markdown sidecar", error);
+          throw error;
+        }
+      },
+    );
   }
 
   public static getInstance(): NotesService {
@@ -149,6 +166,11 @@ class NotesService {
   // Load all yjs updates for a note
   async loadYjsUpdates(noteId: number): Promise<Uint8Array[]> {
     return await loadYjsUpdatesFromDB(db, noteId);
+  }
+
+  // Set note markdown sidecar
+  async setNoteMarkdown(noteId: number, markdown: string): Promise<void> {
+    await setNoteMarkdownInDb(db, noteId, markdown);
   }
 
   // Compact all note documents

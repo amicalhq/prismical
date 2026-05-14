@@ -300,3 +300,19 @@ export async function compactUpToId(
     });
   });
 }
+
+// Replace notes.content with the current markdown projection.
+// notes.content is the one-way markdown sidecar (PRSM-56).
+export async function setNoteMarkdown(
+  db: DB,
+  noteId: number,
+  markdown: string,
+): Promise<void> {
+  await db
+    .update(notes)
+    .set({
+      content: markdown,
+      updatedAt: new Date(),
+    })
+    .where(eq(notes.id, noteId));
+}
