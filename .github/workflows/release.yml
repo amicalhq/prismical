@@ -3,8 +3,6 @@ name: Release
 on:
   pull_request:
   push:
-    branches:
-      - hs.windows.ci
     tags:
       - "v*"
   workflow_dispatch:
@@ -115,18 +113,18 @@ jobs:
         run: pnpm download-node
 
       - name: Import Developer ID cert
-        if: matrix.os == 'macos' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref_type == 'tag'))
+        if: matrix.os == 'macos' && github.event_name != 'pull_request'
         uses: apple-actions/import-codesign-certs@v3
         with:
           p12-file-base64: ${{ secrets.DEVELOPER_CERT_BASE64 }}
           p12-password: ${{ secrets.DEVELOPER_CERT_PASSPHRASE }}
 
       - name: List signing identities (debug)
-        if: matrix.os == 'macos' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref_type == 'tag'))
+        if: matrix.os == 'macos' && github.event_name != 'pull_request'
         run: security find-identity -v -p codesigning
 
       - name: Build artifacts (macOS release)
-        if: matrix.os == 'macos' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref_type == 'tag'))
+        if: matrix.os == 'macos' && github.event_name != 'pull_request'
         working-directory: apps/desktop
         env:
           SKIP_CODESIGNING: false
@@ -149,7 +147,7 @@ jobs:
           pnpm make:${{ matrix.arch }}
 
       - name: Build artifacts (macOS PR)
-        if: matrix.os == 'macos' && (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref_type == 'branch'))
+        if: matrix.os == 'macos' && github.event_name == 'pull_request'
         working-directory: apps/desktop
         env:
           SKIP_CODESIGNING: "true"
@@ -168,7 +166,7 @@ jobs:
           pnpm make:${{ matrix.arch }}
 
       - name: Build artifacts (Windows release)
-        if: matrix.os == 'windows' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref_type == 'tag'))
+        if: matrix.os == 'windows' && github.event_name != 'pull_request'
         working-directory: apps/desktop
         env:
           POSTHOG_HOST: https://app.posthog.com
@@ -185,7 +183,7 @@ jobs:
           pnpm make:windows
 
       - name: Build artifacts (Windows PR)
-        if: matrix.os == 'windows' && (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref_type == 'branch'))
+        if: matrix.os == 'windows' && github.event_name == 'pull_request'
         working-directory: apps/desktop
         env:
           TELEMETRY_ENABLED: "false"
@@ -249,7 +247,7 @@ jobs:
   release:
     name: Create Release
     needs: build
-    if: (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref_type == 'tag'))
+    if: github.event_name == 'workflow_dispatch' || github.ref_type == 'tag'
     runs-on: ubuntu-latest
     permissions:
       contents: write
