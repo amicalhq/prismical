@@ -17,13 +17,13 @@ import { ArtifactNode } from "@/renderer/main/components/editor/nodes/artifact-n
 import { ArtifactInlineNode } from "@/renderer/main/components/editor/nodes/artifact-inline-node";
 
 export const editorTheme = {
-  paragraph: "mb-0.5",
+  paragraph: "mb-0.5 font-normal",
   heading: {
-    h1: "text-3xl font-bold mt-4 mb-2",
-    h2: "text-2xl font-bold mt-3 mb-1.5",
-    h3: "text-xl font-bold mt-2 mb-1",
-    h4: "text-lg font-bold mt-2 mb-1",
-    h5: "text-base font-bold mt-1 mb-0.5",
+    h1: "text-3xl font-medium mt-4 mb-2",
+    h2: "text-2xl font-medium mt-3 mb-1.5",
+    h3: "text-xl font-medium mt-2 mb-1",
+    h4: "text-lg font-medium mt-2 mb-1",
+    h5: "text-base font-medium mt-1 mb-0.5",
   },
   quote: "border-l-4 border-border pl-4 italic text-muted-foreground my-1",
   list: {

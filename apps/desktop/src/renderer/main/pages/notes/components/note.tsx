@@ -313,13 +313,13 @@ export default function Note({
               <Input
                 value={noteTitle}
                 onChange={(event) => onTitleChange(event.target.value)}
-                className="flex-1 !h-auto !bg-transparent dark:!bg-transparent px-4 py-2 !text-4xl font-semibold !border-0 !shadow-none placeholder:text-muted-foreground focus-visible:!border-0 focus-visible:!ring-0"
+                className="flex-1 !h-auto !bg-transparent dark:!bg-transparent px-4 py-2 !text-4xl font-medium !border-0 !shadow-none placeholder:text-muted-foreground focus-visible:!border-0 focus-visible:!ring-0"
                 placeholder={t("settings.notes.note.titlePlaceholder")}
               />
             </div>
           )}
 
-          <div className="mb-6 flex flex-col gap-0.5 bg-card pl-4">
+          <div className="mb-6 flex flex-col gap-0.5 pl-4">
             <div className="flex flex-wrap items-center gap-1">
               <span className="mr-1 text-sm text-muted-foreground">
                 {t("settings.notes.note.edited", {
