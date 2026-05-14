@@ -104,6 +104,10 @@ jobs:
         if: matrix.os == 'windows'
         env:
           GGML_NATIVE: OFF
+          # whisper.cpp's vulkan-shaders-gen sub-cmake TryCompile pushes paths
+          # past Windows' 260-char MAX_PATH from D:\a\prismical\prismical\... .
+          # Build out-of-tree on a short path; build-addon.js honors this env.
+          WHISPER_BUILD_OUT_DIR: C:\b
         run: pnpm --filter @prismical/whisper-wrapper build:native:vulkan
 
       - name: Download Node.js binaries

@@ -40,8 +40,12 @@ if (!fs.existsSync(addonDir) || !hasRequiredWhisperSources) {
   process.exit(1);
 }
 
-const buildDir = path.join(pkgDir, "build");
-if (!fs.existsSync(buildDir)) fs.mkdirSync(buildDir);
+// WHISPER_BUILD_OUT_DIR lets CI place the cmake build tree on a short Windows
+// path so vulkan-shaders-gen's sub-cmake TryCompile doesn't hit MAX_PATH (260).
+const buildDir = process.env.WHISPER_BUILD_OUT_DIR
+  ? path.resolve(process.env.WHISPER_BUILD_OUT_DIR)
+  : path.join(pkgDir, "build");
+if (!fs.existsSync(buildDir)) fs.mkdirSync(buildDir, { recursive: true });
 
 const cacheDir = path.join(pkgDir, ".cmake-js");
 if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir);
