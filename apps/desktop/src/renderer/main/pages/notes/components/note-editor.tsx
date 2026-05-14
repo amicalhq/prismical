@@ -19,6 +19,7 @@ import { CodeBlockShortcutPlugin } from "@/renderer/main/components/editor/code-
 import { ChecklistShortcutPlugin } from "@/renderer/main/components/editor/checklist-shortcut-plugin";
 import { HorizontalRuleShortcutPlugin } from "@/renderer/main/components/editor/horizontal-rule-shortcut-plugin";
 import { ArtifactNodeCommandsPlugin } from "@/renderer/main/components/editor/commands/artifact-commands";
+import { ArtifactEscapePlugin } from "@/renderer/main/components/editor/artifact-escape-plugin";
 import { SkillDiffActionBar } from "@/renderer/main/components/editor/diff/skill-diff-action-bar";
 import { InlineSkillPopoverPlugin } from "@/renderer/main/components/editor/inline-skill-popover/inline-skill-popover-plugin";
 import { toast } from "sonner";
@@ -201,6 +202,7 @@ export function NoteEditor({
         <ChecklistShortcutPlugin />
         <HorizontalRuleShortcutPlugin />
         <ArtifactNodeCommandsPlugin />
+        <ArtifactEscapePlugin />
         <MarkdownShortcutPlugin transformers={MARKDOWN_TRANSFORMERS} />
         <SkillDiffActionBar noteId={noteId} />
         <InlineSkillPopoverPlugin noteId={noteId} />
