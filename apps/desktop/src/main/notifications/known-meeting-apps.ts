@@ -6,6 +6,7 @@ const KNOWN_MEETING_APPS: KnownMeetingApp[] = [
     displayName: "Zoom",
     category: "native",
     enabledByDefault: true,
+    aliases: ["zoom.exe", "zoomphone.exe", "cptserv.exe"],
     priority: 100,
   },
   {
@@ -13,6 +14,7 @@ const KNOWN_MEETING_APPS: KnownMeetingApp[] = [
     displayName: "Microsoft Teams",
     category: "native",
     enabledByDefault: true,
+    aliases: ["ms-teams.exe", "teams.exe"],
     priority: 95,
   },
   {
@@ -24,6 +26,7 @@ const KNOWN_MEETING_APPS: KnownMeetingApp[] = [
       "com.tinyspeck.slackmacgap.helper",
       "com.tinyspeck.slackmacgap.helper.plugin",
       "com.tinyspeck.slackmacgap.helper.renderer",
+      "slack.exe",
     ],
     priority: 90,
   },
@@ -32,6 +35,7 @@ const KNOWN_MEETING_APPS: KnownMeetingApp[] = [
     displayName: "Webex",
     category: "native",
     enabledByDefault: true,
+    aliases: ["webex.exe", "ciscocollabhost.exe", "atmgr.exe"],
     priority: 90,
   },
   {
@@ -43,6 +47,7 @@ const KNOWN_MEETING_APPS: KnownMeetingApp[] = [
       "com.hnc.discord.helper",
       "com.hnc.discord.helper.plugin",
       "com.hnc.discord.helper.renderer",
+      "discord.exe",
     ],
     priority: 80,
   },
@@ -51,6 +56,7 @@ const KNOWN_MEETING_APPS: KnownMeetingApp[] = [
     displayName: "WhatsApp",
     category: "native",
     enabledByDefault: true,
+    aliases: ["whatsapp.exe"],
     priority: 75,
   },
   {
@@ -58,6 +64,7 @@ const KNOWN_MEETING_APPS: KnownMeetingApp[] = [
     displayName: "Tuple",
     category: "native",
     enabledByDefault: true,
+    aliases: ["tuple.exe"],
     priority: 85,
   },
   {
@@ -65,6 +72,7 @@ const KNOWN_MEETING_APPS: KnownMeetingApp[] = [
     displayName: "Aircall",
     category: "native",
     enabledByDefault: true,
+    aliases: ["aircall.exe"],
     priority: 70,
   },
   {
@@ -72,6 +80,7 @@ const KNOWN_MEETING_APPS: KnownMeetingApp[] = [
     displayName: "VooV Meeting",
     category: "native",
     enabledByDefault: true,
+    aliases: ["voovmeeting.exe", "wemeetapp.exe"],
     priority: 70,
   },
   {
@@ -79,6 +88,7 @@ const KNOWN_MEETING_APPS: KnownMeetingApp[] = [
     displayName: "Dialpad",
     category: "native",
     enabledByDefault: true,
+    aliases: ["dialpad.exe"],
     priority: 70,
   },
   {
@@ -86,6 +96,7 @@ const KNOWN_MEETING_APPS: KnownMeetingApp[] = [
     displayName: "Dialpad Meetings",
     category: "native",
     enabledByDefault: true,
+    aliases: ["uberconference.exe", "dialpadmeetings.exe"],
     priority: 70,
   },
   {
@@ -93,6 +104,7 @@ const KNOWN_MEETING_APPS: KnownMeetingApp[] = [
     displayName: "Gather",
     category: "native",
     enabledByDefault: true,
+    aliases: ["gather.exe"],
     priority: 70,
   },
   {
@@ -100,7 +112,7 @@ const KNOWN_MEETING_APPS: KnownMeetingApp[] = [
     displayName: "Chrome",
     category: "browser",
     enabledByDefault: true,
-    aliases: ["com.google.Chrome.helper"],
+    aliases: ["com.google.Chrome.helper", "chrome.exe"],
     priority: 60,
   },
   {
@@ -108,7 +120,7 @@ const KNOWN_MEETING_APPS: KnownMeetingApp[] = [
     displayName: "Arc",
     category: "browser",
     enabledByDefault: true,
-    aliases: ["company.thebrowser.Browser.helper"],
+    aliases: ["company.thebrowser.Browser.helper", "arc.exe"],
     priority: 60,
   },
   {
@@ -119,6 +131,7 @@ const KNOWN_MEETING_APPS: KnownMeetingApp[] = [
     aliases: [
       "org.mozilla.firefox.helper",
       "org.mozilla.firefoxdeveloperedition.helper",
+      "firefox.exe",
     ],
     priority: 60,
   },
@@ -134,7 +147,7 @@ const KNOWN_MEETING_APPS: KnownMeetingApp[] = [
     displayName: "Brave",
     category: "browser",
     enabledByDefault: true,
-    aliases: ["com.brave.Browser.helper"],
+    aliases: ["com.brave.Browser.helper", "brave.exe"],
     priority: 60,
   },
   {
@@ -142,7 +155,7 @@ const KNOWN_MEETING_APPS: KnownMeetingApp[] = [
     displayName: "Microsoft Edge",
     category: "browser",
     enabledByDefault: true,
-    aliases: ["com.microsoft.edgemac.helper"],
+    aliases: ["com.microsoft.edgemac.helper", "msedge.exe"],
     priority: 60,
   },
   {
@@ -150,7 +163,7 @@ const KNOWN_MEETING_APPS: KnownMeetingApp[] = [
     displayName: "Vivaldi",
     category: "browser",
     enabledByDefault: true,
-    aliases: ["com.vivaldi.Vivaldi.helper"],
+    aliases: ["com.vivaldi.Vivaldi.helper", "vivaldi.exe"],
     priority: 60,
   },
   {
@@ -158,7 +171,7 @@ const KNOWN_MEETING_APPS: KnownMeetingApp[] = [
     displayName: "Zen Browser",
     category: "browser",
     enabledByDefault: true,
-    aliases: ["app.zen-browser.zen.helper"],
+    aliases: ["app.zen-browser.zen.helper", "zen.exe"],
     priority: 60,
   },
   {
@@ -166,6 +179,7 @@ const KNOWN_MEETING_APPS: KnownMeetingApp[] = [
     displayName: "Perplexity",
     category: "browser",
     enabledByDefault: true,
+    aliases: ["comet.exe", "perplexity.exe"],
     priority: 55,
   },
 ];

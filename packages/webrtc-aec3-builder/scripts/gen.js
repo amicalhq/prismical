@@ -4,19 +4,22 @@ const {
   getOutDir,
   getRelativeOutDir,
   gnTargetCpu,
+  gnTargetOs,
   parseArch,
+  parsePlatform,
   run,
   syncOverlay,
   checkoutSrcDir,
 } = require("./common");
 
 const arch = parseArch(process.argv);
+const platform = parsePlatform(process.argv);
 
 syncOverlay();
-ensureDir(getOutDir(arch));
+ensureDir(getOutDir(arch, platform));
 
 const gnArgs = [
-  'target_os="mac"',
+  `target_os="${gnTargetOs(platform)}"`,
   `target_cpu="${gnTargetCpu(arch)}"`,
   "is_debug=false",
   "is_component_build=false",
@@ -24,15 +27,17 @@ const gnArgs = [
   "rtc_build_tools=false",
   "rtc_include_tests=false",
   "symbol_level=0",
-  "enable_dsyms=false",
   "use_custom_libcxx=false",
-  'mac_deployment_target="13.0"',
   "treat_warnings_as_errors=false",
 ];
 
+if (platform === "macos") {
+  gnArgs.push("enable_dsyms=false", 'mac_deployment_target="13.0"');
+}
+
 run(
   "gn",
-  ["gen", getRelativeOutDir(arch), `--args=${gnArgs.join(" ")}`],
+  ["gen", getRelativeOutDir(arch, platform), `--args=${gnArgs.join(" ")}`],
   {
     cwd: checkoutSrcDir,
     env: buildEnv(),

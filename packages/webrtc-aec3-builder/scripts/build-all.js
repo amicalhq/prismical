@@ -1,8 +1,60 @@
-const { run } = require("./common");
+const { parsePlatform, run } = require("./common");
+const path = require("node:path");
 
-run("node", [require("node:path").join(__dirname, "fetch-checkout.js")]);
-run("node", [require("node:path").join(__dirname, "gen.js"), "--arch", "arm64"]);
-run("node", [require("node:path").join(__dirname, "gen.js"), "--arch", "x64"]);
-run("node", [require("node:path").join(__dirname, "build.js"), "--arch", "arm64"]);
-run("node", [require("node:path").join(__dirname, "build.js"), "--arch", "x64"]);
-run("node", [require("node:path").join(__dirname, "bundle.js")]);
+const platform = parsePlatform(process.argv);
+
+run("node", [path.join(__dirname, "fetch-checkout.js")]);
+
+if (platform === "windows") {
+  run("node", [
+    path.join(__dirname, "gen.js"),
+    "--platform",
+    "windows",
+    "--arch",
+    "x64",
+  ]);
+  run("node", [
+    path.join(__dirname, "build.js"),
+    "--platform",
+    "windows",
+    "--arch",
+    "x64",
+  ]);
+  run("node", [
+    path.join(__dirname, "bundle.js"),
+    "--platform",
+    "windows",
+    "--arch",
+    "x64",
+  ]);
+} else {
+  run("node", [
+    path.join(__dirname, "gen.js"),
+    "--platform",
+    "macos",
+    "--arch",
+    "arm64",
+  ]);
+  run("node", [
+    path.join(__dirname, "gen.js"),
+    "--platform",
+    "macos",
+    "--arch",
+    "x64",
+  ]);
+  run("node", [
+    path.join(__dirname, "build.js"),
+    "--platform",
+    "macos",
+    "--arch",
+    "arm64",
+  ]);
+  run("node", [
+    path.join(__dirname, "build.js"),
+    "--platform",
+    "macos",
+    "--arch",
+    "x64",
+  ]);
+  run("node", [path.join(__dirname, "bundle.js"), "--platform", "macos"]);
+}

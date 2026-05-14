@@ -8,6 +8,25 @@
     "S3_BUCKET_NAME",
     "S3_ENDPOINT"
   ],
+  "globalPassThroughEnv": [
+    "APPDATA",
+    "LOCALAPPDATA",
+    "USERPROFILE",
+    "HOMEDRIVE",
+    "HOMEPATH",
+    "TEMP",
+    "TMP",
+    "SystemRoot",
+    "windir",
+    "ProgramFiles",
+    "ProgramFiles(x86)",
+    "ProgramW6432",
+    "DOTNET_ROOT",
+    "DOTNET_CLI_HOME",
+    "NUGET_PACKAGES",
+    "NUGET_HTTP_CACHE_PATH",
+    "NUGET_CERT_REVOCATION_MODE"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

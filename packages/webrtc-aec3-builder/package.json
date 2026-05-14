@@ -6,11 +6,15 @@
     "doctor:env": "node ./scripts/doctor.js",
     "fetch": "node ./scripts/fetch-checkout.js",
     "sync": "node ./scripts/fetch-checkout.js --sync-only",
-    "gen:arm64": "node ./scripts/gen.js --arch arm64",
-    "gen:x64": "node ./scripts/gen.js --arch x64",
-    "build:arm64": "node ./scripts/build.js --arch arm64",
-    "build:x64": "node ./scripts/build.js --arch x64",
-    "bundle": "node ./scripts/bundle.js",
-    "build:bundle": "node ./scripts/build-all.js"
+    "gen:arm64": "node ./scripts/gen.js --platform macos --arch arm64",
+    "gen:x64": "node ./scripts/gen.js --platform macos --arch x64",
+    "gen:win-x64": "node ./scripts/gen.js --platform windows --arch x64",
+    "build:arm64": "node ./scripts/build.js --platform macos --arch arm64",
+    "build:x64": "node ./scripts/build.js --platform macos --arch x64",
+    "build:win-x64": "node ./scripts/build.js --platform windows --arch x64",
+    "bundle": "node ./scripts/bundle.js --platform macos",
+    "bundle:win-x64": "node ./scripts/bundle.js --platform windows --arch x64",
+    "build:bundle": "node ./scripts/build-all.js --platform macos",
+    "build:windows": "node ./scripts/build-all.js --platform windows"
   }
 }
