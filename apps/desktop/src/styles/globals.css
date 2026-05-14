@@ -268,6 +268,40 @@ html.vibrancy [data-slot="sidebar-inner"] {
   color: transparent;
 }
 
+/* Element-local shimmer for small inline labels (e.g. the "Generating" /
+ * "Refining" pill labels on the dock). The viewport-anchored variant above
+ * (`shimmer-text-light`) is designed for wide surfaces — on a ~80px label
+ * its 200vw band only flashes across the element for a few frames per loop,
+ * which reads as "barely shimmering". This variant scopes the gradient to
+ * the element itself (`background-size: 200% 100%`) so the bright band
+ * always sweeps cleanly across the visible text, at a slower 2.6s cadence
+ * that doesn't feel jittery. Self-contained — no `--shimmer-x` driver
+ * needed. */
+.shimmer-text-pill {
+  background-image: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.35) 0%,
+    rgba(255, 255, 255, 0.35) 40%,
+    rgb(255, 255, 255) 50%,
+    rgba(255, 255, 255, 0.35) 60%,
+    rgba(255, 255, 255, 0.35) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer-text-pill-sweep 1.8s ease-in-out infinite;
+}
+
+@keyframes shimmer-text-pill-sweep {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+
 .ai-generating-text [contenteditable],
 .ai-generating-text [contenteditable] * {
   /* Dim state is muted-foreground faded ~65% toward background; gives the

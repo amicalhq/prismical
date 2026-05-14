@@ -198,7 +198,33 @@ export function SkillDiffDockBar({ editor, noteId }: Props) {
         <span className="max-w-[140px] truncate">{candidate.skillName}</span>
       </div>
       <AnimatePresence mode="popLayout" initial={false}>
-        {refineMode ? (
+        {refineMode && run.isPending ? (
+          <motion.div
+            key="refining"
+            initial={{ opacity: 0, x: 8 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 8 }}
+            transition={INNER_TRANSITION}
+            className="flex items-center gap-1"
+          >
+            <span className="shimmer-text-pill pr-2 text-sm font-medium">
+              Refining
+            </span>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={cancelRefine}
+                  className={`${INNER_BTN} w-8 text-white/60`}
+                  aria-label="Stop refinement"
+                >
+                  <IconX size={16} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>Stop refining</TooltipContent>
+            </Tooltip>
+          </motion.div>
+        ) : refineMode ? (
           <motion.div
             key="refine"
             initial={{ opacity: 0, x: 8 }}
@@ -224,7 +250,7 @@ export function SkillDiffDockBar({ editor, noteId }: Props) {
                 <button
                   type="button"
                   onClick={submitRefine}
-                  disabled={run.isPending || !refineText.trim()}
+                  disabled={!refineText.trim()}
                   className={`${INNER_BTN} w-8`}
                   aria-label="Submit refinement"
                 >
