@@ -177,6 +177,9 @@ export function SkillDiffDockBar({ editor, noteId }: Props) {
           setRefineText("");
         },
         onError: (err) => {
+          // Skip the error toast for user-initiated cancellations (see
+          // use-run-skill.ts for the rationale on matching both shapes).
+          if (/cancell?ed|abort/i.test(err.message)) return;
           toast.error(`Couldn't refine ${candidate.skillName} — ${err.message}`);
         },
       },

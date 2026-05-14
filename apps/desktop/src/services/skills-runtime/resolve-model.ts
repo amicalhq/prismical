@@ -1,6 +1,5 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { LanguageModelV3 } from "@ai-sdk/provider";
-import { MockLanguageModelV3 } from "ai/test";
 
 import { PROVIDER_TYPES } from "@/constants/provider-types";
 import type {
@@ -9,6 +8,7 @@ import type {
   OpenAICompatibleConfig,
 } from "@/db/schema";
 import { SkillRunError } from "./errors";
+import { createMockSkillModel } from "./mock-skill-model";
 
 const OPENAI_BASE_URL = "https://api.openai.com/v1";
 const GROQ_BASE_URL = "https://api.groq.com/openai/v1";
@@ -41,7 +41,7 @@ export function resolveSkillModel(
       return openAICompatibleModel(cfg.apiKey, cfg.baseURL, modelId);
     }
     case PROVIDER_TYPES.mock:
-      return createMockModel(modelId);
+      return createMockSkillModel(modelId);
     case PROVIDER_TYPES.anthropic:
       throw new SkillRunError(
         "Skills can't run on Anthropic instances yet — the @ai-sdk/anthropic dep hasn't been added. Use OpenRouter to reach Claude in the meantime.",
@@ -72,59 +72,4 @@ function openAICompatibleModel(
     name: "skills-runtime",
   });
   return provider(modelId);
-}
-
-// Canned structured output for dev/test runs against the Mock provider.
-// Returns valid JSON that matches the runner's output schema. The shape is
-// mode-aware — inline-rewrite gets a single short replacement (block-shaped
-// output would be rejected by markdownToInlineChildren), block modes get
-// the full multi-paragraph canned response.
-function createMockModel(modelId: string): LanguageModelV3 {
-  const blockCanned = {
-    markdown:
-      "## Mock skill output\n\n" +
-      "This was produced by the **Mock** language model. It does not reflect " +
-      "your note's content — switch to a real provider in Settings → AI " +
-      "Models to see the actual skill result.\n\n" +
-      "- Pipeline wiring verified end-to-end\n" +
-      "- Skill prompt was rendered with injected context\n" +
-      "- Output schema accepted the result\n",
-  };
-  const inlineCanned = {
-    markdown:
-      "[mock rewrite — switch to a real provider for actual output]",
-  };
-  return new MockLanguageModelV3({
-    modelId,
-    doGenerate: async (options) => {
-      // The system prompt embeds the active mode; peek at it to pick the
-      // right canned shape. LanguageModelV3 system messages carry a plain
-      // string in `content`, so we don't need the part-array dance.
-      const systemText = options.prompt
-        .filter((m) => m.role === "system")
-        .map((m) => (typeof m.content === "string" ? m.content : ""))
-        .join("\n");
-      const isInline = /Active mode: inline-rewrite/.test(systemText);
-      const canned = isInline ? inlineCanned : blockCanned;
-      return {
-        content: [{ type: "text" as const, text: JSON.stringify(canned) }],
-        finishReason: { unified: "stop" as const, raw: "stop" },
-        usage: {
-          inputTokens: {
-            total: undefined,
-            noCache: undefined,
-            cacheRead: undefined,
-            cacheWrite: undefined,
-          },
-          outputTokens: {
-            total: undefined,
-            text: undefined,
-            reasoning: undefined,
-          },
-          totalTokens: undefined,
-        },
-        warnings: [],
-      };
-    },
-  });
 }
