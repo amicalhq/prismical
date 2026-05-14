@@ -1,23 +1,21 @@
 import { create } from "zustand";
-import type { NodeKey, SerializedLexicalNode } from "lexical";
+import type { JSONContent } from "@tiptap/core";
 import type { ArtifactMode } from "@/db/schema";
 
 /**
- * Captured selection endpoint at skill-run time. Used for `inline-rewrite`
+ * Captured selection range at skill-run time. Used for `inline-rewrite`
  * mode so the action bar can restore the original range before dispatching
  * the insert command — by accept-time the live editor selection has moved
- * to the action bar / popover / elsewhere and `$getSelection()` would
- * return a stale or null range.
+ * to the action bar / popover / elsewhere.
+ *
+ * ProseMirror positions are integer offsets in the document tree; they're
+ * subject to invalidation if the doc is edited between capture and use.
+ * The action bar verifies the positions still point at valid nodes before
+ * dispatching.
  */
-export interface SerializedSelectionPoint {
-  key: NodeKey;
-  offset: number;
-  type: "text" | "element";
-}
-
 export interface SerializedSelectionPoints {
-  anchor: SerializedSelectionPoint;
-  focus: SerializedSelectionPoint;
+  from: number;
+  to: number;
 }
 
 export interface SkillDiffCandidate {
@@ -32,13 +30,22 @@ export interface SkillDiffCandidate {
   refineInstruction: string | null;
   selectionText: string | null;
   reasoning: string | null;
-  /** For append-section / inline-rewrite: the Lexical children. */
-  content: SerializedLexicalNode[];
+  /** For append-section / inline-rewrite: the TipTap JSON children. */
+  content: JSONContent[];
   rawMarkdown: string;
   /** For replace-doc / inline-rewrite: the "before" text we diff against. */
   beforeText?: string;
   /** Captured for inline-rewrite so accept can restore the selection. */
   selectionPoints?: SerializedSelectionPoints;
+  /**
+   * True while the dock bar's accept handler is awaiting the audit-write
+   * RPC. Used to suppress the attention shake when the user happens to
+   * type during the wait window — by clicking Accept they've already
+   * committed to the change, so the "you can't edit" nudge would be
+   * misleading. The candidate is still staged (decorations remain) so
+   * the user keeps seeing the diff until the accepted content lands.
+   */
+  isAccepting?: boolean;
 }
 
 interface SkillDiffState {
@@ -58,6 +65,8 @@ interface SkillDiffState {
    * because the action bar passes `candidate.mode` into the run call.
    */
   switchMode: (noteId: number) => void;
+  /** Toggle the `isAccepting` flag on a staged candidate. No-op if absent. */
+  setAccepting: (noteId: number, value: boolean) => void;
 }
 
 export const useSkillDiffStore = create<SkillDiffState>((set, get) => ({
@@ -92,6 +101,15 @@ export const useSkillDiffStore = create<SkillDiffState>((set, get) => ({
         mode:
           current.mode === "append-section" ? "replace-doc" : "append-section",
       });
+      return { candidatesByNote: next };
+    }),
+
+  setAccepting: (noteId, value) =>
+    set((s) => {
+      const current = s.candidatesByNote.get(noteId);
+      if (!current) return s;
+      const next = new Map(s.candidatesByNote);
+      next.set(noteId, { ...current, isAccepting: value });
       return { candidatesByNote: next };
     }),
 }));

@@ -1,37 +1,48 @@
 import { useEffect, useRef, useMemo, useCallback } from "react";
-import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
+import type { Editor } from "@tiptap/core";
 import type * as Y from "yjs";
 import { debounce } from "@/renderer/main/utils/debounce";
 
-interface YjsSyncPluginProps {
-  yText: Y.Text;
+interface UseYjsSyncOptions {
+  editor: Editor | null;
+  yText: Y.Text | null;
   onSyncStatusChange?: (isSyncing: boolean) => void;
 }
 
-export function YjsSyncPlugin({
+// Bridges the TipTap editor's JSON state and a Y.Text container that
+// persists the note. The Y.Text holds the editor state JSON as a raw
+// string — no Yjs-native CRDT binding (per PRSM-50, we're moving to an
+// op-log sync adapter; this temporary path keeps the local-only flow
+// working until the adapter lands).
+export function useYjsSync({
+  editor,
   yText,
   onSyncStatusChange,
-}: YjsSyncPluginProps): null {
-  const [editor] = useLexicalComposerContext();
+}: UseYjsSyncOptions): void {
   const isUpdatingFromYjsRef = useRef(false);
-  const isUpdatingFromLexicalRef = useRef(false);
+  const isUpdatingFromEditorRef = useRef(false);
   const hasPendingRef = useRef(false);
   const pendingJsonRef = useRef<string | null>(null);
+  // Last value we wrote into yText (or read out of it at seed time).
+  // Comparing against this — rather than the freshly-stringified editor
+  // state — short-circuits any keystroke that produces JSON byte-identical
+  // to what's already stored, even if a future TipTap version introduces
+  // a stable-but-different serialization path.
+  const lastSyncedJsonRef = useRef<string | null>(null);
   const onSyncStatusChangeRef = useRef(onSyncStatusChange);
 
-  // Keep the callback ref up to date
   useEffect(() => {
     onSyncStatusChangeRef.current = onSyncStatusChange;
   }, [onSyncStatusChange]);
 
   const writeJsonToYjs = useCallback(
     (jsonString: string) => {
-      if (isUpdatingFromYjsRef.current) {
+      if (!yText || isUpdatingFromYjsRef.current) {
         onSyncStatusChangeRef.current?.(false);
         return;
       }
 
-      isUpdatingFromLexicalRef.current = true;
+      isUpdatingFromEditorRef.current = true;
       try {
         const yDoc = yText.doc;
         if (yDoc) {
@@ -39,10 +50,11 @@ export function YjsSyncPlugin({
             const oldLength = yText.length;
             yText.delete(0, oldLength);
             yText.insert(0, jsonString);
-          }, "lexical-sync");
+          }, "tiptap-sync");
         }
+        lastSyncedJsonRef.current = jsonString;
       } finally {
-        isUpdatingFromLexicalRef.current = false;
+        isUpdatingFromEditorRef.current = false;
         hasPendingRef.current = false;
         pendingJsonRef.current = null;
         onSyncStatusChangeRef.current?.(false);
@@ -51,96 +63,95 @@ export function YjsSyncPlugin({
     [yText],
   );
 
-  // Create debounced sync function once per yText instance
   const debouncedSync = useMemo(
     () => debounce((jsonString: string) => writeJsonToYjs(jsonString), 500),
     [writeJsonToYjs],
   );
 
   useEffect(() => {
-    const setEditorStateFromJson = (jsonString: string) => {
-      isUpdatingFromYjsRef.current = true;
+    if (!editor || !yText) return;
+
+    const setEditorFromJson = (jsonString: string) => {
       try {
-        const editorState = editor.parseEditorState(jsonString);
-        editor.setEditorState(editorState);
-      } finally {
-        isUpdatingFromYjsRef.current = false;
+        const parsed = JSON.parse(jsonString);
+        isUpdatingFromYjsRef.current = true;
+        try {
+          // emitUpdate=false so the editor.update listener below doesn't
+          // turn around and re-write what we just read.
+          editor.commands.setContent(parsed, { emitUpdate: false });
+        } finally {
+          isUpdatingFromYjsRef.current = false;
+        }
+      } catch (error) {
+        console.warn("Failed to parse stored content as TipTap state:", error);
       }
     };
 
-    // Set initial content from Yjs (stored as JSON)
+    // Seed the editor from the Yjs container (which carries the persisted
+    // state for this note).
     const storedContent = yText.toString();
     if (storedContent) {
-      try {
-        setEditorStateFromJson(storedContent);
-      } catch (error) {
-        console.warn("Failed to parse stored content as editor state:", error);
-      }
+      setEditorFromJson(storedContent);
+      // Align lastSyncedJsonRef with the editor's POST-seed state, not the
+      // raw Y.Text content. Schema-level appendTransactions (e.g. the
+      // trailing-paragraph invariant after an artifact) can mutate the
+      // doc during setContent — using the raw stored value here would
+      // make the next user keystroke see a phantom "diff" and write the
+      // normalized form back to Y unnecessarily.
+      lastSyncedJsonRef.current = JSON.stringify(editor.getJSON());
     }
     onSyncStatusChangeRef.current?.(false);
 
-    // Observer for Yjs changes -> Lexical
     const yjsObserver = () => {
-      if (isUpdatingFromLexicalRef.current) return;
-
+      if (isUpdatingFromEditorRef.current) return;
       const newContent = yText.toString();
-
-      if (newContent) {
-        try {
-          const currentJson = JSON.stringify(editor.getEditorState().toJSON());
-          if (currentJson !== newContent) {
-            setEditorStateFromJson(newContent);
-          }
-        } catch (error) {
-          console.warn("Failed to parse Yjs content as editor state:", error);
-        }
-      }
+      if (!newContent) return;
+      if (lastSyncedJsonRef.current === newContent) return;
+      setEditorFromJson(newContent);
+      lastSyncedJsonRef.current = newContent;
     };
-
     yText.observe(yjsObserver);
 
-    // Listener for Lexical changes -> Yjs (save as JSON)
-    const removeUpdateListener = editor.registerUpdateListener(
-      ({ editorState, dirtyElements, dirtyLeaves }) => {
-        // Skip if triggered by Yjs sync or no actual changes
-        if (
-          isUpdatingFromYjsRef.current ||
-          (dirtyElements.size === 0 && dirtyLeaves.size === 0)
-        ) {
-          return;
-        }
+    const onUpdate = ({ editor: ed }: { editor: Editor }) => {
+      if (isUpdatingFromYjsRef.current) return;
+      const jsonString = JSON.stringify(ed.getJSON());
 
-        const jsonString = JSON.stringify(editorState.toJSON());
-        const currentYjsContent = yText.toString();
-
-        if (jsonString === currentYjsContent) {
-          if (hasPendingRef.current) {
-            debouncedSync.cancel();
-            hasPendingRef.current = false;
-            pendingJsonRef.current = null;
-            onSyncStatusChangeRef.current?.(false);
-          }
-          return;
+      // Compare against the last value we synced (in either direction).
+      // Comparing against `yText.toString()` would re-trigger writes on
+      // any byte-level diff between TipTap's getJSON output and what's
+      // stored — even if semantically identical.
+      if (jsonString === lastSyncedJsonRef.current) {
+        if (hasPendingRef.current) {
+          debouncedSync.cancel();
+          hasPendingRef.current = false;
+          pendingJsonRef.current = null;
+          onSyncStatusChangeRef.current?.(false);
         }
+        return;
+      }
 
-        if (jsonString !== currentYjsContent) {
-          pendingJsonRef.current = jsonString;
-          hasPendingRef.current = true;
-          onSyncStatusChangeRef.current?.(true);
-          debouncedSync(jsonString);
-        }
-      },
-    );
+      pendingJsonRef.current = jsonString;
+      hasPendingRef.current = true;
+      onSyncStatusChangeRef.current?.(true);
+      debouncedSync(jsonString);
+    };
+
+    editor.on("update", onUpdate);
 
     return () => {
+      // Detach listeners BEFORE flushing, so the synchronous flush write
+      // doesn't trigger the yjsObserver re-entrantly (Yjs's observer
+      // dispatch can be synchronous within a transact() block).
+      yText.unobserve(yjsObserver);
+      // useEditor's own cleanup may have destroyed the editor by the time
+      // we run (effect ordering between TipTap's hook and ours isn't
+      // guaranteed under React strict mode). `off` on a destroyed editor
+      // is undefined behavior, so skip it.
+      if (!editor.isDestroyed) editor.off("update", onUpdate);
       if (hasPendingRef.current && pendingJsonRef.current) {
         writeJsonToYjs(pendingJsonRef.current);
       }
-      yText.unobserve(yjsObserver);
-      removeUpdateListener();
       debouncedSync.cancel();
     };
-  }, [editor, yText, debouncedSync]);
-
-  return null;
+  }, [editor, yText, debouncedSync, writeJsonToYjs]);
 }

@@ -108,10 +108,12 @@ describe("SkillsListPage", () => {
     expect(html).toContain("skills.page.empty");
   });
 
-  it("renders New Skill link to /skills/new", async () => {
+  it("renders New Skill link to /settings/skills/new", async () => {
+    // The route was moved under /settings/ at some point; the assertion
+    // was tracking the old path.
     skillsListUseQuery.mockReturnValue({ data: [], isLoading: false });
     const html = await renderPage();
-    expect(html).toContain('href="/skills/new"');
+    expect(html).toContain('href="/settings/skills/new"');
   });
 
   it("renders skill name for a user skill", async () => {

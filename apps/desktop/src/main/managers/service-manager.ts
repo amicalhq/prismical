@@ -391,6 +391,15 @@ export class ServiceManager {
     return ServiceManager.instance;
   }
 
+  // Test-only escape hatch: replace the cached singleton with a fresh
+  // ServiceManager. Without this, tests that vi.doMock("@db") would still
+  // see the previous test's ServiceManager (constructed against an earlier
+  // DB mock).
+  static createInstance(): ServiceManager {
+    ServiceManager.instance = new ServiceManager();
+    return ServiceManager.instance;
+  }
+
   setWindowManager(windowManager: WindowManager): void {
     this.windowManager = windowManager;
     if (this.isInitialized && !this.meetingRecordingWidgetManager) {

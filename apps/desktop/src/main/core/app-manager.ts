@@ -14,7 +14,6 @@ import { createContext } from "../../trpc/context";
 import type { OnboardingService } from "../../services/onboarding-service";
 import type { ShortcutManager } from "../managers/shortcut-manager";
 import type { SettingsService } from "../../services/settings-service";
-import { runDataMigrations } from "../migrations/data-migrations";
 import { initMainI18n } from "../../i18n/main";
 
 export class AppManager {
@@ -141,7 +140,6 @@ export class AppManager {
 
   private async initializeDatabase(): Promise<void> {
     await initializeDatabase();
-    await runDataMigrations();
     await seedEventsAndNotes();
     // Seed system provider instances + reconcile local-whisper downloads.
     // Must run before service-manager constructs ModelService, which reads

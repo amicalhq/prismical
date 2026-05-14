@@ -139,16 +139,20 @@ describe("SkillSparkleButton", () => {
     expect(listForSurfaceUseQuery).toHaveBeenCalledWith({ surface: "dock" });
   });
 
-  it("renders Stop button when a skill run is in-flight", async () => {
+  it("renders the Generating state with a stop affordance when a skill run is in-flight", async () => {
     listForSurfaceUseQuery.mockReturnValue({ data: [makeSkill()] });
     getInFlightUseQuery.mockReturnValue({
       data: { noteId: 1, skillSlug: "enhance", startedAt: new Date().toISOString() },
     });
     const html = await renderButton(1);
-    expect(html).toContain("Stop");
-    // The default-skill button should NOT be present while a run is in flight —
-    // only the Stop button remains.
-    expect(html).not.toContain("tabler-icon-sparkles");
+    // Shimmering "Generating" label + X-button stop affordance (aria-label
+    // is the stable identifier here; the visible label is iconographic).
+    expect(html).toContain("Generating");
+    expect(html).toContain("shimmer-text-pill");
+    expect(html).toContain('aria-label="Stop skill run"');
+    // The default-skill label should NOT be present while a run is in flight —
+    // the generating-state pill replaces it.
+    expect(html).not.toContain("Enhance");
   });
 
   it("queries listForSurface with dock surface", async () => {

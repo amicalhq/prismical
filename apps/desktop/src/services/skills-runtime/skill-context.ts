@@ -1,5 +1,5 @@
 import type { ArtifactMode, Skill } from "@/db/schema";
-import type { SerializedLexicalNode } from "lexical";
+import type { JSONContent } from "@tiptap/core";
 
 // The runtime is stateless per call. All inputs the runner needs are bound
 // into this context object once. The runner deterministically gathers
@@ -51,8 +51,8 @@ export interface SkillRunResult {
   modelId: string;
   modelInstanceId: string;
   providerType: string;
-  // The Lexical children that will become the node body when accepted.
-  content: SerializedLexicalNode[];
+  // The TipTap children that will become the node body when accepted.
+  content: JSONContent[];
   // The raw markdown the model emitted — kept around for the refine flow
   // (passed back as previousOutput) and stored on the audit row at accept.
   rawMarkdown: string;

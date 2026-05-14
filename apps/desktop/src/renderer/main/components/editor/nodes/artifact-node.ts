@@ -1,13 +1,4 @@
-import {
-  $applyNodeReplacement,
-  ElementNode,
-  type EditorConfig,
-  type LexicalEditor,
-  type LexicalNode,
-  type NodeKey,
-  type SerializedElementNode,
-  type Spread,
-} from "lexical";
+import { Node, mergeAttributes } from "@tiptap/core";
 
 // Metadata schema mirrors the `artifacts` row plus the human-readable
 // skill name (so the chrome can render without a separate skills lookup).
@@ -22,211 +13,171 @@ export interface ArtifactNodeMetadata {
   modelId: string;
 }
 
-export type SerializedArtifactNode = Spread<
-  ArtifactNodeMetadata,
-  SerializedElementNode
->;
+export const ARTIFACT_NODE_NAME = "artifact" as const;
 
-export class ArtifactNode extends ElementNode {
-  __artifactId: string;
-  __skillId: string;
-  __skillName: string;
-  __version: number;
-  __generatedAt: string;
-  __modelId: string;
-
-  static getType(): string {
-    return "artifact";
-  }
-
-  static clone(node: ArtifactNode): ArtifactNode {
-    return new ArtifactNode(
-      {
-        artifactId: node.__artifactId,
-        skillId: node.__skillId,
-        skillName: node.__skillName,
-        version: node.__version,
-        generatedAt: node.__generatedAt,
-        modelId: node.__modelId,
-      },
-      node.__key,
-    );
-  }
-
-  constructor(metadata: ArtifactNodeMetadata, key?: NodeKey) {
-    super(key);
-    this.__artifactId = metadata.artifactId;
-    this.__skillId = metadata.skillId;
-    this.__skillName = metadata.skillName;
-    this.__version = metadata.version;
-    this.__generatedAt = metadata.generatedAt;
-    this.__modelId = metadata.modelId;
-  }
-
-  // -------------------------------------------------------------------
-  // DOM
-  // -------------------------------------------------------------------
-
-  createDOM(_config: EditorConfig, _editor: LexicalEditor): HTMLElement {
-    const wrapper = document.createElement("div");
-    wrapper.className = "prismical-artifact-node";
-    wrapper.dataset.artifactId = this.__artifactId;
-    wrapper.dataset.skillId = this.__skillId;
-    wrapper.dataset.version = String(this.__version);
-
-    // Persistent sparkle in the left gutter — the only visible affordance.
-    // On hover, a CSS ::after chip reads `data-skill-name` to show
-    // "Generated using <skill>". No click behavior; no expanded chrome.
-    // mousedown.preventDefault stops the editor from placing the caret
-    // inside the decorator when the gutter is clicked accidentally.
-    const sparkle = document.createElement("span");
-    sparkle.className = "prismical-artifact-node__sparkle";
-    sparkle.textContent = "✨";
-    sparkle.dataset.skillName = this.__skillName;
-    sparkle.contentEditable = "false";
-    sparkle.setAttribute("data-lexical-decorator", "true");
-    sparkle.addEventListener("mousedown", (e) => e.preventDefault());
-    wrapper.appendChild(sparkle);
-
-    // Content container — Lexical writes children here.
-    const content = document.createElement("div");
-    content.className = "prismical-artifact-node__content";
-    wrapper.appendChild(content);
-
-    return wrapper;
-  }
-
-  // Only the skill-name label on the hover chip is user-visible chrome —
-  // re-render when it changes so the tooltip stays accurate. Version changes
-  // alone don't surface in the DOM anymore.
-  updateDOM(prevNode: ArtifactNode, _dom: HTMLElement): boolean {
-    return prevNode.__skillName !== this.__skillName;
-  }
-
-  // Children render into the content container, not the header.
-  // We delegate to the base class and redirect it to the content div so that
-  // Lexical's reconciler places child nodes inside `.prismical-artifact-node__content`
-  // rather than the wrapper itself.
-  getDOMSlot(elementDOM: HTMLElement) {
-    const content = elementDOM.querySelector(
-      ".prismical-artifact-node__content",
-    ) as HTMLElement | null;
-    if (!content) {
-      throw new Error(
-        "ArtifactNode DOM is missing __content child — createDOM contract broken",
-      );
-    }
-    return super.getDOMSlot(elementDOM).withElement(content);
-  }
-
-  // -------------------------------------------------------------------
-  // JSON serialization
-  // -------------------------------------------------------------------
-
-  static importJSON(serialized: SerializedArtifactNode): ArtifactNode {
-    return $createArtifactNode({
-      artifactId: serialized.artifactId,
-      skillId: serialized.skillId,
-      skillName: serialized.skillName,
-      version: serialized.version,
-      generatedAt: serialized.generatedAt,
-      modelId: serialized.modelId,
-    }).updateFromJSON(serialized);
-  }
-
-  exportJSON(): SerializedArtifactNode {
-    return {
-      ...super.exportJSON(),
-      type: "artifact",
-      version: this.__version,
-      artifactId: this.__artifactId,
-      skillId: this.__skillId,
-      skillName: this.__skillName,
-      generatedAt: this.__generatedAt,
-      modelId: this.__modelId,
+declare module "@tiptap/core" {
+  interface Commands<ReturnType> {
+    artifactBlock: {
+      // The regen-in-place invariant is enforced by the command: if an
+      // existing artifact with the same skillId is in the doc, its content
+      // and metadata are replaced rather than a sibling block appended.
+      insertArtifactBlock: (
+        payload: ArtifactNodeMetadata & { content: object[] },
+      ) => ReturnType;
     };
   }
-
-  // -------------------------------------------------------------------
-  // Accessors
-  // -------------------------------------------------------------------
-
-  getArtifactId(): string {
-    return this.getLatest().__artifactId;
-  }
-
-  getSkillId(): string {
-    return this.getLatest().__skillId;
-  }
-
-  getSkillName(): string {
-    return this.getLatest().__skillName;
-  }
-
-  getVersion(): number {
-    return this.getLatest().__version;
-  }
-
-  getGeneratedAt(): string {
-    return this.getLatest().__generatedAt;
-  }
-
-  getModelId(): string {
-    return this.getLatest().__modelId;
-  }
-
-  // Mutator — used by the runtime when a skill regen completes. Replaces
-  // artifactId / version / generatedAt / modelId in place. Children are
-  // replaced via normal Lexical writes by the runtime, not here.
-  //
-  // Updating `artifactId` is required: each accepted run gets a fresh audit
-  // row, so the node must point at the latest row's id (the regenerate /
-  // hover-chip-to-audit affordances would otherwise reference v1's row
-  // while the node displays v2's metadata).
-  updateMetadata(patch: {
-    artifactId: string;
-    version: number;
-    generatedAt: string;
-    modelId: string;
-  }): this {
-    const writable = this.getWritable();
-    writable.__artifactId = patch.artifactId;
-    writable.__version = patch.version;
-    writable.__generatedAt = patch.generatedAt;
-    writable.__modelId = patch.modelId;
-    return writable;
-  }
-
-  // -------------------------------------------------------------------
-  // Block-level semantics
-  // -------------------------------------------------------------------
-
-  // ArtifactNode is a top-level block container; it must always live at
-  // the root or inside another block (never inline).
-  isInline(): false {
-    return false;
-  }
-
-  // It's a complete unit — selecting "all" via Cmd-A should select its
-  // content not the wrapper itself, and the wrapper shouldn't accept
-  // adjacent text merging.
-  canIndent(): false {
-    return false;
-  }
-
-  canMergeWith(_node: LexicalNode): boolean {
-    return false;
-  }
 }
 
-export function $createArtifactNode(
-  metadata: ArtifactNodeMetadata,
-): ArtifactNode {
-  return $applyNodeReplacement(new ArtifactNode(metadata));
-}
+export const ArtifactNode = Node.create({
+  name: ARTIFACT_NODE_NAME,
 
-export function $isArtifactNode(
-  node: LexicalNode | null | undefined,
-): node is ArtifactNode {
-  return node instanceof ArtifactNode;
-}
+  // Block container; holds arbitrary block-level content (paragraphs,
+  // lists, code blocks, etc.). Never inline.
+  group: "block",
+  content: "block+",
+  defining: true,
+
+  // Selecting the wrapper should pull through to its content, not collapse
+  // it into a single atomic selection. Atoms are wrong here — we want
+  // ProseMirror to traverse the children.
+  atom: false,
+  selectable: false,
+
+  addAttributes() {
+    return {
+      artifactId: {
+        default: "",
+        parseHTML: (el) => el.getAttribute("data-artifact-id") ?? "",
+        renderHTML: (attrs) => ({ "data-artifact-id": attrs.artifactId }),
+      },
+      skillId: {
+        default: "",
+        parseHTML: (el) => el.getAttribute("data-skill-id") ?? "",
+        renderHTML: (attrs) => ({ "data-skill-id": attrs.skillId }),
+      },
+      skillName: {
+        default: "",
+        parseHTML: (el) => el.getAttribute("data-skill-name") ?? "",
+        renderHTML: (attrs) => ({ "data-skill-name": attrs.skillName }),
+      },
+      version: {
+        default: 1,
+        parseHTML: (el) => {
+          const raw = el.getAttribute("data-version");
+          return raw ? Number(raw) : 1;
+        },
+        renderHTML: (attrs) => ({ "data-version": String(attrs.version) }),
+      },
+      generatedAt: {
+        default: "",
+        parseHTML: (el) => el.getAttribute("data-generated-at") ?? "",
+        renderHTML: (attrs) => ({ "data-generated-at": attrs.generatedAt }),
+      },
+      modelId: {
+        default: "",
+        parseHTML: (el) => el.getAttribute("data-model-id") ?? "",
+        renderHTML: (attrs) => ({ "data-model-id": attrs.modelId }),
+      },
+    };
+  },
+
+  parseHTML() {
+    return [
+      {
+        tag: "div.prismical-artifact-node",
+        // Tell ProseMirror to look inside the inner content div when
+        // hydrating children from HTML; the sparkle gutter has no content.
+        contentElement: "div.prismical-artifact-node__content",
+      },
+    ];
+  },
+
+  renderHTML({ HTMLAttributes, node }) {
+    // ProseMirror DOMOutputSpec: the `0` placeholder is the contentDOM
+    // hole where children render. The sparkle is non-editable chrome.
+    const skillName = String(node.attrs.skillName ?? "");
+    return [
+      "div",
+      mergeAttributes(HTMLAttributes, {
+        class: "prismical-artifact-node",
+      }),
+      [
+        "span",
+        {
+          class: "prismical-artifact-node__sparkle",
+          contenteditable: "false",
+          "data-skill-name": skillName,
+        },
+        "✨",
+      ],
+      ["div", { class: "prismical-artifact-node__content" }, 0],
+    ];
+  },
+
+  addCommands() {
+    return {
+      insertArtifactBlock:
+        (payload) =>
+        ({ commands, state, tr, dispatch }) => {
+          // Regen invariant: re-running an `append-section` skill walks the
+          // doc for an existing artifact block with matching skillId and
+          // replaces its children + bumps its metadata in place. This keeps
+          // the node's identity stable (cursor position, scroll anchor) and
+          // ensures the same skill never produces duplicate blocks.
+          let existingPos: number | null = null;
+          state.doc.descendants((child, pos) => {
+            if (existingPos !== null) return false;
+            if (
+              child.type.name === ARTIFACT_NODE_NAME &&
+              child.attrs.skillId === payload.skillId
+            ) {
+              existingPos = pos;
+              return false;
+            }
+            return true;
+          });
+
+          let newNode;
+          try {
+            newNode = state.schema.nodes[ARTIFACT_NODE_NAME].create(
+              {
+                artifactId: payload.artifactId,
+                skillId: payload.skillId,
+                skillName: payload.skillName,
+                version: payload.version,
+                generatedAt: payload.generatedAt,
+                modelId: payload.modelId,
+              },
+              payload.content.map((child) => state.schema.nodeFromJSON(child)),
+            );
+          } catch (err) {
+            // Malformed payload (skill output didn't match the schema).
+            // Fail the command quietly rather than throwing out of TipTap's
+            // command runner, which would crash the editor.
+            console.warn(
+              "insertArtifactBlock: failed to materialize node from payload",
+              err,
+            );
+            return false;
+          }
+
+          if (existingPos !== null) {
+            const existing = state.doc.nodeAt(existingPos);
+            if (existing) {
+              if (dispatch) {
+                tr.replaceWith(
+                  existingPos,
+                  existingPos + existing.nodeSize,
+                  newNode,
+                );
+              }
+              return true;
+            }
+          }
+
+          // No existing block; append to the end of the doc.
+          return commands.insertContentAt(state.doc.content.size, newNode.toJSON());
+        },
+    };
+  },
+});

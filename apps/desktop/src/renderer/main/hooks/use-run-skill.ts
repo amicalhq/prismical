@@ -54,6 +54,12 @@ export function useRunSkill() {
             });
           },
           onError: (err) => {
+            // Cancellation is user-initiated, not a failure — show no toast.
+            // The server throws SkillCancelledError("Skill run was cancelled"),
+            // and an abort that bypassed our wrapper would surface as a plain
+            // AbortError; covering both keeps this resilient to wire-format
+            // changes.
+            if (/cancell?ed|abort/i.test(err.message)) return;
             toast.error(`Couldn't run ${args.skillName} — ${err.message}`);
           },
           onSettled: () => {

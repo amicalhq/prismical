@@ -52,16 +52,13 @@ async function insertFixtures(db: TestDatabase["db"]) {
     .values({
       title: NOTE_TITLE,
       content: JSON.stringify({
-        root: {
-          children: [
-            { type: "paragraph", children: [{ type: "text", text: "note body" }] },
-          ],
-          type: "root",
-          version: 1,
-          direction: null,
-          format: "",
-          indent: 0,
-        },
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [{ type: "text", text: "note body" }],
+          },
+        ],
       }),
     })
     .returning();

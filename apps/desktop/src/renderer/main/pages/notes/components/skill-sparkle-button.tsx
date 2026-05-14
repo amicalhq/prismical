@@ -2,7 +2,7 @@ import {
   IconSparkles,
   IconChevronUp,
   IconDots,
-  IconPlayerStop,
+  IconX,
 } from "@tabler/icons-react";
 import {
   DropdownMenu,
@@ -60,22 +60,27 @@ export function SkillSparkleButton({ noteId }: Props) {
   const defaultSkill =
     skills.find((s) => s.config.defaultSkill === true) ?? skills[0];
 
-  // Show Stop the instant the initiator's mutation is pending — don't wait
-  // for the polled query to catch up. `inFlight` still covers cross-component
-  // cases (e.g., run initiated from another surface).
+  // Show the generating state the instant the initiator's mutation is pending
+  // — don't wait for the polled query to catch up. `inFlight` still covers
+  // cross-component cases (e.g., run initiated from another surface).
+  // Visually: sparkle icon + shimmering "Generating" label + a dedicated stop
+  // button so the cancel target is separate from the status text.
   if (isPending || inFlight) {
     return (
-      <div className={`${PILL_OUTER} px-1`}>
+      <div className={`${PILL_OUTER} pl-3 pr-1 gap-1`}>
+        <div className="flex items-center gap-1.5 text-sm font-medium">
+          <IconSparkles size={16} className="shrink-0 text-white/80" />
+          <span className="shimmer-text-pill">Generating</span>
+        </div>
         <Tooltip>
           <TooltipTrigger asChild>
             <button
               type="button"
               aria-label="Stop skill run"
-              className={`${INNER_BTN} gap-1 px-3 text-sm font-medium`}
+              className={`${INNER_BTN} w-8 text-white/60`}
               onClick={() => cancel.mutate({ noteId })}
             >
-              <IconPlayerStop size={16} />
-              Stop
+              <IconX size={16} />
             </button>
           </TooltipTrigger>
           <TooltipContent>Stop running skill</TooltipContent>

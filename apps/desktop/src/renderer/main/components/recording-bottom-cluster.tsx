@@ -1,16 +1,118 @@
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
-
+import { AnimatePresence, motion, useAnimationControls } from "framer-motion";
+import { IconSparkles } from "@tabler/icons-react";
 import { api } from "@/trpc/react";
 import { combinedLevel, useMeetingLevel } from "@/hooks/useMeetingLevel";
 import { useCurrentNote } from "@/renderer/main/components/current-note-context";
+import { useNoteEditor } from "@/renderer/main/components/note-editor-context";
 import { useMeetingSnapshot } from "@/renderer/main/components/meeting-snapshot-context";
+import { useSkillDiffStore } from "@/renderer/main/components/editor/diff/skill-diff-store";
+import { useSkillDiffToastStore } from "@/renderer/main/components/editor/diff/skill-diff-toast-store";
+import { SkillDiffDockBar } from "@/renderer/main/components/editor/diff/skill-diff-dock-bar";
 import { NoteAssetsPanel } from "@/renderer/main/pages/notes/components/note-assets-panel";
 import { NoteRecordingDock } from "@/renderer/main/pages/notes/components/note-recording-dock";
 import { RecordingJumpPill } from "@/renderer/main/components/recording-jump-pill";
 import type { MeetingRuntimeState } from "@/types/meeting";
+
+// Transient confirmation pill rendered just above the dock when a skill
+// accept lands off-screen (typical when a long note pushes the appended
+// section below the viewport). Visual chrome mirrors the dock — same dark
+// pill + ring + blur — but at 32px height with tighter padding so it reads
+// as a hint, not a control.
+function ClusterToast() {
+  const message = useSkillDiffToastStore((s) => s.message);
+  return (
+    <AnimatePresence initial={false}>
+      {message ? (
+        <motion.div
+          key="cluster-toast"
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 8 }}
+          transition={{ duration: 0.18, ease: "easeOut" }}
+          className="pointer-events-auto flex h-[32px] items-center gap-1.5 rounded-[20px] bg-black/70 px-3 text-xs text-white/90 ring-[1px] ring-black/50 shadow-[0px_0px_10px_0px_rgba(0,0,0,0.30)] backdrop-blur-md select-none dark:bg-black/60"
+          role="status"
+        >
+          <IconSparkles size={13} className="text-white/75" />
+          <span>{message}</span>
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
+  );
+}
+
+type DockProps = {
+  noteId?: number;
+  isTranscriptionOpen?: boolean;
+  onToggleTranscription?: () => void;
+  meetingState: MeetingRuntimeState;
+  level: number;
+  onStartMeeting: () => void;
+  onStopMeeting: () => void;
+};
+
+// Swaps the recording dock pill for the skill-diff accept bar when a
+// candidate is staged for the current note. Both pills share the same dark
+// chrome and CSS hover/width transitions (matching the sparkle button) — no
+// framer-driven shared-layout morph, so the swap is a clean conditional
+// render rather than a wobbly width interpolation.
+function DockArea({
+  currentNoteId,
+  dockProps,
+  jumpPill,
+}: {
+  currentNoteId: number | undefined;
+  dockProps: DockProps;
+  jumpPill: React.ReactNode;
+}) {
+  const noteEditor = useNoteEditor();
+  const candidate = useSkillDiffStore((s) =>
+    currentNoteId !== undefined
+      ? s.candidatesByNote.get(currentNoteId)
+      : undefined,
+  );
+  // Only show the accept bar when we have both a candidate AND the matching
+  // editor — otherwise the bar would render without an editor to drive accept
+  // / decoration commands.
+  const showDiffBar =
+    candidate !== undefined &&
+    noteEditor !== null &&
+    currentNoteId !== undefined &&
+    noteEditor.noteId === currentNoteId;
+
+  // Shake the accept bar when the user attempts to edit the (read-only)
+  // doc — the toast store increments `attentionTick` from the editor's
+  // handleKeyDown / handlePaste plumbing. Watching the counter (not a
+  // boolean) ensures back-to-back nudges retrigger the effect.
+  const attentionTick = useSkillDiffToastStore((s) => s.attentionTick);
+  const shakeControls = useAnimationControls();
+  useEffect(() => {
+    if (!showDiffBar || attentionTick === 0) return;
+    shakeControls.start({
+      x: [0, -6, 6, -5, 5, -3, 3, 0],
+      transition: { duration: 0.42, ease: "easeInOut" },
+    });
+  }, [attentionTick, showDiffBar, shakeControls]);
+
+  return (
+    <div className="pointer-events-auto flex items-center gap-2">
+      {showDiffBar ? (
+        <motion.div animate={shakeControls}>
+          <SkillDiffDockBar
+            editor={noteEditor!.editor}
+            noteId={currentNoteId!}
+          />
+        </motion.div>
+      ) : (
+        <NoteRecordingDock {...dockProps} />
+      )}
+      {!showDiffBar && jumpPill}
+    </div>
+  );
+}
 
 function isActiveState(state: MeetingRuntimeState): boolean {
   return (
@@ -156,31 +258,35 @@ export function RecordingBottomCluster() {
           </div>
         )}
 
-        <div className="pointer-events-auto flex items-center gap-2">
-          <NoteRecordingDock
-            noteId={currentNote?.noteId}
-            isTranscriptionOpen={
-              currentNote ? currentNote.isTranscriptionOpen : false
-            }
-            onToggleTranscription={
-              currentNote ? currentNote.onToggleTranscription : undefined
-            }
-            meetingState={dockMeetingState}
-            level={dockLevel}
-            onStartMeeting={handleStart}
-            onStopMeeting={handleStop}
-          />
+        <ClusterToast />
 
-          {needsJumpPill && (
-            <RecordingJumpPill
-              title={recordingNoteTitle}
-              onJump={handleJump}
-              ariaLabel={t("settings.notes.jumpPill.ariaLabel", {
-                title: recordingNoteTitle,
-              })}
-            />
-          )}
-        </div>
+        <DockArea
+          currentNoteId={currentNote?.noteId}
+          dockProps={{
+            noteId: currentNote?.noteId,
+            isTranscriptionOpen: currentNote
+              ? currentNote.isTranscriptionOpen
+              : false,
+            onToggleTranscription: currentNote
+              ? currentNote.onToggleTranscription
+              : undefined,
+            meetingState: dockMeetingState,
+            level: dockLevel,
+            onStartMeeting: handleStart,
+            onStopMeeting: handleStop,
+          }}
+          jumpPill={
+            needsJumpPill ? (
+              <RecordingJumpPill
+                title={recordingNoteTitle}
+                onJump={handleJump}
+                ariaLabel={t("settings.notes.jumpPill.ariaLabel", {
+                  title: recordingNoteTitle,
+                })}
+              />
+            ) : null
+          }
+        />
       </div>
     </div>
   );

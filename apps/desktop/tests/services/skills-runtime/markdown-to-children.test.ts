@@ -5,10 +5,11 @@ describe("skills-runtime/markdown-to-children", () => {
   it("returns a paragraph node with text content for a simple paragraph", () => {
     const children = markdownToChildren("hello");
     expect(children.length).toBeGreaterThan(0);
-    const first = children[0] as { type: string; children?: { text?: string }[] };
+    const first = children[0] as { type: string; content?: { text?: string }[] };
     expect(first.type).toBe("paragraph");
-    // Text should be present somewhere in the structure
-    const texts = first.children?.map((c) => c.text).join("") ?? "";
+    // Text should be present somewhere in the structure (TipTap uses
+    // `content` for children, `text` on leaf text nodes).
+    const texts = first.content?.map((c) => c.text).join("") ?? "";
     expect(texts).toContain("hello");
   });
 
@@ -18,7 +19,7 @@ describe("skills-runtime/markdown-to-children", () => {
     expect(children.length).toBeGreaterThan(1);
     const types = children.map((c) => (c as { type: string }).type);
     expect(types).toContain("heading");
-    expect(types).toContain("list");
+    expect(types).toContain("bulletList");
   });
 
   it("returns empty array for empty input", () => {

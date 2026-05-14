@@ -4,6 +4,9 @@ import { resolve } from "path";
 export default defineConfig({
   test: {
     globals: true,
+    // Default to node; tests that need a DOM (TipTap Editor instantiation,
+    // ProseMirror view, etc.) opt in via `// @vitest-environment happy-dom`
+    // at the top of the file.
     environment: "node",
     include: ["tests/**/*.{test,spec}.{js,ts,jsx,tsx}"],
     exclude: ["node_modules", ".vite", "out"],
