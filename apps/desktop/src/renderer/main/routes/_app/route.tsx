@@ -6,6 +6,7 @@ import { SiteHeader } from "@/components/site-header";
 import { RecordingBottomCluster } from "@/renderer/main/components/recording-bottom-cluster";
 import { MeetingSnapshotProvider } from "@/renderer/main/components/meeting-snapshot-context";
 import { CurrentNoteProvider } from "@/renderer/main/components/current-note-context";
+import { NoteEditorProvider } from "@/renderer/main/components/note-editor-context";
 import { useLocation, useNavigate, useRouter } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
 import {
@@ -149,6 +150,7 @@ function AppLayoutContent() {
   return (
     <MeetingSnapshotProvider>
       <CurrentNoteProvider>
+        <NoteEditorProvider>
         <SidebarProvider
           style={
             {
@@ -212,6 +214,7 @@ function AppLayoutContent() {
             </SidebarInset>
           </div>
         </SidebarProvider>
+        </NoteEditorProvider>
       </CurrentNoteProvider>
     </MeetingSnapshotProvider>
   );

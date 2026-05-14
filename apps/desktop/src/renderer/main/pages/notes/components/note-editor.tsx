@@ -5,8 +5,9 @@ import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { NoteSyncProvider } from "@/renderer/main/providers/sync-provider";
 import { useYjsSync } from "@/renderer/main/components/editor/yjs-sync-plugin";
-import { SkillDiffActionBar } from "@/renderer/main/components/editor/diff/skill-diff-action-bar";
+import { useSkillDiffDecorations } from "@/renderer/main/components/editor/diff/use-skill-diff-decorations";
 import { InlineSkillPopoverPlugin } from "@/renderer/main/components/editor/inline-skill-popover/inline-skill-popover-plugin";
+import { useRegisterNoteEditor } from "@/renderer/main/components/note-editor-context";
 import { buildRendererExtensions } from "../utils/editor-shared";
 
 interface NoteEditorProps {
@@ -148,6 +149,14 @@ export function NoteEditor({
     onSyncStatusChange: handleSyncStatusChange,
   });
 
+  // Publish the editor instance to the layout so the bottom cluster can morph
+  // its dock pill into the skill-diff accept bar without owning the editor.
+  useRegisterNoteEditor(noteId, editor);
+
+  // Decorate / clear in-document diff when a candidate is staged for this
+  // note. The cluster renders the action UI separately.
+  useSkillDiffDecorations(editor, noteId);
+
   // Notify parent when editor is ready (after the provider is hooked up and
   // the editor exists).
   useEffect(() => {
@@ -169,10 +178,7 @@ export function NoteEditor({
     <div className="relative">
       <EditorContent editor={editor} />
       {editor ? (
-        <>
-          <SkillDiffActionBar editor={editor} noteId={noteId} />
-          <InlineSkillPopoverPlugin editor={editor} noteId={noteId} />
-        </>
+        <InlineSkillPopoverPlugin editor={editor} noteId={noteId} />
       ) : null}
     </div>
   );

@@ -2,15 +2,101 @@ import { useCallback } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
+import { AnimatePresence, motion } from "framer-motion";
 
 import { api } from "@/trpc/react";
 import { combinedLevel, useMeetingLevel } from "@/hooks/useMeetingLevel";
 import { useCurrentNote } from "@/renderer/main/components/current-note-context";
+import { useNoteEditor } from "@/renderer/main/components/note-editor-context";
 import { useMeetingSnapshot } from "@/renderer/main/components/meeting-snapshot-context";
+import { useSkillDiffStore } from "@/renderer/main/components/editor/diff/skill-diff-store";
+import { SkillDiffDockBar } from "@/renderer/main/components/editor/diff/skill-diff-dock-bar";
 import { NoteAssetsPanel } from "@/renderer/main/pages/notes/components/note-assets-panel";
 import { NoteRecordingDock } from "@/renderer/main/pages/notes/components/note-recording-dock";
 import { RecordingJumpPill } from "@/renderer/main/components/recording-jump-pill";
 import type { MeetingRuntimeState } from "@/types/meeting";
+
+// Spring transition is shared with SkillDiffDockBar so the morph feels like one
+// continuous motion across the swap boundary.
+const MORPH_TRANSITION = {
+  type: "spring" as const,
+  stiffness: 320,
+  damping: 30,
+  mass: 0.7,
+};
+
+type DockProps = {
+  noteId?: number;
+  isTranscriptionOpen?: boolean;
+  onToggleTranscription?: () => void;
+  meetingState: MeetingRuntimeState;
+  level: number;
+  onStartMeeting: () => void;
+  onStopMeeting: () => void;
+};
+
+// DockArea owns the swap between the recording dock (idle/recording state)
+// and the skill-diff accept bar (when a candidate is staged for the current
+// note). Both surfaces share the same horizontal slot, and AnimatePresence
+// cross-fades them so the morph reads as one continuous surface.
+function DockArea({
+  currentNoteId,
+  dockProps,
+  jumpPill,
+}: {
+  currentNoteId: number | undefined;
+  dockProps: DockProps;
+  jumpPill: React.ReactNode;
+}) {
+  const noteEditor = useNoteEditor();
+  const candidate = useSkillDiffStore((s) =>
+    currentNoteId !== undefined
+      ? s.candidatesByNote.get(currentNoteId)
+      : undefined,
+  );
+  // Only show the accept bar when we have both a candidate AND the matching
+  // editor — otherwise the bar would render without an editor to drive accept
+  // / decoration commands.
+  const showDiffBar =
+    candidate !== undefined &&
+    noteEditor !== null &&
+    currentNoteId !== undefined &&
+    noteEditor.noteId === currentNoteId;
+
+  return (
+    <div className="pointer-events-auto flex items-center gap-2">
+      <AnimatePresence mode="wait" initial={false}>
+        {showDiffBar ? (
+          <motion.div
+            key="diff-bar"
+            initial={{ opacity: 0, scale: 0.96 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.96 }}
+            transition={MORPH_TRANSITION}
+            className="flex items-center"
+          >
+            <SkillDiffDockBar
+              editor={noteEditor!.editor}
+              noteId={currentNoteId!}
+            />
+          </motion.div>
+        ) : (
+          <motion.div
+            key="dock"
+            initial={{ opacity: 0, scale: 0.96 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.96 }}
+            transition={MORPH_TRANSITION}
+            className="flex items-center gap-2"
+          >
+            <NoteRecordingDock {...dockProps} />
+            {jumpPill}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
 
 function isActiveState(state: MeetingRuntimeState): boolean {
   return (
@@ -156,31 +242,33 @@ export function RecordingBottomCluster() {
           </div>
         )}
 
-        <div className="pointer-events-auto flex items-center gap-2">
-          <NoteRecordingDock
-            noteId={currentNote?.noteId}
-            isTranscriptionOpen={
-              currentNote ? currentNote.isTranscriptionOpen : false
-            }
-            onToggleTranscription={
-              currentNote ? currentNote.onToggleTranscription : undefined
-            }
-            meetingState={dockMeetingState}
-            level={dockLevel}
-            onStartMeeting={handleStart}
-            onStopMeeting={handleStop}
-          />
-
-          {needsJumpPill && (
-            <RecordingJumpPill
-              title={recordingNoteTitle}
-              onJump={handleJump}
-              ariaLabel={t("settings.notes.jumpPill.ariaLabel", {
-                title: recordingNoteTitle,
-              })}
-            />
-          )}
-        </div>
+        <DockArea
+          currentNoteId={currentNote?.noteId}
+          dockProps={{
+            noteId: currentNote?.noteId,
+            isTranscriptionOpen: currentNote
+              ? currentNote.isTranscriptionOpen
+              : false,
+            onToggleTranscription: currentNote
+              ? currentNote.onToggleTranscription
+              : undefined,
+            meetingState: dockMeetingState,
+            level: dockLevel,
+            onStartMeeting: handleStart,
+            onStopMeeting: handleStop,
+          }}
+          jumpPill={
+            needsJumpPill ? (
+              <RecordingJumpPill
+                title={recordingNoteTitle}
+                onJump={handleJump}
+                ariaLabel={t("settings.notes.jumpPill.ariaLabel", {
+                  title: recordingNoteTitle,
+                })}
+              />
+            ) : null
+          }
+        />
       </div>
     </div>
   );
