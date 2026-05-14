@@ -40,6 +40,10 @@ vi.mock("@tanstack/react-router", async () => {
     },
     useLocation: () => routerState,
     useNavigate: () => vi.fn(),
+    // SettingsSidebar started reading the search-params via `useSearch`
+    // for folder / tag filtering; provide an empty default so tests don't
+    // need to script each route's URL state.
+    useSearch: () => ({}) as Record<string, unknown>,
   };
 });
 
@@ -53,6 +57,21 @@ vi.mock("react-i18next", () => ({
 vi.mock("@/hooks/useFeatureFlag", () => ({
   useFeatureFlag: () => ({ enabled: false, payload: null }),
 }));
+
+// The sidebar embeds <CommandSearchButton/>, which pulls in a long chain
+// of tRPC queries, contexts (CreateNoteContext), and the global command
+// palette. The sidebar test doesn't exercise any of that, so stub the
+// component out entirely.
+vi.mock(
+  "@/renderer/main/components/command-search-button",
+  async () => {
+    const React = await import("react");
+    return {
+      CommandSearchButton: () =>
+        React.createElement("div", { "data-testid": "command-search-stub" }),
+    };
+  },
+);
 
 vi.mock("@/components/nav-secondary", async () => {
   const React = await import("react");
@@ -83,6 +102,10 @@ vi.mock("@/trpc/react", () => ({
       create: { useMutation },
       update: { useMutation },
       delete: { useMutation },
+      // NavNotesGroups pre-fetches the delete preview to gate the
+      // confirmation dialog; stub it so the SSR render doesn't trip
+      // on an undefined query proc.
+      getDeletePreview: { useQuery: () => ({ data: null, isLoading: false }) },
     },
     useUtils: () => ({
       notes: {

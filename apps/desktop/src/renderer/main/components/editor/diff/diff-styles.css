@@ -18,6 +18,18 @@
   line-height: 1.5;
 }
 
+/* Block-level widget (a multi-block proposed insert at doc / blockquote
+ * level): give it a soft border + a bit of padding so the proposed slice
+ * reads as a distinct surface rather than a colored bleed against the
+ * surrounding text. The selector targets only `<div>` wrappers — the
+ * inline `<span>` variant inherits the base rule above. */
+div.prismical-diff-insert {
+  padding: 0.5rem 0.75rem;
+  border-left: 3px solid var(--diff-insert);
+  border-radius: 0.25rem;
+  margin: 0.5rem 0;
+}
+
 .prismical-diff-delete {
   color: var(--diff-delete);
   text-decoration: line-through;

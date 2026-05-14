@@ -182,8 +182,16 @@ class FakeBrowserWindow extends EventEmitter {
   }
 }
 
-// Create test directories
-const testUserDataPath = path.join(os.tmpdir(), "prismical-test-" + Date.now());
+// Create test directories — append a high-resolution suffix on top of
+// Date.now() so two test files imported in the same millisecond don't
+// share a path (vitest's isolate:true gives each file its own module
+// instance, but the timer's resolution alone is not enough to guarantee
+// uniqueness on fast machines, and a collision means file A's afterAll
+// destroys the directory file B's tests are still using).
+const testUserDataPath = path.join(
+  os.tmpdir(),
+  `prismical-test-${Date.now()}-${process.pid}-${process.hrtime.bigint()}`,
+);
 const testAppPath = process.cwd();
 
 // Mock app object
