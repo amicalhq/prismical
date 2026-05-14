@@ -15,6 +15,7 @@ import { mergeAttributes, type Extensions } from "@tiptap/core";
 import { ArtifactNode } from "@/renderer/main/components/editor/nodes/artifact-node";
 import { ArtifactInlineNode } from "@/renderer/main/components/editor/nodes/artifact-inline-node";
 import { ArtifactEscape } from "@/renderer/main/components/editor/artifact-escape-plugin";
+import { SkillDiffPlugin } from "@/renderer/main/components/editor/diff/diff-plugin";
 import { MARKDOWN_OPTIONS } from "@/services/notes/editor-extensions";
 
 const lowlight = createLowlight(common);
@@ -109,6 +110,7 @@ export function buildRendererExtensions(
     ArtifactNode,
     ArtifactInlineNode,
     ArtifactEscape,
+    SkillDiffPlugin,
     Placeholder.configure({
       placeholder: opts.placeholder ?? "",
       emptyEditorClass: "is-editor-empty",

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Editor } from "@tiptap/core";
 import { TextSelection } from "@tiptap/pm/state";
 import { toast } from "sonner";
@@ -6,8 +6,11 @@ import { useSkillDiffStore } from "./skill-diff-store";
 import { api } from "@/trpc/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { computeTextDiff } from "./compute-text-diff";
-import type React from "react";
+import { skillDiffPluginKey } from "./diff-plugin";
+import {
+  buildCandidateTransaction,
+  buildDiffDecorations,
+} from "./build-decorations";
 
 interface Props {
   editor: Editor;
@@ -26,18 +29,59 @@ export function SkillDiffActionBar({ editor, noteId }: Props) {
   const [refineMode, setRefineMode] = useState(false);
   const [refineText, setRefineText] = useState("");
 
+  // Track which candidate the editor is currently decorated for so refines
+  // re-decorate, but a stable candidate doesn't recompute on every render.
+  const decoratedForRef = useRef<SkillDiffCandidateKey | null>(null);
+
+  // Apply / refresh decorations whenever the staged candidate changes.
+  useEffect(() => {
+    if (!candidate) {
+      if (decoratedForRef.current !== null) {
+        clearDiffDecorations(editor);
+        decoratedForRef.current = null;
+      }
+      return;
+    }
+
+    const key = candidateKey(candidate);
+    if (decoratedForRef.current === key) return;
+
+    const tr = buildCandidateTransaction(editor.state, candidate);
+    if (!tr) {
+      // Couldn't materialize the post-state (stale selection, malformed
+      // payload). Surface a warning and clear so the user can re-run.
+      toast.error(
+        "Couldn't preview this run — the editor state has moved on. Try running the skill again.",
+      );
+      clear(noteId);
+      return;
+    }
+    const decorations = buildDiffDecorations(
+      editor.state.doc,
+      tr,
+      editor.state.schema,
+    );
+    editor.view.dispatch(
+      editor.state.tr.setMeta(skillDiffPluginKey, { decorations }),
+    );
+    decoratedForRef.current = key;
+  }, [editor, candidate, clear, noteId]);
+
+  // Always clear on unmount so a stale decoration doesn't outlive the bar.
+  useEffect(() => {
+    return () => clearDiffDecorations(editor);
+  }, [editor]);
+
   if (!candidate) return null;
 
   const onAccept = async () => {
-    // Inline-rewrite needs the original range restored BEFORE we write the
-    // audit row — if the underlying positions are gone, surface an error
-    // and skip the DB write entirely.
     if (candidate.mode === "inline-rewrite") {
       const restored = restoreInlineSelection(editor, candidate);
       if (!restored) {
         toast.error(
           "The selection where this rewrite was run no longer exists. Re-highlight and try again.",
         );
+        clearDiffDecorations(editor);
         clear(noteId);
         return;
       }
@@ -85,18 +129,18 @@ export function SkillDiffActionBar({ editor, noteId }: Props) {
         content: candidate.content,
       });
     } else {
-      // replace-doc: swap the entire doc content for the candidate's blocks.
       editor.commands.setContent({ type: "doc", content: candidate.content });
     }
+    clearDiffDecorations(editor);
     clear(noteId);
   };
 
-  const reject = () => clear(noteId);
+  const reject = () => {
+    clearDiffDecorations(editor);
+    clear(noteId);
+  };
 
   const cancelRefine = () => {
-    // If a refine call is mid-flight, abort it via the server so the
-    // in-flight registry entry is freed and the eventual response doesn't
-    // re-stage a candidate the user thought they cancelled.
     if (run.isPending) {
       cancel.mutate({ noteId });
     }
@@ -106,9 +150,6 @@ export function SkillDiffActionBar({ editor, noteId }: Props) {
 
   const submitRefine = () => {
     if (!refineText.trim()) return;
-    // Carry the original selectionText (model context) AND selectionPoints
-    // (accept-time selection restore) through refine — otherwise refined
-    // inline rewrites lose their anchor and can't be accepted.
     run.mutate(
       {
         noteId,
@@ -123,8 +164,6 @@ export function SkillDiffActionBar({ editor, noteId }: Props) {
           stage({
             ...result,
             noteId,
-            // Server populates beforeText for replace-doc; for inline-rewrite
-            // we keep the original selection text as the diff anchor.
             beforeText:
               result.mode === "inline-rewrite"
                 ? candidate.selectionText ?? undefined
@@ -142,18 +181,9 @@ export function SkillDiffActionBar({ editor, noteId }: Props) {
   };
 
   return (
-    <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 rounded-lg border bg-popover shadow-lg p-3 flex flex-col gap-2 max-w-xl">
-      <div className="text-xs text-muted-foreground">
+    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 rounded-lg border bg-popover shadow-lg p-2 flex items-center gap-2">
+      <div className="text-xs text-muted-foreground pr-2 border-r">
         ✨ {candidate.skillName}
-      </div>
-      <div className="rounded-md bg-card p-3 max-h-64 overflow-y-auto text-sm whitespace-pre-wrap">
-        {candidate.mode === "replace-doc" && candidate.beforeText ? (
-          renderInlineDiff(candidate.beforeText, candidate.rawMarkdown)
-        ) : (
-          <span style={{ color: "var(--diff-insert)" }}>
-            {candidate.rawMarkdown}
-          </span>
-        )}
       </div>
       {refineMode ? (
         <div className="flex items-center gap-2">
@@ -204,10 +234,11 @@ export function SkillDiffActionBar({ editor, noteId }: Props) {
   );
 }
 
-// Restore the original ProseMirror range selection captured when this
-// candidate was staged. Returns true on success, false if the positions
-// no longer point at valid nodes (in which case the caller should reject
-// the accept).
+function clearDiffDecorations(editor: Editor): void {
+  const { state, view } = editor;
+  view.dispatch(state.tr.setMeta(skillDiffPluginKey, "clear"));
+}
+
 function restoreInlineSelection(
   editor: Editor,
   candidate: { selectionPoints?: { from: number; to: number } },
@@ -231,20 +262,13 @@ function restoreInlineSelection(
   }
 }
 
-function renderInlineDiff(before: string, after: string): React.ReactNode {
-  const spans = computeTextDiff(before, after);
-  return spans.map((span, i) => {
-    if (span.kind === "equal") return <span key={i}>{span.text}</span>;
-    if (span.kind === "insert")
-      return (
-        <span key={i} className="prismical-diff-insert">
-          {span.text}
-        </span>
-      );
-    return (
-      <span key={i} className="prismical-diff-delete">
-        {span.text}
-      </span>
-    );
-  });
+// Stable identity for a staged candidate. We use it to avoid recomputing
+// decorations on every render when the candidate hasn't changed.
+type SkillDiffCandidateKey = string;
+function candidateKey(c: {
+  skillId: string;
+  mode: string;
+  rawMarkdown: string;
+}): SkillDiffCandidateKey {
+  return `${c.mode}|${c.skillId}|${c.rawMarkdown.length}`;
 }

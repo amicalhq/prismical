@@ -198,14 +198,9 @@ describe("SkillDiffActionBar", () => {
 
   // --- Render: candidate present ---
 
-  it("renders preview text and 3 action buttons when candidate is staged", async () => {
+  it("renders three action buttons when a candidate is staged", async () => {
     mockCandidate.value = makeCandidate();
     const html = await renderBar(42);
-
-    // Preview text is visible
-    expect(html).toContain("Here is the proposed content.");
-
-    // Three action buttons
     expect(html).toContain("Refine");
     expect(html).toContain("Accept");
     expect(html).toContain("Reject");
@@ -219,19 +214,17 @@ describe("SkillDiffActionBar", () => {
     expect(html).not.toMatch(/v\d+/);
   });
 
-  it("renders replace-doc diff spans when beforeText is set", async () => {
+  it("no longer renders a text-diff preview inside the bar (decorations live in the editor)", async () => {
     mockCandidate.value = makeCandidate({
       mode: "replace-doc",
       beforeText: "hello world",
       rawMarkdown: "hello earth",
     });
     const html = await renderBar(42);
-
-    // diff spans are rendered
-    expect(html).toContain("prismical-diff-delete");
-    expect(html).toContain("prismical-diff-insert");
-    // The shared "hello " prefix is rendered as equal.
-    expect(html).toContain("hello ");
+    // PRSM-39: the diff is rendered as in-doc decorations, not as
+    // floating text spans inside the action bar.
+    expect(html).not.toContain("prismical-diff-delete");
+    expect(html).not.toContain("prismical-diff-insert");
   });
 
   // --- Behavioral: accept ---
