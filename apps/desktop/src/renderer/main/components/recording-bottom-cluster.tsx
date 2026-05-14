@@ -2,8 +2,6 @@ import { useCallback } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
-import { AnimatePresence, motion } from "framer-motion";
-
 import { api } from "@/trpc/react";
 import { combinedLevel, useMeetingLevel } from "@/hooks/useMeetingLevel";
 import { useCurrentNote } from "@/renderer/main/components/current-note-context";
@@ -16,15 +14,6 @@ import { NoteRecordingDock } from "@/renderer/main/pages/notes/components/note-r
 import { RecordingJumpPill } from "@/renderer/main/components/recording-jump-pill";
 import type { MeetingRuntimeState } from "@/types/meeting";
 
-// Spring transition is shared with SkillDiffDockBar so the morph feels like one
-// continuous motion across the swap boundary.
-const MORPH_TRANSITION = {
-  type: "spring" as const,
-  stiffness: 320,
-  damping: 30,
-  mass: 0.7,
-};
-
 type DockProps = {
   noteId?: number;
   isTranscriptionOpen?: boolean;
@@ -35,10 +24,11 @@ type DockProps = {
   onStopMeeting: () => void;
 };
 
-// DockArea owns the swap between the recording dock (idle/recording state)
-// and the skill-diff accept bar (when a candidate is staged for the current
-// note). Both surfaces share the same horizontal slot, and AnimatePresence
-// cross-fades them so the morph reads as one continuous surface.
+// Swaps the recording dock pill for the skill-diff accept bar when a
+// candidate is staged for the current note. Both pills share the same dark
+// chrome and CSS hover/width transitions (matching the sparkle button) — no
+// framer-driven shared-layout morph, so the swap is a clean conditional
+// render rather than a wobbly width interpolation.
 function DockArea({
   currentNoteId,
   dockProps,
@@ -65,35 +55,15 @@ function DockArea({
 
   return (
     <div className="pointer-events-auto flex items-center gap-2">
-      <AnimatePresence mode="wait" initial={false}>
-        {showDiffBar ? (
-          <motion.div
-            key="diff-bar"
-            initial={{ opacity: 0, scale: 0.96 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.96 }}
-            transition={MORPH_TRANSITION}
-            className="flex items-center"
-          >
-            <SkillDiffDockBar
-              editor={noteEditor!.editor}
-              noteId={currentNoteId!}
-            />
-          </motion.div>
-        ) : (
-          <motion.div
-            key="dock"
-            initial={{ opacity: 0, scale: 0.96 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.96 }}
-            transition={MORPH_TRANSITION}
-            className="flex items-center gap-2"
-          >
-            <NoteRecordingDock {...dockProps} />
-            {jumpPill}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {showDiffBar ? (
+        <SkillDiffDockBar
+          editor={noteEditor!.editor}
+          noteId={currentNoteId!}
+        />
+      ) : (
+        <NoteRecordingDock {...dockProps} />
+      )}
+      {!showDiffBar && jumpPill}
     </div>
   );
 }

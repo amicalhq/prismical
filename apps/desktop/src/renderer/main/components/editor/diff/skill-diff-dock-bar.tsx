@@ -26,21 +26,27 @@ interface Props {
 }
 
 // Visual language matches NoteRecordingDock / SkillSparkleButton: 42px-tall
-// dark pill, rounded-28, backdrop-blur, ring + soft shadow. The morph bar
-// occupies the same horizontal slot, so the dock-area swap reads as a single
-// surface morphing in place rather than a new floating widget.
+// dark pill, rounded-28, backdrop-blur, ring + soft shadow, with the same
+// plain CSS hover-scale + width transition. Keeping the chrome animation
+// CSS-only (no framer layout magic) avoids the shrink/expand wobble that
+// shared-layout morphs produced when this swaps in/out of the dock slot.
 const PILL_OUTER =
   "group h-[42px] bg-black/80 dark:bg-black/70 rounded-[28px] backdrop-blur-md " +
   "ring-[1px] ring-black/60 shadow-[0px_0px_15px_0px_rgba(0,0,0,0.40)] " +
-  "select-none flex items-center";
+  "select-none flex items-center overflow-hidden " +
+  "transition-all duration-200 ease-out hover:scale-[1.02]";
 
 const INNER_BTN =
   "flex h-8 shrink-0 items-center justify-center rounded-full cursor-pointer " +
   "text-white/80 transition-colors hover:bg-white/15 hover:text-white " +
   "active:scale-95 disabled:cursor-not-allowed disabled:opacity-60";
 
-// Spring transition consistent with the recording-widget pill morphs.
-const SPRING = { type: "spring" as const, stiffness: 320, damping: 30, mass: 0.7 };
+// Quick tween for the inner accept-row <-> refine-input swap. Only the
+// inner controls animate; the outer pill chrome is CSS-only above.
+const INNER_TRANSITION = {
+  duration: 0.12,
+  ease: [0.32, 0.72, 0, 1] as [number, number, number, number],
+};
 
 export function SkillDiffDockBar({ editor, noteId }: Props) {
   const candidate = useSkillDiffStore((s) => s.candidatesByNote.get(noteId));
@@ -167,31 +173,25 @@ export function SkillDiffDockBar({ editor, noteId }: Props) {
     );
   };
 
-  // Layout transitions on the outer pill animate the width change between
-  // the accept-row (compact) and refine-input (wider) states. The
-  // AnimatePresence inside cross-fades the two sets of controls.
+  // Outer pill chrome is plain CSS so it picks up the same `transition-all
+  // duration-200 ease-out` rhythm as the recording dock and sparkle pill —
+  // no shared-layout shenanigans, so mounting/unmounting in the dock slot
+  // doesn't produce a shrink-and-grow wobble. AnimatePresence inside still
+  // morphs accept-row <-> refine-input.
   return (
-    <motion.div
-      layout
-      transition={SPRING}
-      className={`${PILL_OUTER} pl-3 pr-1 gap-1`}
-    >
-      <motion.div
-        layout="position"
-        transition={SPRING}
-        className="flex items-center gap-1.5 text-sm font-medium text-white/85 pr-2 mr-1 border-r border-white/15"
-      >
+    <div className={`${PILL_OUTER} pl-3 pr-1 gap-1`}>
+      <div className="flex items-center gap-1.5 text-sm font-medium text-white/85 pr-2 mr-1 border-r border-white/15">
         <IconSparkles size={16} className="shrink-0 text-white/80" />
         <span className="max-w-[140px] truncate">{candidate.skillName}</span>
-      </motion.div>
-      <AnimatePresence mode="wait" initial={false}>
+      </div>
+      <AnimatePresence mode="popLayout" initial={false}>
         {refineMode ? (
           <motion.div
             key="refine"
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -4 }}
-            transition={{ duration: 0.14, ease: "easeOut" }}
+            initial={{ opacity: 0, x: 8 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 8 }}
+            transition={INNER_TRANSITION}
             className="flex items-center gap-1"
           >
             <input
@@ -237,10 +237,10 @@ export function SkillDiffDockBar({ editor, noteId }: Props) {
         ) : (
           <motion.div
             key="actions"
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -4 }}
-            transition={{ duration: 0.14, ease: "easeOut" }}
+            initial={{ opacity: 0, x: -8 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -8 }}
+            transition={INNER_TRANSITION}
             className="flex items-center gap-1"
           >
             <Tooltip>
@@ -313,7 +313,7 @@ export function SkillDiffDockBar({ editor, noteId }: Props) {
           </motion.div>
         )}
       </AnimatePresence>
-    </motion.div>
+    </div>
   );
 }
 
