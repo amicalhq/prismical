@@ -250,4 +250,41 @@ describe("skills-runtime/skill-runner", () => {
     const rows = await testDb.db.select().from(artifacts).all();
     expect(rows.length).toBe(0);
   });
+
+  it("append-section also populates beforeText so the diff store's post-run switch (append <-> replace) has the data it needs without a second round-trip", async () => {
+    const { runSkill } = await import("@/services/skills-runtime/skill-runner");
+    const { note, skill } = await insertFixtures(testDb.db);
+
+    generateTextMock.mockResolvedValue({
+      output: { markdown: "## Summary\n\nNew section." },
+    });
+
+    const result = await runSkill(
+      makeCtx({ skill, noteId: note.id, mode: "append-section" }),
+      { db: testDb.db },
+    );
+
+    expect(result.mode).toBe("append-section");
+    expect(result.beforeText).toContain("note body");
+  });
+
+  it("inline-rewrite leaves beforeText undefined — the client supplies it from the selection", async () => {
+    const { runSkill } = await import("@/services/skills-runtime/skill-runner");
+    const { note, skill } = await insertFixtures(testDb.db);
+
+    generateTextMock.mockResolvedValue({ output: { markdown: "rewritten" } });
+
+    const result = await runSkill(
+      makeCtx({
+        skill,
+        noteId: note.id,
+        mode: "inline-rewrite",
+        selectionText: "selected",
+      }),
+      { db: testDb.db },
+    );
+
+    expect(result.mode).toBe("inline-rewrite");
+    expect(result.beforeText).toBeUndefined();
+  });
 });

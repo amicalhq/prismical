@@ -17,6 +17,7 @@ export const SkillJsonImportSchema = z.object({
       .object({ instanceId: z.string(), modelId: z.string() })
       .optional(),
     defaultSkill: z.boolean().optional(),
+    modeAgnosticPrompt: z.boolean().optional(),
     // Per-skill input policy. Omitted = all flags default off.
     inputs: z
       .object({

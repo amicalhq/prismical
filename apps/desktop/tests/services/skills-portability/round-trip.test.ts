@@ -183,3 +183,52 @@ surface:
     expect(() => skillFromMarkdown(badMd)).toThrow();
   });
 });
+
+describe("modeAgnosticPrompt round-trip", () => {
+  it("preserves modeAgnosticPrompt through JSON round-trip", () => {
+    const skill = makeSkill({
+      config: {
+        editingOptions: "append-section",
+        surface: ["dock"],
+        modeAgnosticPrompt: true,
+      },
+    });
+    const imported = skillFromJson(JSON.parse(JSON.stringify(skillToJson(skill))));
+    expect(imported.config.modeAgnosticPrompt).toBe(true);
+  });
+
+  it("preserves modeAgnosticPrompt through markdown round-trip", () => {
+    const skill = makeSkill({
+      config: {
+        editingOptions: "append-section",
+        surface: ["dock"],
+        modeAgnosticPrompt: true,
+      },
+    });
+    const md = skillToMarkdown(skill);
+    expect(md).toContain("modeAgnosticPrompt: true");
+    const imported = skillFromMarkdown(md);
+    expect(imported.config.modeAgnosticPrompt).toBe(true);
+  });
+
+  it("omits modeAgnosticPrompt from markdown frontmatter when unset (keep YAML minimal)", () => {
+    const skill = makeSkill(); // no modeAgnosticPrompt
+    const md = skillToMarkdown(skill);
+    expect(md).not.toContain("modeAgnosticPrompt");
+  });
+
+  it("imports modeAgnosticPrompt as undefined when frontmatter omits it", () => {
+    const md = `---
+slug: tuned
+name: Tuned
+editingOptions: append-section
+surface:
+  - dock
+---
+
+A normal mode-tuned skill body.
+`;
+    const imported = skillFromMarkdown(md);
+    expect(imported.config.modeAgnosticPrompt).toBeUndefined();
+  });
+});

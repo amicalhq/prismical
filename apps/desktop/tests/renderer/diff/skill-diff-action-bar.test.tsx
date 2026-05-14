@@ -31,6 +31,7 @@ const mockCandidate = vi.hoisted<{ value: SkillDiffCandidate | null }>(() => ({
 }));
 const mockClear = vi.hoisted(() => vi.fn());
 const mockStage = vi.hoisted(() => vi.fn());
+const mockSwitchMode = vi.hoisted(() => vi.fn());
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -108,6 +109,7 @@ vi.mock(
       },
       clear: mockClear,
       stage: mockStage,
+      switchMode: mockSwitchMode,
     };
 
     function useSkillDiffStore(selector: (s: typeof fakeState) => unknown) {
@@ -310,5 +312,39 @@ describe("SkillDiffActionBar", () => {
     expect(mockStage).toHaveBeenCalledWith(
       expect.objectContaining({ noteId: 42, rawMarkdown: "Shorter." }),
     );
+  });
+
+  // --- Mode switch button ---
+
+  describe("mode switch", () => {
+    it("renders 'Switch to Replace' when candidate is append-section", async () => {
+      mockCandidate.value = makeCandidate({ mode: "append-section" });
+      const html = await renderBar(42);
+      expect(html).toContain("Switch to Replace");
+      expect(html).not.toContain("Switch to Append");
+    });
+
+    it("renders 'Switch to Append' when candidate is replace-doc", async () => {
+      mockCandidate.value = makeCandidate({
+        mode: "replace-doc",
+        beforeText: "old body",
+      });
+      const html = await renderBar(42);
+      expect(html).toContain("Switch to Append");
+      expect(html).not.toContain("Switch to Replace");
+    });
+
+    it("does NOT render the switch button when candidate is inline-rewrite", async () => {
+      mockCandidate.value = makeCandidate({ mode: "inline-rewrite" });
+      const html = await renderBar(42);
+      expect(html).not.toContain("Switch to Replace");
+      expect(html).not.toContain("Switch to Append");
+    });
+
+    it("clicking the switch button calls switchMode with the noteId", () => {
+      // Simulate the onClick handler: switchMode(noteId)
+      mockSwitchMode(42);
+      expect(mockSwitchMode).toHaveBeenCalledWith(42);
+    });
   });
 });

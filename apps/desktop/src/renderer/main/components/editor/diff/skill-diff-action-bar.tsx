@@ -27,6 +27,7 @@ export function SkillDiffActionBar({ noteId }: Props) {
   const candidate = useSkillDiffStore((s) => s.candidatesByNote.get(noteId));
   const clear = useSkillDiffStore((s) => s.clear);
   const stage = useSkillDiffStore((s) => s.stage);
+  const switchMode = useSkillDiffStore((s) => s.switchMode);
   const run = api.skillRuns.run.useMutation();
   const accept = api.skillRuns.accept.useMutation();
   const cancel = api.skillRuns.cancel.useMutation();
@@ -190,6 +191,23 @@ export function SkillDiffActionBar({ noteId }: Props) {
           <Button variant="outline" onClick={() => setRefineMode(true)}>
             ✦ Refine
           </Button>
+          {candidate.mode === "append-section" ||
+          candidate.mode === "replace-doc" ? (
+            <Button
+              variant="outline"
+              onClick={() => switchMode(noteId)}
+              disabled={accept.isPending}
+              aria-label={
+                candidate.mode === "append-section"
+                  ? "Switch to replace document"
+                  : "Switch to append section"
+              }
+            >
+              {candidate.mode === "append-section"
+                ? "Switch to Replace"
+                : "Switch to Append"}
+            </Button>
+          ) : null}
           <Button onClick={onAccept} disabled={accept.isPending}>
             ✓ Accept
           </Button>
