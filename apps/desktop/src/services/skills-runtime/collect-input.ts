@@ -1,6 +1,7 @@
 import { eq, asc } from "drizzle-orm";
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
 import * as Y from "yjs";
+import { yXmlFragmentToProsemirrorJSON } from "y-prosemirror";
 import {
   notes,
   meetings,
@@ -9,6 +10,7 @@ import {
 } from "@/db/schema";
 import { tiptapJsonToMarkdown } from "@/services/notes/tiptap-markdown";
 import { extractPlainText } from "./extract-plain-text";
+import { COLLAB_FRAGMENT_NAME } from "@/services/notes/markdown-to-ydoc";
 import type { SkillRunContext } from "./skill-context";
 
 // Deterministic context for the skill. The skill author declared the mode
@@ -31,14 +33,12 @@ export async function collectInput(
   db: LibSQLDatabase<Record<string, unknown>>,
   ctx: SkillRunContext,
 ): Promise<SkillInput> {
-  // `notes.content` is a one-time seed snapshot — it's set at note creation
-  // and never updated. The live editor state lives in `yjs_updates` (the
-  // editor reads/writes via Yjs). Materializing here ensures every skill
-  // run sees the current note, including content from previously-accepted
-  // skill runs that wrote via the editor's Yjs sync.
-  const stateJson = await materializeNoteContent(db, ctx.noteId);
-  const noteMarkdown = stateJson ? tiptapJsonToMarkdown(stateJson) : "";
-  const notePlainText = stateJson ? extractPlainText(stateJson) : "";
+  // Skills need the FRESHEST note state, so we replay yjs_updates into a
+  // transient Y.Doc here rather than reading the markdown sidecar (which
+  // the renderer debounces by ~1.5s). materializeNoteContent returns both
+  // the markdown projection and a plain-text rendering for the diff.
+  const { markdown: noteMarkdown, plainText: notePlainText } =
+    await materializeNoteContent(db, ctx.noteId);
 
   const transcript = await loadTranscript(db, ctx.noteId);
 
@@ -50,15 +50,15 @@ export async function collectInput(
   };
 }
 
-// Reconstruct the note's live TipTap state JSON by applying all stored Yjs
-// updates. The editor's YjsSyncPlugin stores the TipTap editor-state JSON
-// as a plain string inside a Y.Text named "content"; replaying the deltas
-// gives us the current value. Falls back to the `notes.content` snapshot
-// for notes that have no Yjs updates (e.g., freshly seeded fixtures).
+// Reconstruct the note's freshest TipTap state by replaying yjs_updates
+// rows into a transient Y.Doc, then read the canonical XmlFragment. We
+// avoid the notes.content markdown sidecar here because it's debounced
+// ~1.5s — a user who edits and immediately runs a skill would otherwise
+// see stale input. Replay is bounded by compaction (PRSM-56 §7.4).
 async function materializeNoteContent(
   db: LibSQLDatabase<Record<string, unknown>>,
   noteId: number,
-): Promise<string> {
+): Promise<{ markdown: string; plainText: string }> {
   const updates = await db
     .select({ data: yjsUpdates.updateData })
     .from(yjsUpdates)
@@ -71,20 +71,42 @@ async function materializeNoteContent(
       for (const row of updates) {
         Y.applyUpdate(ydoc, new Uint8Array(row.data as Buffer));
       }
-      const live = ydoc.getText("content").toString();
-      if (live.length > 0) return live;
+      const fragment = ydoc.getXmlFragment(COLLAB_FRAGMENT_NAME);
+      const json = yXmlFragmentToProsemirrorJSON(fragment);
+      return {
+        markdown: tiptapJsonToMarkdown(json),
+        plainText: extractPlainText(json),
+      };
     } finally {
       ydoc.destroy();
     }
   }
 
-  // Fall back to the snapshot for never-edited notes.
+  // Fall back to notes.content (already markdown) for notes with no Yjs
+  // state yet — freshly seeded fixtures, test setups. plainText is
+  // derived via a lightweight strip; no parser needed.
   const [row] = await db
     .select({ content: notes.content })
     .from(notes)
     .where(eq(notes.id, noteId))
     .limit(1);
-  return row?.content ?? "";
+  const markdown = row?.content ?? "";
+  return { markdown, plainText: stripMarkdownLite(markdown) };
+}
+
+// Lightweight markdown-to-plain-text for the fallback path only (notes
+// without Yjs state). Not a parser; strips the most common syntax.
+function stripMarkdownLite(md: string): string {
+  return md
+    .replace(/```[\s\S]*?```/g, "")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/[*_]{1,3}([^*_]+)[*_]{1,3}/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/!\[[^\]]*\]\([^)]+\)/g, "")
+    .replace(/^>\s+/gm, "")
+    .replace(/^[-*+]\s+/gm, "")
+    .replace(/^\d+\.\s+/gm, "");
 }
 
 async function loadTranscript(
