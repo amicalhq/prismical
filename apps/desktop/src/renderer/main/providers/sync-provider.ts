@@ -54,14 +54,6 @@ export class NoteSyncProvider {
     return this.ydoc;
   }
 
-  /**
-   * @deprecated Shim for Task 7 to remove. `useYjsSync` and its `Y.Text`
-   * dependency are being deleted; this method goes with them.
-   */
-  getText(): Y.Text {
-    return this.ydoc.getText("content");
-  }
-
   // Late-binding hook: useEditor() creates the editor AFTER the provider
   // exists (Collaboration needs the provider's Y.Doc up front), so the
   // editor reference flows back in via this setter once available.

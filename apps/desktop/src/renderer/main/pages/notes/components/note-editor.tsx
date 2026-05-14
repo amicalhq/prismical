@@ -1,11 +1,10 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import { DragHandle } from "@tiptap/extension-drag-handle-react";
 import { Loader2, GripVertical } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { NoteSyncProvider } from "@/renderer/main/providers/sync-provider";
-import { useYjsSync } from "@/renderer/main/components/editor/yjs-sync-plugin";
 import { useSkillDiffDecorations } from "@/renderer/main/components/editor/diff/use-skill-diff-decorations";
 import { SkillDiffEditorLock } from "@/renderer/main/components/editor/diff/skill-diff-editor-lock";
 import { useSkillDiffStore } from "@/renderer/main/components/editor/diff/skill-diff-store";
@@ -43,13 +42,11 @@ function isContentMutatingKey(event: KeyboardEvent): boolean {
 
 interface NoteEditorProps {
   noteId: number;
-  onSyncStatusChange?: (isSyncing: boolean) => void;
   onReady?: () => void;
 }
 
 export function NoteEditor({
   noteId,
-  onSyncStatusChange,
   onReady,
 }: NoteEditorProps): React.ReactNode {
   const { t } = useTranslation();
@@ -60,13 +57,6 @@ export function NoteEditor({
   const onReadyCalledRef = useRef(false);
   const onSaveErrorRef = useRef(() =>
     toast.error(t("settings.notes.toast.saveFailed")),
-  );
-
-  const handleSyncStatusChange = useCallback(
-    (isSyncing: boolean) => {
-      onSyncStatusChange?.(isSyncing);
-    },
-    [onSyncStatusChange],
   );
 
   // Reset onReady tracking when noteId changes.
@@ -81,8 +71,8 @@ export function NoteEditor({
 
   // After `syncProvider` changes (either unmounting or swapping to a new
   // provider), it is safe to destroy the previous provider(s). This ensures
-  // useYjsSync can flush any pending debounced writes during its cleanup
-  // while the persistence listener is still attached.
+  // any pending debounced writes are flushed while the persistence listener
+  // is still attached.
   useEffect(() => {
     if (destroyQueueRef.current.length === 0) return;
     const providersToDestroy = destroyQueueRef.current;
@@ -144,17 +134,17 @@ export function NoteEditor({
 
   const extensions = useMemo(
     () => [
-      ...buildRendererExtensions({ placeholder }),
+      ...buildRendererExtensions({
+        placeholder,
+        ydoc: syncProvider?.getDoc(),
+      }),
       SkillDiffEditorLock.configure({ noteId }),
     ],
-    [placeholder, noteId],
+    [placeholder, noteId, syncProvider],
   );
 
   // Reset the TipTap editor when the noteId or syncProvider changes — a fresh
-  // instance with the new initial seed avoids stale content flashing in.
-  // useYjsSync's cleanup flushes any pending debounced write to the OLD
-  // syncProvider before this hook's teardown destroys the view, so we don't
-  // lose keystrokes across note switches.
+  // instance bound to the new provider's Y.Doc avoids stale content flashing in.
   const editor = useEditor(
     {
       extensions,
@@ -197,22 +187,24 @@ export function NoteEditor({
       // navigated to. The "start" placement matches the original Lexical
       // AutoFocusPlugin behavior.
       autofocus: "start",
-      // Initial content is empty — useYjsSync seeds the doc from the Y.Text
-      // container once the sync provider has loaded the persisted state.
+      // Initial content is empty — Collaboration syncs the editor view with
+      // the provider's Y.Doc (already seeded by syncProvider.loadFromLocal).
       content: undefined,
     },
     [noteId, syncProvider],
   );
 
-  useYjsSync({
-    editor,
-    yText: syncProvider?.getText() ?? null,
-    onSyncStatusChange: handleSyncStatusChange,
-  });
-
   // Publish the editor instance to the layout so the bottom cluster can morph
   // its dock pill into the skill-diff accept bar without owning the editor.
   useRegisterNoteEditor(noteId, editor);
+
+  // Hand the editor back to the provider so the markdown sidecar
+  // debouncer can serialize editor.getJSON() when it fires.
+  useEffect(() => {
+    if (syncProvider && editor) {
+      syncProvider.setEditor(editor);
+    }
+  }, [syncProvider, editor]);
 
   // Decorate / clear in-document diff when a candidate is staged for this
   // note. The cluster renders the action UI separately; the SkillDiffEditorLock
