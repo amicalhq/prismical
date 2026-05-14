@@ -117,6 +117,9 @@ export function NoteEditor({
 
   // Reset the TipTap editor when the noteId or syncProvider changes — a fresh
   // instance with the new initial seed avoids stale content flashing in.
+  // useYjsSync's cleanup flushes any pending debounced write to the OLD
+  // syncProvider before this hook's teardown destroys the view, so we don't
+  // lose keystrokes across note switches.
   const editor = useEditor(
     {
       extensions,
@@ -127,7 +130,11 @@ export function NoteEditor({
           "aria-placeholder": placeholder,
         },
       },
-      autofocus: true,
+      // Only autofocus on initial mount — re-creating the editor when the
+      // user switches notes shouldn't steal focus from wherever they
+      // navigated to. The "start" placement matches the original Lexical
+      // AutoFocusPlugin behavior.
+      autofocus: "start",
       // Initial content is empty — useYjsSync seeds the doc from the Y.Text
       // container once the sync provider has loaded the persisted state.
       content: undefined,
@@ -137,7 +144,7 @@ export function NoteEditor({
 
   useYjsSync({
     editor,
-    yText: syncProvider?.getText() as Parameters<typeof useYjsSync>[0]["yText"],
+    yText: syncProvider?.getText() ?? null,
     onSyncStatusChange: handleSyncStatusChange,
   });
 

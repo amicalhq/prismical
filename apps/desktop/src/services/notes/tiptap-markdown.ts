@@ -21,41 +21,53 @@ const md = MarkdownIt("commonmark", { html: false });
 
 // Token-to-node mapping for markdown-it tokens. Node/mark names use TipTap's
 // camelCase convention (NOT prosemirror-markdown's defaultParser snake_case).
-// The `md as never` cast bridges duplicate `@types/markdown-it` copies that
-// pnpm nests under prosemirror-markdown — the runtime classes are identical.
-const parser = new MarkdownParser(schema, md as never, {
-  blockquote: { block: "blockquote" },
-  paragraph: { block: "paragraph" },
-  list_item: { block: "listItem" },
-  bullet_list: { block: "bulletList", getAttrs: () => ({}) },
-  ordered_list: {
-    block: "orderedList",
-    getAttrs: (tok) => ({ start: Number(tok.attrGet("start") ?? "1") || 1 }),
+// The cast bridges duplicate `@types/markdown-it` copies that pnpm nests
+// under prosemirror-markdown — the runtime classes are identical.
+const parser = new MarkdownParser(
+  schema,
+  md as ConstructorParameters<typeof MarkdownParser>[1],
+  {
+    blockquote: { block: "blockquote" },
+    paragraph: { block: "paragraph" },
+    list_item: { block: "listItem" },
+    bullet_list: { block: "bulletList", getAttrs: () => ({}) },
+    ordered_list: {
+      block: "orderedList",
+      getAttrs: (tok) => ({ start: Number(tok.attrGet("start") ?? "1") || 1 }),
+    },
+    heading: {
+      block: "heading",
+      getAttrs: (tok) => ({ level: Number(tok.tag.slice(1)) }),
+    },
+    code_block: { block: "codeBlock", noCloseToken: true },
+    fence: {
+      block: "codeBlock",
+      getAttrs: (tok) => ({ language: tok.info || null }),
+      noCloseToken: true,
+    },
+    hr: { node: "horizontalRule" },
+    hardbreak: { node: "hardBreak" },
+    // markdown-it emits `softbreak` for line breaks inside paragraphs. We
+    // ignore them (no visible break) — matches HTML convention where wrapped
+    // markdown lines collapse to a single space. Without this entry,
+    // MarkdownParser throws on any input containing a wrapped paragraph.
+    softbreak: { ignore: true },
+    // No image extension installed yet — drop images silently rather than
+    // throwing. Revisit if/when the editor gains image support.
+    image: { ignore: true },
+    em: { mark: "italic" },
+    strong: { mark: "bold" },
+    s: { mark: "strike" },
+    link: {
+      mark: "link",
+      getAttrs: (tok) => ({
+        href: tok.attrGet("href"),
+        title: tok.attrGet("title") || null,
+      }),
+    },
+    code_inline: { mark: "code", noCloseToken: true },
   },
-  heading: {
-    block: "heading",
-    getAttrs: (tok) => ({ level: Number(tok.tag.slice(1)) }),
-  },
-  code_block: { block: "codeBlock", noCloseToken: true },
-  fence: {
-    block: "codeBlock",
-    getAttrs: (tok) => ({ language: tok.info || null }),
-    noCloseToken: true,
-  },
-  hr: { node: "horizontalRule" },
-  hardbreak: { node: "hardBreak" },
-  em: { mark: "italic" },
-  strong: { mark: "bold" },
-  s: { mark: "strike" },
-  link: {
-    mark: "link",
-    getAttrs: (tok) => ({
-      href: tok.attrGet("href"),
-      title: tok.attrGet("title") || null,
-    }),
-  },
-  code_inline: { mark: "code", noCloseToken: true },
-});
+);
 
 // Reuse prosemirror-markdown's defaultSerializer for built-in nodes, then
 // add our custom node serializers. Artifact wrappers are unwrapped on

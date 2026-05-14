@@ -23,6 +23,12 @@ export function useYjsSync({
   const isUpdatingFromEditorRef = useRef(false);
   const hasPendingRef = useRef(false);
   const pendingJsonRef = useRef<string | null>(null);
+  // Last value we wrote into yText (or read out of it at seed time).
+  // Comparing against this — rather than the freshly-stringified editor
+  // state — short-circuits any keystroke that produces JSON byte-identical
+  // to what's already stored, even if a future TipTap version introduces
+  // a stable-but-different serialization path.
+  const lastSyncedJsonRef = useRef<string | null>(null);
   const onSyncStatusChangeRef = useRef(onSyncStatusChange);
 
   useEffect(() => {
@@ -46,6 +52,7 @@ export function useYjsSync({
             yText.insert(0, jsonString);
           }, "tiptap-sync");
         }
+        lastSyncedJsonRef.current = jsonString;
       } finally {
         isUpdatingFromEditorRef.current = false;
         hasPendingRef.current = false;
@@ -85,6 +92,7 @@ export function useYjsSync({
     const storedContent = yText.toString();
     if (storedContent) {
       setEditorFromJson(storedContent);
+      lastSyncedJsonRef.current = storedContent;
     }
     onSyncStatusChangeRef.current?.(false);
 
@@ -92,18 +100,21 @@ export function useYjsSync({
       if (isUpdatingFromEditorRef.current) return;
       const newContent = yText.toString();
       if (!newContent) return;
-      const currentJson = JSON.stringify(editor.getJSON());
-      if (currentJson === newContent) return;
+      if (lastSyncedJsonRef.current === newContent) return;
       setEditorFromJson(newContent);
+      lastSyncedJsonRef.current = newContent;
     };
     yText.observe(yjsObserver);
 
     const onUpdate = ({ editor: ed }: { editor: Editor }) => {
       if (isUpdatingFromYjsRef.current) return;
       const jsonString = JSON.stringify(ed.getJSON());
-      const currentYjsContent = yText.toString();
 
-      if (jsonString === currentYjsContent) {
+      // Compare against the last value we synced (in either direction).
+      // Comparing against `yText.toString()` would re-trigger writes on
+      // any byte-level diff between TipTap's getJSON output and what's
+      // stored — even if semantically identical.
+      if (jsonString === lastSyncedJsonRef.current) {
         if (hasPendingRef.current) {
           debouncedSync.cancel();
           hasPendingRef.current = false;
@@ -122,11 +133,14 @@ export function useYjsSync({
     editor.on("update", onUpdate);
 
     return () => {
+      // Detach listeners BEFORE flushing, so the synchronous flush write
+      // doesn't trigger the yjsObserver re-entrantly (Yjs's observer
+      // dispatch can be synchronous within a transact() block).
+      yText.unobserve(yjsObserver);
+      editor.off("update", onUpdate);
       if (hasPendingRef.current && pendingJsonRef.current) {
         writeJsonToYjs(pendingJsonRef.current);
       }
-      yText.unobserve(yjsObserver);
-      editor.off("update", onUpdate);
       debouncedSync.cancel();
     };
   }, [editor, yText, debouncedSync, writeJsonToYjs]);

@@ -15,6 +15,7 @@ import { mergeAttributes, type Extensions } from "@tiptap/core";
 import { ArtifactNode } from "@/renderer/main/components/editor/nodes/artifact-node";
 import { ArtifactInlineNode } from "@/renderer/main/components/editor/nodes/artifact-inline-node";
 import { ArtifactEscape } from "@/renderer/main/components/editor/artifact-escape-plugin";
+import { MARKDOWN_OPTIONS } from "@/services/notes/editor-extensions";
 
 const lowlight = createLowlight(common);
 
@@ -112,13 +113,6 @@ export function buildRendererExtensions(
       placeholder: opts.placeholder ?? "",
       emptyEditorClass: "is-editor-empty",
     }),
-    Markdown.configure({
-      html: false,
-      tightLists: true,
-      linkify: false,
-      breaks: false,
-      transformPastedText: true,
-      transformCopiedText: true,
-    }),
+    Markdown.configure(MARKDOWN_OPTIONS),
   ];
 }

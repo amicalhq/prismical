@@ -137,17 +137,29 @@ export const ArtifactNode = Node.create({
             return true;
           });
 
-          const newNode = state.schema.nodes[ARTIFACT_NODE_NAME].create(
-            {
-              artifactId: payload.artifactId,
-              skillId: payload.skillId,
-              skillName: payload.skillName,
-              version: payload.version,
-              generatedAt: payload.generatedAt,
-              modelId: payload.modelId,
-            },
-            payload.content.map((child) => state.schema.nodeFromJSON(child)),
-          );
+          let newNode;
+          try {
+            newNode = state.schema.nodes[ARTIFACT_NODE_NAME].create(
+              {
+                artifactId: payload.artifactId,
+                skillId: payload.skillId,
+                skillName: payload.skillName,
+                version: payload.version,
+                generatedAt: payload.generatedAt,
+                modelId: payload.modelId,
+              },
+              payload.content.map((child) => state.schema.nodeFromJSON(child)),
+            );
+          } catch (err) {
+            // Malformed payload (skill output didn't match the schema).
+            // Fail the command quietly rather than throwing out of TipTap's
+            // command runner, which would crash the editor.
+            console.warn(
+              "insertArtifactBlock: failed to materialize node from payload",
+              err,
+            );
+            return false;
+          }
 
           if (existingPos !== null) {
             const existing = state.doc.nodeAt(existingPos);
@@ -169,10 +181,3 @@ export const ArtifactNode = Node.create({
     };
   },
 });
-
-// Type guard for ProseMirror Node instances (used by plugins traversing the doc).
-export function isArtifactNode(node: {
-  type: { name: string };
-}): boolean {
-  return node.type.name === ARTIFACT_NODE_NAME;
-}

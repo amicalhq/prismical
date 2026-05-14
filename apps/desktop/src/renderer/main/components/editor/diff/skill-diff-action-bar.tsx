@@ -215,7 +215,13 @@ function restoreInlineSelection(
   const points = candidate.selectionPoints;
   if (!points) return false;
   const { doc } = editor.state;
-  if (points.from < 0 || points.to > doc.content.size) return false;
+  if (
+    points.from < 0 ||
+    points.to > doc.content.size ||
+    points.from > points.to
+  ) {
+    return false;
+  }
   try {
     const sel = TextSelection.create(doc, points.from, points.to);
     editor.view.dispatch(editor.state.tr.setSelection(sel));

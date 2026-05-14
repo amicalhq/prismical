@@ -13,6 +13,18 @@ import { ArtifactNode } from "@/renderer/main/components/editor/nodes/artifact-n
 import { ArtifactInlineNode } from "@/renderer/main/components/editor/nodes/artifact-inline-node";
 import { ArtifactEscape } from "@/renderer/main/components/editor/artifact-escape-plugin";
 
+// Single tiptap-markdown configuration shared by both the renderer's
+// editor and the headless converters. Keep this in lockstep with how
+// the renderer surface parses pasted markdown.
+export const MARKDOWN_OPTIONS = {
+  html: false,
+  tightLists: true,
+  linkify: false,
+  breaks: false,
+  transformPastedText: true,
+  transformCopiedText: true,
+} as const;
+
 // Lowlight instance is constructed lazily to avoid pulling all language
 // grammars into the main-process bundle. Callers in the renderer build a
 // configured instance; the headless paths get plain code blocks (no syntax
@@ -40,13 +52,6 @@ export function buildEditorExtensions(opts?: {
     ArtifactEscape,
     // tiptap-markdown must come AFTER all schema-contributing extensions
     // so it can attach its `addStorage().markdown` overrides cleanly.
-    Markdown.configure({
-      html: false,
-      tightLists: true,
-      linkify: false,
-      breaks: false,
-      transformPastedText: true,
-      transformCopiedText: true,
-    }),
+    Markdown.configure(MARKDOWN_OPTIONS),
   ];
 }

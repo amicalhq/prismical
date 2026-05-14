@@ -76,11 +76,14 @@ export function InlineSkillPopoverPlugin({ editor, noteId }: Props) {
       setPopover({ top, left, selectionText: text, selectionPoints });
     };
 
+    const onBlur = () => setPopover(null);
+
     editor.on("selectionUpdate", onSelectionUpdate);
-    editor.on("blur", () => setPopover(null));
+    editor.on("blur", onBlur);
 
     return () => {
       editor.off("selectionUpdate", onSelectionUpdate);
+      editor.off("blur", onBlur);
     };
   }, [editor]);
 

@@ -77,21 +77,28 @@ export const ArtifactInlineNode = Node.create({
       insertArtifactInline:
         (payload) =>
         ({ state, tr, dispatch }) => {
-          const { $from, $to } = state.selection;
           const existing = findInlineAncestor(state.selection, payload.skillId);
 
-          const childNodes = payload.content.map((child) =>
-            state.schema.nodeFromJSON(child),
-          );
-
-          const newNode = state.schema.nodes[ARTIFACT_INLINE_NODE_NAME].create(
-            {
-              artifactId: payload.artifactId,
-              skillId: payload.skillId,
-              skillName: payload.skillName,
-            },
-            childNodes,
-          );
+          let newNode;
+          try {
+            const childNodes = payload.content.map((child) =>
+              state.schema.nodeFromJSON(child),
+            );
+            newNode = state.schema.nodes[ARTIFACT_INLINE_NODE_NAME].create(
+              {
+                artifactId: payload.artifactId,
+                skillId: payload.skillId,
+                skillName: payload.skillName,
+              },
+              childNodes,
+            );
+          } catch (err) {
+            console.warn(
+              "insertArtifactInline: failed to materialize node from payload",
+              err,
+            );
+            return false;
+          }
 
           if (existing) {
             if (dispatch) {
@@ -103,6 +110,12 @@ export const ArtifactInlineNode = Node.create({
             }
             return true;
           }
+
+          // Non-existing branch: insert at the current selection. The
+          // selection must be inside an inline-content context for the
+          // replaceWith to validate — otherwise we'd corrupt the schema.
+          const { $from, $to } = state.selection;
+          if (!$from.parent.inlineContent) return false;
 
           if (dispatch) {
             tr.replaceWith($from.pos, $to.pos, newNode);

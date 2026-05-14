@@ -54,10 +54,21 @@ export const ArtifactEscape = Extension.create({
         const tr = state.tr;
         const sel = Selection.near(tr.doc.resolve(artifactStart), -1);
 
-        // If `near` lands us back inside the artifact (e.g. the artifact is
-        // the first block in the doc), insert a paragraph before it.
-        const inArtifactStill = sel.$from.node(aDepth)?.type.name === ARTIFACT_NODE_NAME;
-        if (inArtifactStill) {
+        // If `near` lands us back inside the artifact (no preceding
+        // sibling — e.g. the artifact is the first block in the doc),
+        // insert a paragraph before it and land in it. Walk sel.$from's
+        // own depth chain rather than indexing at `aDepth` directly,
+        // since Selection.near may return a node selection at a shallower
+        // depth than the original — `node(aDepth)` would throw in that
+        // case.
+        let stillInArtifact = false;
+        for (let d = sel.$from.depth; d > 0; d--) {
+          if (sel.$from.node(d).type.name === ARTIFACT_NODE_NAME) {
+            stillInArtifact = true;
+            break;
+          }
+        }
+        if (stillInArtifact) {
           const para = state.schema.nodes.paragraph.createAndFill();
           if (!para) return false;
           tr.insert(artifactStart, para);
@@ -112,8 +123,9 @@ export const ArtifactEscape = Extension.create({
       Enter: tryEscapeDown(true),
       ArrowDown: tryEscapeDown(false),
       ArrowUp: tryEscapeUp(false),
-      // Backspace at the top edge always escapes (no shiftKey check —
-      // browsers treat Shift-Backspace identically to Backspace).
+      // Backspace at the top edge always escapes — we don't distinguish
+      // Shift-Backspace here, treating both as "leave the artifact"
+      // rather than swallowing them as a no-op delete.
       Backspace: tryEscapeUp(false),
     };
   },
