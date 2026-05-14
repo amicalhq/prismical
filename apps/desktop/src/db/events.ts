@@ -1,6 +1,5 @@
 import { asc, eq, gte, sql } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
-import * as Y from "yjs";
 import { db } from "./index";
 import { saveYjsUpdate } from "./notes";
 import {
@@ -11,6 +10,7 @@ import {
   transcriptSegments,
   type NewEvent,
 } from "./schema";
+import { markdownToYDocUpdate } from "../services/notes/markdown-to-ydoc";
 import { serializePlainTextToTiptapJson } from "../services/notes/tiptap-editor-state";
 
 export async function upsertEvent(
@@ -348,32 +348,26 @@ async function seedCustomerSyncMeeting(noteId: number, now: Date) {
   const durationMs = 30 * 60_000;
   const endedAt = new Date(startedAt.getTime() + durationMs);
 
-  const rawNotesText = [
-    "Walk through onboarding notes use case during the call.",
-    "Confirm the templates design review for end of the week.",
-    "Open question — how to handle multiple contacts on one call?",
+  const rawNotesMarkdown = [
+    "- Walk through onboarding notes use case during the call.",
+    "- Confirm the templates design review for end of the week.",
+    "- Open question — how to handle multiple contacts on one call?",
   ].join("\n");
-  const rawNotesLexicalJson =
-    serializePlainTextToTiptapJson(rawNotesText);
 
-  // `notes.content` is a fallback/snapshot field — the editor reads from Yjs
-  // updates. Set both so list previews, search, and the live editor all show
-  // something.
+  // notes.content is the live markdown sidecar (PRSM-56).
   await db
     .update(notes)
     .set({
-      content: rawNotesLexicalJson,
+      content: rawNotesMarkdown,
       updatedAt: endedAt,
     })
     .where(eq(notes.id, noteId));
 
-  // Seed a Yjs update so the Raw notes tab has content on first open.
-  // The editor's YjsSyncPlugin stores the Lexical editor state JSON as a
-  // plain string inside a Y.Text named "content".
-  const ydoc = new Y.Doc();
-  ydoc.getText("content").insert(0, rawNotesLexicalJson);
-  await saveYjsUpdate(db, noteId, Y.encodeStateAsUpdate(ydoc));
-  ydoc.destroy();
+  // Seed yjs_updates with a real Y.XmlFragment encoding so the editor
+  // opens with content on first mount. markdownToYDocUpdate handles the
+  // markdown → TipTap JSON → prosemirror → Y.XmlFragment → encoded chain.
+  const encoded = markdownToYDocUpdate(rawNotesMarkdown);
+  await saveYjsUpdate(db, noteId, encoded);
 
   await db.insert(meetings).values({
     id: meetingId,
