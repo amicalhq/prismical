@@ -67,9 +67,6 @@ importers:
       '@prismical/whisper-wrapper':
         specifier: workspace:*
         version: link:../../packages/whisper-wrapper
-      '@prismical/y-libsql':
-        specifier: workspace:*
-        version: link:../../packages/y-libsql
       '@radix-ui/react-accordion':
         specifier: ^1.2.10
         version: 1.2.12(@types/react-dom@19.1.9(@types/react@19.1.12))(@types/react@19.1.12)(react-dom@19.1.1(react@19.1.1))(react@19.1.1)
@@ -637,25 +634,6 @@ importers:
         version: 5.8.3
 
   packages/whisper-wrapper/addon: {}
-
-  packages/y-libsql:
-    dependencies:
-      '@libsql/client':
-        specifier: ^0.15.9
-        version: 0.15.12
-      minimatch:
-        specifier: 10.0.3
-        version: 10.0.3
-      yjs:
-        specifier: ^13.6.18
-        version: 13.6.27
-    devDependencies:
-      '@types/node':
-        specifier: ^20.14.9
-        version: 20.19.11
-      typescript:
-        specifier: ^5.5.2
-        version: 5.8.3
 
 packages:
 
@@ -3099,9 +3077,6 @@ packages:
 
   '@types/node@16.18.126':
     resolution: {integrity: sha512-OTcgaiwfGFBKacvfwuHzzn1KLxH/er8mluiy8/uM3sGXHaRe73RrSIj01jow9t4kJEW633Ov+cOexXeiApTyAw==}
-
-  '@types/node@20.19.11':
-    resolution: {integrity: sha512-uug3FEEGv0r+jrecvUUpbY8lLisvIjg6AAic6a2bSP5OEOLeJsDSnvhCDov7ipFFMXS3orMpzlmi0ZcuGkBbow==}
 
   '@types/node@22.15.12':
     resolution: {integrity: sha512-K0fpC/ZVeb8G9rm7bH7vI0KAec4XHEhBam616nVJCV51bKzJ6oA3luG4WdKoaztxe70QaNjS/xBmcDLmr4PiGw==}
@@ -10156,10 +10131,6 @@ snapshots:
   '@types/minimatch@3.0.5': {}
 
   '@types/node@16.18.126': {}
-
-  '@types/node@20.19.11':
-    dependencies:
-      undici-types: 6.21.0
 
   '@types/node@22.15.12':
     dependencies:
