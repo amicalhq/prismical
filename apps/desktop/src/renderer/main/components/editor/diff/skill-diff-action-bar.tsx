@@ -1,16 +1,7 @@
 import { useState } from "react";
-import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
-import {
-  $createRangeSelection,
-  $getRoot,
-  $parseSerializedNode,
-  $setSelection,
-} from "lexical";
+import type { Editor } from "@tiptap/core";
+import { TextSelection } from "@tiptap/pm/state";
 import { toast } from "sonner";
-import {
-  INSERT_ARTIFACT_NODE_COMMAND,
-  INSERT_ARTIFACT_INLINE_NODE_COMMAND,
-} from "@/renderer/main/components/editor/commands/artifact-commands";
 import { useSkillDiffStore } from "./skill-diff-store";
 import { api } from "@/trpc/react";
 import { Button } from "@/components/ui/button";
@@ -19,11 +10,11 @@ import { computeTextDiff } from "./compute-text-diff";
 import type React from "react";
 
 interface Props {
+  editor: Editor;
   noteId: number;
 }
 
-export function SkillDiffActionBar({ noteId }: Props) {
-  const [editor] = useLexicalComposerContext();
+export function SkillDiffActionBar({ editor, noteId }: Props) {
   const candidate = useSkillDiffStore((s) => s.candidatesByNote.get(noteId));
   const clear = useSkillDiffStore((s) => s.clear);
   const stage = useSkillDiffStore((s) => s.stage);
@@ -39,8 +30,8 @@ export function SkillDiffActionBar({ noteId }: Props) {
 
   const onAccept = async () => {
     // Inline-rewrite needs the original range restored BEFORE we write the
-    // audit row — if the underlying nodes are gone, surface an error and
-    // skip the DB write entirely.
+    // audit row — if the underlying positions are gone, surface an error
+    // and skip the DB write entirely.
     if (candidate.mode === "inline-rewrite") {
       const restored = restoreInlineSelection(editor, candidate);
       if (!restored) {
@@ -77,7 +68,7 @@ export function SkillDiffActionBar({ noteId }: Props) {
     }
 
     if (candidate.mode === "append-section") {
-      editor.dispatchCommand(INSERT_ARTIFACT_NODE_COMMAND, {
+      editor.commands.insertArtifactBlock({
         artifactId: auditMeta.artifactId,
         skillId: candidate.skillId,
         skillName: candidate.skillName,
@@ -87,21 +78,15 @@ export function SkillDiffActionBar({ noteId }: Props) {
         content: candidate.content,
       });
     } else if (candidate.mode === "inline-rewrite") {
-      editor.dispatchCommand(INSERT_ARTIFACT_INLINE_NODE_COMMAND, {
+      editor.commands.insertArtifactInline({
         artifactId: auditMeta.artifactId,
         skillId: candidate.skillId,
         skillName: candidate.skillName,
         content: candidate.content,
       });
     } else {
-      // replace-doc: clear the root + append the candidate's children.
-      editor.update(() => {
-        const root = $getRoot();
-        root.clear();
-        for (const serialized of candidate.content) {
-          root.append($parseSerializedNode(serialized));
-        }
-      });
+      // replace-doc: swap the entire doc content for the candidate's blocks.
+      editor.commands.setContent({ type: "doc", content: candidate.content });
     }
     clear(noteId);
   };
@@ -219,37 +204,25 @@ export function SkillDiffActionBar({ noteId }: Props) {
   );
 }
 
-/**
- * Restore the original Lexical range selection captured when this candidate
- * was staged. Returns true on success, false if the underlying nodes have
- * been deleted (in which case the caller should reject the accept).
- */
+// Restore the original ProseMirror range selection captured when this
+// candidate was staged. Returns true on success, false if the positions
+// no longer point at valid nodes (in which case the caller should reject
+// the accept).
 function restoreInlineSelection(
-  editor: ReturnType<typeof useLexicalComposerContext>[0],
-  candidate: { selectionPoints?: import("./skill-diff-store").SerializedSelectionPoints },
+  editor: Editor,
+  candidate: { selectionPoints?: { from: number; to: number } },
 ): boolean {
   const points = candidate.selectionPoints;
   if (!points) return false;
-  let ok = false;
-  editor.update(
-    () => {
-      const sel = $createRangeSelection();
-      sel.anchor.set(points.anchor.key, points.anchor.offset, points.anchor.type);
-      sel.focus.set(points.focus.key, points.focus.offset, points.focus.type);
-      // Lexical sets the selection's anchor/focus even if the keys are stale;
-      // verify the nodes still exist by walking them up via getNodes().
-      try {
-        const nodes = sel.getNodes();
-        if (nodes.length === 0) return;
-        $setSelection(sel);
-        ok = true;
-      } catch {
-        ok = false;
-      }
-    },
-    { discrete: true },
-  );
-  return ok;
+  const { doc } = editor.state;
+  if (points.from < 0 || points.to > doc.content.size) return false;
+  try {
+    const sel = TextSelection.create(doc, points.from, points.to);
+    editor.view.dispatch(editor.state.tr.setSelection(sel));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function renderInlineDiff(before: string, after: string): React.ReactNode {

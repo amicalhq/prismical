@@ -1,216 +1,150 @@
-import { useEffect } from "react";
-import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
-import {
-  $createParagraphNode,
-  $getSelection,
-  $isElementNode,
-  $isRangeSelection,
-  $isRootNode,
-  COMMAND_PRIORITY_LOW,
-  KEY_ARROW_DOWN_COMMAND,
-  KEY_ARROW_UP_COMMAND,
-  KEY_BACKSPACE_COMMAND,
-  KEY_ENTER_COMMAND,
-  type LexicalEditor,
-  type LexicalNode,
-} from "lexical";
-import {
-  ArtifactNode,
-  $isArtifactNode,
-} from "./nodes/artifact-node";
+import { Extension, type Editor } from "@tiptap/core";
+import { Plugin, PluginKey, Selection, TextSelection } from "@tiptap/pm/state";
+import type { ResolvedPos } from "@tiptap/pm/model";
+import { ARTIFACT_NODE_NAME } from "./nodes/artifact-node";
 
-function $ensureArtifactTrailingParagraph(node: ArtifactNode): void {
-  const parent = node.getParent();
-  if (!parent || !$isRootNode(parent)) return;
-  if (node.getNextSibling() !== null) return;
-  node.insertAfter($createParagraphNode());
-}
-
-function $findArtifactAncestor(node: LexicalNode): ArtifactNode | null {
-  let cur: LexicalNode | null = node;
-  while (cur) {
-    if ($isArtifactNode(cur)) return cur;
-    cur = cur.getParent();
+// Find the closest ancestor of `$pos` that is an artifact node. Returns the
+// depth at which the artifact lives, or null if `$pos` is outside any artifact.
+function findArtifactDepth($pos: ResolvedPos): number | null {
+  for (let d = $pos.depth; d > 0; d--) {
+    if ($pos.node(d).type.name === ARTIFACT_NODE_NAME) return d;
   }
   return null;
 }
 
-function $isLastDescendantPosition(
-  artifact: ArtifactNode,
-  block: LexicalNode,
-): boolean {
-  // We're at the bottom edge if walking up from `block` to `artifact` never
-  // encounters a node that has a next sibling — i.e. block is on the artifact's
-  // last-child chain.
-  let cur: LexicalNode | null = block;
-  while (cur && cur !== artifact) {
-    if (cur.getNextSibling() !== null) return false;
-    cur = cur.getParent();
+// Caret is on the top edge of the artifact if every node between the leaf
+// and the artifact is the first child of its parent, AND the offset within
+// the leaf is 0.
+function isAtTopEdge($pos: ResolvedPos, aDepth: number): boolean {
+  for (let d = aDepth + 1; d <= $pos.depth; d++) {
+    if ($pos.index(d - 1) !== 0) return false;
   }
-  return cur === artifact;
+  return $pos.parentOffset === 0;
 }
 
-function $isFirstDescendantPosition(
-  artifact: ArtifactNode,
-  block: LexicalNode,
-): boolean {
-  // Top-edge mirror of $isLastDescendantPosition: walking up from `block` to
-  // `artifact` must never cross a node with a previous sibling — i.e. block is
-  // on the artifact's first-child chain.
-  let cur: LexicalNode | null = block;
-  while (cur && cur !== artifact) {
-    if (cur.getPreviousSibling() !== null) return false;
-    cur = cur.getParent();
+// Caret is on the bottom edge of the artifact if every node between the
+// leaf and the artifact is the last child of its parent, AND the offset
+// within the leaf is at the end of the parent's content.
+function isAtBottomEdge($pos: ResolvedPos, aDepth: number): boolean {
+  for (let d = aDepth + 1; d <= $pos.depth; d++) {
+    const parent = $pos.node(d - 1);
+    if ($pos.index(d - 1) !== parent.childCount - 1) return false;
   }
-  return cur === artifact;
+  return $pos.parentOffset === $pos.parent.content.size;
 }
 
-export function $tryEscapeArtifactDown(requireEmpty = true): boolean {
-  const sel = $getSelection();
-  if (!$isRangeSelection(sel) || !sel.isCollapsed()) return false;
+const artifactEscapeKey = new PluginKey("prismical-artifact-escape");
 
-  const anchorNode = sel.anchor.getNode();
-  const artifact = $findArtifactAncestor(anchorNode);
-  if (!artifact) return false;
+export const ArtifactEscape = Extension.create({
+  name: "artifactEscape",
 
-  const leafBlock = $isElementNode(anchorNode)
-    ? anchorNode
-    : anchorNode.getParent();
-  if (!leafBlock || !$isElementNode(leafBlock)) return false;
+  addKeyboardShortcuts() {
+    const tryEscapeUp = (requireEmpty: boolean) => {
+      return ({ editor }: { editor: Editor }): boolean => {
+        const { state, view } = editor;
+        const { $from, empty } = state.selection;
+        if (!empty) return false;
 
-  if (!$isLastDescendantPosition(artifact, leafBlock)) return false;
+        const aDepth = findArtifactDepth($from);
+        if (aDepth === null) return false;
+        if (!isAtTopEdge($from, aDepth)) return false;
+        if (requireEmpty && $from.parent.content.size !== 0) return false;
 
-  // Caret must be at the end of the leaf — otherwise we'd swallow mid-line keys.
-  if (sel.anchor.offset !== anchorNode.getTextContentSize()) return false;
+        const artifactStart = $from.before(aDepth);
+        const tr = state.tr;
+        const sel = Selection.near(tr.doc.resolve(artifactStart), -1);
 
-  // Enter only escapes from an empty leaf — otherwise we'd block normal
-  // newline insertion at the end of a non-empty paragraph.
-  if (requireEmpty && leafBlock.getTextContentSize() !== 0) return false;
+        // If `near` lands us back inside the artifact (e.g. the artifact is
+        // the first block in the doc), insert a paragraph before it.
+        const inArtifactStill = sel.$from.node(aDepth)?.type.name === ARTIFACT_NODE_NAME;
+        if (inArtifactStill) {
+          const para = state.schema.nodes.paragraph.createAndFill();
+          if (!para) return false;
+          tr.insert(artifactStart, para);
+          tr.setSelection(
+            TextSelection.near(tr.doc.resolve(artifactStart + 1), -1),
+          );
+        } else {
+          tr.setSelection(sel);
+        }
+        view.dispatch(tr);
+        return true;
+      };
+    };
 
-  let next = artifact.getNextSibling();
-  if (next === null) {
-    // Defensive: Task 1's transform should have created this; if it hasn't run
-    // yet, do it now so we have somewhere to land.
-    next = $createParagraphNode();
-    artifact.insertAfter(next);
-  }
+    const tryEscapeDown = (requireEmpty: boolean) => {
+      return ({ editor }: { editor: Editor }): boolean => {
+        const { state, view } = editor;
+        const { $from, empty } = state.selection;
+        if (!empty) return false;
 
-  if (!$isElementNode(next)) {
-    // Top-level DecoratorNodes (none today, but possible — e.g. images/embeds)
-    // can't accept selectStart; bail so the default Enter/ArrowDown handling
-    // runs instead of trapping the caret.
-    return false;
-  }
-  next.selectStart();
-  return true;
-}
+        const aDepth = findArtifactDepth($from);
+        if (aDepth === null) return false;
+        if (!isAtBottomEdge($from, aDepth)) return false;
+        if (requireEmpty && $from.parent.content.size !== 0) return false;
 
-export function $tryEscapeArtifactUp(requireEmpty = false): boolean {
-  const sel = $getSelection();
-  if (!$isRangeSelection(sel) || !sel.isCollapsed()) return false;
+        const artifactEnd = $from.after(aDepth);
+        const tr = state.tr;
+        const after = state.doc.nodeAt(artifactEnd);
+        if (!after) {
+          // Defensive: the appendTransaction below normally creates a
+          // trailing paragraph; insert one inline if for some reason it
+          // hasn't fired yet.
+          const para = state.schema.nodes.paragraph.createAndFill();
+          if (!para) return false;
+          tr.insert(artifactEnd, para);
+          tr.setSelection(
+            TextSelection.near(tr.doc.resolve(artifactEnd + 1), 1),
+          );
+        } else {
+          tr.setSelection(
+            Selection.near(state.doc.resolve(artifactEnd + 1), 1),
+          );
+        }
+        view.dispatch(tr);
+        return true;
+      };
+    };
 
-  const anchorNode = sel.anchor.getNode();
-  const artifact = $findArtifactAncestor(anchorNode);
-  if (!artifact) return false;
+    return {
+      // Enter only escapes from an empty leaf at the bottom edge; otherwise
+      // we'd block normal newline insertion at the end of a non-empty paragraph.
+      Enter: tryEscapeDown(true),
+      ArrowDown: tryEscapeDown(false),
+      ArrowUp: tryEscapeUp(false),
+      // Backspace at the top edge always escapes (no shiftKey check —
+      // browsers treat Shift-Backspace identically to Backspace).
+      Backspace: tryEscapeUp(false),
+    };
+  },
 
-  const leafBlock = $isElementNode(anchorNode)
-    ? anchorNode
-    : anchorNode.getParent();
-  if (!leafBlock || !$isElementNode(leafBlock)) return false;
+  addProseMirrorPlugins() {
+    return [
+      // Mirror of the Lexical node-transform: every artifact must have a
+      // trailing block-level sibling so the caret has somewhere to land
+      // when escaping downward. Runs on every transaction; idempotent.
+      new Plugin({
+        key: artifactEscapeKey,
+        appendTransaction: (_transactions, _oldState, newState) => {
+          const insertions: number[] = [];
+          newState.doc.forEach((child, offset) => {
+            if (child.type.name !== ARTIFACT_NODE_NAME) return;
+            const end = offset + child.nodeSize;
+            const next = newState.doc.nodeAt(end);
+            if (!next) insertions.push(end);
+          });
+          if (insertions.length === 0) return null;
 
-  if (!$isFirstDescendantPosition(artifact, leafBlock)) return false;
-
-  // Caret must be at the start of the leaf — otherwise we'd swallow mid-line keys.
-  if (sel.anchor.offset !== 0) return false;
-
-  // Backspace/Arrow-Up only escape from an empty leaf when callers ask for it
-  // (the wired commands pass false — Backspace at the top edge is always an
-  // escape, never a deletion).
-  if (requireEmpty && leafBlock.getTextContentSize() !== 0) return false;
-
-  let prev = artifact.getPreviousSibling();
-  if (prev === null) {
-    // Symmetric to the downward fallback: ensure there is a place to land
-    // above the artifact, even if the user's doc started with the artifact.
-    prev = $createParagraphNode();
-    artifact.insertBefore(prev);
-  }
-
-  if (!$isElementNode(prev)) {
-    // Top-level DecoratorNodes (none today, but possible — e.g. images/embeds)
-    // can't accept selectEnd; bail so the default Backspace/ArrowUp handling
-    // runs instead of trapping the caret.
-    return false;
-  }
-  prev.selectEnd();
-  return true;
-}
-
-export function registerArtifactEscape(editor: LexicalEditor): () => void {
-  const unregisterTransform = editor.registerNodeTransform(
-    ArtifactNode,
-    $ensureArtifactTrailingParagraph,
-  );
-
-  // KEY_ENTER_COMMAND's payload is `KeyboardEvent | null` — Lexical allows
-  // programmatic dispatch without an event, so the optional chaining here is
-  // intentional (the arrow/backspace commands below carry non-null payloads).
-  const unregisterEnter = editor.registerCommand(
-    KEY_ENTER_COMMAND,
-    (event) => {
-      if (event?.shiftKey) return false; // Shift-Enter is line-break, leave it.
-      if (!$tryEscapeArtifactDown(/* requireEmpty */ true)) return false;
-      event?.preventDefault();
-      return true;
-    },
-    COMMAND_PRIORITY_LOW,
-  );
-
-  const unregisterArrowDown = editor.registerCommand(
-    KEY_ARROW_DOWN_COMMAND,
-    (event) => {
-      if (event.shiftKey) return false; // Don't break shift-select extension.
-      if (!$tryEscapeArtifactDown(/* requireEmpty */ false)) return false;
-      event.preventDefault();
-      return true;
-    },
-    COMMAND_PRIORITY_LOW,
-  );
-
-  const unregisterArrowUp = editor.registerCommand(
-    KEY_ARROW_UP_COMMAND,
-    (event) => {
-      if (event.shiftKey) return false;
-      if (!$tryEscapeArtifactUp(false)) return false;
-      event.preventDefault();
-      return true;
-    },
-    COMMAND_PRIORITY_LOW,
-  );
-
-  // No shiftKey check: browsers treat Shift-Backspace identically to Backspace,
-  // and at the artifact's top edge we always want to escape rather than delete.
-  const unregisterBackspace = editor.registerCommand(
-    KEY_BACKSPACE_COMMAND,
-    (event) => {
-      if (!$tryEscapeArtifactUp(false)) return false;
-      event.preventDefault();
-      return true;
-    },
-    COMMAND_PRIORITY_LOW,
-  );
-
-  return () => {
-    unregisterBackspace();
-    unregisterArrowUp();
-    unregisterArrowDown();
-    unregisterEnter();
-    unregisterTransform();
-  };
-}
-
-export function ArtifactEscapePlugin(): null {
-  const [editor] = useLexicalComposerContext();
-  useEffect(() => registerArtifactEscape(editor), [editor]);
-  return null;
-}
+          const tr = newState.tr;
+          // Apply insertions in reverse so earlier offsets remain valid.
+          for (let i = insertions.length - 1; i >= 0; i--) {
+            const para = newState.schema.nodes.paragraph.createAndFill();
+            if (!para) continue;
+            tr.insert(insertions[i], para);
+          }
+          return tr;
+        },
+      }),
+    ];
+  },
+});

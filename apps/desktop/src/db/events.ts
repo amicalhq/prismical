@@ -11,7 +11,7 @@ import {
   transcriptSegments,
   type NewEvent,
 } from "./schema";
-import { serializePlainTextToLexicalEditorStateJson } from "../services/notes/lexical-editor-state";
+import { serializePlainTextToTiptapJson } from "../services/notes/tiptap-editor-state";
 
 export async function upsertEvent(
   data: Omit<NewEvent, "createdAt" | "updatedAt">,
@@ -354,7 +354,7 @@ async function seedCustomerSyncMeeting(noteId: number, now: Date) {
     "Open question — how to handle multiple contacts on one call?",
   ].join("\n");
   const rawNotesLexicalJson =
-    serializePlainTextToLexicalEditorStateJson(rawNotesText);
+    serializePlainTextToTiptapJson(rawNotesText);
 
   // `notes.content` is a fallback/snapshot field — the editor reads from Yjs
   // updates. Set both so list previews, search, and the live editor all show
@@ -486,7 +486,7 @@ async function seedCustomerSyncMeeting(noteId: number, now: Date) {
     skillId: "summary",
     mode: "replace-doc",
     version: 1,
-    content: serializePlainTextToLexicalEditorStateJson(summaryText),
+    content: serializePlainTextToTiptapJson(summaryText),
     generator: "ai",
     modelId: "claude-opus-4-7",
     meta: { prompt: "default_summary_v1" },

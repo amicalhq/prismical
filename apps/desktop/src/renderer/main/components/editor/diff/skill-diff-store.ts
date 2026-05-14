@@ -1,23 +1,21 @@
 import { create } from "zustand";
-import type { NodeKey, SerializedLexicalNode } from "lexical";
+import type { JSONContent } from "@tiptap/core";
 import type { ArtifactMode } from "@/db/schema";
 
 /**
- * Captured selection endpoint at skill-run time. Used for `inline-rewrite`
+ * Captured selection range at skill-run time. Used for `inline-rewrite`
  * mode so the action bar can restore the original range before dispatching
  * the insert command — by accept-time the live editor selection has moved
- * to the action bar / popover / elsewhere and `$getSelection()` would
- * return a stale or null range.
+ * to the action bar / popover / elsewhere.
+ *
+ * ProseMirror positions are integer offsets in the document tree; they're
+ * subject to invalidation if the doc is edited between capture and use.
+ * The action bar verifies the positions still point at valid nodes before
+ * dispatching.
  */
-export interface SerializedSelectionPoint {
-  key: NodeKey;
-  offset: number;
-  type: "text" | "element";
-}
-
 export interface SerializedSelectionPoints {
-  anchor: SerializedSelectionPoint;
-  focus: SerializedSelectionPoint;
+  from: number;
+  to: number;
 }
 
 export interface SkillDiffCandidate {
@@ -32,8 +30,8 @@ export interface SkillDiffCandidate {
   refineInstruction: string | null;
   selectionText: string | null;
   reasoning: string | null;
-  /** For append-section / inline-rewrite: the Lexical children. */
-  content: SerializedLexicalNode[];
+  /** For append-section / inline-rewrite: the TipTap JSON children. */
+  content: JSONContent[];
   rawMarkdown: string;
   /** For replace-doc / inline-rewrite: the "before" text we diff against. */
   beforeText?: string;

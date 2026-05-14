@@ -1,16 +1,11 @@
 import { useEffect, useState } from "react";
-import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
-import {
-  $getSelection,
-  $isRangeSelection,
-  SELECTION_CHANGE_COMMAND,
-  COMMAND_PRIORITY_LOW,
-} from "lexical";
+import type { Editor } from "@tiptap/core";
 import { api } from "@/trpc/react";
 import { useRunSkill } from "@/renderer/main/hooks/use-run-skill";
 import type { SerializedSelectionPoints } from "@/renderer/main/components/editor/diff/skill-diff-store";
 
 interface Props {
+  editor: Editor;
   noteId: number;
 }
 
@@ -28,8 +23,7 @@ const POPOVER_ESTIMATED_HEIGHT = 40;
 const POPOVER_ESTIMATED_WIDTH = 240;
 const VIEWPORT_MARGIN = 8;
 
-export function InlineSkillPopoverPlugin({ noteId }: Props) {
-  const [editor] = useLexicalComposerContext();
+export function InlineSkillPopoverPlugin({ editor, noteId }: Props) {
   const { data: skills = [] } = api.skills.listForSurface.useQuery({
     surface: "inline",
   });
@@ -46,58 +40,48 @@ export function InlineSkillPopoverPlugin({ noteId }: Props) {
   const [popover, setPopover] = useState<PopoverState | null>(null);
 
   useEffect(() => {
-    return editor.registerCommand(
-      SELECTION_CHANGE_COMMAND,
-      () => {
-        editor.read(() => {
-          const sel = $getSelection();
-          if (!$isRangeSelection(sel) || sel.isCollapsed()) {
-            setPopover(null);
-            return;
-          }
-          const text = sel.getTextContent();
-          if (!text.trim()) {
-            setPopover(null);
-            return;
-          }
-          const nativeSel = window.getSelection();
-          if (!nativeSel || nativeSel.rangeCount === 0) {
-            setPopover(null);
-            return;
-          }
-          const rect = nativeSel.getRangeAt(0).getBoundingClientRect();
-          // Capture selection anchor/focus so accept can restore the range
-          // long after the user has clicked the action bar (Lexical's live
-          // selection has moved by then).
-          const selectionPoints: SerializedSelectionPoints = {
-            anchor: {
-              key: sel.anchor.key,
-              offset: sel.anchor.offset,
-              type: sel.anchor.type,
-            },
-            focus: {
-              key: sel.focus.key,
-              offset: sel.focus.offset,
-              type: sel.focus.type,
-            },
-          };
-          // Clamp position to viewport. Default anchors above the selection;
-          // if there's no room, drop below.
-          const viewportWidth = window.innerWidth;
-          let top = rect.top - VIEWPORT_MARGIN - POPOVER_ESTIMATED_HEIGHT;
-          if (top < VIEWPORT_MARGIN) {
-            top = rect.bottom + VIEWPORT_MARGIN;
-          }
-          const left = Math.min(
-            Math.max(VIEWPORT_MARGIN, rect.left),
-            viewportWidth - POPOVER_ESTIMATED_WIDTH - VIEWPORT_MARGIN,
-          );
-          setPopover({ top, left, selectionText: text, selectionPoints });
-        });
-        return false;
-      },
-      COMMAND_PRIORITY_LOW,
-    );
+    const onSelectionUpdate = ({ editor: ed }: { editor: Editor }) => {
+      const { state } = ed;
+      const { from, to, empty } = state.selection;
+      if (empty) {
+        setPopover(null);
+        return;
+      }
+      const text = state.doc.textBetween(from, to, " ");
+      if (!text.trim()) {
+        setPopover(null);
+        return;
+      }
+      const nativeSel = window.getSelection();
+      if (!nativeSel || nativeSel.rangeCount === 0) {
+        setPopover(null);
+        return;
+      }
+      const rect = nativeSel.getRangeAt(0).getBoundingClientRect();
+      // Capture from/to so accept can restore the range long after the
+      // user has clicked the action bar (the editor's live selection has
+      // moved by then).
+      const selectionPoints: SerializedSelectionPoints = { from, to };
+      // Clamp position to viewport. Default anchors above the selection;
+      // if there's no room, drop below.
+      const viewportWidth = window.innerWidth;
+      let top = rect.top - VIEWPORT_MARGIN - POPOVER_ESTIMATED_HEIGHT;
+      if (top < VIEWPORT_MARGIN) {
+        top = rect.bottom + VIEWPORT_MARGIN;
+      }
+      const left = Math.min(
+        Math.max(VIEWPORT_MARGIN, rect.left),
+        viewportWidth - POPOVER_ESTIMATED_WIDTH - VIEWPORT_MARGIN,
+      );
+      setPopover({ top, left, selectionText: text, selectionPoints });
+    };
+
+    editor.on("selectionUpdate", onSelectionUpdate);
+    editor.on("blur", () => setPopover(null));
+
+    return () => {
+      editor.off("selectionUpdate", onSelectionUpdate);
+    };
   }, [editor]);
 
   if (!popover || skills.length === 0 || inFlight || isPending) return null;

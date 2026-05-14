@@ -1,0 +1,165 @@
+/* Editor-wide styling that can't be expressed via TipTap extension
+ * `HTMLAttributes`: code-block syntax highlighting tokens (mapping
+ * highlight.js classes to the same Tailwind colors the old Lexical theme
+ * used) and placeholder chrome for the Placeholder extension. */
+
+/* ----------------------------------------------------------------------
+ * Placeholder chrome — rendered by @tiptap/extension-placeholder as a
+ * `data-placeholder` attribute on the first empty node. The ::before
+ * pseudo-element makes it visible without consuming space.
+ * -------------------------------------------------------------------- */
+
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: var(--muted-foreground);
+  pointer-events: none;
+  height: 0;
+}
+
+/* ----------------------------------------------------------------------
+ * Code block syntax highlighting — map highlight.js class names to the
+ * same Tailwind palette the old Lexical Prism theme used. lowlight emits
+ * `hljs-*` classes on inline <span>s inside the <code> element.
+ *
+ * Lexical Prism tokens → hljs equivalents:
+ *   keyword/atrule       → hljs-keyword              indigo
+ *   string/char          → hljs-string               green
+ *   number/boolean/      → hljs-number, hljs-literal orange
+ *     constant/variable/   hljs-variable, hljs-symbol
+ *     symbol/regex
+ *   comment/cdata/       → hljs-comment, hljs-quote, gray italic
+ *     doctype/prolog/      hljs-meta
+ *     namespace
+ *   function/property/   → hljs-function, hljs-title.function_,
+ *     attribute            hljs-attr, hljs-attribute,
+ *                          hljs-property            blue
+ *   class/class-name     → hljs-class, hljs-title.class_   yellow
+ *   built-in/url         → hljs-built_in, hljs-link  cyan
+ *   tag/section          → hljs-tag, hljs-name,
+ *                          hljs-selector-tag, hljs-section red
+ *   selector             → hljs-selector-class,
+ *                          hljs-selector-id          green
+ *   operator/punctuation → hljs-operator,
+ *                          hljs-punctuation          gray
+ *   deleted              → hljs-deletion             red
+ *   inserted/addition    → hljs-addition             green
+ *   important/strong     → hljs-strong,
+ *                          hljs-emphasis             bold
+ * -------------------------------------------------------------------- */
+
+.hljs-keyword {
+  color: oklch(0.5 0.18 274);
+}
+.dark .hljs-keyword {
+  color: oklch(0.74 0.16 274);
+}
+
+.hljs-string,
+.hljs-char,
+.hljs-selector-class,
+.hljs-selector-id,
+.hljs-addition,
+.hljs-attribute {
+  color: oklch(0.58 0.16 145);
+}
+.dark .hljs-string,
+.dark .hljs-char,
+.dark .hljs-selector-class,
+.dark .hljs-selector-id,
+.dark .hljs-addition,
+.dark .hljs-attribute {
+  color: oklch(0.78 0.17 145);
+}
+
+.hljs-number,
+.hljs-literal,
+.hljs-variable,
+.hljs-symbol,
+.hljs-regexp {
+  color: oklch(0.6 0.18 50);
+}
+.dark .hljs-number,
+.dark .hljs-literal,
+.dark .hljs-variable,
+.dark .hljs-symbol,
+.dark .hljs-regexp {
+  color: oklch(0.79 0.16 50);
+}
+
+.hljs-comment,
+.hljs-quote,
+.hljs-meta,
+.hljs-doctag {
+  color: oklch(0.55 0.02 264);
+  font-style: italic;
+}
+.dark .hljs-comment,
+.dark .hljs-quote,
+.dark .hljs-meta,
+.dark .hljs-doctag {
+  color: oklch(0.7 0.02 264);
+}
+
+.hljs-function,
+.hljs-title,
+.hljs-attr,
+.hljs-property {
+  color: oklch(0.52 0.18 250);
+}
+.dark .hljs-function,
+.dark .hljs-title,
+.dark .hljs-attr,
+.dark .hljs-property {
+  color: oklch(0.76 0.15 250);
+}
+
+.hljs-class,
+.hljs-title.class_ {
+  color: oklch(0.65 0.16 95);
+}
+.dark .hljs-class,
+.dark .hljs-title.class_ {
+  color: oklch(0.83 0.15 95);
+}
+
+.hljs-built_in,
+.hljs-link {
+  color: oklch(0.6 0.13 215);
+}
+.dark .hljs-built_in,
+.dark .hljs-link {
+  color: oklch(0.79 0.12 215);
+}
+
+.hljs-tag,
+.hljs-name,
+.hljs-selector-tag,
+.hljs-section,
+.hljs-deletion {
+  color: oklch(0.55 0.2 25);
+}
+.dark .hljs-tag,
+.dark .hljs-name,
+.dark .hljs-selector-tag,
+.dark .hljs-section,
+.dark .hljs-deletion {
+  color: oklch(0.78 0.18 25);
+}
+
+.hljs-operator,
+.hljs-punctuation {
+  color: oklch(0.6 0.02 264);
+}
+.dark .hljs-operator,
+.dark .hljs-punctuation {
+  color: oklch(0.75 0.02 264);
+}
+
+.hljs-strong,
+.hljs-emphasis {
+  font-weight: 700;
+}
+.hljs-emphasis {
+  font-style: italic;
+}

@@ -10,6 +10,7 @@ body {
 
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "../renderer/main/components/editor/editor-styles.css";
 @import "../renderer/main/components/editor/nodes/artifact-node.css";
 @import "../renderer/main/components/editor/diff/diff-styles.css";
 
@@ -345,4 +346,55 @@ html.vibrancy [data-slot="sidebar-inner"] {
 
 .listitemUnchecked:hover:before {
   border-color: var(--primary);
+}
+
+/* TipTap task list — canonical inline layout (matches the demo on
+ * tiptap.dev). TaskItem renders <li><label><input/></label><div>content</div></li>;
+ * the rules below put the label and content on the same row. Inlined here
+ * (not in a nested @import) so Tailwind v4's pipeline definitely applies
+ * them. */
+ul[data-type="taskList"] {
+  list-style: none;
+  margin-left: 0;
+  padding: 0;
+}
+
+ul[data-type="taskList"] li {
+  display: flex;
+  align-items: center;
+}
+
+ul[data-type="taskList"] li > label {
+  flex: 0 0 auto;
+  margin-right: 0.5rem;
+  user-select: none;
+}
+
+ul[data-type="taskList"] li > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+ul[data-type="taskList"] li > div > p {
+  margin: 0;
+}
+
+ul[data-type="taskList"] input[type="checkbox"] {
+  cursor: pointer;
+  /* Indigo accent matches editor's link / syntax-keyword color (Tailwind
+   * indigo-600 / indigo-400 in OKLCH). `accent-color` recolors the checked
+   * fill on native checkboxes without replacing the control. */
+  accent-color: oklch(0.5 0.18 274);
+}
+
+.dark ul[data-type="taskList"] input[type="checkbox"] {
+  accent-color: oklch(0.74 0.16 274);
+}
+
+/* Checked state: strike through the paragraph + drop it to muted color. The
+ * `data-checked` attribute is set by TaskItem's `checked` attr via
+ * renderHTML. */
+ul[data-type="taskList"] li[data-checked="true"] > div {
+  text-decoration: line-through;
+  color: var(--muted-foreground);
 }

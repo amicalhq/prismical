@@ -1,13 +1,13 @@
-import type { SerializedLexicalNode } from "lexical";
-import { markdownToLexicalStateJson } from "@/services/notes/markdown-to-lexical";
+import type { JSONContent } from "@tiptap/core";
+import { markdownToTiptapJson } from "@/services/notes/tiptap-markdown";
 import { logger } from "@/main/logger";
 
-interface LexicalBlockLike {
+interface BlockLike {
   type?: string;
-  children?: SerializedLexicalNode[];
+  content?: JSONContent[];
 }
 
-// Converts the model's markdown emission into a Lexical *block* children array
+// Converts the model's markdown emission into a TipTap *block* children array
 // — paragraphs, headings, lists, etc. Used by `append-section` and
 // `replace-doc` modes, where the artifact wrapper is a block-level container.
 //
@@ -15,14 +15,13 @@ interface LexicalBlockLike {
 // Parse errors are logged via the pipeline logger so support can diagnose
 // malformed model output (the SkillRunError thrown downstream just says
 // "empty content" without preserving the original cause).
-export function markdownToChildren(markdown: string): SerializedLexicalNode[] {
+export function markdownToChildren(markdown: string): JSONContent[] {
   if (!markdown || markdown.trim() === "") return [];
   try {
-    const stateJson = markdownToLexicalStateJson(markdown);
-    const parsed = JSON.parse(stateJson);
-    const children = parsed?.root?.children;
+    const doc = markdownToTiptapJson(markdown) as { content?: JSONContent[] };
+    const children = doc?.content;
     if (!Array.isArray(children)) return [];
-    return children as SerializedLexicalNode[];
+    return children;
   } catch (err) {
     logger.pipeline.warn("markdownToChildren parse failed", {
       error: err instanceof Error ? err.message : String(err),
@@ -32,23 +31,20 @@ export function markdownToChildren(markdown: string): SerializedLexicalNode[] {
   }
 }
 
-// Converts the model's markdown emission into a Lexical *inline* children
+// Converts the model's markdown emission into a TipTap *inline* children
 // array — text nodes, link nodes, etc. — suitable for nesting inside an
 // `ArtifactInlineNode`. An inline wrapper can only contain inline content;
-// putting paragraphs/headings inside would corrupt Lexical's tree invariants.
+// putting paragraphs/headings inside would corrupt the schema.
 //
 // Contract for inline-rewrite skills: emit a single paragraph (or plain text).
 // If the model emits multiple blocks or a non-paragraph block (heading, list,
 // code), we reject with `[]` so the runner surfaces a SkillRunError — the user
 // sees "couldn't run X — model returned unexpected output" and can retry.
-export function markdownToInlineChildren(
-  markdown: string,
-): SerializedLexicalNode[] {
+export function markdownToInlineChildren(markdown: string): JSONContent[] {
   if (!markdown || markdown.trim() === "") return [];
   try {
-    const stateJson = markdownToLexicalStateJson(markdown);
-    const parsed = JSON.parse(stateJson);
-    const blocks = parsed?.root?.children as LexicalBlockLike[] | undefined;
+    const doc = markdownToTiptapJson(markdown) as { content?: BlockLike[] };
+    const blocks = doc?.content;
     if (!Array.isArray(blocks) || blocks.length === 0) return [];
 
     if (blocks.length > 1) {
@@ -68,7 +64,7 @@ export function markdownToInlineChildren(
       return [];
     }
 
-    const inlineChildren = only.children;
+    const inlineChildren = only.content;
     if (!Array.isArray(inlineChildren) || inlineChildren.length === 0) {
       return [];
     }

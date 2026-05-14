@@ -2,7 +2,7 @@ import { z } from "zod";
 import { createRouter, procedure } from "../trpc";
 import NotesService from "../../services/notes-service";
 import { ServiceManager } from "../../main/managers/service-manager";
-import { lexicalStateToMarkdown } from "../../services/notes/lexical-to-markdown";
+import { tiptapJsonToMarkdown } from "../../services/notes/tiptap-markdown";
 
 const notesService = NotesService.getInstance();
 
@@ -261,7 +261,7 @@ export const notesRouter = createRouter({
       const note = await notesService.getNote(input.noteId);
       if (!note) throw new Error("Note not found");
       const markdown = note.content
-        ? lexicalStateToMarkdown(note.content)
+        ? tiptapJsonToMarkdown(note.content)
         : "";
       return { markdown, title: note.title };
     }),

@@ -7,7 +7,7 @@ import {
   transcriptSegments,
   yjsUpdates,
 } from "@/db/schema";
-import { lexicalStateToMarkdown } from "@/services/notes/lexical-to-markdown";
+import { tiptapJsonToMarkdown } from "@/services/notes/tiptap-markdown";
 import { extractPlainText } from "./extract-plain-text";
 import type { SkillRunContext } from "./skill-context";
 
@@ -15,7 +15,7 @@ import type { SkillRunContext } from "./skill-context";
 // via skill.config.editingOptions; we know what the skill needs from that
 // plus the run-time ctx — no agentic decision required.
 export interface SkillInput {
-  // Markdown render of the note's Lexical state. Always populated.
+  // Markdown render of the note's TipTap state. Always populated.
   noteMarkdown: string;
   // Plain-text render of the note. Used as the "before" side of the
   // replace-doc char diff; not fed into the prompt (markdown is richer).
@@ -37,7 +37,7 @@ export async function collectInput(
   // run sees the current note, including content from previously-accepted
   // skill runs that wrote via the editor's Yjs sync.
   const stateJson = await materializeNoteContent(db, ctx.noteId);
-  const noteMarkdown = stateJson ? lexicalStateToMarkdown(stateJson) : "";
+  const noteMarkdown = stateJson ? tiptapJsonToMarkdown(stateJson) : "";
   const notePlainText = stateJson ? extractPlainText(stateJson) : "";
 
   const transcript = await loadTranscript(db, ctx.noteId);
@@ -50,8 +50,8 @@ export async function collectInput(
   };
 }
 
-// Reconstruct the note's live Lexical state JSON by applying all stored Yjs
-// updates. The editor's YjsSyncPlugin stores the Lexical editor-state JSON
+// Reconstruct the note's live TipTap state JSON by applying all stored Yjs
+// updates. The editor's YjsSyncPlugin stores the TipTap editor-state JSON
 // as a plain string inside a Y.Text named "content"; replaying the deltas
 // gives us the current value. Falls back to the `notes.content` snapshot
 // for notes that have no Yjs updates (e.g., freshly seeded fixtures).
