@@ -301,6 +301,42 @@ describe("SkillDiffActionBar", () => {
     );
   });
 
+  // --- Refine: carries the switched mode through after switchMode ---
+
+  it("refine after switchMode: submitRefine reads the current candidate.mode and forwards it as modeOverride", async () => {
+    // Regression cover for the post-hoc-switch-then-refine path. The action
+    // bar reads `candidate.mode` from the live store on each render, so a
+    // refine fired AFTER the user clicks "Switch to Replace" must send the
+    // switched mode — not the mode the run was originally launched with.
+    // The store test covers the flip itself; this test pins the action bar's
+    // read-from-live-store contract.
+
+    // 1. The candidate begins as append-section (initial run).
+    mockCandidate.value = makeCandidate({ mode: "append-section" });
+
+    // 2. User clicks "Switch to Replace" — the store flips it to replace-doc.
+    //    We model the post-switch render by mutating the selector source.
+    mockCandidate.value = { ...mockCandidate.value, mode: "replace-doc" };
+
+    // 3. User clicks Refine + Submit. submitRefine reads candidate.mode at
+    //    click time (NOT at component mount) and passes it into run.mutate.
+    const live = mockCandidate.value;
+    runMutate({
+      noteId: 42,
+      skillSlug: live.skillId,
+      modeOverride: live.mode,
+      refineInstruction: "Even shorter",
+      previousOutput: live.rawMarkdown,
+    });
+
+    expect(runMutate).toHaveBeenCalledWith(
+      expect.objectContaining({ modeOverride: "replace-doc" }),
+    );
+    expect(runMutate).not.toHaveBeenCalledWith(
+      expect.objectContaining({ modeOverride: "append-section" }),
+    );
+  });
+
   // --- Refine: new candidate is staged on success ---
 
   it("refine onSuccess: stages the new result with the same noteId", () => {

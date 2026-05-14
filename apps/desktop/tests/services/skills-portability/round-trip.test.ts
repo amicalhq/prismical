@@ -217,6 +217,33 @@ describe("modeAgnosticPrompt round-trip", () => {
     expect(md).not.toContain("modeAgnosticPrompt");
   });
 
+  it("omits modeAgnosticPrompt from markdown frontmatter when explicitly false", () => {
+    // The form writes `modeAgnosticPrompt: false` for every user-authored
+    // skill, so without this check exported YAML would carry it on every
+    // skill that didn't opt in.
+    const skill = makeSkill({
+      config: {
+        editingOptions: "append-section",
+        surface: ["dock"],
+        modeAgnosticPrompt: false,
+      },
+    });
+    const md = skillToMarkdown(skill);
+    expect(md).not.toContain("modeAgnosticPrompt");
+  });
+
+  it("omits defaultSkill from markdown frontmatter when explicitly false", () => {
+    const skill = makeSkill({
+      config: {
+        editingOptions: "append-section",
+        surface: ["dock"],
+        defaultSkill: false,
+      },
+    });
+    const md = skillToMarkdown(skill);
+    expect(md).not.toContain("defaultSkill");
+  });
+
   it("imports modeAgnosticPrompt as undefined when frontmatter omits it", () => {
     const md = `---
 slug: tuned
