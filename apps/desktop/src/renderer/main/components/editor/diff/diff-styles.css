@@ -6,6 +6,16 @@
 .prismical-diff-insert {
   color: var(--diff-insert);
   background: color-mix(in oklch, var(--diff-insert) 12%, transparent);
+  /* Reset font inheritance: when prosemirror-changeset aligns blocks and
+   * the widget lands INSIDE an existing heading (the changeset reports a
+   * text-content change scoped to that h1), the widget's <span> would
+   * otherwise inherit the heading's font-size and weight, making
+   * subsequent paragraphs / bullets inside the inserted slice look
+   * heading-sized. Children with their own typography classes (h1/h2/p
+   * via the themed schema) override these values explicitly. */
+  font-size: 1rem;
+  font-weight: 400;
+  line-height: 1.5;
 }
 
 .prismical-diff-delete {
