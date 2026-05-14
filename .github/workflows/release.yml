@@ -14,7 +14,7 @@ on:
 
 jobs:
   build:
-    name: Build macOS (${{ matrix.arch }})
+    name: Build ${{ matrix.os == 'macos' && 'macOS' || 'Windows' }} (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
@@ -25,6 +25,9 @@ jobs:
           - os: macos
             arch: x64
             runner: macos-15-intel
+          - os: windows
+            arch: x64
+            runner: windows-2025
 
     steps:
       - name: Checkout code
@@ -68,6 +71,13 @@ jobs:
           node-version: "24.1.0"
           cache: "pnpm"
 
+      - name: Install Vulkan SDK
+        if: matrix.os == 'windows'
+        uses: humbletim/install-vulkan-sdk@v1.2
+        with:
+          version: 1.3.290.0
+          cache: true
+
       - name: Log Node.js architecture and platform
         run: |
           echo "=== Node.js Process Information ==="
@@ -87,6 +97,16 @@ jobs:
         env:
           GGML_NATIVE: OFF # CI mac runners lack i8mm support; keep CPU features conservative here
         run: pnpm --filter @prismical/whisper-wrapper build:native
+
+      - name: Build whisper native binaries (vulkan)
+        if: matrix.os == 'windows'
+        env:
+          GGML_NATIVE: OFF
+          # whisper.cpp's vulkan-shaders-gen sub-cmake TryCompile pushes paths
+          # past Windows' 260-char MAX_PATH from D:\a\prismical\prismical\... .
+          # Build out-of-tree on a short path; build-addon.js honors this env.
+          WHISPER_BUILD_OUT_DIR: C:\b
+        run: pnpm --filter @prismical/whisper-wrapper build:native:vulkan
 
       - name: Download Node.js binaries
         working-directory: apps/desktop
@@ -145,6 +165,40 @@ jobs:
           echo "Building unsigned macOS ${{ matrix.arch }} PR artifacts"
           pnpm make:${{ matrix.arch }}
 
+      - name: Build artifacts (Windows release)
+        if: matrix.os == 'windows' && github.event_name != 'pull_request'
+        working-directory: apps/desktop
+        env:
+          POSTHOG_HOST: https://app.posthog.com
+          TELEMETRY_ENABLED: true
+          POSTHOG_API_KEY: ${{ secrets.POSTHOG_API_KEY }}
+          FEEDBACK_SURVEY_ID: ${{ secrets.FEEDBACK_SURVEY_ID }}
+          AUTH_CLIENT_ID: ${{ secrets.AUTH_CLIENT_ID }}
+          AUTHORIZATION_ENDPOINT: ${{ secrets.AUTHORIZATION_ENDPOINT }}
+          AUTH_TOKEN_ENDPOINT: ${{ secrets.AUTH_TOKEN_ENDPOINT }}
+          API_ENDPOINT: ${{ secrets.API_ENDPOINT }}
+          AUTH_REDIRECT_URI: ${{ secrets.AUTH_REDIRECT_URI }}
+        run: |
+          echo "Building unsigned Windows ${{ matrix.arch }} release artifacts"
+          pnpm make:windows
+
+      - name: Build artifacts (Windows PR)
+        if: matrix.os == 'windows' && github.event_name == 'pull_request'
+        working-directory: apps/desktop
+        env:
+          TELEMETRY_ENABLED: "false"
+          POSTHOG_HOST: https://app.posthog.com
+          POSTHOG_API_KEY: ""
+          FEEDBACK_SURVEY_ID: ""
+          AUTH_CLIENT_ID: ""
+          AUTHORIZATION_ENDPOINT: ""
+          AUTH_TOKEN_ENDPOINT: ""
+          API_ENDPOINT: ""
+          AUTH_REDIRECT_URI: ""
+        run: |
+          echo "Building unsigned Windows ${{ matrix.arch }} PR artifacts"
+          pnpm make:windows
+
       - name: Get version from package.json
         id: package_version
         working-directory: apps/desktop
@@ -161,6 +215,16 @@ jobs:
             echo "Renamed $dmg → Prismical-macos-${{ matrix.arch }}.dmg"
           done
 
+      - name: Rename artifacts (Windows)
+        if: matrix.os == 'windows'
+        shell: bash
+        run: |
+          cd apps/desktop/out/make/squirrel.windows/${{ matrix.arch }}
+          for exe in *.exe; do
+            mv "$exe" "Prismical-windows-${{ matrix.arch }}.exe"
+            echo "Renamed $exe → Prismical-windows-${{ matrix.arch }}.exe"
+          done
+
       - name: Upload artifacts (macOS)
         if: matrix.os == 'macos'
         uses: actions/upload-artifact@v4
@@ -170,10 +234,20 @@ jobs:
             apps/desktop/out/make/Prismical-macos-${{ matrix.arch }}.dmg
             apps/desktop/out/make/zip/darwin/${{ matrix.arch }}/*.zip
 
+      - name: Upload artifacts (Windows)
+        if: matrix.os == 'windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-${{ matrix.arch }}
+          path: |
+            apps/desktop/out/make/squirrel.windows/${{ matrix.arch }}/Prismical-windows-${{ matrix.arch }}.exe
+            apps/desktop/out/make/squirrel.windows/${{ matrix.arch }}/*.nupkg
+            apps/desktop/out/make/squirrel.windows/${{ matrix.arch }}/RELEASES
+
   release:
     name: Create Release
     needs: build
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'workflow_dispatch' || github.ref_type == 'tag'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -346,13 +420,19 @@ jobs:
             echo "- **Apple Silicon (M1/M2/M3)**: Download the DMG or ZIP file for arm64"
             echo "- **Intel**: Download the DMG or ZIP file for x64"
             echo ""
+            echo "#### Windows"
+            echo "- **Windows (x64)**: Download the .exe installer for 64-bit Windows"
+            echo ""
             echo "### Installation"
             echo ""
             echo "**macOS**:"
             echo "- **DMG**: Download and open the DMG file, then drag Prismical to your Applications folder"
             echo "- **ZIP**: Download and extract the ZIP file, then drag Prismical to your Applications folder"
             echo ""
-            echo "Windows builds are temporarily disabled."
+            echo "**Windows**:"
+            echo "- Download and run the .exe installer"
+            echo "- Follow the installation wizard"
+            echo "- The app will be installed to your user AppData folder and a shortcut will be created"
             echo ""
             echo "The ZIP files are primarily for automatic updates. We recommend using the DMG files for initial installation on macOS."
           } > release-notes.md
@@ -459,10 +539,10 @@ jobs:
       - name: List artifacts
         run: |
           echo "=== Full artifacts directory structure ==="
-          find artifacts -type f \( -name "*.dmg" -o -name "*.zip" \) | sort
+          find artifacts -type f \( -name "*.dmg" -o -name "*.zip" -o -name "*.exe" -o -name "*.nupkg" -o -name "RELEASES" \) | sort
           echo ""
           echo "=== Detailed file listing ==="
-          find artifacts -type f \( -name "*.dmg" -o -name "*.zip" \) -exec ls -la {} \;
+          find artifacts -type f \( -name "*.dmg" -o -name "*.zip" -o -name "*.exe" -o -name "*.nupkg" -o -name "RELEASES" \) -exec ls -la {} \;
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -479,5 +559,8 @@ jobs:
             artifacts/macos-arm64/zip/darwin/arm64/*.zip
             artifacts/macos-x64/*.dmg
             artifacts/macos-x64/zip/darwin/x64/*.zip
+            artifacts/windows-x64/*.exe
+            artifacts/windows-x64/*.nupkg
+            artifacts/windows-x64/RELEASES
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

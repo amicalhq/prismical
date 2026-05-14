@@ -413,6 +413,11 @@ const config: ForgeConfig = {
     icon: "./assets/logo", // Path to your icon file
     appBundleId: "com.prismical.desktop", // Proper bundle ID
     extraResource: [
+      `${
+        process.platform === "win32"
+          ? "../../packages/native-helpers/windows-helper/bin"
+          : "../../packages/native-helpers/swift-helper/bin"
+      }`,
       "./src/db/migrations",
       // Only include the platform-specific node binary
       `./node-binaries/${process.platform}-${process.arch}/node${
