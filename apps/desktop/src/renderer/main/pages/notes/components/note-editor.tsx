@@ -6,9 +6,38 @@ import { useTranslation } from "react-i18next";
 import { NoteSyncProvider } from "@/renderer/main/providers/sync-provider";
 import { useYjsSync } from "@/renderer/main/components/editor/yjs-sync-plugin";
 import { useSkillDiffDecorations } from "@/renderer/main/components/editor/diff/use-skill-diff-decorations";
+import { SkillDiffEditorLock } from "@/renderer/main/components/editor/diff/skill-diff-editor-lock";
+import { useSkillDiffStore } from "@/renderer/main/components/editor/diff/skill-diff-store";
+import { useSkillDiffToastStore } from "@/renderer/main/components/editor/diff/skill-diff-toast-store";
 import { InlineSkillPopoverPlugin } from "@/renderer/main/components/editor/inline-skill-popover/inline-skill-popover-plugin";
 import { useRegisterNoteEditor } from "@/renderer/main/components/note-editor-context";
 import { buildRendererExtensions } from "../utils/editor-shared";
+
+// Keys whose default behaviour mutates the document. Used to gate the
+// attention-pulse so navigation / modifier / system keys don't shake
+// the dock bar.
+function isContentMutatingKey(event: KeyboardEvent): boolean {
+  if (event.metaKey || event.ctrlKey || event.altKey) return false;
+  switch (event.key) {
+    case "ArrowLeft":
+    case "ArrowRight":
+    case "ArrowUp":
+    case "ArrowDown":
+    case "Home":
+    case "End":
+    case "PageUp":
+    case "PageDown":
+    case "Escape":
+    case "Shift":
+    case "CapsLock":
+    case "Meta":
+    case "Control":
+    case "Alt":
+      return false;
+    default:
+      return true;
+  }
+}
 
 interface NoteEditorProps {
   noteId: number;
@@ -112,8 +141,11 @@ export function NoteEditor({
   const placeholder = t("settings.notes.note.bodyPlaceholder");
 
   const extensions = useMemo(
-    () => buildRendererExtensions({ placeholder }),
-    [placeholder],
+    () => [
+      ...buildRendererExtensions({ placeholder }),
+      SkillDiffEditorLock.configure({ noteId }),
+    ],
+    [placeholder, noteId],
   );
 
   // Reset the TipTap editor when the noteId or syncProvider changes — a fresh
@@ -129,6 +161,33 @@ export function NoteEditor({
           class:
             "min-h-[500px] px-4 py-2 outline-none text-base leading-normal text-note-foreground selection:bg-indigo-500/20",
           "aria-placeholder": placeholder,
+        },
+        // Pulse the dock bar when a user tries to edit under a staged
+        // candidate. The lock extension silently blocks the mutation;
+        // these handlers exist purely to detect user intent so the
+        // attention shake fires for typed/pasted input only and not for
+        // system-driven mutations (which the filterTransaction also
+        // catches). Read store state via getState() — these handlers fire
+        // on user input and must read the latest at event time.
+        handleKeyDown(_view, event) {
+          const candidate = useSkillDiffStore
+            .getState()
+            .candidatesByNote.get(noteId);
+          // No candidate → editor is live, nothing to nudge. Accept in
+          // flight → user has already committed, don't shake at them.
+          if (!candidate || candidate.isAccepting) return false;
+          if (isContentMutatingKey(event)) {
+            useSkillDiffToastStore.getState().pulseAttention();
+          }
+          return false;
+        },
+        handlePaste() {
+          const candidate = useSkillDiffStore
+            .getState()
+            .candidatesByNote.get(noteId);
+          if (!candidate || candidate.isAccepting) return false;
+          useSkillDiffToastStore.getState().pulseAttention();
+          return false;
         },
       },
       // Only autofocus on initial mount — re-creating the editor when the
@@ -154,7 +213,8 @@ export function NoteEditor({
   useRegisterNoteEditor(noteId, editor);
 
   // Decorate / clear in-document diff when a candidate is staged for this
-  // note. The cluster renders the action UI separately.
+  // note. The cluster renders the action UI separately; the SkillDiffEditorLock
+  // extension above blocks mutations + pulses attention.
   useSkillDiffDecorations(editor, noteId);
 
   // Notify parent when editor is ready (after the provider is hooked up and

@@ -1,8 +1,8 @@
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useAnimationControls } from "framer-motion";
 import { IconSparkles } from "@tabler/icons-react";
 import { api } from "@/trpc/react";
 import { combinedLevel, useMeetingLevel } from "@/hooks/useMeetingLevel";
@@ -83,13 +83,29 @@ function DockArea({
     currentNoteId !== undefined &&
     noteEditor.noteId === currentNoteId;
 
+  // Shake the accept bar when the user attempts to edit the (read-only)
+  // doc — the toast store increments `attentionTick` from the editor's
+  // handleKeyDown / handlePaste plumbing. Watching the counter (not a
+  // boolean) ensures back-to-back nudges retrigger the effect.
+  const attentionTick = useSkillDiffToastStore((s) => s.attentionTick);
+  const shakeControls = useAnimationControls();
+  useEffect(() => {
+    if (!showDiffBar || attentionTick === 0) return;
+    shakeControls.start({
+      x: [0, -6, 6, -5, 5, -3, 3, 0],
+      transition: { duration: 0.42, ease: "easeInOut" },
+    });
+  }, [attentionTick, showDiffBar, shakeControls]);
+
   return (
     <div className="pointer-events-auto flex items-center gap-2">
       {showDiffBar ? (
-        <SkillDiffDockBar
-          editor={noteEditor!.editor}
-          noteId={currentNoteId!}
-        />
+        <motion.div animate={shakeControls}>
+          <SkillDiffDockBar
+            editor={noteEditor!.editor}
+            noteId={currentNoteId!}
+          />
+        </motion.div>
       ) : (
         <NoteRecordingDock {...dockProps} />
       )}

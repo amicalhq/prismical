@@ -54,6 +54,7 @@ export function SkillDiffDockBar({ editor, noteId }: Props) {
   const clear = useSkillDiffStore((s) => s.clear);
   const stage = useSkillDiffStore((s) => s.stage);
   const switchMode = useSkillDiffStore((s) => s.switchMode);
+  const setAccepting = useSkillDiffStore((s) => s.setAccepting);
   const run = api.skillRuns.run.useMutation();
   const accept = api.skillRuns.accept.useMutation();
   const cancel = api.skillRuns.cancel.useMutation();
@@ -76,6 +77,12 @@ export function SkillDiffDockBar({ editor, noteId }: Props) {
       }
     }
 
+    // Mark the candidate as mid-accept so handleKeyDown in note-editor.tsx
+    // stops pulsing attention while we await the network call — the user
+    // has already committed to the change, and a stray keystroke shouldn't
+    // shake the dock at the moment of confirmation.
+    setAccepting(noteId, true);
+
     let auditMeta: { artifactId: string; version: number; generatedAt: string };
     try {
       auditMeta = await accept.mutateAsync({
@@ -97,13 +104,18 @@ export function SkillDiffDockBar({ editor, noteId }: Props) {
           err instanceof Error ? err.message : String(err)
         }`,
       );
-      // Leave the candidate staged so the user can retry, but drop the
-      // preview decorations + reset the cursor — the failed restore left
-      // the inline-rewrite path with the selection moved to the would-be
-      // edit point, which is misleading when no edit landed.
+      // Leave the candidate staged so the user can retry — but unmark
+      // isAccepting so a subsequent edit attempt does pulse normally.
+      setAccepting(noteId, false);
       clearDiffDecorations(editor);
       return;
     }
+
+    // Release the editor lock BEFORE dispatching the accept's command
+    // transactions — SkillDiffEditorLock filters out mutating txns while
+    // a candidate is staged. clearDiffDecorations also dispatches, so it
+    // runs after clear() too.
+    clear(noteId);
 
     if (candidate.mode === "append-section") {
       editor.commands.insertArtifactBlock({
@@ -115,11 +127,17 @@ export function SkillDiffDockBar({ editor, noteId }: Props) {
         modelId: candidate.modelId,
         content: candidate.content,
       });
-      // The new section can land below the fold on long notes. Focus the
-      // doc end so the editor smooth-scrolls it into view, and surface a
-      // transient confirmation above the dock so users who weren't looking
-      // at the bottom still know something landed.
-      editor.commands.focus("end");
+      // The new section can land below the fold on long notes. TipTap's
+      // built-in `focus("end")` only does an instant scroll-into-view; do
+      // the scroll manually on rAF so we get the smooth behaviour and so
+      // the editor has applied the insert before we read its DOM. Also
+      // surface a transient toast above the dock so users who weren't
+      // looking at the bottom still notice.
+      requestAnimationFrame(() => {
+        if (editor.isDestroyed) return;
+        const last = editor.view.dom.lastElementChild;
+        last?.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
       useSkillDiffToastStore.getState().show("New section added");
     } else if (candidate.mode === "inline-rewrite") {
       editor.commands.insertArtifactInline({
@@ -131,11 +149,16 @@ export function SkillDiffDockBar({ editor, noteId }: Props) {
       useSkillDiffToastStore.getState().show("Selection updated");
     } else {
       editor.commands.setContent({ type: "doc", content: candidate.content });
-      editor.commands.focus("start");
+      requestAnimationFrame(() => {
+        if (editor.isDestroyed) return;
+        editor.view.dom.firstElementChild?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      });
       useSkillDiffToastStore.getState().show("Note replaced");
     }
     clearDiffDecorations(editor);
-    clear(noteId);
   };
 
   const reject = () => {

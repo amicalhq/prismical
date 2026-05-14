@@ -64,6 +64,23 @@ export function useSkillDiffDecorations(
     view.dispatch(view.state.tr.setMeta(skillDiffPluginKey, { decorations }));
     decoratedForRef.current = key;
 
+    // Scroll to where the diff begins so users reading the top of a long
+    // note still see the proposed change. Append-only for now: inline-
+    // rewrite is anchored at the user's selection (already in view) and
+    // replace-doc's diff spans the whole doc. We wait one rAF because the
+    // decoration's widget DOM is rendered as part of dispatching the
+    // setMeta — querying for `.prismical-diff-insert` before paint would
+    // miss it.
+    if (candidate.mode === "append-section") {
+      requestAnimationFrame(() => {
+        if (editor.isDestroyed) return;
+        const firstInsert = editor.view.dom.querySelector(
+          ".prismical-diff-insert",
+        );
+        firstInsert?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    }
+
     return () => {
       if (!editor.isDestroyed) clearDiffDecorations(editor);
       decoratedForRef.current = null;

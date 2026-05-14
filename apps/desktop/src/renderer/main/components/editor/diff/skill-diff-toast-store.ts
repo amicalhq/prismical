@@ -12,6 +12,12 @@ interface State {
   message: string | null;
   show: (message: string) => void;
   dismiss: () => void;
+  // Monotonically-increasing counter that consumers (the dock bar) can watch
+  // to trigger a one-shot shake animation. The COUNTER not a boolean so back-
+  // to-back nudges retrigger the effect — a boolean toggle could miss the
+  // second pulse if React batched the renders.
+  attentionTick: number;
+  pulseAttention: () => void;
 }
 
 const DISPLAY_MS = 2500;
@@ -33,4 +39,7 @@ export const useSkillDiffToastStore = create<State>((set) => ({
     dismissTimer = null;
     set({ message: null });
   },
+  attentionTick: 0,
+  pulseAttention: () =>
+    set((s) => ({ attentionTick: s.attentionTick + 1 })),
 }));
