@@ -10,8 +10,8 @@ import {
 } from "@lexical/code";
 import { AutoLinkNode, LinkNode } from "@lexical/link";
 import { ListItemNode, ListNode } from "@lexical/list";
-import { HorizontalRuleNode } from "@lexical/react/LexicalHorizontalRuleNode";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
+import { HorizontalRuleNode } from "@lexical/extension";
 import { HeadingNode, QuoteNode } from "@lexical/rich-text";
 import { ArtifactNode } from "@/renderer/main/components/editor/nodes/artifact-node";
 import { ArtifactInlineNode } from "@/renderer/main/components/editor/nodes/artifact-inline-node";

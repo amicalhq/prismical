@@ -1,10 +1,11 @@
 import { createEditor } from "lexical";
-import { $convertFromMarkdownString, TRANSFORMERS } from "@lexical/markdown";
+import { $convertFromMarkdownString } from "@lexical/markdown";
 import { HeadingNode, QuoteNode } from "@lexical/rich-text";
 import { ListNode, ListItemNode } from "@lexical/list";
 import { LinkNode, AutoLinkNode } from "@lexical/link";
 import { CodeNode, CodeHighlightNode } from "@lexical/code";
-import { HorizontalRuleNode } from "@lexical/react/LexicalHorizontalRuleNode";
+import { HorizontalRuleNode } from "@lexical/extension";
+import { MARKDOWN_TRANSFORMERS } from "./markdown-transformers";
 
 // Node set mirrors what the renderer's NoteEditor registers, so the
 // serialized state deserializes cleanly in the client editor.
@@ -35,7 +36,7 @@ export function markdownToLexicalStateJson(markdown: string): string {
 
   editor.update(
     () => {
-      $convertFromMarkdownString(markdown, TRANSFORMERS);
+      $convertFromMarkdownString(markdown, MARKDOWN_TRANSFORMERS);
     },
     { discrete: true },
   );
