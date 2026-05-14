@@ -8,6 +8,7 @@ import { TaskList } from "@tiptap/extension-task-list";
 import { TaskItem } from "@tiptap/extension-task-item";
 import { CodeBlockLowlight } from "@tiptap/extension-code-block-lowlight";
 import { Markdown } from "tiptap-markdown";
+import { createLowlight } from "lowlight";
 import type { Extensions } from "@tiptap/core";
 import { ArtifactNode } from "@/renderer/main/components/editor/nodes/artifact-node";
 import { ArtifactInlineNode } from "@/renderer/main/components/editor/nodes/artifact-inline-node";
@@ -30,9 +31,14 @@ export const MARKDOWN_OPTIONS = {
 // configured instance; the headless paths get plain code blocks (no syntax
 // classes) which is fine — they're only used for skill-output parsing where
 // the rendered markdown never gets syntax-highlighted server-side anyway.
+// Default to an empty lowlight registry. The renderer passes its own
+// (common-languages) instance when building extensions for the live editor;
+// headless callers get this no-op highlighter — code blocks still render,
+// they just don't get token classes (the renderer adds those at runtime).
+const emptyLowlight = createLowlight();
+
 export function buildEditorExtensions(opts?: {
-  // null = plain code blocks, no syntax classes.
-  lowlight?: unknown;
+  lowlight?: ReturnType<typeof createLowlight>;
   placeholder?: string;
 }): Extensions {
   return [
@@ -41,7 +47,7 @@ export function buildEditorExtensions(opts?: {
       codeBlock: false,
     }),
     CodeBlockLowlight.configure({
-      lowlight: opts?.lowlight,
+      lowlight: opts?.lowlight ?? emptyLowlight,
     }),
     TaskList,
     TaskItem.configure({

@@ -243,5 +243,8 @@ afterEach(() => {
   // Additional cleanup if needed
 });
 
-// Export for use in tests
-export { TEST_USER_DATA_PATH };
+// Re-export for tests that want to import from setup.ts. The indirection
+// (vs. a bare `export { TEST_USER_DATA_PATH }` re-export) sidesteps a
+// vite:client-inject parser error under happy-dom — the bare re-export
+// pattern confuses esbuild's symbol analysis during HMR injection.
+export const TEST_USER_DATA_PATH_RE_EXPORT = TEST_USER_DATA_PATH;

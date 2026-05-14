@@ -1,375 +1,242 @@
-import { describe, expect, it } from "vitest";
-import { createHeadlessEditor } from "@lexical/headless";
-import {
-  $createParagraphNode,
-  $createTextNode,
-  $getRoot,
-  $getSelection,
-  $isRangeSelection,
-} from "lexical";
+// @vitest-environment happy-dom
+import { describe, expect, it, beforeEach, afterEach } from "vitest";
+import { Editor } from "@tiptap/core";
+import { TextSelection } from "@tiptap/pm/state";
+import { buildEditorExtensions } from "@/services/notes/editor-extensions";
 
-describe("editor/artifact-escape-plugin", () => {
-  it("appends a trailing paragraph after an ArtifactNode at the end of the root", async () => {
-    const { ArtifactNode } = await import(
-      "@/renderer/main/components/editor/nodes/artifact-node"
-    );
-    const {
-      INSERT_ARTIFACT_NODE_COMMAND,
-      registerArtifactNodeCommands,
-    } = await import(
-      "@/renderer/main/components/editor/commands/artifact-commands"
-    );
-    const { registerArtifactEscape } = await import(
-      "@/renderer/main/components/editor/artifact-escape-plugin"
-    );
+function makeEditor() {
+  const element = document.createElement("div");
+  document.body.appendChild(element);
+  return new Editor({
+    element,
+    extensions: buildEditorExtensions(),
+    content: { type: "doc", content: [{ type: "paragraph" }] },
+  });
+}
 
-    const editor = createHeadlessEditor({ nodes: [ArtifactNode] });
-    const disposeCmds = registerArtifactNodeCommands(editor);
-    const disposeEsc = registerArtifactEscape(editor);
-
-    try {
-      const childContent = [
-        {
-          type: "paragraph",
-          version: 1,
-          children: [
-            { type: "text", version: 1, text: "Body", format: 0, detail: 0, mode: "normal", style: "" },
-          ],
-          direction: null,
-          format: "",
-          indent: 0,
-        },
-      ];
-
-      editor.dispatchCommand(INSERT_ARTIFACT_NODE_COMMAND, {
+const artifactDoc = (paragraphs: Array<{ type: string; content?: unknown[] }>) => ({
+  type: "doc",
+  content: [
+    {
+      type: "artifact",
+      attrs: {
         artifactId: "a1",
-        skillId: "enhance",
-        skillName: "Enhance",
+        skillId: "s",
+        skillName: "S",
         version: 1,
         generatedAt: "2026-05-13T00:00:00Z",
         modelId: "m",
-        content: childContent,
-      });
+      },
+      content: paragraphs,
+    },
+  ],
+});
 
-      editor.read(() => {
-        const root = $getRoot();
-        expect(root.getChildrenSize()).toBe(2);
-        expect(root.getChildAtIndex(0)!.getType()).toBe("artifact");
-        const last = root.getChildAtIndex(1)!;
-        expect(last.getType()).toBe("paragraph");
-        expect(last.getTextContent()).toBe("");
-      });
-    } finally {
-      disposeEsc();
-      disposeCmds();
-    }
+const paragraph = (text?: string) => ({
+  type: "paragraph",
+  ...(text ? { content: [{ type: "text", text }] } : {}),
+});
+
+function dispatchKey(editor: Editor, key: string) {
+  const event = new KeyboardEvent("keydown", { key, bubbles: true });
+  editor.view.dom.dispatchEvent(event);
+}
+
+describe("editor/artifact-escape-plugin — trailing paragraph invariant", () => {
+  let editor: Editor;
+
+  beforeEach(() => {
+    editor = makeEditor();
   });
 
-  it("appends a trailing paragraph when an artifact-terminated state is loaded", async () => {
-    const { ArtifactNode, $createArtifactNode } = await import(
-      "@/renderer/main/components/editor/nodes/artifact-node"
-    );
-    const { registerArtifactEscape } = await import(
-      "@/renderer/main/components/editor/artifact-escape-plugin"
-    );
+  afterEach(() => {
+    editor.destroy();
+  });
 
-    const source = createHeadlessEditor({ nodes: [ArtifactNode] });
-    let json: string;
-    source.update(
-      () => {
-        const node = $createArtifactNode({
-          artifactId: "a1",
-          skillId: "s1",
-          skillName: "S",
-          version: 1,
-          generatedAt: "2026-05-13T00:00:00Z",
-          modelId: "m",
-        });
-        node.append($createParagraphNode().append($createTextNode("hi")));
-        $getRoot().append(node);
-      },
-      { discrete: true },
-    );
-    source.read(() => {
-      json = JSON.stringify(source.getEditorState().toJSON());
+  it("appends a trailing paragraph after an artifact at the end of the doc", () => {
+    editor.commands.setContent(artifactDoc([paragraph("Body")]));
+
+    const doc = editor.state.doc;
+    expect(doc.childCount).toBe(2);
+    expect(doc.firstChild?.type.name).toBe("artifact");
+    const last = doc.lastChild;
+    expect(last?.type.name).toBe("paragraph");
+    expect(last?.textContent).toBe("");
+  });
+
+  it("appends a trailing paragraph when an artifact-terminated state is loaded", () => {
+    // setContent triggers the appendTransaction, mirroring a fresh load from
+    // persistence.
+    editor.commands.setContent(artifactDoc([paragraph("hi")]));
+    expect(editor.state.doc.childCount).toBe(2);
+    expect(editor.state.doc.lastChild?.type.name).toBe("paragraph");
+  });
+});
+
+describe("editor/artifact-escape-plugin — escape downward", () => {
+  let editor: Editor;
+
+  beforeEach(() => {
+    editor = makeEditor();
+  });
+
+  afterEach(() => {
+    editor.destroy();
+  });
+
+  it("Enter on an empty paragraph at the end of an artifact escapes to the trailing paragraph", () => {
+    editor.commands.setContent(artifactDoc([paragraph("body"), paragraph()]));
+    // Caret in the empty last paragraph of the artifact.
+    // Doc: <artifact><p>body</p><p></p></artifact><p></p>
+    // Positions: 0 [<artifact>] 1 [<p>] 2..6 [body] 6 [</p>] 7 [<p>] 8 [</p>] 9 [</artifact>] 10 [<p>] 11
+    // The empty paragraph inside the artifact starts at position 7.
+    const { tr } = editor.state;
+    editor.view.dispatch(tr.setSelection(TextSelection.create(tr.doc, 8)));
+
+    dispatchKey(editor, "Enter");
+
+    // After escape: selection should be in the doc's trailing paragraph
+    // (the one outside the artifact).
+    const { $from } = editor.state.selection;
+    let inArtifact = false;
+    for (let d = $from.depth; d > 0; d--) {
+      if ($from.node(d).type.name === "artifact") {
+        inArtifact = true;
+        break;
+      }
+    }
+    expect(inArtifact).toBe(false);
+  });
+
+  it("Enter at the end of a non-empty paragraph inside an artifact does NOT escape", () => {
+    editor.commands.setContent(artifactDoc([paragraph("body")]));
+    // Doc: <artifact><p>body</p></artifact><p></p>
+    // Inside the paragraph "body" at end → pos 5.
+    const { tr } = editor.state;
+    editor.view.dispatch(tr.setSelection(TextSelection.create(tr.doc, 5)));
+
+    dispatchKey(editor, "Enter");
+
+    // Selection should still be inside the artifact (Enter splits the
+    // paragraph normally rather than escaping). The default Enter behavior
+    // creates a new paragraph at the cursor — so the doc grows, but the
+    // selection ancestor chain still includes the artifact.
+    const { $from } = editor.state.selection;
+    let inArtifact = false;
+    for (let d = $from.depth; d > 0; d--) {
+      if ($from.node(d).type.name === "artifact") {
+        inArtifact = true;
+        break;
+      }
+    }
+    expect(inArtifact).toBe(true);
+  });
+
+  it("ArrowDown at the end of an artifact's last paragraph escapes to the trailing paragraph", () => {
+    editor.commands.setContent(artifactDoc([paragraph("end")]));
+    // Doc: <artifact><p>end</p></artifact><p></p>
+    // End of "end" inside the artifact's paragraph → position 5.
+    const { tr } = editor.state;
+    editor.view.dispatch(tr.setSelection(TextSelection.create(tr.doc, 5)));
+
+    dispatchKey(editor, "ArrowDown");
+
+    const { $from } = editor.state.selection;
+    let inArtifact = false;
+    for (let d = $from.depth; d > 0; d--) {
+      if ($from.node(d).type.name === "artifact") {
+        inArtifact = true;
+        break;
+      }
+    }
+    expect(inArtifact).toBe(false);
+  });
+});
+
+describe("editor/artifact-escape-plugin — escape upward", () => {
+  let editor: Editor;
+
+  beforeEach(() => {
+    editor = makeEditor();
+  });
+
+  afterEach(() => {
+    editor.destroy();
+  });
+
+  it("ArrowUp at the start of an artifact's first paragraph escapes upward, creating a preceding paragraph if needed", () => {
+    editor.commands.setContent(artifactDoc([paragraph("first")]));
+    // Doc seeded: <artifact><p>first</p></artifact><p></p>
+    // Start of "first" → position 2 (inside the first paragraph).
+    const { tr } = editor.state;
+    editor.view.dispatch(tr.setSelection(TextSelection.create(tr.doc, 2)));
+
+    dispatchKey(editor, "ArrowUp");
+
+    const doc = editor.state.doc;
+    // A new paragraph should now precede the artifact: [p, artifact, p].
+    expect(doc.childCount).toBe(3);
+    expect(doc.firstChild?.type.name).toBe("paragraph");
+    expect(doc.child(1).type.name).toBe("artifact");
+    expect(doc.lastChild?.type.name).toBe("paragraph");
+
+    const { $from } = editor.state.selection;
+    let inArtifact = false;
+    for (let d = $from.depth; d > 0; d--) {
+      if ($from.node(d).type.name === "artifact") {
+        inArtifact = true;
+        break;
+      }
+    }
+    expect(inArtifact).toBe(false);
+  });
+
+  it("Backspace at the start of an artifact's first paragraph escapes upward without deleting the artifact content", () => {
+    // Seed: <p>above</p><artifact><p>artifact body</p></artifact>
+    editor.commands.setContent({
+      type: "doc",
+      content: [
+        paragraph("above"),
+        {
+          type: "artifact",
+          attrs: {
+            artifactId: "a1",
+            skillId: "s",
+            skillName: "S",
+            version: 1,
+            generatedAt: "2026-05-13T00:00:00Z",
+            modelId: "m",
+          },
+          content: [paragraph("artifact body")],
+        },
+      ],
     });
 
-    const editor = createHeadlessEditor({ nodes: [ArtifactNode] });
-    const dispose = registerArtifactEscape(editor);
-    try {
-      const parsed = editor.parseEditorState(json!);
-      editor.setEditorState(parsed);
-      editor.update(
-        () => {
-          const root = $getRoot();
-          const node = root.getFirstChildOrThrow();
-          node.markDirty();
-        },
-        { discrete: true },
-      );
+    // Position at start of "artifact body" inside the artifact. Skip past
+    // the "above" paragraph (7 chars + open/close = 9) + artifact-open (1) +
+    // paragraph-open (1) = position 9.
+    const { tr } = editor.state;
+    editor.view.dispatch(tr.setSelection(TextSelection.create(tr.doc, 9)));
 
-      editor.read(() => {
-        const root = $getRoot();
-        expect(root.getChildrenSize()).toBe(2);
-        expect(root.getChildAtIndex(1)!.getType()).toBe("paragraph");
-      });
-    } finally {
-      dispose();
+    dispatchKey(editor, "Backspace");
+
+    // The artifact's content must be intact.
+    const doc = editor.state.doc;
+    let artifactText = "";
+    doc.forEach((child) => {
+      if (child.type.name === "artifact") artifactText = child.textContent;
+    });
+    expect(artifactText).toBe("artifact body");
+
+    // Selection should be in the "above" paragraph, OUTSIDE the artifact.
+    const { $from } = editor.state.selection;
+    let inArtifact = false;
+    for (let d = $from.depth; d > 0; d--) {
+      if ($from.node(d).type.name === "artifact") {
+        inArtifact = true;
+        break;
+      }
     }
-  });
-
-  it("Enter on an empty paragraph that is the last child of an ArtifactNode escapes to the trailing paragraph", async () => {
-    const { ArtifactNode, $createArtifactNode } = await import(
-      "@/renderer/main/components/editor/nodes/artifact-node"
-    );
-    const { registerArtifactEscape, $tryEscapeArtifactDown } = await import(
-      "@/renderer/main/components/editor/artifact-escape-plugin"
-    );
-
-    const editor = createHeadlessEditor({ nodes: [ArtifactNode] });
-    const dispose = registerArtifactEscape(editor);
-
-    try {
-      let trailingKey = "";
-      editor.update(
-        () => {
-          const node = $createArtifactNode({
-            artifactId: "a1", skillId: "s", skillName: "S",
-            version: 1, generatedAt: "2026-05-13T00:00:00Z", modelId: "m",
-          });
-          node.append($createParagraphNode().append($createTextNode("body")));
-          // Empty paragraph at the end — what the user lands in after exiting a list.
-          const empty = $createParagraphNode();
-          node.append(empty);
-          $getRoot().append(node);
-          // Place the caret in the empty paragraph.
-          empty.selectStart();
-        },
-        { discrete: true },
-      );
-
-      // Trigger another tick so Task 1's transform appends the trailing paragraph.
-      editor.update(() => {}, { discrete: true });
-      editor.read(() => {
-        const root = $getRoot();
-        expect(root.getChildrenSize()).toBe(2);
-        trailingKey = root.getChildAtIndex(1)!.getKey();
-      });
-
-      let consumed = false;
-      editor.update(
-        () => {
-          consumed = $tryEscapeArtifactDown();
-        },
-        { discrete: true },
-      );
-      expect(consumed).toBe(true);
-
-      editor.read(() => {
-        const sel = $getSelection();
-        if (!$isRangeSelection(sel)) throw new Error("expected range selection");
-        // Selection should now be in the trailing paragraph.
-        const anchorBlock = sel.anchor.getNode().getTopLevelElementOrThrow();
-        expect(anchorBlock.getKey()).toBe(trailingKey);
-      });
-    } finally {
-      dispose();
-    }
-  });
-
-  it("Arrow-Down at the end of an artifact's last non-empty paragraph escapes to the trailing paragraph", async () => {
-    const { ArtifactNode, $createArtifactNode } = await import(
-      "@/renderer/main/components/editor/nodes/artifact-node"
-    );
-    const { registerArtifactEscape, $tryEscapeArtifactDown } = await import(
-      "@/renderer/main/components/editor/artifact-escape-plugin"
-    );
-
-    const editor = createHeadlessEditor({ nodes: [ArtifactNode] });
-    const dispose = registerArtifactEscape(editor);
-
-    try {
-      editor.update(
-        () => {
-          const node = $createArtifactNode({
-            artifactId: "a1", skillId: "s", skillName: "S",
-            version: 1, generatedAt: "2026-05-13T00:00:00Z", modelId: "m",
-          });
-          const last = $createParagraphNode().append($createTextNode("end"));
-          node.append(last);
-          $getRoot().append(node);
-          last.selectEnd();
-        },
-        { discrete: true },
-      );
-      editor.update(() => {}, { discrete: true }); // run transform
-
-      let consumed = false;
-      editor.update(
-        () => {
-          consumed = $tryEscapeArtifactDown(false);
-        },
-        { discrete: true },
-      );
-      expect(consumed).toBe(true);
-
-      editor.read(() => {
-        const sel = $getSelection();
-        if (!$isRangeSelection(sel)) throw new Error("expected range selection");
-        const block = sel.anchor.getNode().getTopLevelElementOrThrow();
-        // Caret should now be in the paragraph appended *after* the artifact.
-        expect(block.getType()).toBe("paragraph");
-        expect(block.getKey()).toBe(
-          $getRoot().getChildAtIndex(1)!.getKey(),
-        );
-      });
-    } finally {
-      dispose();
-    }
-  });
-
-  it("Enter at the end of a non-empty paragraph inside an artifact does not escape (so list-exit / new-paragraph still works)", async () => {
-    const { ArtifactNode, $createArtifactNode } = await import(
-      "@/renderer/main/components/editor/nodes/artifact-node"
-    );
-    const { registerArtifactEscape, $tryEscapeArtifactDown } = await import(
-      "@/renderer/main/components/editor/artifact-escape-plugin"
-    );
-
-    const editor = createHeadlessEditor({ nodes: [ArtifactNode] });
-    const dispose = registerArtifactEscape(editor);
-    try {
-      editor.update(
-        () => {
-          const node = $createArtifactNode({
-            artifactId: "a1", skillId: "s", skillName: "S",
-            version: 1, generatedAt: "2026-05-13T00:00:00Z", modelId: "m",
-          });
-          const p = $createParagraphNode().append($createTextNode("body"));
-          node.append(p);
-          $getRoot().append(node);
-          p.selectEnd();
-        },
-        { discrete: true },
-      );
-      editor.update(() => {}, { discrete: true });
-
-      let consumed = false;
-      editor.update(
-        () => {
-          consumed = $tryEscapeArtifactDown(true); // Enter semantics
-        },
-        { discrete: true },
-      );
-      expect(consumed).toBe(false);
-    } finally {
-      dispose();
-    }
-  });
-
-  it("Arrow-Up at the start of an artifact's first paragraph escapes to the previous sibling (creating one if needed)", async () => {
-    const { ArtifactNode, $createArtifactNode } = await import(
-      "@/renderer/main/components/editor/nodes/artifact-node"
-    );
-    const { registerArtifactEscape, $tryEscapeArtifactUp } = await import(
-      "@/renderer/main/components/editor/artifact-escape-plugin"
-    );
-
-    const editor = createHeadlessEditor({ nodes: [ArtifactNode] });
-    const dispose = registerArtifactEscape(editor);
-    try {
-      editor.update(
-        () => {
-          const node = $createArtifactNode({
-            artifactId: "a1", skillId: "s", skillName: "S",
-            version: 1, generatedAt: "2026-05-13T00:00:00Z", modelId: "m",
-          });
-          const first = $createParagraphNode().append($createTextNode("first"));
-          node.append(first);
-          $getRoot().append(node);
-          first.selectStart();
-        },
-        { discrete: true },
-      );
-      editor.update(() => {}, { discrete: true }); // run transform (adds trailing)
-
-      let consumed = false;
-      editor.update(
-        () => {
-          consumed = $tryEscapeArtifactUp(false);
-        },
-        { discrete: true },
-      );
-      expect(consumed).toBe(true);
-
-      editor.read(() => {
-        const root = $getRoot();
-        // Now: [paragraph (new, above artifact), artifact, paragraph (trailing)]
-        expect(root.getChildrenSize()).toBe(3);
-        expect(root.getChildAtIndex(0)!.getType()).toBe("paragraph");
-        expect(root.getChildAtIndex(1)!.getType()).toBe("artifact");
-        expect(root.getChildAtIndex(2)!.getType()).toBe("paragraph");
-
-        const sel = $getSelection();
-        if (!$isRangeSelection(sel)) throw new Error("expected range selection");
-        const block = sel.anchor.getNode().getTopLevelElementOrThrow();
-        expect(block.getKey()).toBe(root.getChildAtIndex(0)!.getKey());
-      });
-    } finally {
-      dispose();
-    }
-  });
-
-  it("Backspace at the start of an artifact's first paragraph escapes upward and does not delete the artifact's content", async () => {
-    const { ArtifactNode, $createArtifactNode } = await import(
-      "@/renderer/main/components/editor/nodes/artifact-node"
-    );
-    const { registerArtifactEscape, $tryEscapeArtifactUp } = await import(
-      "@/renderer/main/components/editor/artifact-escape-plugin"
-    );
-
-    const editor = createHeadlessEditor({ nodes: [ArtifactNode] });
-    const dispose = registerArtifactEscape(editor);
-    try {
-      editor.update(
-        () => {
-          // Pre-existing paragraph above so Task 1's transform is a no-op above.
-          $getRoot().append(
-            $createParagraphNode().append($createTextNode("above")),
-          );
-          const node = $createArtifactNode({
-            artifactId: "a1", skillId: "s", skillName: "S",
-            version: 1, generatedAt: "2026-05-13T00:00:00Z", modelId: "m",
-          });
-          const first = $createParagraphNode().append($createTextNode("artifact body"));
-          node.append(first);
-          $getRoot().append(node);
-          first.selectStart();
-        },
-        { discrete: true },
-      );
-      editor.update(() => {}, { discrete: true });
-
-      let consumed = false;
-      editor.update(
-        () => {
-          consumed = $tryEscapeArtifactUp(false);
-        },
-        { discrete: true },
-      );
-      expect(consumed).toBe(true);
-
-      editor.read(() => {
-        const root = $getRoot();
-        const artifact = root.getChildren().find((c) => c.getType() === "artifact")!;
-        expect(artifact.getTextContent()).toBe("artifact body");
-
-        const sel = $getSelection();
-        if (!$isRangeSelection(sel)) throw new Error("expected range selection");
-        expect(sel.anchor.getNode().getTextContent()).toBe("above");
-      });
-    } finally {
-      dispose();
-    }
+    expect(inArtifact).toBe(false);
   });
 });

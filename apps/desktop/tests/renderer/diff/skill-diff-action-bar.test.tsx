@@ -19,8 +19,9 @@ import {
 // Hoisted spies
 // ---------------------------------------------------------------------------
 
-const dispatchCommand = vi.hoisted(() => vi.fn());
-const editorUpdate = vi.hoisted(() => vi.fn());
+const insertArtifactBlock = vi.hoisted(() => vi.fn());
+const insertArtifactInline = vi.hoisted(() => vi.fn());
+const setContent = vi.hoisted(() => vi.fn());
 const runMutate = vi.hoisted(() => vi.fn());
 const acceptMutate = vi.hoisted(() => vi.fn());
 const cancelMutate = vi.hoisted(() => vi.fn());
@@ -33,15 +34,27 @@ const mockClear = vi.hoisted(() => vi.fn());
 const mockStage = vi.hoisted(() => vi.fn());
 const mockSwitchMode = vi.hoisted(() => vi.fn());
 
+// Build a fake editor that captures command calls. The action bar reads
+// `editor.commands.insertArtifactBlock`, etc., and `editor.state` / `view`
+// for selection restore — the selection-restore path is exercised in the
+// inline-rewrite tests below.
+const makeFakeEditor = () =>
+  ({
+    commands: {
+      insertArtifactBlock,
+      insertArtifactInline,
+      setContent,
+    },
+    state: {
+      doc: { content: { size: 100 } },
+      tr: { setSelection: vi.fn() },
+    },
+    view: { dispatch: vi.fn() },
+  }) as never;
+
 // ---------------------------------------------------------------------------
 // Mocks
 // ---------------------------------------------------------------------------
-
-vi.mock("@lexical/react/LexicalComposerContext", () => ({
-  useLexicalComposerContext: () => [
-    { dispatchCommand, update: editorUpdate },
-  ],
-}));
 
 vi.mock("@/trpc/react", () => ({
   api: {
@@ -157,7 +170,10 @@ async function renderBar(noteId: number): Promise<string> {
     "../../../src/renderer/main/components/editor/diff/skill-diff-action-bar"
   );
   return renderToStaticMarkup(
-    React.createElement(SkillDiffActionBar, { noteId }),
+    React.createElement(SkillDiffActionBar, {
+      editor: makeFakeEditor(),
+      noteId,
+    }),
   );
 }
 
@@ -214,36 +230,24 @@ describe("SkillDiffActionBar", () => {
     // diff spans are rendered
     expect(html).toContain("prismical-diff-delete");
     expect(html).toContain("prismical-diff-insert");
-    // The diff of "world" vs "earth" produces delete/insert char spans;
-    // the text content of the deleted chars is present in the HTML.
-    // We check that the raw text "ld" (end of "world") appears as deleted.
-    expect(html).toContain("prismical-diff-delete");
-    // And "th" from "earth" appears as inserted.
-    expect(html).toContain("prismical-diff-insert");
     // The shared "hello " prefix is rendered as equal.
     expect(html).toContain("hello ");
   });
 
   // --- Behavioral: accept ---
 
-  it("accept path: dispatches INSERT_ARTIFACT_NODE_COMMAND with server-allocated audit ids and clears store", async () => {
+  it("accept path: calls editor.commands.insertArtifactBlock with server-allocated audit ids and clears store", () => {
     const candidate = makeCandidate({ mode: "append-section" });
 
-    const {
-      INSERT_ARTIFACT_NODE_COMMAND,
-    } = await import(
-      "../../../src/renderer/main/components/editor/commands/artifact-commands"
-    );
-
     // The accept mutation returns server-allocated metadata. The action bar
-    // dispatches INSERT with those ids — not anything carried on the
+    // calls insertArtifactBlock with those ids — not anything carried on the
     // unpersisted candidate (which deliberately has no artifactId/version).
     const auditMeta = {
       artifactId: "art-001",
       version: 1,
       generatedAt: "2026-05-11T00:00:00.000Z",
     };
-    dispatchCommand(INSERT_ARTIFACT_NODE_COMMAND, {
+    insertArtifactBlock({
       artifactId: auditMeta.artifactId,
       skillId: candidate.skillId,
       skillName: candidate.skillName,
@@ -254,8 +258,7 @@ describe("SkillDiffActionBar", () => {
     });
     mockClear(candidate.noteId);
 
-    expect(dispatchCommand).toHaveBeenCalledWith(
-      INSERT_ARTIFACT_NODE_COMMAND,
+    expect(insertArtifactBlock).toHaveBeenCalledWith(
       expect.objectContaining({
         artifactId: "art-001",
         skillId: "my-skill",
@@ -303,7 +306,7 @@ describe("SkillDiffActionBar", () => {
 
   // --- Refine: carries the switched mode through after switchMode ---
 
-  it("refine after switchMode: submitRefine reads the current candidate.mode and forwards it as modeOverride", async () => {
+  it("refine after switchMode: submitRefine reads the current candidate.mode and forwards it as modeOverride", () => {
     // Regression cover for the post-hoc-switch-then-refine path. The action
     // bar reads `candidate.mode` from the live store on each render, so a
     // refine fired AFTER the user clicks "Switch to Replace" must send the
@@ -378,3 +381,7 @@ describe("SkillDiffActionBar", () => {
     });
   });
 });
+
+// Keep the typed import live so the action bar's store contract is exercised
+// at the type level by future renames.
+void useSkillDiffStore;
