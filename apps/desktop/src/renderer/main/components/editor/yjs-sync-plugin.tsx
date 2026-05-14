@@ -92,7 +92,13 @@ export function useYjsSync({
     const storedContent = yText.toString();
     if (storedContent) {
       setEditorFromJson(storedContent);
-      lastSyncedJsonRef.current = storedContent;
+      // Align lastSyncedJsonRef with the editor's POST-seed state, not the
+      // raw Y.Text content. Schema-level appendTransactions (e.g. the
+      // trailing-paragraph invariant after an artifact) can mutate the
+      // doc during setContent — using the raw stored value here would
+      // make the next user keystroke see a phantom "diff" and write the
+      // normalized form back to Y unnecessarily.
+      lastSyncedJsonRef.current = JSON.stringify(editor.getJSON());
     }
     onSyncStatusChangeRef.current?.(false);
 
@@ -137,7 +143,11 @@ export function useYjsSync({
       // doesn't trigger the yjsObserver re-entrantly (Yjs's observer
       // dispatch can be synchronous within a transact() block).
       yText.unobserve(yjsObserver);
-      editor.off("update", onUpdate);
+      // useEditor's own cleanup may have destroyed the editor by the time
+      // we run (effect ordering between TipTap's hook and ours isn't
+      // guaranteed under React strict mode). `off` on a destroyed editor
+      // is undefined behavior, so skip it.
+      if (!editor.isDestroyed) editor.off("update", onUpdate);
       if (hasPendingRef.current && pendingJsonRef.current) {
         writeJsonToYjs(pendingJsonRef.current);
       }

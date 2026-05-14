@@ -34,6 +34,10 @@ export function SkillDiffActionBar({ editor, noteId }: Props) {
   const decoratedForRef = useRef<SkillDiffCandidateKey | null>(null);
 
   // Apply / refresh decorations whenever the staged candidate changes.
+  // The cleanup ALSO handles the editor-swap case: when the editor is
+  // re-created (e.g. user switches notes), `editor.isDestroyed` will be
+  // true by the time React runs cleanup, so we skip the dispatch instead
+  // of throwing on a torn-down view.
   useEffect(() => {
     if (!candidate) {
       if (decoratedForRef.current !== null) {
@@ -46,7 +50,12 @@ export function SkillDiffActionBar({ editor, noteId }: Props) {
     const key = candidateKey(candidate);
     if (decoratedForRef.current === key) return;
 
-    const tr = buildCandidateTransaction(editor.state, candidate);
+    // Read state at dispatch time, not effect time — between effect
+    // queueing and now, a Yjs observer or another transaction may have
+    // dispatched and our snapshot would be stale.
+    const view = editor.view;
+    const state = view.state;
+    const tr = buildCandidateTransaction(state, candidate);
     if (!tr) {
       // Couldn't materialize the post-state (stale selection, malformed
       // payload). Surface a warning and clear so the user can re-run.
@@ -56,21 +65,17 @@ export function SkillDiffActionBar({ editor, noteId }: Props) {
       clear(noteId);
       return;
     }
-    const decorations = buildDiffDecorations(
-      editor.state.doc,
-      tr,
-      editor.state.schema,
-    );
-    editor.view.dispatch(
-      editor.state.tr.setMeta(skillDiffPluginKey, { decorations }),
-    );
+    const decorations = buildDiffDecorations(state.doc, tr, state.schema);
+    view.dispatch(view.state.tr.setMeta(skillDiffPluginKey, { decorations }));
     decoratedForRef.current = key;
-  }, [editor, candidate, clear, noteId]);
 
-  // Always clear on unmount so a stale decoration doesn't outlive the bar.
-  useEffect(() => {
-    return () => clearDiffDecorations(editor);
-  }, [editor]);
+    return () => {
+      // Editor may be destroyed by the time cleanup runs (parent recreates
+      // it on noteId / syncProvider change); skip the clear in that case.
+      if (!editor.isDestroyed) clearDiffDecorations(editor);
+      decoratedForRef.current = null;
+    };
+  }, [editor, candidate, clear, noteId]);
 
   if (!candidate) return null;
 
@@ -108,6 +113,12 @@ export function SkillDiffActionBar({ editor, noteId }: Props) {
           err instanceof Error ? err.message : String(err)
         }`,
       );
+      // Leave the candidate staged so the user can retry, but drop the
+      // preview decorations + reset the cursor — the failed restore left
+      // the inline-rewrite path with the selection moved to the would-be
+      // edit point, which is misleading when no edit landed.
+      clearDiffDecorations(editor);
+      decoratedForRef.current = null;
       return;
     }
 
@@ -263,12 +274,15 @@ function restoreInlineSelection(
 }
 
 // Stable identity for a staged candidate. We use it to avoid recomputing
-// decorations on every render when the candidate hasn't changed.
+// decorations on every render when the candidate hasn't changed. The full
+// rawMarkdown is part of the key because a refine commonly produces a
+// same-length-but-different replacement, and bucketing by length only
+// would leave stale decorations in place.
 type SkillDiffCandidateKey = string;
 function candidateKey(c: {
   skillId: string;
   mode: string;
   rawMarkdown: string;
 }): SkillDiffCandidateKey {
-  return `${c.mode}|${c.skillId}|${c.rawMarkdown.length}`;
+  return `${c.mode}|${c.skillId}|${c.rawMarkdown}`;
 }

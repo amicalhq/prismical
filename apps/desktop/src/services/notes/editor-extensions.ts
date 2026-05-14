@@ -7,7 +7,6 @@ import { StarterKit } from "@tiptap/starter-kit";
 import { TaskList } from "@tiptap/extension-task-list";
 import { TaskItem } from "@tiptap/extension-task-item";
 import { CodeBlockLowlight } from "@tiptap/extension-code-block-lowlight";
-import { Markdown } from "tiptap-markdown";
 import { createLowlight } from "lowlight";
 import type { Extensions } from "@tiptap/core";
 import { ArtifactNode } from "@/renderer/main/components/editor/nodes/artifact-node";
@@ -56,8 +55,11 @@ export function buildEditorExtensions(opts?: {
     ArtifactNode,
     ArtifactInlineNode,
     ArtifactEscape,
-    // tiptap-markdown must come AFTER all schema-contributing extensions
-    // so it can attach its `addStorage().markdown` overrides cleanly.
-    Markdown.configure(MARKDOWN_OPTIONS),
+    // NOTE: tiptap-markdown is NOT included here on purpose. The renderer
+    // adds it (in editor-shared.tsx) for in-editor paste/copy, but the
+    // headless schema this function builds is used by the main-process
+    // markdown round-trip (prosemirror-markdown), which doesn't need
+    // tiptap-markdown's storage hooks — and pulling that extension into
+    // the main process would risk DOM-touching code paths at parse time.
   ];
 }

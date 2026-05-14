@@ -35,12 +35,7 @@ export function buildCandidateTransaction(
 
   try {
     if (candidate.mode === "append-section") {
-      const meta = pickBlockMetadata(candidate);
       const children = candidate.content.map((c) => schema.nodeFromJSON(c));
-      const artifactNode = schema.nodes[ARTIFACT_NODE_NAME].create(
-        meta,
-        children,
-      );
 
       // Regen invariant: replace an existing artifact for the same skill in
       // place; otherwise append at end.
@@ -60,6 +55,18 @@ export function buildCandidateTransaction(
       if (existingPos !== null) {
         const existing = state.doc.nodeAt(existingPos);
         if (existing) {
+          // Reuse the EXISTING artifact's attrs for the diff. The audit row
+          // hasn't been written yet, so we don't have new artifactId /
+          // version / generatedAt — and using placeholders would make the
+          // changeset see an attribute change at the wrapper level and
+          // visualize the whole subtree as deleted+re-inserted. Carrying
+          // existing attrs forward focuses the diff on the body children,
+          // which is what changed. Accept overwrites attrs with server-
+          // allocated audit meta via insertArtifactBlock.
+          const artifactNode = schema.nodes[ARTIFACT_NODE_NAME].create(
+            existing.attrs,
+            children,
+          );
           tr.replaceWith(
             existingPos,
             existingPos + existing.nodeSize,
@@ -67,6 +74,10 @@ export function buildCandidateTransaction(
           );
         }
       } else {
+        const artifactNode = schema.nodes[ARTIFACT_NODE_NAME].create(
+          pickBlockMetadata(candidate),
+          children,
+        );
         tr.insert(state.doc.content.size, artifactNode);
       }
       return tr;
@@ -142,13 +153,22 @@ export function buildDiffDecorations(
     }
 
     // Insertions: render the post-doc slice as a widget at the original
-    // position where the new content would land.
+    // position where the new content would land. Pick the wrapper element
+    // based on BOTH the insertion's content AND the surrounding context —
+    // a <div> wrapper inside a textblock (<p>) produces invalid HTML and
+    // makes the browser silently close the paragraph early, breaking
+    // selection geometry. When the resolved parent is a textblock we
+    // always use <span>, even if the inserted slice carries blocks (which
+    // wouldn't be valid in that position anyway).
     if (change.toB > change.fromB) {
       const slice = candidateTr.doc.slice(change.fromB, change.toB);
+      const $pos = originalDoc.resolve(change.fromA);
+      const inlineContext = $pos.parent.isTextblock;
+      const insertedIsBlock = slice.content.firstChild?.isBlock ?? false;
+      const tag = !inlineContext && insertedIsBlock ? "div" : "span";
+
       const widget = (): HTMLElement => {
-        const wrapper = document.createElement(
-          slice.content.firstChild?.isBlock ? "div" : "span",
-        );
+        const wrapper = document.createElement(tag);
         wrapper.className = "prismical-diff-insert";
         wrapper.contentEditable = "false";
         wrapper.appendChild(serializer.serializeFragment(slice.content));
