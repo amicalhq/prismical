@@ -372,7 +372,7 @@ async function seedCustomerSyncMeeting(noteId: number, now: Date) {
   // plain string inside a Y.Text named "content".
   const ydoc = new Y.Doc();
   ydoc.getText("content").insert(0, rawNotesLexicalJson);
-  await saveYjsUpdate(noteId, Y.encodeStateAsUpdate(ydoc));
+  await saveYjsUpdate(db, noteId, Y.encodeStateAsUpdate(ydoc));
   ydoc.destroy();
 
   await db.insert(meetings).values({

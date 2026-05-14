@@ -17,7 +17,12 @@
     "baseUrl": ".",
     "noEmit": true,
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["src/*"],
+      "@db/*": ["src/db/*"],
+      "@main/*": ["src/main/*"],
+      "@services/*": ["src/services/*"],
+      "@utils/*": ["src/utils/*"],
+      "@trpc/*": ["src/trpc/*"]
     }
   },
   "include": [

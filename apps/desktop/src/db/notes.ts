@@ -1,4 +1,5 @@
-import { eq, desc, asc, like, and, inArray, isNull, sql } from "drizzle-orm";
+import { eq, desc, asc, like, and, inArray, isNull, sql, lte } from "drizzle-orm";
+import type { LibSQLDatabase } from "drizzle-orm/libsql";
 import { db } from "./index";
 import {
   notes,
@@ -217,8 +218,14 @@ export async function deleteNote(id: number) {
 
 // YJS Updates operations
 
+type DB = LibSQLDatabase<Record<string, unknown>>;
+
 // Save a YJS update to the database
-export async function saveYjsUpdate(noteId: number, update: Uint8Array) {
+export async function saveYjsUpdate(
+  db: DB,
+  noteId: number,
+  update: Uint8Array,
+) {
   // Convert Uint8Array to Buffer for storage
   const bufferUpdate = Buffer.from(update);
 
@@ -230,7 +237,10 @@ export async function saveYjsUpdate(noteId: number, update: Uint8Array) {
 }
 
 // Load all YJS updates for a note
-export async function loadYjsUpdates(noteId: number): Promise<Uint8Array[]> {
+export async function loadYjsUpdates(
+  db: DB,
+  noteId: number,
+): Promise<Uint8Array[]> {
   const updates = await db
     .select()
     .from(yjsUpdates)
@@ -244,7 +254,7 @@ export async function loadYjsUpdates(noteId: number): Promise<Uint8Array[]> {
 }
 
 // Get all unique note IDs that have updates
-export async function getUniqueNoteIds(): Promise<number[]> {
+export async function getUniqueNoteIds(db: DB): Promise<number[]> {
   const result = await db
     .select({ noteId: yjsUpdates.noteId })
     .from(yjsUpdates)
@@ -255,6 +265,7 @@ export async function getUniqueNoteIds(): Promise<number[]> {
 
 // Get all YJS updates for a specific note
 export async function getYjsUpdatesByNoteId(
+  db: DB,
   noteId: number,
 ): Promise<YjsUpdate[]> {
   return await db
@@ -264,16 +275,23 @@ export async function getYjsUpdatesByNoteId(
     .orderBy(asc(yjsUpdates.id));
 }
 
-// Replace all YJS updates with a compacted one (transactional)
-export async function replaceYjsUpdates(
+// Compact YJS updates up to a watermark id (race-safe).
+// Deletes rows with id <= maxId for the note and inserts the compacted update
+// in a single transaction. Any rows inserted after maxId (concurrent writes)
+// are preserved.
+export async function compactUpToId(
+  db: DB,
   noteId: number,
+  maxId: number,
   compactedUpdate: Uint8Array,
 ): Promise<void> {
   const bufferUpdate = Buffer.from(compactedUpdate);
 
   await db.transaction(async (tx) => {
-    // Delete all existing updates
-    await tx.delete(yjsUpdates).where(eq(yjsUpdates.noteId, noteId));
+    // Delete only rows up to the watermark — concurrent tail rows survive
+    await tx
+      .delete(yjsUpdates)
+      .where(and(eq(yjsUpdates.noteId, noteId), lte(yjsUpdates.id, maxId)));
 
     // Insert the compacted update
     await tx.insert(yjsUpdates).values({
