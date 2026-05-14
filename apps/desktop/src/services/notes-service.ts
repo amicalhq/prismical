@@ -17,6 +17,8 @@ import {
 import { db } from "../db/index";
 import { upsertEvent } from "../db/events";
 import type { NewEvent } from "../db/schema";
+import { yjsUpdates } from "../db/schema";
+import { eq, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { ipcMain } from "electron";
 import { logger } from "../main/logger";
@@ -39,6 +41,7 @@ export interface NoteUpdateOptions {
 
 class NotesService {
   private static instance: NotesService;
+  private static readonly COMPACTION_THRESHOLD = 100;
   private compactionTask: cron.ScheduledTask | null = null;
 
   private constructor() {
@@ -57,6 +60,7 @@ class NotesService {
             noteId,
             updateSize: updateArray.length,
           });
+          void this.maybeCompactNote(noteId);
         } catch (error) {
           logger.main.error("Failed to save yjs update", error);
           throw error;
@@ -201,6 +205,19 @@ class NotesService {
       });
     } catch (error) {
       logger.main.error("Failed to compact notes:", error);
+    }
+  }
+
+  // Opportunistic: count rows; if above threshold, run compaction.
+  // Safe to call on every save — counting is cheap, and compaction
+  // itself is race-safe via the high-watermark in compactUpToId.
+  async maybeCompactNote(noteId: number): Promise<void> {
+    const [{ count }] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(yjsUpdates)
+      .where(eq(yjsUpdates.noteId, noteId));
+    if (count > NotesService.COMPACTION_THRESHOLD) {
+      await this.compactNote(noteId);
     }
   }
 
