@@ -27,6 +27,7 @@ const ConfigSchema = z.object({
   surface: z.array(SurfaceSchema).min(1),
   modelPreference: ModelSelectionSchema.optional(),
   defaultSkill: z.boolean().optional(),
+  modeAgnosticPrompt: z.boolean().optional(),
 });
 
 export const skillsRouter = createRouter({

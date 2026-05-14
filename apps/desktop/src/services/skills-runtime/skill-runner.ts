@@ -78,14 +78,19 @@ export async function runSkill(
     );
   }
 
-  // beforeText is the "before" side of the char-level diff overlay for
-  // replace-doc. We use the markdown rendering of the note (not plain text)
-  // because the candidate's `rawMarkdown` is markdown — diffing plain-vs-md
-  // makes every `##`, `**`, `-` look like an insert even when the content
-  // hasn't changed. append-section is additive (no diff); inline-rewrite
-  // gets beforeText from the client's selection.
+  // beforeText is the "before" side of the char-level diff overlay. We use the
+  // markdown rendering of the note (not plain text) because the candidate's
+  // `rawMarkdown` is markdown — diffing plain-vs-md makes every `##`, `**`,
+  // `-` look like an insert even when the content hasn't changed.
+  //
+  // Populated for both `append-section` and `replace-doc` so the diff store's
+  // post-run mode switch (append <-> replace) can re-render the overlay
+  // without a second tRPC round-trip. append-section's additive preview
+  // doesn't render beforeText today; carrying it is harmless.
+  //
+  // inline-rewrite gets beforeText from the client's selection instead.
   const beforeText =
-    ctx.mode === "replace-doc" ? input.noteMarkdown : undefined;
+    ctx.mode === "inline-rewrite" ? undefined : input.noteMarkdown;
 
   logger.pipeline.info("Skill run produced candidate (unpersisted)", {
     noteId: ctx.noteId,

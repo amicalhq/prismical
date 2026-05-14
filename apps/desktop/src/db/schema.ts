@@ -594,12 +594,28 @@ export interface SkillMetadata {
 
 export interface SkillConfig {
   // The skill's **default** mode. Users can pick a different mode for a
-  // single run via the picker's `⋯` overflow menu; that override is held
-  // in-memory and not persisted on the skill row.
+  // single run via the picker's `⋯` overflow menu (pre-run), or switch
+  // append <-> replace post-run in the diff action bar before accepting.
+  // inline-rewrite is excluded from the post-run switch (selection-driven).
   editingOptions: ArtifactMode;
   surface: SkillSurface[];
   modelPreference?: ModelSelection;
   defaultSkill?: boolean;
+  /**
+   * When true, the runtime does NOT inject mode-specific guidance into the
+   * system prompt (the `# Active mode` block and the mode enumeration in
+   * `# Output`). The skill body alone tells the model what shape of markdown
+   * to produce. Default false preserves the current mode-tuned behavior.
+   *
+   * Useful for skills like Enhance whose output (a clean summary chunk) is
+   * coherent in either append or replace position — the user can switch
+   * between them post-hoc in the diff action bar without re-running.
+   *
+   * Exemption: `inline-rewrite` runs always receive mode guidance regardless
+   * of this flag — inline output is single-paragraph-only (enforced by
+   * `markdownToInlineChildren`) and the model needs the explicit instruction.
+   */
+  modeAgnosticPrompt?: boolean;
   /**
    * Per-skill input policy. Each flag opts the skill into having that piece
    * of context injected into the system prompt by the runner. Note markdown

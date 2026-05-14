@@ -82,4 +82,73 @@ describe("useSkillDiffStore", () => {
     const mapAfter = useSkillDiffStore.getState().candidatesByNote;
     expect(mapAfter).not.toBe(mapBefore);
   });
+
+  describe("switchMode", () => {
+    it("flips append-section -> replace-doc", () => {
+      const { stage, switchMode, getCandidate } = useSkillDiffStore.getState();
+      stage({ ...makeCandidate(1), mode: "append-section" });
+
+      switchMode(1);
+      expect(getCandidate(1)?.mode).toBe("replace-doc");
+    });
+
+    it("flips replace-doc -> append-section", () => {
+      const { stage, switchMode, getCandidate } = useSkillDiffStore.getState();
+      stage({ ...makeCandidate(1), mode: "replace-doc" });
+
+      switchMode(1);
+      expect(getCandidate(1)?.mode).toBe("append-section");
+    });
+
+    it("is a no-op for inline-rewrite candidates", () => {
+      const { stage, switchMode, getCandidate } = useSkillDiffStore.getState();
+      stage({ ...makeCandidate(1), mode: "inline-rewrite" });
+
+      switchMode(1);
+      expect(getCandidate(1)?.mode).toBe("inline-rewrite");
+    });
+
+    it("is a no-op when no candidate is staged for the note", () => {
+      const { switchMode } = useSkillDiffStore.getState();
+      expect(() => switchMode(9999)).not.toThrow();
+    });
+
+    it("preserves all other candidate fields (content, beforeText, rawMarkdown, audit meta)", () => {
+      const { stage, switchMode, getCandidate } = useSkillDiffStore.getState();
+      const original: SkillDiffCandidate = {
+        ...makeCandidate(1),
+        mode: "append-section",
+        beforeText: "original note body",
+        rawMarkdown: "## New section\n\ncontent",
+        reasoning: "model thoughts",
+      };
+      stage(original);
+
+      switchMode(1);
+
+      const switched = getCandidate(1);
+      expect(switched?.mode).toBe("replace-doc");
+      expect(switched?.beforeText).toBe("original note body");
+      expect(switched?.rawMarkdown).toBe("## New section\n\ncontent");
+      expect(switched?.reasoning).toBe("model thoughts");
+      expect(switched?.content).toBe(original.content);
+    });
+
+    it("produces a new Map for React change detection", () => {
+      const { stage, switchMode } = useSkillDiffStore.getState();
+      stage(makeCandidate(1));
+      const mapBefore = useSkillDiffStore.getState().candidatesByNote;
+      switchMode(1);
+      const mapAfter = useSkillDiffStore.getState().candidatesByNote;
+      expect(mapAfter).not.toBe(mapBefore);
+    });
+
+    it("two switches return to the original mode", () => {
+      const { stage, switchMode, getCandidate } = useSkillDiffStore.getState();
+      stage({ ...makeCandidate(1), mode: "append-section" });
+      switchMode(1);
+      switchMode(1);
+      expect(getCandidate(1)?.mode).toBe("append-section");
+    });
+  });
 });

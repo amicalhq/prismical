@@ -10,11 +10,17 @@ export function skillToMarkdown(skill: Skill): string {
   };
   // Only include optional fields when they have meaningful values,
   // because js-yaml (used inside gray-matter) cannot serialize `undefined`.
+  // Boolean flags are emitted only when `=== true` — the form writes `false`
+  // unconditionally for every user-authored skill, and emitting that into
+  // exported YAML would clutter the output for the no-opt-ins common case.
   if (skill.description != null) {
     frontmatter.description = skill.description;
   }
-  if (skill.config.defaultSkill != null) {
-    frontmatter.defaultSkill = skill.config.defaultSkill;
+  if (skill.config.defaultSkill === true) {
+    frontmatter.defaultSkill = true;
+  }
+  if (skill.config.modeAgnosticPrompt === true) {
+    frontmatter.modeAgnosticPrompt = true;
   }
   // Per-skill input policy — only emit the keys that are explicitly set, so
   // the YAML stays minimal for the common "no opt-ins" case.

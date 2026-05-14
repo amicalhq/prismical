@@ -9,12 +9,22 @@ export function buildSystemPrompt(
   ctx: SkillRunContext,
   input: SkillInput,
 ): string {
+  // Mode-agnostic skills want the model to produce a self-contained chunk
+  // that the user can position (append vs replace) post-run via the diff
+  // action bar. Inline-rewrite is exempted: inline output is single-paragraph
+  // only and the model needs the explicit guidance to honour that constraint.
+  const skipModeBlock =
+    ctx.skill.config.modeAgnosticPrompt === true &&
+    ctx.mode !== "inline-rewrite";
+
   const out: string[] = [];
 
   out.push(ctx.skill.body.trim());
   out.push("");
-  out.push(`# Active mode: ${ctx.mode}`);
-  out.push(modeGuidance(ctx.mode));
+  if (!skipModeBlock) {
+    out.push(`# Active mode: ${ctx.mode}`);
+    out.push(modeGuidance(ctx.mode));
+  }
 
   if (input.noteMarkdown.trim().length > 0) {
     out.push("");
@@ -54,12 +64,19 @@ export function buildSystemPrompt(
 
   out.push("");
   out.push("# Output");
-  out.push(
-    'Return JSON matching the provided schema: { "markdown": "<your output>" }. ' +
-      "The markdown will be inserted into the note as-is based on the active " +
-      "mode — append-section appends a new block, replace-doc replaces the " +
-      "whole note, inline-rewrite replaces just the selected text.",
-  );
+  if (skipModeBlock) {
+    out.push(
+      'Return JSON matching the provided schema: { "markdown": "<your output>" }. ' +
+        "The markdown will be inserted into the note as-is.",
+    );
+  } else {
+    out.push(
+      'Return JSON matching the provided schema: { "markdown": "<your output>" }. ' +
+        "The markdown will be inserted into the note as-is based on the active " +
+        "mode — append-section appends a new block, replace-doc replaces the " +
+        "whole note, inline-rewrite replaces just the selected text.",
+    );
+  }
 
   return out.join("\n");
 }

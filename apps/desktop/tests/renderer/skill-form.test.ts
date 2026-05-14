@@ -9,7 +9,10 @@ import type { Skill } from "@/db/schema";
 
 const createMutate = vi.hoisted(() => vi.fn());
 const updateMutate = vi.hoisted(() => vi.fn());
+const cloneMutate = vi.hoisted(() => vi.fn());
 const invalidate = vi.hoisted(() => vi.fn());
+const exportAsJsonFetch = vi.hoisted(() => vi.fn());
+const exportAsMarkdownFetch = vi.hoisted(() => vi.fn());
 
 vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => vi.fn(),
@@ -30,10 +33,24 @@ vi.mock("@/trpc/react", () => ({
           isPending: false,
         })),
       },
+      clone: {
+        useMutation: vi.fn(() => ({
+          mutate: cloneMutate,
+          isPending: false,
+        })),
+      },
+      delete: {
+        useMutation: vi.fn(() => ({
+          mutate: vi.fn(),
+          isPending: false,
+        })),
+      },
     },
     useUtils: () => ({
       skills: {
         list: { invalidate },
+        exportAsJson: { fetch: exportAsJsonFetch },
+        exportAsMarkdown: { fetch: exportAsMarkdownFetch },
       },
     }),
   },
@@ -143,5 +160,46 @@ describe("SkillForm", () => {
     expect(html).toContain("Append section");
     expect(html).toContain("Replace document");
     expect(html).toContain("Inline rewrite");
+  });
+
+  describe("modeAgnosticPrompt checkbox", () => {
+    // SSR-only assertions: pin that the checkbox is wired to the existing
+    // skill's config flag. The save-payload side is covered by the
+    // skills-portability round-trip tests (which exercise both true and false
+    // through the JSON/YAML boundary).
+    it("renders the Mode-agnostic prompt checkbox + helper text", async () => {
+      const html = await renderForm({ mode: "new" });
+      expect(html).toContain('id="mode-agnostic"');
+      expect(html).toContain("Mode-agnostic prompt");
+    });
+
+    it("reflects an existing skill's modeAgnosticPrompt=true as a checked checkbox", async () => {
+      const existing = makeSkill({
+        config: {
+          editingOptions: "append-section",
+          surface: ["dock"],
+          modeAgnosticPrompt: true,
+        },
+      });
+      const html = await renderForm({ mode: "edit", existing });
+      // Radix renders the checkbox with `data-state="checked"` when checked.
+      // Find the slice of HTML around the mode-agnostic checkbox and assert
+      // it's in the checked state.
+      const idx = html.indexOf('id="mode-agnostic"');
+      expect(idx).toBeGreaterThan(-1);
+      const slice = html.slice(Math.max(0, idx - 200), idx + 200);
+      expect(slice).toContain('data-state="checked"');
+    });
+
+    it("reflects an existing skill without modeAgnosticPrompt as an unchecked checkbox", async () => {
+      const existing = makeSkill(); // factory: no modeAgnosticPrompt
+      const html = await renderForm({ mode: "edit", existing });
+      const idx = html.indexOf('id="mode-agnostic"');
+      expect(idx).toBeGreaterThan(-1);
+      // Radix only emits `data-state="checked"` when checked; absence means
+      // unchecked. We pin the absence here.
+      const slice = html.slice(Math.max(0, idx - 200), idx + 200);
+      expect(slice).not.toContain('data-state="checked"');
+    });
   });
 });

@@ -157,4 +157,76 @@ describe("skills-runtime/build-system-prompt", () => {
     );
     expect(prompt).not.toContain("# Selected text to rewrite");
   });
+
+  describe("modeAgnosticPrompt", () => {
+    function makeAgnosticSkill(mode: "append-section" | "replace-doc"): Skill {
+      const skill = makeSkill("Agnostic body.");
+      skill.config = {
+        ...skill.config,
+        editingOptions: mode,
+        modeAgnosticPrompt: true,
+      };
+      return skill;
+    }
+
+    it("skips the # Active mode block when modeAgnosticPrompt is true (append)", () => {
+      const ctx = makeCtx({
+        skill: makeAgnosticSkill("append-section"),
+        mode: "append-section",
+      });
+      const prompt = buildSystemPrompt(ctx, makeInput());
+      expect(prompt).not.toContain("# Active mode");
+      expect(prompt).not.toContain("Produce a new section");
+    });
+
+    it("skips the # Active mode block when modeAgnosticPrompt is true (replace)", () => {
+      const ctx = makeCtx({
+        skill: makeAgnosticSkill("replace-doc"),
+        mode: "replace-doc",
+      });
+      const prompt = buildSystemPrompt(ctx, makeInput());
+      expect(prompt).not.toContain("# Active mode");
+      expect(prompt).not.toContain("Produce a complete replacement");
+    });
+
+    it("rewrites the # Output block to drop mode enumeration when modeAgnosticPrompt is true", () => {
+      const ctx = makeCtx({
+        skill: makeAgnosticSkill("append-section"),
+        mode: "append-section",
+      });
+      const prompt = buildSystemPrompt(ctx, makeInput());
+      expect(prompt).toContain("# Output");
+      expect(prompt).toContain("inserted into the note as-is.");
+      expect(prompt).not.toContain("append-section appends");
+      expect(prompt).not.toContain("replace-doc replaces");
+      expect(prompt).not.toContain("inline-rewrite replaces");
+    });
+
+    it("STILL injects # Active mode for inline-rewrite even when modeAgnosticPrompt is true (inline exemption)", () => {
+      // inline-rewrite needs the explicit guidance because the runner enforces
+      // single-paragraph output via markdownToInlineChildren. The agnostic flag
+      // is about append <-> replace positioning, never inline.
+      const skill = makeAgnosticSkill("append-section");
+      skill.config.surface = ["dock", "inline"];
+      const ctx = makeCtx({ skill, mode: "inline-rewrite" });
+      const prompt = buildSystemPrompt(
+        ctx,
+        makeInput({ selectionText: "highlighted text" }),
+      );
+      expect(prompt).toContain("# Active mode: inline-rewrite");
+      expect(prompt).toContain("rewrite of the selected text only");
+      expect(prompt).toContain("# Selected text to rewrite");
+    });
+
+    it("preserves the current mode-tuned behavior when modeAgnosticPrompt is false/undefined", () => {
+      // Sanity: existing skills without the flag must produce identical output.
+      const prompt = buildSystemPrompt(
+        makeCtx({ mode: "replace-doc" }),
+        makeInput(),
+      );
+      expect(prompt).toContain("# Active mode: replace-doc");
+      expect(prompt).toContain("Produce a complete replacement");
+      expect(prompt).toContain("append-section appends");
+    });
+  });
 });

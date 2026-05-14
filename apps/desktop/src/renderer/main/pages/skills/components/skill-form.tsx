@@ -52,6 +52,9 @@ export function SkillForm({ mode, existing }: Props) {
   const [defaultSkill, setDefaultSkill] = useState(
     existing?.config.defaultSkill ?? false,
   );
+  const [modeAgnosticPrompt, setModeAgnosticPrompt] = useState(
+    existing?.config.modeAgnosticPrompt ?? false,
+  );
   const [enabled, setEnabled] = useState(existing?.enabled ?? true);
   const [error, setError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState(false);
@@ -104,6 +107,7 @@ export function SkillForm({ mode, existing }: Props) {
       editingOptions,
       surface: [...surfaces],
       defaultSkill,
+      modeAgnosticPrompt,
     };
     if (mode === "new") {
       create.mutate({
@@ -305,6 +309,27 @@ export function SkillForm({ mode, existing }: Props) {
               onCheckedChange={setDefaultSkill}
               disabled={isReadOnly}
             />
+          </div>
+
+          <div className="flex items-start gap-2">
+            <Checkbox
+              id="mode-agnostic"
+              checked={modeAgnosticPrompt}
+              onCheckedChange={(c) => setModeAgnosticPrompt(c === true)}
+              disabled={isReadOnly}
+              className="mt-0.5"
+            />
+            <div className="space-y-1">
+              <Label htmlFor="mode-agnostic" className="font-normal">
+                Mode-agnostic prompt
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Don&rsquo;t tell the model which mode is active — the body alone
+                describes the output. Lets the user switch between append and
+                replace after the run without re-generating. Inline-rewrite is
+                always mode-tuned regardless of this setting.
+              </p>
+            </div>
           </div>
 
           {mode === "edit" && !existing?.system ? (
