@@ -12,6 +12,7 @@ import type { Editor } from "@tiptap/core";
 import { TextSelection } from "@tiptap/pm/state";
 import { toast } from "sonner";
 import { useSkillDiffStore } from "./skill-diff-store";
+import { useSkillDiffToastStore } from "./skill-diff-toast-store";
 import { clearDiffDecorations } from "./use-skill-diff-decorations";
 import { api } from "@/trpc/react";
 import {
@@ -114,6 +115,12 @@ export function SkillDiffDockBar({ editor, noteId }: Props) {
         modelId: candidate.modelId,
         content: candidate.content,
       });
+      // The new section can land below the fold on long notes. Focus the
+      // doc end so the editor smooth-scrolls it into view, and surface a
+      // transient confirmation above the dock so users who weren't looking
+      // at the bottom still know something landed.
+      editor.commands.focus("end");
+      useSkillDiffToastStore.getState().show("New section added");
     } else if (candidate.mode === "inline-rewrite") {
       editor.commands.insertArtifactInline({
         artifactId: auditMeta.artifactId,
@@ -121,8 +128,11 @@ export function SkillDiffDockBar({ editor, noteId }: Props) {
         skillName: candidate.skillName,
         content: candidate.content,
       });
+      useSkillDiffToastStore.getState().show("Selection updated");
     } else {
       editor.commands.setContent({ type: "doc", content: candidate.content });
+      editor.commands.focus("start");
+      useSkillDiffToastStore.getState().show("Note replaced");
     }
     clearDiffDecorations(editor);
     clear(noteId);

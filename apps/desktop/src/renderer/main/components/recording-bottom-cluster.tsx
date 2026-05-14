@@ -2,17 +2,47 @@ import { useCallback } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
+import { AnimatePresence, motion } from "framer-motion";
+import { IconSparkles } from "@tabler/icons-react";
 import { api } from "@/trpc/react";
 import { combinedLevel, useMeetingLevel } from "@/hooks/useMeetingLevel";
 import { useCurrentNote } from "@/renderer/main/components/current-note-context";
 import { useNoteEditor } from "@/renderer/main/components/note-editor-context";
 import { useMeetingSnapshot } from "@/renderer/main/components/meeting-snapshot-context";
 import { useSkillDiffStore } from "@/renderer/main/components/editor/diff/skill-diff-store";
+import { useSkillDiffToastStore } from "@/renderer/main/components/editor/diff/skill-diff-toast-store";
 import { SkillDiffDockBar } from "@/renderer/main/components/editor/diff/skill-diff-dock-bar";
 import { NoteAssetsPanel } from "@/renderer/main/pages/notes/components/note-assets-panel";
 import { NoteRecordingDock } from "@/renderer/main/pages/notes/components/note-recording-dock";
 import { RecordingJumpPill } from "@/renderer/main/components/recording-jump-pill";
 import type { MeetingRuntimeState } from "@/types/meeting";
+
+// Transient confirmation pill rendered just above the dock when a skill
+// accept lands off-screen (typical when a long note pushes the appended
+// section below the viewport). Visual chrome mirrors the dock — same dark
+// pill + ring + blur — but at 32px height with tighter padding so it reads
+// as a hint, not a control.
+function ClusterToast() {
+  const message = useSkillDiffToastStore((s) => s.message);
+  return (
+    <AnimatePresence initial={false}>
+      {message ? (
+        <motion.div
+          key="cluster-toast"
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 8 }}
+          transition={{ duration: 0.18, ease: "easeOut" }}
+          className="pointer-events-auto flex h-[32px] items-center gap-1.5 rounded-[20px] bg-black/70 px-3 text-xs text-white/90 ring-[1px] ring-black/50 shadow-[0px_0px_10px_0px_rgba(0,0,0,0.30)] backdrop-blur-md select-none dark:bg-black/60"
+          role="status"
+        >
+          <IconSparkles size={13} className="text-white/75" />
+          <span>{message}</span>
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
+  );
+}
 
 type DockProps = {
   noteId?: number;
@@ -211,6 +241,8 @@ export function RecordingBottomCluster() {
             />
           </div>
         )}
+
+        <ClusterToast />
 
         <DockArea
           currentNoteId={currentNote?.noteId}
