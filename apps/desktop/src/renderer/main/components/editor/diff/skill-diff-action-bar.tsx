@@ -191,8 +191,7 @@ export function SkillDiffActionBar({ noteId }: Props) {
           <Button variant="outline" onClick={() => setRefineMode(true)}>
             ✦ Refine
           </Button>
-          {candidate.mode === "append-section" ||
-          candidate.mode === "replace-doc" ? (
+          {candidate.mode !== "inline-rewrite" ? (
             <Button
               variant="outline"
               onClick={() => switchMode(noteId)}

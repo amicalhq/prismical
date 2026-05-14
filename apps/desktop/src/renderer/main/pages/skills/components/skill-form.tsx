@@ -107,7 +107,7 @@ export function SkillForm({ mode, existing }: Props) {
       editingOptions,
       surface: [...surfaces],
       defaultSkill,
-      ...(modeAgnosticPrompt ? { modeAgnosticPrompt: true } : {}),
+      modeAgnosticPrompt,
     };
     if (mode === "new") {
       create.mutate({

@@ -340,11 +340,5 @@ describe("SkillDiffActionBar", () => {
       expect(html).not.toContain("Switch to Replace");
       expect(html).not.toContain("Switch to Append");
     });
-
-    it("clicking the switch button calls switchMode with the noteId", () => {
-      // Simulate the onClick handler: switchMode(noteId)
-      mockSwitchMode(42);
-      expect(mockSwitchMode).toHaveBeenCalledWith(42);
-    });
   });
 });
