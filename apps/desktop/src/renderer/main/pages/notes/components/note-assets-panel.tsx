@@ -1,9 +1,25 @@
 import { useEffect, useRef, useState } from "react";
-import { Maximize2, Minimize2, X } from "lucide-react";
+import {
+  ChevronDown,
+  ClipboardCopy,
+  FileText,
+  Maximize2,
+  Minimize2,
+  MoreVertical,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { motion, AnimatePresence } from "framer-motion";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useSkillDiffToastStore } from "@/renderer/main/components/editor/diff/skill-diff-toast-store";
+import { useNoteEditor } from "@/renderer/main/components/note-editor-context";
 import type { MeetingRuntimeState, TranscriptEvent } from "@/types/meeting";
 import type { NoteAssetKind } from "../types";
 
@@ -20,6 +36,27 @@ function formatTimestamp(milliseconds: number): string {
 
 function getSpeakerLabel(event: TranscriptEvent): string {
   return event.speaker === "you" ? "You" : "Them";
+}
+
+function formatTranscriptAsText(transcript: TranscriptEvent[]): string {
+  return transcript
+    .map(
+      (segment) =>
+        `[${getSpeakerLabel(segment)} ${formatTimestamp(segment.startTimeMs)}] ${segment.text}`,
+    )
+    .join("\n");
+}
+
+function buildTranscriptParagraphs(transcript: TranscriptEvent[]) {
+  return transcript.map((segment) => ({
+    type: "paragraph",
+    content: [
+      {
+        type: "text",
+        text: `${getSpeakerLabel(segment)} ${formatTimestamp(segment.startTimeMs)}: ${segment.text}`,
+      },
+    ],
+  }));
 }
 
 type NoteAssetsPanelProps = {
@@ -42,11 +79,49 @@ export function NoteAssetsPanel({
   meetingState,
 }: NoteAssetsPanelProps) {
   const { t } = useTranslation();
+  const noteEditor = useNoteEditor();
   const [isContentVisible, setIsContentVisible] = useState(isOpen);
   const scrollEndRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const prevTranscriptLenRef = useRef(transcript.length);
   const isStuckToBottomRef = useRef(true);
+
+  const hasTranscript = transcript.length > 0;
+
+  const handleCopyTranscript = async () => {
+    try {
+      await navigator.clipboard.writeText(formatTranscriptAsText(transcript));
+      toast.success(t("settings.notes.note.transcriptionMenu.copied"));
+    } catch {
+      toast.error(t("settings.notes.note.transcriptionMenu.copyFailed"));
+    }
+  };
+
+  const handleAddToNote = () => {
+    if (!noteEditor) {
+      toast.error(t("settings.notes.note.transcriptionMenu.addFailed"));
+      return;
+    }
+    const { editor } = noteEditor;
+    // When a skill-diff candidate is staged for this note the editor lock
+    // rejects the docChanged transaction (see skill-diff-editor-lock.ts).
+    // `.run()` returns false in that case — surface it instead of toasting
+    // success against a no-op, and pulse the diff bar so the user looks at
+    // it (matches the user-input attention path).
+    const ok = editor
+      .chain()
+      .insertContentAt(
+        editor.state.doc.content.size,
+        buildTranscriptParagraphs(transcript),
+      )
+      .run();
+    if (!ok) {
+      useSkillDiffToastStore.getState().pulseAttention();
+      toast.error(t("settings.notes.note.transcriptionMenu.addBlocked"));
+      return;
+    }
+    toast.success(t("settings.notes.note.transcriptionMenu.added"));
+  };
 
   useEffect(() => {
     if (!isOpen) {
@@ -148,11 +223,42 @@ export function NoteAssetsPanel({
                   size="icon"
                   className="h-8 w-8 text-white/70 hover:bg-white/15 hover:text-white"
                   onClick={onClose}
-                  aria-label={t("settings.notes.note.actions.closeTranscription")}
-                  title={t("settings.notes.note.actions.closeTranscription")}
+                  aria-label={t("settings.notes.note.actions.minimizeTranscription")}
+                  title={t("settings.notes.note.actions.minimizeTranscription")}
                 >
-                  <X className="h-4 w-4" />
+                  <ChevronDown className="h-4 w-4" />
                 </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-white/70 hover:bg-white/15 hover:text-white disabled:opacity-40"
+                      aria-label={t("settings.notes.note.transcriptionMenu.trigger")}
+                      title={t("settings.notes.note.transcriptionMenu.trigger")}
+                      disabled={!hasTranscript}
+                    >
+                      <MoreVertical className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      className="gap-2"
+                      onSelect={handleCopyTranscript}
+                    >
+                      <ClipboardCopy className="h-4 w-4" />
+                      {t("settings.notes.note.transcriptionMenu.copy")}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="gap-2"
+                      disabled={!noteEditor}
+                      onSelect={handleAddToNote}
+                    >
+                      <FileText className="h-4 w-4" />
+                      {t("settings.notes.note.transcriptionMenu.addToNote")}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </div>
 

@@ -753,8 +753,18 @@
         "bodyPlaceholder": "ノートを書き始めましょう...",
         "edited": "{{date}}に編集",
         "transcription": "文字起こし",
+        "transcriptionMenu": {
+          "trigger": "文字起こしの操作",
+          "copy": "クリップボードにコピー",
+          "copied": "文字起こしをコピーしました",
+          "copyFailed": "文字起こしをコピーできませんでした",
+          "addToNote": "ノートに追加",
+          "added": "ノートに追加しました",
+          "addFailed": "ノートを開いてから文字起こしを追加してください",
+          "addBlocked": "保留中の変更を解決してから文字起こしを追加してください"
+        },
         "actions": {
-          "closeTranscription": "文字起こしを閉じる",
+          "minimizeTranscription": "文字起こしを最小化",
           "delete": "削除",
           "addToFavorites": "お気に入りに追加",
           "removeFromFavorites": "お気に入りから削除",

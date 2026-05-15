@@ -753,8 +753,18 @@
         "bodyPlaceholder": "Comienza a escribir tu nota...",
         "edited": "Editado {{date}}",
         "transcription": "Transcripción",
+        "transcriptionMenu": {
+          "trigger": "Acciones de transcripción",
+          "copy": "Copiar al portapapeles",
+          "copied": "Transcripción copiada",
+          "copyFailed": "No se pudo copiar la transcripción",
+          "addToNote": "Añadir a la nota",
+          "added": "Añadido a la nota",
+          "addFailed": "Abre la nota para añadir la transcripción",
+          "addBlocked": "Resuelve el cambio pendiente antes de añadir la transcripción"
+        },
         "actions": {
-          "closeTranscription": "Cerrar transcripción",
+          "minimizeTranscription": "Minimizar transcripción",
           "delete": "Eliminar",
           "addToFavorites": "Agregar a favoritos",
           "removeFromFavorites": "Quitar de favoritos",

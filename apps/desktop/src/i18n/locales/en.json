@@ -676,8 +676,18 @@
         "bodyPlaceholder": "Start writing your note...",
         "edited": "Edited {{date}}",
         "transcription": "Transcription",
+        "transcriptionMenu": {
+          "trigger": "Transcription actions",
+          "copy": "Copy to clipboard",
+          "copied": "Transcription copied",
+          "copyFailed": "Couldn't copy transcription",
+          "addToNote": "Add to note",
+          "added": "Added to note",
+          "addFailed": "Open the note to add the transcription",
+          "addBlocked": "Resolve the pending change before adding the transcription"
+        },
         "actions": {
-          "closeTranscription": "Close transcription",
+          "minimizeTranscription": "Minimize transcription",
           "delete": "Delete",
           "addToFavorites": "Add to favorites",
           "removeFromFavorites": "Remove from favorites",
