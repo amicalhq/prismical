@@ -15,6 +15,7 @@ import type {
 } from "@/db/schema";
 import { getUserAgent } from "@/utils/http-client";
 import { createMockLanguageModel } from "./mock-language-model";
+import { compatCapabilityTransform } from "./openai-compatible-capabilities";
 
 // `PROVIDER_TYPES.openai` and `PROVIDER_TYPES.groq` route through the
 // generic openai-compatible adapter today. Subsequent tasks swap each to
@@ -39,15 +40,12 @@ export const providerFactories: Partial<
       apiKey: c.apiKey,
       baseURL: OPENAI_BASE_URL,
       headers: { "User-Agent": getUserAgent() },
-      // Newer OpenAI models (o-series, gpt-5) reject `max_tokens` and
-      // require `max_completion_tokens`. Renaming unconditionally is safe:
-      // OpenAI accepts the new name for all chat models. Removed once
-      // t-02 swaps in @ai-sdk/openai (which handles the rename itself).
-      transformRequestBody: (body) => {
-        if (typeof body.max_tokens !== "number") return body;
-        const { max_tokens, ...rest } = body;
-        return { ...rest, max_completion_tokens: max_tokens };
-      },
+      // Capability-aware param cleanup (t-04). Strips temperature/top_p/
+      // penalties for reasoning models and renames `max_tokens` →
+      // `max_completion_tokens` for newer chat models. Replaced wholesale
+      // once t-02 swaps in @ai-sdk/openai (which handles capabilities
+      // natively).
+      transformRequestBody: compatCapabilityTransform,
     });
   },
 
@@ -58,6 +56,7 @@ export const providerFactories: Partial<
       apiKey: c.apiKey,
       baseURL: GROQ_BASE_URL,
       headers: { "User-Agent": getUserAgent() },
+      transformRequestBody: compatCapabilityTransform,
     });
   },
 
@@ -81,6 +80,7 @@ export const providerFactories: Partial<
       baseURL: `${c.url.replace(/\/+$/, "")}/v1`,
       supportsStructuredOutputs: true,
       headers: { "User-Agent": getUserAgent() },
+      transformRequestBody: compatCapabilityTransform,
     });
   },
 
@@ -91,6 +91,7 @@ export const providerFactories: Partial<
       apiKey: c.apiKey,
       baseURL: c.baseURL,
       headers: { "User-Agent": getUserAgent() },
+      transformRequestBody: compatCapabilityTransform,
     });
   },
 
