@@ -66,4 +66,12 @@ export interface SkillRunResult {
   refineInstruction: string | null;
   selectionText: string | null;
   reasoning: string | null;
+  // LLM token-usage snapshot (t-07). Optional — some providers don't
+  // surface it. Forwarded to the artifacts audit row by `skillRuns.accept`.
+  usage?: {
+    inputTokens?: number;
+    outputTokens?: number;
+    totalTokens?: number;
+    raw?: string; // JSON.stringify of the full LanguageModelUsage payload
+  };
 }

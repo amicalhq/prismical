@@ -86,6 +86,17 @@ export const skillRunsRouter = createRouter({
         refineInstruction: z.string().nullable(),
         selectionText: z.string().nullable(),
         reasoning: z.string().nullable(),
+        // Token usage captured at run time (t-07). Optional — old clients
+        // and non-LLM generators won't send it. Cost-on-rejected-runs is a
+        // known limitation: only fires on accept.
+        usage: z
+          .object({
+            inputTokens: z.number().int().nonnegative().optional(),
+            outputTokens: z.number().int().nonnegative().optional(),
+            totalTokens: z.number().int().nonnegative().optional(),
+            raw: z.string().optional(),
+          })
+          .optional(),
       }),
     )
     .mutation(async ({ input }) => {
@@ -103,6 +114,7 @@ export const skillRunsRouter = createRouter({
           selectionText: input.selectionText,
           reasoning: input.reasoning,
         },
+        usage: input.usage,
       });
       return {
         artifactId: row.id,

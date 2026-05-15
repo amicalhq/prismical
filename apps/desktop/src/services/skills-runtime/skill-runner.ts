@@ -92,6 +92,7 @@ export async function runSkill(
   const systemPrompt = buildSystemPrompt(ctx, input);
 
   let object: z.infer<typeof OUTPUT_SCHEMA>;
+  let usage: SkillRunResult["usage"];
   try {
     const result = await generateText({
       model,
@@ -101,6 +102,12 @@ export async function runSkill(
       abortSignal: ctx.signal,
     });
     object = result.output;
+    usage = {
+      inputTokens: result.usage?.inputTokens,
+      outputTokens: result.usage?.outputTokens,
+      totalTokens: result.usage?.totalTokens,
+      raw: result.usage ? JSON.stringify(result.usage) : undefined,
+    };
   } catch (err) {
     if (ctx.signal.aborted) throw new SkillCancelledError();
 
@@ -186,5 +193,6 @@ export async function runSkill(
     refineInstruction: ctx.refineInstruction ?? null,
     selectionText: ctx.selectionText ?? null,
     reasoning: object.reasoning ?? null,
+    usage,
   };
 }

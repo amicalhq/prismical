@@ -23,6 +23,16 @@ export interface AppendArtifactInput {
   modelId?: string | null;
   meta?: Record<string, unknown> | null;
   generatedAt?: Date;
+  // LLM token usage at the moment the candidate was produced (t-07).
+  // Optional because not every generator is an LLM and some providers
+  // don't surface usage. `raw` is the full LanguageModelUsage
+  // JSON-stringified for forward-compat (Gemini cache details, etc.).
+  usage?: {
+    inputTokens?: number;
+    outputTokens?: number;
+    totalTokens?: number;
+    raw?: string;
+  };
 }
 
 export async function appendArtifact(
@@ -50,6 +60,10 @@ export async function appendArtifact(
       generator: input.generator,
       modelId: input.modelId ?? null,
       meta: input.meta ?? null,
+      inputTokens: input.usage?.inputTokens ?? null,
+      outputTokens: input.usage?.outputTokens ?? null,
+      totalTokens: input.usage?.totalTokens ?? null,
+      rawUsageJson: input.usage?.raw ?? null,
       generatedAt: input.generatedAt ?? now,
       createdAt: now,
       updatedAt: now,

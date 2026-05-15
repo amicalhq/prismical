@@ -1,5 +1,9 @@
 import { generateText } from "ai";
+import { v4 as uuid } from "uuid";
 
+import { db } from "@/db";
+import { getInstanceById } from "@/db/instances";
+import { noteGenerationAudit } from "@/db/schema";
 import { logger } from "@/main/logger";
 import { getRegistry, registryKey } from "@/services/ai/registry";
 import { buildNoteGenerationPrompt } from "./note-generation-prompt";
@@ -16,6 +20,9 @@ export interface NoteGenerationInput {
   transcript: string;
   noteTitle?: string;
   eventTitle?: string;
+  // Optional — passed to the audit row so per-note spend can be joined
+  // back to the source note. Absent for one-shot dev/test runs.
+  noteId?: number;
 }
 
 export interface NoteGenerationResult {
@@ -23,6 +30,7 @@ export interface NoteGenerationResult {
   usage?: {
     inputTokens?: number;
     outputTokens?: number;
+    totalTokens?: number;
   };
 }
 
@@ -37,6 +45,10 @@ export interface NoteGenerationResult {
  * `extractJsonMiddleware`. The middleware's fence-stripping regex
  * misinterprets ` ```markdown ... ``` ` blocks (which note-gen models
  * often emit) — we rely on `normalizeGeneratedMarkdown` instead.
+ *
+ * On success, writes a `note_generation_audit` row capturing token usage
+ * (t-07). Failed runs do not write a row; the pipeline logger carries
+ * the failure breadcrumb instead.
  */
 export async function generateNoteMarkdown(
   instanceId: string,
@@ -64,7 +76,37 @@ export async function generateNoteMarkdown(
     maxOutputTokens: 3000,
   });
 
+  // Resolve providerType for the audit row. One extra query per run is
+  // fine — note-gen isn't on a hot path. If we ever care, the call site
+  // can pre-fetch and pass it in.
+  const instance = await getInstanceById(instanceId);
+  try {
+    await db.insert(noteGenerationAudit).values({
+      id: uuid(),
+      noteId: input.noteId ?? null,
+      modelInstanceId: instanceId,
+      modelId,
+      providerType: instance?.provider ?? "unknown",
+      inputTokens: result.usage?.inputTokens ?? null,
+      outputTokens: result.usage?.outputTokens ?? null,
+      totalTokens: result.usage?.totalTokens ?? null,
+      rawUsageJson: result.usage ? JSON.stringify(result.usage) : null,
+    });
+  } catch (err) {
+    // Audit-write failure must not fail the user's run. Surface to logs.
+    logger.pipeline.error("Failed to write note_generation_audit row", {
+      instanceId,
+      modelId,
+      err,
+    });
+  }
+
   return {
     markdown: normalizeGeneratedMarkdown(result.text),
+    usage: {
+      inputTokens: result.usage?.inputTokens,
+      outputTokens: result.usage?.outputTokens,
+      totalTokens: result.usage?.totalTokens,
+    },
   };
 }
