@@ -1,6 +1,4 @@
 import {
-  generateText,
-  Output,
   extractJsonMiddleware,
   wrapLanguageModel,
   NoObjectGeneratedError,
@@ -9,7 +7,6 @@ import type { SharedV3ProviderOptions } from "@ai-sdk/provider";
 
 import { PROVIDER_TYPES } from "@/constants/provider-types";
 import { groqSupportsStrictJsonSchema } from "@/services/ai/groq-capabilities";
-import { z } from "zod";
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
 
 import { logger } from "@/main/logger";
@@ -28,23 +25,10 @@ import {
   SkillCancelledError,
   SkillOutputInvalidError,
 } from "./errors";
+import { runSkillAgent, type SkillAgentOutput } from "./skill-agent";
 
-// The model returns one JSON object per run. We deliberately don't expose
-// tools in v1 — the runner injects everything the skill needs (note,
-// transcript, selection, refine context) into the system prompt, and the
-// model just transforms. Tool-loop / MCP support can opt-in via
-// `skill.allowedTools` later without changing this default path.
-//
-// `markdown` is a plain `z.string()` — NOT `z.string().min(1)`. OpenAI's
-// strict JSON schema mode rejects `minLength` keywords (and `@ai-sdk/openai`
-// doesn't sanitize them like `@ai-sdk/anthropic` does), so the on-the-wire
-// schema must stay vanilla. Non-empty is validated post-parse below.
-const OUTPUT_SCHEMA = z.object({
-  markdown: z.string(),
-  // Optional model-supplied notes. Stored in the audit meta for eval/debug;
-  // never shown to the user.
-  reasoning: z.string().optional(),
-});
+// OUTPUT_SCHEMA lives in skill-agent.ts so the single-shot and tool-loop
+// agent paths share the same contract. The runner just consumes the shape.
 
 export async function runSkill(
   ctx: SkillRunContext,
@@ -102,17 +86,16 @@ export async function runSkill(
   // unless the model is gpt-5.1-Codex-Max.
   const providerOptions = buildProviderOptions(ctx, instance.provider);
 
-  let object: z.infer<typeof OUTPUT_SCHEMA>;
+  let object: SkillAgentOutput;
   let usage: SkillRunResult["usage"];
   let costUsd: number | null = null;
   try {
-    const result = await generateText({
+    const result = await runSkillAgent({
       model,
-      system: systemPrompt,
-      prompt: "Run the skill as instructed in the system prompt.",
-      output: Output.object({ schema: OUTPUT_SCHEMA }),
-      abortSignal: ctx.signal,
+      systemPrompt,
       providerOptions,
+      signal: ctx.signal,
+      skill: ctx.skill,
     });
     object = result.output;
     usage = {
