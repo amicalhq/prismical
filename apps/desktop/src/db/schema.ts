@@ -414,8 +414,7 @@ export const artifacts = sqliteTable(
     meta: text("meta", { mode: "json" }).$type<Record<string, unknown>>(),
     // Token usage captured from the LLM response. Optional because (a) some
     // providers don't populate usage, (b) non-AI generators ("user",
-    // "imported") have no usage to record. Cost in dollars is wired
-    // separately in t-16 (OpenRouter only).
+    // "imported") have no usage to record.
     inputTokens: integer("input_tokens"),
     outputTokens: integer("output_tokens"),
     totalTokens: integer("total_tokens"),
@@ -423,6 +422,13 @@ export const artifacts = sqliteTable(
     // forward-compat: nested fields like `inputTokenDetails.cacheReadTokens`
     // (Gemini implicit caching) ship without another migration.
     rawUsageJson: text("raw_usage_json"),
+    // Per-call cost in US dollars (t-16). Only OpenRouter populates this
+    // today — comes from `result.providerMetadata.openrouter.usage.cost`
+    // when the provider is wrapped with `usage: { include: true }` (which
+    // it is by default — see provider-config.ts). Null for every other
+    // provider; no token×price calculations here because pricing tables
+    // drift faster than we can pin them.
+    costUsd: real("cost_usd"),
     generatedAt: integer("generated_at", { mode: "timestamp" }),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
@@ -472,6 +478,9 @@ export const noteGenerationAudit = sqliteTable(
     outputTokens: integer("output_tokens"),
     totalTokens: integer("total_tokens"),
     rawUsageJson: text("raw_usage_json"),
+    // Per-call cost in US dollars (t-16). Mirrors `artifacts.cost_usd` —
+    // only OpenRouter populates it; null elsewhere.
+    costUsd: real("cost_usd"),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
       .default(sql`(unixepoch())`),

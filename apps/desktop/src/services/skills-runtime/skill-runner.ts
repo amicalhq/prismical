@@ -104,6 +104,7 @@ export async function runSkill(
 
   let object: z.infer<typeof OUTPUT_SCHEMA>;
   let usage: SkillRunResult["usage"];
+  let costUsd: number | null = null;
   try {
     const result = await generateText({
       model,
@@ -120,6 +121,7 @@ export async function runSkill(
       totalTokens: result.usage?.totalTokens,
       raw: result.usage ? JSON.stringify(result.usage) : undefined,
     };
+    costUsd = extractOpenRouterCost(result.providerMetadata);
   } catch (err) {
     if (ctx.signal.aborted) throw new SkillCancelledError();
 
@@ -206,7 +208,23 @@ export async function runSkill(
     selectionText: ctx.selectionText ?? null,
     reasoning: object.reasoning ?? null,
     usage,
+    costUsd,
   };
+}
+
+/**
+ * Pull `cost` (US dollars) out of OpenRouter's providerMetadata. Returns
+ * null when the resolved provider isn't OpenRouter, when usage
+ * accounting isn't enabled, or when OpenRouter didn't populate the field
+ * (BYOK passthrough, free models, etc.).
+ */
+function extractOpenRouterCost(
+  metadata: Record<string, Record<string, unknown>> | undefined,
+): number | null {
+  const usage = metadata?.openrouter?.usage as
+    | { cost?: unknown }
+    | undefined;
+  return typeof usage?.cost === "number" ? usage.cost : null;
 }
 
 /**

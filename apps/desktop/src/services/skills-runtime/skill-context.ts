@@ -73,6 +73,14 @@ export interface SkillRunContext {
   // Groq service tier. `'flex'` is a 10× rate-limit tier for non-critical
   // work. Defaults to `'on_demand'`.
   groqServiceTier?: "on_demand" | "performance" | "flex" | "auto";
+
+  // OpenRouter prompt caching for Anthropic-routed models. Surface
+  // declared for forward compat; not yet wired — the SDK exposes
+  // `cacheControl` per message part, but skill-runner today passes the
+  // note body in `system` (not a typed user-message part). Hooking this
+  // up requires switching the runner to the messages array format. Left
+  // here so callers can pass it without changing the contract again.
+  cacheUserPrompt?: boolean;
 }
 
 // Final result returned to the tRPC caller. Every **accepted** run writes a
@@ -114,4 +122,7 @@ export interface SkillRunResult {
     totalTokens?: number;
     raw?: string; // JSON.stringify of the full LanguageModelUsage payload
   };
+  // Per-call cost in US dollars (t-16). Only populated when the resolved
+  // provider is OpenRouter. Forwarded to `artifacts.cost_usd` on accept.
+  costUsd?: number | null;
 }

@@ -33,6 +33,11 @@ export interface AppendArtifactInput {
     totalTokens?: number;
     raw?: string;
   };
+  // Per-call cost in US dollars (t-16). Currently populated only when the
+  // resolved provider is OpenRouter — pulled from
+  // `result.providerMetadata.openrouter.usage.cost`. Null for every other
+  // provider.
+  costUsd?: number | null;
 }
 
 export async function appendArtifact(
@@ -64,6 +69,7 @@ export async function appendArtifact(
       outputTokens: input.usage?.outputTokens ?? null,
       totalTokens: input.usage?.totalTokens ?? null,
       rawUsageJson: input.usage?.raw ?? null,
+      costUsd: input.costUsd ?? null,
       generatedAt: input.generatedAt ?? now,
       createdAt: now,
       updatedAt: now,

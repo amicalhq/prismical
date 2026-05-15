@@ -80,6 +80,15 @@ export async function generateNoteMarkdown(
   // fine — note-gen isn't on a hot path. If we ever care, the call site
   // can pre-fetch and pass it in.
   const instance = await getInstanceById(instanceId);
+  // OpenRouter populates `cost` (USD per call) on providerMetadata when
+  // `usage: { include: true }` is set (always on via the factory wrap —
+  // see provider-config.ts). Null for any other provider (t-16).
+  const orUsage = (result.providerMetadata?.openrouter?.usage ?? null) as
+    | { cost?: unknown }
+    | null;
+  const costUsd =
+    orUsage && typeof orUsage.cost === "number" ? orUsage.cost : null;
+
   try {
     await db.insert(noteGenerationAudit).values({
       id: uuid(),
@@ -91,6 +100,7 @@ export async function generateNoteMarkdown(
       outputTokens: result.usage?.outputTokens ?? null,
       totalTokens: result.usage?.totalTokens ?? null,
       rawUsageJson: result.usage ? JSON.stringify(result.usage) : null,
+      costUsd,
     });
   } catch (err) {
     // Audit-write failure must not fail the user's run. Surface to logs.

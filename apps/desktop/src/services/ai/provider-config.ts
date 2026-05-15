@@ -4,6 +4,7 @@ import { createGroq } from "@ai-sdk/groq";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
+import { defaultSettingsMiddleware, wrapProvider } from "ai";
 import { MockProviderV3 } from "ai/test";
 
 import {
@@ -74,11 +75,25 @@ export const providerFactories: Partial<
 
   [PROVIDER_TYPES.openRouter]: (cfg) => {
     const c = cfg as ApiKeyConfig;
-    // TODO(t-08): pass `appName` / `appUrl` for OpenRouter dashboard attribution.
-    // TODO(t-16): wrap with `wrapProvider` + `defaultSettingsMiddleware` to set
-    // `providerOptions: { openrouter: { usage: { include: true } } }` so
-    // `result.providerMetadata.openrouter.usage.cost` is populated.
-    return createOpenRouter({ apiKey: c.apiKey });
+    // Vendor provider (t-16). Wrapped with defaultSettingsMiddleware to
+    // turn on usage accounting — that's what populates
+    // `result.providerMetadata.openrouter.usage.cost` (US dollars per
+    // call). Without `usage: { include: true }` the cost field stays
+    // undefined. Applied at registration so every OpenRouter call (skill
+    // + note-gen) gets it without the call site remembering.
+    //
+    // TODO(t-08): add `appName` / `appUrl` for OpenRouter dashboard
+    // attribution.
+    return wrapProvider({
+      provider: createOpenRouter({ apiKey: c.apiKey }),
+      languageModelMiddleware: defaultSettingsMiddleware({
+        settings: {
+          providerOptions: {
+            openrouter: { usage: { include: true } },
+          },
+        },
+      }),
+    });
   },
 
   [PROVIDER_TYPES.ollama]: (cfg) => {

@@ -97,6 +97,9 @@ export const skillRunsRouter = createRouter({
             raw: z.string().optional(),
           })
           .optional(),
+        // Per-call cost in US dollars (t-16). Populated only for
+        // OpenRouter runs. Null elsewhere.
+        costUsd: z.number().nullable().optional(),
       }),
     )
     .mutation(async ({ input }) => {
@@ -115,6 +118,7 @@ export const skillRunsRouter = createRouter({
           reasoning: input.reasoning,
         },
         usage: input.usage,
+        costUsd: input.costUsd ?? null,
       });
       return {
         artifactId: row.id,
