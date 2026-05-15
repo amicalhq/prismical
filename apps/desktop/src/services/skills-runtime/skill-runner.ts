@@ -5,6 +5,7 @@ import {
   wrapLanguageModel,
   NoObjectGeneratedError,
 } from "ai";
+import type { SharedV3ProviderOptions } from "@ai-sdk/provider";
 import { z } from "zod";
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
 
@@ -91,6 +92,13 @@ export async function runSkill(
   const input = await collectInput(db, ctx);
   const systemPrompt = buildSystemPrompt(ctx, input);
 
+  // Per-vendor provider options. The runner pins keys the resolved
+  // provider understands — non-matching keys are no-ops, so it's safe to
+  // include them all unconditionally. Each provider's @ai-sdk package
+  // validates per-model: e.g. OpenAI rejects `reasoningEffort: 'xhigh'`
+  // unless the model is gpt-5.1-Codex-Max.
+  const providerOptions = buildProviderOptions(ctx);
+
   let object: z.infer<typeof OUTPUT_SCHEMA>;
   let usage: SkillRunResult["usage"];
   try {
@@ -100,6 +108,7 @@ export async function runSkill(
       prompt: "Run the skill as instructed in the system prompt.",
       output: Output.object({ schema: OUTPUT_SCHEMA }),
       abortSignal: ctx.signal,
+      providerOptions,
     });
     object = result.output;
     usage = {
@@ -195,4 +204,22 @@ export async function runSkill(
     reasoning: object.reasoning ?? null,
     usage,
   };
+}
+
+/**
+ * Compose `providerOptions` for `generateText` from the skill context.
+ * Each vendor block is omitted if the caller didn't set its key, which
+ * keeps the on-the-wire payload minimal and avoids forwarding undefined
+ * settings to providers that would treat them as explicit `undefined`.
+ */
+function buildProviderOptions(
+  ctx: SkillRunContext,
+): SharedV3ProviderOptions | undefined {
+  const out: SharedV3ProviderOptions = {};
+
+  if (ctx.openaiReasoningEffort !== undefined) {
+    out.openai = { reasoningEffort: ctx.openaiReasoningEffort };
+  }
+
+  return Object.keys(out).length === 0 ? undefined : out;
 }

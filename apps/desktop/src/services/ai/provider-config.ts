@@ -1,4 +1,5 @@
 import type { ProviderV3 } from "@ai-sdk/provider";
+import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { MockProviderV3 } from "ai/test";
@@ -17,11 +18,9 @@ import { getUserAgent } from "@/utils/http-client";
 import { createMockLanguageModel } from "./mock-language-model";
 import { compatCapabilityTransform } from "./openai-compatible-capabilities";
 
-// `PROVIDER_TYPES.openai` and `PROVIDER_TYPES.groq` route through the
-// generic openai-compatible adapter today. Subsequent tasks swap each to
-// a first-class @ai-sdk package (t-02, t-03, t-15) — those PRs just
-// change the entry below.
-const OPENAI_BASE_URL = "https://api.openai.com/v1";
+// `PROVIDER_TYPES.groq` still routes through the generic openai-compatible
+// adapter today. t-15 swaps it to a first-class @ai-sdk/groq package — that
+// PR just changes the entry below. OpenAI moved to first-class in t-02.
 const GROQ_BASE_URL = "https://api.groq.com/openai/v1";
 
 // `Partial<Record<ProviderType, ...>>` is deliberate: not every provider
@@ -35,17 +34,15 @@ export const providerFactories: Partial<
 > = {
   [PROVIDER_TYPES.openai]: (cfg) => {
     const c = cfg as ApiKeyConfig;
-    return createOpenAICompatible({
-      name: "openai",
+    // First-class provider (t-02). Defaults to the Responses API since
+    // v5, knows per-model capabilities (strips unsupported params and
+    // emits AI SDK warnings — see sdk-warning-handler.ts), supports
+    // strict JSON schema by default (`strictJsonSchema: true` in
+    // @ai-sdk/openai@^3 — verified at chat/openai-chat-language-model.ts).
+    // No transformRequestBody needed — the provider handles it natively.
+    return createOpenAI({
       apiKey: c.apiKey,
-      baseURL: OPENAI_BASE_URL,
       headers: { "User-Agent": getUserAgent() },
-      // Capability-aware param cleanup (t-04). Strips temperature/top_p/
-      // penalties for reasoning models and renames `max_tokens` →
-      // `max_completion_tokens` for newer chat models. Replaced wholesale
-      // once t-02 swaps in @ai-sdk/openai (which handles capabilities
-      // natively).
-      transformRequestBody: compatCapabilityTransform,
     });
   },
 

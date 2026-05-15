@@ -33,6 +33,21 @@ export interface SkillRunContext {
 
   // Cancellation signal — wired to the in-flight registry / stop button.
   signal: AbortSignal;
+
+  // Provider-specific tuning knobs. All optional; passed through to the
+  // matching `providerOptions.<vendor>` block on generateText. The runner
+  // only forwards keys the resolved provider understands — pinning these
+  // here doesn't constrain other providers.
+
+  // OpenAI reasoning effort (gpt-5, o-series). `'none'` is gpt-5.1-only;
+  // `'xhigh'` is gpt-5.1-Codex-Max-only. Provider validates per-model.
+  openaiReasoningEffort?:
+    | "none"
+    | "minimal"
+    | "low"
+    | "medium"
+    | "high"
+    | "xhigh";
 }
 
 // Final result returned to the tRPC caller. Every **accepted** run writes a
