@@ -62,6 +62,17 @@ export interface SkillRunContext {
   // sonnet-4.5+ and `jsonTool` for older models. Leave at default unless
   // a specific skill fails.
   anthropicStructuredOutputMode?: "outputFormat" | "jsonTool" | "auto";
+
+  // Groq reasoning format. `'parsed'` strips reasoning from final text
+  // (typical for skills); `'raw'` keeps it inline; `'hidden'` omits it.
+  groqReasoningFormat?: "parsed" | "raw" | "hidden";
+
+  // Groq reasoning effort. Model-specific values; see Groq docs.
+  groqReasoningEffort?: "low" | "medium" | "high" | "none" | "default";
+
+  // Groq service tier. `'flex'` is a 10× rate-limit tier for non-critical
+  // work. Defaults to `'on_demand'`.
+  groqServiceTier?: "on_demand" | "performance" | "flex" | "auto";
 }
 
 // Final result returned to the tRPC caller. Every **accepted** run writes a

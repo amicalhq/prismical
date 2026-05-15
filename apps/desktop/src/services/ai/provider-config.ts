@@ -1,5 +1,6 @@
 import type { ProviderV3 } from "@ai-sdk/provider";
 import { createAnthropic } from "@ai-sdk/anthropic";
+import { createGroq } from "@ai-sdk/groq";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
@@ -19,10 +20,6 @@ import { getUserAgent } from "@/utils/http-client";
 import { createMockLanguageModel } from "./mock-language-model";
 import { compatCapabilityTransform } from "./openai-compatible-capabilities";
 
-// `PROVIDER_TYPES.groq` still routes through the generic openai-compatible
-// adapter today. t-15 swaps it to a first-class @ai-sdk/groq package — that
-// PR just changes the entry below. OpenAI moved to first-class in t-02.
-const GROQ_BASE_URL = "https://api.groq.com/openai/v1";
 
 // `Partial<Record<ProviderType, ...>>` is deliberate: not every provider
 // type has an HTTP factory. `localWhisper` is served by an in-process
@@ -63,12 +60,15 @@ export const providerFactories: Partial<
 
   [PROVIDER_TYPES.groq]: (cfg) => {
     const c = cfg as ApiKeyConfig;
-    return createOpenAICompatible({
-      name: "groq",
+    // First-class provider (t-15). Defaults `structuredOutputs: true` and
+    // `strictJsonSchema: true` — which 400s on Groq models that only
+    // support json_object (gemma2-9b-it, smaller Llamas). The skill
+    // runner sets `providerOptions.groq.structuredOutputs: false` for
+    // models outside `GROQ_STRICT_SCHEMA_PREFIXES` and relies on
+    // extractJsonMiddleware to parse the loose response.
+    return createGroq({
       apiKey: c.apiKey,
-      baseURL: GROQ_BASE_URL,
       headers: { "User-Agent": getUserAgent() },
-      transformRequestBody: compatCapabilityTransform,
     });
   },
 

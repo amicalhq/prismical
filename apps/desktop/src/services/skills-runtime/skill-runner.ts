@@ -6,6 +6,9 @@ import {
   NoObjectGeneratedError,
 } from "ai";
 import type { SharedV3ProviderOptions } from "@ai-sdk/provider";
+
+import { PROVIDER_TYPES } from "@/constants/provider-types";
+import { groqSupportsStrictJsonSchema } from "@/services/ai/groq-capabilities";
 import { z } from "zod";
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
 
@@ -97,7 +100,7 @@ export async function runSkill(
   // include them all unconditionally. Each provider's @ai-sdk package
   // validates per-model: e.g. OpenAI rejects `reasoningEffort: 'xhigh'`
   // unless the model is gpt-5.1-Codex-Max.
-  const providerOptions = buildProviderOptions(ctx);
+  const providerOptions = buildProviderOptions(ctx, instance.provider);
 
   let object: z.infer<typeof OUTPUT_SCHEMA>;
   let usage: SkillRunResult["usage"];
@@ -214,6 +217,7 @@ export async function runSkill(
  */
 function buildProviderOptions(
   ctx: SkillRunContext,
+  providerType: string,
 ): SharedV3ProviderOptions | undefined {
   const out: SharedV3ProviderOptions = {};
 
@@ -234,6 +238,30 @@ function buildProviderOptions(
   if (Object.keys(anthropic).length > 0) {
     // Cast through unknown to bridge our typed-context union → JSONObject.
     out.anthropic = anthropic as SharedV3ProviderOptions[string];
+  }
+
+  const groq: Record<string, unknown> = {};
+  if (ctx.groqReasoningFormat !== undefined) {
+    groq.reasoningFormat = ctx.groqReasoningFormat;
+  }
+  if (ctx.groqReasoningEffort !== undefined) {
+    groq.reasoningEffort = ctx.groqReasoningEffort;
+  }
+  if (ctx.groqServiceTier !== undefined) {
+    groq.serviceTier = ctx.groqServiceTier;
+  }
+  // Groq carve-out (t-15): @ai-sdk/groq defaults to structuredOutputs:
+  // true, which 400s on older models (gemma2-9b-it, smaller Llamas) that
+  // only support json_object. Opt out for models outside the strict
+  // allow-list — extractJsonMiddleware (t-05) parses the loose JSON.
+  if (
+    providerType === PROVIDER_TYPES.groq &&
+    !groqSupportsStrictJsonSchema(ctx.modelId)
+  ) {
+    groq.structuredOutputs = false;
+  }
+  if (Object.keys(groq).length > 0) {
+    out.groq = groq as SharedV3ProviderOptions[string];
   }
 
   return Object.keys(out).length === 0 ? undefined : out;
