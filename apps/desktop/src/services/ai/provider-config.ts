@@ -17,6 +17,7 @@ import type {
   OllamaConfig,
   OpenAICompatibleConfig,
 } from "@/db/schema";
+import { APP_NAME, APP_URL } from "@/constants/app-attribution";
 import { getUserAgent } from "@/utils/http-client";
 import { createMockLanguageModel } from "./mock-language-model";
 import { compatCapabilityTransform } from "./openai-compatible-capabilities";
@@ -82,10 +83,15 @@ export const providerFactories: Partial<
     // undefined. Applied at registration so every OpenRouter call (skill
     // + note-gen) gets it without the call site remembering.
     //
-    // TODO(t-08): add `appName` / `appUrl` for OpenRouter dashboard
-    // attribution.
+    // `appName` / `appUrl` (t-08) sets the `HTTP-Referer` and
+    // `X-OpenRouter-Title` headers OpenRouter reads for dashboard
+    // attribution. Free observability.
     return wrapProvider({
-      provider: createOpenRouter({ apiKey: c.apiKey }),
+      provider: createOpenRouter({
+        apiKey: c.apiKey,
+        appName: APP_NAME,
+        appUrl: APP_URL,
+      }),
       languageModelMiddleware: defaultSettingsMiddleware({
         settings: {
           providerOptions: {
