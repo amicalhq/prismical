@@ -221,5 +221,20 @@ function buildProviderOptions(
     out.openai = { reasoningEffort: ctx.openaiReasoningEffort };
   }
 
+  const anthropic: Record<string, unknown> = {};
+  if (ctx.anthropicEffort !== undefined) {
+    anthropic.effort = ctx.anthropicEffort;
+  }
+  if (ctx.anthropicThinking !== undefined) {
+    anthropic.thinking = ctx.anthropicThinking;
+  }
+  if (ctx.anthropicStructuredOutputMode !== undefined) {
+    anthropic.structuredOutputMode = ctx.anthropicStructuredOutputMode;
+  }
+  if (Object.keys(anthropic).length > 0) {
+    // Cast through unknown to bridge our typed-context union → JSONObject.
+    out.anthropic = anthropic as SharedV3ProviderOptions[string];
+  }
+
   return Object.keys(out).length === 0 ? undefined : out;
 }

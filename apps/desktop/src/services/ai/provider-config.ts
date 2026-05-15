@@ -1,4 +1,5 @@
 import type { ProviderV3 } from "@ai-sdk/provider";
+import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
@@ -41,6 +42,20 @@ export const providerFactories: Partial<
     // @ai-sdk/openai@^3 — verified at chat/openai-chat-language-model.ts).
     // No transformRequestBody needed — the provider handles it natively.
     return createOpenAI({
+      apiKey: c.apiKey,
+      headers: { "User-Agent": getUserAgent() },
+    });
+  },
+
+  [PROVIDER_TYPES.anthropic]: (cfg) => {
+    const c = cfg as ApiKeyConfig;
+    // First-class provider (t-03). Native structured outputs on
+    // claude-sonnet-4-5+ via `outputFormat`, jsonTool fallback for older
+    // models. Sanitises strict-schema-incompatible Zod refinements
+    // automatically (sanitize-json-schema.ts in @ai-sdk/anthropic).
+    // Caller exposes effort / thinking / structuredOutputMode via
+    // providerOptions.anthropic.
+    return createAnthropic({
       apiKey: c.apiKey,
       headers: { "User-Agent": getUserAgent() },
     });

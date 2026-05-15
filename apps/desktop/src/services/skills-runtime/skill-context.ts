@@ -48,6 +48,20 @@ export interface SkillRunContext {
     | "medium"
     | "high"
     | "xhigh";
+
+  // Anthropic reasoning effort (claude-opus-4-5+). Provider validates per-model.
+  anthropicEffort?: "low" | "medium" | "high" | "xhigh" | "max";
+
+  // Anthropic thinking mode. `'adaptive'` is sonnet-4-6+; explicit
+  // `'enabled'` + budgetTokens is the older shape.
+  anthropicThinking?:
+    | { type: "adaptive"; display?: boolean }
+    | { type: "enabled"; budgetTokens: number; display?: boolean };
+
+  // Anthropic structured-output mode. `'auto'` picks `outputFormat` for
+  // sonnet-4.5+ and `jsonTool` for older models. Leave at default unless
+  // a specific skill fails.
+  anthropicStructuredOutputMode?: "outputFormat" | "jsonTool" | "auto";
 }
 
 // Final result returned to the tRPC caller. Every **accepted** run writes a

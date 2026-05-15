@@ -60,7 +60,7 @@ export const PROVIDER_TYPE_LABELS: Record<ProviderType, string> = {
 // validator + runtime).
 export const PROVIDER_TYPE_COMING_SOON: Record<ProviderType, boolean> = {
   [PROVIDER_TYPES.openai]: false,
-  [PROVIDER_TYPES.anthropic]: true,
+  [PROVIDER_TYPES.anthropic]: false,
   [PROVIDER_TYPES.groq]: true,
   [PROVIDER_TYPES.openRouter]: false,
   [PROVIDER_TYPES.ollama]: false,
