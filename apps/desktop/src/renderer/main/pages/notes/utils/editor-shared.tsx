@@ -23,6 +23,7 @@ import { ArtifactNode } from "@/renderer/main/components/editor/nodes/artifact-n
 import { ArtifactInlineNode } from "@/renderer/main/components/editor/nodes/artifact-inline-node";
 import { ArtifactEscape } from "@/renderer/main/components/editor/artifact-escape-plugin";
 import { SkillDiffPlugin } from "@/renderer/main/components/editor/diff/diff-plugin";
+import { SlashMenuExtension } from "@/renderer/main/components/editor/slash-menu/slash-menu-extension";
 import { MARKDOWN_OPTIONS } from "@/services/notes/editor-extensions";
 import { COLLAB_FRAGMENT_NAME } from "@/services/notes/markdown-to-ydoc";
 
@@ -149,5 +150,6 @@ export function buildRendererExtensions(
     ...(opts.ydoc !== undefined
       ? [Collaboration.configure({ document: opts.ydoc, field: COLLAB_FRAGMENT_NAME })]
       : []),
+    SlashMenuExtension,
   ];
 }
