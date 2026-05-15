@@ -3,6 +3,7 @@ import {
   Output,
   extractJsonMiddleware,
   wrapLanguageModel,
+  NoObjectGeneratedError,
 } from "ai";
 import { z } from "zod";
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
@@ -18,15 +19,24 @@ import {
   markdownToChildren,
   markdownToInlineChildren,
 } from "./markdown-to-children";
-import { SkillRunError, SkillCancelledError } from "./errors";
+import {
+  SkillRunError,
+  SkillCancelledError,
+  SkillOutputInvalidError,
+} from "./errors";
 
 // The model returns one JSON object per run. We deliberately don't expose
 // tools in v1 — the runner injects everything the skill needs (note,
 // transcript, selection, refine context) into the system prompt, and the
 // model just transforms. Tool-loop / MCP support can opt-in via
 // `skill.allowedTools` later without changing this default path.
+//
+// `markdown` is a plain `z.string()` — NOT `z.string().min(1)`. OpenAI's
+// strict JSON schema mode rejects `minLength` keywords (and `@ai-sdk/openai`
+// doesn't sanitize them like `@ai-sdk/anthropic` does), so the on-the-wire
+// schema must stay vanilla. Non-empty is validated post-parse below.
 const OUTPUT_SCHEMA = z.object({
-  markdown: z.string().min(1, "must produce non-empty markdown"),
+  markdown: z.string(),
   // Optional model-supplied notes. Stored in the audit meta for eval/debug;
   // never shown to the user.
   reasoning: z.string().optional(),
@@ -93,10 +103,39 @@ export async function runSkill(
     object = result.output;
   } catch (err) {
     if (ctx.signal.aborted) throw new SkillCancelledError();
+
+    // The SDK throws `NoObjectGeneratedError` when the model produced text
+    // that couldn't be coerced into the output schema (malformed JSON,
+    // wrong shape, fence the middleware missed). The default toast loses
+    // the diagnostic payload — surface `text` / `usage` / `response.id`
+    // for telemetry, then throw a typed error the tRPC layer can render.
+    if (NoObjectGeneratedError.isInstance(err)) {
+      logger.pipeline.error("Skill model produced invalid structured output", {
+        skill: ctx.skill.slug,
+        modelId: ctx.modelId,
+        modelInstanceId: instance.id,
+        responseId: err.response?.id,
+        text: err.text?.slice(0, 1024),
+        usage: err.usage,
+      });
+      throw new SkillOutputInvalidError({
+        text: err.text,
+        responseId: err.response?.id,
+        cause: err,
+      });
+    }
+
     throw new SkillRunError(
       err instanceof Error ? err.message : String(err),
       err,
     );
+  }
+
+  // Post-parse non-empty validation — the schema can't express this
+  // (see OUTPUT_SCHEMA comment). Empty markdown means the model
+  // generated valid JSON but returned no usable content.
+  if (!object.markdown.trim()) {
+    throw new SkillRunError("Model returned empty markdown");
   }
 
   // Inline-rewrite wraps the output in an ArtifactInlineNode, which can only
