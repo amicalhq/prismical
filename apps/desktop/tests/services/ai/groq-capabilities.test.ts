@@ -3,13 +3,17 @@ import { describe, expect, it } from "vitest";
 import { groqSupportsStrictJsonSchema } from "@/services/ai/groq-capabilities";
 
 describe("groq-capabilities", () => {
-  it("allows known strict-schema-capable model families", () => {
+  it("allows known strict-schema-capable model families (vendor-prefixed where Groq returns them that way)", () => {
     expect(groqSupportsStrictJsonSchema("moonshotai/kimi-k2-instruct-0905")).toBe(true);
-    expect(groqSupportsStrictJsonSchema("meta-llama/llama-4-scout-17b")).toBe(true);
+    expect(
+      groqSupportsStrictJsonSchema("meta-llama/llama-4-scout-17b-16e-instruct"),
+    ).toBe(true);
     expect(groqSupportsStrictJsonSchema("llama-3.3-70b-versatile")).toBe(true);
-    expect(groqSupportsStrictJsonSchema("qwen3-32b")).toBe(true);
+    // Qwen3 ships as `qwen/qwen3-32b` from Groq's catalog — not bare `qwen3-`.
+    expect(groqSupportsStrictJsonSchema("qwen/qwen3-32b")).toBe(true);
     expect(groqSupportsStrictJsonSchema("qwen-qwq-32b")).toBe(true);
     expect(groqSupportsStrictJsonSchema("openai/gpt-oss-20b")).toBe(true);
+    expect(groqSupportsStrictJsonSchema("openai/gpt-oss-120b")).toBe(true);
     expect(groqSupportsStrictJsonSchema("deepseek-r1-distill-qwen-32b")).toBe(true);
   });
 

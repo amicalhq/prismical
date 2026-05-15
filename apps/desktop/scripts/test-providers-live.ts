@@ -11,67 +11,70 @@
  * "OK") and once with a strict structured-output schema. The script prints
  * a markdown table summary suitable for pasting into a PR comment.
  *
- * Not part of CI. On-demand only — running this in PR CI burns money and
- * surfaces flaky-provider noise that isn't our bug.
+ * IMPORTANT: providers are constructed via `providerFactories` from
+ * `src/services/ai/provider-config.ts` — the same closures the production
+ * registry uses. So this exercises real wrappers (extractJsonMiddleware,
+ * User-Agent, OpenRouter usage middleware + app attribution,
+ * compatCapabilityTransform), not bare vendor SDKs. A green run actually
+ * means the production wiring works against live providers.
+ *
+ * Not part of CI. On-demand only — running against real providers in PR
+ * runs would burn money and surface flaky-provider noise that isn't ours.
  */
 
-import { generateText, Output } from "ai";
-import { createAnthropic } from "@ai-sdk/anthropic";
-import { createGroq } from "@ai-sdk/groq";
-import { createOpenAI } from "@ai-sdk/openai";
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { createOpenRouter } from "@openrouter/ai-sdk-provider";
+import {
+  generateText,
+  Output,
+  extractJsonMiddleware,
+  wrapLanguageModel,
+} from "ai";
+import type { LanguageModelV3 } from "@ai-sdk/provider";
 import { z } from "zod";
 
+import {
+  PROVIDER_TYPES,
+  type ProviderType,
+} from "../src/constants/provider-types";
+import { providerFactories } from "../src/services/ai/provider-config";
+import type { InstanceConfig } from "../src/db/schema";
+
 interface MatrixEntry {
-  provider: string;
+  provider: ProviderType;
   envVar: string;
   models: string[];
-  build: (apiKey: string, modelId: string) => unknown;
+  configFromEnv: (envValue: string) => InstanceConfig;
 }
 
 const MATRIX: MatrixEntry[] = [
   {
-    provider: "openai",
+    provider: PROVIDER_TYPES.openai,
     envVar: "OPENAI_API_KEY",
     models: ["gpt-4o-mini"],
-    build: (apiKey, modelId) =>
-      createOpenAI({ apiKey }).languageModel(modelId),
+    configFromEnv: (apiKey) => ({ apiKey }),
   },
   {
-    provider: "anthropic",
+    provider: PROVIDER_TYPES.anthropic,
     envVar: "ANTHROPIC_API_KEY",
     models: ["claude-haiku-4-5"],
-    build: (apiKey, modelId) =>
-      createAnthropic({ apiKey }).languageModel(modelId),
+    configFromEnv: (apiKey) => ({ apiKey }),
   },
   {
-    provider: "groq",
+    provider: PROVIDER_TYPES.groq,
     envVar: "GROQ_API_KEY",
     models: ["llama-3.3-70b-versatile"],
-    build: (apiKey, modelId) => createGroq({ apiKey }).languageModel(modelId),
+    configFromEnv: (apiKey) => ({ apiKey }),
   },
   {
-    provider: "openrouter",
+    provider: PROVIDER_TYPES.openRouter,
     envVar: "OPENROUTER_API_KEY",
     models: ["openai/gpt-4o-mini"],
-    build: (apiKey, modelId) =>
-      createOpenRouter({
-        apiKey,
-        appName: "Prismical (live test)",
-        appUrl: "https://prismical.ai",
-      }).languageModel(modelId),
+    configFromEnv: (apiKey) => ({ apiKey }),
   },
   {
-    provider: "ollama",
+    provider: PROVIDER_TYPES.ollama,
     envVar: "OLLAMA_HOST",
     models: ["llama3.2"],
-    build: (host, modelId) =>
-      createOpenAICompatible({
-        name: "ollama",
-        baseURL: `${host.replace(/\/+$/, "")}/v1`,
-        supportsStructuredOutputs: true,
-      }).languageModel(modelId),
+    configFromEnv: (host) => ({ url: host }),
   },
 ];
 
@@ -82,10 +85,18 @@ interface Result {
   structured: { ok: boolean; ms: number; error?: string };
 }
 
-async function runPlain(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  model: any,
-): Promise<Result["plain"]> {
+function buildModel(entry: MatrixEntry, envValue: string, modelId: string) {
+  const factory = providerFactories[entry.provider];
+  if (!factory) {
+    throw new Error(
+      `providerFactories has no entry for ${entry.provider}; matrix is out of sync`,
+    );
+  }
+  const provider = factory(entry.configFromEnv(envValue));
+  return provider.languageModel(modelId);
+}
+
+async function runPlain(model: LanguageModelV3): Promise<Result["plain"]> {
   const start = Date.now();
   try {
     const result = await generateText({
@@ -105,13 +116,19 @@ async function runPlain(
 }
 
 async function runStructured(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  model: any,
+  model: LanguageModelV3,
 ): Promise<Result["structured"]> {
+  // Wrap with extractJsonMiddleware — matches the skill-runner's production
+  // path. Without this, a Groq model returning fenced JSON would fail here
+  // even though it succeeds in production.
+  const wrapped = wrapLanguageModel({
+    model,
+    middleware: extractJsonMiddleware(),
+  });
   const start = Date.now();
   try {
     const result = await generateText({
-      model,
+      model: wrapped,
       prompt: 'Return JSON with a single field `word` containing "hello".',
       output: Output.object({ schema: z.object({ word: z.string() }) }),
     });
@@ -142,8 +159,7 @@ async function main() {
       continue;
     }
     for (const modelId of entry.models) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const model = entry.build(cred, modelId) as any;
+      const model = buildModel(entry, cred, modelId);
       const plain = await runPlain(model);
       const structured = await runStructured(model);
       results.push({ provider: entry.provider, model: modelId, plain, structured });

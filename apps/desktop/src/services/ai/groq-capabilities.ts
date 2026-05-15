@@ -13,13 +13,16 @@
 //
 // Update this list when Groq adds new strict-schema-capable models.
 // Source of truth: https://console.groq.com/docs/structured-outputs.
+// Prefixes match the Groq /v1/models id format (verified against
+// `node_modules/@ai-sdk/groq/dist/index.d.ts` `GroqChatModelId`); ids
+// arrive vendor-prefixed (`qwen/`, `meta-llama/`, `openai/`,
+// `moonshotai/`) so the prefixes carry the namespace.
 const GROQ_STRICT_SCHEMA_PREFIXES: readonly string[] = [
   "moonshotai/kimi-k2",
   "meta-llama/llama-4",
-  "llama-4-",
   "llama-3.3-",
   "qwen-qwq",
-  "qwen3-",
+  "qwen/qwen3-",
   "openai/gpt-oss",
   "deepseek-r1-distill",
 ];

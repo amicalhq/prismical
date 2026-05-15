@@ -103,6 +103,14 @@ export const skillRunsRouter = createRouter({
       }),
     )
     .mutation(async ({ input }) => {
+      // We intentionally let a failed appendArtifact insert propagate (the
+      // tRPC caller will surface "couldn't accept" to the user). Unlike
+      // note-gen's audit row — which is observability-only — this row is
+      // load-bearing: `append-section` mode uses `MAX(version) + 1` and the
+      // partial unique index `artifacts_note_id_skill_id_version_append_unique`
+      // depends on the insert succeeding to keep monotonic versioning
+      // honest. Silently swallowing would risk duplicate-version races on
+      // the next append-section accept.
       const row = await appendArtifact(db, {
         noteId: input.noteId,
         skillId: input.skillSlug,

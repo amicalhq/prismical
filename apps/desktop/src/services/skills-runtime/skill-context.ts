@@ -52,11 +52,18 @@ export interface SkillRunContext {
   // Anthropic reasoning effort (claude-opus-4-5+). Provider validates per-model.
   anthropicEffort?: "low" | "medium" | "high" | "xhigh" | "max";
 
-  // Anthropic thinking mode. `'adaptive'` is sonnet-4-6+; explicit
-  // `'enabled'` + budgetTokens is the older shape.
+  // Anthropic thinking mode. Matches the SDK's
+  // `AnthropicLanguageModelOptions.thinking` shape — verified against
+  // `node_modules/@ai-sdk/anthropic/dist/index.d.ts:180-191`:
+  // - `adaptive` (sonnet-4-6+): optional `display` controls how the SDK
+  //   surfaces thinking turns to the user (`omitted` | `summarized`).
+  // - `enabled`: explicit budgeted thinking for older models; `budgetTokens`
+  //   is optional.
+  // - `disabled`: turn thinking off explicitly (useful for performance).
   anthropicThinking?:
-    | { type: "adaptive"; display?: boolean }
-    | { type: "enabled"; budgetTokens: number; display?: boolean };
+    | { type: "adaptive"; display?: "omitted" | "summarized" }
+    | { type: "enabled"; budgetTokens?: number }
+    | { type: "disabled" };
 
   // Anthropic structured-output mode. `'auto'` picks `outputFormat` for
   // sonnet-4.5+ and `jsonTool` for older models. Leave at default unless
