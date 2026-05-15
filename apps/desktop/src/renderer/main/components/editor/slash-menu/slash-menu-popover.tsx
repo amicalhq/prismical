@@ -53,7 +53,7 @@ export const SlashMenuPopover = forwardRef<
 
   return (
     <div className="z-50 min-w-[220px] rounded-md border border-border bg-popover text-popover-foreground shadow-md p-1">
-      <ul className="flex flex-col">
+      <ul role="listbox" className="flex flex-col">
         {items.map((item, i) => (
           <li
             key={item.label}

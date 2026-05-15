@@ -26,56 +26,77 @@ export const SLASH_MENU_ITEMS: SlashMenuItem[] = [
     keywords: ["h1", "title", "heading"],
     icon: <Heading1 className="size-4" />,
     run: (editor, range) =>
-      editor.chain().focus().deleteRange(range).toggleHeading({ level: 1 }).run(),
+      editor.chain().focus().deleteRange(range).setHeading({ level: 1 }).run(),
   },
   {
     label: "Heading 2",
     keywords: ["h2", "heading"],
     icon: <Heading2 className="size-4" />,
     run: (editor, range) =>
-      editor.chain().focus().deleteRange(range).toggleHeading({ level: 2 }).run(),
+      editor.chain().focus().deleteRange(range).setHeading({ level: 2 }).run(),
   },
   {
     label: "Heading 3",
     keywords: ["h3", "heading"],
     icon: <Heading3 className="size-4" />,
     run: (editor, range) =>
-      editor.chain().focus().deleteRange(range).toggleHeading({ level: 3 }).run(),
+      editor.chain().focus().deleteRange(range).setHeading({ level: 3 }).run(),
   },
   {
     label: "Bullet list",
     keywords: ["ul", "bullet", "list"],
     icon: <List className="size-4" />,
-    run: (editor, range) =>
-      editor.chain().focus().deleteRange(range).toggleBulletList().run(),
+    run: (editor, range) => {
+      // TipTap's list extensions only expose toggle*, which would demote the
+      // user out of the list if they're already in one. Guard with isActive
+      // so picking the active type is a no-op (just drops the / trigger).
+      const chain = editor.chain().focus().deleteRange(range);
+      if (editor.isActive("bulletList")) {
+        chain.run();
+      } else {
+        chain.toggleBulletList().run();
+      }
+    },
   },
   {
     label: "Numbered list",
     keywords: ["ol", "ordered", "numbered", "list"],
     icon: <ListOrdered className="size-4" />,
-    run: (editor, range) =>
-      editor.chain().focus().deleteRange(range).toggleOrderedList().run(),
+    run: (editor, range) => {
+      const chain = editor.chain().focus().deleteRange(range);
+      if (editor.isActive("orderedList")) {
+        chain.run();
+      } else {
+        chain.toggleOrderedList().run();
+      }
+    },
   },
   {
     label: "Check list",
     keywords: ["todo", "checklist", "check", "list", "task"],
     icon: <ListChecks className="size-4" />,
-    run: (editor, range) =>
-      editor.chain().focus().deleteRange(range).toggleTaskList().run(),
+    run: (editor, range) => {
+      const chain = editor.chain().focus().deleteRange(range);
+      if (editor.isActive("taskList")) {
+        chain.run();
+      } else {
+        chain.toggleTaskList().run();
+      }
+    },
   },
   {
     label: "Quote",
     keywords: ["quote", "blockquote"],
     icon: <Quote className="size-4" />,
     run: (editor, range) =>
-      editor.chain().focus().deleteRange(range).toggleBlockquote().run(),
+      editor.chain().focus().deleteRange(range).setBlockquote().run(),
   },
   {
     label: "Code block",
     keywords: ["code", "pre", "snippet"],
     icon: <Code2 className="size-4" />,
     run: (editor, range) =>
-      editor.chain().focus().deleteRange(range).toggleCodeBlock().run(),
+      editor.chain().focus().deleteRange(range).setCodeBlock().run(),
   },
   {
     label: "Divider",

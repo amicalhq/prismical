@@ -13,6 +13,10 @@ import {
 
 export const SlashMenuPluginKey = new PluginKey("prismical-slash-menu");
 
+const POPOVER_ESTIMATED_HEIGHT = 360; // ~10 items × ~32px + padding
+const POPOVER_ESTIMATED_WIDTH = 240;
+const VIEWPORT_MARGIN = 8;
+
 function positionPopup(
   el: HTMLDivElement,
   clientRect: (() => DOMRect | null) | null | undefined,
@@ -24,8 +28,23 @@ function positionPopup(
   }
   el.style.display = "";
   el.style.position = "fixed";
-  el.style.top = `${rect.bottom + 6}px`;
-  el.style.left = `${rect.left}px`;
+
+  // Prefer below the caret; flip above if no room.
+  const viewportHeight = window.innerHeight;
+  const viewportWidth = window.innerWidth;
+  let top = rect.bottom + 6;
+  if (top + POPOVER_ESTIMATED_HEIGHT > viewportHeight - VIEWPORT_MARGIN) {
+    const flippedTop = rect.top - POPOVER_ESTIMATED_HEIGHT - 6;
+    // If flipping up doesn't fit either, clamp into viewport.
+    top = Math.max(VIEWPORT_MARGIN, flippedTop);
+  }
+  const left = Math.min(
+    Math.max(VIEWPORT_MARGIN, rect.left),
+    viewportWidth - POPOVER_ESTIMATED_WIDTH - VIEWPORT_MARGIN,
+  );
+
+  el.style.top = `${top}px`;
+  el.style.left = `${left}px`;
 }
 
 export const SlashMenuExtension = Extension.create({
@@ -36,7 +55,7 @@ export const SlashMenuExtension = Extension.create({
     let popupEl: HTMLDivElement | null = null;
 
     return [
-      Suggestion<SlashMenuItem>({
+      Suggestion<SlashMenuItem, SlashMenuItem>({
         editor: this.editor,
         pluginKey: SlashMenuPluginKey,
         char: "/",
@@ -44,10 +63,22 @@ export const SlashMenuExtension = Extension.create({
         // Only fire inside a paragraph, only when the trigger `/` is at the
         // start of the textblock (optionally preceded by a single space).
         // Prevents popover-spam mid-sentence and inside non-text blocks.
+        // Also reject when inside table cells (nested tables aren't supported)
+        // or inside artifact wrappers (they have their own surfaces).
         allow: ({ state, range }) => {
           const $from = state.doc.resolve(range.from);
           const parent = $from.parent;
           if (parent.type.name !== "paragraph") return false;
+          for (let d = $from.depth - 1; d > 0; d--) {
+            const ancestor = $from.node(d).type.name;
+            if (
+              ancestor === "tableCell" ||
+              ancestor === "tableHeader" ||
+              ancestor === "artifact"
+            ) {
+              return false;
+            }
+          }
           const before = parent.textContent.slice(0, $from.parentOffset);
           return before === "" || before === " ";
         },
@@ -78,9 +109,6 @@ export const SlashMenuExtension = Extension.create({
             if (popupEl) positionPopup(popupEl, props.clientRect);
           },
           onKeyDown: (props) => {
-            if (props.event.key === "Escape") {
-              return true;
-            }
             return reactRenderer?.ref?.onKeyDown({ event: props.event }) ?? false;
           },
           onExit: () => {
