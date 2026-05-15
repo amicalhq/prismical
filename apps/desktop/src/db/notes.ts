@@ -1,4 +1,4 @@
-import { eq, desc, asc, like, and, inArray, isNull, sql, lte } from "drizzle-orm";
+import { eq, desc, asc, like, and, inArray, isNull, sql, lte, lt, notInArray } from "drizzle-orm";
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
 import { db } from "./index";
 import {
@@ -6,6 +6,7 @@ import {
   events,
   yjsUpdates,
   noteTags,
+  noteSnapshots,
   type Note,
   type NewNote,
   type YjsUpdate,
@@ -315,4 +316,137 @@ export async function setNoteMarkdown(
       updatedAt: new Date(),
     })
     .where(eq(notes.id, noteId));
+}
+
+// Snapshot helpers — PRSM-56 §11.6
+
+export type NoteSnapshotKind = "manual" | "auto" | "skill-accept";
+
+export interface SaveNoteSnapshotArgs {
+  noteId: number;
+  kind: NoteSnapshotKind;
+  ydocState: Uint8Array;
+  markdown: string;
+  label?: string | null;
+  createdBy?: string | null;
+}
+
+// Persist a self-contained snapshot of a note's Yjs state at this moment.
+// Stores the full encoded state (not a marker on yjs_updates), so compaction
+// of the live log never invalidates this row. See PRSM-56 §11.6.
+export async function saveNoteSnapshot(
+  db: DB,
+  args: SaveNoteSnapshotArgs,
+): Promise<number> {
+  const [row] = await db
+    .insert(noteSnapshots)
+    .values({
+      noteId: args.noteId,
+      kind: args.kind,
+      label: args.label ?? null,
+      ydocState: Buffer.from(args.ydocState),
+      markdown: args.markdown,
+      createdBy: args.createdBy ?? null,
+    })
+    .returning({ id: noteSnapshots.id });
+  return row.id;
+}
+
+export interface PruneOpts {
+  /**
+   * Delete non-protected snapshots older than this many days.
+   * `0` or `undefined` disables the age axis.
+   */
+  maxAgeDays?: number;
+  /**
+   * Cap the per-note non-protected snapshot count at this number.
+   * Survivors are the newest N by `createdAt`. `0` or `undefined`
+   * disables the count axis.
+   */
+  maxCount?: number;
+  /**
+   * Kinds that are NEVER pruned by either axis. Default: `["manual"]`.
+   */
+  protectKinds?: NoteSnapshotKind[];
+}
+
+// Default retention. A future user-facing setting in `app_settings` will
+// override these at the call site. PRSM-56 §11.6 retention.
+export const DEFAULT_SNAPSHOT_RETENTION: Required<PruneOpts> = {
+  maxAgeDays: 30,
+  maxCount: 50,
+  protectKinds: ["manual"],
+};
+
+// Two-axis retention: delete non-protected snapshots older than maxAgeDays,
+// then cap the per-note non-protected count at maxCount (newest survive).
+// Manual snapshots (default protectKinds) are NEVER pruned.
+export async function pruneNoteSnapshots(
+  db: DB,
+  noteId: number,
+  opts: PruneOpts = {},
+): Promise<{ deleted: number }> {
+  const policy: Required<PruneOpts> = {
+    maxAgeDays: opts.maxAgeDays ?? DEFAULT_SNAPSHOT_RETENTION.maxAgeDays,
+    maxCount: opts.maxCount ?? DEFAULT_SNAPSHOT_RETENTION.maxCount,
+    protectKinds:
+      opts.protectKinds ?? DEFAULT_SNAPSHOT_RETENTION.protectKinds,
+  };
+
+  return db.transaction(async (tx) => {
+    let deleted = 0;
+
+    // Axis 1: age cutoff (non-protected only).
+    if (policy.maxAgeDays > 0) {
+      const cutoff = new Date(Date.now() - policy.maxAgeDays * 86_400_000);
+      const res = await tx
+        .delete(noteSnapshots)
+        .where(
+          and(
+            eq(noteSnapshots.noteId, noteId),
+            notInArray(noteSnapshots.kind, policy.protectKinds),
+            lt(noteSnapshots.createdAt, cutoff),
+          ),
+        )
+        .returning({ id: noteSnapshots.id });
+      deleted += res.length;
+    }
+
+    // Axis 2: count cap (non-protected only). Survivors = newest N; delete
+    // everything else within the non-protected set.
+    if (policy.maxCount > 0) {
+      const survivors = await tx
+        .select({ id: noteSnapshots.id })
+        .from(noteSnapshots)
+        .where(
+          and(
+            eq(noteSnapshots.noteId, noteId),
+            notInArray(noteSnapshots.kind, policy.protectKinds),
+          ),
+        )
+        .orderBy(desc(noteSnapshots.createdAt))
+        .limit(policy.maxCount);
+      const survivorIds = survivors.map((s) => s.id);
+
+      // When the non-protected set is empty (no rows survive the LIMIT N
+      // query), survivorIds is []. Without this guard, notInArray(id, [])
+      // evaluates to TRUE in drizzle and we'd delete every non-protected
+      // row — the exact opposite of what we want.
+      if (survivorIds.length > 0) {
+        const res = await tx
+          .delete(noteSnapshots)
+          .where(
+            and(
+              eq(noteSnapshots.noteId, noteId),
+              notInArray(noteSnapshots.kind, policy.protectKinds),
+              notInArray(noteSnapshots.id, survivorIds),
+            ),
+          )
+          .returning({ id: noteSnapshots.id });
+        deleted += res.length;
+      }
+    }
+
+    return { deleted };
+  });
 }

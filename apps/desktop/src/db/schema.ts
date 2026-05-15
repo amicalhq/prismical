@@ -537,6 +537,37 @@ export const yjsUpdates = sqliteTable(
   ],
 );
 
+// Snapshots of a note's Yjs state at a point in time. Each row is a
+// self-contained encoded full state (NOT a marker on yjs_updates) so
+// compaction of the live log never invalidates a historical snapshot.
+// See docs/superpowers/specs/2026-05-14-prsm-56-yjs-pivot-design.md §11.6.
+export const noteSnapshots = sqliteTable(
+  "note_snapshots",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    noteId: integer("note_id")
+      .notNull()
+      .references(() => notes.id, { onDelete: "cascade" }),
+    label: text("label"),
+    kind: text("kind").notNull(), // 'manual' | 'auto' | 'skill-accept'
+    ydocState: blob("ydoc_state", { mode: "buffer" }).notNull(),
+    markdown: text("markdown").notNull().default(""),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    createdBy: text("created_by"),
+  },
+  (table) => [
+    index("note_snapshots_note_id_created_at_idx").on(
+      table.noteId,
+      table.createdAt,
+    ),
+  ],
+);
+
+export type NoteSnapshot = typeof noteSnapshots.$inferSelect;
+export type NewNoteSnapshot = typeof noteSnapshots.$inferInsert;
+
 // Skills table — agentic AI enhancements applied to notes. v1 ships two
 // system skills (`enhance`, `cleanup`); users can author their own.
 //
