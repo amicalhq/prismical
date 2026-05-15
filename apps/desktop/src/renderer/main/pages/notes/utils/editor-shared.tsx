@@ -15,13 +15,16 @@ import { TableHeader } from "@tiptap/extension-table-header";
 import { TableCell } from "@tiptap/extension-table-cell";
 import { Emoji, gitHubEmojis } from "@tiptap/extension-emoji";
 import { Markdown } from "tiptap-markdown";
+import { Collaboration } from "@tiptap/extension-collaboration";
 import { createLowlight, common } from "lowlight";
 import { mergeAttributes, type Extensions } from "@tiptap/core";
+import type * as Y from "yjs";
 import { ArtifactNode } from "@/renderer/main/components/editor/nodes/artifact-node";
 import { ArtifactInlineNode } from "@/renderer/main/components/editor/nodes/artifact-inline-node";
 import { ArtifactEscape } from "@/renderer/main/components/editor/artifact-escape-plugin";
 import { SkillDiffPlugin } from "@/renderer/main/components/editor/diff/diff-plugin";
 import { MARKDOWN_OPTIONS } from "@/services/notes/editor-extensions";
+import { COLLAB_FRAGMENT_NAME } from "@/services/notes/markdown-to-ydoc";
 
 const lowlight = createLowlight(common);
 
@@ -51,8 +54,13 @@ const ThemedHeading = Heading.extend({
   },
 });
 
+// When `ydoc` is provided, Collaboration is mounted and StarterKit's
+// built-in undoRedo is disabled (Collaboration brings its own
+// Y.UndoManager and the two cannot coexist). Non-collab callers
+// (e.g. the skill artifact editor) get default StarterKit undo.
 interface RendererExtensionsOptions {
   placeholder?: string;
+  ydoc?: Y.Doc;
 }
 
 export function buildRendererExtensions(
@@ -101,6 +109,7 @@ export function buildRendererExtensions(
         protocols: ["http", "https", "mailto"],
         defaultProtocol: "https",
       },
+      ...(opts.ydoc !== undefined ? { undoRedo: false as const } : {}),
     }),
     ThemedHeading.configure({ levels: [1, 2, 3, 4, 5] }),
     CodeBlockLowlight.configure({
@@ -137,5 +146,8 @@ export function buildRendererExtensions(
       emptyEditorClass: "is-editor-empty",
     }),
     Markdown.configure(MARKDOWN_OPTIONS),
+    ...(opts.ydoc !== undefined
+      ? [Collaboration.configure({ document: opts.ydoc, field: COLLAB_FRAGMENT_NAME })]
+      : []),
   ];
 }

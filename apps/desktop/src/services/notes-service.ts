@@ -11,10 +11,14 @@ import {
   loadYjsUpdates as loadYjsUpdatesFromDB,
   getUniqueNoteIds,
   getYjsUpdatesByNoteId,
-  replaceYjsUpdates,
+  compactUpToId,
+  setNoteMarkdown as setNoteMarkdownInDb,
 } from "../db/notes";
+import { db } from "../db/index";
 import { upsertEvent } from "../db/events";
 import type { NewEvent } from "../db/schema";
+import { yjsUpdates } from "../db/schema";
+import { eq, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { ipcMain } from "electron";
 import { logger } from "../main/logger";
@@ -37,6 +41,7 @@ export interface NoteUpdateOptions {
 
 class NotesService {
   private static instance: NotesService;
+  private static readonly COMPACTION_THRESHOLD = 100;
   private compactionTask: cron.ScheduledTask | null = null;
 
   private constructor() {
@@ -55,6 +60,7 @@ class NotesService {
             noteId,
             updateSize: updateArray.length,
           });
+          void this.maybeCompactNote(noteId);
         } catch (error) {
           logger.main.error("Failed to save yjs update", error);
           throw error;
@@ -75,6 +81,22 @@ class NotesService {
         throw error;
       }
     });
+
+    ipcMain.handle(
+      "notes:setNoteMarkdown",
+      async (_event, noteId: number, markdown: string) => {
+        try {
+          await this.setNoteMarkdown(noteId, markdown);
+          logger.main.debug("Set note markdown sidecar", {
+            noteId,
+            markdownLength: markdown.length,
+          });
+        } catch (error) {
+          logger.main.error("Failed to set note markdown sidecar", error);
+          throw error;
+        }
+      },
+    );
   }
 
   public static getInstance(): NotesService {
@@ -142,12 +164,17 @@ class NotesService {
 
   // Save yjs update to database
   async saveYjsUpdate(noteId: number, update: Uint8Array) {
-    await saveYjsUpdateToDB(noteId, update);
+    await saveYjsUpdateToDB(db, noteId, update);
   }
 
   // Load all yjs updates for a note
   async loadYjsUpdates(noteId: number): Promise<Uint8Array[]> {
-    return await loadYjsUpdatesFromDB(noteId);
+    return await loadYjsUpdatesFromDB(db, noteId);
+  }
+
+  // Set note markdown sidecar
+  async setNoteMarkdown(noteId: number, markdown: string): Promise<void> {
+    await setNoteMarkdownInDb(db, noteId, markdown);
   }
 
   // Compact all note documents
@@ -157,7 +184,7 @@ class NotesService {
 
     try {
       // Get all unique note IDs that have updates
-      const noteIds = await getUniqueNoteIds();
+      const noteIds = await getUniqueNoteIds(db);
       logger.main.info(`Found ${noteIds.length} notes to compact`);
 
       let totalUpdatesBefore = 0;
@@ -181,18 +208,34 @@ class NotesService {
     }
   }
 
+  // Opportunistic: count rows; if above threshold, run compaction.
+  // Safe to call on every save — counting is cheap, and compaction
+  // itself is race-safe via the high-watermark in compactUpToId.
+  async maybeCompactNote(noteId: number): Promise<void> {
+    const [{ count }] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(yjsUpdates)
+      .where(eq(yjsUpdates.noteId, noteId));
+    if (count > NotesService.COMPACTION_THRESHOLD) {
+      await this.compactNote(noteId);
+    }
+  }
+
   // Compact a specific note
   async compactNote(
     noteId: number,
   ): Promise<{ updatesBefore: number; updatesAfter: number }> {
     // Get all updates for this note
-    const updates = await getYjsUpdatesByNoteId(noteId);
+    const updates = await getYjsUpdatesByNoteId(db, noteId);
     const updatesBefore = updates.length;
 
     if (updatesBefore <= 1) {
       // No need to compact if there's only one update or none
       return { updatesBefore, updatesAfter: updatesBefore };
     }
+
+    // Capture the high-watermark from the rows we just read
+    const maxId = updates[updates.length - 1].id;
 
     // Create a new Y.Doc and apply all updates
     const ydoc = new Y.Doc();
@@ -204,14 +247,17 @@ class NotesService {
     // Encode the current state as a single update
     const stateUpdate = Y.encodeStateAsUpdate(ydoc);
 
-    // Replace all updates with the compacted one
-    await replaceYjsUpdates(noteId, stateUpdate);
+    // Replace updates up to the watermark with the compacted one,
+    // preserving any tail rows written concurrently by the renderer
+    await compactUpToId(db, noteId, maxId, stateUpdate);
+
+    const updatesAfter = (await getYjsUpdatesByNoteId(db, noteId)).length;
 
     logger.main.debug(
-      `Compacted note ${noteId}: ${updatesBefore} updates -> 1 update`,
+      `Compacted note ${noteId}: ${updatesBefore} updates -> ${updatesAfter} update(s)`,
     );
 
-    return { updatesBefore, updatesAfter: 1 };
+    return { updatesBefore, updatesAfter };
   }
 
   // Set up cron job for scheduled compaction
