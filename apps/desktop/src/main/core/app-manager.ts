@@ -1,6 +1,6 @@
 import { app, dialog, ipcMain, shell } from "electron";
 import { initializeDatabase } from "../../db";
-import { seedEventsAndNotes } from "../../db/events";
+import { seedDevFixtures } from "../../services/dev-fixtures";
 import { bootstrapInstances } from "../../services/instance-bootstrap";
 import { bootstrapSkills } from "../../services/skills-bootstrap";
 import { logger } from "../logger";
@@ -142,12 +142,16 @@ export class AppManager {
 
   private async initializeDatabase(): Promise<void> {
     await initializeDatabase();
-    await seedEventsAndNotes();
     // Seed system provider instances + reconcile local-whisper downloads.
     // Must run before service-manager constructs ModelService, which reads
     // from the local-whisper instance row on the transcription hot path.
+    // Also runs before seedDevFixtures so the dev fixtures can reference
+    // bootstrapped skill slugs (e.g. the catch-up artifact's "enhance").
     await bootstrapInstances();
     await bootstrapSkills();
+    if (process.env.NODE_ENV !== "production") {
+      await seedDevFixtures();
+    }
     logger.db.info(
       "Database initialized and migrations completed successfully",
     );
