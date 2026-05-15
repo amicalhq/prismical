@@ -1,4 +1,9 @@
-import { generateText, Output } from "ai";
+import {
+  generateText,
+  Output,
+  extractJsonMiddleware,
+  wrapLanguageModel,
+} from "ai";
 import { z } from "zod";
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
 
@@ -49,15 +54,30 @@ export async function runSkill(
   // Translate to `SkillRunError` so the tRPC layer surfaces a friendly
   // "Couldn't run X — <reason>" toast instead of the raw SDK message.
   const registry = await getRegistry();
-  let model;
+  let baseModel;
   try {
-    model = registry.languageModel(registryKey(instance.id, ctx.modelId));
+    baseModel = registry.languageModel(
+      registryKey(instance.id, ctx.modelId),
+    );
   } catch (err) {
     throw new SkillRunError(
       `Skills aren't wired for this instance yet (${instance.provider}). ${err instanceof Error ? err.message : String(err)}`,
       err,
     );
   }
+
+  // Local + weaker models (Ollama, lower-tier Groq, generic
+  // openai-compatible endpoints) often wrap structured-output JSON in
+  // ```json ... ``` fences, which `Output.object` then parses as text and
+  // rejects with `NoObjectGeneratedError`. The SDK ships
+  // `extractJsonMiddleware` for exactly this case. We apply it per-call at
+  // the skill-runner site only — NOT registry-global — because note-gen
+  // returns freeform markdown via plain `generateText` and the middleware's
+  // fence-stripping regex would mangle ` ```markdown ... ``` ` blocks.
+  const model = wrapLanguageModel({
+    model: baseModel,
+    middleware: extractJsonMiddleware(),
+  });
   const input = await collectInput(db, ctx);
   const systemPrompt = buildSystemPrompt(ctx, input);
 
