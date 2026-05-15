@@ -42,14 +42,15 @@ const REASONING_CAPS: ModelCapabilities = {
 };
 
 // First match wins. Patterns kept loose on purpose — every vendor names
-// reasoning variants slightly differently, and a false positive here just
-// means we drop sampling knobs the server would have ignored anyway.
+// reasoning variants slightly differently (`gpt-oss-20b` vs
+// `openai/gpt-oss-20b`), and a false positive here just means we drop
+// sampling knobs the server would have ignored anyway.
 const REASONING_PATTERNS: readonly RegExp[] = [
-  /^o[1-9](-|$)/i, // OpenAI o-series: o1, o3, o3-mini, o4-mini
-  /^gpt-5(\.|-|$)/i, // gpt-5 family is reasoning by default
-  /^gpt-oss/i, // OpenAI gpt-oss-*
+  /(^|\/)o[1-9](-|$)/i, // OpenAI o-series: o1, o3, o3-mini, o4-mini, optionally vendor-prefixed
+  /(^|\/)gpt-5(\.|-|$)/i, // gpt-5 family is reasoning by default
+  /gpt-oss/i, // gpt-oss-*, openai/gpt-oss-*, etc.
   /deepseek-r1/i, // DeepSeek R1 + distills
-  /^qwen-?qwq/i, // qwen-qwq-32b
+  /qwen-?qwq/i, // qwen-qwq-32b, anywhere in id
   /\bqwen3\b/i, // Qwen3 reasoning variants
   /claude.*thinking/i, // Older Anthropic thinking variants on compat path
 ];

@@ -17,7 +17,12 @@ import { type TestDatabase } from "../../helpers/test-db";
 import { setTestDatabase } from "../../setup";
 import { notes, skills, instances, artifacts } from "@db/schema";
 import type { SkillRunContext } from "@/services/skills-runtime/skill-context";
-import { SkillCancelledError, SkillRunError } from "@/services/skills-runtime/errors";
+import {
+  SkillCancelledError,
+  SkillRunError,
+  SkillOutputInvalidError,
+} from "@/services/skills-runtime/errors";
+import { NoObjectGeneratedError } from "ai";
 
 // Mock `generateText` from `ai`. The runner asks for a structured output
 // via `Output.object`; the mock returns a fake result with the typed
@@ -288,6 +293,101 @@ describe("skills-runtime/skill-runner", () => {
 
     expect(result.mode).toBe("append-section");
     expect(result.beforeText).toContain("note body");
+  });
+
+  it("NoObjectGeneratedError → SkillOutputInvalidError with truncated text snippet (t-06)", async () => {
+    const { runSkill } = await import("@/services/skills-runtime/skill-runner");
+    const { note, skill } = await insertFixtures(testDb.db);
+
+    generateTextMock.mockRejectedValue(
+      new NoObjectGeneratedError({
+        message: "model returned non-JSON",
+        text: "```\nthis is not valid JSON at all\n```",
+        response: {
+          id: "resp_test_001",
+          modelId: MODEL_ID,
+          timestamp: new Date(),
+        },
+        usage: {
+          inputTokens: 100,
+          outputTokens: 50,
+          totalTokens: 150,
+        },
+        finishReason: "stop",
+      }),
+    );
+
+    const err = await runSkill(makeCtx({ skill, noteId: note.id }), {
+      db: testDb.db,
+    }).catch((e) => e);
+
+    expect(err).toBeInstanceOf(SkillOutputInvalidError);
+    expect(err).toBeInstanceOf(SkillRunError);
+    expect((err as SkillOutputInvalidError).responseId).toBe("resp_test_001");
+    expect((err as SkillOutputInvalidError).truncatedText).toContain(
+      "this is not valid JSON",
+    );
+  });
+
+  it("captures result.usage on successful runs and propagates it to SkillRunResult (t-07)", async () => {
+    const { runSkill } = await import("@/services/skills-runtime/skill-runner");
+    const { note, skill } = await insertFixtures(testDb.db);
+
+    generateTextMock.mockResolvedValue({
+      output: { markdown: CANNED_MARKDOWN },
+      usage: { inputTokens: 200, outputTokens: 75, totalTokens: 275 },
+    });
+
+    const result = await runSkill(makeCtx({ skill, noteId: note.id }), {
+      db: testDb.db,
+    });
+
+    expect(result.usage?.inputTokens).toBe(200);
+    expect(result.usage?.outputTokens).toBe(75);
+    expect(result.usage?.totalTokens).toBe(275);
+    // raw is JSON.stringify of the LanguageModelUsage shape — round-trip
+    // it to confirm we serialised the whole payload.
+    expect(JSON.parse(result.usage!.raw!)).toEqual({
+      inputTokens: 200,
+      outputTokens: 75,
+      totalTokens: 275,
+    });
+  });
+
+  it("captures OpenRouter cost from providerMetadata.openrouter.usage.cost (t-16)", async () => {
+    const { runSkill } = await import("@/services/skills-runtime/skill-runner");
+    const { note, skill } = await insertFixtures(testDb.db);
+
+    generateTextMock.mockResolvedValue({
+      output: { markdown: CANNED_MARKDOWN },
+      usage: { inputTokens: 100, outputTokens: 30, totalTokens: 130 },
+      providerMetadata: {
+        openrouter: {
+          usage: { cost: 0.00123 },
+        },
+      },
+    });
+
+    const result = await runSkill(makeCtx({ skill, noteId: note.id }), {
+      db: testDb.db,
+    });
+
+    expect(result.costUsd).toBe(0.00123);
+  });
+
+  it("costUsd is null when the provider didn't populate it (e.g. non-OpenRouter run)", async () => {
+    const { runSkill } = await import("@/services/skills-runtime/skill-runner");
+    const { note, skill } = await insertFixtures(testDb.db);
+
+    generateTextMock.mockResolvedValue({
+      output: { markdown: CANNED_MARKDOWN },
+      usage: { inputTokens: 100, outputTokens: 30, totalTokens: 130 },
+    });
+
+    const result = await runSkill(makeCtx({ skill, noteId: note.id }), {
+      db: testDb.db,
+    });
+    expect(result.costUsd).toBeNull();
   });
 
   it("inline-rewrite leaves beforeText undefined — the client supplies it from the selection", async () => {
