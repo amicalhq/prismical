@@ -33,11 +33,36 @@ vi.mock("ai", async (importOriginal) => {
 });
 
 // Mock the openai-compatible provider so we don't make HTTP calls.
+// Returns a ProviderV3-shaped object — the unified registry calls
+// `provider.languageModel(modelId)`, so this needs a real method, not the
+// callable-provider shape the old `resolve-model.ts` used.
 vi.mock("@ai-sdk/openai-compatible", () => ({
-  createOpenAICompatible: vi.fn(() => (modelId: string) => ({
+  createOpenAICompatible: vi.fn((opts: { name: string }) => ({
     specificationVersion: "v3",
-    provider: "openai-compatible",
-    modelId,
+    languageModel: (modelId: string) => ({
+      specificationVersion: "v3",
+      provider: opts.name ?? "openai-compatible",
+      modelId,
+    }),
+    textEmbeddingModel: (modelId: string) => ({
+      specificationVersion: "v3",
+      provider: opts.name ?? "openai-compatible",
+      modelId,
+    }),
+  })),
+}));
+
+// Mock the OpenRouter vendor provider so the registry can construct it
+// without exploding if a test ever inserts an openrouter row (defensive —
+// the existing fixtures use openai-compatible).
+vi.mock("@openrouter/ai-sdk-provider", () => ({
+  createOpenRouter: vi.fn(() => ({
+    specificationVersion: "v3",
+    languageModel: (modelId: string) => ({
+      specificationVersion: "v3",
+      provider: "openrouter",
+      modelId,
+    }),
   })),
 }));
 

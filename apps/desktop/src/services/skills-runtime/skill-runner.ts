@@ -5,10 +5,10 @@ import type { LibSQLDatabase } from "drizzle-orm/libsql";
 import { logger } from "@/main/logger";
 import { db as defaultDb } from "@/db";
 import { getInstanceById } from "@/db/instances";
+import { getRegistry, registryKey } from "@/services/ai/registry";
 import type { SkillRunContext, SkillRunResult } from "./skill-context";
 import { buildSystemPrompt } from "./build-system-prompt";
 import { collectInput } from "./collect-input";
-import { resolveSkillModel } from "./resolve-model";
 import {
   markdownToChildren,
   markdownToInlineChildren,
@@ -41,7 +41,23 @@ export async function runSkill(
     );
   }
 
-  const model = resolveSkillModel(instance, ctx.modelId);
+  // The registry's `languageModel(...)` throws `NoSuchModelError` /
+  // `NoSuchProviderError` (raw `AI_NoSuchModelError`) when the row's
+  // provider has no factory entry — e.g. an anthropic instance before
+  // t-03 installs `@ai-sdk/anthropic`, or a row whose provider was
+  // removed between the `getInstanceById` lookup above and this call.
+  // Translate to `SkillRunError` so the tRPC layer surfaces a friendly
+  // "Couldn't run X — <reason>" toast instead of the raw SDK message.
+  const registry = await getRegistry();
+  let model;
+  try {
+    model = registry.languageModel(registryKey(instance.id, ctx.modelId));
+  } catch (err) {
+    throw new SkillRunError(
+      `Skills aren't wired for this instance yet (${instance.provider}). ${err instanceof Error ? err.message : String(err)}`,
+      err,
+    );
+  }
   const input = await collectInput(db, ctx);
   const systemPrompt = buildSystemPrompt(ctx, input);
 

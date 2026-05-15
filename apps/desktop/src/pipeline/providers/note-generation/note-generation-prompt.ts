@@ -1,4 +1,4 @@
-import type { NoteGenerationInput } from "./types";
+import type { NoteGenerationInput } from "./generate-note-markdown";
 
 export function buildNoteGenerationPrompt(input: NoteGenerationInput): {
   systemPrompt: string;
