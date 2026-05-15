@@ -125,6 +125,11 @@ export const providerFactories: Partial<
       baseURL: c.baseURL,
       headers: { "User-Agent": getUserAgent() },
       transformRequestBody: compatCapabilityTransform,
+      // User-controlled per-instance flag (t-19). Default off — most
+      // generic proxies only support json_object. Upstreams that do
+      // support strict json_schema (vLLM, LM Studio 0.3+, Mistral) flip
+      // it on via the instance form's Advanced section.
+      supportsStructuredOutputs: c.supportsStrictJsonSchema ?? false,
     });
   },
 

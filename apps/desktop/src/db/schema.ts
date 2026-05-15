@@ -197,6 +197,13 @@ export interface OllamaConfig {
 export interface OpenAICompatibleConfig {
   apiKey: string;
   baseURL: string;
+  // (t-19) Most generic openai-compatible endpoints only support
+  // `response_format: { type: "json_object" }`; vLLM, LM Studio 0.3+,
+  // Mistral, and Ollama support the stricter `json_schema` form. We
+  // can't pick a single default that's right for every upstream —
+  // user-controlled flag, default off. Exposed in the Advanced section
+  // of the instance-config dialog.
+  supportsStrictJsonSchema?: boolean;
 }
 
 export interface LocalWhisperConfig {

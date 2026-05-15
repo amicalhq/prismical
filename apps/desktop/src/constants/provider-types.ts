@@ -105,12 +105,19 @@ export const SINGLETON_INSTANCE_IDS: Readonly<
 // Form-field spec for the Add/Edit Instance dialog. Order of entries
 // determines order of inputs in the form. Empty array = no form (the
 // instance is always seeded by the system, not the user).
-export type InstanceConfigFieldName = "apiKey" | "url" | "baseURL";
+export type InstanceConfigFieldName =
+  | "apiKey"
+  | "url"
+  | "baseURL"
+  | "supportsStrictJsonSchema";
 
 export interface InstanceConfigFieldSpec {
   field: InstanceConfigFieldName;
-  inputType: "password" | "text";
+  inputType: "password" | "text" | "checkbox";
   required: boolean;
+  // When true, the form renders the field inside a collapsible
+  // "Advanced settings" section instead of the main field stack.
+  advanced?: boolean;
 }
 
 export const PROVIDER_TYPE_CONFIG_FIELDS: Record<
@@ -135,6 +142,12 @@ export const PROVIDER_TYPE_CONFIG_FIELDS: Record<
   [PROVIDER_TYPES.openAICompatible]: [
     { field: "baseURL", inputType: "text", required: true },
     { field: "apiKey", inputType: "password", required: true },
+    {
+      field: "supportsStrictJsonSchema",
+      inputType: "checkbox",
+      required: false,
+      advanced: true,
+    },
   ],
   [PROVIDER_TYPES.localWhisper]: [],
   [PROVIDER_TYPES.mock]: [],

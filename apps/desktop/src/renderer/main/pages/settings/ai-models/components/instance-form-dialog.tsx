@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { ChevronDown, Loader2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -10,6 +10,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api } from "@/trpc/react";
@@ -17,6 +23,7 @@ import { toast } from "sonner";
 import {
   PROVIDER_TYPE_CONFIG_FIELDS,
   type InstanceConfigFieldName,
+  type InstanceConfigFieldSpec,
   type ProviderType,
 } from "@/constants/provider-types";
 import { PROVIDER_META } from "@/renderer/main/components/provider-meta";
@@ -35,12 +42,18 @@ const FIELD_LABELS: Record<InstanceConfigFieldName, string> = {
   apiKey: "API key",
   url: "URL",
   baseURL: "Base URL",
+  supportsStrictJsonSchema: "Endpoint supports strict JSON Schema",
 };
 
-const FIELD_PLACEHOLDERS: Record<InstanceConfigFieldName, string> = {
+const FIELD_PLACEHOLDERS: Partial<Record<InstanceConfigFieldName, string>> = {
   apiKey: "sk-...",
   url: "http://localhost:11434",
   baseURL: "https://api.example.com/v1",
+};
+
+const FIELD_HELP_TEXT: Partial<Record<InstanceConfigFieldName, string>> = {
+  supportsStrictJsonSchema:
+    "Only enable if your endpoint supports OpenAI's strict structured outputs (response_format: json_schema). vLLM, LM Studio 0.3+, Mistral, and Ollama support this; most generic proxies do not. If unsure, leave off — skills still work via JSON mode.",
 };
 
 export default function InstanceFormDialog({
@@ -69,7 +82,10 @@ export default function InstanceFormDialog({
   );
 
   const [label, setLabel] = useState("");
-  const [values, setValues] = useState<Record<string, string>>({});
+  // Field values carry strings for text/password fields, booleans for
+  // checkbox fields. Stored under one keyed map so resetting on
+  // open/edit stays simple.
+  const [values, setValues] = useState<Record<string, string | boolean>>({});
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -83,10 +99,14 @@ export default function InstanceFormDialog({
     } else if (existingQuery.data) {
       setLabel(existingQuery.data.label);
       const cfg = existingQuery.data.config as Record<string, unknown>;
-      const next: Record<string, string> = {};
+      const next: Record<string, string | boolean> = {};
       for (const f of fields) {
         const v = cfg[f.field];
-        next[f.field] = typeof v === "string" ? v : "";
+        if (f.inputType === "checkbox") {
+          next[f.field] = typeof v === "boolean" ? v : false;
+        } else {
+          next[f.field] = typeof v === "string" ? v : "";
+        }
       }
       setValues(next);
     }
@@ -96,18 +116,28 @@ export default function InstanceFormDialog({
   const createMutation = api.instances.create.useMutation();
   const updateMutation = api.instances.update.useMutation();
 
-  const buildConfig = (): Record<string, string> => {
-    const cfg: Record<string, string> = {};
+  const buildConfig = (): Record<string, string | boolean> => {
+    const cfg: Record<string, string | boolean> = {};
     for (const f of fields) {
-      const v = (values[f.field] ?? "").trim();
-      if (v) cfg[f.field] = v;
+      const v = values[f.field];
+      if (f.inputType === "checkbox") {
+        // Send the boolean — even `false` matters because it disambiguates
+        // "user explicitly disabled" from "field never set". Validation
+        // (instances.ts) accepts both undefined and boolean.
+        if (typeof v === "boolean") cfg[f.field] = v;
+      } else if (typeof v === "string" && v.trim()) {
+        cfg[f.field] = v.trim();
+      }
     }
     return cfg;
   };
 
   const requiredFilled = fields
     .filter((f) => f.required)
-    .every((f) => (values[f.field] ?? "").trim().length > 0);
+    .every((f) => {
+      const v = values[f.field];
+      return typeof v === "string" && v.trim().length > 0;
+    });
   const labelFilled = label.trim().length > 0;
   const canSubmit =
     provider !== null && labelFilled && requiredFilled && !isSaving;
@@ -207,23 +237,23 @@ export default function InstanceFormDialog({
             />
           </div>
 
-          {fields.map((f) => (
-            <div key={f.field} className="space-y-2">
-              <Label htmlFor={`instance-${f.field}`}>
-                {FIELD_LABELS[f.field]}
-                {f.required && <span className="text-destructive"> *</span>}
-              </Label>
-              <Input
-                id={`instance-${f.field}`}
-                type={f.inputType}
-                placeholder={FIELD_PLACEHOLDERS[f.field]}
-                value={values[f.field] ?? ""}
-                onChange={(e) =>
-                  setValues((prev) => ({ ...prev, [f.field]: e.target.value }))
-                }
-              />
-            </div>
-          ))}
+          {fields.filter((f) => !f.advanced).map((f) =>
+            renderField(f, values, setValues),
+          )}
+
+          {fields.some((f) => f.advanced) && (
+            <Collapsible className="space-y-2">
+              <CollapsibleTrigger className="flex w-full items-center justify-between rounded-md border border-dashed border-border px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-accent/40">
+                Advanced settings
+                <ChevronDown className="h-3 w-3 transition-transform data-[state=open]:rotate-180" />
+              </CollapsibleTrigger>
+              <CollapsibleContent className="space-y-4 pt-2">
+                {fields
+                  .filter((f) => f.advanced)
+                  .map((f) => renderField(f, values, setValues))}
+              </CollapsibleContent>
+            </Collapsible>
+          )}
 
           {error && (
             <p className="text-xs text-destructive">{error}</p>
@@ -253,5 +283,61 @@ export default function InstanceFormDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function renderField(
+  f: InstanceConfigFieldSpec,
+  values: Record<string, string | boolean>,
+  setValues: React.Dispatch<
+    React.SetStateAction<Record<string, string | boolean>>
+  >,
+) {
+  if (f.inputType === "checkbox") {
+    const checked = values[f.field] === true;
+    return (
+      <div key={f.field} className="space-y-2">
+        <div className="flex items-start gap-2">
+          <Checkbox
+            id={`instance-${f.field}`}
+            checked={checked}
+            onCheckedChange={(v) =>
+              setValues((prev) => ({ ...prev, [f.field]: v === true }))
+            }
+          />
+          <Label
+            htmlFor={`instance-${f.field}`}
+            className="text-sm font-normal leading-snug"
+          >
+            {FIELD_LABELS[f.field]}
+          </Label>
+        </div>
+        {FIELD_HELP_TEXT[f.field] && (
+          <p className="text-xs text-muted-foreground pl-6">
+            {FIELD_HELP_TEXT[f.field]}
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  const stringValue =
+    typeof values[f.field] === "string" ? (values[f.field] as string) : "";
+  return (
+    <div key={f.field} className="space-y-2">
+      <Label htmlFor={`instance-${f.field}`}>
+        {FIELD_LABELS[f.field]}
+        {f.required && <span className="text-destructive"> *</span>}
+      </Label>
+      <Input
+        id={`instance-${f.field}`}
+        type={f.inputType}
+        placeholder={FIELD_PLACEHOLDERS[f.field]}
+        value={stringValue}
+        onChange={(e) =>
+          setValues((prev) => ({ ...prev, [f.field]: e.target.value }))
+        }
+      />
+    </div>
   );
 }
