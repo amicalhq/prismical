@@ -205,6 +205,9 @@ importers:
       '@tiptap/starter-kit':
         specifier: ^3.23.4
         version: 3.23.4
+      '@tiptap/suggestion':
+        specifier: ^3.23.4
+        version: 3.23.4(@tiptap/core@3.23.4(@tiptap/pm@3.23.4))(@tiptap/pm@3.23.4)
       '@trpc/client':
         specifier: ^11.4.2
         version: 11.5.0(@trpc/server@11.5.0(typescript@5.8.3))(typescript@5.8.3)
