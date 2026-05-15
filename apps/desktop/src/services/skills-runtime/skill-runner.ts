@@ -282,5 +282,19 @@ function buildProviderOptions(
     out.groq = groq as SharedV3ProviderOptions[string];
   }
 
+  // Ollama is served via @ai-sdk/openai-compatible at /v1 (t-09). The
+  // adapter forwards `providerOptions.openaiCompatible.reasoningEffort`
+  // (camelCase; kebab-cased `'openai-compatible'` is deprecated) through
+  // to Ollama's `reasoning_effort` field. The option is provider-typed
+  // for forwarders but harmless if the model ignores it.
+  if (
+    providerType === PROVIDER_TYPES.ollama &&
+    ctx.ollamaReasoningEffort !== undefined
+  ) {
+    out.openaiCompatible = {
+      reasoningEffort: ctx.ollamaReasoningEffort,
+    };
+  }
+
   return Object.keys(out).length === 0 ? undefined : out;
 }

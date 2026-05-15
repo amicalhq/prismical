@@ -74,6 +74,11 @@ export interface SkillRunContext {
   // work. Defaults to `'on_demand'`.
   groqServiceTier?: "on_demand" | "performance" | "flex" | "auto";
 
+  // Ollama reasoning effort — forwarded through the openai-compatible
+  // adapter as `providerOptions.openaiCompatible.reasoningEffort`. Useful
+  // for deepseek-r1, qwen3, gpt-oss* served via Ollama's /v1.
+  ollamaReasoningEffort?: "low" | "medium" | "high" | "none";
+
   // OpenRouter prompt caching for Anthropic-routed models. Surface
   // declared for forward compat; not yet wired — the SDK exposes
   // `cacheControl` per message part, but skill-runner today passes the
