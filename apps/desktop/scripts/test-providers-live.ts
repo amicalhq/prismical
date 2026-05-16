@@ -45,34 +45,37 @@ interface MatrixEntry {
   configFromEnv: (envValue: string) => InstanceConfig;
 }
 
+// Env var names are `DEV_`-prefixed so the secrets in Infisical's dev
+// environment are unambiguous — these are credentials kept around for
+// dev-time live-smoke-testing, not anything the app reads at runtime.
 const MATRIX: MatrixEntry[] = [
   {
     provider: PROVIDER_TYPES.openai,
-    envVar: "OPENAI_API_KEY",
+    envVar: "DEV_OPENAI_API_KEY",
     models: ["gpt-4o-mini"],
     configFromEnv: (apiKey) => ({ apiKey }),
   },
   {
     provider: PROVIDER_TYPES.anthropic,
-    envVar: "ANTHROPIC_API_KEY",
+    envVar: "DEV_ANTHROPIC_API_KEY",
     models: ["claude-haiku-4-5"],
     configFromEnv: (apiKey) => ({ apiKey }),
   },
   {
     provider: PROVIDER_TYPES.groq,
-    envVar: "GROQ_API_KEY",
+    envVar: "DEV_GROQ_API_KEY",
     models: ["llama-3.3-70b-versatile"],
     configFromEnv: (apiKey) => ({ apiKey }),
   },
   {
     provider: PROVIDER_TYPES.openRouter,
-    envVar: "OPENROUTER_API_KEY",
+    envVar: "DEV_OPENROUTER_API_KEY",
     models: ["openai/gpt-4o-mini"],
     configFromEnv: (apiKey) => ({ apiKey }),
   },
   {
     provider: PROVIDER_TYPES.ollama,
-    envVar: "OLLAMA_HOST",
+    envVar: "DEV_OLLAMA_HOST",
     models: ["llama3.2"],
     configFromEnv: (host) => ({ url: host }),
   },
