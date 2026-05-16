@@ -8,7 +8,6 @@ describe("groq-capabilities", () => {
     expect(
       groqSupportsStrictJsonSchema("meta-llama/llama-4-scout-17b-16e-instruct"),
     ).toBe(true);
-    expect(groqSupportsStrictJsonSchema("llama-3.3-70b-versatile")).toBe(true);
     // Qwen3 ships as `qwen/qwen3-32b` from Groq's catalog — not bare `qwen3-`.
     expect(groqSupportsStrictJsonSchema("qwen/qwen3-32b")).toBe(true);
     expect(groqSupportsStrictJsonSchema("qwen-qwq-32b")).toBe(true);
@@ -23,6 +22,9 @@ describe("groq-capabilities", () => {
     expect(groqSupportsStrictJsonSchema("gemma2-9b-it")).toBe(false);
     // Older Llama 3.1 8B instant variant
     expect(groqSupportsStrictJsonSchema("llama-3.1-8b-instant")).toBe(false);
+    // Llama 3.3 — verified 2026-05 via live smoke-test: Groq rejects
+    // `response_format: json_schema` for `llama-3.3-70b-versatile`.
+    expect(groqSupportsStrictJsonSchema("llama-3.3-70b-versatile")).toBe(false);
   });
 
   it("returns false for unknown ids (conservative default)", () => {

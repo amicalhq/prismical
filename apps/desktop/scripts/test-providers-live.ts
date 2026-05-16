@@ -36,7 +36,9 @@ import {
   type ProviderType,
 } from "../src/constants/provider-types";
 import { providerFactories } from "../src/services/ai/provider-config";
+import { groqSupportsStrictJsonSchema } from "../src/services/ai/groq-capabilities";
 import type { InstanceConfig } from "../src/db/schema";
+import type { SharedV3ProviderOptions } from "@ai-sdk/provider";
 
 interface MatrixEntry {
   provider: ProviderType;
@@ -76,7 +78,9 @@ const MATRIX: MatrixEntry[] = [
   {
     provider: PROVIDER_TYPES.ollama,
     envVar: "DEV_OLLAMA_HOST",
-    models: ["llama3.2"],
+    // Whatever you've got pulled locally — `ollama list` to check.
+    // llama3.1:8b is a reasonable smoke-test default.
+    models: ["llama3.1:8b"],
     configFromEnv: (host) => ({ url: host }),
   },
 ];
@@ -118,12 +122,34 @@ async function runPlain(model: LanguageModelV3): Promise<Result["plain"]> {
   }
 }
 
+/**
+ * Mirror what the skill-runner's buildProviderOptions does for each
+ * provider/model pair. The smoke test doesn't go through skill-runner, so
+ * we compose providerOptions here. The interesting case today is Groq:
+ * @ai-sdk/groq defaults `structuredOutputs: true` and 400s on models that
+ * only support `json_object` (gemma2, llama-3.x, etc.).
+ */
+function providerOptionsFor(
+  provider: ProviderType,
+  modelId: string,
+): SharedV3ProviderOptions | undefined {
+  if (
+    provider === PROVIDER_TYPES.groq &&
+    !groqSupportsStrictJsonSchema(modelId)
+  ) {
+    return { groq: { structuredOutputs: false } };
+  }
+  return undefined;
+}
+
 async function runStructured(
   model: LanguageModelV3,
+  provider: ProviderType,
+  modelId: string,
 ): Promise<Result["structured"]> {
   // Wrap with extractJsonMiddleware — matches the skill-runner's production
-  // path. Without this, a Groq model returning fenced JSON would fail here
-  // even though it succeeds in production.
+  // path. Without this, a Groq model running in json_object mode returns
+  // fenced JSON that Output.object can't parse.
   const wrapped = wrapLanguageModel({
     model,
     middleware: extractJsonMiddleware(),
@@ -134,6 +160,7 @@ async function runStructured(
       model: wrapped,
       prompt: 'Return JSON with a single field `word` containing "hello".',
       output: Output.object({ schema: z.object({ word: z.string() }) }),
+      providerOptions: providerOptionsFor(provider, modelId),
     });
     const ms = Date.now() - start;
     const ok = typeof result.output.word === "string";
@@ -164,7 +191,7 @@ async function main() {
     for (const modelId of entry.models) {
       const model = buildModel(entry, cred, modelId);
       const plain = await runPlain(model);
-      const structured = await runStructured(model);
+      const structured = await runStructured(model, entry.provider, modelId);
       results.push({ provider: entry.provider, model: modelId, plain, structured });
       const label = `${entry.provider}/${modelId}`;
       const plainStatus = plain.ok ? "✅" : "❌";

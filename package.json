@@ -14,7 +14,7 @@
     "test": "turbo run test",
     "test:watch": "turbo run test:watch",
     "test:ui": "turbo run test:ui",
-    "test:providers:live": "infisical run --env=dev -- tsx apps/desktop/scripts/test-providers-live.ts"
+    "test:providers:live": "infisical run --projectId=a3064b60-ac15-446c-8733-159c4bc56884 --env=dev -- tsx --tsconfig apps/desktop/tsconfig.json apps/desktop/scripts/test-providers-live.ts"
   },
   "devDependencies": {
     "prettier": "^3.5.3",

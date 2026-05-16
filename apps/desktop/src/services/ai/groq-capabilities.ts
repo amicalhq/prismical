@@ -20,7 +20,11 @@
 const GROQ_STRICT_SCHEMA_PREFIXES: readonly string[] = [
   "moonshotai/kimi-k2",
   "meta-llama/llama-4",
-  "llama-3.3-",
+  // Note: `llama-3.3-70b-versatile` does NOT support json_schema — verified
+  // 2026-05 by the live smoke-test (Groq returns "This model does not
+  // support response format `json_schema`"). The Llama-3.x family stays
+  // off this list; structured outputs flow through json_object +
+  // extractJsonMiddleware instead.
   "qwen-qwq",
   "qwen/qwen3-",
   "openai/gpt-oss",
