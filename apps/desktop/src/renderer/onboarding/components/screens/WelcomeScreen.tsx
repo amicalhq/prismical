@@ -18,7 +18,7 @@ export function WelcomeScreen({ onNext }: WelcomeScreenProps) {
             className="absolute inset-0 -z-10 rounded-full bg-primary/15 blur-2xl"
           />
           <img
-            src="/assets/app-icon.png"
+            src="assets/icon.svg"
             alt={t("settings.sidebar.logoAlt")}
             className="h-28 w-28 drop-shadow-sm"
           />

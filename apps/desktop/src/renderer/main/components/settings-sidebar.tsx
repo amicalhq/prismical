@@ -192,7 +192,7 @@ export function SettingsSidebar({
               >
                 <div className="inline-flex items-center gap-2.5 font-semibold w-full">
                   <img
-                    src="/assets/app-icon.png"
+                    src="assets/icon.svg"
                     alt={t("settings.sidebar.logoAlt")}
                     className="!size-7"
                   />

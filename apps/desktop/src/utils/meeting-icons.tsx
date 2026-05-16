@@ -57,17 +57,17 @@ export function getMeetingIcon(
 
   switch (platform) {
     case "zoom":
-      return <img src="/assets/zoom.svg" alt="Zoom" className={className} />;
+      return <img src="assets/zoom.svg" alt="Zoom" className={className} />;
 
     case "google-meet":
       return (
-        <img src="/assets/meet.svg" alt="Google Meet" className={className} />
+        <img src="assets/meet.svg" alt="Google Meet" className={className} />
       );
 
     case "discord":
       return (
         <img
-          src="/assets/discord-icon.svg"
+          src="assets/discord-icon.svg"
           alt="Discord"
           className={className}
         />

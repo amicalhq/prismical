@@ -23,7 +23,7 @@ export const TakeNotesButton = forwardRef<
     >
       <span
         className="block size-[22px] flex-none rounded-md bg-cover bg-center"
-        style={{ backgroundImage: "url('/assets/app-icon.png')" }}
+        style={{ backgroundImage: "url('assets/icon.svg')" }}
       />
       <span>Take Notes</span>
     </button>
