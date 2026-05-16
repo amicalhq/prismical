@@ -54,19 +54,27 @@ const MATRIX: MatrixEntry[] = [
   {
     provider: PROVIDER_TYPES.openai,
     envVar: "DEV_OPENAI_API_KEY",
-    models: ["gpt-4o-mini"],
+    // gpt-4o-mini = chat-completions sanity check;
+    // gpt-5.4-mini = reasoning model (Responses API path, classifier
+    // strips temperature/top_p natively via the @ai-sdk/openai package).
+    models: ["gpt-4o-mini", "gpt-5.4-mini"],
     configFromEnv: (apiKey) => ({ apiKey }),
   },
   {
     provider: PROVIDER_TYPES.anthropic,
     envVar: "DEV_ANTHROPIC_API_KEY",
-    models: ["claude-haiku-4-5"],
+    // haiku-4-5 = cheap baseline; sonnet-4-6 exercises native
+    // structured outputs (outputFormat) on the 4.5+ family.
+    models: ["claude-haiku-4-5", "claude-sonnet-4-6"],
     configFromEnv: (apiKey) => ({ apiKey }),
   },
   {
     provider: PROVIDER_TYPES.groq,
     envVar: "DEV_GROQ_API_KEY",
-    models: ["llama-3.3-70b-versatile"],
+    // llama-3.3 = non-strict path (json_object + extractJsonMiddleware);
+    // openai/gpt-oss-120b = strict path (allow-listed; structuredOutputs
+    // stays on, native json_schema enforcement).
+    models: ["llama-3.3-70b-versatile", "openai/gpt-oss-120b"],
     configFromEnv: (apiKey) => ({ apiKey }),
   },
   {
