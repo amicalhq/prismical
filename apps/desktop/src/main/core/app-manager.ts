@@ -149,7 +149,7 @@ export class AppManager {
     // bootstrapped skill slugs (e.g. the catch-up artifact's "enhance").
     await bootstrapInstances();
     await bootstrapSkills();
-    if (process.env.NODE_ENV !== "production") {
+    if (!app.isPackaged) {
       await seedDevFixtures();
     }
     logger.db.info(

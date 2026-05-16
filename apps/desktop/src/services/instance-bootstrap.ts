@@ -29,7 +29,7 @@ import type {
  * Idempotent — safe to run on every launch.
  */
 export async function bootstrapInstances(): Promise<void> {
-  const includeMock = process.env.NODE_ENV !== "production";
+  const includeMock = !app.isPackaged;
   await seedSystemInstances({ includeMock });
   await reconcileLocalWhisperDownloads();
 }

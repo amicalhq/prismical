@@ -1,5 +1,7 @@
-// Dev-only seed fixtures. Runs at app start when NODE_ENV !== "production"
-// (gated at the call site in app-manager.ts). Idempotent at the row level:
+// Dev-only seed fixtures. Runs at app start when !app.isPackaged (gated at
+// the call site in app-manager.ts — bare isPackaged, not NODE_ENV, so a
+// packaged binary can never seed Emma into a real user's DB even if
+// NODE_ENV is set in the launching shell). Idempotent at the row level:
 // re-launching never duplicates content; once a dev edits anything, the seed
 // stops adding new fixtures to that table. The full demo only materialises
 // on a truly empty database — `rm prismical.db && pnpm dev`.
