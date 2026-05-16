@@ -80,10 +80,18 @@ const MATRIX: MatrixEntry[] = [
   {
     provider: PROVIDER_TYPES.openRouter,
     envVar: "DEV_OPENROUTER_API_KEY",
-    // gpt-4o-mini = closed-weight baseline routed via OR;
-    // deepseek/deepseek-chat-v3.1 = top-3 most-popular OSS model on
-    // OpenRouter, native json_schema support, distinct upstream vendor.
-    models: ["openai/gpt-4o-mini", "deepseek/deepseek-chat-v3.1"],
+    // openai/gpt-4o-mini      = closed-weight baseline routed via OR
+    // deepseek-chat-v3.1      = popular OSS chat, distinct upstream vendor
+    // deepseek-v4-flash       = newer cheap reasoning-class DeepSeek
+    // google/gemini-3-flash-preview = Gemini 3 Flash via OR (our own
+    //   t-17 Gemini integration is out of this revamp's scope, so OR is
+    //   the only path to test Gemini-class models for now)
+    models: [
+      "openai/gpt-4o-mini",
+      "deepseek/deepseek-chat-v3.1",
+      "deepseek/deepseek-v4-flash",
+      "google/gemini-3-flash-preview",
+    ],
     configFromEnv: (apiKey) => ({ apiKey }),
   },
   {
