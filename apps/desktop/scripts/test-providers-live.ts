@@ -1,0 +1,243 @@
+#!/usr/bin/env tsx
+/*
+ * Live provider smoke test (t-13).
+ *
+ * Run: `pnpm test:providers:live` from repo root, which wraps the script
+ * with `infisical run --env=dev` to inject API keys. Without infisical the
+ * script still works — it reads `process.env.<PROVIDER>_API_KEY` and skips
+ * any provider whose key isn't present.
+ *
+ * Each (provider, model) pair in MATRIX runs twice: once plain (just say
+ * "OK") and once with a strict structured-output schema. The script prints
+ * a markdown table summary suitable for pasting into a PR comment.
+ *
+ * IMPORTANT: providers are constructed via `providerFactories` from
+ * `src/services/ai/provider-config.ts` — the same closures the production
+ * registry uses. So this exercises real wrappers (extractJsonMiddleware,
+ * User-Agent, OpenRouter usage middleware + app attribution,
+ * compatCapabilityTransform), not bare vendor SDKs. A green run actually
+ * means the production wiring works against live providers.
+ *
+ * Not part of CI. On-demand only — running against real providers in PR
+ * runs would burn money and surface flaky-provider noise that isn't ours.
+ */
+
+import {
+  generateText,
+  Output,
+  extractJsonMiddleware,
+  wrapLanguageModel,
+} from "ai";
+import type { LanguageModelV3 } from "@ai-sdk/provider";
+import { z } from "zod";
+
+import {
+  PROVIDER_TYPES,
+  type ProviderType,
+} from "../src/constants/provider-types";
+import { providerFactories } from "../src/services/ai/provider-config";
+import { groqSupportsStrictJsonSchema } from "../src/services/ai/groq-capabilities";
+import type { InstanceConfig } from "../src/db/schema";
+import type { SharedV3ProviderOptions } from "@ai-sdk/provider";
+
+interface MatrixEntry {
+  provider: ProviderType;
+  envVar: string;
+  models: string[];
+  configFromEnv: (envValue: string) => InstanceConfig;
+}
+
+// Env var names are `DEV_`-prefixed so the secrets in Infisical's dev
+// environment are unambiguous — these are credentials kept around for
+// dev-time live-smoke-testing, not anything the app reads at runtime.
+const MATRIX: MatrixEntry[] = [
+  {
+    provider: PROVIDER_TYPES.openai,
+    envVar: "DEV_OPENAI_API_KEY",
+    // gpt-4o-mini = chat-completions sanity check;
+    // gpt-5.4-mini = reasoning model (Responses API path, classifier
+    // strips temperature/top_p natively via the @ai-sdk/openai package).
+    models: ["gpt-4o-mini", "gpt-5.4-mini"],
+    configFromEnv: (apiKey) => ({ apiKey }),
+  },
+  {
+    provider: PROVIDER_TYPES.anthropic,
+    envVar: "DEV_ANTHROPIC_API_KEY",
+    // haiku-4-5 = cheap baseline; sonnet-4-6 exercises native
+    // structured outputs (outputFormat) on the 4.5+ family.
+    models: ["claude-haiku-4-5", "claude-sonnet-4-6"],
+    configFromEnv: (apiKey) => ({ apiKey }),
+  },
+  {
+    provider: PROVIDER_TYPES.groq,
+    envVar: "DEV_GROQ_API_KEY",
+    // llama-3.3 = non-strict path (json_object + extractJsonMiddleware);
+    // openai/gpt-oss-120b = strict path (allow-listed; structuredOutputs
+    // stays on, native json_schema enforcement).
+    models: ["llama-3.3-70b-versatile", "openai/gpt-oss-120b"],
+    configFromEnv: (apiKey) => ({ apiKey }),
+  },
+  {
+    provider: PROVIDER_TYPES.openRouter,
+    envVar: "DEV_OPENROUTER_API_KEY",
+    // openai/gpt-4o-mini      = closed-weight baseline routed via OR
+    // deepseek-chat-v3.1      = popular OSS chat, distinct upstream vendor
+    // deepseek-v4-flash       = newer cheap reasoning-class DeepSeek
+    // google/gemini-3-flash-preview = Gemini 3 Flash via OR (our own
+    //   t-17 Gemini integration is out of this revamp's scope, so OR is
+    //   the only path to test Gemini-class models for now)
+    models: [
+      "openai/gpt-4o-mini",
+      "deepseek/deepseek-chat-v3.1",
+      "deepseek/deepseek-v4-flash",
+      "google/gemini-3-flash-preview",
+    ],
+    configFromEnv: (apiKey) => ({ apiKey }),
+  },
+  {
+    provider: PROVIDER_TYPES.ollama,
+    envVar: "DEV_OLLAMA_HOST",
+    // Whatever you've got pulled locally — `ollama list` to check.
+    // llama3.1:8b is a reasonable smoke-test default.
+    models: ["llama3.1:8b"],
+    configFromEnv: (host) => ({ url: host }),
+  },
+];
+
+interface Result {
+  provider: string;
+  model: string;
+  plain: { ok: boolean; ms: number; error?: string };
+  structured: { ok: boolean; ms: number; error?: string };
+}
+
+function buildModel(entry: MatrixEntry, envValue: string, modelId: string) {
+  const factory = providerFactories[entry.provider];
+  if (!factory) {
+    throw new Error(
+      `providerFactories has no entry for ${entry.provider}; matrix is out of sync`,
+    );
+  }
+  const provider = factory(entry.configFromEnv(envValue));
+  return provider.languageModel(modelId);
+}
+
+async function runPlain(model: LanguageModelV3): Promise<Result["plain"]> {
+  const start = Date.now();
+  try {
+    const result = await generateText({
+      model,
+      prompt: 'Reply with the single word "OK" and nothing else.',
+    });
+    const ms = Date.now() - start;
+    const ok = result.text.trim().toUpperCase().startsWith("OK");
+    return { ok, ms, error: ok ? undefined : `text=${result.text.slice(0, 60)}` };
+  } catch (e) {
+    return {
+      ok: false,
+      ms: Date.now() - start,
+      error: e instanceof Error ? e.message : String(e),
+    };
+  }
+}
+
+/**
+ * Mirror what the skill-runner's buildProviderOptions does for each
+ * provider/model pair. The smoke test doesn't go through skill-runner, so
+ * we compose providerOptions here. The interesting case today is Groq:
+ * @ai-sdk/groq defaults `structuredOutputs: true` and 400s on models that
+ * only support `json_object` (gemma2, llama-3.x, etc.).
+ */
+function providerOptionsFor(
+  provider: ProviderType,
+  modelId: string,
+): SharedV3ProviderOptions | undefined {
+  if (
+    provider === PROVIDER_TYPES.groq &&
+    !groqSupportsStrictJsonSchema(modelId)
+  ) {
+    return { groq: { structuredOutputs: false } };
+  }
+  return undefined;
+}
+
+async function runStructured(
+  model: LanguageModelV3,
+  provider: ProviderType,
+  modelId: string,
+): Promise<Result["structured"]> {
+  // Wrap with extractJsonMiddleware — matches the skill-runner's production
+  // path. Without this, a Groq model running in json_object mode returns
+  // fenced JSON that Output.object can't parse.
+  const wrapped = wrapLanguageModel({
+    model,
+    middleware: extractJsonMiddleware(),
+  });
+  const start = Date.now();
+  try {
+    const result = await generateText({
+      model: wrapped,
+      prompt: 'Return JSON with a single field `word` containing "hello".',
+      output: Output.object({ schema: z.object({ word: z.string() }) }),
+      providerOptions: providerOptionsFor(provider, modelId),
+    });
+    const ms = Date.now() - start;
+    const ok = typeof result.output.word === "string";
+    return {
+      ok,
+      ms,
+      error: ok ? undefined : `output=${JSON.stringify(result.output)}`,
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      ms: Date.now() - start,
+      error: e instanceof Error ? e.message : String(e),
+    };
+  }
+}
+
+async function main() {
+  const results: Result[] = [];
+  for (const entry of MATRIX) {
+    const cred = process.env[entry.envVar];
+    if (!cred) {
+      console.warn(
+        `⚠️  Skipping ${entry.provider}: ${entry.envVar} not set in env`,
+      );
+      continue;
+    }
+    for (const modelId of entry.models) {
+      const model = buildModel(entry, cred, modelId);
+      const plain = await runPlain(model);
+      const structured = await runStructured(model, entry.provider, modelId);
+      results.push({ provider: entry.provider, model: modelId, plain, structured });
+      const label = `${entry.provider}/${modelId}`;
+      const plainStatus = plain.ok ? "✅" : "❌";
+      const structuredStatus = structured.ok ? "✅" : "❌";
+      console.log(
+        `${plainStatus} ${label} · plain ${plain.ms}ms · ${structuredStatus} structured ${structured.ms}ms${plain.ok ? "" : ` · ${plain.error}`}${structured.ok ? "" : ` · ${structured.error}`}`,
+      );
+    }
+  }
+
+  // Markdown summary for PR pasting.
+  console.log("\n## Live provider matrix\n");
+  console.log("| Provider | Model | Plain | Structured |");
+  console.log("| --- | --- | --- | --- |");
+  for (const r of results) {
+    const p = r.plain.ok ? `✅ ${r.plain.ms}ms` : `❌ ${r.plain.error}`;
+    const s = r.structured.ok
+      ? `✅ ${r.structured.ms}ms`
+      : `❌ ${r.structured.error}`;
+    console.log(`| ${r.provider} | \`${r.model}\` | ${p} | ${s} |`);
+  }
+
+  const anyFail = results.some((r) => !r.plain.ok || !r.structured.ok);
+  process.exit(anyFail ? 1 : 0);
+}
+
+main().catch((e) => {
+  console.error(e);
+  process.exit(2);
+});

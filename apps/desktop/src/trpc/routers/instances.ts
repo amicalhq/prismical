@@ -45,6 +45,8 @@ const OllamaConfigSchema = z.object({
 const OpenAICompatibleConfigSchema = z.object({
   apiKey: z.string().min(1, "API key is required"),
   baseURL: z.string().url("Must be a valid URL"),
+  // (t-19) Optional user-set flag — see OpenAICompatibleConfig comment.
+  supportsStrictJsonSchema: z.boolean().optional(),
 });
 const EmptyConfigSchema = z.object({}).strict();
 

@@ -197,6 +197,13 @@ export interface OllamaConfig {
 export interface OpenAICompatibleConfig {
   apiKey: string;
   baseURL: string;
+  // (t-19) Most generic openai-compatible endpoints only support
+  // `response_format: { type: "json_object" }`; vLLM, LM Studio 0.3+,
+  // Mistral, and Ollama support the stricter `json_schema` form. We
+  // can't pick a single default that's right for every upstream —
+  // user-controlled flag, default off. Exposed in the Advanced section
+  // of the instance-config dialog.
+  supportsStrictJsonSchema?: boolean;
 }
 
 export interface LocalWhisperConfig {
@@ -412,6 +419,23 @@ export const artifacts = sqliteTable(
     generator: text("generator").notNull(), // "ai" | "user" | "imported"
     modelId: text("model_id"),
     meta: text("meta", { mode: "json" }).$type<Record<string, unknown>>(),
+    // Token usage captured from the LLM response. Optional because (a) some
+    // providers don't populate usage, (b) non-AI generators ("user",
+    // "imported") have no usage to record.
+    inputTokens: integer("input_tokens"),
+    outputTokens: integer("output_tokens"),
+    totalTokens: integer("total_tokens"),
+    // Raw usage payload (LanguageModelUsage), serialised as JSON, for
+    // forward-compat: nested fields like `inputTokenDetails.cacheReadTokens`
+    // (Gemini implicit caching) ship without another migration.
+    rawUsageJson: text("raw_usage_json"),
+    // Per-call cost in US dollars (t-16). Only OpenRouter populates this
+    // today — comes from `result.providerMetadata.openrouter.usage.cost`
+    // when the provider is wrapped with `usage: { include: true }` (which
+    // it is by default — see provider-config.ts). Null for every other
+    // provider; no token×price calculations here because pricing tables
+    // drift faster than we can pin them.
+    costUsd: real("cost_usd"),
     generatedAt: integer("generated_at", { mode: "timestamp" }),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
@@ -436,6 +460,41 @@ export const artifacts = sqliteTable(
       table.noteId,
       table.generatedAt,
     ),
+  ],
+);
+
+// Per-call audit row for note generation. The skill audit lives in
+// `artifacts` (accept-only); note-gen has no accept/reject dance so each
+// successful run writes one row here directly. Lets operators see token
+// spend per generated note without wedging into the skills schema.
+//
+// Failed runs do NOT write a row — that's intentional. Capture failures
+// in the pipeline logger instead. If we later need failure counts for
+// reliability dashboards, add a separate metric or a `success` column.
+export const noteGenerationAudit = sqliteTable(
+  "note_generation_audit",
+  {
+    id: text("id").primaryKey(), // nanoid
+    noteId: integer("note_id").references(() => notes.id, {
+      onDelete: "set null",
+    }),
+    modelInstanceId: text("model_instance_id").notNull(),
+    modelId: text("model_id").notNull(),
+    providerType: text("provider_type").notNull(),
+    inputTokens: integer("input_tokens"),
+    outputTokens: integer("output_tokens"),
+    totalTokens: integer("total_tokens"),
+    rawUsageJson: text("raw_usage_json"),
+    // Per-call cost in US dollars (t-16). Mirrors `artifacts.cost_usd` —
+    // only OpenRouter populates it; null elsewhere.
+    costUsd: real("cost_usd"),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (table) => [
+    index("note_generation_audit_note_id_idx").on(table.noteId),
+    index("note_generation_audit_created_at_idx").on(table.createdAt),
   ],
 );
 

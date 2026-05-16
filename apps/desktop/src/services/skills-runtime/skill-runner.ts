@@ -1,31 +1,34 @@
-import { generateText, Output } from "ai";
-import { z } from "zod";
+import {
+  extractJsonMiddleware,
+  wrapLanguageModel,
+  NoObjectGeneratedError,
+} from "ai";
+import type { SharedV3ProviderOptions } from "@ai-sdk/provider";
+
+import { PROVIDER_TYPES } from "@/constants/provider-types";
+import { groqSupportsStrictJsonSchema } from "@/services/ai/groq-capabilities";
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
 
 import { logger } from "@/main/logger";
 import { db as defaultDb } from "@/db";
 import { getInstanceById } from "@/db/instances";
+import { getRegistry, registryKey } from "@/services/ai/registry";
 import type { SkillRunContext, SkillRunResult } from "./skill-context";
 import { buildSystemPrompt } from "./build-system-prompt";
 import { collectInput } from "./collect-input";
-import { resolveSkillModel } from "./resolve-model";
 import {
   markdownToChildren,
   markdownToInlineChildren,
 } from "./markdown-to-children";
-import { SkillRunError, SkillCancelledError } from "./errors";
+import {
+  SkillRunError,
+  SkillCancelledError,
+  SkillOutputInvalidError,
+} from "./errors";
+import { runSkillAgent, type SkillAgentOutput } from "./skill-agent";
 
-// The model returns one JSON object per run. We deliberately don't expose
-// tools in v1 — the runner injects everything the skill needs (note,
-// transcript, selection, refine context) into the system prompt, and the
-// model just transforms. Tool-loop / MCP support can opt-in via
-// `skill.allowedTools` later without changing this default path.
-const OUTPUT_SCHEMA = z.object({
-  markdown: z.string().min(1, "must produce non-empty markdown"),
-  // Optional model-supplied notes. Stored in the audit meta for eval/debug;
-  // never shown to the user.
-  reasoning: z.string().optional(),
-});
+// OUTPUT_SCHEMA lives in skill-agent.ts so the single-shot and tool-loop
+// agent paths share the same contract. The runner just consumes the shape.
 
 export async function runSkill(
   ctx: SkillRunContext,
@@ -41,26 +44,102 @@ export async function runSkill(
     );
   }
 
-  const model = resolveSkillModel(instance, ctx.modelId);
+  // The registry's `languageModel(...)` throws `NoSuchModelError` /
+  // `NoSuchProviderError` (raw `AI_NoSuchModelError`) when the row's
+  // provider has no factory entry — e.g. an anthropic instance before
+  // t-03 installs `@ai-sdk/anthropic`, or a row whose provider was
+  // removed between the `getInstanceById` lookup above and this call.
+  // Translate to `SkillRunError` so the tRPC layer surfaces a friendly
+  // "Couldn't run X — <reason>" toast instead of the raw SDK message.
+  const registry = await getRegistry();
+  let baseModel;
+  try {
+    baseModel = registry.languageModel(
+      registryKey(instance.id, ctx.modelId),
+    );
+  } catch (err) {
+    throw new SkillRunError(
+      `Skills aren't wired for this instance yet (${instance.provider}). ${err instanceof Error ? err.message : String(err)}`,
+      err,
+    );
+  }
+
+  // Local + weaker models (Ollama, lower-tier Groq, generic
+  // openai-compatible endpoints) often wrap structured-output JSON in
+  // ```json ... ``` fences, which `Output.object` then parses as text and
+  // rejects with `NoObjectGeneratedError`. The SDK ships
+  // `extractJsonMiddleware` for exactly this case. We apply it per-call at
+  // the skill-runner site only — NOT registry-global — because note-gen
+  // returns freeform markdown via plain `generateText` and the middleware's
+  // fence-stripping regex would mangle ` ```markdown ... ``` ` blocks.
+  const model = wrapLanguageModel({
+    model: baseModel,
+    middleware: extractJsonMiddleware(),
+  });
   const input = await collectInput(db, ctx);
   const systemPrompt = buildSystemPrompt(ctx, input);
 
-  let object: z.infer<typeof OUTPUT_SCHEMA>;
+  // Per-vendor provider options. The runner pins keys the resolved
+  // provider understands — non-matching keys are no-ops, so it's safe to
+  // include them all unconditionally. Each provider's @ai-sdk package
+  // validates per-model: e.g. OpenAI rejects `reasoningEffort: 'xhigh'`
+  // unless the model is gpt-5.1-Codex-Max.
+  const providerOptions = buildProviderOptions(ctx, instance.provider);
+
+  let object: SkillAgentOutput;
+  let usage: SkillRunResult["usage"];
+  let costUsd: number | null = null;
   try {
-    const result = await generateText({
+    const result = await runSkillAgent({
       model,
-      system: systemPrompt,
-      prompt: "Run the skill as instructed in the system prompt.",
-      output: Output.object({ schema: OUTPUT_SCHEMA }),
-      abortSignal: ctx.signal,
+      systemPrompt,
+      providerOptions,
+      signal: ctx.signal,
+      skill: ctx.skill,
     });
     object = result.output;
+    usage = {
+      inputTokens: result.usage?.inputTokens,
+      outputTokens: result.usage?.outputTokens,
+      totalTokens: result.usage?.totalTokens,
+      raw: result.usage ? JSON.stringify(result.usage) : undefined,
+    };
+    costUsd = extractOpenRouterCost(result.providerMetadata);
   } catch (err) {
     if (ctx.signal.aborted) throw new SkillCancelledError();
+
+    // The SDK throws `NoObjectGeneratedError` when the model produced text
+    // that couldn't be coerced into the output schema (malformed JSON,
+    // wrong shape, fence the middleware missed). The default toast loses
+    // the diagnostic payload — surface `text` / `usage` / `response.id`
+    // for telemetry, then throw a typed error the tRPC layer can render.
+    if (NoObjectGeneratedError.isInstance(err)) {
+      logger.pipeline.error("Skill model produced invalid structured output", {
+        skill: ctx.skill.slug,
+        modelId: ctx.modelId,
+        modelInstanceId: instance.id,
+        responseId: err.response?.id,
+        text: err.text?.slice(0, 1024),
+        usage: err.usage,
+      });
+      throw new SkillOutputInvalidError({
+        text: err.text,
+        responseId: err.response?.id,
+        cause: err,
+      });
+    }
+
     throw new SkillRunError(
       err instanceof Error ? err.message : String(err),
       err,
     );
+  }
+
+  // Post-parse non-empty validation — the schema can't express this
+  // (see OUTPUT_SCHEMA comment). Empty markdown means the model
+  // generated valid JSON but returned no usable content.
+  if (!object.markdown.trim()) {
+    throw new SkillRunError("Model returned empty markdown");
   }
 
   // Inline-rewrite wraps the output in an ArtifactInlineNode, which can only
@@ -111,5 +190,94 @@ export async function runSkill(
     refineInstruction: ctx.refineInstruction ?? null,
     selectionText: ctx.selectionText ?? null,
     reasoning: object.reasoning ?? null,
+    usage,
+    costUsd,
   };
+}
+
+/**
+ * Pull `cost` (US dollars) out of OpenRouter's providerMetadata. Returns
+ * null when the resolved provider isn't OpenRouter, when usage
+ * accounting isn't enabled, or when OpenRouter didn't populate the field
+ * (BYOK passthrough, free models, etc.).
+ */
+function extractOpenRouterCost(
+  metadata: Record<string, Record<string, unknown>> | undefined,
+): number | null {
+  const usage = metadata?.openrouter?.usage as
+    | { cost?: unknown }
+    | undefined;
+  return typeof usage?.cost === "number" ? usage.cost : null;
+}
+
+/**
+ * Compose `providerOptions` for `generateText` from the skill context.
+ * Each vendor block is omitted if the caller didn't set its key, which
+ * keeps the on-the-wire payload minimal and avoids forwarding undefined
+ * settings to providers that would treat them as explicit `undefined`.
+ */
+function buildProviderOptions(
+  ctx: SkillRunContext,
+  providerType: string,
+): SharedV3ProviderOptions | undefined {
+  const out: SharedV3ProviderOptions = {};
+
+  if (ctx.openaiReasoningEffort !== undefined) {
+    out.openai = { reasoningEffort: ctx.openaiReasoningEffort };
+  }
+
+  const anthropic: Record<string, unknown> = {};
+  if (ctx.anthropicEffort !== undefined) {
+    anthropic.effort = ctx.anthropicEffort;
+  }
+  if (ctx.anthropicThinking !== undefined) {
+    anthropic.thinking = ctx.anthropicThinking;
+  }
+  if (ctx.anthropicStructuredOutputMode !== undefined) {
+    anthropic.structuredOutputMode = ctx.anthropicStructuredOutputMode;
+  }
+  if (Object.keys(anthropic).length > 0) {
+    // Cast through unknown to bridge our typed-context union → JSONObject.
+    out.anthropic = anthropic as SharedV3ProviderOptions[string];
+  }
+
+  const groq: Record<string, unknown> = {};
+  if (ctx.groqReasoningFormat !== undefined) {
+    groq.reasoningFormat = ctx.groqReasoningFormat;
+  }
+  if (ctx.groqReasoningEffort !== undefined) {
+    groq.reasoningEffort = ctx.groqReasoningEffort;
+  }
+  if (ctx.groqServiceTier !== undefined) {
+    groq.serviceTier = ctx.groqServiceTier;
+  }
+  // Groq carve-out (t-15): @ai-sdk/groq defaults to structuredOutputs:
+  // true, which 400s on older models (gemma2-9b-it, smaller Llamas) that
+  // only support json_object. Opt out for models outside the strict
+  // allow-list — extractJsonMiddleware (t-05) parses the loose JSON.
+  if (
+    providerType === PROVIDER_TYPES.groq &&
+    !groqSupportsStrictJsonSchema(ctx.modelId)
+  ) {
+    groq.structuredOutputs = false;
+  }
+  if (Object.keys(groq).length > 0) {
+    out.groq = groq as SharedV3ProviderOptions[string];
+  }
+
+  // Ollama is served via @ai-sdk/openai-compatible at /v1 (t-09). The
+  // adapter forwards `providerOptions.openaiCompatible.reasoningEffort`
+  // (camelCase; kebab-cased `'openai-compatible'` is deprecated) through
+  // to Ollama's `reasoning_effort` field. The option is provider-typed
+  // for forwarders but harmless if the model ignores it.
+  if (
+    providerType === PROVIDER_TYPES.ollama &&
+    ctx.ollamaReasoningEffort !== undefined
+  ) {
+    out.openaiCompatible = {
+      reasoningEffort: ctx.ollamaReasoningEffort,
+    };
+  }
+
+  return Object.keys(out).length === 0 ? undefined : out;
 }

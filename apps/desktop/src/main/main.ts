@@ -9,6 +9,12 @@ import { AppManager } from "./core/app-manager";
 import { getAppIconPath } from "./core/icon";
 import { isWindows } from "../utils/platform";
 import { ServiceManager } from "./managers/service-manager";
+import { registerSdkWarningHandler } from "../services/ai/sdk-warning-handler";
+
+// Forward AI SDK provider warnings (e.g. "AI SDK Warning: temperature is
+// not supported by this model") to the structured pipeline logger. Must
+// run before any AI SDK call.
+registerSdkWarningHandler();
 
 // Setup renderer logging relay (allows renderer to send logs to main process)
 ipcMain.handle(

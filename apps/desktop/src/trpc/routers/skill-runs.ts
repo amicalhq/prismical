@@ -86,9 +86,31 @@ export const skillRunsRouter = createRouter({
         refineInstruction: z.string().nullable(),
         selectionText: z.string().nullable(),
         reasoning: z.string().nullable(),
+        // Token usage captured at run time (t-07). Optional — old clients
+        // and non-LLM generators won't send it. Cost-on-rejected-runs is a
+        // known limitation: only fires on accept.
+        usage: z
+          .object({
+            inputTokens: z.number().int().nonnegative().optional(),
+            outputTokens: z.number().int().nonnegative().optional(),
+            totalTokens: z.number().int().nonnegative().optional(),
+            raw: z.string().optional(),
+          })
+          .optional(),
+        // Per-call cost in US dollars (t-16). Populated only for
+        // OpenRouter runs. Null elsewhere.
+        costUsd: z.number().nullable().optional(),
       }),
     )
     .mutation(async ({ input }) => {
+      // We intentionally let a failed appendArtifact insert propagate (the
+      // tRPC caller will surface "couldn't accept" to the user). Unlike
+      // note-gen's audit row — which is observability-only — this row is
+      // load-bearing: `append-section` mode uses `MAX(version) + 1` and the
+      // partial unique index `artifacts_note_id_skill_id_version_append_unique`
+      // depends on the insert succeeding to keep monotonic versioning
+      // honest. Silently swallowing would risk duplicate-version races on
+      // the next append-section accept.
       const row = await appendArtifact(db, {
         noteId: input.noteId,
         skillId: input.skillSlug,
@@ -103,6 +125,8 @@ export const skillRunsRouter = createRouter({
           selectionText: input.selectionText,
           reasoning: input.reasoning,
         },
+        usage: input.usage,
+        costUsd: input.costUsd ?? null,
       });
       return {
         artifactId: row.id,
