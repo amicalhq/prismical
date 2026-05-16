@@ -80,7 +80,10 @@ const MATRIX: MatrixEntry[] = [
   {
     provider: PROVIDER_TYPES.openRouter,
     envVar: "DEV_OPENROUTER_API_KEY",
-    models: ["openai/gpt-4o-mini"],
+    // gpt-4o-mini = closed-weight baseline routed via OR;
+    // deepseek/deepseek-chat-v3.1 = top-3 most-popular OSS model on
+    // OpenRouter, native json_schema support, distinct upstream vendor.
+    models: ["openai/gpt-4o-mini", "deepseek/deepseek-chat-v3.1"],
     configFromEnv: (apiKey) => ({ apiKey }),
   },
   {
