@@ -58,8 +58,18 @@ export interface ElectronAPI {
 
   recordingWidget: {
     setInteractive: (interactive: boolean) => Promise<void>;
-    dragMove: (screenY: number, pointerOffsetY: number) => Promise<void>;
-    dragEnd: (screenY: number, pointerOffsetY: number) => Promise<void>;
+    dragMove: (
+      screenX: number,
+      screenY: number,
+      pointerOffsetX: number,
+      pointerOffsetY: number,
+    ) => Promise<void>;
+    dragEnd: (
+      screenX: number,
+      screenY: number,
+      pointerOffsetX: number,
+      pointerOffsetY: number,
+    ) => Promise<void>;
     openNote: (options?: {
       noteId?: number | null;
       openTranscription?: boolean;

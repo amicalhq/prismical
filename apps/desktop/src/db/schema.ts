@@ -255,7 +255,8 @@ export interface AppSettingsData {
   };
   meetingWidget?: {
     visibility?: "never" | "while-recording" | "always";
-    normalizedY?: number;
+    edge?: "right" | "bottom";
+    normalizedPosition?: number;
   };
   shortcuts?: {
     pushToTalk?: number[];

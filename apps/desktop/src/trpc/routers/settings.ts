@@ -67,7 +67,8 @@ const RecordingSettingsSchema = z.object({
 
 const MeetingWidgetSettingsSchema = z.object({
   visibility: z.enum(["never", "while-recording", "always"]).optional(),
-  normalizedY: z.number().min(0).max(1).optional(),
+  edge: z.enum(["right", "bottom"]).optional(),
+  normalizedPosition: z.number().min(0).max(1).optional(),
 });
 
 export const settingsRouter = createRouter({

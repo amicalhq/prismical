@@ -13,7 +13,7 @@ class FakeMeetingManager extends EventEmitter {
 
 class FakeSettingsService extends EventEmitter {
   async getMeetingWidgetSettings(): Promise<MeetingWidgetSettings> {
-    return { visibility: "always", normalizedY: 0.5 };
+    return { visibility: "always", edge: "right", normalizedPosition: 0.5 };
   }
 }
 
@@ -26,7 +26,8 @@ function createManager() {
     hideMeetingWidgetWindow: vi.fn(),
     getMainWindow: vi.fn(() => null),
     getMeetingWidgetWindow: vi.fn(() => null),
-    updateMeetingWidgetWindowPosition: vi.fn(),
+    updateMeetingWidgetWindowPositionFree: vi.fn(() => null),
+    snapMeetingWidgetToEdge: vi.fn(() => null),
   };
   const manager = new MeetingRecordingWidgetManager({
     settingsService: settingsService as any,
@@ -93,7 +94,8 @@ describe("MeetingRecordingWidgetManager visibility with detection", () => {
     const { manager, settingsService } = createManager();
     settingsService.getMeetingWidgetSettings = async () => ({
       visibility: "while-recording" as const,
-      normalizedY: 0.5,
+      edge: "right" as const,
+      normalizedPosition: 0.5,
     });
     await manager.start();
 

@@ -48,12 +48,14 @@ export class MeetingRecordingWidgetManager extends EventEmitter {
     meetingState: "idle",
     noteId: null,
     meetingDetection: null,
+    edge: "right",
   };
 
   private started = false;
   private settings: MeetingWidgetSettings = {
     visibility: "always",
-    normalizedY: 0.5,
+    edge: "right",
+    normalizedPosition: 0.5,
   };
   private hideTimer: NodeJS.Timeout | null = null;
   private ipcHandlersRegistered = false;
@@ -108,12 +110,14 @@ export class MeetingRecordingWidgetManager extends EventEmitter {
       meetingState: this.deps.meetingManager.getState().state,
       noteId: this.deps.meetingManager.getState().noteId,
       meetingDetection: null,
+      edge: this.settings.edge,
     });
   }
 
   getState(): MeetingWidgetState {
     return {
       ...this.state,
+      edge: this.settings.edge,
       meetingDetection: this.state.meetingDetection
         ? { ...this.state.meetingDetection }
         : null,
@@ -184,39 +188,54 @@ export class MeetingRecordingWidgetManager extends EventEmitter {
     );
   }
 
-  dragMove(screenY: number, pointerOffsetY: number): void {
+  dragMove(
+    screenX: number,
+    screenY: number,
+    pointerOffsetX: number,
+    pointerOffsetY: number,
+  ): void {
     if (!this.state.visible) {
       return;
     }
 
     this.clearHideTimer();
     this.setInteractive(true);
-    this.deps.windowManager.updateMeetingWidgetWindowPosition(
+    this.deps.windowManager.updateMeetingWidgetWindowPositionFree(
+      screenX,
       screenY,
+      pointerOffsetX,
       pointerOffsetY,
     );
   }
 
-  async dragEnd(screenY: number, pointerOffsetY: number): Promise<void> {
-    const normalizedY =
-      this.deps.windowManager.updateMeetingWidgetWindowPosition(
-        screenY,
-        pointerOffsetY,
-      );
+  async dragEnd(
+    screenX: number,
+    screenY: number,
+    _pointerOffsetX: number,
+    _pointerOffsetY: number,
+  ): Promise<void> {
+    const snapped = this.deps.windowManager.snapMeetingWidgetToEdge(
+      screenX,
+      screenY,
+    );
 
     this.setInteractive(false);
 
-    if (normalizedY === null) {
+    if (snapped === null) {
       return;
     }
 
     this.settings = {
       ...this.settings,
-      normalizedY,
+      edge: snapped.edge,
+      normalizedPosition: snapped.normalizedPosition,
     };
     await this.deps.settingsService.setMeetingWidgetSettings({
-      normalizedY,
+      edge: snapped.edge,
+      normalizedPosition: snapped.normalizedPosition,
     });
+    // Propagate the new edge into the renderer state so it can re-orient.
+    this.refreshState("drag-end-snap");
   }
 
   private attachListeners(): void {
@@ -259,15 +278,27 @@ export class MeetingRecordingWidgetManager extends EventEmitter {
     );
     ipcMain.handle(
       IPC_CHANNELS.dragMove,
-      (_event, screenY: number, pointerOffsetY: number) => {
-        this.dragMove(screenY, pointerOffsetY);
+      (
+        _event,
+        screenX: number,
+        screenY: number,
+        pointerOffsetX: number,
+        pointerOffsetY: number,
+      ) => {
+        this.dragMove(screenX, screenY, pointerOffsetX, pointerOffsetY);
         return true;
       },
     );
     ipcMain.handle(
       IPC_CHANNELS.dragEnd,
-      async (_event, screenY: number, pointerOffsetY: number) => {
-        await this.dragEnd(screenY, pointerOffsetY);
+      async (
+        _event,
+        screenX: number,
+        screenY: number,
+        pointerOffsetX: number,
+        pointerOffsetY: number,
+      ) => {
+        await this.dragEnd(screenX, screenY, pointerOffsetX, pointerOffsetY);
         return true;
       },
     );
@@ -321,7 +352,8 @@ export class MeetingRecordingWidgetManager extends EventEmitter {
     if (nextVisible) {
       this.clearHideTimer();
       void this.deps.windowManager.createOrShowMeetingWidgetWindow(
-        this.settings.normalizedY,
+        this.settings.edge,
+        this.settings.normalizedPosition,
       );
       this.deps.windowManager.setMeetingWidgetWindowIgnoreMouseEvents(true);
     } else if (this.isWidgetWindowVisible()) {
@@ -335,6 +367,7 @@ export class MeetingRecordingWidgetManager extends EventEmitter {
       meetingState: runtime.state,
       noteId: runtime.noteId,
       meetingDetection: this.state.meetingDetection,
+      edge: this.settings.edge,
     });
 
     logger.debug("Meeting recording widget state refreshed", {
@@ -414,6 +447,7 @@ export class MeetingRecordingWidgetManager extends EventEmitter {
       nextState.visible === this.state.visible &&
       nextState.meetingState === this.state.meetingState &&
       nextState.noteId === this.state.noteId &&
+      nextState.edge === this.state.edge &&
       sameDetectionId(nextState.meetingDetection, this.state.meetingDetection)
     ) {
       return false;
@@ -424,6 +458,7 @@ export class MeetingRecordingWidgetManager extends EventEmitter {
     this.state.meetingState = nextState.meetingState;
     this.state.noteId = nextState.noteId;
     this.state.meetingDetection = nextState.meetingDetection;
+    this.state.edge = nextState.edge;
     this.emit("state-changed", this.getState());
     return true;
   }

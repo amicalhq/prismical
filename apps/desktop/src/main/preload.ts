@@ -141,10 +141,32 @@ const api: ElectronAPI = {
   recordingWidget: {
     setInteractive: (interactive: boolean) =>
       ipcRenderer.invoke("meeting-widget:set-interactive", interactive),
-    dragMove: (screenY: number, pointerOffsetY: number) =>
-      ipcRenderer.invoke("meeting-widget:drag-move", screenY, pointerOffsetY),
-    dragEnd: (screenY: number, pointerOffsetY: number) =>
-      ipcRenderer.invoke("meeting-widget:drag-end", screenY, pointerOffsetY),
+    dragMove: (
+      screenX: number,
+      screenY: number,
+      pointerOffsetX: number,
+      pointerOffsetY: number,
+    ) =>
+      ipcRenderer.invoke(
+        "meeting-widget:drag-move",
+        screenX,
+        screenY,
+        pointerOffsetX,
+        pointerOffsetY,
+      ),
+    dragEnd: (
+      screenX: number,
+      screenY: number,
+      pointerOffsetX: number,
+      pointerOffsetY: number,
+    ) =>
+      ipcRenderer.invoke(
+        "meeting-widget:drag-end",
+        screenX,
+        screenY,
+        pointerOffsetX,
+        pointerOffsetY,
+      ),
     openNote: (options?: {
       noteId?: number | null;
       openTranscription?: boolean;

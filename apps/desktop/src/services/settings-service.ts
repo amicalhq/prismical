@@ -43,9 +43,12 @@ export interface MeetingNotificationSettings {
 
 export type MeetingWidgetVisibility = "never" | "while-recording" | "always";
 
+export type MeetingWidgetEdge = "right" | "bottom";
+
 export interface MeetingWidgetSettings {
   visibility: MeetingWidgetVisibility;
-  normalizedY: number;
+  edge: MeetingWidgetEdge;
+  normalizedPosition: number;
 }
 
 export class SettingsService extends EventEmitter {
@@ -134,7 +137,10 @@ export class SettingsService extends EventEmitter {
 
     return {
       visibility: meetingWidget?.visibility ?? "always",
-      normalizedY: clampNormalizedY(meetingWidget?.normalizedY ?? 0.5),
+      edge: meetingWidget?.edge ?? "right",
+      normalizedPosition: clampNormalizedPosition(
+        meetingWidget?.normalizedPosition ?? 0.5,
+      ),
     };
   }
 
@@ -145,11 +151,11 @@ export class SettingsService extends EventEmitter {
     meetingWidgetSettings: Partial<MeetingWidgetSettings>,
   ): Promise<void> {
     const current = await this.getMeetingWidgetSettings();
-    const next = {
+    const next: MeetingWidgetSettings = {
       ...current,
       ...meetingWidgetSettings,
-      normalizedY: clampNormalizedY(
-        meetingWidgetSettings.normalizedY ?? current.normalizedY,
+      normalizedPosition: clampNormalizedPosition(
+        meetingWidgetSettings.normalizedPosition ?? current.normalizedPosition,
       ),
     };
 
@@ -458,9 +464,9 @@ export class SettingsService extends EventEmitter {
   }
 }
 
-function clampNormalizedY(value: number): number {
+function clampNormalizedPosition(value: number): number {
   if (!Number.isFinite(value)) {
-    return 1;
+    return 0.5;
   }
 
   return Math.min(1, Math.max(0, value));

@@ -102,7 +102,8 @@ const defaultSettings: AppSettingsData = {
   },
   meetingWidget: {
     visibility: "always",
-    normalizedY: 0.5,
+    edge: "right",
+    normalizedPosition: 0.5,
   },
   shortcuts: getDefaultShortcuts(),
   // No `modelDefaults` here — undefined means "no default set yet"; the
