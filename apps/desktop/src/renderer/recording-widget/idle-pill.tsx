@@ -198,7 +198,12 @@ export function IdlePill({
 
       {/* Drag handle — opposite side of Take Notes, follows hover state. */}
       <div className="absolute" style={handleStyle}>
-        <DragHandle edge={edge} visible={showHandle} onPointerDown={onDragStart} />
+        <DragHandle
+          edge={edge}
+          visible={showHandle}
+          onPointerDown={onDragStart}
+          tooltipSide={tooltipSide}
+        />
       </div>
     </div>
   );

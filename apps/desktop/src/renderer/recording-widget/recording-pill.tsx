@@ -102,7 +102,12 @@ export function RecordingPill({
 
       {/* Drag handle — always visible while recording. */}
       <div className="absolute" style={handleStyle}>
-        <DragHandle edge={edge} visible={showHandle} onPointerDown={onDragStart} />
+        <DragHandle
+          edge={edge}
+          visible={showHandle}
+          onPointerDown={onDragStart}
+          tooltipSide={tooltipSide}
+        />
       </div>
     </div>
   );
