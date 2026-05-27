@@ -201,6 +201,26 @@ export class MeetingStartNotificationManager extends EventEmitter {
     return { noteId: note.id };
   }
 
+  async createBlankNote(): Promise<{ noteId: number }> {
+    const note = await this.notesService.createNote({
+      title: buildIdleNoteTitle(),
+      icon: null,
+    });
+
+    this.deps.telemetryService?.trackNoteCreated({
+      note_id: note.id,
+      has_initial_content: false,
+      has_icon: false,
+    });
+
+    await this.deps.windowManager.navigateMainWindow(`/notes/${note.id}`);
+
+    this.clearActiveNotificationWindow();
+    logger.info("Created blank note from widget", { noteId: note.id });
+
+    return { noteId: note.id };
+  }
+
   async showTestNotification(): Promise<void> {
     this.clearActiveNotificationWindow();
     await this.showNotification({

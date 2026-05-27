@@ -52,6 +52,13 @@ export const meetingWidgetRouter = createRouter({
     return await meetingStartNotificationManager.startNoteFromIdle();
   }),
 
+  createBlankNote: procedure.mutation(async ({ ctx }) => {
+    const meetingStartNotificationManager = ctx.serviceManager.getService(
+      "meetingStartNotificationManager",
+    );
+    return await meetingStartNotificationManager.createBlankNote();
+  }),
+
   showTestDetection: procedure.mutation(async ({ ctx }) => {
     const meetingStartNotificationManager = ctx.serviceManager.getService(
       "meetingStartNotificationManager",
