@@ -138,7 +138,9 @@ export function IdlePill({
               : { ...sliverDims, opacity: 1 }
           }
           transition={anchorSpring}
-          className={`${PILL_SHELL_CLASS} rounded-full before:rounded-full`}
+          // Override PILL_SHELL_CLASS's dark ring with a white-tinted one
+          // so the bar stays visible on dark wallpapers.
+          className={`${PILL_SHELL_CLASS} ring-white/40 rounded-full before:rounded-full`}
         />
       </div>
 
