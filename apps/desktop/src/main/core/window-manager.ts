@@ -381,6 +381,7 @@ export class WindowManager {
         preload: path.join(__dirname, "preload.js"),
         nodeIntegration: false,
         contextIsolation: true,
+        backgroundThrottling: false,
       },
     });
 
@@ -488,27 +489,34 @@ export class WindowManager {
    * can persist them.
    */
   snapMeetingWidgetToEdge(
-    screenX: number,
-    screenY: number,
+    _screenX: number,
+    _screenY: number,
   ): { edge: MeetingWidgetEdge; normalizedPosition: number } | null {
     if (!this.meetingWidgetWindow || this.meetingWidgetWindow.isDestroyed()) {
       return null;
     }
 
-    const display = screen.getDisplayNearestPoint({ x: screenX, y: screenY });
+    const bounds = this.meetingWidgetWindow.getBounds();
+    // Use the window's center to choose nearest edge and derive
+    // normalizedPosition from the window's current bounds — this preserves
+    // the pointer-offset grip that the user established at drag-start, so
+    // the widget snaps to where it visually ended, not where the cursor
+    // released.
+    const centerX = bounds.x + bounds.width / 2;
+    const centerY = bounds.y + bounds.height / 2;
+    const display = screen.getDisplayNearestPoint({ x: centerX, y: centerY });
     const workArea = display.workArea;
     const distanceToRight = Math.max(
       0,
-      workArea.x + workArea.width - screenX,
+      workArea.x + workArea.width - centerX,
     );
     const distanceToBottom = Math.max(
       0,
-      workArea.y + workArea.height - screenY,
+      workArea.y + workArea.height - centerY,
     );
     const edge: MeetingWidgetEdge =
       distanceToBottom < distanceToRight ? "bottom" : "right";
 
-    const bounds = this.meetingWidgetWindow.getBounds();
     const parallelMargin = WindowManager.MEETING_WIDGET_PARALLEL_MARGIN;
     let normalizedPosition: number;
 
@@ -519,7 +527,7 @@ export class WindowManager {
       normalizedPosition =
         maxY <= minY
           ? 0.5
-          : clampNormalizedPosition((screenY - minY) / (maxY - minY));
+          : clampNormalizedPosition((bounds.y - minY) / (maxY - minY));
     } else {
       const minX = workArea.x + parallelMargin;
       const maxX =
@@ -527,13 +535,13 @@ export class WindowManager {
       normalizedPosition =
         maxX <= minX
           ? 0.5
-          : clampNormalizedPosition((screenX - minX) / (maxX - minX));
+          : clampNormalizedPosition((bounds.x - minX) / (maxX - minX));
     }
 
     const target = this.getMeetingWidgetWindowBounds(
       edge,
       normalizedPosition,
-      { x: screenX, y: screenY },
+      { x: centerX, y: centerY },
     );
     this.meetingWidgetWindow.setBounds(target);
     return { edge, normalizedPosition };

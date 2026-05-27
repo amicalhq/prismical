@@ -27,8 +27,11 @@ function makeManager() {
   } as any);
 }
 
-function attachFakeWindow(mgr: WindowManager) {
-  const fakeBounds = { x: 0, y: 0, width: 380, height: 240 };
+function attachFakeWindow(
+  mgr: WindowManager,
+  initial: { x: number; y: number } = { x: 0, y: 0 },
+) {
+  const fakeBounds = { ...initial, width: 380, height: 240 };
   (mgr as any).meetingWidgetWindow = {
     isDestroyed: () => false,
     getBounds: () => fakeBounds,
@@ -38,28 +41,37 @@ function attachFakeWindow(mgr: WindowManager) {
 }
 
 describe("WindowManager.snapMeetingWidgetToEdge", () => {
-  it("snaps to right edge when cursor is near the right side", () => {
+  it("snaps to right edge when window center is near the right side", () => {
     const mgr = makeManager();
-    attachFakeWindow(mgr);
-    const result = mgr.snapMeetingWidgetToEdge(1400, 200);
+    // Window top-left at (1200, 200) → center ≈ (1390, 320) on 1440×900 area.
+    // distanceToRight ≈ 50, distanceToBottom ≈ 580 → right.
+    attachFakeWindow(mgr, { x: 1200, y: 200 });
+    const result = mgr.snapMeetingWidgetToEdge(0, 0);
     expect(result?.edge).toBe("right");
     expect(result?.normalizedPosition).toBeGreaterThanOrEqual(0);
     expect(result?.normalizedPosition).toBeLessThanOrEqual(1);
   });
 
-  it("snaps to bottom edge when cursor is near the bottom", () => {
+  it("snaps to bottom edge when window center is near the bottom", () => {
     const mgr = makeManager();
-    attachFakeWindow(mgr);
-    const result = mgr.snapMeetingWidgetToEdge(400, 880);
+    // Window top-left at (400, 700) → centerY ≈ 820. distanceToBottom ≈ 80,
+    // distanceToRight ≈ 850 → bottom.
+    attachFakeWindow(mgr, { x: 400, y: 700 });
+    const result = mgr.snapMeetingWidgetToEdge(0, 0);
     expect(result?.edge).toBe("bottom");
   });
 
-  it("normalizedPosition reflects cursor X when snapped to bottom", () => {
-    const mgr = makeManager();
-    attachFakeWindow(mgr);
-    // Cursor near far-left should map to a low normalizedPosition.
-    const left = mgr.snapMeetingWidgetToEdge(40, 880);
-    const right = mgr.snapMeetingWidgetToEdge(1300, 880);
+  it("normalizedPosition reflects window X when snapped to bottom", () => {
+    const leftMgr = makeManager();
+    attachFakeWindow(leftMgr, { x: 10, y: 700 });
+    const left = leftMgr.snapMeetingWidgetToEdge(0, 0);
+
+    const rightMgr = makeManager();
+    attachFakeWindow(rightMgr, { x: 1000, y: 700 });
+    const right = rightMgr.snapMeetingWidgetToEdge(0, 0);
+
+    expect(left?.edge).toBe("bottom");
+    expect(right?.edge).toBe("bottom");
     expect(left?.normalizedPosition).toBeLessThan(right!.normalizedPosition);
   });
 
