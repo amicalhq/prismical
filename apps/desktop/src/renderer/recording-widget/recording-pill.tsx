@@ -36,19 +36,35 @@ export function RecordingPill({
   const isVertical = edge === "right";
   const tooltipSide = isVertical ? "left" : "top";
 
-  const openNoteStyle = isVertical
+  const openNoteStyle: React.CSSProperties = isVertical
     ? { right: 0, top: -(OPEN_NOTE + GAP) }
     : { right: -(OPEN_NOTE + GAP), top: 0 };
-  const handleStyle = isVertical
+  // Drag handle on the opposite side from Open Note.
+  const handleStyle: React.CSSProperties = isVertical
     ? {
         bottom: -(HANDLE_SHORT + GAP),
         left: "50%",
         transform: "translateX(-50%)",
       }
     : {
-        right: -(HANDLE_SHORT + GAP),
+        left: -(HANDLE_SHORT + GAP),
         top: "50%",
         transform: "translateY(-50%)",
+      };
+  // Hit-zone underlay covering the full expanded bounding box so the
+  // cursor doesn't lose hover crossing the gaps between buttons.
+  const hitUnderlayStyle: React.CSSProperties = isVertical
+    ? {
+        top: -(OPEN_NOTE + GAP),
+        left: 0,
+        width: FRAME,
+        height: OPEN_NOTE + GAP + FRAME + GAP + HANDLE_SHORT,
+      }
+    : {
+        top: 0,
+        left: -(HANDLE_SHORT + GAP),
+        width: HANDLE_SHORT + GAP + FRAME + GAP + OPEN_NOTE,
+        height: FRAME,
       };
 
   return (
@@ -57,6 +73,12 @@ export function RecordingPill({
       style={{ width: FRAME, height: FRAME }}
       data-hit-zone="true"
     >
+      {/* Hit-zone underlay — always active during recording. */}
+      <div
+        className="absolute"
+        style={hitUnderlayStyle}
+        data-hit-zone="true"
+      />
       {/* Waveform / Stop anchor — always present, owns its own
           internal hover state for the waveform→Stop swap. */}
       <div className="absolute inset-0">

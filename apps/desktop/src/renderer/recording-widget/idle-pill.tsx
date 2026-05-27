@@ -67,17 +67,38 @@ export function IdlePill({
     : { right: -(TAKE_NOTES + GAP), top: 0 };
   const takeNotesEnter = isVertical ? { y: 14 } : { x: -14 };
 
-  // Where the drag handle lives relative to the frame.
-  const handleStyle = isVertical
+  // Where the drag handle lives relative to the frame — opposite side
+  // from Take Notes so they don't overlap (right-edge: handle below,
+  // bottom-edge: handle to the left while Take Notes is to the right).
+  const handleStyle: React.CSSProperties = isVertical
     ? {
         bottom: -(HANDLE_SHORT + GAP),
         left: "50%",
         transform: "translateX(-50%)",
       }
     : {
-        right: -(HANDLE_SHORT + GAP),
+        left: -(HANDLE_SHORT + GAP),
         top: "50%",
         transform: "translateY(-50%)",
+      };
+
+  // Invisible hit-zone underlay covering the full expanded bounding
+  // box (Take Notes + frame + drag handle + the gaps in-between). Buttons
+  // and the sliver sit on top of it, so it only catches mousemove events
+  // when the cursor is in a gap — which is enough to keep `isHovered`
+  // true while the user travels between buttons.
+  const hitUnderlayStyle: React.CSSProperties = isVertical
+    ? {
+        top: -(TAKE_NOTES + GAP),
+        left: 0,
+        width: FRAME,
+        height: TAKE_NOTES + GAP + FRAME + GAP + HANDLE_SHORT,
+      }
+    : {
+        top: 0,
+        left: -(HANDLE_SHORT + GAP),
+        width: HANDLE_SHORT + GAP + FRAME + GAP + TAKE_NOTES,
+        height: FRAME,
       };
 
   // Pin the anchor (bar / Mic) to the screen-facing edge of the frame so
@@ -96,6 +117,15 @@ export function IdlePill({
       style={{ width: FRAME, height: FRAME }}
       data-hit-zone={hovered ? "true" : undefined}
     >
+      {/* Hit-zone underlay — only active while hovered. Keeps the cursor
+          "inside" the widget as it travels across button gaps so the pill
+          doesn't collapse mid-traversal. */}
+      <div
+        className="absolute"
+        style={hitUnderlayStyle}
+        data-hit-zone={hovered ? "true" : undefined}
+      />
+
       {/* Sliver shell — bar at rest; morphs into the Mic's bounding box
           and fades out as the Mic IconButton fades in. Pinned to the
           screen-facing edge so the bar never moves away from it. */}
