@@ -21,24 +21,10 @@ export class WindowManager {
   private meetingWidgetWindow: BrowserWindow | null = null;
   private themeListenerSetup: boolean = false;
 
-  /**
-   * Get the correct traffic light position based on macOS version.
-   * macOS Tahoe (26+) has larger, redesigned traffic light buttons as part of
-   * the "Liquid Glass" design language that require a different y-offset.
-   * Electron does not handle this automatically - apps must detect OS version.
-   * See: https://github.com/microsoft/vscode/pull/280593
-   */
   private getTrafficLightPosition(): { x: number; y: number } {
     if (process.platform !== "darwin") {
       return { x: 20, y: 16 }; // Not used on non-macOS, but return default
     }
-
-    // process.getSystemVersion() returns marketing version (e.g., "26.0.0")
-    // vs os.release() which returns Darwin kernel version (e.g., "25.1.0")
-    const systemVersion = process.getSystemVersion();
-    const majorVersion = parseInt(systemVersion.split(".")[0], 10);
-    const isTahoeOrLater = majorVersion >= 26;
-
     return { x: 16, y: 16 };
   }
 

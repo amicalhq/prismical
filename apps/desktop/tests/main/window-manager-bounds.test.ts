@@ -81,3 +81,48 @@ describe("WindowManager.snapMeetingWidgetToEdge", () => {
     expect(mgr.snapMeetingWidgetToEdge(100, 100)).toBeNull();
   });
 });
+
+describe("WindowManager.updateMeetingWidgetWindowPositionFree", () => {
+  it("places the window so the grip point stays under the cursor", () => {
+    // Window starts at (100, 100). User grabbed the handle at clientX=370,
+    // clientY=20 inside the window (so the grip was at screen (470, 120)).
+    // They now drag the cursor to screen (800, 400). Expected window
+    // top-left: (800 - 370, 400 - 20) = (430, 380), so the grip lands
+    // back under the cursor.
+    const mgr = makeManager();
+    attachFakeWindow(mgr, { x: 100, y: 100 });
+    const next = mgr.updateMeetingWidgetWindowPositionFree(800, 400, 370, 20);
+    expect(next).not.toBeNull();
+    expect(next?.x).toBe(430);
+    expect(next?.y).toBe(380);
+  });
+
+  it("clamps the window to the work area", () => {
+    // Cursor + grip would put the window at (-200, -200); clamp keeps the
+    // window inside the 1440×900 work area at (0, 0).
+    const mgr = makeManager();
+    attachFakeWindow(mgr, { x: 100, y: 100 });
+    const next = mgr.updateMeetingWidgetWindowPositionFree(170, 170, 370, 370);
+    expect(next?.x).toBe(0);
+    expect(next?.y).toBe(0);
+  });
+
+  it("clamps against the bottom-right when dragged past the edge", () => {
+    // 380×240 window. Work area 1440×900. Max x = 1440-380 = 1060,
+    // max y = 900-240 = 660. screen (2000, 1500) with no grip offset
+    // would land at (2000, 1500); clamp pins to (1060, 660).
+    const mgr = makeManager();
+    attachFakeWindow(mgr, { x: 100, y: 100 });
+    const next = mgr.updateMeetingWidgetWindowPositionFree(2000, 1500, 0, 0);
+    expect(next?.x).toBe(1060);
+    expect(next?.y).toBe(660);
+  });
+
+  it("returns null when the widget window is absent", () => {
+    const mgr = makeManager();
+    (mgr as any).meetingWidgetWindow = null;
+    expect(
+      mgr.updateMeetingWidgetWindowPositionFree(100, 100, 0, 0),
+    ).toBeNull();
+  });
+});

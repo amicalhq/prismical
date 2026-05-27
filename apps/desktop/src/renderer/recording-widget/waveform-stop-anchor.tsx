@@ -114,11 +114,13 @@ export function WaveformStopAnchor({
     </button>
   );
 
+  const tooltipText = isError ? "Dismiss" : "Stop Recording";
+
   return (
     <Tooltip>
       <TooltipTrigger asChild>{button}</TooltipTrigger>
       <TooltipContent side={tooltipSide} sideOffset={6}>
-        Stop Recording
+        {tooltipText}
       </TooltipContent>
     </Tooltip>
   );
