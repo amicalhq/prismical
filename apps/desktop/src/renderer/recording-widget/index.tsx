@@ -220,13 +220,13 @@ function RecordingWidgetWindow() {
       ? "flex flex-col items-center gap-1.5"
       : "flex flex-row items-center gap-1.5";
 
-  const dragHandleEl = (
+  const dragHandleEl = showHandle ? (
     <DragHandle
       edge={edge}
       visible={showHandle}
       onPointerDown={handleDragStart}
     />
-  );
+  ) : null;
 
   return (
     <main
@@ -240,7 +240,10 @@ function RecordingWidgetWindow() {
           animate={widgetVisible ? { opacity: 1 } : { opacity: 0 }}
           transition={{ type: "spring", stiffness: 280, damping: 26, mass: 0.7 }}
         >
-          <div className={innerLayout}>
+          <div
+            className={innerLayout}
+            data-hit-zone={showHandle ? "true" : undefined}
+          >
             {edge === "bottom" ? dragHandleEl : null}
             <AnimatePresence mode="wait" initial={false}>
               {isRecording ? (
