@@ -170,7 +170,6 @@ function RecordingWidgetWindow() {
     >
       <div className="flex h-full w-full items-center justify-end pr-1">
         <motion.div
-          data-hit-zone="true"
           initial={false}
           animate={
             widgetVisible ? { opacity: 1, x: 0 } : { opacity: 0, x: 24 }
@@ -180,7 +179,7 @@ function RecordingWidgetWindow() {
         >
           <motion.button
             type="button"
-            data-hit-zone="true"
+            data-hit-zone={showHandle ? "true" : undefined}
             onPointerDown={handleDragStart}
             initial={false}
             animate={{ opacity: showHandle ? 1 : 0, x: showHandle ? 0 : 6 }}
