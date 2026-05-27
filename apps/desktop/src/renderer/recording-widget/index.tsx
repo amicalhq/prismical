@@ -27,40 +27,6 @@ const queryClient = new QueryClient({
 
 type DragState = { pointerOffsetX: number; pointerOffsetY: number };
 
-interface DragHandleProps {
-  edge: MeetingWidgetEdge;
-  visible: boolean;
-  onPointerDown: (event: React.PointerEvent<HTMLButtonElement>) => void;
-}
-
-function DragHandle({ edge, visible, onPointerDown }: DragHandleProps) {
-  const isVertical = edge === "right";
-  return (
-    <motion.button
-      type="button"
-      data-hit-zone={visible ? "true" : undefined}
-      onPointerDown={onPointerDown}
-      initial={false}
-      animate={{ opacity: visible ? 1 : 0, scale: visible ? 1 : 0.85 }}
-      transition={{ duration: 0.14, ease: "easeOut" }}
-      className={`pointer-events-auto flex ${
-        isVertical ? "h-[18px] w-[28px]" : "h-[28px] w-[18px]"
-      } items-center justify-center rounded-full border border-white/10 bg-[rgba(12,14,18,0.72)] text-white/45 backdrop-blur-md shadow-[0_8px_20px_rgba(3,6,14,0.28)]`}
-      aria-label="Drag recording widget"
-    >
-      <div
-        className={`grid ${
-          isVertical ? "grid-cols-3 grid-rows-2" : "grid-cols-2 grid-rows-3"
-        } gap-[2.5px]`}
-      >
-        {Array.from({ length: 6 }).map((_, i) => (
-          <span key={i} className="h-[2.5px] w-[2.5px] rounded-full bg-current" />
-        ))}
-      </div>
-    </motion.button>
-  );
-}
-
 function RecordingWidgetWindow() {
   const initialStateQuery = api.meetingWidget.getState.useQuery();
   const [liveState, setLiveState] = useState<MeetingWidgetState | null>(null);
@@ -214,23 +180,13 @@ function RecordingWidgetWindow() {
   // Idle keeps the original hover-to-reveal behavior.
   const showHandle = isRecording || isHovered || dragState !== null;
 
-  // Outer container anchors the visible content to the active edge.
+  // Outer container anchors the pill's 36×36 frame to the active edge.
+  // Each pill owns its own absolutely-positioned drag handle + secondary
+  // button around that frame, so no inner-flex / layout-shift dance.
   const outerJustify =
     edge === "right"
       ? "items-center justify-end pr-1"
       : "items-end justify-center pb-1";
-  const innerLayout =
-    edge === "right"
-      ? "flex flex-col items-center gap-1.5"
-      : "flex flex-row items-center gap-1.5";
-
-  const dragHandleEl = showHandle ? (
-    <DragHandle
-      edge={edge}
-      visible={showHandle}
-      onPointerDown={handleDragStart}
-    />
-  ) : null;
 
   return (
     <main
@@ -244,44 +200,41 @@ function RecordingWidgetWindow() {
           animate={widgetVisible ? { opacity: 1 } : { opacity: 0 }}
           transition={{ type: "spring", stiffness: 280, damping: 26, mass: 0.7 }}
         >
-          <div
-            className={innerLayout}
-            data-hit-zone={showHandle ? "true" : undefined}
-          >
-            {edge === "bottom" ? dragHandleEl : null}
-            <AnimatePresence mode="wait" initial={false}>
-              {isRecording ? (
-                <RecordingPill
-                  key="recording"
-                  edge={edge}
-                  meetingState={meetingState}
-                  level={waveformLevel}
-                  onStop={handleStop}
-                  onOpenNote={handleOpenNote}
-                />
-              ) : isDetection && meetingDetection ? (
-                <DetectionPill
-                  key="detection"
-                  payload={meetingDetection}
-                  onTakeNotes={handleTakeNotesDetection}
-                  onDismiss={handleDismissDetection}
-                  takingNotes={startNoteFromDetectionMutation.isPending}
-                  dismissing={dismissDetectionMutation.isPending}
-                />
-              ) : (
-                <IdlePill
-                  key="idle"
-                  edge={edge}
-                  hovered={isHovered || dragState !== null}
-                  onTakeNotes={handleTakeNotes}
-                  takingNotes={createBlankNoteMutation.isPending}
-                  onStartRecording={handleStartRecording}
-                  startingRecording={startNoteFromIdleMutation.isPending}
-                />
-              )}
-            </AnimatePresence>
-            {edge === "right" ? dragHandleEl : null}
-          </div>
+          <AnimatePresence mode="wait" initial={false}>
+            {isRecording ? (
+              <RecordingPill
+                key="recording"
+                edge={edge}
+                meetingState={meetingState}
+                level={waveformLevel}
+                onStop={handleStop}
+                onOpenNote={handleOpenNote}
+                showHandle={showHandle}
+                onDragStart={handleDragStart}
+              />
+            ) : isDetection && meetingDetection ? (
+              <DetectionPill
+                key="detection"
+                payload={meetingDetection}
+                onTakeNotes={handleTakeNotesDetection}
+                onDismiss={handleDismissDetection}
+                takingNotes={startNoteFromDetectionMutation.isPending}
+                dismissing={dismissDetectionMutation.isPending}
+              />
+            ) : (
+              <IdlePill
+                key="idle"
+                edge={edge}
+                hovered={isHovered || dragState !== null}
+                onTakeNotes={handleTakeNotes}
+                takingNotes={createBlankNoteMutation.isPending}
+                onStartRecording={handleStartRecording}
+                startingRecording={startNoteFromIdleMutation.isPending}
+                showHandle={showHandle}
+                onDragStart={handleDragStart}
+              />
+            )}
+          </AnimatePresence>
         </motion.div>
       </div>
     </main>

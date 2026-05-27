@@ -14,7 +14,7 @@ declare const RECORDING_WIDGET_WINDOW_VITE_NAME: string;
 export class WindowManager {
   private static readonly MEETING_WIDGET_WINDOW_WIDTH = 380 as const;
   private static readonly MEETING_WIDGET_WINDOW_HEIGHT = 240 as const;
-  private static readonly MEETING_WIDGET_EDGE_MARGIN = 12 as const;
+  private static readonly MEETING_WIDGET_EDGE_MARGIN = 6 as const;
   private static readonly MEETING_WIDGET_PARALLEL_MARGIN = 24 as const;
   private mainWindow: BrowserWindow | null = null;
   private onboardingWindow: BrowserWindow | null = null;

@@ -3,7 +3,7 @@ import { Mic } from "lucide-react";
 import { IconNotes } from "@tabler/icons-react";
 import type { MeetingWidgetEdge } from "@/types/meeting-widget";
 import { IconButton } from "./icon-button";
-import { IconButtonStack } from "./icon-button-stack";
+import { DragHandle } from "./drag-handle";
 
 export const PILL_SHELL_CLASS =
   "relative pointer-events-auto bg-black/80 dark:bg-black/70 backdrop-blur-md ring-[1px] ring-black/60 shadow-[0px_0px_15px_0px_rgba(0,0,0,0.40)] before:content-[''] before:absolute before:inset-[1px] before:outline before:outline-white/15 before:pointer-events-none";
@@ -15,14 +15,28 @@ export interface IdlePillProps {
   takingNotes: boolean;
   onStartRecording: () => void;
   startingRecording: boolean;
+  showHandle: boolean;
+  onDragStart: (event: React.PointerEvent<HTMLButtonElement>) => void;
 }
 
-const SLIVER_RIGHT = { width: 8, height: 56 };
-const SLIVER_BOTTOM = { width: 56, height: 8 };
+// Frame = the 36×36 Mic-slot. Sliver and Mic occupy this exact spot, so
+// the bar morphs in place with no displacement. Take Notes and the drag
+// handle are absolutely positioned around the frame and fade/scale in
+// when hovered, without affecting layout.
+const FRAME = 36;
+const GAP = 6;
+const TAKE_NOTES = 36;
+const HANDLE_SHORT = 18;
 
-const buttonSpring = {
+const anchorSpring = {
   type: "spring",
-  stiffness: 480,
+  stiffness: 420,
+  damping: 32,
+} as const;
+
+const popSpring = {
+  type: "spring",
+  stiffness: 460,
   damping: 28,
 } as const;
 
@@ -33,70 +47,127 @@ export function IdlePill({
   takingNotes,
   onStartRecording,
   startingRecording,
+  showHandle,
+  onDragStart,
 }: IdlePillProps) {
-  const sliver = edge === "right" ? SLIVER_RIGHT : SLIVER_BOTTOM;
-  const tooltipSide = edge === "right" ? "left" : "top";
+  const isVertical = edge === "right";
+  const tooltipSide = isVertical ? "left" : "top";
 
-  // IconButtonStack's outer motion.div has `layout`, so the bounding box
-  // animates as the sliver gives way to two buttons. Each slot uses
-  // AnimatePresence so the sliver and the buttons fade/scale in & out
-  // rather than crossfading abruptly — the effect is the bar morphing
-  // outward into the buttons.
+  // Sliver and Mic share the frame's center. Sliver may exceed the
+  // 36×36 box on one axis; absolute positioning lets it overflow visually
+  // without affecting layout.
+  const sliverDims = isVertical
+    ? { width: 8, height: 56 }
+    : { width: 56, height: 8 };
+  const micDims = { width: FRAME, height: FRAME };
+
+  // Where Take Notes lives relative to the frame.
+  const takeNotesStyle = isVertical
+    ? { right: 0, top: -(TAKE_NOTES + GAP) }
+    : { right: -(TAKE_NOTES + GAP), top: 0 };
+  const takeNotesEnter = isVertical ? { y: 14 } : { x: -14 };
+
+  // Where the drag handle lives relative to the frame.
+  const handleStyle = isVertical
+    ? {
+        bottom: -(HANDLE_SHORT + GAP),
+        left: "50%",
+        transform: "translateX(-50%)",
+      }
+    : {
+        right: -(HANDLE_SHORT + GAP),
+        top: "50%",
+        transform: "translateY(-50%)",
+      };
+
+  // Pin the anchor (bar / Mic) to the screen-facing edge of the frame so
+  // the bar's edge stays put while it morphs inward. The wrapper owns the
+  // CSS transform that handles the perpendicular centering; the inner
+  // motion element owns the size + opacity + scale animation, so the two
+  // don't fight over the transform property.
+  const anchorWrapperStyle: React.CSSProperties = isVertical
+    ? { right: 0, top: "50%", transform: "translateY(-50%)" }
+    : { bottom: 0, left: "50%", transform: "translateX(-50%)" };
+  const micOrigin = isVertical ? "right center" : "center bottom";
+
   return (
-    <IconButtonStack
-      edge={edge}
-      secondaryLeading={
-        <AnimatePresence initial={false}>
-          {hovered ? (
-            <motion.div
-              key="take-notes"
-              initial={{ opacity: 0, scale: 0.3 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.3 }}
-              transition={buttonSpring}
-            >
-              <IconButton
-                tooltip="Take Notes"
-                icon={<IconNotes size={16} stroke={2} />}
-                onClick={onTakeNotes}
-                disabled={takingNotes}
-                tooltipSide={tooltipSide}
-              />
-            </motion.div>
-          ) : null}
-        </AnimatePresence>
-      }
-      mainAnchor={
-        <AnimatePresence mode="popLayout" initial={false}>
-          {hovered ? (
-            <motion.div
-              key="mic"
-              initial={{ opacity: 0, scale: 0.3 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.3 }}
-              transition={buttonSpring}
-            >
-              <IconButton
-                tooltip="Start Recording"
-                icon={<Mic className="h-[18px] w-[18px]" />}
-                onClick={onStartRecording}
-                disabled={startingRecording}
-                tooltipSide={tooltipSide}
-              />
-            </motion.div>
-          ) : (
-            <motion.div
-              key="sliver"
-              data-hit-zone="true"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1, ...sliver }}
-              exit={{ opacity: 0, scale: 0.5 }}
-              transition={{ duration: 0.2, ease: "easeOut" }}
-              className={`${PILL_SHELL_CLASS} rounded-full before:rounded-full`}
+    <div
+      className="relative"
+      style={{ width: FRAME, height: FRAME }}
+      data-hit-zone={hovered ? "true" : undefined}
+    >
+      {/* Sliver shell — bar at rest; morphs into the Mic's bounding box
+          and fades out as the Mic IconButton fades in. Pinned to the
+          screen-facing edge so the bar never moves away from it. */}
+      <div className="absolute" style={anchorWrapperStyle}>
+        <motion.div
+          data-hit-zone="true"
+          animate={
+            hovered
+              ? { ...micDims, opacity: 0 }
+              : { ...sliverDims, opacity: 1 }
+          }
+          transition={anchorSpring}
+          className={`${PILL_SHELL_CLASS} rounded-full before:rounded-full`}
+        />
+      </div>
+
+      {/* Mic IconButton — same anchor as the bar, scales out from the
+          screen edge to feel like the bar morphing into a button. */}
+      <div
+        className="absolute"
+        style={{
+          ...anchorWrapperStyle,
+          pointerEvents: hovered ? "auto" : "none",
+        }}
+      >
+        <motion.div
+          initial={false}
+          animate={{
+            opacity: hovered ? 1 : 0,
+            scale: hovered ? 1 : 0.6,
+          }}
+          transition={{ duration: 0.18, ease: "easeOut" }}
+          style={{ transformOrigin: micOrigin }}
+        >
+          <IconButton
+            tooltip="Start Recording"
+            icon={<Mic className="h-[18px] w-[18px]" />}
+            onClick={onStartRecording}
+            disabled={startingRecording}
+            tooltipSide={tooltipSide}
+          />
+        </motion.div>
+      </div>
+
+      {/* Take Notes — absolute, outside the frame on the away-from-edge
+          side. Slides toward the anchor on exit. */}
+      <AnimatePresence>
+        {hovered ? (
+          <motion.div
+            key="take-notes"
+            initial={{ opacity: 0, scale: 0.4, ...takeNotesEnter }}
+            animate={{ opacity: 1, scale: 1, x: 0, y: 0 }}
+            exit={{ opacity: 0, scale: 0.4, ...takeNotesEnter }}
+            transition={popSpring}
+            className="absolute"
+            style={takeNotesStyle}
+          >
+            <IconButton
+              tooltip="Take Notes"
+              icon={<IconNotes size={16} stroke={2} />}
+              onClick={onTakeNotes}
+              disabled={takingNotes}
+              tooltipSide={tooltipSide}
             />
-          )}
-        </AnimatePresence>
-      }
-    />
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
+      {/* Drag handle — opposite side of Take Notes, follows hover state. */}
+      <div className="absolute" style={handleStyle}>
+        <DragHandle edge={edge} visible={showHandle} onPointerDown={onDragStart} />
+      </div>
+    </div>
   );
 }
