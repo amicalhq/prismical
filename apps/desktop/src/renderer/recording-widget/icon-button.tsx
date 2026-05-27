@@ -1,27 +1,42 @@
 import React, { forwardRef } from "react";
 import type { ReactNode } from "react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 export interface IconButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  /** Accessible tooltip text. Shown via native title attribute. */
+  /** Tooltip text. Rendered via radix tooltip; falsy = no tooltip wrapper. */
   tooltip: string;
   /** Lucide / Tabler icon node, 16-18px. */
   icon: ReactNode;
   /** When true, the button uses the destructive (red) accent. */
   destructive?: boolean;
+  /** Side the tooltip floats on. Defaults to "left" so it doesn't get clipped
+   *  by the right edge of the screen for right-anchored widgets. */
+  tooltipSide?: "top" | "right" | "bottom" | "left";
 }
 
 export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
   function IconButton(
-    { tooltip, icon, destructive, disabled, className, ...rest },
+    {
+      tooltip,
+      icon,
+      destructive,
+      disabled,
+      className,
+      tooltipSide = "left",
+      ...rest
+    },
     ref,
   ) {
-    return (
+    const button = (
       <button
         ref={ref}
         type="button"
         data-hit-zone="true"
-        title={tooltip}
         aria-label={tooltip}
         disabled={disabled}
         className={[
@@ -39,6 +54,19 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
       >
         {icon}
       </button>
+    );
+
+    if (!tooltip) {
+      return button;
+    }
+
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>{button}</TooltipTrigger>
+        <TooltipContent side={tooltipSide} sideOffset={6}>
+          {tooltip}
+        </TooltipContent>
+      </Tooltip>
     );
   },
 );

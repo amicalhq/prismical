@@ -9,6 +9,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
 import { api, trpcClient } from "@/trpc/react";
 import { combinedLevel, useMeetingLevel } from "@/hooks/useMeetingLevel";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import type {
   MeetingWidgetEdge,
   MeetingWidgetState,
@@ -208,7 +209,10 @@ function RecordingWidgetWindow() {
     dismissDetectionMutation.mutate();
   }, [dismissDetectionMutation]);
 
-  const showHandle = isHovered || dragState !== null;
+  // While recording, the widget rests in its expanded layout (Open Note +
+  // waveform anchor + drag handle), so the handle is always visible.
+  // Idle keeps the original hover-to-reveal behavior.
+  const showHandle = isRecording || isHovered || dragState !== null;
 
   // Outer container anchors the visible content to the active edge.
   const outerJustify =
@@ -250,7 +254,6 @@ function RecordingWidgetWindow() {
                 <RecordingPill
                   key="recording"
                   edge={edge}
-                  hovered={isHovered || dragState !== null}
                   meetingState={meetingState}
                   level={waveformLevel}
                   onStop={handleStop}
@@ -290,7 +293,9 @@ if (container) {
   createRoot(container).render(
     <api.Provider client={trpcClient} queryClient={queryClient}>
       <QueryClientProvider client={queryClient}>
-        <RecordingWidgetWindow />
+        <TooltipProvider delayDuration={200}>
+          <RecordingWidgetWindow />
+        </TooltipProvider>
       </QueryClientProvider>
     </api.Provider>,
   );
