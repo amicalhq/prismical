@@ -1,7 +1,5 @@
 import React, { forwardRef } from "react";
 import type { ReactNode } from "react";
-import { IconNotes } from "@tabler/icons-react";
-import { Square } from "lucide-react";
 
 export interface TakeNotesButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -48,42 +46,6 @@ export const OutlinedIconButton = forwardRef<
       className={`flex size-8 items-center justify-center rounded-full border border-white/20 bg-transparent text-white/70 transition-colors hover:border-white/35 hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-60 ${props.className ?? ""}`}
     >
       {children}
-    </button>
-  );
-});
-
-export const StopButton = forwardRef<
-  HTMLButtonElement,
-  React.ButtonHTMLAttributes<HTMLButtonElement>
->(function StopButton(props, ref) {
-  return (
-    <button
-      ref={ref}
-      type="button"
-      data-hit-zone="true"
-      aria-label="Stop recording"
-      {...props}
-      className={`flex size-8 items-center justify-center rounded-full border border-white/20 bg-transparent text-red-400 transition-colors hover:border-white/35 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60 ${props.className ?? ""}`}
-    >
-      <Square className="size-[11px] fill-current text-current" />
-    </button>
-  );
-});
-
-export const NotesIconButton = forwardRef<
-  HTMLButtonElement,
-  React.ButtonHTMLAttributes<HTMLButtonElement>
->(function NotesIconButton(props, ref) {
-  return (
-    <button
-      ref={ref}
-      type="button"
-      data-hit-zone="true"
-      aria-label="Open note"
-      {...props}
-      className={`flex size-8 items-center justify-center rounded-full border border-white/20 bg-transparent text-white/75 transition-colors hover:border-white/35 hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-60 ${props.className ?? ""}`}
-    >
-      <IconNotes size={16} stroke={2} />
     </button>
   );
 });
