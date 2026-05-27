@@ -44,9 +44,12 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
           "border border-white/15 bg-black/80 backdrop-blur-md",
           "shadow-[0_8px_24px_rgba(0,0,0,0.35)]",
           "transition-colors",
+          // Hover state: fully opaque black + bright border so the button
+          // pops on light wallpapers (where the resting 80% black still
+          // shows the bg through and looks faded).
           destructive
-            ? "text-red-400 hover:border-white/35 hover:bg-white/10"
-            : "text-white/85 hover:border-white/35 hover:bg-white/10 hover:text-white",
+            ? "text-red-400 hover:border-white/55 hover:bg-black"
+            : "text-white/85 hover:border-white/55 hover:bg-black hover:text-white",
           "disabled:cursor-not-allowed disabled:opacity-50",
           className ?? "",
         ].join(" ")}

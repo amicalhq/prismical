@@ -47,8 +47,10 @@ export function WaveformStopAnchor({
         "border border-white/15 bg-black/80 backdrop-blur-md",
         "shadow-[0_8px_24px_rgba(0,0,0,0.35)]",
         "transition-colors",
+        // Stop-hover state: fully opaque black + bright border so it pops
+        // on light wallpapers and reads clearly as "destructive on hover".
         showStop
-          ? "text-red-400 border-white/35 bg-white/10"
+          ? "text-red-400 border-white/55 bg-black"
           : "text-white/85",
         "disabled:cursor-not-allowed disabled:opacity-60",
         PILL_SHELL_CLASS,
