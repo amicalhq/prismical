@@ -21,6 +21,7 @@
   "globalPassThroughEnv": [
     "CI",
     "GIT_SHA",
+    "LOCALAPPDATA",
     "NODE_EXTRA_CA_CERTS",
     "npm_lifecycle_event",
     "npm_command",
