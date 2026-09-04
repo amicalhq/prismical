@@ -196,13 +196,20 @@ const stageExternalDependencies = (platform: string, arch: string): void => {
   // MAX_PATH during packaging. This prunes only the staged copy under
   // apps/desktop/node_modules; cpSync above already dereferenced, so the real
   // package dir and submodule working tree are never touched.
-  // node_modules and .turbo are pruned because the wrapper is a WORKSPACE
-  // package here, and dereferencing its dev-dep symlinks (typescript,
-  // cmake-js) would copy whole toolchains into the asar. The wrapper's runtime
-  // (dist + native) requires none of its declared deps.
+  // addon, node_modules and .turbo are pruned because they are build-only
+  // workspace content. The wrapper's runtime (dist + native) requires none of
+  // them.
   const stagedWhisper = path.join(appNodeModules, '@prismical', 'whisper-wrapper');
   if (existsSync(stagedWhisper)) {
-    for (const sub of ['whisper.cpp', 'build', '.cmake-js', '.home', 'node_modules', '.turbo']) {
+    for (const sub of [
+      'whisper.cpp',
+      'build',
+      '.cmake-js',
+      '.home',
+      'addon',
+      'node_modules',
+      '.turbo',
+    ]) {
       rmSync(path.join(stagedWhisper, sub), { recursive: true, force: true });
     }
   }
