@@ -129,7 +129,7 @@ jobs:
           target="${{ github.event.inputs.target || 'all' }}"
           mac_arm='{"os":"macos","arch":"arm64","runner":"macos-latest"}'
           mac_x64='{"os":"macos","arch":"x64","runner":"macos-15-intel"}'
-          win_x64='{"os":"windows","arch":"x64","runner":"windows-latest"}'
+          win_x64='{"os":"windows","arch":"x64","runner":"windows-2022"}'
           case "$target" in
             all)                 legs="$mac_arm,$mac_x64,$win_x64" ;;
             macos)               legs="$mac_arm,$mac_x64" ;;
