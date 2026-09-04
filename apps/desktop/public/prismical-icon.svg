@@ -1,0 +1,474 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Source: prismical-www/public/brand (icon.svg / logo-color-transparent.svg).
+     The sparkle is painted as 14 cross-faded gradient bands. The export overlapped them
+     by 0.05 user units - sub-pixel at every size we render - so Chromium and rsvg let the
+     black tile show through as horizontal seams. Band rects and the sparkle-mix mask
+     regions are overlapped by 25 units here instead. Re-apply if you re-copy from brand/. -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="2883" height="2891" viewBox="0 0 2883 2891" fill="none">
+  <title>Prismical app icon</title>
+  <desc>Full vector reconstruction of the supplied glowing Prismical app icon.</desc>
+  <defs>
+    <linearGradient id="icon-glow-top" gradientUnits="userSpaceOnUse" x1="970" y1="294" x2="1914" y2="294">
+      <stop offset="0" stop-color="#DFB381"/>
+      <stop offset="0.5" stop-color="#F0DE64"/>
+      <stop offset="1" stop-color="#EDD964"/>
+    </linearGradient>
+    <linearGradient id="icon-glow-top-right" gradientUnits="userSpaceOnUse" x1="1914" y1="294" x2="2593" y2="971">
+      <stop offset="0" stop-color="#EDD964"/>
+      <stop offset="0.5" stop-color="#D7EB6F"/>
+      <stop offset="1" stop-color="#B6FB7C"/>
+    </linearGradient>
+    <linearGradient id="icon-glow-right" gradientUnits="userSpaceOnUse" x1="2593" y1="971" x2="2593" y2="1924">
+      <stop offset="0" stop-color="#B6FB7C"/>
+      <stop offset="0.5" stop-color="#96F5A0"/>
+      <stop offset="1" stop-color="#75E6C2"/>
+    </linearGradient>
+    <linearGradient id="icon-glow-bottom-right" gradientUnits="userSpaceOnUse" x1="2593" y1="1924" x2="1914" y2="2601">
+      <stop offset="0" stop-color="#75E6C2"/>
+      <stop offset="0.5" stop-color="#60B1D2"/>
+      <stop offset="1" stop-color="#5464E2"/>
+    </linearGradient>
+    <linearGradient id="icon-glow-bottom" gradientUnits="userSpaceOnUse" x1="970" y1="2601" x2="1914" y2="2601">
+      <stop offset="0" stop-color="#600FFB"/>
+      <stop offset="0.5" stop-color="#4F17FB"/>
+      <stop offset="1" stop-color="#5464E2"/>
+    </linearGradient>
+    <linearGradient id="icon-glow-bottom-left" gradientUnits="userSpaceOnUse" x1="970" y1="2601" x2="291" y2="1924">
+      <stop offset="0" stop-color="#600FFB"/>
+      <stop offset="0.5" stop-color="#8423F5"/>
+      <stop offset="1" stop-color="#9F3AE5"/>
+    </linearGradient>
+    <linearGradient id="icon-glow-left" gradientUnits="userSpaceOnUse" x1="291" y1="971" x2="291" y2="1924">
+      <stop offset="0" stop-color="#C460C6"/>
+      <stop offset="0.5" stop-color="#AE49DD"/>
+      <stop offset="1" stop-color="#9F3AE5"/>
+    </linearGradient>
+    <linearGradient id="icon-glow-top-left" gradientUnits="userSpaceOnUse" x1="291" y1="971" x2="970" y2="294">
+      <stop offset="0" stop-color="#C460C6"/>
+      <stop offset="0.5" stop-color="#D281A3"/>
+      <stop offset="1" stop-color="#DFB381"/>
+    </linearGradient>
+
+    <filter id="icon-glow-wide" filterUnits="userSpaceOnUse" x="0" y="0" width="2883" height="2891" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="90"/>
+    </filter>
+    <filter id="icon-glow-main" filterUnits="userSpaceOnUse" x="0" y="0" width="2883" height="2891" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="40"/>
+    </filter>
+    <filter id="icon-glow-near" filterUnits="userSpaceOnUse" x="0" y="0" width="2883" height="2891" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="10"/>
+    </filter>
+  </defs>
+
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <g stroke-width="100" opacity="0.50" filter="url(#icon-glow-wide)">
+  <path d="M970 294 H1914" stroke="url(#icon-glow-top)"/>
+  <path d="M1914 294 A679 677 0 0 1 2593 971" stroke="url(#icon-glow-top-right)"/>
+  <path d="M2593 971 V1924" stroke="url(#icon-glow-right)"/>
+  <path d="M2593 1924 A679 677 0 0 1 1914 2601" stroke="url(#icon-glow-bottom-right)"/>
+  <path d="M1914 2601 H970" stroke="url(#icon-glow-bottom)"/>
+  <path d="M970 2601 A679 677 0 0 1 291 1924" stroke="url(#icon-glow-bottom-left)"/>
+  <path d="M291 1924 V971" stroke="url(#icon-glow-left)"/>
+  <path d="M291 971 A679 677 0 0 1 970 294" stroke="url(#icon-glow-top-left)"/>
+</g>
+    <g stroke-width="80" opacity="0.95" filter="url(#icon-glow-main)">
+  <path d="M970 294 H1914" stroke="url(#icon-glow-top)"/>
+  <path d="M1914 294 A679 677 0 0 1 2593 971" stroke="url(#icon-glow-top-right)"/>
+  <path d="M2593 971 V1924" stroke="url(#icon-glow-right)"/>
+  <path d="M2593 1924 A679 677 0 0 1 1914 2601" stroke="url(#icon-glow-bottom-right)"/>
+  <path d="M1914 2601 H970" stroke="url(#icon-glow-bottom)"/>
+  <path d="M970 2601 A679 677 0 0 1 291 1924" stroke="url(#icon-glow-bottom-left)"/>
+  <path d="M291 1924 V971" stroke="url(#icon-glow-left)"/>
+  <path d="M291 971 A679 677 0 0 1 970 294" stroke="url(#icon-glow-top-left)"/>
+</g>
+    <g stroke-width="24" opacity="0.20" filter="url(#icon-glow-near)">
+  <path d="M970 294 H1914" stroke="url(#icon-glow-top)"/>
+  <path d="M1914 294 A679 677 0 0 1 2593 971" stroke="url(#icon-glow-top-right)"/>
+  <path d="M2593 971 V1924" stroke="url(#icon-glow-right)"/>
+  <path d="M2593 1924 A679 677 0 0 1 1914 2601" stroke="url(#icon-glow-bottom-right)"/>
+  <path d="M1914 2601 H970" stroke="url(#icon-glow-bottom)"/>
+  <path d="M970 2601 A679 677 0 0 1 291 1924" stroke="url(#icon-glow-bottom-left)"/>
+  <path d="M291 1924 V971" stroke="url(#icon-glow-left)"/>
+  <path d="M291 971 A679 677 0 0 1 970 294" stroke="url(#icon-glow-top-left)"/>
+</g>
+  </g>
+
+  <rect x="291" y="294" width="2302" height="2307" rx="679" ry="677" fill="#000000"/>
+
+  <svg x="759" y="825" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1365" height="1242" viewBox="0 0 1365 1242" fill="none">
+  <title>Vector logo</title>
+  <desc>Faithful vector reconstruction from the supplied 1365 by 1242 pixel logo.</desc>
+  <defs>
+    <path id="main-shape" d="M 659 0.605 C 647.340 1.636, 628.383 4.405, 617.618 6.651 C 552.949 20.141, 501.648 51.678, 463.904 101.145 C 447.720 122.354, 425.458 160.010, 301.704 375.500 C 269.802 431.050, 229.754 500.575, 212.709 530 C 195.663 559.425, 156.525 627.150, 125.736 680.500 C 94.946 733.850, 63.432 788.075, 55.706 801 C 40.913 825.744, 28.558 848.800, 22.479 863 C 13.315 884.405, 5.682 911.489, 2.329 934.500 C -0.028 950.669, -0.033 987.878, 2.319 1003.305 C 6.208 1028.810, 13.542 1054.266, 24.098 1078.896 C 35.790 1106.179, 49.543 1125.798, 80.612 1159.515 C 103.316 1184.155, 123.921 1199.976, 151.095 1213.636 C 164.557 1220.403, 179.498 1226.050, 194.173 1229.917 C 209.300 1233.903, 219.219 1235.674, 236.264 1237.431 C 275.266 1241.453, 280.519 1241.500, 691.500 1241.500 C 1068.589 1241.500, 1088.169 1241.413, 1101.500 1239.681 C 1130.449 1235.919, 1156.502 1229.565, 1177.850 1221.060 C 1190.240 1216.124, 1207.585 1207.531, 1219 1200.675 C 1241.167 1187.360, 1268.722 1162.852, 1285.805 1141.257 C 1295.934 1128.451, 1308.992 1108.845, 1316.885 1094.589 C 1323.283 1083.035, 1330.274 1067.726, 1335.194 1054.500 C 1339.383 1043.240, 1345.474 1018.678, 1347.593 1004.500 C 1350.018 988.280, 1350.044 956.193, 1347.646 939.500 C 1344.374 916.719, 1337.043 890.641, 1327.406 867.500 C 1322.478 855.666, 1306.771 824.885, 1294.494 803 C 1277.739 773.133, 1245.314 719.248, 1241.690 715.250 C 1240.569 714.012, 1238.837 713, 1237.842 713 C 1232.623 713, 1189.067 754.767, 1171.923 776.209 C 1156.957 794.928, 1143.440 814.853, 1131.360 836 C 1127.028 843.584, 1126.506 845.147, 1126.517 850.500 C 1126.528 856.343, 1126.805 856.957, 1137.097 874 C 1153.612 901.347, 1167.667 926.753, 1171.551 936.280 C 1178.073 952.276, 1179.256 963.088, 1176.493 981.423 C 1174.538 994.394, 1169.455 1009.027, 1163.380 1019.178 C 1160.696 1023.662, 1154.794 1031.246, 1150.265 1036.030 C 1132.785 1054.496, 1112.511 1064.574, 1086 1067.977 C 1079.949 1068.754, 959.209 1068.987, 667 1068.784 L 256.500 1068.500 246.794 1065.819 C 236.119 1062.870, 222.808 1056.998, 215.327 1051.936 C 200.985 1042.235, 189.115 1028.420, 181.515 1012.585 C 176.190 1001.490, 173.402 991.676, 171.994 979.074 C 170.849 968.828, 171.267 961.569, 173.665 950.075 C 175.757 940.049, 179.899 930.569, 191.218 909.909 C 196.463 900.334, 239.795 824.775, 287.511 742 C 335.227 659.225, 399.920 546.950, 431.273 492.500 C 462.626 438.050, 502.309 369.200, 519.458 339.500 C 536.607 309.800, 556.335 275.468, 563.297 263.206 C 577.252 238.629, 591.422 216.547, 600.672 204.959 C 618.493 182.634, 643.102 171, 672.500 171 C 683.003 171, 696.458 173.069, 706 176.152 C 716.109 179.418, 728.734 186.326, 737.690 193.492 C 745.473 199.719, 755.235 210.686, 760.800 219.453 C 762.213 221.679, 766.859 230.115, 771.125 238.199 C 779.979 254.980, 785.766 265.154, 804.855 297.500 C 812.320 310.150, 823.004 328.600, 828.595 338.500 C 837.223 353.776, 839.115 356.500, 841.093 356.500 C 842.818 356.500, 845.322 354.166, 850.736 347.515 C 869.199 324.827, 887.822 295.475, 901.504 267.500 C 914.714 240.488, 928.039 204.847, 929.937 191.443 C 930.971 184.138, 929.957 175.459, 927.278 168.693 C 925.336 163.787, 908.522 134.910, 899.217 120.500 C 887.055 101.664, 875.784 88.493, 858.841 73.321 C 852.603 67.735, 844.002 60.380, 839.727 56.975 C 816.865 38.767, 785.855 21.816, 759.500 13.121 C 732.578 4.239, 713.575 1.079, 684 0.564 C 672.725 0.368, 661.475 0.387, 659 0.605"/>
+    <path id="sparkle-shape" d="M 1005.844 206.338 C 998.814 208.957, 993.291 212.938, 989.035 218.455 C 984.442 224.408, 980.283 233.613, 962.811 276.500 C 947.645 313.729, 941.926 326.604, 934.534 340.169 C 908.506 387.929, 876.561 423.374, 834 451.717 C 823.070 458.996, 812.087 465.420, 801 471.020 C 797.425 472.826, 772.225 484.151, 745 496.187 C 717.775 508.223, 693.109 519.704, 690.187 521.701 C 683.660 526.160, 677.465 534.593, 675.336 541.917 C 673.240 549.125, 673.283 561.315, 675.429 568.128 C 677.587 574.983, 682.713 582.037, 688.756 586.468 C 693.932 590.264, 711.831 598.577, 762.500 620.721 C 798.016 636.242, 813.579 643.950, 829.836 654.067 C 867.498 677.507, 901.733 711.429, 924.928 748.293 C 935.065 764.404, 943.704 782.065, 965.526 831.291 C 988.476 883.062, 989.810 885.314, 1000.717 890.650 C 1005.186 892.837, 1008.133 893.486, 1015.098 893.819 C 1022.064 894.152, 1025.255 893.804, 1030.679 892.120 C 1038.761 889.611, 1045.687 884.768, 1049.853 878.713 C 1051.513 876.301, 1058.706 860.865, 1065.838 844.413 C 1097.094 772.304, 1105.469 756.316, 1127.341 727 C 1139.140 711.185, 1163.330 686.328, 1178.784 674.139 C 1191.931 663.769, 1208.541 652.809, 1223.619 644.552 C 1230.153 640.974, 1258.734 627.721, 1287.132 615.100 C 1315.530 602.479, 1340.973 591.034, 1343.672 589.666 C 1350.151 586.383, 1356.436 579.411, 1360.335 571.180 C 1363.232 565.066, 1363.500 563.653, 1363.500 554.500 C 1363.500 545.487, 1363.211 543.908, 1360.580 538.500 C 1356.371 529.849, 1347.446 521.484, 1336.965 516.368 C 1332.309 514.095, 1315.225 506.500, 1299 499.490 C 1245.067 476.190, 1224.477 465.941, 1202.284 451.348 C 1185.650 440.409, 1172.117 429.292, 1156.927 414.087 C 1140.910 398.053, 1131.301 386.274, 1118.344 366.792 C 1105.118 346.905, 1091.047 317.859, 1072.619 272.406 C 1064.125 251.454, 1055.568 230.926, 1053.604 226.788 C 1049.364 217.852, 1044.470 213.054, 1035.123 208.670 C 1029.419 205.994, 1027.182 205.522, 1019 205.269 C 1012.763 205.077, 1008.244 205.444, 1005.844 206.338"/>
+    <clipPath id="sparkle-clip" clipPathUnits="userSpaceOnUse">
+      <use xlink:href="#sparkle-shape" href="#sparkle-shape"/>
+    </clipPath>
+
+    <linearGradient id="main-base" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="1365" y2="0">
+      <stop offset="0" stop-color="#6E3CFB"/>
+      <stop offset="0.37" stop-color="#6E3CFB"/>
+      <stop offset="0.44" stop-color="#6B42FB"/>
+      <stop offset="0.51" stop-color="#6259FA"/>
+      <stop offset="0.586" stop-color="#5083F9"/>
+      <stop offset="0.659" stop-color="#40A9F8"/>
+      <stop offset="0.733" stop-color="#39BAF8"/>
+      <stop offset="0.806" stop-color="#38BDF8"/>
+      <stop offset="1" stop-color="#38BDF8"/>
+    </linearGradient>
+
+    <linearGradient id="main-top" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="1365" y2="0">
+      <stop offset="0" stop-color="#B93AF7"/>
+      <stop offset="0.15" stop-color="#CA3DF3"/>
+      <stop offset="0.22" stop-color="#D643EF"/>
+      <stop offset="0.293" stop-color="#D948EC"/>
+      <stop offset="0.352" stop-color="#DC50E2"/>
+      <stop offset="0.396" stop-color="#E05FCE"/>
+      <stop offset="0.44" stop-color="#E779AE"/>
+      <stop offset="0.476" stop-color="#EE928D"/>
+      <stop offset="0.513" stop-color="#F4AA6D"/>
+      <stop offset="0.55" stop-color="#F9B953"/>
+      <stop offset="0.586" stop-color="#FCBF40"/>
+      <stop offset="0.623" stop-color="#FDBD34"/>
+      <stop offset="0.66" stop-color="#FEB82E"/>
+      <stop offset="1" stop-color="#FFB227"/>
+    </linearGradient>
+
+    <linearGradient id="main-top-opacity" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="1242">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="1"/>
+      <stop offset="0.28" stop-color="#FFFFFF" stop-opacity="1"/>
+      <stop offset="0.36" stop-color="#FFFFFF" stop-opacity="0.96"/>
+      <stop offset="0.44" stop-color="#FFFFFF" stop-opacity="0.75"/>
+      <stop offset="0.52" stop-color="#FFFFFF" stop-opacity="0.40"/>
+      <stop offset="0.60" stop-color="#FFFFFF" stop-opacity="0.11"/>
+      <stop offset="0.66" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+
+    <mask id="main-top-mask" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="0" y="0" width="1365" height="1242" style="mask-type:alpha">
+      <rect width="1365" height="1242" fill="url(#main-top-opacity)"/>
+    </mask>
+
+    <linearGradient id="main-right-warm" gradientUnits="userSpaceOnUse" x1="900" y1="0" x2="1365" y2="0">
+      <stop offset="0" stop-color="#FFC83A" stop-opacity="0"/>
+      <stop offset="0.35" stop-color="#FFC83A" stop-opacity="0"/>
+      <stop offset="0.72" stop-color="#FFC83A" stop-opacity="1"/>
+      <stop offset="1" stop-color="#FFC83A" stop-opacity="1"/>
+    </linearGradient>
+
+    <linearGradient id="main-right-warm-opacity" gradientUnits="userSpaceOnUse" x1="0" y1="650" x2="0" y2="930">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.10"/>
+      <stop offset="0.39" stop-color="#FFFFFF" stop-opacity="0.11"/>
+      <stop offset="0.71" stop-color="#FFFFFF" stop-opacity="0.05"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+
+    <mask id="main-right-warm-mask" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="0" y="0" width="1365" height="1242" style="mask-type:alpha">
+      <rect width="1365" height="1242" fill="url(#main-right-warm-opacity)"/>
+    </mask>
+
+    <linearGradient id="sparkle-row-0" gradientUnits="userSpaceOnUse" x1="1000" y1="0" x2="1035" y2="0">
+      <stop offset="0.0000" stop-color="#FFB027"/>
+      <stop offset="0.1250" stop-color="#FFB027"/>
+      <stop offset="0.2500" stop-color="#FFB027"/>
+      <stop offset="0.3750" stop-color="#FFAF27"/>
+      <stop offset="0.5000" stop-color="#FFAF27"/>
+      <stop offset="0.6250" stop-color="#FFAF26"/>
+      <stop offset="0.7500" stop-color="#FFAF26"/>
+      <stop offset="0.8750" stop-color="#FFAE26"/>
+      <stop offset="1.0000" stop-color="#FFAE26"/>
+    </linearGradient>
+    <linearGradient id="sparkle-row-1" gradientUnits="userSpaceOnUse" x1="976" y1="0" x2="1060" y2="0">
+      <stop offset="0.0000" stop-color="#FFB52B"/>
+      <stop offset="0.1250" stop-color="#FFB42A"/>
+      <stop offset="0.2500" stop-color="#FFB329"/>
+      <stop offset="0.3750" stop-color="#FFB229"/>
+      <stop offset="0.5000" stop-color="#FFB128"/>
+      <stop offset="0.6250" stop-color="#FFB128"/>
+      <stop offset="0.7500" stop-color="#FFB027"/>
+      <stop offset="0.8750" stop-color="#FFAF27"/>
+      <stop offset="1.0000" stop-color="#FFAF27"/>
+    </linearGradient>
+    <linearGradient id="sparkle-row-2" gradientUnits="userSpaceOnUse" x1="955" y1="0" x2="1080" y2="0">
+      <stop offset="0.0000" stop-color="#FEBB2F"/>
+      <stop offset="0.1250" stop-color="#FEBA2E"/>
+      <stop offset="0.2500" stop-color="#FEB92D"/>
+      <stop offset="0.3750" stop-color="#FFB72C"/>
+      <stop offset="0.5000" stop-color="#FFB52B"/>
+      <stop offset="0.6250" stop-color="#FFB42A"/>
+      <stop offset="0.7500" stop-color="#FFB329"/>
+      <stop offset="0.8750" stop-color="#FFB229"/>
+      <stop offset="1.0000" stop-color="#FFB128"/>
+    </linearGradient>
+    <linearGradient id="sparkle-row-3" gradientUnits="userSpaceOnUse" x1="931" y1="0" x2="1104" y2="0">
+      <stop offset="0.0000" stop-color="#FEC335"/>
+      <stop offset="0.1250" stop-color="#FEC133"/>
+      <stop offset="0.2500" stop-color="#FEBF31"/>
+      <stop offset="0.3750" stop-color="#FEBD30"/>
+      <stop offset="0.5000" stop-color="#FEBB2F"/>
+      <stop offset="0.6250" stop-color="#FEB92D"/>
+      <stop offset="0.7500" stop-color="#FEB72C"/>
+      <stop offset="0.8750" stop-color="#FEB62B"/>
+      <stop offset="1.0000" stop-color="#FEB52B"/>
+    </linearGradient>
+    <linearGradient id="sparkle-row-4" gradientUnits="userSpaceOnUse" x1="896" y1="0" x2="1140" y2="0">
+      <stop offset="0.0000" stop-color="#FBC93E"/>
+      <stop offset="0.1250" stop-color="#FBC83B"/>
+      <stop offset="0.2500" stop-color="#FCC638"/>
+      <stop offset="0.3750" stop-color="#FCC336"/>
+      <stop offset="0.5000" stop-color="#FDC034"/>
+      <stop offset="0.6250" stop-color="#FDBE32"/>
+      <stop offset="0.7500" stop-color="#FDBC31"/>
+      <stop offset="0.8750" stop-color="#FDBA2F"/>
+      <stop offset="1.0000" stop-color="#FDB92E"/>
+    </linearGradient>
+    <linearGradient id="sparkle-row-5" gradientUnits="userSpaceOnUse" x1="839" y1="0" x2="1197" y2="0">
+      <stop offset="0.0000" stop-color="#F2CA51"/>
+      <stop offset="0.1250" stop-color="#F4CC48"/>
+      <stop offset="0.2500" stop-color="#F6CB43"/>
+      <stop offset="0.3750" stop-color="#F7C83F"/>
+      <stop offset="0.5000" stop-color="#F8C63C"/>
+      <stop offset="0.6250" stop-color="#F9C339"/>
+      <stop offset="0.7500" stop-color="#F9C037"/>
+      <stop offset="0.8750" stop-color="#FABE35"/>
+      <stop offset="1.0000" stop-color="#FABD34"/>
+    </linearGradient>
+    <linearGradient id="sparkle-row-6" gradientUnits="userSpaceOnUse" x1="739" y1="0" x2="1297" y2="0">
+      <stop offset="0.0000" stop-color="#DEA982"/>
+      <stop offset="0.1250" stop-color="#E4C167"/>
+      <stop offset="0.2500" stop-color="#E7CB58"/>
+      <stop offset="0.3750" stop-color="#EACC50"/>
+      <stop offset="0.5000" stop-color="#ECC94A"/>
+      <stop offset="0.6250" stop-color="#EEC646"/>
+      <stop offset="0.7500" stop-color="#F0C342"/>
+      <stop offset="0.8750" stop-color="#F1C240"/>
+      <stop offset="1.0000" stop-color="#F2C13F"/>
+    </linearGradient>
+    <linearGradient id="sparkle-row-7" gradientUnits="userSpaceOnUse" x1="676" y1="0" x2="1326" y2="0">
+      <stop offset="0.0000" stop-color="#C683B1"/>
+      <stop offset="0.1250" stop-color="#CCA88D"/>
+      <stop offset="0.2500" stop-color="#D0C276"/>
+      <stop offset="0.3750" stop-color="#D2CB69"/>
+      <stop offset="0.5000" stop-color="#D6CB61"/>
+      <stop offset="0.6250" stop-color="#DBC85B"/>
+      <stop offset="0.7500" stop-color="#DEC656"/>
+      <stop offset="0.8750" stop-color="#E1C553"/>
+      <stop offset="1.0000" stop-color="#E2C552"/>
+    </linearGradient>
+    <linearGradient id="sparkle-row-8" gradientUnits="userSpaceOnUse" x1="720" y1="0" x2="1316" y2="0">
+      <stop offset="0.0000" stop-color="#B08CB2"/>
+      <stop offset="0.1250" stop-color="#B2AC9B"/>
+      <stop offset="0.2500" stop-color="#B1C18D"/>
+      <stop offset="0.3750" stop-color="#B5C884"/>
+      <stop offset="0.5000" stop-color="#B9C87D"/>
+      <stop offset="0.6250" stop-color="#BEC777"/>
+      <stop offset="0.7500" stop-color="#C1C673"/>
+      <stop offset="0.8750" stop-color="#C4C66F"/>
+      <stop offset="1.0000" stop-color="#C5C56E"/>
+    </linearGradient>
+    <linearGradient id="sparkle-row-9" gradientUnits="userSpaceOnUse" x1="827" y1="0" x2="1209" y2="0">
+      <stop offset="0.0000" stop-color="#93ADB3"/>
+      <stop offset="0.1250" stop-color="#91BAAB"/>
+      <stop offset="0.2500" stop-color="#91C1A7"/>
+      <stop offset="0.3750" stop-color="#93C5A2"/>
+      <stop offset="0.5000" stop-color="#96C69F"/>
+      <stop offset="0.6250" stop-color="#99C59B"/>
+      <stop offset="0.7500" stop-color="#9DC597"/>
+      <stop offset="0.8750" stop-color="#9FC495"/>
+      <stop offset="1.0000" stop-color="#A0C493"/>
+    </linearGradient>
+    <linearGradient id="sparkle-row-10" gradientUnits="userSpaceOnUse" x1="890" y1="0" x2="1146" y2="0">
+      <stop offset="0.0000" stop-color="#72B5C8"/>
+      <stop offset="0.1250" stop-color="#72BBC5"/>
+      <stop offset="0.2500" stop-color="#73BEC3"/>
+      <stop offset="0.3750" stop-color="#73C1C0"/>
+      <stop offset="0.5000" stop-color="#74C2BF"/>
+      <stop offset="0.6250" stop-color="#76C2BD"/>
+      <stop offset="0.7500" stop-color="#77C2BB"/>
+      <stop offset="0.8750" stop-color="#7AC2B9"/>
+      <stop offset="1.0000" stop-color="#7CC1B7"/>
+    </linearGradient>
+    <linearGradient id="sparkle-row-11" gradientUnits="userSpaceOnUse" x1="929" y1="0" x2="1107" y2="0">
+      <stop offset="0.0000" stop-color="#59B7DC"/>
+      <stop offset="0.1250" stop-color="#59BADB"/>
+      <stop offset="0.2500" stop-color="#5ABDD9"/>
+      <stop offset="0.3750" stop-color="#5ABED8"/>
+      <stop offset="0.5000" stop-color="#5BBFD7"/>
+      <stop offset="0.6250" stop-color="#5CBFD6"/>
+      <stop offset="0.7500" stop-color="#5DBFD5"/>
+      <stop offset="0.8750" stop-color="#5EBFD4"/>
+      <stop offset="1.0000" stop-color="#5EBFD3"/>
+    </linearGradient>
+    <linearGradient id="sparkle-row-12" gradientUnits="userSpaceOnUse" x1="954" y1="0" x2="1082" y2="0">
+      <stop offset="0.0000" stop-color="#4AB9EA"/>
+      <stop offset="0.1250" stop-color="#49BAEA"/>
+      <stop offset="0.2500" stop-color="#49BBE9"/>
+      <stop offset="0.3750" stop-color="#49BCE9"/>
+      <stop offset="0.5000" stop-color="#49BCE8"/>
+      <stop offset="0.6250" stop-color="#4ABDE7"/>
+      <stop offset="0.7500" stop-color="#4ABDE6"/>
+      <stop offset="0.8750" stop-color="#4BBDE5"/>
+      <stop offset="1.0000" stop-color="#4CBEE5"/>
+    </linearGradient>
+    <linearGradient id="sparkle-row-13" gradientUnits="userSpaceOnUse" x1="977" y1="0" x2="1060" y2="0">
+      <stop offset="0.0000" stop-color="#41BAF1"/>
+      <stop offset="0.1250" stop-color="#41BBF1"/>
+      <stop offset="0.2500" stop-color="#41BBF0"/>
+      <stop offset="0.3750" stop-color="#41BCF0"/>
+      <stop offset="0.5000" stop-color="#41BCEF"/>
+      <stop offset="0.6250" stop-color="#40BDF0"/>
+      <stop offset="0.7500" stop-color="#40BDEF"/>
+      <stop offset="0.8750" stop-color="#40BDEF"/>
+      <stop offset="1.0000" stop-color="#40BDEF"/>
+    </linearGradient>
+    <linearGradient id="sparkle-row-14" gradientUnits="userSpaceOnUse" x1="1003" y1="0" x2="1031" y2="0">
+      <stop offset="0.0000" stop-color="#3DBBF4"/>
+      <stop offset="0.1250" stop-color="#3DBBF4"/>
+      <stop offset="0.2500" stop-color="#3DBBF4"/>
+      <stop offset="0.3750" stop-color="#3DBCF4"/>
+      <stop offset="0.5000" stop-color="#3CBCF4"/>
+      <stop offset="0.6250" stop-color="#3CBCF4"/>
+      <stop offset="0.7500" stop-color="#3CBCF4"/>
+      <stop offset="0.8750" stop-color="#3CBCF4"/>
+      <stop offset="1.0000" stop-color="#3CBCF4"/>
+    </linearGradient>
+    <linearGradient id="sparkle-mix-gradient-0" gradientUnits="userSpaceOnUse" x1="0" y1="210" x2="0" y2="250">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="1"/>
+    </linearGradient>
+    <mask id="sparkle-mix-0" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="0" y="210" width="1365" height="65" style="mask-type:alpha">
+      <rect x="0" y="210" width="1365" height="65" fill="url(#sparkle-mix-gradient-0)"/>
+    </mask>
+    <linearGradient id="sparkle-mix-gradient-1" gradientUnits="userSpaceOnUse" x1="0" y1="250" x2="0" y2="300">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="1"/>
+    </linearGradient>
+    <mask id="sparkle-mix-1" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="0" y="250" width="1365" height="75" style="mask-type:alpha">
+      <rect x="0" y="250" width="1365" height="75" fill="url(#sparkle-mix-gradient-1)"/>
+    </mask>
+    <linearGradient id="sparkle-mix-gradient-2" gradientUnits="userSpaceOnUse" x1="0" y1="300" x2="0" y2="350">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="1"/>
+    </linearGradient>
+    <mask id="sparkle-mix-2" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="0" y="300" width="1365" height="75" style="mask-type:alpha">
+      <rect x="0" y="300" width="1365" height="75" fill="url(#sparkle-mix-gradient-2)"/>
+    </mask>
+    <linearGradient id="sparkle-mix-gradient-3" gradientUnits="userSpaceOnUse" x1="0" y1="350" x2="0" y2="400">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="1"/>
+    </linearGradient>
+    <mask id="sparkle-mix-3" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="0" y="350" width="1365" height="75" style="mask-type:alpha">
+      <rect x="0" y="350" width="1365" height="75" fill="url(#sparkle-mix-gradient-3)"/>
+    </mask>
+    <linearGradient id="sparkle-mix-gradient-4" gradientUnits="userSpaceOnUse" x1="0" y1="400" x2="0" y2="450">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="1"/>
+    </linearGradient>
+    <mask id="sparkle-mix-4" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="0" y="400" width="1365" height="75" style="mask-type:alpha">
+      <rect x="0" y="400" width="1365" height="75" fill="url(#sparkle-mix-gradient-4)"/>
+    </mask>
+    <linearGradient id="sparkle-mix-gradient-5" gradientUnits="userSpaceOnUse" x1="0" y1="450" x2="0" y2="500">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="1"/>
+    </linearGradient>
+    <mask id="sparkle-mix-5" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="0" y="450" width="1365" height="75" style="mask-type:alpha">
+      <rect x="0" y="450" width="1365" height="75" fill="url(#sparkle-mix-gradient-5)"/>
+    </mask>
+    <linearGradient id="sparkle-mix-gradient-6" gradientUnits="userSpaceOnUse" x1="0" y1="500" x2="0" y2="550">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="1"/>
+    </linearGradient>
+    <mask id="sparkle-mix-6" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="0" y="500" width="1365" height="75" style="mask-type:alpha">
+      <rect x="0" y="500" width="1365" height="75" fill="url(#sparkle-mix-gradient-6)"/>
+    </mask>
+    <linearGradient id="sparkle-mix-gradient-7" gradientUnits="userSpaceOnUse" x1="0" y1="550" x2="0" y2="600">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="1"/>
+    </linearGradient>
+    <mask id="sparkle-mix-7" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="0" y="550" width="1365" height="75" style="mask-type:alpha">
+      <rect x="0" y="550" width="1365" height="75" fill="url(#sparkle-mix-gradient-7)"/>
+    </mask>
+    <linearGradient id="sparkle-mix-gradient-8" gradientUnits="userSpaceOnUse" x1="0" y1="600" x2="0" y2="650">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="1"/>
+    </linearGradient>
+    <mask id="sparkle-mix-8" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="0" y="600" width="1365" height="75" style="mask-type:alpha">
+      <rect x="0" y="600" width="1365" height="75" fill="url(#sparkle-mix-gradient-8)"/>
+    </mask>
+    <linearGradient id="sparkle-mix-gradient-9" gradientUnits="userSpaceOnUse" x1="0" y1="650" x2="0" y2="700">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="1"/>
+    </linearGradient>
+    <mask id="sparkle-mix-9" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="0" y="650" width="1365" height="75" style="mask-type:alpha">
+      <rect x="0" y="650" width="1365" height="75" fill="url(#sparkle-mix-gradient-9)"/>
+    </mask>
+    <linearGradient id="sparkle-mix-gradient-10" gradientUnits="userSpaceOnUse" x1="0" y1="700" x2="0" y2="750">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="1"/>
+    </linearGradient>
+    <mask id="sparkle-mix-10" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="0" y="700" width="1365" height="75" style="mask-type:alpha">
+      <rect x="0" y="700" width="1365" height="75" fill="url(#sparkle-mix-gradient-10)"/>
+    </mask>
+    <linearGradient id="sparkle-mix-gradient-11" gradientUnits="userSpaceOnUse" x1="0" y1="750" x2="0" y2="800">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="1"/>
+    </linearGradient>
+    <mask id="sparkle-mix-11" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="0" y="750" width="1365" height="75" style="mask-type:alpha">
+      <rect x="0" y="750" width="1365" height="75" fill="url(#sparkle-mix-gradient-11)"/>
+    </mask>
+    <linearGradient id="sparkle-mix-gradient-12" gradientUnits="userSpaceOnUse" x1="0" y1="800" x2="0" y2="850">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="1"/>
+    </linearGradient>
+    <mask id="sparkle-mix-12" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="0" y="800" width="1365" height="75" style="mask-type:alpha">
+      <rect x="0" y="800" width="1365" height="75" fill="url(#sparkle-mix-gradient-12)"/>
+    </mask>
+    <linearGradient id="sparkle-mix-gradient-13" gradientUnits="userSpaceOnUse" x1="0" y1="850" x2="0" y2="890">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="1"/>
+    </linearGradient>
+    <mask id="sparkle-mix-13" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="0" y="850" width="1365" height="65" style="mask-type:alpha">
+      <rect x="0" y="850" width="1365" height="65" fill="url(#sparkle-mix-gradient-13)"/>
+    </mask>
+  </defs>
+
+  <g id="logo">
+    <use xlink:href="#main-shape" href="#main-shape" fill="url(#main-base)"/>
+    <use xlink:href="#main-shape" href="#main-shape" fill="url(#main-top)" mask="url(#main-top-mask)"/>
+    <use xlink:href="#main-shape" href="#main-shape" fill="url(#main-right-warm)" mask="url(#main-right-warm-mask)"/>
+    <g clip-path="url(#sparkle-clip)">
+    <rect x="0" y="205" width="1365" height="30.05" fill="url(#sparkle-row-0)"/>
+    <rect x="0" y="210" width="1365" height="65.05" fill="url(#sparkle-row-0)"/>
+    <rect x="0" y="210" width="1365" height="65.05" fill="url(#sparkle-row-1)" mask="url(#sparkle-mix-0)"/>
+    <rect x="0" y="250" width="1365" height="75.05" fill="url(#sparkle-row-1)"/>
+    <rect x="0" y="250" width="1365" height="75.05" fill="url(#sparkle-row-2)" mask="url(#sparkle-mix-1)"/>
+    <rect x="0" y="300" width="1365" height="75.05" fill="url(#sparkle-row-2)"/>
+    <rect x="0" y="300" width="1365" height="75.05" fill="url(#sparkle-row-3)" mask="url(#sparkle-mix-2)"/>
+    <rect x="0" y="350" width="1365" height="75.05" fill="url(#sparkle-row-3)"/>
+    <rect x="0" y="350" width="1365" height="75.05" fill="url(#sparkle-row-4)" mask="url(#sparkle-mix-3)"/>
+    <rect x="0" y="400" width="1365" height="75.05" fill="url(#sparkle-row-4)"/>
+    <rect x="0" y="400" width="1365" height="75.05" fill="url(#sparkle-row-5)" mask="url(#sparkle-mix-4)"/>
+    <rect x="0" y="450" width="1365" height="75.05" fill="url(#sparkle-row-5)"/>
+    <rect x="0" y="450" width="1365" height="75.05" fill="url(#sparkle-row-6)" mask="url(#sparkle-mix-5)"/>
+    <rect x="0" y="500" width="1365" height="75.05" fill="url(#sparkle-row-6)"/>
+    <rect x="0" y="500" width="1365" height="75.05" fill="url(#sparkle-row-7)" mask="url(#sparkle-mix-6)"/>
+    <rect x="0" y="550" width="1365" height="75.05" fill="url(#sparkle-row-7)"/>
+    <rect x="0" y="550" width="1365" height="75.05" fill="url(#sparkle-row-8)" mask="url(#sparkle-mix-7)"/>
+    <rect x="0" y="600" width="1365" height="75.05" fill="url(#sparkle-row-8)"/>
+    <rect x="0" y="600" width="1365" height="75.05" fill="url(#sparkle-row-9)" mask="url(#sparkle-mix-8)"/>
+    <rect x="0" y="650" width="1365" height="75.05" fill="url(#sparkle-row-9)"/>
+    <rect x="0" y="650" width="1365" height="75.05" fill="url(#sparkle-row-10)" mask="url(#sparkle-mix-9)"/>
+    <rect x="0" y="700" width="1365" height="75.05" fill="url(#sparkle-row-10)"/>
+    <rect x="0" y="700" width="1365" height="75.05" fill="url(#sparkle-row-11)" mask="url(#sparkle-mix-10)"/>
+    <rect x="0" y="750" width="1365" height="75.05" fill="url(#sparkle-row-11)"/>
+    <rect x="0" y="750" width="1365" height="75.05" fill="url(#sparkle-row-12)" mask="url(#sparkle-mix-11)"/>
+    <rect x="0" y="800" width="1365" height="75.05" fill="url(#sparkle-row-12)"/>
+    <rect x="0" y="800" width="1365" height="75.05" fill="url(#sparkle-row-13)" mask="url(#sparkle-mix-12)"/>
+    <rect x="0" y="850" width="1365" height="65.05" fill="url(#sparkle-row-13)"/>
+    <rect x="0" y="850" width="1365" height="65.05" fill="url(#sparkle-row-14)" mask="url(#sparkle-mix-13)"/>
+    <rect x="0" y="890" width="1365" height="29" fill="url(#sparkle-row-14)"/>
+    </g>
+  </g>
+</svg>
+
+</svg>

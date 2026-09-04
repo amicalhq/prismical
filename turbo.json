@@ -1,0 +1,103 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "globalDependencies": [
+    "**/.env.*local"
+  ],
+  "globalEnv": [
+    "CI",
+    "NODE_ENV",
+    "NEXT_PUBLIC_DEV_ID_TOKEN",
+    "NEXT_PUBLIC_TRANSCRIBE_WARMUP_WINDOW_S",
+    "NEXT_PUBLIC_TRANSCRIBE_WARMUP_MIN_S",
+    "NEXT_PUBLIC_TRANSCRIBE_MIN_S",
+    "NEXT_PUBLIC_TRANSCRIBE_MAX_S",
+    "PRISMICAL_CLIENT_ID",
+    "PRISMICAL_ANALYTICS_KEY",
+    "PRISMICAL_CORE_API_URL_DEFAULT",
+    "PRISMICAL_NOTE_WS_URL_DEFAULT",
+    "PRISMICAL_WEB_APP_ORIGIN_DEFAULT",
+    "PRISMICAL_ANALYTICS_HOST_DEFAULT"
+  ],
+  "globalPassThroughEnv": [
+    "CI",
+    "GIT_SHA",
+    "NODE_EXTRA_CA_CERTS",
+    "npm_lifecycle_event",
+    "npm_command",
+    "PNPM_SCRIPT_SRC_DIR",
+    "APPLE_APP_PASSWORD",
+    "APPLE_ID",
+    "APPLE_TEAM_ID",
+    "CODESIGNING_IDENTITY",
+    "SKIP_CODESIGNING",
+    "WINDOWS_SIGNTOOL_PATH",
+    "WINDOWS_SIGN_WITH_PARAMS",
+    "PRISMICAL_CLIENT_ID",
+    "PRISMICAL_ANALYTICS_KEY",
+    "PRISMICAL_ANALYTICS_HOST",
+    "PRISMICAL_CORE_API_URL",
+    "PRISMICAL_NOTE_WS_URL",
+    "PRISMICAL_WEB_APP_ORIGIN",
+    "PRISMICAL_E2E",
+    "PRISMICAL_E2E_BREAK_BOOT",
+    "PRISMICAL_E2E_FAKE_AI",
+    "PRISMICAL_E2E_FAKE_SECURE_STORE",
+    "PRISMICAL_E2E_PACKAGE",
+    "PRISMICAL_E2E_TARGET",
+    "PRISMICAL_E2E_USER_DATA_DIR"
+  ],
+  "tasks": {
+    "clean": {
+      "cache": false
+    },
+    "build": {
+      "dependsOn": [
+        "^build"
+      ],
+      "outputs": [
+        "dist/**"
+      ]
+    },
+    "lint": {
+      "dependsOn": [
+        "^lint"
+      ]
+    },
+    "lint:fix": {
+      "dependsOn": [
+        "^lint:fix"
+      ]
+    },
+    "format": {
+      "dependsOn": [
+        "^format"
+      ]
+    },
+    "format:check": {
+      "dependsOn": [
+        "^format:check"
+      ]
+    },
+    "dev": {
+      "dependsOn": [
+        "^build"
+      ],
+      "cache": false,
+      "persistent": true
+    },
+    "test": {
+      "dependsOn": [
+        "^build",
+        "^test"
+      ],
+      "cache": false
+    },
+    "type:check": {
+      "dependsOn": [
+        "^build"
+      ],
+      "cache": false
+    }
+  },
+  "concurrency": "10"
+}

@@ -1,0 +1,8 @@
+# Forge/Vite build output
+.vite/
+
+# Playwright failure artifacts
+e2e/.artifacts/
+
+# Dev-mode operational store (infra/operational-db; packaged builds use userData)
+.data/

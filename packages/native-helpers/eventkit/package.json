@@ -1,0 +1,22 @@
+{
+  "name": "@prismical/eventkit-helper",
+  "version": "1.0.0",
+  "license": "MIT",
+  "description": "Privacy-bounded Apple EventKit bridge for Prismical",
+  "private": true,
+  "scripts": {
+    "build": "node scripts/build.cjs build",
+    "clean": "node scripts/build.cjs clean",
+    "dev": "node scripts/build.cjs dev"
+  },
+  "files": [
+    "bin/*"
+  ],
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ]
+}

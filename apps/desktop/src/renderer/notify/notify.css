@@ -1,0 +1,25 @@
+@import "tailwindcss";
+
+/* The notify panel paints over other apps, so its document must be fully
+ * transparent — only the cards (which carry their own bg-black/80) are
+ * visible. The panel is click-through until the renderer toggles interactivity
+ * on card hover (window.notify.setInteractive). overflow: hidden clips the
+ * slide-in offscreen park + Windows ghost scrollbars (see widget.css). */
+html,
+body,
+#root {
+  background: transparent;
+  overflow: hidden;
+}
+
+/* The 2px bottom auto-dismiss loader: scaleX from 1 → 0 over the card's
+ * remaining TTL. Driven per-card via inline animation-duration/delay off the
+ * pushed expiresAtMs/durationMs (cosmetic — expiry authority is main-side). */
+@keyframes notify-loader {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}

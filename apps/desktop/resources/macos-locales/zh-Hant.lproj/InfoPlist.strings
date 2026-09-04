@@ -1,0 +1,4 @@
+"NSMicrophoneUsageDescription" = "Prismical 會使用你的麥克風來擷取會議並進行轉錄。";
+"NSAudioCaptureUsageDescription" = "Prismical 會擷取系統音訊，以轉錄會議中每個人的聲音，而不只是你的聲音。";
+"NSCalendarsUsageDescription" = "Prismical 會讀取你選擇的行事曆，以顯示即將舉行的會議並準備筆記。";
+"NSCalendarsFullAccessUsageDescription" = "Prismical 會讀取你選擇的行事曆，以顯示即將舉行的會議並準備筆記。";

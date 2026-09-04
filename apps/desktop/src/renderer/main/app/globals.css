@@ -1,0 +1,86 @@
+@import "tailwindcss";
+
+/* Shared design tokens, theme, self-hosted Ubuntu @font-face and editor
+ * animations. The web CSS entry imports the same file right
+ * after the Tailwind engine so `@theme` / `@custom-variant` / `@apply` are
+ * processed in one pass. The woff2 url()s inside resolve relative to tokens.css
+ * and are emitted by Vite as `/assets/*` (served over prismical-app://, which
+ * `font-src 'self' data:` in the window CSP admits). */
+@import "@prismical/app-ui/styles/tokens.css";
+
+/* Tailwind v4 cross-package content scanning. The shell, screens
+ * and primitives live in a symlinked workspace package; Tailwind v4's automatic
+ * content detection deliberately skips node_modules, so without this `@source`
+ * every utility used only inside app-ui would be purged. Path is relative to
+ * this file (apps/desktop/src/renderer/main/app/). */
+@source "../../../../../../packages/app-ui/src";
+
+/* macOS vibrancy. Main
+ * creates the darwin window with `vibrancy: 'menu'` + a transparent
+ * backgroundColor, which mounts an NSVisualEffectView BEHIND the web contents;
+ * it shows through only where the page itself is transparent. The renderer
+ * entry tags <html> with `.vibrancy` on darwin, and these rules punch the
+ * holes. Deliberately lives in the desktop CSS entry, not app-ui/tokens.css —
+ * the browser client renders the same shell and must keep its opaque sidebar. */
+html.vibrancy {
+  background: transparent !important;
+}
+
+/* The tint every translucent surface reads through: --sidebar at 50% alpha, so
+ * it follows the light/dark token instead of duplicating its hex. Only the
+ * sidebar column and the inset variant's gutters end up translucent — the
+ * content pane keeps SidebarInset's opaque `bg-background`, so body text never
+ * sits directly on the blur. */
+html.vibrancy body {
+  background: color-mix(in srgb, var(--sidebar) 50%, transparent) !important;
+}
+
+/* `variant="inset"` paints bg-sidebar on the wrapper (has-data-[variant=inset])
+ * AND on sidebar-inner — two opaque layers that would each hide the material.
+ * Both defer to the single body tint above rather than stacking alpha. */
+html.vibrancy [data-slot="sidebar-wrapper"],
+html.vibrancy [data-slot="sidebar-inner"] {
+  background: transparent !important;
+}
+
+/* Two more full-window `fixed; inset:0` layers that the browser client has no equivalent
+ * of, and either one alone flattens the frost to a solid fill: the shell overlay
+ * (app/mount.tsx) paints `--background` inline so it hides the auth gate it
+ * mounts beside, and the gate (auth-gate.ts) paints its own backdrop plus a
+ * signed-in placeholder card, staying in the DOM post-auth. Both lose their
+ * PAINT only — DOM, layout and testids are untouched, so `desktop-shell` still
+ * satisfies toBeVisible() and toHaveText still reads `auth-account-email`
+ * (Playwright counts an `opacity:0` element as visible).
+ *
+ * NOTE: `desktop-shell` is a test hook doing double duty as a style hook —
+ * rename it in mount.tsx and the frost silently goes flat. */
+html.vibrancy [data-testid="desktop-shell"] {
+  background: transparent !important;
+}
+
+/* Scoped to "the shell is actually mounted" on purpose: index.ts mounts the
+ * shell fire-and-forget SO THAT a mount failure leaves the gate as the visible
+ * fallback. Hiding the gate unconditionally would turn that fallback — and the
+ * placeholder shown during the async mount on a signed-in cold start — into a
+ * blank frosted window. */
+html.vibrancy:has([data-testid="desktop-shell"]) .auth-gate[data-mode="session"] {
+  opacity: 0;
+}
+
+/* Pre-auth drag strip (auth-gate.tsx). The signed-out gate has no shell header
+ * to drag the frameless window by, so it carries its own. Chromium derives
+ * draggable regions from app-region declarations alone — occlusion never
+ * subtracts one — hence the explicit no-drag on the card: it can reach under
+ * the strip on a short window, and without this its buttons would be dead
+ * zones. The strip itself leaves the DOM once the shell paints over the gate. */
+.auth-gate-drag {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
+  -webkit-app-region: drag;
+}
+.auth-gate-card {
+  -webkit-app-region: no-drag;
+}

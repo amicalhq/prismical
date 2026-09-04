@@ -1,0 +1,51 @@
+{
+  "name": "@prismical/ai-prompts",
+  "version": "0.1.0",
+  "license": "MIT",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "type": "module",
+  "exports": {
+    ".": {
+      "prismical-source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
+    },
+    "./transcription": {
+      "prismical-source": "./src/transcription/index.ts",
+      "types": "./dist/transcription/index.d.ts",
+      "import": "./dist/transcription/index.js",
+      "require": "./dist/transcription/index.js"
+    },
+    "./testing": {
+      "prismical-source": "./src/testing/index.ts",
+      "types": "./dist/testing/index.d.ts",
+      "import": "./dist/testing/index.js",
+      "require": "./dist/testing/index.js"
+    }
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "type:check": "tsc --noEmit",
+    "build": "pnpm run clean && tsc -p tsconfig.build.json",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo tsconfig.build.tsbuildinfo",
+    "test": "vitest run --disable-console-intercept"
+  },
+  "dependencies": {
+    "@prismical/api-contracts": "workspace:*",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@prismical/eslint-config": "workspace:*",
+    "@prismical/typescript-config": "workspace:*",
+    "@types/node": "catalog:",
+    "eslint": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

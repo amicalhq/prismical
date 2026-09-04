@@ -1,0 +1,59 @@
+{
+  "name": "@prismical/app-client",
+  "version": "0.1.0",
+  "license": "MIT",
+  "description": "Shared renderer data layer (apiClient, query hooks, auth session, transports) for the web and desktop renderers. No next/*, no electron, no window.location env sniffing.",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "lint": "eslint src/ --max-warnings 0",
+    "type:check": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@hocuspocus/provider": "^4.1.0",
+    "@legendapp/state": "3.0.0-beta.47",
+    "@prismical/api-contracts": "workspace:*",
+    "@prismical/app-contracts": "workspace:*",
+    "@prismical/app-i18n": "workspace:*",
+    "@prismical/editor-markdown": "workspace:*",
+    "@prismical/editor-schema": "workspace:*",
+    "@prismical/id": "workspace:*",
+    "@prismical/note-derive": "workspace:*",
+    "@prismical/silence": "workspace:*",
+    "@tanstack/react-query": "^5.101.0",
+    "@tiptap/core": "^3.23.4",
+    "@tiptap/extension-collaboration": "^3.23.4",
+    "@tiptap/extensions": "^3.23.4",
+    "@tiptap/pm": "^3.23.4",
+    "@tiptap/react": "^3.23.4",
+    "@tiptap/y-tiptap": "^3.0.4",
+    "ai": "catalog:",
+    "prosemirror-changeset": "^2.4.1",
+    "react-i18next": "catalog:",
+    "sonner": "^2.0.7",
+    "yjs": "^13.6.27",
+    "zustand": "^5.0.13"
+  },
+  "peerDependencies": {
+    "react": "catalog:",
+    "react-dom": "catalog:"
+  },
+  "devDependencies": {
+    "@prismical/eslint-config": "workspace:*",
+    "@prismical/typescript-config": "workspace:*",
+    "@testing-library/react": "^16.3.2",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "eslint": "catalog:",
+    "fake-indexeddb": "^6.2.5",
+    "jsdom": "^29.1.1",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

@@ -1,0 +1,676 @@
+name: desktop-release
+
+# Build, sign and publish Prismical Desktop for macOS and Windows.
+#
+# Release flow (amical's bumpp pattern): `pnpm --filter @prismical/desktop exec
+# bumpp <version>` bumps apps/desktop/package.json, commits `chore: release
+# v<version>` and pushes the `v<version>` tag; that tag runs this workflow.
+# Every leg builds + signs on its own runner and uploads its artifacts as run
+# artifacts; once every leg succeeds a DRAFT GitHub Release with a generated
+# changelog is created from them. Publish the draft by hand after checking it;
+# Core serves its auto-update feed from the published GitHub Release assets.
+#
+# Signing (amical's recipe): mac Developer-ID + notarization, Windows Azure
+# Trusted Signing. Version tags always sign, so an unsigned build can never
+# enter a published release. Manual/preview builds use the dispatch checkbox or
+# repository variable:
+#
+#   dispatch sign=true      ⇒ signed + notarized (mac) and Trusted-Signed (Windows)
+#   vars.SKIP_CODESIGNING   unset/'true' ⇒ unsigned preview build
+#                           'false'      ⇒ signed preview build
+#
+# Required secrets for version tags and any other signed build:
+#   macOS   : DEVELOPER_CERT_BASE64, DEVELOPER_CERT_PASSPHRASE,
+#             CODESIGNING_IDENTITY, APPLE_ID, APPLE_APP_PASSWORD, APPLE_TEAM_ID
+#   Windows : AZURE_CLIENT_ID, AZURE_CLIENT_SECRET, AZURE_TENANT_ID,
+#             AZURE_CODESIGN_ENDPOINT, AZURE_CODESIGN_ACCOUNT_NAME,
+#             AZURE_CODESIGN_PROFILE_NAME  (+ optional AZURE_CODESIGN_CORRELATION_ID)
+# Always optional: PRISMICAL_CLIENT_ID (public OAuth id baked into the build;
+# absent ⇒ cloud-mode sign-in reports "not configured" — local mode is
+# unaffected), PRISMICAL_ANALYTICS_KEY (absent ⇒ telemetry disabled).
+#
+# PR CI (lint/type/unit/smoke + helper builds) lives in ci.yml; this workflow
+# is dispatch/tag/preview-branch only so it never double-builds on PRs.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Which platform/arch to build"
+        required: false
+        default: all
+        type: choice
+        options:
+          - all
+          - macos-arm64 # Apple Silicon
+          - macos-x64 # Intel
+          - macos # both mac arches
+          - windows-x64
+      sign:
+        description: "Sign + notarize this build (needs the signing secrets configured)"
+        required: false
+        default: false
+        type: boolean
+      ref:
+        description: "Git ref (branch, tag, or SHA) to build. Defaults to the triggering ref."
+        required: false
+        type: string
+  push:
+    tags:
+      - "v*"
+    branches:
+      # Push to a preview/** branch to get installers for testing without cutting
+      # a tag — grab them from the run's Artifacts.
+      - "preview/**"
+
+jobs:
+  # Resolve which platform/arch legs to build. A manual dispatch can target one
+  # (Windows only, Mac Intel only, Mac ARM only, …) for a fast iteration; tag /
+  # preview pushes always build all three.
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.pick.outputs.matrix }}
+    steps:
+      - name: Checkout release metadata
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+
+      - name: Validate release tag
+        if: github.ref_type == 'tag'
+        shell: bash
+        run: |
+          version=$(node -p "require('./apps/desktop/package.json').version")
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$ ]]; then
+            echo "::error::Desktop version must be stable or beta semver; got '$version'"
+            exit 1
+          fi
+          if [[ "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match apps/desktop/package.json version $version"
+            exit 1
+          fi
+
+      - name: Validate release configuration
+        if: github.ref_type == 'tag'
+        shell: bash
+        env:
+          DEVELOPER_CERT_BASE64: ${{ secrets.DEVELOPER_CERT_BASE64 }}
+          DEVELOPER_CERT_PASSPHRASE: ${{ secrets.DEVELOPER_CERT_PASSPHRASE }}
+          CODESIGNING_IDENTITY: ${{ secrets.CODESIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CODESIGN_ENDPOINT: ${{ secrets.AZURE_CODESIGN_ENDPOINT }}
+          AZURE_CODESIGN_ACCOUNT_NAME: ${{ secrets.AZURE_CODESIGN_ACCOUNT_NAME }}
+          AZURE_CODESIGN_PROFILE_NAME: ${{ secrets.AZURE_CODESIGN_PROFILE_NAME }}
+        run: |
+          missing=()
+          for name in \
+            DEVELOPER_CERT_BASE64 DEVELOPER_CERT_PASSPHRASE CODESIGNING_IDENTITY \
+            APPLE_ID APPLE_APP_PASSWORD APPLE_TEAM_ID \
+            AZURE_CLIENT_ID AZURE_CLIENT_SECRET AZURE_TENANT_ID \
+            AZURE_CODESIGN_ENDPOINT AZURE_CODESIGN_ACCOUNT_NAME AZURE_CODESIGN_PROFILE_NAME
+          do
+            if [[ -z "${!name}" ]]; then missing+=("$name"); fi
+          done
+          if (( ${#missing[@]} )); then
+            printf '::error::Missing desktop release configuration: %s\n' "${missing[*]}"
+            exit 1
+          fi
+
+      - name: Pick build targets
+        id: pick
+        shell: bash
+        run: |
+          target="${{ github.event.inputs.target || 'all' }}"
+          mac_arm='{"os":"macos","arch":"arm64","runner":"macos-latest"}'
+          mac_x64='{"os":"macos","arch":"x64","runner":"macos-15-intel"}'
+          win_x64='{"os":"windows","arch":"x64","runner":"windows-latest"}'
+          case "$target" in
+            all)                 legs="$mac_arm,$mac_x64,$win_x64" ;;
+            macos)               legs="$mac_arm,$mac_x64" ;;
+            macos-arm64)         legs="$mac_arm" ;;
+            macos-x64)           legs="$mac_x64" ;;
+            windows|windows-x64) legs="$win_x64" ;;
+            *) echo "::error::unknown build target '$target'"; exit 1 ;;
+          esac
+          echo "Building target: $target"
+          echo "matrix={\"include\":[$legs]}" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: setup
+    name: Build ${{ matrix.os == 'macos' && 'macOS' || 'Windows' }} (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
+    env:
+      # Version tags are public releases and are always signed. For manual and
+      # preview builds, the dispatch checkbox overrides vars.SKIP_CODESIGNING;
+      # those builds remain unsigned by default.
+      SKIP_CODESIGNING: ${{ github.ref_type == 'tag' && 'false' || github.event.inputs.sign == 'true' && 'false' || vars.SKIP_CODESIGNING || 'true' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+          # whisper.cpp — the local-transcription native addon builds from it
+          # (the wrapper's postinstall) and forge packages the result.
+          submodules: recursive
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.27.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      # The native recording helpers build in forge's prePackage hook: Swift on
+      # macOS (Xcode ships on the runners), `dotnet publish -r win-x64` on
+      # Windows (needs the .NET SDK). audio-capture links the prebuilt WebRTC
+      # AEC3 DLL on win32.
+      - name: Setup .NET (Windows helpers)
+        if: matrix.os == 'windows'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The desktop bundle imports workspace packages from their built dist/
+      # (e.g. @prismical/id → bunchee dist/es). `^...` builds every dependency of
+      # @prismical/desktop (topologically, via the build task's ^build) — but not
+      # desktop itself, which forge packages next.
+      - name: Build workspace dependencies
+        run: pnpm turbo run build --filter=@prismical/desktop^...
+
+      # The wrapper's postinstall already built the native addon during
+      # `pnpm install` (submodule checked out above; GGML_NATIVE defaults OFF
+      # in build-addon.js — hosted runners reject i8mm under -mcpu=native).
+      # Postinstall build failures only warn, so this stamp-aware pass rebuilds
+      # if that silently did not happen and is a fast no-op otherwise;
+      # test:load then proves the binary dlopens on this runner. A missing
+      # submodule fails here, loudly — a release can never ship without local
+      # transcription by accident.
+      - name: Ensure whisper native binaries
+        shell: bash
+        run: |
+          if [ ! -f packages/whisper-wrapper/whisper.cpp/src/whisper.cpp ]; then
+            echo "::error::whisper.cpp submodule is not checked out (packages/whisper-wrapper/whisper.cpp)"
+            exit 1
+          fi
+          node packages/whisper-wrapper/bin/build-addon.js --postinstall
+
+      - name: Smoke-load whisper native addon
+        run: pnpm --filter @prismical/whisper-wrapper test:load
+
+      # Both are optional for a fork (local mode needs neither), but a tag
+      # release of the official app without them is almost certainly a
+      # misconfigured repository — say so in the run.
+      - name: Check app configuration secrets
+        if: github.ref_type == 'tag'
+        shell: bash
+        env:
+          PRISMICAL_CLIENT_ID: ${{ secrets.PRISMICAL_CLIENT_ID }}
+          PRISMICAL_ANALYTICS_KEY: ${{ secrets.PRISMICAL_ANALYTICS_KEY }}
+        run: |
+          [ -n "$PRISMICAL_CLIENT_ID" ] || echo "::warning::PRISMICAL_CLIENT_ID is not set — cloud-mode sign-in will report NOT_CONFIGURED in this build"
+          [ -n "$PRISMICAL_ANALYTICS_KEY" ] || echo "::warning::PRISMICAL_ANALYTICS_KEY is not set — telemetry is disabled in this build"
+
+      # ------------------------------------------------------------------ macOS
+      - name: Import Developer ID cert (macOS, signing on)
+        if: matrix.os == 'macos' && env.SKIP_CODESIGNING == 'false'
+        uses: apple-actions/import-codesign-certs@v3
+        with:
+          p12-file-base64: ${{ secrets.DEVELOPER_CERT_BASE64 }}
+          p12-password: ${{ secrets.DEVELOPER_CERT_PASSPHRASE }}
+
+      - name: Make (macOS, ${{ matrix.arch }})
+        if: matrix.os == 'macos'
+        working-directory: apps/desktop
+        env:
+          # ~120MB DMG + full electron-forge make can spike memory.
+          NODE_OPTIONS: --max-old-space-size=6144
+          # forge signs + notarizes only when SKIP_CODESIGNING is exactly 'false'
+          # AND the creds are present; otherwise this is a plain unsigned build.
+          SKIP_CODESIGNING: ${{ env.SKIP_CODESIGNING }}
+          CODESIGNING_IDENTITY: ${{ secrets.CODESIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          PRISMICAL_CLIENT_ID: ${{ secrets.PRISMICAL_CLIENT_ID }}
+          PRISMICAL_ANALYTICS_KEY: ${{ secrets.PRISMICAL_ANALYTICS_KEY }}
+        # No --arch: forge builds for the host arch, which is arm64 on
+        # macos-latest and x64 on macos-13 — matching matrix.arch (and the
+        # zip/darwin/<arch> output path the upload globs read).
+        run: pnpm make
+
+      # ---------------------------------------------------------------- Windows
+      # Unsigned path: one shot, host arch = x64.
+      - name: Make (Windows, unsigned)
+        if: matrix.os == 'windows' && env.SKIP_CODESIGNING != 'false'
+        working-directory: apps/desktop
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+          PRISMICAL_CLIENT_ID: ${{ secrets.PRISMICAL_CLIENT_ID }}
+          PRISMICAL_ANALYTICS_KEY: ${{ secrets.PRISMICAL_ANALYTICS_KEY }}
+        run: pnpm make
+
+      # Signed path (Azure Trusted Signing, amical's recipe): package first, sign
+      # the packaged binaries, then releasify (make --skip-package) so Squirrel's
+      # generated stubs (Update.exe, the launcher) get signed too.
+      - name: Package (Windows, signing on)
+        if: matrix.os == 'windows' && env.SKIP_CODESIGNING == 'false'
+        working-directory: apps/desktop
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+          PRISMICAL_CLIENT_ID: ${{ secrets.PRISMICAL_CLIENT_ID }}
+          PRISMICAL_ANALYTICS_KEY: ${{ secrets.PRISMICAL_ANALYTICS_KEY }}
+        run: pnpm package
+
+      - name: Build Windows package signing catalog
+        if: matrix.os == 'windows' && env.SKIP_CODESIGNING == 'false'
+        id: windows_package_catalog
+        shell: pwsh
+        run: |
+          $packageRoot = Join-Path $env:GITHUB_WORKSPACE "apps\desktop\out\Prismical-win32-${{ matrix.arch }}"
+          $catalogPath = Join-Path $packageRoot "artifact-signing-package-catalog.txt"
+
+          $isPortableExecutable = {
+            param([string]$Path)
+            try {
+              $stream = [System.IO.File]::OpenRead($Path)
+              try {
+                $buffer = New-Object byte[] 2
+                $read = $stream.Read($buffer, 0, 2)
+                return $read -eq 2 -and $buffer[0] -eq 0x4D -and $buffer[1] -eq 0x5A
+              } finally {
+                $stream.Dispose()
+              }
+            } catch {
+              return $false
+            }
+          }
+
+          $targets = Get-ChildItem -Path $packageRoot -Recurse -File |
+            Where-Object { $_.Extension -in '.exe', '.node' } |
+            Where-Object { & $isPortableExecutable $_.FullName } |
+            ForEach-Object { [System.IO.Path]::GetRelativePath($packageRoot, $_.FullName) }
+
+          if (-not $targets) {
+            throw "No signable Windows binaries found in $packageRoot"
+          }
+
+          $targets | Set-Content -Path $catalogPath -Encoding utf8
+          "catalog_path=$catalogPath" >> $env:GITHUB_OUTPUT
+
+      - name: Sign packaged Windows app
+        if: matrix.os == 'windows' && env.SKIP_CODESIGNING == 'false'
+        uses: azure/artifact-signing-action@v1
+        with:
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          endpoint: ${{ secrets.AZURE_CODESIGN_ENDPOINT }}
+          signing-account-name: ${{ secrets.AZURE_CODESIGN_ACCOUNT_NAME }}
+          certificate-profile-name: ${{ secrets.AZURE_CODESIGN_PROFILE_NAME }}
+          correlation-id: ${{ secrets.AZURE_CODESIGN_CORRELATION_ID || github.run_id }}
+          files-catalog: ${{ steps.windows_package_catalog.outputs.catalog_path }}
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          description: Prismical
+          description-url: https://prismical.ai
+
+      - name: Prepare Squirrel signing (Trusted Signing dlib)
+        if: matrix.os == 'windows' && env.SKIP_CODESIGNING == 'false'
+        id: squirrel_signing
+        shell: pwsh
+        run: |
+          # Squirrel's releasify generates the app-launcher stub and Update.exe
+          # during make, so those must be signed inside releasify (windowsSign in
+          # forge.config.ts). Fetch the Trusted Signing dlib and point signtool at it.
+          $client = Join-Path $env:RUNNER_TEMP "trusted-signing-client"
+          nuget install Microsoft.ArtifactSigning.Client -x -NonInteractive -Source https://api.nuget.org/v3/index.json -OutputDirectory $client | Out-Null
+          $dlib = Join-Path $client "Microsoft.ArtifactSigning.Client\bin\x64\Azure.CodeSigning.Dlib.dll"
+          if (-not (Test-Path $dlib)) { throw "Azure.CodeSigning.Dlib.dll not found under $client" }
+
+          $metadata = Join-Path $client "metadata.json"
+          @{
+            Endpoint               = "${{ secrets.AZURE_CODESIGN_ENDPOINT }}"
+            CodeSigningAccountName = "${{ secrets.AZURE_CODESIGN_ACCOUNT_NAME }}"
+            CertificateProfileName = "${{ secrets.AZURE_CODESIGN_PROFILE_NAME }}"
+            CorrelationId          = "${{ secrets.AZURE_CODESIGN_CORRELATION_ID || github.run_id }}"
+          } | ConvertTo-Json | Set-Content -Path $metadata -Encoding utf8
+
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\10.*\x64\signtool.exe" -ErrorAction SilentlyContinue |
+            Sort-Object { [version]$_.Directory.Parent.Name } |
+            Select-Object -Last 1 -ExpandProperty FullName
+          if (-not $signtool) { throw "signtool.exe not found in the Windows SDK" }
+
+          "signtool_path=$signtool" >> $env:GITHUB_OUTPUT
+          "sign_params=/v /dlib $dlib /dmdf $metadata" >> $env:GITHUB_OUTPUT
+
+      - name: Build Windows installer from signed package
+        if: matrix.os == 'windows' && env.SKIP_CODESIGNING == 'false'
+        working-directory: apps/desktop
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+          # Consumed by windowsSign in forge.config.ts to sign the
+          # Squirrel-generated binaries (stub launcher, Update.exe) in-releasify.
+          WINDOWS_SIGN_WITH_PARAMS: ${{ steps.squirrel_signing.outputs.sign_params }}
+          WINDOWS_SIGNTOOL_PATH: ${{ steps.squirrel_signing.outputs.signtool_path }}
+          # The Trusted Signing dlib authenticates via EnvironmentCredential.
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        run: pnpm exec electron-forge make --platform=win32 --arch=${{ matrix.arch }} --skip-package
+
+      - name: Verify Windows artifact signatures
+        if: matrix.os == 'windows' && env.SKIP_CODESIGNING == 'false'
+        shell: pwsh
+        run: |
+          # Releasify signs Setup.exe and everything it packs (windowsSign in
+          # forge.config.ts); the packaged-app pass signs the .exe/.node natives.
+          # Gate the release on every PE artifact carrying a valid, timestamped
+          # signature so a silent degradation in either pass fails the build.
+          $makeDir = Join-Path $env:GITHUB_WORKSPACE "apps\desktop\out\make\squirrel.windows\${{ matrix.arch }}"
+
+          $isPortableExecutable = {
+            param([string]$Path)
+            try {
+              $stream = [System.IO.File]::OpenRead($Path)
+              try {
+                $buffer = New-Object byte[] 2
+                $read = $stream.Read($buffer, 0, 2)
+                return $read -eq 2 -and $buffer[0] -eq 0x4D -and $buffer[1] -eq 0x5A
+              } finally {
+                $stream.Dispose()
+              }
+            } catch {
+              return $false
+            }
+          }
+
+          $targets = @(Get-ChildItem $makeDir -File -Filter "*.exe" | Select-Object -ExpandProperty FullName)
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          foreach ($nupkg in Get-ChildItem $makeDir -File -Filter "*.nupkg") {
+            $extractDir = Join-Path $env:RUNNER_TEMP "verify-$($nupkg.BaseName)"
+            [System.IO.Compression.ZipFile]::ExtractToDirectory($nupkg.FullName, $extractDir)
+            $targets += Get-ChildItem $extractDir -Recurse -File |
+              Where-Object { & $isPortableExecutable $_.FullName } |
+              Select-Object -ExpandProperty FullName
+          }
+          if ($targets.Count -eq 0) { throw "No Windows artifacts found to verify in $makeDir" }
+
+          $failures = @()
+          foreach ($t in $targets) {
+            $sig = Get-AuthenticodeSignature $t
+            $timestamped = $null -ne $sig.TimeStamperCertificate
+            $subject = if ($sig.SignerCertificate) { ($sig.SignerCertificate.Subject -split ',')[0] } else { "<unsigned>" }
+            "{0,-12} ts={1,-5} {2,-40} {3}" -f $sig.Status, $timestamped, $subject, $t
+            if ($sig.Status -ne "Valid" -or -not $timestamped) { $failures += $t }
+          }
+
+          if ($failures.Count -gt 0) {
+            Write-Output "`nFailed signature verification:"
+            $failures | ForEach-Object { Write-Output "  $_" }
+            throw "$($failures.Count) of $($targets.Count) Windows artifact(s) failed signature verification"
+          }
+          Write-Output "`nAll $($targets.Count) PE artifacts are signed and timestamped"
+
+      # ----------------------------------------------------------------- upload
+      # Every build uploads its installers as run artifacts: the release job
+      # attaches them to the GitHub Release (tags), the preview job to a rolling
+      # pre-release (preview/** branches), and a human grabs dispatch builds from
+      # the Actions UI. Once attached to a release they live there, so three
+      # days of artifact retention is all this needs.
+      - name: Rename release artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.os }}" = "macos" ]; then
+            cd apps/desktop/out/make
+            for dmg in *.dmg; do mv "$dmg" "Prismical-macos-${{ matrix.arch }}.dmg"; done
+          else
+            cd "apps/desktop/out/make/squirrel.windows/${{ matrix.arch }}"
+            for exe in *.exe; do mv "$exe" "Prismical-windows-${{ matrix.arch }}.exe"; done
+
+            shopt -s nullglob
+            nupkgs=(*.nupkg)
+            if [ ${#nupkgs[@]} -ne 1 ]; then
+              echo "::error::Expected exactly one .nupkg, found ${#nupkgs[@]}."
+              exit 1
+            fi
+            source_nupkg="${nupkgs[0]}"
+            if [[ "$source_nupkg" != Prismical-*-full.nupkg ]]; then
+              echo "::error::Unexpected Squirrel package name: $source_nupkg"
+              exit 1
+            fi
+
+            named_nupkg="Prismical-windows-${{ matrix.arch }}-${source_nupkg#Prismical-}"
+            named_releases="RELEASES-windows-${{ matrix.arch }}"
+            source_entries=$(awk -v package="$source_nupkg" '
+              $2 == package { count++ }
+              END { print count + 0 }
+            ' RELEASES)
+            if [ "$source_entries" -ne 1 ]; then
+              echo "::error::Expected RELEASES to reference $source_nupkg exactly once, found $source_entries entries."
+              exit 1
+            fi
+
+            awk -v old="$source_nupkg" -v new="$named_nupkg" '
+              $2 == old { $2 = new; print }
+            ' RELEASES > "$named_releases"
+            mv "$source_nupkg" "$named_nupkg"
+            rm RELEASES
+          fi
+          ls -la
+
+      - name: Upload macOS artifacts
+        if: matrix.os == 'macos'
+        uses: actions/upload-artifact@v4
+        with:
+          name: prismical-macos-${{ matrix.arch }}
+          if-no-files-found: error
+          retention-days: 3
+          path: |
+            apps/desktop/out/make/*.dmg
+            apps/desktop/out/make/zip/darwin/${{ matrix.arch }}/*.zip
+
+      - name: Upload Windows artifacts
+        if: matrix.os == 'windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: prismical-windows-${{ matrix.arch }}
+          if-no-files-found: error
+          retention-days: 3
+          # The .exe is the installer; the architecture-specific .nupkg and
+          # RELEASES-windows-<arch> are the Squirrel
+          # auto-update payload attached to the GitHub Release on a tag.
+          path: |
+            apps/desktop/out/make/squirrel.windows/${{ matrix.arch }}/*.exe
+            apps/desktop/out/make/squirrel.windows/${{ matrix.arch }}/*.nupkg
+            apps/desktop/out/make/squirrel.windows/${{ matrix.arch }}/RELEASES-windows-${{ matrix.arch }}
+
+  release:
+    name: Create GitHub Release (draft)
+    needs: build
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve release context
+        id: release_context
+        shell: bash
+        run: |
+          set -euo pipefail
+          CURRENT_TAG="${{ github.ref_name }}"
+          CURRENT_SHA=$(git rev-parse "${CURRENT_TAG}^{commit}")
+          VERSION=$(node -p "require('./apps/desktop/package.json').version")
+          if [[ "$CURRENT_TAG" == *-* ]]; then IS_PRERELEASE=true; else IS_PRERELEASE=false; fi
+          echo "current_tag=$CURRENT_TAG" >> "$GITHUB_OUTPUT"
+          echo "current_sha=$CURRENT_SHA" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "is_prerelease=$IS_PRERELEASE" >> "$GITHUB_OUTPUT"
+
+      # Conventional-commit changelog since the previous release tag (a beta
+      # counts every tag, a stable release only stable ones), plus GitHub's
+      # "New Contributors" section.
+      - name: Generate changelog
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          CURRENT_TAG="${{ steps.release_context.outputs.current_tag }}"
+          CURRENT_SHA="${{ steps.release_context.outputs.current_sha }}"
+          IS_PRERELEASE="${{ steps.release_context.outputs.is_prerelease }}"
+          VERSION="${{ steps.release_context.outputs.version }}"
+
+          if [[ "$IS_PRERELEASE" == "true" ]]; then
+            PREV_TAG=$(git describe --tags --abbrev=0 --match 'v[0-9]*' "$CURRENT_SHA"^ 2>/dev/null || echo "")
+          else
+            PREV_TAG=$(git describe --tags --abbrev=0 --match 'v[0-9]*' --exclude='*-*' "$CURRENT_SHA"^ 2>/dev/null || echo "")
+          fi
+          if [ -z "$PREV_TAG" ]; then RANGE="$CURRENT_SHA"; else RANGE="${PREV_TAG}..${CURRENT_SHA}"; fi
+          echo "changelog range: ${RANGE}"
+
+          RANGE="$RANGE" VERSION="$VERSION" node <<'NODE'
+          const { execFileSync } = require('node:child_process');
+          const fs = require('node:fs');
+          const log = execFileSync('git', ['log', '--no-merges', '--format=%s%x1f%h', process.env.RANGE], { encoding: 'utf8' });
+          const feat = /^\s*feat(?:\(([^)]*)\))?!?\s*:\s*(.*)$/i;
+          const fix = /^\s*fix(?:\(([^)]*)\))?!?\s*:\s*(.*)$/i;
+          const release = /^\s*chore(?:\([^)]*\))?\s*:\s*release/i;
+          const other = /^\s*(chore|refactor|docs|style|perf|test|build|ci)(?:\(([^)]*)\))?!?\s*:\s*/i;
+          const sections = { features: [], fixes: [], others: [] };
+          for (const line of log.split('\n').filter(Boolean)) {
+            const [message, hash] = line.split('\x1f');
+            if (!message || !hash) continue;
+            let m;
+            if ((m = message.match(feat))) sections.features.push({ scope: m[1] || null, text: m[2], hash });
+            else if ((m = message.match(fix))) sections.fixes.push({ scope: m[1] || null, text: m[2], hash });
+            else if (release.test(message)) continue;
+            else sections.others.push({ scope: null, text: message.replace(other, ''), hash });
+          }
+          const fmt = ({ scope, text, hash }) => (scope ? `- **${scope}**: ${text} (${hash})` : `- ${text} (${hash})`);
+          const out = [`## Prismical Desktop v${process.env.VERSION}`, ''];
+          if (sections.features.length) out.push('### Features', ...sections.features.map(fmt), '');
+          if (sections.fixes.length) out.push('### Bug Fixes', ...sections.fixes.map(fmt), '');
+          if (sections.others.length) out.push('### Other Changes', ...sections.others.map(fmt), '');
+          fs.writeFileSync('release-notes.md', out.join('\n'));
+          NODE
+
+          if [ -n "$PREV_TAG" ]; then
+            GH_NOTES=$(gh api "repos/${{ github.repository }}/releases/generate-notes" \
+              -f tag_name="$CURRENT_TAG" -f target_commitish="$CURRENT_SHA" -f previous_tag_name="$PREV_TAG" \
+              --jq '.body' 2>/dev/null || true)
+            NEW_CONTRIBUTORS=$(echo "$GH_NOTES" | sed -n '/## New Contributors/,/^## /{ /^## [^N]/d; p; }')
+            if [ -n "$NEW_CONTRIBUTORS" ]; then
+              { echo "$NEW_CONTRIBUTORS" | sed 's/^## /### /'; echo ""; } >> release-notes.md
+            fi
+          fi
+
+          {
+            echo "### Downloads"
+            echo ""
+            echo "- **macOS, Apple silicon**: \`Prismical-macos-arm64.dmg\`"
+            echo "- **macOS, Intel**: \`Prismical-macos-x64.dmg\`"
+            echo "- **Windows (x64)**: \`Prismical-windows-x64.exe\`"
+            echo ""
+            echo "The ZIP, architecture-specific \`.nupkg\` and \`RELEASES-windows-<arch>\` files are the auto-update payloads; installs should use the DMG / installer EXE."
+          } >> release-notes.md
+          echo "=== release notes ==="; cat release-notes.md
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          prerelease: ${{ steps.release_context.outputs.is_prerelease == 'true' }}
+          tag_name: ${{ steps.release_context.outputs.current_tag }}
+          target_commitish: ${{ steps.release_context.outputs.current_sha }}
+          name: Prismical Desktop v${{ steps.release_context.outputs.version }}
+          body_path: release-notes.md
+          fail_on_unmatched_files: true
+          files: |
+            artifacts/prismical-macos-arm64/*.dmg
+            artifacts/prismical-macos-arm64/zip/darwin/arm64/*.zip
+            artifacts/prismical-macos-x64/*.dmg
+            artifacts/prismical-macos-x64/zip/darwin/x64/*.zip
+            artifacts/prismical-windows-*/*.exe
+            artifacts/prismical-windows-*/*.nupkg
+            artifacts/prismical-windows-*/RELEASES-windows-*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  preview-release:
+    name: Publish preview release
+    needs: build
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/preview/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Resolve preview release id
+        id: preview
+        shell: bash
+        run: |
+          BRANCH="${GITHUB_REF#refs/heads/}"
+          # The tag is always prefixed "preview-" and never semver / -beta.N
+          # shaped, so core's update endpoints exclude it from BOTH the stable
+          # and beta channels — preview builds can never reach real users.
+          SLUG=$(printf '%s' "${BRANCH#preview/}" | sed -E 's#[^A-Za-z0-9._-]+#-#g')
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+          echo "tag=preview-${SLUG}" >> "$GITHUB_OUTPUT"
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Replace previous preview release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # One rolling pre-release per preview branch: drop the old release + tag
+          # so the new one always points at the latest build's commit.
+          gh release delete "${{ steps.preview.outputs.tag }}" \
+            --repo "${{ github.repository }}" --yes --cleanup-tag || true
+
+      - name: Create preview release
+        uses: softprops/action-gh-release@v2
+        with:
+          prerelease: true
+          tag_name: ${{ steps.preview.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: "Preview — ${{ steps.preview.outputs.branch }}"
+          body: |
+            Automated **preview build** from `${{ steps.preview.outputs.branch }}` (`${{ github.sha }}`).
+            Unsigned unless the run was dispatched with signing on; not served by the auto-updater.
+          files: |
+            artifacts/**/*.dmg
+            artifacts/**/*.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

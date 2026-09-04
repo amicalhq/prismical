@@ -1,0 +1,23 @@
+{
+  "name": "@prismical/app-contracts",
+  "version": "0.1.0",
+  "license": "MIT",
+  "description": "Framework-free display types and port interfaces shared by the web and desktop renderers. Zero runtime dependencies allowed.",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "lint": "eslint src/ --max-warnings 0",
+    "type:check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@prismical/eslint-config": "workspace:*",
+    "@prismical/typescript-config": "workspace:*",
+    "eslint": "catalog:",
+    "typescript": "catalog:"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "extends": "@prismical/typescript-config/base.json",
+  "compilerOptions": {
+    // Consumed as TS source by the web client (Next transpilePackages via app-client),
+    // the desktop renderer's Vite bundle, AND the desktop MAIN bundle — bundler
+    // resolution keeps relative imports extensionless for all three.
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": [],
+    "declaration": false,
+    "declarationMap": false,
+    "noEmit": true
+  },
+  "include": ["src/**/*"]
+}

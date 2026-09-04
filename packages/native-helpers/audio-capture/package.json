@@ -1,0 +1,23 @@
+{
+  "name": "@prismical/audio-capture",
+  "version": "1.0.0",
+  "license": "MIT",
+  "description": "Dedicated native audio capture binary for Prismical meetings",
+  "private": true,
+  "scripts": {
+    "build": "node scripts/build.cjs build",
+    "clean": "node scripts/build.cjs clean",
+    "dev": "node scripts/build.cjs dev"
+  },
+  "files": [
+    "bin/*"
+  ],
+  "os": [
+    "darwin",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ]
+}

@@ -1,0 +1,58 @@
+import { app, dialog } from 'electron';
+import started from 'electron-squirrel-startup';
+import { bakedE2EBuild, e2eEnvTrusted, scrubE2EEnv } from './e2e-gate';
+
+// Packaged-E2E gating: a production packaged binary must ignore
+// the PRISMICAL_E2E* env family — honoring it would downgrade refresh-token
+// custody to the plaintext-equivalent e2e codec, open the e2e IPC surface,
+// and redirect logs/userData. Only e2e-baked packages (PRISMICAL_E2E_PACKAGE=1
+// bakes __PRISMICAL_E2E_BUILD__=true) and unpackaged runs keep it. Scrubbing
+// here — before the setPath below, before logger.ts/config/start.ts evaluate —
+// makes every downstream consumer read sanitized env by construction.
+if (!e2eEnvTrusted({ isPackaged: app.isPackaged, baked: bakedE2EBuild() })) {
+  scrubE2EEnv(process.env);
+}
+
+// E2E harness hook (see e2e/): give each test run an isolated profile. Must be
+// applied before anything touches the single-instance lock — runtime/start.ts
+// keys requestSingleInstanceLock() off userData, and an isolated path keeps
+// test instances from colliding with a real running Prismical. sessionData is
+// set too so Chromium caches follow.
+if (process.env.PRISMICAL_E2E_USER_DATA_DIR) {
+  app.setPath('userData', process.env.PRISMICAL_E2E_USER_DATA_DIR);
+  app.setPath('sessionData', process.env.PRISMICAL_E2E_USER_DATA_DIR);
+}
+
+if (process.platform === 'win32' && started) {
+  // Squirrel.Windows event hook process (--squirrel-install/-updated/
+  // -obsolete/-uninstall): electron-squirrel-startup spawns the Update.exe
+  // shortcut work and quits once it completes. Nothing else may run here —
+  // loading the app would reach requestSingleInstanceLock(), which fires
+  // second-instance in the already-running app mid-background-update.
+  app.quit();
+} else {
+  // The entire app lives behind this dynamic import so a module-evaluation
+  // failure anywhere in its graph rejects here — the fatal boundary — instead
+  // of crashing the process before any error handling exists. Keep this
+  // entry's own imports minimal for the same reason. The boot failure is
+  // always fatal (exit 1): e2e/broken-boot.spec.ts asserts that a broken boot
+  // fails the launch, so nothing between here and the harness may swallow it.
+  import('./runtime/start').catch(async (error: unknown) => {
+    console.error('Failed to load application', error);
+    if (process.env.PRISMICAL_E2E !== '1') {
+      // showErrorBox is safe before the ready event; skipped under E2E because
+      // the modal would hang a headless run — the non-zero exit still lands.
+      let title = 'Prismical failed to start';
+      let message = error instanceof Error ? (error.stack ?? error.message) : String(error);
+      try {
+        const copy = (await import('./fatal-i18n')).fatalDialogCopy();
+        title = copy.title;
+        message = `${copy.description}\n\n${copy.detailsLabel}:\n${message}`;
+      } catch {
+        // This is the last-resort boundary; even i18n may be the failed module.
+      }
+      dialog.showErrorBox(title, message);
+    }
+    app.exit(1);
+  });
+}

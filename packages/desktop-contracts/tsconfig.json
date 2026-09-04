@@ -1,0 +1,15 @@
+{
+  "extends": "@prismical/typescript-config/base.json",
+  "compilerOptions": {
+    // Consumed as TS source by apps/desktop's bundlers (vite main/preload/renderer
+    // + vitest); bundler resolution keeps relative imports extensionless and
+    // matches the consumer's resolution mode.
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": [],
+    "declaration": false,
+    "declarationMap": false,
+    "noEmit": true
+  },
+  "include": ["src/**/*"]
+}

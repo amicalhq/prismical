@@ -1,0 +1,1 @@
+ALTER TABLE `recovery_outbox` ADD `engine` text;

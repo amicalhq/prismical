@@ -1,0 +1,4 @@
+"NSMicrophoneUsageDescription" = "Prismical は会議を記録して文字起こしするためにマイクを使用します。";
+"NSAudioCaptureUsageDescription" = "Prismical は自分だけでなく会議の参加者全員を文字起こしするためにシステム音声を取り込みます。";
+"NSCalendarsUsageDescription" = "Prismical は今後の会議を表示してノートを準備するために、選択したカレンダーを読み取ります。";
+"NSCalendarsFullAccessUsageDescription" = "Prismical は今後の会議を表示してノートを準備するために、選択したカレンダーを読み取ります。";

@@ -1,0 +1,37 @@
+{
+  "name": "@prismical/whisper-wrapper",
+  "version": "0.0.0",
+  "license": "MIT",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "native",
+    "src",
+    "addon"
+  ],
+  "binary": {
+    "napi_versions": [
+      8
+    ]
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev:prepare": "node ./scripts/dev-prepare.js",
+    "preinstall": "node ./scripts/apply-patches.js",
+    "postinstall": "node ./bin/build-addon.js --postinstall",
+    "build:native": "node ./scripts/build-native.js",
+    "build:native:cuda": "node ./scripts/build-native.js --cuda",
+    "build:native:vulkan": "node ./scripts/build-native.js --vulkan",
+    "test:load": "node -e \"require('./dist/index.js')\""
+  },
+  "devDependencies": {
+    "@prismical/typescript-config": "workspace:*",
+    "@types/node": "catalog:",
+    "cmake-js": "^7.3.1",
+    "minimatch": "10.0.3",
+    "node-api-headers": "^1.5.0",
+    "typescript": "^5.8.3"
+  }
+}

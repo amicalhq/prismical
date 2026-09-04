@@ -1,0 +1,20 @@
+**/dist/
+**/node_modules/
+**/coverage/
+**/.turbo/
+**/whisper.cpp/
+pnpm-lock.yaml
+# Shared packages keep their own formatting — never reformat them here
+packages/api-contracts/
+packages/app-contracts/
+packages/app-client/
+packages/app-i18n/
+packages/app-ui/
+packages/ai-prompts/
+packages/editor-markdown/
+packages/editor-schema/
+packages/id/
+packages/note-derive/
+packages/silence/
+# Generated verbatim by WebRTC's license tool.
+packages/native-helpers/audio-capture/Vendor/WebRTC/**/THIRD_PARTY_LICENSES.md

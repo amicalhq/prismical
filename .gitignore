@@ -1,0 +1,69 @@
+# Dependencies
+node_modules
+.pnp
+.pnp.js
+
+# Local env files
+.env
+.env.local
+.env.*.local
+
+# Testing
+coverage
+test-results
+playwright-report
+
+# Turbo
+.turbo
+
+# Build outputs
+out/
+build
+dist
+.build
+.vite/
+*.tsbuildinfo
+
+# Debug / logs
+npm-debug.log*
+*.log
+logs/
+
+# OS / IDE
+.DS_Store
+.idea/
+*.swp
+*.swo
+
+# Temp
+*.tmp
+*.temp
+
+# pnpm
+.pnpm-store/
+.pnpm-debug.log
+
+# sqlite db files
+*.db*
+
+# Claude Code: machine-local overrides only
+.claude/settings.local.json
+.claude/worktrees/
+
+# whisper.cpp native addon build outputs (packages/whisper-wrapper)
+packages/whisper-wrapper/native/
+packages/whisper-wrapper/.cmake-js/
+packages/whisper-wrapper/.home/
+
+# Desktop sidecar Node runtimes (downloaded per-arch by download-node-binaries.ts)
+apps/desktop/node-binaries/
+
+# Coding-agent instruction files and state stay local; the public docs are
+# README.md, CONTRIBUTING.md and docs/.
+AGENTS.md
+CLAUDE.md
+.claude/
+.cursor/
+.codex/
+.superpowers/
+.worktrees/

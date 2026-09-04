@@ -1,0 +1,689 @@
+/* Shared renderer design-token + theme layer.
+ *
+ * The web (Next) and desktop (Electron) renderers share one source of truth.
+ * Each app's CSS entry keeps
+ * its own `@import "tailwindcss"` and `@source` directive and imports this file
+ * right after it, so Tailwind processes these @theme / @custom-variant / @apply
+ * rules together with the engine. */
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/* Self-hosted Ubuntu — replaces next/font/google so the shared renderer works
+ * identically in the web (Next) and desktop (Electron, CSP `font-src 'self'
+ * data:`) bundles. Ubuntu is not a variable font, so the weights the wordmark
+ * uses (Regular/Medium/Bold) are declared explicitly. Latin subset only. */
+@font-face {
+  font-family: "Ubuntu";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../fonts/ubuntu-latin-400-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Ubuntu";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("../fonts/ubuntu-latin-500-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Ubuntu";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("../fonts/ubuntu-latin-700-normal.woff2") format("woff2");
+}
+
+body {
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
+    sans-serif;
+}
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  /* Brand wordmark font family, self-hosted via the @font-face rules above
+   * Consumed by --font-brand in the @theme block. */
+  --font-ubuntu: "Ubuntu";
+  /* Prismical default theme, light: main #fcfcfd (not pure white), sidebar
+   * #fafafa (darker than main), divider #e4e4e4, card borders #e9e9ea,
+   * text #242424. */
+  --background: #fcfcfd;
+  --foreground: #242424;
+  --note-foreground: #303030;
+  --card: #fcfcfd;
+  --card-foreground: #242424;
+  --popover: #ffffff;
+  --popover-foreground: #242424;
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: #f4f4f5;
+  --secondary-foreground: oklch(0.205 0 0);
+  /* Lifted to the --accent tier (was #f6f6f7, ≈ background) so muted surfaces —
+   * avatar fills, tab tracks, table headers, muted bubbles, cards — read as a
+   * distinct step above the background/popover, per shadcn's muted≈accent
+   * palette. */
+  --muted: #ececee;
+  /* Readable-but-muted: an #a0a0a1-style faint tier is too low-contrast for
+   * our broad muted-foreground usage (timestamps, previews, headers). */
+  --muted-foreground: #76767a;
+  /* Hover wash — a clear step darker than --muted so hover reads. */
+  --accent: #ececee;
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.577 0.245 27.325);
+  /* Status + diff semantics. Dark values are tuned for near-black surfaces;
+   * light values are same-hue, darkened for contrast on light surfaces. */
+  --success: #15803d;
+  --warning: #b45309;
+  /* Text/icon color on a solid --warning fill (e.g. the reconnect banner's button). */
+  --warning-foreground: #ffffff;
+  --diff-added: #3c8d44;
+  --diff-removed: #cc4b40;
+  --border: #e9e9ea;
+  --input: #e4e4e4;
+  /* Raised surface for interactive chips that must read as lifted — outline
+   * buttons, the active tab pill. Light gets this for free from --background
+   * (its brightest tier, which is what those components used directly), but the
+   * dark stack inverts: --background becomes the FLOOR, so the dark override
+   * fell back to --input at 30% alpha and composited to ~1.01:1 against both
+   * --muted and --background — the control lost its shape entirely. Dark
+   * therefore needs its own tier a clear step above --muted.
+   * Light values are exactly what those components rendered before, so light
+   * is unchanged. */
+  --surface-raised: #fcfcfd;
+  --surface-raised-hover: #ececee;
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  --radius: 0.625rem;
+  --sidebar: #fafafa;
+  --sidebar-foreground: #4d4d4d;
+  --sidebar-foreground-muted: #646468;
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: #0d0d0d0d;
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: #0d0d0d1a;
+  --sidebar-ring: oklch(0.708 0 0);
+  --content-padding: 2rem;
+  --content-max-width: 75rem;
+  --header-height: 3rem;
+  /* The recording/Ask dock floats OVER the scroll area (a 42px pill row sitting
+   * 24px off the bottom), so every page needs to be able to scroll its last
+   * content clear of it — otherwise the final button or row sits under the
+   * dock and can never be reached. Measured height + gap + breathing room. */
+  --dock-clearance: 5.5rem;
+  /* Floating glass surface (dock panels: transcription, Ask). The fill is a
+   * step BRIGHTER than --background so the surface reads raised even before
+   * the shadow, and translucent enough that the backdrop blur gives frosted
+   * glass rather than ghosted text. Fallback is the opaque
+   * equivalent for browsers without backdrop-filter. */
+  --surface-glass: rgba(255, 255, 255, 0.8);
+  --surface-glass-fallback: #ffffff;
+  /* 40px, not a subtle 8-24px: at panel scale a small radius leaves legible
+   * shapes ("blobs") of the content behind — heavy blur + a high fill reads
+   * as true frosted glass. Shared by panels AND dock pills so one shader
+   * config serves every glass surface (see BlurPrewarm). */
+  --surface-glass-filter: blur(40px) saturate(180%);
+  --surface-glass-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    0 1px 2px rgba(0, 0, 0, 0.05),
+    0 20px 48px -12px rgba(0, 0, 0, 0.22);
+  /* Transcript speaker accent for "Them" (the far side of a call, from the system-audio
+   * channel). Mirrors the editor-link indigo already used for task lists, so it's a reused
+   * accent, not a new brand colour; "You" stays neutral. */
+  --speaker-them: oklch(0.5 0.18 274);
+  --speaker-them-soft: oklch(0.5 0.18 274 / 0.12);
+  /* Dock surface system.
+   * The dock's two morphing units are OPAQUE raised surfaces — a step brighter
+   * than --background with a hairline + layered shadow. Opaque on purpose: no backdrop-filter means no
+   * backdrop-root constraints on ancestors. */
+  /* Derived from the app theme tokens (not fixed hex) so the dock follows
+   * the active theme while preserving the surface hierarchy. */
+  --dock-surface: var(--popover);
+  --dock-field: var(--muted);
+  --dock-hover: color-mix(in srgb, var(--foreground) 5%, transparent);
+  --dock-line: var(--border);
+  --dock-line-strong: color-mix(in srgb, var(--foreground) 15%, var(--background));
+  --dock-ink: var(--foreground);
+  --dock-ink-2: var(--muted-foreground);
+  --dock-ink-3: color-mix(in srgb, var(--muted-foreground) 72%, var(--background));
+  --dock-inset: color-mix(in srgb, var(--foreground) 3%, var(--background));
+  --dock-shadow:
+    0 0 0 1px rgba(13, 13, 13, 0.05),
+    0 1px 2px rgba(0, 0, 0, 0.07),
+    0 2px 6px rgba(0, 0, 0, 0.06),
+    0 16px 32px -12px rgba(0, 0, 0, 0.14);
+  --dock-shadow-raised:
+    0 0 0 1px rgba(13, 13, 13, 0.06),
+    0 2px 6px rgba(0, 0, 0, 0.08),
+    0 12px 28px -8px rgba(0, 0, 0, 0.18);
+  --dock-shadow-btn: 0 0 0 1px rgba(13, 13, 13, 0.07), 0 1px 2px rgba(0, 0, 0, 0.12);
+  /* Recording accent — warmer + brighter than --destructive so the live
+   * waveform/stop read as "recording", not "error" (Radix red 9/10 family). */
+  --rec: #e5484d;
+  --rec-soft: rgba(229, 72, 77, 0.12);
+}
+
+/* Tighter content gutters on phones — the 2rem desktop gutter eats ~17% of a
+ * 375px viewport. Drives the centered page container's paddingInline in
+ * (app)/layout.tsx, so every page picks this up. */
+@media (max-width: 640px) {
+  :root {
+    --content-padding: 1rem;
+  }
+}
+
+.dark {
+  /* Prismical default theme, dark: deep near-black neutrals — main #121215,
+   * sidebar #1d1d20 (lighter than main), card borders ~#29292c, elevated
+   * input #2b2b2d, ink #e3e4e6, muted text #868688. */
+  --background: #121215;
+  --foreground: #e3e4e6;
+  --note-foreground: #d8d9db;
+  --card: #121215;
+  --card-foreground: #e3e4e6;
+  --popover: #1d1d20;
+  --popover-foreground: #e3e4e6;
+  --primary: oklch(0.985 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: #1d1d20;
+  --secondary-foreground: oklch(0.985 0 0);
+  /* Lifted to the --accent tier (was #1d1d20, identical to popover/sidebar) so
+   * muted surfaces stand out on dark instead of vanishing into their container,
+   * per shadcn's muted≈accent palette. */
+  --muted: #26262a;
+  --muted-foreground: #868688;
+  /* Hover wash — a clear step lighter than --muted/--popover so hover
+   * reads on panels and inside menus. */
+  --accent: #26262a;
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.396 0.141 25.723);
+  --destructive-foreground: oklch(0.637 0.237 25.331);
+  --success: #69c967;
+  --warning: #fbbf24;
+  /* Dark text on the bright amber fill. */
+  --warning-foreground: #1c1403;
+  --diff-added: #69c967;
+  --diff-removed: #ff7e78;
+  --border: #29292c;
+  --input: #2b2b2d;
+  /* See the light block: dark needs a real raised tier, not --background. */
+  --surface-raised: #34343a;
+  --surface-raised-hover: #3d3d43;
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
+  --sidebar: #1d1d20;
+  --sidebar-foreground: #cfd0d1;
+  --sidebar-foreground-muted: #a4a4a8;
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: #ffffff0a;
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: #ffffff1f;
+  --sidebar-ring: oklch(0.439 0 0);
+  /* Glass surface, dark: raised #232327 tone at 85%. NO drop shadow — a soft
+   * black spread doesn't render smoothly on #121215 (visible banding) and, as
+   * in shadcn's dark dialogs, the elevation is carried by the lighter surface
+   * tone + the inset top hairline + a 1px dark ring. */
+  --surface-glass: rgba(35, 35, 39, 0.85);
+  --surface-glass-fallback: #232327;
+  --surface-glass-filter: blur(40px) saturate(140%);
+  --surface-glass-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 0 0 1px rgba(0, 0, 0, 0.45);
+  /* Same indigo accent, lifted for dark surfaces. */
+  --speaker-them: oklch(0.74 0.16 274);
+  --speaker-them-soft: oklch(0.74 0.16 274 / 0.16);
+  /* Dark dock surfaces are derived from the app theme tokens; the mix
+   * ratios keep them distinct from the surrounding surface. The white hairline ring is carried
+   * inside the shadow stack. */
+  --dock-surface: var(--popover);
+  --dock-field: color-mix(in srgb, var(--foreground) 7%, var(--popover));
+  --dock-hover: color-mix(in srgb, var(--foreground) 9%, transparent);
+  --dock-line: color-mix(in srgb, var(--foreground) 10%, var(--popover));
+  --dock-line-strong: color-mix(in srgb, var(--foreground) 17%, var(--popover));
+  --dock-ink: var(--foreground);
+  --dock-ink-2: color-mix(in srgb, var(--foreground) 72%, var(--background));
+  --dock-ink-3: color-mix(in srgb, var(--foreground) 45%, var(--background));
+  --dock-inset: color-mix(in srgb, var(--foreground) 2%, var(--background));
+  --dock-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 1px 2px rgba(0, 0, 0, 0.5),
+    0 2px 6px rgba(0, 0, 0, 0.45),
+    0 16px 32px -12px rgba(0, 0, 0, 0.6);
+  --dock-shadow-raised:
+    0 0 0 1px rgba(255, 255, 255, 0.09),
+    0 4px 10px rgba(0, 0, 0, 0.55),
+    0 16px 36px -8px rgba(0, 0, 0, 0.7);
+  --dock-shadow-btn: 0 0 0 1px rgba(255, 255, 255, 0.09), 0 1px 2px rgba(0, 0, 0, 0.45);
+  --rec: #ff6369;
+  --rec-soft: rgba(255, 99, 105, 0.14);
+}
+
+@theme inline {
+  /* Brand wordmark font — Ubuntu, self-hosted via the @font-face rules above
+   * (--font-ubuntu is set in :root). Falls back to the system stack until/if
+   * the web font fails to load. */
+  --font-brand: var(--font-ubuntu), -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-note-foreground: var(--note-foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-diff-added: var(--diff-added);
+  --color-diff-removed: var(--diff-removed);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-raised-hover: var(--surface-raised-hover);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  /* Fine-print tier (chips, kbd hints, timestamps) — replaces ad-hoc
+   * text-[10px]/text-[11px] arbitrary sizes. */
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-foreground-muted: var(--sidebar-foreground-muted);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  /* Dock surface palette (see the --dock-* blocks above). */
+  --color-dock-surface: var(--dock-surface);
+  --color-dock-field: var(--dock-field);
+  --color-dock-hover: var(--dock-hover);
+  --color-dock-line: var(--dock-line);
+  --color-dock-line-strong: var(--dock-line-strong);
+  --color-dock-ink: var(--dock-ink);
+  --color-dock-ink-2: var(--dock-ink-2);
+  --color-dock-ink-3: var(--dock-ink-3);
+  --color-dock-inset: var(--dock-inset);
+  --color-rec: var(--rec);
+  --color-rec-soft: var(--rec-soft);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Waveform bar oscillation — used by the recording dock's CSS-only waveform.
+ * Each bar runs this keyframe with a staggered animation-delay to create a
+ * traveling-wave silhouette across the row. `transform-origin: bottom` keeps
+ * the bars rooted to the baseline as they scale. */
+@keyframes waveform-bar {
+  0%, 100% { transform: scaleY(0.3); }
+  50% { transform: scaleY(1); }
+}
+
+/* Waveform "pending" pulse — all bars breathe IN UNISON (no stagger) while a
+ * recording is starting/stopping, so the dock reads as "working on it" rather
+ * than hung. Distinct from the staggered traveling wave of live capture.
+ * Transform+opacity only, so it stays on the compositor. */
+@keyframes waveform-bar-pending {
+  0%, 100% { transform: scaleY(0.25); opacity: 0.5; }
+  50% { transform: scaleY(0.5); opacity: 0.9; }
+}
+
+/* Floating glass surface for the dock's panels (transcription, Ask). The dock
+ * pills carry the same --surface-glass-filter and are visible from first
+ * paint, so they double as the warm-up that compiles the blur shaders — the
+ * cold first-use compile used to freeze the FIRST panel open ~200ms.
+ * NOTE: the drop-shadow extent must stay under the 120px clip
+ * headroom of GLASS_WIPE_OPEN in dock-chrome.ts, or the open panel clips it. */
+.surface-glass {
+  background: var(--surface-glass-fallback);
+  box-shadow: var(--surface-glass-shadow);
+}
+@supports (backdrop-filter: blur(1px)) {
+  .surface-glass {
+    background: var(--surface-glass);
+    -webkit-backdrop-filter: var(--surface-glass-filter);
+    backdrop-filter: var(--surface-glass-filter);
+  }
+}
+
+/* Engaged-recording dimming for the skill slot. The v3 pills are opaque
+ * surfaces (no backdrop-filter), so a plain opacity fade is safe now — the
+ * old self-filter rule existed only because a fractional-opacity ancestor of
+ * a backdrop-filter element would have formed a backdrop root and killed the
+ * glass blur. */
+.dock-slot-dimmed .dock-pill {
+  opacity: 0.55;
+}
+
+/* Theme-aware shimmer for small status labels on dock surfaces ("Listening…",
+ * "Thinking…", "Generating"): an ink-3 → ink brightness sweep scoped to the
+ * element (the viewport-anchored variants above barely move on an ~80px
+ * label). Used via className="shimmer" on Marker contents and pill labels. */
+.shimmer {
+  background-image: linear-gradient(
+    90deg,
+    var(--dock-ink-3, var(--muted-foreground)) 0%,
+    var(--dock-ink-3, var(--muted-foreground)) 40%,
+    var(--dock-ink, var(--foreground)) 50%,
+    var(--dock-ink-3, var(--muted-foreground)) 60%,
+    var(--dock-ink-3, var(--muted-foreground)) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer-text-pill-sweep 2.6s linear infinite;
+}
+
+/* An invisible spinner must not tick the compositor forever: the recording
+ * dock keeps its "saving" face mounted inside the opacity-0 engaged layer at
+ * rest (see NoteRecordingDock showSaving). */
+.opacity-0 .animate-spin {
+  animation-play-state: paused;
+}
+
+/* The dock loaders are continuous motion — honor Reduce Motion. (The 200ms
+ * one-shot slides/wipes are left enabled; only infinite animations pulse.) */
+@media (prefers-reduced-motion: reduce) {
+  .waveform-bar-anim {
+    animation: none !important;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 2s linear infinite;
+  background-size: 200% 100%;
+}
+
+/* Text-only AI shimmer used while a note is being generated. Same-hue
+ * brightness sweep (muted → foreground → muted) — no accent color, matches
+ * the "thinking" effect used in most AI chat surfaces.
+ *
+ * One animation runs on the wrapper and updates `--shimmer-x`. Every text
+ * descendant inherits that variable and uses it as `background-position-x`,
+ * so they all sample the same gradient at the same offset. The gradient is
+ * sized in viewport units and anchored with `background-attachment: fixed`
+ * so the band moves at a consistent visible speed regardless of each
+ * element's own width — this is what was causing the jitter on the AI
+ * summary, which has many small spans (bold, list markers) of varying width. */
+@property --shimmer-x {
+  syntax: "<percentage>";
+  inherits: true;
+  initial-value: 100%;
+}
+
+@keyframes shimmer-sweep {
+  0% {
+    --shimmer-x: 100%;
+  }
+  100% {
+    --shimmer-x: -100%;
+  }
+}
+
+.ai-generating-text {
+  animation: shimmer-sweep 2s linear infinite;
+}
+
+/* Direct-element variant for shimmering text on dark backgrounds (e.g. the
+ * "Generate notes" pill while a summary is being generated). Combine with
+ * `.ai-generating-text` on the same element so the animation drives
+ * `--shimmer-x` and the gradient below reads it. */
+.shimmer-text-light {
+  background-image: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.5) 0%,
+    rgba(255, 255, 255, 0.5) 40%,
+    rgb(255, 255, 255) 50%,
+    rgba(255, 255, 255, 0.5) 60%,
+    rgba(255, 255, 255, 0.5) 100%
+  );
+  background-size: 200vw 100vh;
+  background-attachment: fixed;
+  background-position-x: var(--shimmer-x);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Element-local shimmer for small inline labels (e.g. the "Generating" /
+ * "Refining" pill labels on the dock). The viewport-anchored variant above
+ * (`shimmer-text-light`) is designed for wide surfaces — on a ~80px label
+ * its 200vw band only flashes across the element for a few frames per loop,
+ * which reads as "barely shimmering". This variant scopes the gradient to
+ * the element itself (`background-size: 200% 100%`) so the bright band
+ * always sweeps cleanly across the visible text, at a slower 2.6s cadence
+ * that doesn't feel jittery. Self-contained — no `--shimmer-x` driver
+ * needed. */
+.shimmer-text-pill {
+  background-image: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.35) 0%,
+    rgba(255, 255, 255, 0.35) 40%,
+    rgb(255, 255, 255) 50%,
+    rgba(255, 255, 255, 0.35) 60%,
+    rgba(255, 255, 255, 0.35) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer-text-pill-sweep 3s linear infinite;
+}
+
+@keyframes shimmer-text-pill-sweep {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+
+.ai-generating-text [contenteditable],
+.ai-generating-text [contenteditable] * {
+  /* Dim state is muted-foreground faded ~65% toward background; gives the
+   * sweep a much wider contrast range so the highlight band reads stronger. */
+  --shimmer-dim: color-mix(
+    in oklch,
+    var(--muted-foreground) 35%,
+    var(--background)
+  );
+  background-image: linear-gradient(
+    90deg,
+    var(--shimmer-dim) 0%,
+    var(--shimmer-dim) 40%,
+    var(--foreground) 50%,
+    var(--shimmer-dim) 60%,
+    var(--shimmer-dim) 100%
+  );
+  background-size: 200vw 100vh;
+  background-attachment: fixed;
+  background-position-x: var(--shimmer-x);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Lexical Checklist - shadcn-style checkboxes */
+.listitemChecked,
+.listitemUnchecked {
+  position: relative;
+  margin-left: 0.5rem;
+  padding-left: 1.5rem;
+  list-style-type: none;
+  outline: none;
+}
+
+.listitemChecked {
+  text-decoration: line-through;
+  color: var(--muted-foreground);
+}
+
+.listitemChecked:before,
+.listitemUnchecked:before {
+  content: "";
+  width: 1rem;
+  height: 1rem;
+  top: 0.15rem;
+  left: 0;
+  cursor: pointer;
+  display: block;
+  background-size: cover;
+  position: absolute;
+  border: 1.5px solid var(--muted-foreground);
+  border-radius: 0.25rem;
+  transition: all 0.15s ease;
+}
+
+.listitemChecked:before {
+  border-color: var(--primary);
+  background-color: var(--primary);
+}
+
+.listitemChecked:after {
+  content: "";
+  cursor: pointer;
+  border-color: var(--primary-foreground);
+  border-style: solid;
+  position: absolute;
+  display: block;
+  top: 0.35rem;
+  width: 0.25rem;
+  left: 0.35rem;
+  height: 0.5rem;
+  transform: rotate(45deg);
+  border-width: 0 2px 2px 0;
+}
+
+.listitemUnchecked:hover:before {
+  border-color: var(--primary);
+}
+
+/* TipTap task list — canonical inline layout (matches the demo on
+ * tiptap.dev). TaskItem renders <li><label><input/></label><div>content</div></li>;
+ * the rules below put the label and content on the same row. Inlined here
+ * (not in a nested @import) so Tailwind v4's pipeline definitely applies
+ * them. */
+ul[data-type="taskList"] {
+  list-style: none;
+  margin-left: 0;
+  padding: 0;
+}
+
+ul[data-type="taskList"] li {
+  display: flex;
+  align-items: center;
+}
+
+ul[data-type="taskList"] li > label {
+  flex: 0 0 auto;
+  margin-right: 0.5rem;
+  user-select: none;
+}
+
+ul[data-type="taskList"] li > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+ul[data-type="taskList"] li > div > p {
+  margin: 0;
+}
+
+ul[data-type="taskList"] input[type="checkbox"] {
+  cursor: pointer;
+  /* Indigo accent matches editor's link / syntax-keyword color (Tailwind
+   * indigo-600 / indigo-400 in OKLCH). `accent-color` recolors the checked
+   * fill on native checkboxes without replacing the control. */
+  accent-color: oklch(0.5 0.18 274);
+}
+
+.dark ul[data-type="taskList"] input[type="checkbox"] {
+  accent-color: oklch(0.74 0.16 274);
+}
+
+/* Checked state: strike through the paragraph + drop it to muted color. The
+ * `data-checked` attribute is set by TaskItem's `checked` attr via
+ * renderHTML. */
+ul[data-type="taskList"] li[data-checked="true"] > div {
+  text-decoration: line-through;
+  color: var(--muted-foreground);
+}
+
+/* Pixel-orbit loader (px-orbit-loader.tsx): outer ring cells light
+ * clockwise via staggered delays on this shared keyframe. */
+@keyframes px-orbit {
+  0%, 100% { opacity: 0.15; }
+  8% { opacity: 1; }
+  40% { opacity: 0.3; }
+}
+
+/* Ask composer: contenteditable placeholder — shows the data-placeholder
+ * text while the draft is empty. Truncates on one line: a wrapped placeholder
+ * reads as typed content and pushes the composer taller. */
+.ask-composer-input:empty::before {
+  content: attr(data-placeholder);
+  color: var(--dock-ink-3);
+  pointer-events: none;
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Narrow-viewport dock rules: expanded
+ * panels go full-bleed. The cluster sizes panels with inline styles, so the
+ * override travels through a custom property the inline var() reads. */
+@media (max-width: 820px) {
+  .dock-narrow-panels {
+    --dock-panel-w: calc(100vw - 24px);
+  }
+}

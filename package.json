@@ -1,0 +1,73 @@
+{
+  "name": "prismical",
+  "private": true,
+  "description": "Prismical Desktop \u2014 the open-source Electron app (local mode + cloud mode)",
+  "license": "MIT",
+  "scripts": {
+    "build": "turbo run build",
+    "clean": "turbo run clean",
+    "dev": "turbo run dev --filter=@prismical/desktop",
+    "format": "prettier --write \"**/*.{ts,tsx,md,json,mjs,mts,css}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,md,json,mjs,mts,css}\"",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "type:check": "turbo run type:check"
+  },
+  "devDependencies": {
+    "prettier": "^3.5.3",
+    "tsx": "catalog:",
+    "turbo": "^2.5.3"
+  },
+  "packageManager": "pnpm@10.27.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "pnpm": {
+    "overrides": {
+      "@tiptap/core": "3.24.0",
+      "@tiptap/extension-blockquote": "3.24.0",
+      "@tiptap/extension-bold": "3.24.0",
+      "@tiptap/extension-bubble-menu": "3.24.0",
+      "@tiptap/extension-bullet-list": "3.24.0",
+      "@tiptap/extension-code": "3.24.0",
+      "@tiptap/extension-code-block": "3.24.0",
+      "@tiptap/extension-code-block-lowlight": "3.24.0",
+      "@tiptap/extension-collaboration": "3.24.0",
+      "@tiptap/extension-document": "3.24.0",
+      "@tiptap/extension-dropcursor": "3.24.0",
+      "@tiptap/extension-emoji": "3.24.0",
+      "@tiptap/extension-floating-menu": "3.24.0",
+      "@tiptap/extension-gapcursor": "3.24.0",
+      "@tiptap/extension-hard-break": "3.24.0",
+      "@tiptap/extension-heading": "3.24.0",
+      "@tiptap/extension-horizontal-rule": "3.24.0",
+      "@tiptap/extension-italic": "3.24.0",
+      "@tiptap/extension-link": "3.24.0",
+      "@tiptap/extension-list": "3.24.0",
+      "@tiptap/extension-list-item": "3.24.0",
+      "@tiptap/extension-list-keymap": "3.24.0",
+      "@tiptap/extension-ordered-list": "3.24.0",
+      "@tiptap/extension-paragraph": "3.24.0",
+      "@tiptap/extension-strike": "3.24.0",
+      "@tiptap/extension-table": "3.24.0",
+      "@tiptap/extension-table-cell": "3.24.0",
+      "@tiptap/extension-table-header": "3.24.0",
+      "@tiptap/extension-table-row": "3.24.0",
+      "@tiptap/extension-task-item": "3.24.0",
+      "@tiptap/extension-task-list": "3.24.0",
+      "@tiptap/extension-text": "3.24.0",
+      "@tiptap/extension-underline": "3.24.0",
+      "@tiptap/extensions": "3.24.0",
+      "@tiptap/pm": "3.24.0",
+      "@tiptap/react": "3.24.0",
+      "@tiptap/starter-kit": "3.24.0",
+      "@tiptap/suggestion": "3.24.0",
+      "@hocuspocus/server": "4.1.0",
+      "@hocuspocus/common": "4.1.0"
+    },
+    "patchedDependencies": {
+      "macos-alias@0.2.12": "patches/macos-alias@0.2.12.patch",
+      "fs-xattr@0.3.1": "patches/fs-xattr@0.3.1.patch"
+    }
+  }
+}

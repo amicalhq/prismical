@@ -1,0 +1,4 @@
+"NSMicrophoneUsageDescription" = "Prismical zeichnet dein Mikrofon auf, um deine Besprechungen zu erfassen und zu transkribieren.";
+"NSAudioCaptureUsageDescription" = "Prismical erfasst Systemaudio, um alle Personen in der Besprechung zu transkribieren, nicht nur dich.";
+"NSCalendarsUsageDescription" = "Prismical liest die von dir ausgewählten Kalender, um bevorstehende Besprechungen anzuzeigen und Notizen vorzubereiten.";
+"NSCalendarsFullAccessUsageDescription" = "Prismical liest die von dir ausgewählten Kalender, um bevorstehende Besprechungen anzuzeigen und Notizen vorzubereiten.";

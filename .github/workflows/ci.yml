@@ -1,0 +1,192 @@
+name: ci
+
+# Pull-request gate for the desktop app and everything it links.
+#   checks         — lint / type-check / unit tests for the whole workspace
+#   bundle-smoke   — production Vite bundles + the real Electron main/preload/
+#                    renderer booted on an isolated profile
+#   native-helpers — the macOS Swift helpers build from source and pass their
+#                    golden fixtures + a live mic-detector handshake
+#   whisper-wrapper— the whisper.cpp native addon builds from the submodule
+#                    (the ONLY job that initializes it; every other job proves
+#                    the uninitialized-submodule install path stays green)
+#   windows-helpers— the C# / NAudio helpers publish for win-x64
+# Release builds live in release.yml (tags, preview/** branches, dispatch).
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.27.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace dependencies
+        run: pnpm turbo run build --filter=@prismical/desktop^...
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Type-check
+        run: pnpm type:check
+
+      # The desktop suite has timing-sensitive tests (real fs + fibers behind a
+      # test clock); run it on its own after the other packages so a fully
+      # parallel workspace run cannot starve it.
+      - name: Unit tests (packages)
+        run: pnpm turbo run test --filter='!@prismical/desktop'
+
+      - name: Unit tests (desktop)
+        run: pnpm --filter @prismical/desktop test
+
+  bundle-smoke:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.27.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The desktop bundle imports workspace packages from their built dist/
+      # (e.g. @prismical/id); `^...` builds every dependency of the desktop.
+      - name: Build workspace dependencies
+        run: pnpm turbo run build --filter=@prismical/desktop^...
+
+      - name: Build production bundles
+        # `forge package` is the supported way to produce production .vite
+        # bundles (a bare `vite build` would miss the plugin's define/env
+        # wiring). The packaged out/ dir is a byproduct; the smoke below runs
+        # the electron binary against .vite/build (bundle target).
+        run: pnpm --filter @prismical/desktop package
+
+      - name: Bundle smoke
+        run: PRISMICAL_E2E_TARGET=bundle pnpm --filter @prismical/desktop test:e2e e2e/smoke.spec.ts
+
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-e2e-artifacts
+          path: apps/desktop/e2e/.artifacts
+          if-no-files-found: ignore
+
+  # Build the macOS helper sources from a clean runner (bin/ outputs are
+  # gitignored) and prove the wire contracts: golden fixtures + a real
+  # mic-detector NDJSON handshake against the freshly built binary.
+  # audio-capture is asserted to exist and fail fast on an invalid invocation
+  # only — capture modes would require TCC.
+  native-helpers:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.27.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build mic-detector (swift)
+        run: pnpm --filter @prismical/mic-detector build
+
+      - name: Build audio-capture (swift + prebuilt AEC3)
+        run: pnpm --filter @prismical/audio-capture build
+
+      - name: Native golden fixtures + helper handshakes
+        run: pnpm --filter @prismical/desktop exec vitest run tests/native
+
+  whisper-wrapper:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.27.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      # With the submodule checked out, the wrapper's postinstall builds the
+      # native addon during install. GGML_NATIVE stays OFF on hosted runners
+      # (clang rejects i8mm intrinsics under -mcpu=native there).
+      - name: Install dependencies (postinstall builds the native addon)
+        env:
+          GGML_NATIVE: OFF
+        run: pnpm install --frozen-lockfile
+
+      - name: Build wrapper JS
+        run: pnpm --filter @prismical/whisper-wrapper build
+
+      - name: Smoke-load the native addon
+        run: pnpm --filter @prismical/whisper-wrapper test:load
+
+  # The Windows helpers (C# / NAudio, net8.0-windows, runtime-loaded AEC3 DLL)
+  # publish for win-x64 the same way release.yml's Windows leg does.
+  windows-helpers:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.27.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build mic-detector (dotnet publish win-x64)
+        run: pnpm --filter @prismical/mic-detector build
+
+      - name: Build audio-capture (dotnet publish win-x64 + AEC3 DLL copy)
+        run: pnpm --filter @prismical/audio-capture build
+
+      - name: Native golden fixtures + helper handshakes
+        run: pnpm --filter @prismical/desktop exec vitest run tests/native

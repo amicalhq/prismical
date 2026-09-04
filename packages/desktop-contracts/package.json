@@ -1,0 +1,26 @@
+{
+  "name": "@prismical/desktop-contracts",
+  "version": "0.1.0",
+  "license": "MIT",
+  "description": "Typed per-window IPC contracts for the Prismical desktop app. No Electron imports allowed.",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "lint": "eslint src/",
+    "type:check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@prismical/eslint-config": "workspace:*",
+    "@prismical/typescript-config": "workspace:*",
+    "eslint": "catalog:",
+    "typescript": "catalog:"
+  }
+}

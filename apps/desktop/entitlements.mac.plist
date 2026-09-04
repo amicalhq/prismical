@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Parent-app hardened-runtime entitlements (referenced by forge osxSign
+         during release packaging). Electron's V8 needs JIT + writable/executable memory. -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <!-- Microphone: HAL mic capture + the CoreAudio process-tap system-audio
+         path (macOS >= 14.2) both run through the audio-input device. Paired
+         with NSMicrophoneUsageDescription / NSAudioCaptureUsageDescription in
+         the Info.plist (forge extendInfo). -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+    <!-- EventKit full-access prompts are rejected under hardened runtime unless
+         the responsible app declares Calendar access as an entitlement in
+         addition to the Info.plist usage descriptions. -->
+    <key>com.apple.security.personal-information.calendars</key>
+    <true/>
+</dict>
+</plist>

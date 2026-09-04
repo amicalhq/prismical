@@ -1,0 +1,13 @@
+# Normalize line endings to LF in the working tree on every platform.
+* text=auto eol=lf
+*.wav binary
+*.tiff binary
+*.icns binary
+*.ico binary
+*.png binary
+*.a binary
+*.dll binary
+*.lib binary
+*.exe binary
+*.node binary
+*.woff2 binary

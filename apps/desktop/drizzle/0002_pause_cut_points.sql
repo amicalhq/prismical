@@ -1,0 +1,1 @@
+ALTER TABLE `recovery_outbox` ADD `pause_cut_points` text DEFAULT '[]' NOT NULL;

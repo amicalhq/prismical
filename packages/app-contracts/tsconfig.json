@@ -1,0 +1,15 @@
+{
+  "extends": "@prismical/typescript-config/base.json",
+  "compilerOptions": {
+    // Consumed as TS source by the Next.js browser client and the
+    // desktop renderer's Vite bundle; bundler resolution keeps relative
+    // imports extensionless and matches the consumers' resolution mode.
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": [],
+    "declaration": false,
+    "declarationMap": false,
+    "noEmit": true
+  },
+  "include": ["src/**/*"]
+}

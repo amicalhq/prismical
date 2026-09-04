@@ -1,0 +1,35 @@
+{
+  "extends": "@prismical/typescript-config/base.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    // The main-window renderer mounts the shared React shell
+    // (@prismical/app-ui) under a TanStack hash router; the automatic JSX runtime
+    // matches the shared packages' own tsconfigs (jsx: react-jsx).
+    "jsx": "react-jsx",
+    "declaration": false,
+    "declarationMap": false,
+    "noEmit": true,
+    // The imported native modules were authored without
+    // this flag (base.json enables it); relaxed app-wide to keep the import
+    // byte-identical. This can be re-tightened after the modules are Effect-wrapped.
+    "noUncheckedIndexedAccess": false,
+    // "@/*" alias, kept so imported modules' type imports stay verbatim.
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": [
+    "src/**/*",
+    "tests/**/*",
+    "e2e/**/*",
+    "forge.config.ts",
+    "forge.env.d.ts",
+    "playwright.config.ts",
+    "vitest.config.ts",
+    "vite.*.config.mts"
+  ],
+  "exclude": ["node_modules", ".vite", "out"]
+}

@@ -1,0 +1,71 @@
+@import "tailwindcss";
+
+/* Dock surface tokens for the floating pill (subset of app-ui tokens.css —
+ * this bundle deliberately imports no app CSS). The widget floats over the OS,
+ * not over the app, so it follows the SYSTEM theme via prefers-color-scheme
+ * rather than the app's theme class. */
+:root {
+  --dock-surface: #ffffff;
+  --dock-field: #f1f1f3;
+  --dock-hover: #0d0d0d0a;
+  --dock-line: #e6e6e8;
+  --dock-ink: #242424;
+  --dock-ink-2: #6b6b70;
+  --dock-ink-3: #98989e;
+  --dock-shadow-raised:
+    0 0 0 1px rgba(13, 13, 13, 0.06),
+    0 2px 6px rgba(0, 0, 0, 0.08),
+    0 12px 28px -8px rgba(0, 0, 0, 0.18);
+  --rec: #e5484d;
+  --rec-soft: rgba(229, 72, 77, 0.12);
+  --warning: #b45309;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Keep the dark surface tokens in lockstep with tokens.css. */
+    --dock-surface: #1c1c1f;
+    --dock-field: #28282c;
+    --dock-hover: rgba(255, 255, 255, 0.09);
+    --dock-line: #2e2e33;
+    --dock-ink: #f4f4f5;
+    --dock-ink-2: #b0b0b6;
+    --dock-ink-3: #77777d;
+    --dock-shadow-raised:
+      0 0 0 1px rgba(255, 255, 255, 0.09),
+      0 4px 10px rgba(0, 0, 0, 0.55),
+      0 16px 36px -8px rgba(0, 0, 0, 0.7);
+    --rec: #ff6369;
+    --rec-soft: rgba(255, 99, 105, 0.14);
+    --warning: #fbbf24;
+  }
+}
+
+/* The floating widget paints over other apps, so its document must be fully
+ * transparent — only the pills (which carry their own bg-black/80 etc.) are
+ * visible. The panel is click-through until the renderer toggles interactivity
+ * on hit-zone hover (window.widget.setInteractive).
+ *
+ * overflow: hidden is load-bearing: the idle→visible slide parks the (opacity-0)
+ * pill cluster 24px past the right edge (app.tsx `translate-x-6`), which would
+ * otherwise overflow the viewport. On a transparent window the native scrollbar
+ * tracks are the only painted pixels, so on Windows (classic, always-on
+ * scrollbars) they show as ghost bars floating in empty space. Clip them. */
+html,
+body,
+#root {
+  background: transparent;
+  overflow: hidden;
+}
+
+/* Synthetic recording waveform pulse (waveform.tsx). Real amplitude could later
+ * be piped through the widget state stream and mapped onto per-bar scaleY; this
+ * keyframe is that seam. */
+@keyframes widget-wave {
+  0%,
+  100% {
+    transform: scaleY(0.35);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}

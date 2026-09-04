@@ -1,0 +1,6 @@
+.build/
+.swiftpm/
+Package.resolved
+/bin/
+.turbo/
+.DS_Store
