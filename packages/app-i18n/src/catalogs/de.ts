@@ -2512,7 +2512,7 @@ const de = {
     },
     modeChooser: {
       cloud: {
-        choose: 'Anmelden oder Konto erstellen',
+        choose: 'Mit Prismical anmelden',
         description:
           'Melde dich an, um geräteübergreifend zu synchronisieren, Notizen zu teilen und Transkription und KI von Prismical Cloud zu nutzen.',
         title: 'Mit einem Prismical-Konto',
@@ -2521,7 +2521,7 @@ const de = {
         'Du kannst das später unter Einstellungen › Erweitert ändern. Beim Moduswechsel werden die Daten auf diesem Gerät gelöscht.',
       failed: 'Die Auswahl konnte nicht gespeichert werden. Versuche es erneut.',
       local: {
-        choose: 'Auf diesem Gerät verwenden',
+        choose: 'Ohne Konto verwenden',
         description:
           'Kein Konto nötig. Notizen, Aufnahmen und Transkripte bleiben auf diesem Computer. Nutze deinen eigenen KI-Schlüssel oder Ollama.',
         title: 'Auf diesem Gerät',

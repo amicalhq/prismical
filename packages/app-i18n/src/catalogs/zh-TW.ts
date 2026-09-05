@@ -2334,14 +2334,14 @@ const zhTW = {
     },
     modeChooser: {
       cloud: {
-        choose: '登入或建立帳號',
+        choose: '使用 Prismical 登入',
         description: '登入後即可跨裝置同步、分享筆記，並使用 Prismical Cloud 的轉錄與 AI 功能。',
         title: '使用 Prismical 帳號',
       },
       description: '之後可以在「設定 › 進階」中變更。切換模式會清除此裝置上的資料。',
       failed: '無法儲存選擇，請再試一次。',
       local: {
-        choose: '在此裝置上使用',
+        choose: '不登入帳號使用',
         description:
           '不需要帳號。筆記、錄音和轉錄稿都會留在這台電腦上。使用你自己的 AI 金鑰，或執行 Ollama。',
         title: '在此裝置上',

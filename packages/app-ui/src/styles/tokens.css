@@ -271,6 +271,7 @@ body {
 }
 
 @theme inline {
+  --animate-shine: shine var(--duration) infinite linear;
   /* Brand wordmark font — Ubuntu, self-hosted via the @font-face rules above
    * (--font-ubuntu is set in :root). Falls back to the system stack until/if
    * the web font fails to load. */
@@ -337,6 +338,15 @@ body {
   --color-dock-inset: var(--dock-inset);
   --color-rec: var(--rec);
   --color-rec-soft: var(--rec-soft);
+}
+
+@keyframes shine {
+  0%, 100% {
+    background-position: 0% 0%;
+  }
+  50% {
+    background-position: 100% 100%;
+  }
 }
 
 @layer base {

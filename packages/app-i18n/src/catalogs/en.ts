@@ -2469,7 +2469,7 @@ const en = {
     },
     modeChooser: {
       cloud: {
-        choose: 'Sign in or create an account',
+        choose: 'Sign in with Prismical',
         description:
           'Sign in to sync across devices, share notes and use Prismical Cloud transcription and AI.',
         title: 'With a Prismical account',
@@ -2478,9 +2478,9 @@ const en = {
         'You can change this later in Settings › Advanced. Switching modes erases the data on this device.',
       failed: 'The choice could not be saved. Try again.',
       local: {
-        choose: 'Use on this device',
+        choose: 'Use without an account',
         description:
-          'No account needed. Notes, recordings and transcripts stay on this computer. Bring your own AI key, or run Ollama.',
+          'No account needed. Notes, recordings and transcripts stay on this computer. Bring your own AI key.',
         title: 'On this device',
       },
       restarting: 'Restarting Prismical…',

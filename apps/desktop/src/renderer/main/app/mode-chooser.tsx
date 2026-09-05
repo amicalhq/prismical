@@ -4,10 +4,10 @@
  * Shown by the mode router (mount.tsx) while no mode was ever chosen. It paints
  * OVER the auth-gate root (a fresh install boots 'cloud' by default, so the
  * gate is mounted underneath — see index.ts) and calls main directly:
- *  - "Use on this device" → capability:chooseAppMode { mode: 'local' } — the
+ *  - "Use without an account" → capability:chooseAppMode { mode: 'local' } — the
  *    mode differs from the boot mode, so main persists it and relaunches; the
  *    card shows a restarting state until the window goes away.
- *  - "Sign in or create an account" → { mode: 'cloud' } — equals the boot
+ *  - "Sign in with Prismical" → { mode: 'cloud' } — equals the boot
  *    mode, so main persists it and answers { relaunch: false }; the chooser
  *    unmounts and the gate underneath owns the surface.
  * A persist failure surfaces as a notice; the chooser stays (a relaunch would
@@ -23,6 +23,7 @@ import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { AppModeValue } from '@prismical/desktop-contracts';
 import { Button } from '@prismical/app-ui/ui/button';
+import { ShineBorder } from '@prismical/app-ui/ui/shine-border';
 import { GateCard } from '../gate-card';
 
 type ChooserState = 'choose' | 'applying' | 'restarting' | 'failed';
@@ -61,31 +62,30 @@ export function ModeChooser({ onChosen }: { onChosen: () => void }) {
     >
       <div className="auth-gate-drag" />
       <div className="auth-gate-card my-auto flex w-full max-w-md flex-col items-center">
-        <GateCard wide brandTestId="mode-chooser-brand">
-          <div className="grid gap-5 text-center">
-            <div>
-              <h2 className="text-base font-semibold">{t('desktop.modeChooser.title')}</h2>
-              <p className="text-muted-foreground mt-1 text-sm leading-snug">
-                {t('desktop.modeChooser.description')}
-              </p>
+        <GateCard brandTestId="mode-chooser-brand">
+          <div className="grid gap-3 text-center">
+            <div className="relative rounded-md">
+              <Button
+                type="button"
+                className="w-full"
+                data-testid="mode-choose-cloud"
+                disabled={busy}
+                onClick={() => choose('cloud')}
+              >
+                {t('desktop.modeChooser.cloud.choose')}
+              </Button>
+              <ShineBorder shineColor={['#6366f1', '#a5b4fc', '#4f46e5']} borderWidth={2} />
             </div>
-            <ModeOption
-              title={t('desktop.modeChooser.local.title')}
-              description={t('desktop.modeChooser.local.description')}
-              action={t('desktop.modeChooser.local.choose')}
-              testId="mode-choose-local"
+            <Button
+              type="button"
+              variant="link"
+              className="text-muted-foreground hover:text-foreground justify-self-center text-xs font-normal"
+              data-testid="mode-choose-local"
               disabled={busy}
-              onChoose={() => choose('local')}
-            />
-            <ModeOption
-              title={t('desktop.modeChooser.cloud.title')}
-              description={t('desktop.modeChooser.cloud.description')}
-              action={t('desktop.modeChooser.cloud.choose')}
-              testId="mode-choose-cloud"
-              variant="outline"
-              disabled={busy}
-              onChoose={() => choose('cloud')}
-            />
+              onClick={() => choose('local')}
+            >
+              {t('desktop.modeChooser.local.choose')}
+            </Button>
             {state === 'restarting' ? (
               <p data-testid="mode-chooser-notice" className="text-muted-foreground text-sm">
                 {t('desktop.modeChooser.restarting')}
@@ -99,41 +99,6 @@ export function ModeChooser({ onChosen }: { onChosen: () => void }) {
           </div>
         </GateCard>
       </div>
-    </div>
-  );
-}
-
-function ModeOption({
-  title,
-  description,
-  action,
-  testId,
-  variant = 'default',
-  disabled,
-  onChoose,
-}: {
-  title: string;
-  description: string;
-  action: string;
-  testId: string;
-  variant?: 'default' | 'outline';
-  disabled: boolean;
-  onChoose: () => void;
-}) {
-  return (
-    <div className="grid gap-2 rounded-md border p-4 text-left">
-      <p className="text-sm font-medium">{title}</p>
-      <p className="text-muted-foreground text-sm leading-snug">{description}</p>
-      <Button
-        type="button"
-        variant={variant}
-        className="mt-1 w-full"
-        data-testid={testId}
-        disabled={disabled}
-        onClick={onChoose}
-      >
-        {action}
-      </Button>
     </div>
   );
 }

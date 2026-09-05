@@ -2484,7 +2484,7 @@ const es = {
     },
     modeChooser: {
       cloud: {
-        choose: 'Iniciar sesión o crear una cuenta',
+        choose: 'Iniciar sesión con Prismical',
         description:
           'Inicia sesión para sincronizar entre dispositivos, compartir notas y usar la transcripción y la IA de Prismical Cloud.',
         title: 'Con una cuenta de Prismical',
@@ -2493,7 +2493,7 @@ const es = {
         'Puedes cambiarlo más tarde en Ajustes › Avanzado. Cambiar de modo borra los datos de este dispositivo.',
       failed: 'No se pudo guardar la elección. Inténtalo de nuevo.',
       local: {
-        choose: 'Usar en este dispositivo',
+        choose: 'Usar sin una cuenta',
         description:
           'No necesitas cuenta. Las notas, grabaciones y transcripciones se quedan en este equipo. Usa tu propia clave de IA o ejecuta Ollama.',
         title: 'En este dispositivo',
