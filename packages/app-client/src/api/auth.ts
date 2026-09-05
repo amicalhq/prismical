@@ -36,6 +36,20 @@ export function setActiveOrgId(id: string | null): void {
   activeOrgId = id;
 }
 
+// The interface locale the user chose in the app, sent as `x-prismical-locale` so core renders
+// user-facing copy (AI error messages and their recovery actions) in that language instead of
+// guessing from Accept-Language. Set by the i18n provider whenever the applied locale changes.
+let requestLocale: string | null = null;
+
+export function setRequestLocale(locale: string | null): void {
+  requestLocale = locale;
+}
+
+function withLocale(headers: Record<string, string>): Record<string, string> {
+  if (requestLocale) headers["x-prismical-locale"] = requestLocale;
+  return headers;
+}
+
 /**
  * Build request headers. `orgIdOverride`:
  *  - omitted        → use the module-level active org (default).
@@ -48,7 +62,7 @@ export function getAuthHeaders(orgIdOverride?: string | null): Record<string, st
   const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
   const active = orgIdOverride === undefined ? activeOrgId : orgIdOverride;
   if (active) headers["x-active-org-id"] = active;
-  return headers;
+  return withLocale(headers);
 }
 
 /**
@@ -63,7 +77,7 @@ export function getAuthHeadersForToken(
   const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
   const active = orgIdOverride === undefined ? activeOrgId : orgIdOverride;
   if (active) headers["x-active-org-id"] = active;
-  return headers;
+  return withLocale(headers);
 }
 
 /** The raw bearer token (live, else dev fallback), or null if absent/empty.

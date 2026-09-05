@@ -21,16 +21,11 @@ export const InstanceCatalogEntrySchema = z
 export type InstanceCatalogEntry = z.output<typeof InstanceCatalogEntrySchema>;
 
 export const InstanceModelsResponseSchema = z
-  .object({ success: z.literal(true), models: z.array(InstanceCatalogEntrySchema) })
-  .strip();
-
-export const InstanceModelsLegacyErrorSchema = z
-  .object({ error: z.string(), code: z.string() })
+  .object({ results: z.array(InstanceCatalogEntrySchema) })
   .strip();
 
 export const InstanceSecretResponseSchema = z
   .object({
-    success: z.literal(true),
     instanceId: z.string().min(1),
     keyVersion: z.number().int().nonnegative(),
     ttlSeconds: z.number().int().positive(),

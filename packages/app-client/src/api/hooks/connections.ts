@@ -27,7 +27,7 @@ export function useEventKitIntegration(opts?: { enabled?: boolean }) {
     queryFn: async () =>
       EventKitIntegrationResponseSchema.parse(
         await apiClient.getRaw<unknown>(`${ME_PREFIX}/eventkit/integration`),
-      ).result,
+      ),
     enabled: opts?.enabled ?? true,
   });
 }
@@ -39,7 +39,7 @@ export function useEnableEventKitIntegration() {
     mutationFn: async () =>
       EventKitIntegrationResponseSchema.parse(
         await apiClient.putRaw<unknown>(`${ME_PREFIX}/eventkit/integration`, {}),
-      ).result,
+      ),
     onSuccess: (state) => {
       qc.setQueryData(eventKitIntegrationKey, state);
       void qc.invalidateQueries({ queryKey: connectionsKey });

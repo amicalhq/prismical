@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { appsV1ResultResponseSchema } from './common.js';
 
 export const EVENTKIT_MAX_CALENDARS = 100;
 export const EVENTKIT_MAX_EVENTS_PER_CHUNK = 200;
@@ -68,17 +67,15 @@ export const EventKitIntegrationSchema = z.object({
   deviceCount: z.number().int().nonnegative(),
 });
 export type EventKitIntegration = z.output<typeof EventKitIntegrationSchema>;
-export const EventKitIntegrationResponseSchema =
-  appsV1ResultResponseSchema(EventKitIntegrationSchema);
+export const EventKitIntegrationResponseSchema = EventKitIntegrationSchema;
 export const EnableEventKitRequestSchema = z.object({});
 
-export const DisconnectEventKitResponseSchema = appsV1ResultResponseSchema(
-  z.object({ disconnectedDevices: z.number().int().nonnegative() })
-);
+export const DisconnectEventKitResponseSchema = z.object({
+  disconnectedDevices: z.number().int().nonnegative(),
+});
 
 export const EventKitCapabilityResponseSchema = z
   .object({
-    success: z.literal(true),
     available: z.boolean(),
     enabled: z.boolean(),
   })
@@ -88,28 +85,24 @@ export const RegisterEventKitDeviceRequestSchema = z.object({
   deviceName: z.string().trim().min(1).max(128),
   calendars: z.array(EventKitCalendarInputSchema).max(EVENTKIT_MAX_CALENDARS),
 });
-export const RegisterEventKitDeviceResponseSchema = appsV1ResultResponseSchema(
-  z.object({
-    connectionId: z.string(),
-    calendars: z.array(
-      z.object({
-        id: z.string(),
-        externalId: z.string(),
-        enabled: z.boolean(),
-      })
-    ),
-  })
-);
+export const RegisterEventKitDeviceResponseSchema = z.object({
+  connectionId: z.string(),
+  calendars: z.array(
+    z.object({
+      id: z.string(),
+      externalId: z.string(),
+      enabled: z.boolean(),
+    })
+  ),
+});
 
-export const EventKitDeviceConfigResponseSchema = appsV1ResultResponseSchema(
-  z.object({
-    connectionId: z.string(),
-    enabledCalendarExternalIds: z.array(z.string()),
-    lastSequence: z.number().int().nonnegative(),
-    windowBackDays: z.number().int().nonnegative(),
-    windowForwardDays: z.number().int().nonnegative(),
-  })
-);
+export const EventKitDeviceConfigResponseSchema = z.object({
+  connectionId: z.string(),
+  enabledCalendarExternalIds: z.array(z.string()),
+  lastSequence: z.number().int().nonnegative(),
+  windowBackDays: z.number().int().nonnegative(),
+  windowForwardDays: z.number().int().nonnegative(),
+});
 
 export const BeginEventKitSnapshotRequestSchema = z.object({
   sequence: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
@@ -119,12 +112,10 @@ export const BeginEventKitSnapshotRequestSchema = z.object({
   expectedChunks: z.number().int().min(1).max(EVENTKIT_MAX_CHUNKS),
   expectedEvents: z.number().int().min(0).max(EVENTKIT_MAX_EVENTS),
 });
-export const BeginEventKitSnapshotResponseSchema = appsV1ResultResponseSchema(
-  z.object({
-    snapshotId: z.string(),
-    status: z.string(),
-  })
-);
+export const BeginEventKitSnapshotResponseSchema = z.object({
+  snapshotId: z.string(),
+  status: z.string(),
+});
 
 export const EventKitSnapshotChunkParamsSchema = z.object({
   snapshotId: z.string().min(1).max(128),
@@ -137,16 +128,15 @@ export const EventKitSnapshotChunkParamsSchema = z.object({
 export const PutEventKitSnapshotChunkRequestSchema = z.object({
   events: z.array(EventKitEventInputSchema).max(EVENTKIT_MAX_EVENTS_PER_CHUNK),
 });
-export const PutEventKitSnapshotChunkResponseSchema = appsV1ResultResponseSchema(
-  z.object({ checksum: z.string(), accepted: z.boolean() })
-);
+export const PutEventKitSnapshotChunkResponseSchema = z.object({
+  checksum: z.string(),
+  accepted: z.boolean(),
+});
 
 export const EventKitSnapshotParamsSchema = z.object({
   snapshotId: z.string().min(1).max(128),
 });
-export const CommitEventKitSnapshotResponseSchema = appsV1ResultResponseSchema(
-  z.object({
-    committed: z.boolean(),
-    eventCount: z.number().int().nonnegative(),
-  })
-);
+export const CommitEventKitSnapshotResponseSchema = z.object({
+  committed: z.boolean(),
+  eventCount: z.number().int().nonnegative(),
+});

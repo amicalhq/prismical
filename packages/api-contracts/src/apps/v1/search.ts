@@ -23,7 +23,6 @@ export type SearchHit = z.output<typeof SearchHitSchema>;
 
 export const SearchResponseSchema = z
   .object({
-    success: z.literal(true),
     results: z.array(SearchHitSchema),
     total: z.number().int().nonnegative(),
     query: z.string(),

@@ -106,6 +106,18 @@ function IntegrationDetailContent({ id }: { id: string }) {
     );
   };
 
+  // A custom server whose gate is off answers 403 FEATURE_DISABLED. Treat a deep link to it the
+  // same way FeatureGate treats the wider kill switch: send the member back to the list rather
+  // than offering a Retry that can never succeed. Read `code` structurally — ApiError is not part
+  // of app-client's public surface, and an `instanceof` across bundles is not worth relying on.
+  const featureDisabled =
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { code?: unknown }).code === 'FEATURE_DISABLED';
+  React.useEffect(() => {
+    if (featureDisabled) router.replace('/settings/integrations');
+  }, [featureDisabled, router]);
+
   if (isLoading) {
     return (
       <div className="mx-auto w-full max-w-4xl">
@@ -113,6 +125,9 @@ function IntegrationDetailContent({ id }: { id: string }) {
       </div>
     );
   }
+  // Redirect above is in flight — a Retry against a disabled feature can never succeed.
+  if (featureDisabled) return null;
+
   if (error || !server) {
     return (
       <div className="mx-auto w-full max-w-4xl">
@@ -139,24 +154,12 @@ function IntegrationDetailContent({ id }: { id: string }) {
 
   const runTest = () => {
     test.mutate(id, {
-      // The response is a discriminated union, so `toolCount` has to be narrowed to read it.
-      // The `success: false` arm is NOT the live failure path and is unreachable from here today:
-      // core only ever sends it with HTTP 502 (mcp-servers.ts), and the client throws ApiError on
-      // any non-2xx, so a failed probe lands in `onError` below. This branch exists to keep the
-      // union exhaustive — if core ever starts returning that arm with a 2xx, it surfaces the
-      // reason instead of silently rendering "found undefined tools".
       onSuccess: r =>
-        r.success
-          ? toast.success(
-              t('settings.integrations.detail.foundTools', {
-                countLabel: r.toolCount.toLocaleString(resolvedLocale),
-              })
-            )
-          : toast.error(
-              t('settings.integrations.detail.connectionFailedReason', {
-                reason: r.statusReason,
-              })
-            ),
+        toast.success(
+          t('settings.integrations.detail.foundTools', {
+            countLabel: r.toolCount.toLocaleString(resolvedLocale),
+          })
+        ),
       onError: () => toast.error(t('settings.integrations.detail.connectionFailed')),
     });
   };

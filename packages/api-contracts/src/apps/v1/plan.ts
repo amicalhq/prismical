@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AppsV1IsoDateTimeSchema, appsV1ResultResponseSchema } from './common.js';
+import { AppsV1IsoDateTimeSchema } from './common.js';
 
 export const BillingIntervalSchema = z.enum(['month', 'year']);
 export type BillingInterval = z.output<typeof BillingIntervalSchema>;
@@ -134,7 +134,7 @@ export const PlanAccessSchema = z
 
 export type PlanAccess = z.output<typeof PlanAccessSchema>;
 
-export const PlanAccessResponseSchema = appsV1ResultResponseSchema(PlanAccessSchema);
+export const PlanAccessResponseSchema = PlanAccessSchema;
 export type PlanAccessResponse = z.output<typeof PlanAccessResponseSchema>;
 
 export const PlanCheckoutRequestSchema = z
@@ -148,10 +148,10 @@ export type ParsedPlanCheckoutRequest = z.output<typeof PlanCheckoutRequestSchem
 
 export const PlanCheckoutSchema = z.object({ checkoutUrl: z.url() }).strip();
 export type PlanCheckout = z.output<typeof PlanCheckoutSchema>;
-export const PlanCheckoutResponseSchema = appsV1ResultResponseSchema(PlanCheckoutSchema);
+export const PlanCheckoutResponseSchema = PlanCheckoutSchema;
 export type PlanCheckoutResponse = z.output<typeof PlanCheckoutResponseSchema>;
 
 export const PlanPortalSchema = z.object({ portalUrl: z.url() }).strip();
 export type PlanPortal = z.output<typeof PlanPortalSchema>;
-export const PlanPortalResponseSchema = appsV1ResultResponseSchema(PlanPortalSchema);
+export const PlanPortalResponseSchema = PlanPortalSchema;
 export type PlanPortalResponse = z.output<typeof PlanPortalResponseSchema>;

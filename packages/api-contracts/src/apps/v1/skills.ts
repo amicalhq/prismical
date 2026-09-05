@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { appsV1ResultResponseSchema } from './common.js';
+import { AiUserErrorSchema } from '../../ai-errors.js';
 
 export const ArtifactModeSchema = z.enum(['append-section', 'replace-doc', 'inline-rewrite']);
 export type ArtifactMode = z.output<typeof ArtifactModeSchema>;
@@ -41,10 +41,15 @@ export const RunSkillResultSchema = z
     reasoning: z.string().nullable(),
     usage: RunUsageSchema.optional(),
     recordingId: z.string().optional(),
+    /**
+     * Something the user should know about a run that SUCCEEDED (server-rendered, localized): today
+     * only that the chosen BYOK instance was gone and the run went to Prismical Cloud instead.
+     */
+    notice: AiUserErrorSchema.extend({ code: z.string().min(1) }).optional(),
   })
   .strip();
 export type RunSkillResult = z.output<typeof RunSkillResultSchema>;
-export const RunSkillResponseSchema = appsV1ResultResponseSchema(RunSkillResultSchema);
+export const RunSkillResponseSchema = RunSkillResultSchema;
 
 export const AcceptSkillRunRequestSchema = z.object({
   noteId: z.string().min(1),
@@ -71,7 +76,7 @@ export const AcceptSkillRunResultSchema = z
   })
   .strip();
 export type AcceptSkillRunResult = z.output<typeof AcceptSkillRunResultSchema>;
-export const AcceptSkillRunResponseSchema = appsV1ResultResponseSchema(AcceptSkillRunResultSchema);
+export const AcceptSkillRunResponseSchema = AcceptSkillRunResultSchema;
 
 export const RestoreSkillRunRequestSchema = z.object({ noteId: z.string().min(1) });
 export type RestoreSkillRunRequest = z.input<typeof RestoreSkillRunRequestSchema>;
@@ -83,17 +88,13 @@ export const RestoreSkillRunResultSchema = z
   })
   .strip();
 export type RestoreSkillRunResult = z.output<typeof RestoreSkillRunResultSchema>;
-export const RestoreSkillRunResponseSchema = appsV1ResultResponseSchema(
-  RestoreSkillRunResultSchema
-);
+export const RestoreSkillRunResponseSchema = RestoreSkillRunResultSchema;
 
 export const EnhancedRecordingsQuerySchema = z.object({ noteId: z.string().min(1) });
 export const EnhancedRecordingsResultSchema = z
   .object({ recordingIds: z.array(z.string()) })
   .strip();
-export const EnhancedRecordingsResponseSchema = appsV1ResultResponseSchema(
-  EnhancedRecordingsResultSchema
-);
+export const EnhancedRecordingsResponseSchema = EnhancedRecordingsResultSchema;
 
 export const ApplyTitleRunRequestSchema = z.object({ runId: z.string().min(1) });
 export const TitleRunResultSchema = z.object({
@@ -102,5 +103,5 @@ export const TitleRunResultSchema = z.object({
   titleSource: z.string(),
   titleRevision: z.number().int(),
 });
-export const TitleRunResponseSchema = appsV1ResultResponseSchema(TitleRunResultSchema);
+export const TitleRunResponseSchema = TitleRunResultSchema;
 export type TitleRunResult = z.output<typeof TitleRunResultSchema>;

@@ -496,6 +496,7 @@ const ja = {
         'このノートを開けませんでした — アクセス権がないか、セッションの有効期限が切れている可能性があります。',
       placeholder: '入力を開始…',
       readOnly: '読み取り専用 — このノートを編集する権限がありません。',
+      slowConnect: 'まだ読み込み中です。通常より時間がかかっています。',
       reconnecting: '再接続中…',
     },
     list: {
@@ -572,7 +573,7 @@ const ja = {
       noMicrophone: '利用できるマイクがありません。入力機器を接続または有効にしてください。',
       noMicrophoneSystemAudioContinues:
         '利用できるマイクがありません。入力機器を接続または有効にしてください。システム音声の録音は続いています。',
-      quotaExceeded: 'クラウド文字起こしの上限に達しました。',
+      quotaExceeded: '今月分のクラウド文字起こしを使い切りました。',
       renameSpeaker: '話者名を変更できませんでした',
       savedWithErrors: '録音はエラーを含む状態で保存されました。',
       someAudioNotTranscribed: '一部の音声を文字起こしできませんでした。',
@@ -606,6 +607,8 @@ const ja = {
       title: '文字起こし',
       transcribing: '文字起こし中…',
       transcriptReady: '文字起こし完了',
+      speakerLabelsUnavailable: '文字起こしを保存しました。話者ラベルは利用できません',
+      transcriptionFailed: '文字起こしに失敗しました。音声は保存されています',
       waitingFinal: '最終文字起こしを待っています',
       you: 'あなた',
     },
@@ -614,17 +617,39 @@ const ja = {
     collapse: 'AI に質問を折りたたむ',
     conversation: 'AI に質問の会話',
     pillPlaceholder: '何でも聞いてください…',
+    errors: {
+      sessionChanged: 'アカウントを切り替えました。もう一度質問してください。',
+      offline: 'オフラインです。',
+      offlineBody: '再接続してからもう一度お試しください。',
+      modelFallback:
+        '選択したモデルが利用できないため、Ask AI は Prismical Cloud を使用しています。',
+      chooseModel: 'モデルを選ぶ',
+      continueMessage: '続けてください。',
+    },
     composerPlaceholder: '何でも聞いてください — / でスキル、@ でノート',
     composerPlaceholderShort: '/ でスキル、@ でノート',
     dockDescription: 'ノートについて AI に質問',
     dockHide: 'AI に質問を隠す',
     dockLabel: '質問',
     empty: 'ノートについて何でも質問できます。',
-    error: '問題が発生しました。',
+    error: 'Ask AI は回答できませんでした。',
     newChat: '新しいチャット',
-    noResponse: '応答がありません。もう一度お試しください。',
+    noResponse: '今回はモデルから回答がありませんでした。',
     placeholder: '質問を入力…',
     thinking: '考えています…',
+    skillRun: {
+      running: '{{name}}を実行中…',
+      stop: '{{name}}を停止',
+      staged: '{{name}}が提案を作成しました',
+      reviewInNote: 'ノートで確認',
+      kept: '適用済み',
+      undone: '取り消し済み',
+      superseded: '下の再調整に置き換えられました',
+      stopped: '停止しました',
+      skipped: '{{name}}は実行されませんでした',
+      failed: '{{name}}が失敗しました',
+      applied: '{{name}}を適用しました',
+    },
     title: 'AI に質問',
     context: {
       add: 'コンテキストを追加',
@@ -686,6 +711,7 @@ const ja = {
       denied: '拒否',
       deny: '拒否する',
       failed: '失敗',
+      needsAuth: 'この連携を再接続',
     },
   },
   ai: {
@@ -713,11 +739,7 @@ const ja = {
     dock: {
       enhanceUnavailable: '現在、整える機能は利用できません。',
       skillUnavailable: 'そのスキルは利用できません。',
-      generating: '生成中',
-      pick: '別のスキルを選択',
-      run: '{{name}}を実行',
       stopRun: 'スキルの実行を停止',
-      stopRunning: '実行中のスキルを停止',
     },
     diff: {
       accept: '適用',
@@ -725,9 +747,9 @@ const ja = {
       describeEdits: '修正内容を入力…',
       keep: '確定',
       cancelRefinement: '調整をキャンセル',
-      couldNotApply: '{{name}}を適用できませんでした — 内容が無効です',
-      couldNotSave: '{{name}}を保存できませんでした — {{error}}',
-      couldNotUndo: '元に戻せませんでした — {{error}}',
+      couldNotApply: '{{name}}を適用できませんでした。内容が無効です',
+      couldNotSave: '{{name}}を保存できませんでした。もう一度お試しください。',
+      couldNotUndo: 'この編集を元に戻せませんでした。',
       newSectionAdded: '新しいセクションを追加しました',
       noteReplaced: 'ノートを置き換えました',
       previewRewriteFailed:
@@ -741,7 +763,7 @@ const ja = {
       reject: '破棄',
       reopenUndo: '元に戻すにはノートを開き直してください',
       restoredLocallySyncFailed:
-        'ローカルでは復元しましたが、元に戻す操作を同期できませんでした — {{error}}',
+        'ここでは復元しましたが、元に戻す操作を同期できませんでした。再試行します。',
       restoredPrevious: '前のバージョンを復元しました',
       selectionUpdated: '選択範囲を更新しました',
       submitRefinement: '調整を送信',
@@ -751,6 +773,8 @@ const ja = {
     inline: { captureError: '選択範囲を取得できませんでした。テキストを選択し直してください。' },
     run: {
       failed: '{{name}}を実行できませんでした。もう一度お試しください。',
+      offline: 'オフラインです。',
+      offlineBody: '再接続してからもう一度お試しください。',
       noTranscript:
         'この録音には改善に使える文字起こしがありません。文字起こしを確認するか、新しく録音してください。',
       noUsableContent:
@@ -1239,11 +1263,11 @@ const ja = {
       },
       catalog: {
         actions: {
-          comingSoon: '近日公開',
           connect: '接続',
           continueSetup: '設定を続ける',
           createAutomation: '自動化を作成',
           manageConnection: '接続を管理',
+          requestMore: 'アプリをリクエスト',
         },
         categories: {
           all: 'すべてのアプリ',
@@ -1266,6 +1290,10 @@ const ja = {
         filterAria: 'カテゴリでアプリを絞り込む',
         noMatchDescription: '一覧にないプロバイダーは、カスタムMCPサーバーとして接続できます。',
         noMatchTitle: '一致するアプリがありません',
+        requestMore: {
+          description: 'お探しのアプリがありませんか？教えていただければ追加を検討します。',
+          name: '連携をリクエスト',
+        },
         searchAria: 'アプリを検索',
         searchPlaceholder: 'アプリを検索…',
         title: 'アプリを接続',
@@ -1458,8 +1486,8 @@ const ja = {
         },
         free: {
           askAi: 'Ask AI',
-          askAiNote: '期間限定',
-          askAiTooltip: '無料プランでは、期間限定でAsk AIを無制限に利用できます。',
+          askAiNote: '込み',
+          askAiTooltip: 'Ask AI は無料プランに含まれています。',
           billingLabel: 'ずっと無料',
           communitySupport: 'コミュニティサポート',
           cta: 'ずっと無料',
@@ -2248,7 +2276,8 @@ const ja = {
       description:
         'このデバイスで Ask、Enhance、Cleanup、ノート名の生成に使う言語モデルを選択します。',
       keyMissing: 'このデバイスにキーは保存されていません。',
-      keySet: 'このデバイスにキーが保存されています。置き換えるには新しいキーを貼り付けてください。',
+      keySet:
+        'このデバイスにキーが保存されています。置き換えるには新しいキーを貼り付けてください。',
       modelLabel: 'モデル',
       modelPlaceholder: 'モデル ID（空欄で既定値）',
       providers: {
@@ -2450,7 +2479,8 @@ const ja = {
       description: 'このデバイスで作成した録音の文字起こし方法を選択します。',
       engines: {
         byok: {
-          description: '自分の API キーで OpenAI 互換の文字起こしエンドポイントに音声を送信します。',
+          description:
+            '自分の API キーで OpenAI 互換の文字起こしエンドポイントに音声を送信します。',
           label: '自分の API',
         },
         cloud: {

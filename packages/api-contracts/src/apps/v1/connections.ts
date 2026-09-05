@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import {
   AppsV1DateTimeResponseSchema,
-  AppsV1SuccessResponseSchema,
+  AppsV1NoContentResponseSchema,
   appsV1ListResponseSchema,
 } from './common.js';
 
@@ -15,7 +15,6 @@ export const AuthorizeConnectionRequestSchema = z.object({
 });
 export const AuthorizeConnectionResponseSchema = z
   .object({
-    success: z.literal(true),
     url: z.url(),
   })
   .strip();
@@ -47,9 +46,9 @@ export type Connection = z.output<typeof ConnectionSchema>;
 
 export const ConnectionListResponseSchema = appsV1ListResponseSchema(ConnectionSchema);
 export const ConnectionIdParamsSchema = z.object({ id: z.string().min(1) });
-export const DeleteConnectionResponseSchema = AppsV1SuccessResponseSchema;
-export const SyncConnectionResponseSchema = AppsV1SuccessResponseSchema;
+export const DeleteConnectionResponseSchema = AppsV1NoContentResponseSchema;
+export const SyncConnectionResponseSchema = AppsV1NoContentResponseSchema;
 
 export const CalendarIdParamsSchema = z.object({ id: z.string().min(1) });
 export const UpdateCalendarRequestSchema = z.object({ enabled: z.boolean() });
-export const UpdateCalendarResponseSchema = AppsV1SuccessResponseSchema;
+export const UpdateCalendarResponseSchema = AppsV1NoContentResponseSchema;

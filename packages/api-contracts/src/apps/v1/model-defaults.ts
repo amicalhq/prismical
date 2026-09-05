@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AppsV1SuccessResponseSchema, appsV1ResultResponseSchema } from './common.js';
+import { AppsV1NoContentResponseSchema } from './common.js';
 
 export const ModelDefaultUseCaseSchema = z.enum(['formatting', 'transcription']);
 export type ModelDefaultUseCase = z.output<typeof ModelDefaultUseCaseSchema>;
@@ -17,7 +17,7 @@ export const ModelDefaultsSchema = z
   .strip();
 export type ModelDefaults = z.output<typeof ModelDefaultsSchema>;
 
-export const ModelDefaultsResponseSchema = appsV1ResultResponseSchema(ModelDefaultsSchema);
+export const ModelDefaultsResponseSchema = ModelDefaultsSchema;
 
 export const SetModelDefaultRequestSchema = z.object({
   useCase: ModelDefaultUseCaseSchema,
@@ -29,9 +29,7 @@ export type SetModelDefaultRequest = z.input<typeof SetModelDefaultRequestSchema
 export const SetModelDefaultResultSchema = ModelDefaultSelectionSchema.extend({
   useCase: ModelDefaultUseCaseSchema,
 });
-export const SetModelDefaultResponseSchema = appsV1ResultResponseSchema(
-  SetModelDefaultResultSchema
-);
+export const SetModelDefaultResponseSchema = SetModelDefaultResultSchema;
 
 export const ModelDefaultQuerySchema = z.object({ useCase: ModelDefaultUseCaseSchema });
-export const ClearModelDefaultResponseSchema = AppsV1SuccessResponseSchema;
+export const ClearModelDefaultResponseSchema = AppsV1NoContentResponseSchema;

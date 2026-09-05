@@ -1,9 +1,10 @@
 import { create } from "zustand";
 import type { SelectionAnchors } from "./diff/selection-anchors";
 
-// Bridges the inline skill popover (in the note body) to the skill dock's run instance (in
-// SkillSparkleButton) so an inline-rewrite run shows the dock's own "Generating" + Stop and stages
-// a diff candidate exactly like a manual run — same pattern as useAutoEnhanceStore.
+// Bridges the inline skill popover (in the note body) to the skill run bridge (SkillRunBridge in
+// the dock's skill slot) so an inline-rewrite run stages a diff candidate exactly like a manual run
+// and shows on the Ask pill / in the Ask thread via the run feed — same pattern as
+// useAutoEnhanceStore.
 // Keyed by noteId so a request only fires on the note it belongs to.
 export interface InlineRunRequest {
   noteId: string;

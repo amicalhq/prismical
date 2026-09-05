@@ -524,6 +524,7 @@ const es = {
         'No se pudo abrir esta nota — puede que no tengas acceso o que tu sesión haya caducado.',
       placeholder: 'Empieza a escribir…',
       readOnly: 'Solo lectura — no tienes permiso para editar esta nota.',
+      slowConnect: 'Sigue cargando. Está tardando más de lo habitual.',
       reconnecting: 'Reconectando…',
     },
     list: {
@@ -602,7 +603,7 @@ const es = {
       noMicrophone: 'No hay ningún micrófono disponible; conecta o activa una entrada.',
       noMicrophoneSystemAudioContinues:
         'No hay ningún micrófono disponible; conecta o activa una entrada. El audio del sistema sigue grabándose.',
-      quotaExceeded: 'Se ha alcanzado el límite de transcripción en la nube.',
+      quotaExceeded: 'Has usado la transcripción en la nube incluida este mes.',
       renameSpeaker: 'No se pudo cambiar el nombre del hablante',
       savedWithErrors: 'La grabación se ha guardado con errores.',
       someAudioNotTranscribed: 'No se ha podido transcribir parte del audio.',
@@ -639,6 +640,8 @@ const es = {
       title: 'Transcripción',
       transcribing: 'Transcribiendo…',
       transcriptReady: 'Transcripción lista',
+      speakerLabelsUnavailable: 'Transcripción guardada; sin etiquetas de hablante',
+      transcriptionFailed: 'La transcripción falló; el audio se guardó',
       waitingFinal: 'Esperando la transcripción final',
       you: 'Tú',
     },
@@ -647,17 +650,39 @@ const es = {
     collapse: 'Contraer Preguntar a la IA',
     conversation: 'Conversación con Preguntar a la IA',
     pillPlaceholder: 'Pregunta lo que sea…',
+    errors: {
+      sessionChanged: 'Cambiaste de cuenta. Pregunta de nuevo.',
+      offline: 'Estás sin conexión.',
+      offlineBody: 'Vuelve a conectarte e inténtalo de nuevo.',
+      modelFallback:
+        'El modelo que elegiste no está disponible, así que Ask AI está usando Prismical Cloud.',
+      chooseModel: 'Elegir modelo',
+      continueMessage: 'Continúa, por favor.',
+    },
     composerPlaceholder: 'Pregunta lo que sea — / para skills, @ para notas',
     composerPlaceholderShort: '/ para skills, @ para notas',
     dockDescription: 'Pregunta a la IA sobre tus notas',
     dockHide: 'Ocultar Preguntar a la IA',
     dockLabel: 'Preguntar',
     empty: 'Pregunta cualquier cosa sobre tus notas.',
-    error: 'Algo salió mal.',
+    error: 'Ask AI no pudo responder.',
     newChat: 'Chat nuevo',
-    noResponse: 'No hubo respuesta; inténtalo de nuevo.',
+    noResponse: 'El modelo no respondió esta vez.',
     placeholder: 'Haz una pregunta…',
     thinking: 'Pensando…',
+    skillRun: {
+      running: 'Ejecutando {{name}}…',
+      stop: 'Detener {{name}}',
+      staged: '{{name}} redactó una sugerencia',
+      reviewInNote: 'Revisar en la nota',
+      kept: 'Aplicado',
+      undone: 'Descartado',
+      superseded: 'Reemplazado por el refinamiento de abajo',
+      stopped: 'Detenido',
+      skipped: '{{name}} no se ejecutó',
+      failed: '{{name}} falló',
+      applied: '{{name}} aplicado',
+    },
     title: 'Preguntar a la IA',
     context: {
       add: 'Añadir contexto',
@@ -719,6 +744,7 @@ const es = {
       denied: 'denegado',
       deny: 'Denegar',
       failed: 'falló',
+      needsAuth: 'Volver a conectar esta integración',
     },
   },
   ai: {
@@ -750,11 +776,7 @@ const es = {
     dock: {
       enhanceUnavailable: 'Mejorar no está disponible ahora.',
       skillUnavailable: 'Ese skill ya no está disponible.',
-      generating: 'Generando',
-      pick: 'Elegir otra habilidad',
-      run: 'Ejecutar {{name}}',
       stopRun: 'Detener la habilidad',
-      stopRunning: 'Detener la habilidad en ejecución',
     },
     diff: {
       accept: 'Aceptar',
@@ -762,9 +784,9 @@ const es = {
       describeEdits: 'Describe los cambios…',
       keep: 'Conservar',
       cancelRefinement: 'Cancelar ajuste',
-      couldNotApply: 'No se pudo aplicar {{name}} — contenido no válido',
-      couldNotSave: 'No se pudo guardar {{name}} — {{error}}',
-      couldNotUndo: 'No se pudo deshacer — {{error}}',
+      couldNotApply: 'No se pudo aplicar {{name}}: contenido no válido',
+      couldNotSave: 'No se pudo guardar {{name}}. Inténtalo de nuevo.',
+      couldNotUndo: 'No se pudo deshacer esta edición.',
       newSectionAdded: 'Se añadió una sección nueva',
       noteReplaced: 'Nota reemplazada',
       previewRewriteFailed:
@@ -778,7 +800,7 @@ const es = {
       reject: 'Rechazar',
       reopenUndo: 'Vuelve a abrir la nota para deshacer',
       restoredLocallySyncFailed:
-        'Se restauró localmente, pero no se pudo sincronizar la acción de deshacer — {{error}}',
+        'Se restauró aquí, pero la acción de deshacer no se pudo sincronizar. Se volverá a intentar.',
       restoredPrevious: 'Se restauró la versión anterior',
       selectionUpdated: 'Selección actualizada',
       submitRefinement: 'Enviar ajuste',
@@ -789,6 +811,8 @@ const es = {
     inline: { captureError: 'No se pudo capturar la selección; vuelve a seleccionar el texto.' },
     run: {
       failed: 'No se ha podido ejecutar {{name}}. Inténtalo de nuevo.',
+      offline: 'Estás sin conexión.',
+      offlineBody: 'Vuelve a conectarte e inténtalo de nuevo.',
       noTranscript:
         'Esta grabación no tiene transcripción para mejorar. Revisa la transcripción o haz una nueva grabación.',
       noUsableContent:
@@ -1286,11 +1310,11 @@ const es = {
       },
       catalog: {
         actions: {
-          comingSoon: 'Próximamente',
           connect: 'Conectar',
           continueSetup: 'Continuar configuración',
           createAutomation: 'Crear automatización',
           manageConnection: 'Gestionar conexión',
+          requestMore: 'Solicitar una app',
         },
         categories: {
           all: 'Todas las aplicaciones',
@@ -1314,6 +1338,10 @@ const es = {
         noMatchDescription:
           'Conecta un proveedor que no aparece mediante un servidor MCP personalizado.',
         noMatchTitle: 'No hay aplicaciones coincidentes',
+        requestMore: {
+          description: '¿No encuentras la app que necesitas? Dinos cuál y estudiaremos añadirla.',
+          name: 'Solicitar una integración',
+        },
         searchAria: 'Buscar aplicaciones',
         searchPlaceholder: 'Buscar aplicaciones…',
         title: 'Conectar una aplicación',
@@ -1512,9 +1540,8 @@ const es = {
         },
         free: {
           askAi: 'Ask AI',
-          askAiNote: 'por tiempo limitado',
-          askAiTooltip:
-            'En el plan Gratis, Ask AI incluye uso ilimitado durante un periodo limitado.',
+          askAiNote: 'incluido',
+          askAiTooltip: 'Ask AI está incluido en el plan Gratis.',
           billingLabel: 'Gratis para siempre',
           communitySupport: 'Soporte de la comunidad',
           cta: 'Gratis para siempre',
@@ -2333,7 +2360,8 @@ const es = {
           label: 'OpenAI',
         },
         'openai-compatible': {
-          description: 'Cualquier servidor que hable la API de chat de OpenAI (LM Studio, vLLM, un proxy).',
+          description:
+            'Cualquier servidor que hable la API de chat de OpenAI (LM Studio, vLLM, un proxy).',
           label: 'Endpoint compatible con OpenAI',
         },
       },

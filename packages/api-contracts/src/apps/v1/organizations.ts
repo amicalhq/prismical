@@ -1,9 +1,5 @@
 import { z } from 'zod';
-import {
-  AppsV1DateTimeResponseSchema,
-  appsV1ResultEnvelopeSchema,
-  appsV1ResultsEnvelopeSchema,
-} from './common.js';
+import { AppsV1DateTimeResponseSchema, appsV1ListResponseSchema } from './common.js';
 
 export const OrganizationRoleSchema = z.enum(['owner', 'admin', 'member']);
 export const OrganizationInviteRoleSchema = z.enum(['admin', 'member']);
@@ -54,27 +50,23 @@ export const OrganizationSchema = z
   })
   .strip();
 export type Organization = z.output<typeof OrganizationSchema>;
-export const OrganizationsResponseSchema = appsV1ResultsEnvelopeSchema(OrganizationSchema);
-export const OrganizationResponseSchema = appsV1ResultEnvelopeSchema(OrganizationSchema);
+export const OrganizationsResponseSchema = appsV1ListResponseSchema(OrganizationSchema);
+export const OrganizationResponseSchema = OrganizationSchema;
 
 export const RenamedOrganizationSchema = z
   .object({ orgId: z.string().min(1), name: z.string(), slug: z.string() })
   .strip();
-export const RenamedOrganizationResponseSchema =
-  appsV1ResultEnvelopeSchema(RenamedOrganizationSchema);
+export const RenamedOrganizationResponseSchema = RenamedOrganizationSchema;
 
 export const OrganizationSharingPolicySchema = z
   .object({ orgId: z.string().min(1), allowPublicSharing: z.boolean() })
   .strip();
-export const OrganizationSharingPolicyResponseSchema = appsV1ResultEnvelopeSchema(
-  OrganizationSharingPolicySchema
-);
+export const OrganizationSharingPolicyResponseSchema = OrganizationSharingPolicySchema;
 
 export const RevokedPublicLinksSchema = z
   .object({ revoked: z.number().int().nonnegative() })
   .strip();
-export const RevokedPublicLinksResponseSchema =
-  appsV1ResultEnvelopeSchema(RevokedPublicLinksSchema);
+export const RevokedPublicLinksResponseSchema = RevokedPublicLinksSchema;
 
 export const OrganizationMemberSchema = z
   .object({
@@ -88,8 +80,7 @@ export const OrganizationMemberSchema = z
   })
   .strip();
 export type OrganizationMember = z.output<typeof OrganizationMemberSchema>;
-export const OrganizationMembersResponseSchema =
-  appsV1ResultsEnvelopeSchema(OrganizationMemberSchema);
+export const OrganizationMembersResponseSchema = appsV1ListResponseSchema(OrganizationMemberSchema);
 
 export const UpdatedOrganizationMemberSchema = z
   .object({
@@ -99,9 +90,7 @@ export const UpdatedOrganizationMemberSchema = z
     isSelf: z.boolean(),
   })
   .strip();
-export const UpdatedOrganizationMemberResponseSchema = appsV1ResultEnvelopeSchema(
-  UpdatedOrganizationMemberSchema
-);
+export const UpdatedOrganizationMemberResponseSchema = UpdatedOrganizationMemberSchema;
 
 export const OrganizationInvitationSchema = z
   .object({
@@ -114,12 +103,10 @@ export const OrganizationInvitationSchema = z
   })
   .strip();
 export type OrganizationInvitation = z.output<typeof OrganizationInvitationSchema>;
-export const OrganizationInvitationsResponseSchema = appsV1ResultsEnvelopeSchema(
+export const OrganizationInvitationsResponseSchema = appsV1ListResponseSchema(
   OrganizationInvitationSchema
 );
-export const OrganizationInvitationResponseSchema = appsV1ResultEnvelopeSchema(
-  OrganizationInvitationSchema
-);
+export const OrganizationInvitationResponseSchema = OrganizationInvitationSchema;
 
 export const InvitationDetailSchema = z
   .object({
@@ -136,11 +123,9 @@ export const InvitationDetailSchema = z
   })
   .strip();
 export type InvitationDetail = z.output<typeof InvitationDetailSchema>;
-export const InvitationDetailResponseSchema = appsV1ResultEnvelopeSchema(InvitationDetailSchema);
+export const InvitationDetailResponseSchema = InvitationDetailSchema;
 
 export const AcceptInvitationResultSchema = z
   .object({ orgId: z.string().min(1), role: OrganizationRoleSchema })
   .strip();
-export const AcceptInvitationResponseSchema = appsV1ResultEnvelopeSchema(
-  AcceptInvitationResultSchema
-);
+export const AcceptInvitationResponseSchema = AcceptInvitationResultSchema;

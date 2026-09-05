@@ -45,9 +45,7 @@ describe("buildAskRequest", () => {
       headers: {},
     });
     expect(out.body).toEqual({
-      messages: [
-        { role: "user", content: "q", parts: [{ type: "text", text: "q" }] },
-      ],
+      messages: [{ role: "user", content: "q", parts: [{ type: "text", text: "q" }] }],
       // The app clients ALWAYS opt in to follow-up chips; /v1 consumers never send it.
       suggestFollowups: true,
     });
@@ -62,9 +60,7 @@ describe("buildAskRequest", () => {
       headers: {},
     });
     expect(withId.body).toEqual({
-      messages: [
-        { role: "user", content: "q", parts: [{ type: "text", text: "q" }] },
-      ],
+      messages: [{ role: "user", content: "q", parts: [{ type: "text", text: "q" }] }],
       conversationId: "cnv_abc",
       suggestFollowups: true,
     });
@@ -134,9 +130,7 @@ describe("buildAskRequest", () => {
       headers: {},
     });
     expect(out.body).toEqual({
-      messages: [
-        { role: "user", content: "q", parts: [{ type: "text", text: "q" }] },
-      ],
+      messages: [{ role: "user", content: "q", parts: [{ type: "text", text: "q" }] }],
       suggestFollowups: true,
     });
   });
@@ -189,13 +183,15 @@ describe("exactSessionAskHeaders", () => {
   }
 
   it("pins Ask and tool-approval requests to the owner session token and org", async () => {
-    const auth = authPort(() => supportView, async () => "support-token");
+    const auth = authPort(
+      () => supportView,
+      async () => "support-token",
+    );
 
-    await expect(
-      exactSessionAskHeaders(auth, "support_session_1", "org_1"),
-    ).resolves.toEqual({
+    await expect(exactSessionAskHeaders(auth, "support_session_1", "org_1")).resolves.toEqual({
       Authorization: "Bearer support-token",
       "x-active-org-id": "org_1",
+      "x-prismical-ask-error-format": "envelope",
     });
   });
 
@@ -209,9 +205,9 @@ describe("exactSessionAskHeaders", () => {
       },
     );
 
-    await expect(
-      exactSessionAskHeaders(auth, "support_session_1", "org_1"),
-    ).rejects.toBeInstanceOf(AskSessionChangedError);
+    await expect(exactSessionAskHeaders(auth, "support_session_1", "org_1")).rejects.toBeInstanceOf(
+      AskSessionChangedError,
+    );
   });
 
   it("does not even read the ordinary token for an already-stale support chat", async () => {
@@ -224,9 +220,9 @@ describe("exactSessionAskHeaders", () => {
       },
     );
 
-    await expect(
-      exactSessionAskHeaders(auth, "support_session_1", "org_1"),
-    ).rejects.toBeInstanceOf(AskSessionChangedError);
+    await expect(exactSessionAskHeaders(auth, "support_session_1", "org_1")).rejects.toBeInstanceOf(
+      AskSessionChangedError,
+    );
     expect(tokenReads).toBe(0);
   });
 
@@ -241,9 +237,9 @@ describe("exactSessionAskHeaders", () => {
       async () => null,
     );
 
-    await expect(
-      exactSessionAskHeaders(auth, "support_session_1", "org_1"),
-    ).rejects.toBeInstanceOf(AskSessionChangedError);
+    await expect(exactSessionAskHeaders(auth, "support_session_1", "org_1")).rejects.toBeInstanceOf(
+      AskSessionChangedError,
+    );
     expect(ordinaryTokenReads).toBe(0);
   });
 
@@ -254,7 +250,7 @@ describe("exactSessionAskHeaders", () => {
       async () => {
         view = {
           ...supportView,
-          accounts: supportView.accounts.map(account => ({
+          accounts: supportView.accounts.map((account) => ({
             ...account,
             activeOrgId: "org_2",
           })),
@@ -263,22 +259,21 @@ describe("exactSessionAskHeaders", () => {
       },
     );
 
-    await expect(
-      exactSessionAskHeaders(auth, "support_session_1", "org_1"),
-    ).rejects.toBeInstanceOf(AskSessionChangedError);
+    await expect(exactSessionAskHeaders(auth, "support_session_1", "org_1")).rejects.toBeInstanceOf(
+      AskSessionChangedError,
+    );
   });
 
   it("rejects an org seam change before the reactive session view publishes", async () => {
     const auth = authPort(
       () => supportView,
       async () => "support-token",
-      async (_sessionKey, expectedOrgId) =>
-        expectedOrgId === "org_2" ? "support-token" : null,
+      async (_sessionKey, expectedOrgId) => (expectedOrgId === "org_2" ? "support-token" : null),
     );
 
-    await expect(
-      exactSessionAskHeaders(auth, "support_session_1", "org_1"),
-    ).rejects.toBeInstanceOf(AskSessionChangedError);
+    await expect(exactSessionAskHeaders(auth, "support_session_1", "org_1")).rejects.toBeInstanceOf(
+      AskSessionChangedError,
+    );
   });
 
   it("keeps desktop Ask token-free for main-owned IPC authentication", async () => {

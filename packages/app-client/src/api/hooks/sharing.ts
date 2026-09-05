@@ -126,7 +126,7 @@ export function useResourceInvitations(type: ResourceType, id: string | null) {
     queryFn: async () =>
       ResourceInvitationsResponseSchema.parse(
         await apiClient.getRaw<unknown>(`${ME_PREFIX}/${seg(type)}/${id}/invitations`),
-      ).result,
+      ).results,
   });
 }
 
@@ -138,7 +138,7 @@ export function useCreateResourceInvitation(type: ResourceType, id: string) {
     mutationFn: async (vars: { email: string; role: ShareRole }) =>
       ResourceInvitationResponseSchema.parse(
         await apiClient.postRaw<unknown>(`${ME_PREFIX}/${seg(type)}/${id}/invitations`, vars),
-      ).result,
+      ),
     onSuccess: () => void qc.invalidateQueries({ queryKey: resourceInvitationsKey(type, id) }),
   });
 }
@@ -178,7 +178,7 @@ export function usePublishNote(noteId: string) {
     mutationFn: async () =>
       NotePublicationResponseSchema.parse(
         await apiClient.postRaw<unknown>(`${ME_PREFIX}/notes/${noteId}/publish`, {}),
-      ).result,
+      ),
     // This MUST live on the hook, not on the caller's `mutate(..., { onError })`: per-call
     // callbacks are gated on the observer still having listeners, so they are dropped once the
     // component unmounts. Publishing then closing the dialog is an ordinary thing to do, and it
@@ -219,7 +219,7 @@ export function useUpdateSharingPolicy(orgId: string) {
           { allowPublicSharing },
           { activeOrgId: orgId },
         ),
-      ).result,
+      ),
     onSuccess: () => void qc.invalidateQueries({ queryKey: organizationsKey }),
   });
 }
@@ -248,7 +248,7 @@ export function useShareInvitation(id: string | null) {
     queryFn: async () =>
       ShareInvitationDetailResponseSchema.parse(
         await apiClient.getRaw<unknown>(`${ME_PREFIX}/share-invitations/${id}`),
-      ).result,
+      ),
   });
 }
 
@@ -259,7 +259,7 @@ export function useAcceptShareInvitation() {
     mutationFn: async (id: string) =>
       AcceptShareInvitationResponseSchema.parse(
         await apiClient.postRaw<unknown>(`${ME_PREFIX}/share-invitations/${id}/accept`, {}),
-      ).result,
+      ),
     // The newly-granted note/folder must show up immediately — nudge a delta
     // pull so the post-accept redirect resolves it (and it lands in "Shared
     // with me"). (Share grants bump updatedAt server-side, so the delta sees them.)

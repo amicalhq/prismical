@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AppsV1IsoDateTimeSchema, appsV1ResultResponseSchema } from './common.js';
+import { AppsV1IsoDateTimeSchema } from './common.js';
 
 const AiTokenCountSchema = z
   .object({
@@ -45,5 +45,5 @@ export const UsageSchema = z
   .strip();
 
 export type Usage = z.output<typeof UsageSchema>;
-export const UsageResponseSchema = appsV1ResultResponseSchema(UsageSchema);
+export const UsageResponseSchema = UsageSchema;
 export type UsageResponse = z.output<typeof UsageResponseSchema>;

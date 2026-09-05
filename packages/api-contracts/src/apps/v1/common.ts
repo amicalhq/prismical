@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { ApiErrorResponseSchema } from '../../error.js';
 
 export const AppsV1IsoDateTimeSchema = z.iso.datetime();
 /**
@@ -10,43 +9,24 @@ export const AppsV1IsoDateTimeSchema = z.iso.datetime();
 export const AppsV1DateTimeResponseSchema = z
   .union([AppsV1IsoDateTimeSchema, z.date()])
   .transform(value => (value instanceof Date ? value.toISOString() : value));
-export const AppsV1ErrorResponseSchema = ApiErrorResponseSchema;
+/** Nested HTTP errors with correlation fields and domain-specific context. */
+export const AppsV1ErrorDetailsSchema = z.object({
+  code: z.string().min(1),
+  message: z.string(),
+  /** AI failures use AiErrorDetailsSchema; validation failures carry field issues. */
+  details: z.unknown().optional(),
+  traceId: z.string().optional(),
+  requestId: z.string().optional(),
+  localizedMessage: z.object({ locale: z.string(), message: z.string() }).strip().optional(),
+}).strip();
+export const AppsV1ErrorResponseSchema = z.object({ error: AppsV1ErrorDetailsSchema }).strip();
 export type AppsV1ErrorResponse = z.output<typeof AppsV1ErrorResponseSchema>;
+export const AppsV1RouteErrorResponseSchema = AppsV1ErrorResponseSchema;
 
-/** Legacy flat errors still emitted by a small number of app-only handlers. */
-export const AppsV1LegacyErrorResponseSchema = z
-  .object({
-    error: z.string(),
-    message: z.string().optional(),
-    code: z.string().optional(),
-    details: z.unknown().optional(),
-  })
-  .strip();
-
-export const AppsV1RouteErrorResponseSchema = z.union([
-  AppsV1ErrorResponseSchema,
-  AppsV1LegacyErrorResponseSchema,
-]);
-
-export const AppsV1SuccessResponseSchema = z.object({ success: z.literal(true) }).strip();
-export type AppsV1SuccessResponse = z.output<typeof AppsV1SuccessResponseSchema>;
-
+/** An acknowledgement with no representation uses HTTP 204. */
 export const AppsV1NoContentResponseSchema = z.undefined();
 
-export function appsV1ResultResponseSchema<T extends z.ZodType>(result: T) {
-  return z.object({ success: z.literal(true), result }).strip();
-}
-
+/** Lists use results; single resources and composite responses expose their fields directly. */
 export function appsV1ListResponseSchema<T extends z.ZodType>(item: T) {
-  return z.object({ success: z.literal(true), results: z.array(item) }).strip();
-}
-
-/** Existing app-client result envelope without a top-level success field. */
-export function appsV1ResultEnvelopeSchema<T extends z.ZodType>(result: T) {
-  return z.object({ result }).strip();
-}
-
-/** Existing app-client list envelope without a top-level success field. */
-export function appsV1ResultsEnvelopeSchema<T extends z.ZodType>(item: T) {
   return z.object({ results: z.array(item) }).strip();
 }

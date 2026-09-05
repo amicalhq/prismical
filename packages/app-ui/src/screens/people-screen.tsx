@@ -29,7 +29,7 @@ export function PeopleScreen() {
   const [search, setSearch] = React.useState('');
   const [filter, setFilter] = React.useState<PeopleFilter>('all');
   const { data, isLoading, error } = usePeople({ search: useDebouncedValue(search), filter });
-  const people = data?.people ?? [];
+  const people = data?.results ?? [];
 
   return (
     <div className="mx-auto w-full max-w-4xl">

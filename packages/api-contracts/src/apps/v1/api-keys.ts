@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AppsV1DateTimeResponseSchema, appsV1ResultsEnvelopeSchema } from './common.js';
+import { AppsV1DateTimeResponseSchema, appsV1ListResponseSchema } from './common.js';
 
 const DAY_SECONDS = 24 * 60 * 60;
 
@@ -30,7 +30,7 @@ export const ApiKeySchema = z
   .strip();
 export type ApiKey = z.output<typeof ApiKeySchema>;
 
-export const ApiKeyListResponseSchema = appsV1ResultsEnvelopeSchema(ApiKeySchema);
+export const ApiKeyListResponseSchema = appsV1ListResponseSchema(ApiKeySchema);
 
 export const CreatedApiKeySchema = z
   .object({

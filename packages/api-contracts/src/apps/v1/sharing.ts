@@ -1,9 +1,5 @@
 import { z } from 'zod';
-import {
-  AppsV1DateTimeResponseSchema,
-  appsV1ResultEnvelopeSchema,
-  appsV1ResultResponseSchema,
-} from './common.js';
+import { AppsV1DateTimeResponseSchema, appsV1ListResponseSchema } from './common.js';
 
 export const ShareRoleSchema = z.enum(['viewer', 'editor', 'manager']);
 export type ShareRole = z.output<typeof ShareRoleSchema>;
@@ -72,7 +68,7 @@ export const NoteDetailSchema = z
   })
   .strip();
 export type NoteDetail = z.output<typeof NoteDetailSchema>;
-export const NoteDetailResponseSchema = appsV1ResultResponseSchema(NoteDetailSchema);
+export const NoteDetailResponseSchema = NoteDetailSchema;
 
 export const FolderDetailSchema = z
   .object({
@@ -87,7 +83,7 @@ export const FolderDetailSchema = z
   })
   .strip();
 export type FolderDetail = z.output<typeof FolderDetailSchema>;
-export const FolderDetailResponseSchema = appsV1ResultResponseSchema(FolderDetailSchema);
+export const FolderDetailResponseSchema = FolderDetailSchema;
 
 export const ShareOwnerSchema = z
   .object({
@@ -118,7 +114,6 @@ export type ShareMember = z.output<typeof ShareMemberSchema>;
 
 export const NoteMembersResponseSchema = z
   .object({
-    success: z.literal(true),
     noteId: z.string().min(1),
     canManage: z.boolean(),
     owner: ShareOwnerSchema,
@@ -130,7 +125,6 @@ export type NoteMembersResponse = z.output<typeof NoteMembersResponseSchema>;
 
 export const FolderMembersResponseSchema = z
   .object({
-    success: z.literal(true),
     folderId: z.string().min(1),
     canManage: z.boolean(),
     owner: ShareOwnerSchema,
@@ -141,7 +135,6 @@ export type FolderMembersResponse = z.output<typeof FolderMembersResponseSchema>
 
 export const ShareNoteResponseSchema = z
   .object({
-    success: z.literal(true),
     noteId: z.string().min(1),
     added: z.array(z.string()),
     removed: z.array(z.string()),
@@ -150,7 +143,6 @@ export const ShareNoteResponseSchema = z
 
 export const ShareFolderResponseSchema = z
   .object({
-    success: z.literal(true),
     folderId: z.string().min(1),
     added: z.array(z.string()),
     removed: z.array(z.string()),
@@ -161,10 +153,10 @@ export const NotePublicationSchema = z
   .object({ publishedAt: AppsV1DateTimeResponseSchema.nullable() })
   .strip();
 export type NotePublication = z.output<typeof NotePublicationSchema>;
-export const NotePublicationResponseSchema = appsV1ResultEnvelopeSchema(NotePublicationSchema);
-export const NotePublicationStateResponseSchema = z
-  .object({ result: NotePublicationSchema, allowPublicSharing: z.boolean() })
-  .strip();
+export const NotePublicationResponseSchema = NotePublicationSchema;
+export const NotePublicationStateResponseSchema = NotePublicationSchema.extend({
+  allowPublicSharing: z.boolean(),
+});
 export type NotePublicationStateResponse = z.output<typeof NotePublicationStateResponseSchema>;
 
 export const ResourceInvitationSchema = z
@@ -182,16 +174,10 @@ export const CreatedResourceInvitationSchema = ResourceInvitationSchema.extend({
   resourceType: SharedResourceTypeSchema,
   resourceId: z.string().min(1),
 });
-export const ResourceInvitationResponseSchema = appsV1ResultEnvelopeSchema(
-  CreatedResourceInvitationSchema
-);
-export const ResourceInvitationsResponseSchema = appsV1ResultEnvelopeSchema(
-  z.array(ResourceInvitationSchema)
-);
+export const ResourceInvitationResponseSchema = CreatedResourceInvitationSchema;
+export const ResourceInvitationsResponseSchema = appsV1ListResponseSchema(ResourceInvitationSchema);
 
-export const RevokedShareInvitationResponseSchema = appsV1ResultEnvelopeSchema(
-  z.object({ revoked: z.boolean() }).strip()
-);
+export const RevokedShareInvitationResponseSchema = z.object({ revoked: z.boolean() }).strip();
 
 export const ShareInvitationDetailSchema = z
   .object({
@@ -208,13 +194,9 @@ export const ShareInvitationDetailSchema = z
   })
   .strip();
 export type ShareInvitationDetail = z.output<typeof ShareInvitationDetailSchema>;
-export const ShareInvitationDetailResponseSchema = appsV1ResultEnvelopeSchema(
-  ShareInvitationDetailSchema
-);
+export const ShareInvitationDetailResponseSchema = ShareInvitationDetailSchema;
 
 export const AcceptShareInvitationSchema = z
   .object({ resourceType: SharedResourceTypeSchema, resourceId: z.string().min(1) })
   .strip();
-export const AcceptShareInvitationResponseSchema = appsV1ResultEnvelopeSchema(
-  AcceptShareInvitationSchema
-);
+export const AcceptShareInvitationResponseSchema = AcceptShareInvitationSchema;

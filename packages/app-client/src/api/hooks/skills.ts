@@ -1,5 +1,6 @@
 "use client";
 
+import type { SyncWriteEnvelope } from "@prismical/api-contracts/apps/v1";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient, ME_PREFIX } from "../client";
 import { toSkill, type CoreSkill } from "../adapters";
@@ -30,7 +31,10 @@ export function useCreateSkill() {
   return useMutation({
     // skill-form / skills page catch and render these inline.
     meta: { suppressErrorToast: true },
-    mutationFn: (draft: SkillDraft) => apiClient.post<CoreSkill>(`${ME_PREFIX}/skills`, draft),
+    mutationFn: (draft: SkillDraft) =>
+      apiClient
+        .post<SyncWriteEnvelope<CoreSkill>>(`${ME_PREFIX}/skills`, draft)
+        .then((response) => response.result),
     onSuccess: () => qc.invalidateQueries({ queryKey: skillsKey }),
   });
 }
@@ -40,7 +44,9 @@ export function useUpdateSkill() {
   return useMutation({
     meta: { suppressErrorToast: true },
     mutationFn: ({ id, patch }: { id: string; patch: Partial<SkillDraft> }) =>
-      apiClient.put<CoreSkill>(`${ME_PREFIX}/skills/${id}`, patch),
+      apiClient
+        .put<SyncWriteEnvelope<CoreSkill>>(`${ME_PREFIX}/skills/${id}`, patch)
+        .then((response) => response.result),
     onSuccess: () => qc.invalidateQueries({ queryKey: skillsKey }),
   });
 }

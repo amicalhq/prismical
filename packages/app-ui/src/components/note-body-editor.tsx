@@ -1,14 +1,15 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useEditor, EditorContent, type Editor } from '@tiptap/react';
-import { Loader2, Lock } from 'lucide-react';
+import { Lock } from 'lucide-react';
 import type * as Y from 'yjs';
 import { useNoteCollab } from '@prismical/app-client';
 import { buildWebEditorExtensions } from '@prismical/app-client';
 import { useRegisterNoteEditor } from '../shell/current-editor-context';
 import { useSkillDiffDecorations } from '@prismical/app-client';
 import { InlineSkillPopover } from './inline-skill-popover';
+import { NoteBodySkeleton } from './skeletons';
 import './note-body-editor.css';
 import './artifact-node.css';
 import './diff-styles.css';
@@ -19,12 +20,34 @@ interface NoteBodyEditorProps {
   writable: boolean;
 }
 
+/**
+ * How long the bars stand on their own before they admit something may be wrong. Long enough that
+ * a normal connect never shows it, short enough to beat a user's patience.
+ */
+const SLOW_COLLAB_MS = 10_000;
+
 function Loading() {
   const { t } = useTranslation();
+  // Shaped like the text that is about to arrive rather than a spinner over empty space: the body
+  // is the whole point of the screen, so an outline of it reads as loading, while a spinner on a
+  // blank page reads as stalled. The label stays for screen readers, which get nothing from bars.
+  //
+  // But bars alone are only honest while the wait is normal. `useNoteCollab` surfaces `error` only
+  // after repeated AUTH failures — a connect that simply never syncs (the note service wedged)
+  // leaves this mounted forever, and endless shimmering bars claim there is content on the way.
+  // After a while, say so in words.
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    const id = setTimeout(() => setSlow(true), SLOW_COLLAB_MS);
+    return () => clearTimeout(id);
+  }, []);
   return (
-    <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
-      <Loader2 className="h-4 w-4 animate-spin" />
-      {t('notes.editor.loading')}
+    <div role="status" aria-busy="true" aria-label={t('notes.editor.loading')}>
+      <span className="sr-only">{t('notes.editor.loading')}</span>
+      <NoteBodySkeleton />
+      {slow ? (
+        <p className="ml-1 mt-3 text-xs text-muted-foreground">{t('notes.editor.slowConnect')}</p>
+      ) : null}
     </div>
   );
 }

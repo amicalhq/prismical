@@ -90,3 +90,4 @@ export type { SyncPartition } from "./sync/partition";
 export { useSyncStore } from "./sync/provider";
 
 export { setTitleDraftDirty } from "./notes/title-drafts";
+export * from "./errors/ai-user-error";

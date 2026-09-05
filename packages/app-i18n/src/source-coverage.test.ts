@@ -210,10 +210,13 @@ function collectFindings(path: string): Finding[] {
 
 describe('localized interface source coverage', () => {
   it('scans the shared library and at least one application', () => {
-    for (const root of REQUIRED_SOURCE_ROOTS) expect(existsSync(resolve(REPO_ROOT, root))).toBe(true);
+    for (const root of REQUIRED_SOURCE_ROOTS)
+      expect(existsSync(resolve(REPO_ROOT, root))).toBe(true);
     expect(SOURCE_ROOTS.length).toBeGreaterThan(REQUIRED_SOURCE_ROOTS.length);
   });
 
+  // Walks and parses every source file under SOURCE_ROOTS: well under a second locally, ~9s on
+  // a cold CI runner, so the default 5s budget is a flake, not a signal.
   it('contains no unreviewed raw user-visible strings', () => {
     const findings = SOURCE_ROOTS.flatMap(root =>
       listSourceFiles(resolve(REPO_ROOT, root))
@@ -221,5 +224,5 @@ describe('localized interface source coverage', () => {
     const unreviewed = findings.filter(({ value }) => !REVIEWED_VISIBLE_LITERALS.has(value));
 
     expect(unreviewed).toEqual([]);
-  });
+  }, 60_000);
 });

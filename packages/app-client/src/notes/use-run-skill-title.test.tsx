@@ -22,6 +22,8 @@ vi.mock('../api/hooks/skill-runs', () => ({
 vi.mock('../api/hooks/model-defaults', () => ({ ensureModelDefault: async () => ({}) }));
 vi.mock('../ports-context', () => ({
   usePorts: () => ({ analytics: { capture: mocks.capture } }),
+  // The recovery actions ("Open AI models") navigate; the title flow never triggers one.
+  useNavigation: () => ({ push: () => {}, replace: () => {}, back: () => {} }),
 }));
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => ({}) }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));

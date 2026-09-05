@@ -39,7 +39,7 @@ export const modelDefaultsQueryOptions = {
   queryFn: async () =>
     ModelDefaultsResponseSchema.parse(
       await apiClient.getRaw<unknown>(`${ME_PREFIX}/model-defaults`),
-    ).result,
+    ),
   staleTime: 60_000,
 };
 
@@ -63,7 +63,7 @@ export async function ensureModelDefault(
       defaults = opts?.authToken
         ? ModelDefaultsResponseSchema.parse(
             await apiClient.getRaw<unknown>(`${ME_PREFIX}/model-defaults`, undefined, opts),
-          ).result
+          )
         : await qc.ensureQueryData(modelDefaultsQueryOptions);
       if (opts?.authToken) qc.setQueryData(modelDefaultsKey, defaults);
     } catch {
@@ -82,7 +82,7 @@ export function useSetModelDefault() {
     mutationFn: async (body: SetModelDefaultBody) =>
       SetModelDefaultResponseSchema.parse(
         await apiClient.putRaw<unknown>(`${ME_PREFIX}/model-defaults`, body),
-      ).result,
+      ),
     onSuccess: () => qc.invalidateQueries({ queryKey: modelDefaultsKey }),
   });
 }

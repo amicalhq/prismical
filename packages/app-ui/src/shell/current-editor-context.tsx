@@ -4,8 +4,8 @@ import * as React from "react";
 import type { Editor } from "@tiptap/react";
 
 // The note body editor (NoteBodyEditor, rendered inside the page) publishes its live TipTap editor
-// instance here so the LAYOUT-level dock cluster (recording-bottom-cluster → SkillSparkleButton /
-// SkillDiffDockBar) can drive the same editor — run a skill, render the diff, apply on accept.
+// instance here so the LAYOUT-level dock cluster (recording-bottom-cluster → SkillDockSlot's run
+// bridge / SkillDiffDockBar) can drive the same editor — run a skill, render the diff, apply on accept.
 // Mirrors the current-note-context plumbing, keyed by noteId so a note switch can't have the old
 // editor's unmount clear the new editor's registration.
 

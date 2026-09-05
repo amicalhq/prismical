@@ -209,7 +209,7 @@ function makePorts(
         setKey: () => Promise.resolve(),
         clearKey: () => Promise.resolve(),
         hasKey: () => Promise.resolve(false),
-        listModels: () => Promise.resolve({ models: [], error: "unsupported" }),
+        listModels: () => Promise.resolve({ models: [], error: 'unsupported' }),
       },
     },
     analytics: { capture: vi.fn(), capturePageview: vi.fn() },
@@ -446,6 +446,22 @@ describe('useRecording — native (desktop) branch', () => {
     expect(result.current.error).toBe('recording.errors.microphoneDenied');
     expect(result.current.isRecording).toBe(false);
     expect(result.current.state).toBe('idle');
+    // Main keeps pushing its (idle, notice-free) state after the failed start; the reason the
+    // start failed must survive those pushes, not vanish on the next one.
+    fake.push({ ...idle });
+    expect(result.current.error).toBe('recording.errors.microphoneDenied');
+    // A notice main itself implies still replaces it, and clears once main is back to normal.
+    fake.push({
+      ...idle,
+      recordingId: 'rec_1',
+      status: 'recording',
+      captureMode: 'mic',
+      requestedCaptureMode: 'dual',
+      micSource: 'system-default',
+    });
+    expect(result.current.error).toBe('recording.errors.systemAudioUnavailable');
+    fake.push({ ...idle, status: 'recording', captureMode: 'dual', requestedCaptureMode: 'dual' });
+    expect(result.current.error).toBeNull();
   });
 
   it('routes stop from paused to control.stop and reports the live segment count', async () => {
@@ -1101,6 +1117,63 @@ describe('useRecording — web branch pause/resume', () => {
       authToken: 'tok',
       activeOrgId: 'org_1',
     });
+  });
+
+  it('a user-fixable chunk failure shows the server copy and halts the rest of the uploads', async () => {
+    const user = {
+      title: 'Your Deepgram key was rejected.',
+      body: 'Update it in Settings, or use Prismical Cloud for now.',
+      severity: 'warning',
+      actions: [{ kind: 'open-ai-models', label: 'Open AI models' }],
+    };
+    upload.mockRejectedValueOnce(
+      new ApiError('PROVIDER_KEY_INVALID', 'rejected', 422, {
+        lane: 'your-key',
+        provider: 'deepgram',
+        user,
+      })
+    );
+    const { result } = renderWeb();
+    await act(async () => {
+      await result.current.start('note_1', 'Standup');
+    });
+
+    pushFrame(16000); // chunk 0 → 422
+    await act(async () => {});
+    await waitFor(() =>
+      expect(result.current.error).toBe('recording.errors.someAudioNotTranscribed')
+    );
+    expect(result.current.errorUser).toEqual(user);
+    // Every later chunk would fail the same way: nothing more goes on the wire, the session
+    // itself keeps recording.
+    pushFrame(48000);
+    await act(async () => {});
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(result.current.state).toBe('recording');
+
+    // Dismissing (or any other error) drops the server block with the key it belonged to.
+    act(() => result.current.clearError());
+    expect(result.current.errorUser).toBeNull();
+  });
+
+  it('an outage keeps retrying and keeps the generic line (no server copy)', async () => {
+    upload.mockRejectedValue(new ApiError('PROVIDER_UNAVAILABLE', 'down', 502));
+    const { result } = renderWeb();
+    await act(async () => {
+      await result.current.start('note_1', 'Standup');
+    });
+    pushFrame(16000);
+    await waitFor(
+      () => expect(result.current.error).toBe('recording.errors.someAudioNotTranscribed'),
+      {
+        timeout: 5000,
+      }
+    );
+    expect(result.current.errorUser).toBeNull();
+    // A 5xx never halts the session: the next chunk is still attempted.
+    pushFrame(48000);
+    await act(async () => {});
+    expect(upload.mock.calls.length).toBeGreaterThan(3);
   });
 
   it("resume during pause's flush beat wins — the context is never left suspended", async () => {

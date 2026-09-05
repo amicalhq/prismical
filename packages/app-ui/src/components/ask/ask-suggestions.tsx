@@ -51,12 +51,15 @@ export function AskSuggestions({
   const questions = currentNote
     ? [t('ask.suggestions.noteSummary'), t('ask.suggestions.noteActions')]
     : [t('ask.suggestions.recentNotes'), t('ask.suggestions.openActions')];
-  const questionNotes = currentNote
-    ? [{ id: currentNote.noteId, title: currentNote.title }]
-    : [];
+  const questionNotes = currentNote ? [{ id: currentNote.noteId, title: currentNote.title }] : [];
 
   const dockSkills = canRunSkills
-    ? skills.filter(s => s.enabled && s.config.surface.includes('dock')).slice(0, MAX_SKILL_CHIPS)
+    ? skills
+        .filter(
+          s =>
+            s.enabled && s.config.outputTarget !== 'note-title' && s.config.surface.includes('dock')
+        )
+        .slice(0, MAX_SKILL_CHIPS)
     : [];
   const promptSkills =
     dockSkills.length > 0

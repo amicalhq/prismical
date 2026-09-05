@@ -30,6 +30,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import type { AuthPort, NativeRecordingState, SessionView } from '@prismical/app-contracts';
 import type { ApplicationTranslationKey } from '@prismical/app-i18n';
 import { ApiError } from '../api/client';
+import { aiUserErrorOf } from '../errors/ai-user-error';
+import type { AiUserError } from '@prismical/api-contracts';
 import { ensureModelDefault } from '../api/hooks/model-defaults';
 import { activeOrgIdOf, usePorts } from '../ports-context';
 import {
@@ -223,6 +225,13 @@ function nativeStatusToRecState(status: NativeRecordingState['status']): RecStat
 // The banner text a native state implies, or null. A capture give-up wins over
 // a missing mic, which wins over a system/dual → mic degrade. Normal mic
 // alignment transitions are silent.
+const NATIVE_NOTICE_KEYS: ReadonlySet<RecordingErrorKey> = new Set<RecordingErrorKey>([
+  'recording.errors.endedUnexpectedly',
+  'recording.errors.noMicrophoneSystemAudioContinues',
+  'recording.errors.noMicrophone',
+  'recording.errors.systemAudioUnavailable',
+]);
+
 function nativeNotice(state: NativeRecordingState): RecordingErrorKey | null {
   if (state.status === 'error') return 'recording.errors.endedUnexpectedly';
   if (state.micSource === 'unavailable') {
@@ -262,6 +271,10 @@ interface RecordingSession {
   /** Set before local teardown so queued async work cannot cross into a new login. */
   cancelled: boolean;
   stagingStopped: boolean;
+  /** A user-fixable transcription failure (rejected key, quota) stopped the session's uploads:
+   * every later chunk would fail the same way, so they are skipped instead of retried. The
+   * recording itself continues (and is buffered for the finalize pass). */
+  uploadsHalted: boolean;
 }
 
 /**
@@ -584,6 +597,10 @@ export interface UseRecording {
   liveSegments: CoreTranscriptSegment[];
   /** Mic permission / capture / upload-fatal error, for the dock to surface. */
   error: RecordingErrorKey | null;
+  /** The server's own description of `error` when it came from core (a transcription failure it
+   * classified: title, body and the recovery actions to offer, in the user's language). Null for
+   * client-side causes - the dock then renders `error` from its catalog. */
+  errorUser: AiUserError | null;
   /** Dismiss the surfaced error (the dock's banner/pill X). The error would
    * otherwise persist until the next start attempt. */
   clearError(): void;
@@ -625,7 +642,17 @@ export function useRecording(): UseRecording {
   const [startedAt, setStartedAt] = React.useState<string | null>(null);
   const [liveSegments, setLiveSegments] = React.useState<CoreTranscriptSegment[]>([]);
   const [error, setError] = React.useState<RecordingErrorKey | null>(null);
-  const clearError = React.useCallback(() => setError(null), []);
+  // The server-rendered block travels with the key it was set for: any other key (or null)
+  // supersedes it, so a later client-side error never shows a stale server message.
+  const [serverError, setServerError] = React.useState<{
+    key: RecordingErrorKey;
+    user: AiUserError;
+  } | null>(null);
+  const errorUser = serverError && serverError.key === error ? serverError.user : null;
+  const clearError = React.useCallback(() => {
+    setError(null);
+    setServerError(null);
+  }, []);
   // ---- Auto-pause on silence ----------------------------------------------------------------
   // The DECISION lives in @prismical/silence so desktop main runs the identical machine; this
   // hook only owns the wiring: feed it frames, apply its effects, render its prompt.
@@ -724,13 +751,21 @@ export function useRecording(): UseRecording {
           : new Date(s.startedAt).toISOString()
       );
       setLiveSegments([...s.segments]);
-      setError(nativeNotice(s));
+      // Main pushes state on every transition; only a notice main itself implies may replace
+      // (or clear) the banner. An error set by this hook (a failed start's reason) must survive
+      // the pushes that follow it, or it flashes for one frame and is gone.
+      setError(prev => {
+        const notice = nativeNotice(s);
+        if (notice) return notice;
+        return prev !== null && NATIVE_NOTICE_KEYS.has(prev) ? null : prev;
+      });
     });
   }, [control]);
 
   // Warm the web start path once: the AudioWorklet module fetch and
   // the transcription model-default query both sit between the mic click and "recording" —
-  // prefetching them at mount trims the "starting" window to createRecording + getUserMedia.
+  // prefetching them at mount trims the "starting" window. What remains is one round trip
+  // (createRecording, overlapped with the transcription-settings lookup) plus getUserMedia.
   // Desktop's native pipeline has neither, and failures here are fine (start() re-does both).
   React.useEffect(() => {
     if (control) return;
@@ -882,6 +917,10 @@ export function useRecording(): UseRecording {
     (samples: Float32Array) => {
       const s = session.current;
       if (!s?.recordingId || samples.length === 0) return;
+      if (s.uploadsHalted) {
+        s.sentSamples += samples.length; // durationMs still derives from the samples captured
+        return;
+      }
       const chunkIndex = s.chunkIndex++;
       const chunkStartMs = (s.sentSamples / SAMPLE_RATE) * 1000;
       s.sentSamples += samples.length;
@@ -921,11 +960,20 @@ export function useRecording(): UseRecording {
             if (delay === null) {
               // One gap is better than a dead session — warn and carry on.
               console.warn(`transcription chunk ${chunkIndex} failed`, err);
-              setError(
+              const key: RecordingErrorKey =
                 err instanceof ApiError && err.code === 'TRANSCRIPTION_QUOTA_EXCEEDED'
                   ? 'recording.errors.quotaExceeded'
-                  : 'recording.errors.someAudioNotTranscribed'
-              );
+                  : 'recording.errors.someAudioNotTranscribed';
+              // Core describes the cause when it classified one (rejected key, out of credit,
+              // retired model, quota): the dock shows that instead of the generic line. A cause
+              // the retry policy already calls permanent (a config/quota/key 4xx, not a 401/408/
+              // 429 that merely ran out of attempts) fails identically for every later chunk, so
+              // stop uploading for the rest of the session instead of spending three attempts
+              // each. The recording itself continues.
+              const user = aiUserErrorOf(err);
+              if (uploadRetryDelayMs(err, 1) === null) s.uploadsHalted = true;
+              setServerError(user ? { key, user } : null);
+              setError(key);
               return;
             }
             await new Promise(r => setTimeout(r, delay));
@@ -1009,26 +1057,52 @@ export function useRecording(): UseRecording {
         // live lane: the deferred drain only runs managed engines, and the user's pinned
         // provider must transcribe their audio — deferred would leave the recording empty.
         const byokChosen = Boolean((modelParams as { instanceId?: string }).instanceId);
-        authToken = await boundAuthToken(auth, ownerSessionKey);
-        const liveLane =
-          byokChosen ||
-          (await getTranscriptionSettings({ activeOrgId: ownerOrgId, authToken })
-            .then(s => s.liveTranscription)
-            .catch(() => true));
         const preferences = getRecordingPreferences();
         authToken = await boundAuthToken(auth, ownerSessionKey);
-        const rec = await createRecording(
-          {
-            noteId,
-            title,
-            ...modelParams,
-            language: transcriptionLanguageFor(preferences),
-          },
-          { activeOrgId: ownerOrgId, authToken }
-        );
+        // Two INDEPENDENT round trips: the settings lookup does not feed createRecording (its
+        // result is only read later, as effectiveLiveLane). Awaiting them one after the other put
+        // two full server latencies between the click and the microphone opening, so overlap them.
+        // Neither holds an OS resource, so a rejection here needs no teardown beyond the existing
+        // catch — unlike the microphone, which is deliberately still opened afterwards.
+        const [liveLane, rec] = await Promise.all([
+          byokChosen
+            ? Promise.resolve(true)
+            : getTranscriptionSettings({ activeOrgId: ownerOrgId, authToken })
+                .then(s => s.liveTranscription)
+                .catch(() => true),
+          createRecording(
+            {
+              noteId,
+              title,
+              ...modelParams,
+              language: transcriptionLanguageFor(preferences),
+            },
+            { activeOrgId: ownerOrgId, authToken }
+          ),
+        ]);
         openingStream = await openWebMicrophone(
           await resolveWebMicrophone(preferences.microphonePriority)
         );
+        // A mic that goes away mid-session (unplugged, Bluetooth off, OS revocation) ends its
+        // track; the worklet then feeds silence forever. Name the cause and end the session so
+        // what was captured is kept, instead of a silent recording nobody knows is silent.
+        // The listener is attached now but the session only exists further down: an `ended`
+        // that fires during the awaits in between is latched and honoured once the session is up.
+        let micEndedDuringOpen = false;
+        const onMicEnded = () => {
+          const live = session.current;
+          if (!live || live.stream !== openingStream) {
+            micEndedDuringOpen = true;
+            return;
+          }
+          if (live.cancelled) return;
+          setError('recording.errors.microphoneDisconnected');
+          void stopRef.current();
+        };
+        for (const track of openingStream.getTracks()) {
+          if (typeof track.addEventListener !== 'function') continue;
+          track.addEventListener('ended', onMicEnded);
+        }
         await boundAuthToken(auth, ownerSessionKey);
         openingContext = new AudioContext({ sampleRate: SAMPLE_RATE });
         await openingContext.audioWorklet.addModule('/audio-recorder-processor.js');
@@ -1090,6 +1164,7 @@ export function useRecording(): UseRecording {
           ownerSessionKey,
           cancelled: false,
           stagingStopped: false,
+          uploadsHalted: false,
         };
         openingNode.port.onmessage = (ev: MessageEvent) => {
           if (ev.data?.type !== 'audioFrame') return;
@@ -1128,6 +1203,12 @@ export function useRecording(): UseRecording {
         setLiveSegments([]);
         segmentCountRef.current = 0;
         setState('recording');
+        if (
+          micEndedDuringOpen ||
+          openingStream.getTracks().some(track => track.readyState === 'ended')
+        ) {
+          onMicEnded();
+        }
       } catch (err) {
         openingNode?.port.close();
         openingNode?.disconnect();
@@ -1364,6 +1445,13 @@ export function useRecording(): UseRecording {
     return { segments: segmentCountRef.current };
   }, [control, recordingId, state, enqueueChunk, teardownAudio, applyAutoPauseEffects, auth]);
 
+  // `stop` for callbacks registered before it exists (the mic track's `ended` listener). Kept
+  // current from an effect, not during render, like the machine-effect ref below.
+  const stopRef = React.useRef(stop);
+  React.useEffect(() => {
+    stopRef.current = stop;
+  }, [stop]);
+
   // The machine's `pause`/`stop` effects, reachable from the frame handler without a stale
   // closure. An effect (not a render-phase write) keeps render pure for StrictMode replays.
   React.useEffect(() => {
@@ -1409,6 +1497,7 @@ export function useRecording(): UseRecording {
     startedAt,
     liveSegments,
     error,
+    errorUser,
     clearError,
     gracePrompt,
     pauseReason,

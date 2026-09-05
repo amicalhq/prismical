@@ -73,10 +73,19 @@ export const AskComposer = React.forwardRef<
   const [plusOpen, setPlusOpen] = React.useState(false);
 
   const { data: allSkills = [] } = useSkillsList();
-  // The slash lane runs note-editing skills — the dock-surface list, same as the
-  // sparkle pill. Only offered when a note is open (onRunSkill present).
+  // The slash lane runs note-BODY skills — the dock-surface list minus title-target skills
+  // (the naming skill applies straight to the title; nothing to review). Only offered when a
+  // note is open (onRunSkill present).
   const slashSkills = React.useMemo(
-    () => (onRunSkill ? allSkills.filter(s => s.enabled && s.config.surface.includes('dock')) : []),
+    () =>
+      onRunSkill
+        ? allSkills.filter(
+            s =>
+              s.enabled &&
+              s.config.outputTarget !== 'note-title' &&
+              s.config.surface.includes('dock')
+          )
+        : [],
     [allSkills, onRunSkill]
   );
   const { data: notes = [] } = useNotes();

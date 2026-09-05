@@ -1,5 +1,6 @@
 "use client";
 
+import type { SyncWriteEnvelope } from "@prismical/api-contracts/apps/v1";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient, ME_PREFIX } from "../client";
 import { toVocabulary, type CoreVocabulary } from "../adapters";
@@ -25,7 +26,10 @@ export function useAddVocabulary() {
   const qc = useQueryClient();
   return useMutation({
     meta: { errorMessageKey: "common.mutationErrors.vocabularyAdd" },
-    mutationFn: (v: VocabWrite) => apiClient.post(`${ME_PREFIX}/vocabulary`, v),
+    mutationFn: (v: VocabWrite) =>
+      apiClient
+        .post<SyncWriteEnvelope<unknown>>(`${ME_PREFIX}/vocabulary`, v)
+        .then((response) => response.result),
     onSuccess: () => qc.invalidateQueries({ queryKey: vocabularyKey }),
   });
 }
@@ -35,7 +39,9 @@ export function useUpdateVocabulary() {
   return useMutation({
     meta: { errorMessageKey: "common.mutationErrors.vocabularySave" },
     mutationFn: ({ id, patch }: { id: string; patch: VocabWrite }) =>
-      apiClient.put(`${ME_PREFIX}/vocabulary/${id}`, patch),
+      apiClient
+        .put<SyncWriteEnvelope<unknown>>(`${ME_PREFIX}/vocabulary/${id}`, patch)
+        .then((response) => response.result),
     onSuccess: () => qc.invalidateQueries({ queryKey: vocabularyKey }),
   });
 }
@@ -70,7 +76,10 @@ export function useAddTeamVocabulary() {
   const qc = useQueryClient();
   return useMutation({
     meta: { errorMessageKey: "common.mutationErrors.vocabularyAdd" },
-    mutationFn: (v: VocabWrite) => apiClient.post(`${ME_PREFIX}/team-vocabulary`, v),
+    mutationFn: (v: VocabWrite) =>
+      apiClient
+        .post<SyncWriteEnvelope<unknown>>(`${ME_PREFIX}/team-vocabulary`, v)
+        .then((response) => response.result),
     onSuccess: () => qc.invalidateQueries({ queryKey: teamVocabularyKey }),
   });
 }
@@ -80,7 +89,9 @@ export function useUpdateTeamVocabulary() {
   return useMutation({
     meta: { errorMessageKey: "common.mutationErrors.vocabularySave" },
     mutationFn: ({ id, patch }: { id: string; patch: VocabWrite }) =>
-      apiClient.put(`${ME_PREFIX}/team-vocabulary/${id}`, patch),
+      apiClient
+        .put<SyncWriteEnvelope<unknown>>(`${ME_PREFIX}/team-vocabulary/${id}`, patch)
+        .then((response) => response.result),
     onSuccess: () => qc.invalidateQueries({ queryKey: teamVocabularyKey }),
   });
 }

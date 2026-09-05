@@ -530,6 +530,7 @@ const de = {
         'Diese Notiz konnte nicht geöffnet werden — möglicherweise fehlt dir der Zugriff oder deine Sitzung ist abgelaufen.',
       placeholder: 'Schreib etwas…',
       readOnly: 'Schreibgeschützt — du hast keine Berechtigung, diese Notiz zu bearbeiten.',
+      slowConnect: 'Wird noch geladen. Das dauert länger als sonst.',
       reconnecting: 'Verbindung wird wiederhergestellt…',
     },
     list: {
@@ -596,7 +597,7 @@ const de = {
       deadMicHelp: 'Problem beheben',
       deadMicTitle: 'Dein Mikrofon liefert kein Audiosignal',
       deferredRecovery:
-        'Die Aufnahme konnte noch nicht transkribiert werden — der Audio-Upload wird erneut versucht, sobald du wieder online bist.',
+        'Die Aufnahme konnte noch nicht transkribiert werden - der Audio-Upload wird erneut versucht, sobald du wieder online bist.',
       endedUnexpectedly: 'Die Aufnahme wurde unerwartet beendet.',
       microphoneDenied: 'Der Mikrofonzugriff wurde verweigert.',
       microphoneDeniedHintDesktop:
@@ -605,16 +606,16 @@ const de = {
         'Erlaube den Mikrofonzugriff für diese Website in deinem Browser und versuche es erneut.',
       troubleshoot: 'Anleitung zur Fehlerbehebung',
       microphoneDisconnected:
-        'Das Mikrofon wurde getrennt — beende die Aufnahme und starte eine neue.',
-      noMicrophone: 'Kein Mikrofon verfügbar — schließe ein Eingabegerät an oder aktiviere es.',
+        'Das Mikrofon wurde getrennt - beende die Aufnahme und starte eine neue.',
+      noMicrophone: 'Kein Mikrofon verfügbar - schließe ein Eingabegerät an oder aktiviere es.',
       noMicrophoneSystemAudioContinues:
-        'Kein Mikrofon verfügbar — schließe ein Eingabegerät an oder aktiviere es. Systemaudio wird weiterhin aufgenommen.',
-      quotaExceeded: 'Das Limit für Cloud-Transkription wurde erreicht.',
+        'Kein Mikrofon verfügbar - schließe ein Eingabegerät an oder aktiviere es. Systemaudio wird weiterhin aufgenommen.',
+      quotaExceeded: 'Du hast die in diesem Monat enthaltene Cloud-Transkription aufgebraucht.',
       renameSpeaker: 'Sprecher konnte nicht umbenannt werden',
       savedWithErrors: 'Die Aufnahme wurde mit Fehlern gespeichert.',
       someAudioNotTranscribed: 'Ein Teil des Audios konnte nicht transkribiert werden.',
       systemAudioUnavailable:
-        'Systemaudio ist nicht verfügbar — nur das Mikrofon wird aufgenommen.',
+        'Systemaudio ist nicht verfügbar - nur das Mikrofon wird aufgenommen.',
     },
     panel: {
       copied: 'Transkript von Aufnahme {{number}} kopiert',
@@ -645,6 +646,8 @@ const de = {
       title: 'Transkription',
       transcribing: 'Wird transkribiert…',
       transcriptReady: 'Transkript fertig',
+      speakerLabelsUnavailable: 'Transkript gespeichert - keine Sprecherzuordnung',
+      transcriptionFailed: 'Transkription fehlgeschlagen - das Audio wurde gespeichert',
       waitingFinal: 'Warten auf das endgültige Transkript',
       you: 'Du',
     },
@@ -653,17 +656,39 @@ const de = {
     collapse: '„KI fragen“ einklappen',
     conversation: 'Unterhaltung mit „KI fragen“',
     pillPlaceholder: 'Frag irgendwas…',
+    errors: {
+      sessionChanged: 'Du hast das Konto gewechselt. Frag noch einmal.',
+      offline: 'Du bist offline.',
+      offlineBody: 'Stelle die Verbindung wieder her und versuche es erneut.',
+      modelFallback:
+        'Das gewählte Modell ist nicht verfügbar, daher verwendet Ask AI Prismical Cloud.',
+      chooseModel: 'Modell wählen',
+      continueMessage: 'Bitte fortsetzen.',
+    },
     composerPlaceholder: 'Frag irgendwas — / für Skills, @ für Notizen',
     composerPlaceholderShort: '/ für Skills, @ für Notizen',
     dockDescription: 'KI zu deinen Notizen befragen',
     dockHide: '„KI fragen“ ausblenden',
     dockLabel: 'Fragen',
     empty: 'Stelle eine Frage zu deinen Notizen.',
-    error: 'Etwas ist schiefgegangen.',
+    error: 'Ask AI konnte nicht antworten.',
     newChat: 'Neuer Chat',
-    noResponse: 'Keine Antwort — bitte erneut versuchen.',
+    noResponse: 'Das Modell hat diesmal nicht geantwortet.',
     placeholder: 'Eine Frage stellen…',
     thinking: 'Denke nach…',
+    skillRun: {
+      running: '{{name}} läuft…',
+      stop: '{{name}} stoppen',
+      staged: '{{name}} hat einen Vorschlag erstellt',
+      reviewInNote: 'In der Notiz prüfen',
+      kept: 'Übernommen',
+      undone: 'Verworfen',
+      superseded: 'Durch die Verfeinerung unten ersetzt',
+      stopped: 'Gestoppt',
+      skipped: '{{name}} wurde nicht ausgeführt',
+      failed: '{{name}} ist fehlgeschlagen',
+      applied: '{{name}} angewendet',
+    },
     title: 'KI fragen',
     context: {
       add: 'Kontext hinzufügen',
@@ -725,6 +750,7 @@ const de = {
       denied: 'abgelehnt',
       deny: 'Ablehnen',
       failed: 'fehlgeschlagen',
+      needsAuth: 'Integration neu verbinden',
     },
   },
   ai: {
@@ -756,11 +782,7 @@ const de = {
     dock: {
       enhanceUnavailable: 'Verbessern ist derzeit nicht verfügbar.',
       skillUnavailable: 'Dieser Skill ist nicht mehr verfügbar.',
-      generating: 'Wird erstellt',
-      pick: 'Andere Fähigkeit auswählen',
-      run: '{{name}} ausführen',
       stopRun: 'Fähigkeitslauf stoppen',
-      stopRunning: 'Ausführung der Fähigkeit stoppen',
     },
     diff: {
       accept: 'Annehmen',
@@ -768,9 +790,9 @@ const de = {
       describeEdits: 'Änderungen beschreiben…',
       keep: 'Behalten',
       cancelRefinement: 'Verfeinerung abbrechen',
-      couldNotApply: '{{name}} konnte nicht angewendet werden — ungültiger Inhalt',
-      couldNotSave: '{{name}} konnte nicht gespeichert werden — {{error}}',
-      couldNotUndo: 'Rückgängig machen fehlgeschlagen — {{error}}',
+      couldNotApply: '{{name}} konnte nicht angewendet werden - ungültiger Inhalt',
+      couldNotSave: '{{name}} konnte nicht gespeichert werden. Versuche es erneut.',
+      couldNotUndo: 'Diese Änderung konnte nicht rückgängig gemacht werden.',
       newSectionAdded: 'Neuer Abschnitt hinzugefügt',
       noteReplaced: 'Notiz ersetzt',
       previewRewriteFailed:
@@ -784,7 +806,7 @@ const de = {
       reject: 'Ablehnen',
       reopenUndo: 'Öffne die Notiz erneut, um rückgängig zu machen',
       restoredLocallySyncFailed:
-        'Lokal wiederhergestellt, aber das Rückgängigmachen konnte nicht synchronisiert werden — {{error}}',
+        'Hier wiederhergestellt, aber das Rückgängigmachen konnte nicht synchronisiert werden. Es wird erneut versucht.',
       restoredPrevious: 'Vorherige Version wiederhergestellt',
       selectionUpdated: 'Auswahl aktualisiert',
       submitRefinement: 'Verfeinerung senden',
@@ -797,10 +819,12 @@ const de = {
     },
     run: {
       failed: '{{name}} konnte nicht ausgeführt werden. Bitte versuche es erneut.',
+      offline: 'Du bist offline.',
+      offlineBody: 'Stelle die Verbindung wieder her und versuche es erneut.',
       noTranscript:
         'Diese Aufnahme hat kein Transkript zum Verbessern. Prüfe das Transkript oder erstelle eine neue Aufnahme.',
       noUsableContent:
-        '{{name}} konnte nicht ausgeführt werden — das Modell hat keinen verwendbaren Inhalt zurückgegeben.',
+        '{{name}} konnte nicht ausgeführt werden - das Modell hat keinen verwendbaren Inhalt zurückgegeben.',
       noteAndTranscriptEmpty:
         'Diese Notiz hat noch keinen Text und kein Transkript. Füge Text hinzu oder nimm Audio auf, bevor du {{name}} ausführst.',
       noteEmpty: 'Füge dieser Notiz Inhalt hinzu, bevor du {{name}} ausführst.',
@@ -1300,11 +1324,11 @@ const de = {
       },
       catalog: {
         actions: {
-          comingSoon: 'Demnächst',
           connect: 'Verbinden',
           continueSetup: 'Einrichtung fortsetzen',
           createAutomation: 'Automatisierung erstellen',
           manageConnection: 'Verbindung verwalten',
+          requestMore: 'App anfragen',
         },
         categories: {
           all: 'Alle Apps',
@@ -1328,6 +1352,10 @@ const de = {
         noMatchDescription:
           'Verbinde einen nicht aufgeführten Anbieter über einen benutzerdefinierten MCP-Server.',
         noMatchTitle: 'Keine passenden Apps',
+        requestMore: {
+          description: 'Die gewünschte App fehlt? Sagen Sie uns, welche — wir prüfen die Aufnahme.',
+          name: 'Integration anfragen',
+        },
         searchAria: 'Apps durchsuchen',
         searchPlaceholder: 'Apps durchsuchen…',
         title: 'App verbinden',
@@ -1531,9 +1559,8 @@ const de = {
         },
         free: {
           askAi: 'Ask AI',
-          askAiNote: 'für begrenzte Zeit',
-          askAiTooltip:
-            'Im kostenlosen Tarif ist Ask AI für einen begrenzten Zeitraum unbegrenzt enthalten.',
+          askAiNote: 'enthalten',
+          askAiTooltip: 'Ask AI ist im kostenlosen Tarif enthalten.',
           billingLabel: 'Dauerhaft kostenlos',
           communitySupport: 'Community-Support',
           cta: 'Dauerhaft kostenlos',
@@ -2343,7 +2370,8 @@ const de = {
       description:
         'Wähle, welches Sprachmodell Ask, Enhance, Cleanup und Notiz benennen auf diesem Gerät ausführt.',
       keyMissing: 'Auf diesem Gerät ist kein Schlüssel gespeichert.',
-      keySet: 'Auf diesem Gerät ist ein Schlüssel gespeichert. Füge einen neuen ein, um ihn zu ersetzen.',
+      keySet:
+        'Auf diesem Gerät ist ein Schlüssel gespeichert. Füge einen neuen ein, um ihn zu ersetzen.',
       modelLabel: 'Modell',
       modelPlaceholder: 'Modell-ID (leer lassen für den Standard)',
       providers: {
@@ -2360,7 +2388,8 @@ const de = {
           label: 'OpenAI',
         },
         'openai-compatible': {
-          description: 'Jeder Server, der die OpenAI-Chat-API spricht (LM Studio, vLLM, ein Proxy).',
+          description:
+            'Jeder Server, der die OpenAI-Chat-API spricht (LM Studio, vLLM, ein Proxy).',
           label: 'OpenAI-kompatibler Endpunkt',
         },
       },

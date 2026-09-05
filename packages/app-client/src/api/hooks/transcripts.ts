@@ -182,9 +182,18 @@ export function useTitleTranscriptAvailable(noteId: string, enabled: boolean) {
   const { data: recordings = [] } = useNoteRecordings(noteId, { enabled });
   const readyIds = recordings.filter(r => r.status === 'completed').map(r => r.id);
   return useQuery({
-    queryKey: ['title-transcript-available', noteId, ...readyIds],
+    // Keyed on the SET of ready recordings rather than spread as separate members, so the key is
+    // stable under list reordering. Note what this does NOT do: the set still changes when a
+    // recording completes, so that still mints a new key and still re-downloads every transcript
+    // on the note. Only per-recording keys would fix that, and they need the shared raw-segments
+    // cache described below. The saving realised here is the staleTime.
+    queryKey: ['title-transcript-available', noteId, [...readyIds].sort().join(',')],
     enabled: enabled && readyIds.length > 0,
-    staleTime: 5_000,
+    // Was 5s, six times more aggressive than the app default, on the most expensive query we have
+    // (each call is an unbounded full-column segment list per recording). Nothing invalidates this
+    // key, so the cost of the default is a slightly later unlock of "Name with AI" on a note whose
+    // transcript is still landing — worth it against re-downloading every transcript on the note.
+    staleTime: 30_000,
     queryFn: async () => {
       const segments = await Promise.all(readyIds.map(id => listTranscriptSegments(id)));
       return segments.some(rows => rows.some(segment => segment.isFinal && segment.text.trim()));

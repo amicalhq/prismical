@@ -1,9 +1,5 @@
 import { z } from 'zod';
-import {
-  AppsV1SuccessResponseSchema,
-  appsV1ListResponseSchema,
-  appsV1ResultResponseSchema,
-} from './common.js';
+import { AppsV1NoContentResponseSchema, appsV1ListResponseSchema } from './common.js';
 
 export const AppsV1IdParamsSchema = z.object({
   id: z.string().min(1).describe('Client-provided prefixed id (the id IS the document name).'),
@@ -285,12 +281,13 @@ export type SyncSkillIdRequest = z.input<typeof SyncSkillIdRequestSchema>;
 
 export const SyncRecordSchema = z.record(z.string(), z.unknown());
 export const SyncListResponseSchema = appsV1ListResponseSchema(SyncRecordSchema);
-export const SyncResultResponseSchema = appsV1ResultResponseSchema(SyncRecordSchema);
-export const SyncWriteResponseSchema = appsV1ResultResponseSchema(SyncRecordSchema).extend({
+export const SyncResultResponseSchema = SyncRecordSchema;
+export const SyncWriteResponseSchema = z.object({
+  result: SyncRecordSchema,
   applied: z.boolean(),
   created: z.boolean().optional(),
 });
-export const SyncDeleteResponseSchema = AppsV1SuccessResponseSchema;
+export const SyncDeleteResponseSchema = AppsV1NoContentResponseSchema;
 
 export type SyncListResponse = z.output<typeof SyncListResponseSchema>;
 export type SyncResultResponse = z.output<typeof SyncResultResponseSchema>;
@@ -298,7 +295,6 @@ export type SyncWriteResponse = z.output<typeof SyncWriteResponseSchema>;
 export type SyncDeleteResponse = z.output<typeof SyncDeleteResponseSchema>;
 
 export type SyncWriteEnvelope<T> = {
-  success: true;
   result: T;
   applied: boolean;
   created?: boolean;
@@ -309,4 +305,4 @@ export const NoteTagRequestSchema = z
   .strict();
 export const NoteTagParamsSchema = NoteTagRequestSchema;
 export const NoteTagSchema = NoteTagRequestSchema.strip();
-export const NoteTagResponseSchema = appsV1ResultResponseSchema(NoteTagSchema);
+export const NoteTagResponseSchema = NoteTagSchema;

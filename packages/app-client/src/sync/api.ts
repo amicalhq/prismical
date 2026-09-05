@@ -101,7 +101,7 @@ export async function restUpdate<T>(
   return envelope.result;
 }
 
-/** Tombstone delete ({success:true}; 404 = already gone, the caller's ack case). */
+/** Tombstone delete (HTTP 204; 404 = already gone, the caller's ack case). */
 export async function restRemove(
   route: string,
   id: string,
@@ -142,7 +142,7 @@ export async function restNoteTagCreate(
   );
 }
 
-/** Unlink — {success:true}; 404 = already unlinked (ack). */
+/** Unlink — HTTP 204; 404 = already unlinked (ack). */
 export async function restNoteTagRemove(
   noteId: string,
   tagId: string,

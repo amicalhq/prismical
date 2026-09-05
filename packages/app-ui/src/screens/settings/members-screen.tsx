@@ -433,8 +433,8 @@ function PublicSharingControl({ orgId, allowed }: { orgId: string; allowed: bool
                     setConfirming(false);
                     toast.success(
                       t('settings.members.sharing.unpublished', {
-                        count: res.result.revoked,
-                        countLabel: res.result.revoked.toLocaleString(resolvedLocale),
+                        count: res.revoked,
+                        countLabel: res.revoked.toLocaleString(resolvedLocale),
                       })
                     );
                   },

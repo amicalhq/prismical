@@ -257,7 +257,7 @@ export function useCreateOrganization() {
           { name },
           { activeOrgId: null },
         ),
-      ).result,
+      ),
     onSuccess: (created) => {
       qc.setQueryData<Organization[]>(organizationsKey, (old) =>
         old ? [...old, created] : [created],
@@ -281,7 +281,7 @@ export function useRenameOrganization(orgId: string) {
           { name },
           { activeOrgId: orgId },
         ),
-      ).result,
+      ),
     onSuccess: () => qc.invalidateQueries({ queryKey: organizationsKey }),
   });
 }
@@ -312,7 +312,7 @@ export function useUpdateMemberRole(orgId: string) {
           { role: vars.role },
           { activeOrgId: orgId },
         ),
-      ).result,
+      ),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: orgMembersKey(orgId) });
       void qc.invalidateQueries({ queryKey: organizationsKey });
@@ -364,7 +364,7 @@ export function useCreateInvitation(orgId: string) {
         await apiClient.postRaw<unknown>(`${ME_PREFIX}/organizations/${orgId}/invitations`, vars, {
           activeOrgId: orgId,
         }),
-      ).result,
+      ),
     onSuccess: () => qc.invalidateQueries({ queryKey: orgInvitationsKey(orgId) }),
   });
 }
@@ -393,7 +393,7 @@ export function useInvitation(id: string | null) {
         await apiClient.getRaw<unknown>(`${ME_PREFIX}/invitations/${id}`, undefined, {
           activeOrgId: null,
         }),
-      ).result,
+      ),
   });
 }
 
@@ -409,7 +409,7 @@ export function useAcceptInvitation() {
           {},
           { activeOrgId: null },
         ),
-      ).result,
+      ),
     onSuccess: ({ orgId }) => {
       // Join landed — refresh the organization list and switch into the new one.
       void qc.invalidateQueries({ queryKey: organizationsKey });

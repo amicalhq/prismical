@@ -1,5 +1,8 @@
 import type { TransportMethod, TransportPort } from "@prismical/app-contracts";
-import { ApiErrorResponseSchema } from "@prismical/api-contracts";
+import {
+  AppsV1ErrorResponseSchema,
+  type AppsV1ErrorResponse,
+} from "@prismical/api-contracts/apps/v1";
 import { coreApiBaseUrl, getClientTransport } from "../runtime";
 import { getAuthHeaders, getAuthHeadersForToken, onUnauthorized } from "./auth";
 
@@ -15,12 +18,24 @@ export class ApiError extends Error {
   code: string;
   status: number;
   details?: unknown;
-  constructor(code: string, message: string, status: number, details?: unknown) {
+  traceId?: string;
+  requestId?: string;
+  localizedMessage?: AppsV1ErrorResponse["error"]["localizedMessage"];
+  constructor(
+    code: string,
+    message: string,
+    status: number,
+    details?: unknown,
+    metadata?: Pick<AppsV1ErrorResponse["error"], "traceId" | "requestId" | "localizedMessage">,
+  ) {
     super(message);
     this.name = "ApiError";
     this.code = code;
     this.status = status;
     this.details = details;
+    this.traceId = metadata?.traceId;
+    this.requestId = metadata?.requestId;
+    this.localizedMessage = metadata?.localizedMessage;
   }
 }
 
@@ -58,10 +73,10 @@ function buildUrl(path: string, query?: QueryParams): string {
 }
 
 function toApiError(json: unknown, status: number, statusText: string): ApiError {
-  const contracted = ApiErrorResponseSchema.safeParse(json);
+  const contracted = AppsV1ErrorResponseSchema.safeParse(json);
   if (contracted.success) {
-    const { code, message, details } = contracted.data.error;
-    return new ApiError(code, message, status, details);
+    const error = contracted.data.error;
+    return new ApiError(error.code, error.message, status, error.details, error);
   }
   const body = (json ?? {}) as { error?: unknown; message?: unknown; details?: unknown };
   // Nested envelope: { error: { code, message, details } } (the common case)
@@ -116,7 +131,7 @@ async function requestViaTransport<T>(
     if (res.status === 401) onUnauthorized();
     throw toApiError(res.bodyJson, res.status, String(res.status));
   }
-  return res.bodyJson as T;
+  return (res.status === 204 ? undefined : res.bodyJson) as T;
 }
 
 async function request<T>(method: string, path: string, opts: RequestOptions = {}): Promise<T> {
@@ -135,7 +150,7 @@ async function request<T>(method: string, path: string, opts: RequestOptions = {
     ...(opts.signal ? { signal: opts.signal } : {}),
   });
 
-  const json = await res.json().catch(() => ({}));
+  const json = res.status === 204 ? undefined : await res.json().catch(() => ({}));
 
   if (!res.ok) {
     if (res.status === 401) onUnauthorized();
@@ -147,56 +162,49 @@ async function request<T>(method: string, path: string, opts: RequestOptions = {
 interface ListEnvelope<T> {
   results: T[];
 }
-interface ResultEnvelope<T> {
-  result: T;
-}
 
 type OrgOpt = { activeOrgId?: string | null; authToken?: string };
 
 export const apiClient = {
   list: async <T>(path: string, query?: QueryParams, opts?: OrgOpt): Promise<T[]> =>
-    (await request<ListEnvelope<T>>("GET", path, {
-      query,
-      activeOrgId: opts?.activeOrgId,
-      authToken: opts?.authToken,
-    }))
-      .results ?? [],
+    (
+      await request<ListEnvelope<T>>("GET", path, {
+        query,
+        activeOrgId: opts?.activeOrgId,
+        authToken: opts?.authToken,
+      })
+    ).results ?? [],
   get: async <T>(path: string, query?: QueryParams, opts?: OrgOpt): Promise<T> =>
-    (await request<ResultEnvelope<T>>("GET", path, {
+    request<T>("GET", path, {
       query,
       activeOrgId: opts?.activeOrgId,
       authToken: opts?.authToken,
-    }))
-      .result,
+    }),
   post: async <T>(
     path: string,
     body: unknown,
     opts?: { signal?: AbortSignal } & OrgOpt,
   ): Promise<T> =>
-    (
-      await request<ResultEnvelope<T>>("POST", path, {
-        body,
-        signal: opts?.signal,
-        activeOrgId: opts?.activeOrgId,
-        authToken: opts?.authToken,
-      })
-    ).result,
+    request<T>("POST", path, {
+      body,
+      signal: opts?.signal,
+      activeOrgId: opts?.activeOrgId,
+      authToken: opts?.authToken,
+    }),
   put: async <T>(path: string, body: unknown, opts?: OrgOpt): Promise<T> =>
-    (await request<ResultEnvelope<T>>("PUT", path, {
+    request<T>("PUT", path, {
       body,
       activeOrgId: opts?.activeOrgId,
       authToken: opts?.authToken,
-    }))
-      .result,
+    }),
   patch: async <T>(path: string, body: unknown, opts?: OrgOpt): Promise<T> =>
-    (await request<ResultEnvelope<T>>("PATCH", path, {
+    request<T>("PATCH", path, {
       body,
       activeOrgId: opts?.activeOrgId,
       authToken: opts?.authToken,
-    }))
-      .result,
+    }),
   del: async (path: string, opts?: OrgOpt): Promise<void> => {
-    await request<{ success: true }>("DELETE", path, {
+    await request<unknown>("DELETE", path, {
       activeOrgId: opts?.activeOrgId,
       authToken: opts?.authToken,
     });
@@ -207,7 +215,7 @@ export const apiClient = {
       activeOrgId: opts?.activeOrgId,
       authToken: opts?.authToken,
     }),
-  /** For endpoints whose envelope carries extra fields (search, plan). */
+  /** GET with session cookies for routes that support cookie authentication. */
   getRaw: <T>(path: string, query?: QueryParams, opts?: OrgOpt): Promise<T> =>
     request<T>("GET", path, {
       query,
@@ -215,7 +223,7 @@ export const apiClient = {
       activeOrgId: opts?.activeOrgId,
       authToken: opts?.authToken,
     }),
-  /** For POST endpoints with a flat envelope (e.g. authorize → { url }, sync → { success }). */
+  /** POST with an optional body and optional session cookies. */
   postRaw: <T>(
     path: string,
     body?: unknown,
@@ -227,7 +235,7 @@ export const apiClient = {
       activeOrgId: opts?.activeOrgId,
       authToken: opts?.authToken,
     }),
-  /** For PATCH endpoints with a flat envelope (e.g. /me/mcp-servers/:id → the updated server). */
+  /** Return the complete PATCH response. */
   patchRaw: <T>(path: string, body: unknown, opts?: OrgOpt): Promise<T> =>
     request<T>("PATCH", path, {
       body,

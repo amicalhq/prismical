@@ -18,12 +18,20 @@ import {
   tiptapJsonToMarkdown,
 } from "@prismical/editor-markdown";
 import { useSkillDiffStore } from "./diff/skill-diff-store";
-import { useSkillRunActivityStore } from "./skill-run-activity-store";
+import { useSkillRunActivityStore, type SkillRunSource } from "./skill-run-activity-store";
 import { EVENTS } from "../analytics-events";
 import { usePorts } from "../ports-context";
 import type { SelectionAnchors } from "./diff/selection-anchors";
 import { ENHANCE_SKILL_ID, type ArtifactMode } from "@prismical/app-contracts";
 import { retryTranscriptFinalizing } from "./skill-run-retry";
+import { useAutoEnhanceStore } from "./auto-enhance-store";
+import {
+  aiErrorToastBody,
+  aiUserErrorOf,
+  bindAiErrorActions,
+  isNetworkFailure,
+} from "../errors/ai-user-error";
+import { useNavigation } from "../ports-context";
 
 type TitleState = Pick<NoteRow, "title" | "titleSource" | "titleRevision">;
 function sameTitleIntent(before: TitleState | undefined, current: TitleState | undefined) {
@@ -57,6 +65,13 @@ export interface RunSkillArgs {
   /** Refine flow: re-run with an instruction + the previous output. */
   refineInstruction?: string;
   previousOutput?: string;
+  /** Where the run was started from (dock v3 run feed + analytics). Defaults to "dock". */
+  source?: SkillRunSource;
+  /**
+   * Run on Prismical Cloud for THIS run only, ignoring the saved BYOK default — the "Use
+   * Prismical Cloud" recovery action after the user's own key failed. Never changes the default.
+   */
+  forceCloud?: boolean;
 }
 
 /**
@@ -73,8 +88,12 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
   // The user's Text-generation (formatting) default drives which model skills run on.
   const qc = useQueryClient();
   const { analytics } = usePorts();
+  const navigation = useNavigation();
   const [running, setRunning] = useState(false);
   const acRef = useRef<AbortController | null>(null);
+  // `run` is referenced by the recovery actions it hands out (Try again, Use Prismical Cloud,
+  // Append instead) — through a ref so the callbacks never capture a stale instance.
+  const runRef = useRef<(args: RunSkillArgs) => Promise<void>>(async () => {});
 
   // Transcript readiness can keep a run parked across several retries. Leaving the note/unmounting
   // must cancel that wait so its eventual result cannot stage into a stale editor.
@@ -97,14 +116,57 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
       acRef.current?.abort();
       const ac = new AbortController();
       acRef.current = ac;
+      // Only a FRESH recording-scoped run is what the transcript bar's Enhance chip re-runs, so
+      // only those participate in its failure marker. Refining an already-staged diff also carries
+      // a recordingId, but re-showing that bar mid-review would offer a chip that can do nothing
+      // but toast "you already have a suggestion" until the diff is resolved.
+      const retryableFromTranscriptBar =
+        args.recordingId !== undefined && args.refineInstruction === undefined;
+      // A new attempt supersedes any earlier failure for the same recording, so the marker never
+      // outlives the condition it describes.
+      if (retryableFromTranscriptBar) {
+        useAutoEnhanceStore.getState().clearFailed(args.recordingId!);
+      }
       setRunning(true);
       // Also publish to the cross-instance activity store — the inline popover hides while ANY
       // run is in flight on this note, whichever surface started it.
-      useSkillRunActivityStore.getState().start(noteId);
+      const activity = useSkillRunActivityStore.getState();
+      activity.start(noteId);
+      const source = args.source ?? "dock";
+      // Note-body runs also open a run-feed record: the Ask thread renders it as a turn
+      // and the collapsed Ask pill shows it with a Stop. Title runs stay out of the feed (see the
+      // store's header comment).
+      const feedId =
+        args.outputTarget === "note-title"
+          ? null
+          : activity.begin({
+              noteId,
+              skillId: args.skillId,
+              skillName: args.skillName,
+              instruction: args.refineInstruction,
+              source,
+              cancel: () => {
+                ac.abort();
+                if (acRef.current === ac) {
+                  acRef.current = null;
+                  setRunning(false);
+                }
+              },
+            });
+      // Idempotent: the first terminal status wins, so the explicit calls below beat the
+      // catch-all in `finally`.
+      const finish = (
+        status: Parameters<typeof activity.finish>[1],
+        detail?: string,
+        extra?: Parameters<typeof activity.finish>[3],
+      ) => {
+        if (feedId) activity.finish(feedId, status, detail, extra);
+      };
       try {
         // Resolve the Text-generation default (loads it if the query hasn't settled) so a BYOK
-        // choice is never silently dropped on the first run.
-        const modelParams = await ensureModelDefault(qc, "formatting");
+        // choice is never silently dropped on the first run. `forceCloud` (the "Use Prismical
+        // Cloud" recovery action) sends no instance at all, which the server resolves to Auto.
+        const modelParams = args.forceCloud ? {} : await ensureModelDefault(qc, "formatting");
         const result = await retryTranscriptFinalizing(() => {
           // A readiness wait may last long enough for the user to keep editing. Re-serialize on
           // every attempt so the first request the server accepts carries the current note, not
@@ -184,8 +246,13 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
               },
             },
           });
+          // Only reachable with a feed record when the CALLER didn't know the target was the
+          // title (the server decides) — close it as applied rather than letting the catch-all
+          // in `finally` read a successful title run as an error.
+          finish("applied");
           analytics.capture(EVENTS.SKILL_RUN, {
             skill_id: result.skillId,
+            source,
             output_target: "note-title",
             model_id: result.modelId,
           });
@@ -200,7 +267,9 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
             ? markdownToInlineChildren(result.rawMarkdown)
             : markdownToChildren(result.rawMarkdown);
         if (content.length === 0) {
-          toast.error(t("skills.run.noUsableContent", { name: args.skillName }));
+          const msg = t("skills.run.noUsableContent", { name: args.skillName });
+          toast.error(msg);
+          finish("error", msg);
           return;
         }
         stage({
@@ -222,9 +291,23 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
           content,
           rawMarkdown: result.rawMarkdown,
         });
+        finish("staged");
+        // The run succeeded but the server has something the user should know (it fell back to
+        // Prismical Cloud because their chosen model is gone). Server-rendered, like the errors.
+        if (result.notice) {
+          const [primary] = bindAiErrorActions(result.notice.actions, {
+            "choose-model": () => navigation.push("/settings/ai-models"),
+            "open-ai-models": () => navigation.push("/settings/ai-models"),
+          });
+          toast.info(result.notice.title, {
+            description: result.notice.body,
+            ...(primary ? { action: { label: primary.label, onClick: primary.onClick } } : {}),
+          });
+        }
         analytics.capture(EVENTS.SKILL_RUN, {
           skill_id: result.skillId,
           skill_name: result.skillName,
+          source,
           mode: result.mode,
           model_id: result.modelId,
           scoped_to_recording: !!result.recordingId,
@@ -232,8 +315,64 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
       } catch (err) {
         // User-initiated cancellation (abort) is not a failure — show no toast.
         if (ac.signal.aborted) return;
+        // Whatever the toast below says, republish the failure before returning down any of these
+        // branches: the transcript bar's Enhance chip is that recording's only retry affordance and
+        // it sits on a dismiss timer.
+        if (retryableFromTranscriptBar) {
+          useAutoEnhanceStore.getState().markFailed(args.recordingId!);
+        }
+        // The server describes AI failures for the user — localized title/body, severity, and the
+        // recovery actions to offer (`details.user`). Render that as-is: the client only binds the
+        // action kinds it can perform. Everything below this block is the fallback for servers
+        // that predate it (and for failures that never reached core).
+        const user = aiUserErrorOf(err);
+        if (user) {
+          const actions = bindAiErrorActions(user.actions, {
+            retry: () => void runRef.current(args),
+            "use-cloud": () => void runRef.current({ ...args, forceCloud: true }),
+            "append-instead": () => void runRef.current({ ...args, mode: "append-section" }),
+            "open-ai-models": () => navigation.push("/settings/ai-models"),
+            "choose-model": () => navigation.push("/settings/ai-models"),
+          });
+          // The first action is the toast's button; any further action is a link in the body.
+          // (sonner's `cancel` slot renders BEFORE `action` and styled as a dismiss, which would
+          // invert the server's order and make "Use Prismical Cloud" look like Cancel.)
+          const [primary, ...more] = actions;
+          const toastOpts = {
+            description: aiErrorToastBody(user.body, more),
+            ...(primary ? { action: { label: primary.label, onClick: primary.onClick } } : {}),
+          };
+          if (user.severity === "info") toast.info(user.title, toastOpts);
+          else if (user.severity === "warning") toast.warning(user.title, toastOpts);
+          else toast.error(user.title, toastOpts);
+          finish(user.severity === "info" ? "skipped" : "error", user.title, {
+            body: user.body,
+            actions,
+          });
+          return;
+        }
+        if (isNetworkFailure(err)) {
+          const msg = t("skills.run.offline");
+          toast.error(msg, {
+            description: t("skills.run.offlineBody"),
+            action: { label: t("common.actions.retry"), onClick: () => void runRef.current(args) },
+          });
+          finish("error", msg, {
+            body: t("skills.run.offlineBody"),
+            actions: [
+              {
+                kind: "retry",
+                label: t("common.actions.retry"),
+                onClick: () => void runRef.current(args),
+              },
+            ],
+          });
+          return;
+        }
         if (err instanceof ApiError && err.code === "TITLE_CHANGED") {
-          toast.error(t("notes.titleConflict"));
+          const msg = t("notes.titleConflict");
+          toast.error(msg);
+          finish("error", msg);
           return;
         }
         // Empty note isn't an error — it's a fixable state. Nudge, don't alarm.
@@ -242,27 +381,37 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
             (err.details as { includesTranscript?: boolean } | undefined)?.includesTranscript ??
             args.skillId === ENHANCE_SKILL_ID;
           // Enhance uses its transcript input when choosing the empty-state hint.
-          toast.info(
-            t(includesTranscript ? "skills.run.noteAndTranscriptEmpty" : "skills.run.noteEmpty", {
-              name: args.skillName,
-            }),
+          const msg = t(
+            includesTranscript ? "skills.run.noteAndTranscriptEmpty" : "skills.run.noteEmpty",
+            { name: args.skillName },
           );
+          toast.info(msg);
+          finish("skipped", msg);
           return;
         }
         // Scoped Enhance on a recording with no transcript (silent take / still processing) — a
         // fixable state, not a failure. Nudge, don't alarm. (The wand is hidden for empty recordings;
         // this is the server backstop, so keep the message neutral.)
         if (err instanceof ApiError && err.code === "NO_TRANSCRIPT") {
-          toast.info(t("skills.run.noTranscript"));
+          const msg = t("skills.run.noTranscript");
+          toast.info(msg);
+          finish("skipped", msg);
           return;
         }
         if (err instanceof ApiError && err.code === "TRANSCRIPT_FINALIZING") {
-          toast.info(t("skills.run.transcriptFinalizing"));
+          const msg = t("skills.run.transcriptFinalizing");
+          toast.info(msg);
+          finish("skipped", msg);
           return;
         }
         console.error("skill run failed", err);
-        toast.error(t("skills.run.failed", { name: args.skillName }));
+        const msg = t("skills.run.failed", { name: args.skillName });
+        toast.error(msg);
+        finish("error", msg);
       } finally {
+        // Catch-all so a record can never stay "running": an abort is the user's Stop; any other
+        // early return (no editor, a silent bail) reads as a failure with no detail.
+        finish(ac.signal.aborted ? "stopped" : "error");
         useSkillRunActivityStore.getState().stop(noteId);
         if (acRef.current === ac) {
           setRunning(false);
@@ -270,8 +419,9 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
         }
       }
     },
-    [noteId, editor, stage, qc, analytics, t, store],
+    [noteId, editor, stage, qc, analytics, t, store, navigation],
   );
+  runRef.current = run;
 
   const cancel = useCallback(() => {
     acRef.current?.abort();

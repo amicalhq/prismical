@@ -398,7 +398,7 @@ function PublicLinkSection({ noteId }: { noteId: string }) {
   // off; defaulting to `false` made every not-yet-loaded fetch accuse an admin of something they
   // hadn't done, and hid a control that in fact worked.
   const allowed = publication.data?.allowPublicSharing ?? true;
-  const active = !!publication.data?.result?.publishedAt;
+  const active = !!publication.data?.publishedAt;
   // The organization policy pauses access without removing publication state. Offering the link
   // while access is paused would give the user a URL that cannot currently be opened.
   const paused = active && !allowed;

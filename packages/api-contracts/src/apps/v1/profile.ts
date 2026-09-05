@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { appsV1ResultEnvelopeSchema } from './common.js';
 
 export const ViewerProfileSchema = z
   .object({
@@ -10,4 +9,4 @@ export const ViewerProfileSchema = z
   })
   .strip();
 export type ViewerProfile = z.output<typeof ViewerProfileSchema>;
-export const ViewerProfileResponseSchema = appsV1ResultEnvelopeSchema(ViewerProfileSchema);
+export const ViewerProfileResponseSchema = ViewerProfileSchema;

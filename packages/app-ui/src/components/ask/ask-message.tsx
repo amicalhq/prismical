@@ -38,8 +38,21 @@ interface ToolPartView {
   toolCallId?: string;
   state?: string;
   input?: unknown;
+  output?: unknown;
   errorText?: string;
   approval?: { id: string; approved?: boolean; reason?: string };
+}
+
+/**
+ * Integration (MCP) tools return a structured outcome instead of throwing, so the model can keep
+ * going — `{ ok: false, reason }` marks a call that produced no result. `needs_auth` is the one
+ * the user can fix themselves (reconnect the integration).
+ */
+function toolOutcome(part: ToolPartView): { ok: boolean; reason?: string } | null {
+  const out = part.output;
+  if (!out || typeof out !== 'object' || !('ok' in out)) return null;
+  const { ok, reason } = out as { ok?: unknown; reason?: unknown };
+  return { ok: ok !== false, reason: typeof reason === 'string' ? reason : undefined };
 }
 
 export interface ApprovalControls {
@@ -63,7 +76,12 @@ function prettyToolName(name: string): string {
 function ToolChip({ part }: { part: ToolPartView }) {
   const { t } = useTranslation();
   const name = prettyToolName(toolPartName(part));
-  const state = part.state ?? 'input-streaming';
+  const rawState = part.state ?? 'input-streaming';
+  const outcome = rawState === 'output-available' ? toolOutcome(part) : null;
+  // A structured `{ ok: false }` result is a failed call for the user even though the SDK filed
+  // it as a successful output.
+  const state = outcome && !outcome.ok ? 'output-error' : rawState;
+  const needsAuth = outcome?.reason === 'needs_auth';
   const inProgress =
     state !== 'output-available' && state !== 'output-error' && state !== 'output-denied';
   const icon =
@@ -85,10 +103,16 @@ function ToolChip({ part }: { part: ToolPartView }) {
         <code className="font-medium">{name}</code>
         {icon}
         {state === 'output-denied' && <span>{t('ask.tools.denied')}</span>}
-        {state === 'output-error' && (
-          <span className="max-w-[240px] truncate text-destructive">
-            {part.errorText ?? t('ask.tools.failed')}
-          </span>
+        {state === 'output-error' && !needsAuth && (
+          <span className="max-w-[240px] truncate text-destructive">{t('ask.tools.failed')}</span>
+        )}
+        {needsAuth && (
+          <Link
+            href="/settings/integrations"
+            className="text-destructive underline-offset-2 hover:underline"
+          >
+            {t('ask.tools.needsAuth')}
+          </Link>
         )}
       </MarkerContent>
     </Marker>
@@ -219,11 +243,7 @@ function AnswerMeta({
           <Copy className="size-[13px]" />
         </MetaAction>
         {isLast && onRegenerate ? (
-          <MetaAction
-            label={t('ask.actions.regenerate')}
-            onClick={onRegenerate}
-            disabled={busy}
-          >
+          <MetaAction label={t('ask.actions.regenerate')} onClick={onRegenerate} disabled={busy}>
             <RotateCcw className="size-[13px]" />
           </MetaAction>
         ) : null}

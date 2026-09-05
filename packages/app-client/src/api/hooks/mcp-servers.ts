@@ -28,7 +28,7 @@ export type {
 
 /**
  * MCP server connections — Settings › Integrations. Wire shapes come from the server's
- * `/me/mcp-servers` serialize() (flat, no `.result` envelope → raw client variants). Secrets are
+ * `/me/mcp-servers` serialize(). Secrets are
  * write-only: requests may carry `secret`, responses only ever say `secretSet`.
  */
 

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AppsV1IsoDateTimeSchema, appsV1ResultResponseSchema } from './common.js';
+import { AppsV1IsoDateTimeSchema } from './common.js';
 
 export const DirectoryListQuerySchema = z.object({
   search: z.string().trim().min(1).max(100).optional(),
@@ -57,13 +57,13 @@ export type DirectoryMeeting = z.output<typeof DirectoryMeetingSchema>;
 
 export const PeopleListResultSchema = z
   .object({
-    people: z.array(DirectoryPersonSchema),
+    results: z.array(DirectoryPersonSchema),
     limit: z.number().int().positive(),
     offset: z.number().int().nonnegative(),
   })
   .strip();
 export type PeopleListResult = z.output<typeof PeopleListResultSchema>;
-export const PeopleListResponseSchema = appsV1ResultResponseSchema(PeopleListResultSchema);
+export const PeopleListResponseSchema = PeopleListResultSchema;
 
 export const PersonDetailSchema = z
   .object({
@@ -72,17 +72,17 @@ export const PersonDetailSchema = z
   })
   .strip();
 export type PersonDetail = z.output<typeof PersonDetailSchema>;
-export const PersonDetailResponseSchema = appsV1ResultResponseSchema(PersonDetailSchema);
+export const PersonDetailResponseSchema = PersonDetailSchema;
 
 export const CompaniesListResultSchema = z
   .object({
-    companies: z.array(DirectoryCompanySchema),
+    results: z.array(DirectoryCompanySchema),
     limit: z.number().int().positive(),
     offset: z.number().int().nonnegative(),
   })
   .strip();
 export type CompaniesListResult = z.output<typeof CompaniesListResultSchema>;
-export const CompaniesListResponseSchema = appsV1ResultResponseSchema(CompaniesListResultSchema);
+export const CompaniesListResponseSchema = CompaniesListResultSchema;
 
 export const CompanyDetailSchema = z
   .object({
@@ -96,4 +96,4 @@ export const CompanyDetailSchema = z
   })
   .strip();
 export type CompanyDetail = z.output<typeof CompanyDetailSchema>;
-export const CompanyDetailResponseSchema = appsV1ResultResponseSchema(CompanyDetailSchema);
+export const CompanyDetailResponseSchema = CompanyDetailSchema;

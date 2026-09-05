@@ -1,16 +1,19 @@
 import { create } from "zustand";
+import type { SkillRunSource } from "./skill-run-activity-store";
 
-// Bridges the Ask composer's slash-command send to the skill dock's
-// run instance (in SkillSparkleButton) — same seam as the auto-enhance and
-// inline-popover bridges, so a `/skill` run shows the dock's "Generating" +
-// Stop and stages a diff candidate exactly like a manual run. Keyed by noteId
-// so a request only fires on the note it belongs to.
+// Bridges the Ask composer's slash-command send / the Ask pill's suggested chip to the
+// skill run bridge (SkillRunBridge in the dock's skill slot) — same seam as the auto-enhance and
+// inline-popover bridges, so the run stages a diff candidate exactly like any other run and shows
+// up in the Ask thread + on the collapsed Ask pill via the run feed. Keyed by noteId so a request
+// only fires on the note it belongs to.
 export interface AskSkillRunRequest {
   noteId: string;
   skillId: string;
   skillName: string;
   /** Extra guidance the user typed after the slash token (sent as the run's instruction). */
   instruction?: string;
+  /** The composer's slash lane or the pill's one-click chip. */
+  source: Extract<SkillRunSource, "chip" | "composer">;
 }
 
 interface AskSkillRunState {

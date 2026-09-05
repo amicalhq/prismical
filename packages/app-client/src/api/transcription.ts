@@ -1,3 +1,4 @@
+import type { SyncWriteEnvelope } from '@prismical/api-contracts/apps/v1';
 import {
   AbandonStagingResponseSchema,
   CompleteStagingResponseSchema,
@@ -69,30 +70,32 @@ export function createRecording(
   opts?: BoundAuthOptions
 ): Promise<CoreRecording> {
   const byok = vars.instanceId && vars.modelId;
-  return apiClient.post<CoreRecording>(
-    `${ME_PREFIX}/recordings`,
-    {
-      title: vars.title,
-      captureMode: 'mic',
-      status: 'recording',
-      noteId: vars.noteId,
-      startedAt: Date.now(),
-      // The transcribe handler reads instanceId/modelId from here (set once at create). A managed
-      // recording names NO model: which engine Prismical Cloud routes to is ours to change, the
-      // client has no say in it, and anything written here ships inside the web bundle for anyone
-      // to read. Server-side routing is opaque. BYOK is different — the owner
-      // picked that model, so it is carried and echoed back to them.
-      transcriptionConfig: {
-        provider: byok ? 'byok' : 'prismical-cloud',
-        model: byok ? vars.modelId : 'prismical-cloud',
-        // Code-switching: non-English speech transcribes correctly instead of being force-decoded
-        // as English. Core maps 'multi' to auto-detect for BYOK OpenAI ASR.
-        language: vars.language ?? 'multi',
-        ...(byok ? { instanceId: vars.instanceId, modelId: vars.modelId } : {}),
+  return apiClient
+    .post<SyncWriteEnvelope<CoreRecording>>(
+      `${ME_PREFIX}/recordings`,
+      {
+        title: vars.title,
+        captureMode: 'mic',
+        status: 'recording',
+        noteId: vars.noteId,
+        startedAt: Date.now(),
+        // The transcribe handler reads instanceId/modelId from here (set once at create). A managed
+        // recording names NO model: which engine Prismical Cloud routes to is ours to change, the
+        // client has no say in it, and anything written here ships inside the web bundle for anyone
+        // to read. Server-side routing is opaque. BYOK is different —
+        // the owner picked that model, so it is carried and echoed back to them.
+        transcriptionConfig: {
+          provider: byok ? 'byok' : 'prismical-cloud',
+          model: byok ? vars.modelId : 'prismical-cloud',
+          // Code-switching: non-English speech transcribes correctly instead of being force-decoded
+          // as English. Core maps 'multi' to auto-detect for BYOK OpenAI ASR.
+          language: vars.language ?? 'multi',
+          ...(byok ? { instanceId: vars.instanceId, modelId: vars.modelId } : {}),
+        },
       },
-    },
-    opts
-  );
+      opts
+    )
+    .then(response => response.result);
 }
 
 export function finalizeRecording(
@@ -102,17 +105,19 @@ export function finalizeRecording(
   transcriptionDeferred: boolean,
   opts?: { endedAt?: number; activeOrgId?: string; authToken?: string }
 ): Promise<CoreRecording> {
-  return apiClient.put<CoreRecording>(
-    `${ME_PREFIX}/recordings/${recordingId}`,
-    {
-      status: 'completed',
-      endedAt: opts?.endedAt ?? Date.now(),
-      durationMs: Math.round(durationMs),
-      stagingExpected,
-      transcriptionDeferred,
-    },
-    { activeOrgId: opts?.activeOrgId, authToken: opts?.authToken }
-  );
+  return apiClient
+    .put<SyncWriteEnvelope<CoreRecording>>(
+      `${ME_PREFIX}/recordings/${recordingId}`,
+      {
+        status: 'completed',
+        endedAt: opts?.endedAt ?? Date.now(),
+        durationMs: Math.round(durationMs),
+        stagingExpected,
+        transcriptionDeferred,
+      },
+      { activeOrgId: opts?.activeOrgId, authToken: opts?.authToken }
+    )
+    .then(response => response.result);
 }
 
 export function listNoteRecordings(noteId: string): Promise<CoreRecording[]> {
@@ -145,7 +150,7 @@ export function renameRecordingSpeaker(
     .patchRaw<unknown>(`${ME_PREFIX}/recording-speakers/${speakerId}`, {
       displayName,
     })
-    .then(response => RecordingSpeakerResponseSchema.parse(response).result);
+    .then(response => RecordingSpeakerResponseSchema.parse(response));
 }
 
 // The raw-WAV chunk upload is a JSON-apiClient bypass owned by the web RecordingPort adapter. It

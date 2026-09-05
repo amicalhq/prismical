@@ -9,7 +9,7 @@ import { recordingErrorHintKey } from '../lib/recording-error-help';
 import { X } from 'lucide-react';
 import { RecordingPillFace, recordingPillWidth } from './note-recording-dock';
 import { DockUnit, DockRowmate } from './dock-unit';
-import { SkillDockSlot } from './skill-sparkle-button';
+import { SkillDockSlot } from './skill-dock-slot';
 import { getAutoEnhanceEnabled } from '@prismical/app-client';
 import {
   consumePendingAutoTranscribe,
@@ -32,8 +32,8 @@ import { TranscriptPanel, type RecordingLog } from './transcript-panel';
 import { AskPillFace, ASK_PILL_WIDTH } from './ask/ask-dock-pill';
 import type { ComposerSkill } from './ask/ask-composer';
 import { useAskSkillRunStore } from '@prismical/app-client';
-import { useSkillRunActive } from '@prismical/app-client';
-import { useNavigation } from '@prismical/app-client';
+import { useActiveSkillRun, type SkillRunSource } from '@prismical/app-client';
+import { useNavigation, bindAiErrorActions } from '@prismical/app-client';
 import { AskPanel } from './ask/ask-panel';
 import { useRecording } from '@prismical/app-client';
 import { EVENTS, usePorts } from '@prismical/app-client';
@@ -75,11 +75,12 @@ export function RecordingBottomCluster({
   onAutoStartConsumed,
 }: {
   /**
-   * Narrow-surface mode (the floating note): while a recording
-   * is engaged the row hides the skill slot and the Ask pill — the recording
-   * pill alone already fills the narrow window, and the full row would
-   * overflow it. Idle keeps all three (they fit). Default false keeps the
-   * web/app layout unchanged.
+   * Narrow-surface mode (the floating note, PRSMPRO-166 / dock v3): the pills
+   * shrink to the float scale and the Ask pill takes whatever width the Record
+   * pill leaves, so both units stay in the row while recording (mock
+   * floating-compare). Only the full-width review pill still leaves the row
+   * while a recording is engaged — it is inert then anyway, and it would
+   * overflow the window. Default false keeps the web/app layout unchanged.
    */
   compact?: boolean;
   /**
@@ -191,17 +192,6 @@ export function RecordingBottomCluster({
   // parked (no partial-data refetch mid-stop) and the live lines keep showing.
   const liveActive = sessionActive || rec.state === 'stopping';
   const noteId = currentNote?.noteId ?? null;
-
-  // Compact mode: from the first click ("starting") through "stopping" the
-  // secondary pills leave the row entirely.
-  const hideSecondary = compact && rec.state !== 'idle';
-  // If Ask was open when a recording engaged, its pill just vanished — close
-  // the panel too, or it would be stuck open with no toggle to dismiss it.
-  React.useEffect(() => {
-    if (hideSecondary) {
-      setExpandedUnit(current => (current === 'ask' ? null : current));
-    }
-  }, [hideSecondary]);
 
   // Dead-mic capture (micSilent): the OS is feeding the browser pure silence — usually a
   // revoked/wedged system-level mic permission, which getUserMedia does NOT error on (the
@@ -409,12 +399,14 @@ export function RecordingBottomCluster({
     // reads stagedAt when present, else the recording's own start time.
     const anchorTs = Date.parse(meta.staging?.stagedAt ?? r.startedAt ?? '');
     const fresh = Number.isFinite(anchorTs) && Date.now() - anchorTs < 30 * 60_000;
+    // Aged out of the window = the pipeline died: 'stalled' (settled for the spinner/poll, but
+    // the panel must not call a deferred recording with no lines "ready").
     if (['awaiting_upload', 'pending', 'running'].includes(meta.finalize?.status ?? '')) {
-      return fresh ? 'identifying' : null;
+      return fresh ? 'identifying' : 'stalled';
     }
     if (meta.finalize?.status) return meta.finalize.status;
     if (meta.staging?.status === 'staged') {
-      return fresh ? 'identifying' : null;
+      return fresh ? 'identifying' : 'stalled';
     }
     return null;
   };
@@ -426,9 +418,11 @@ export function RecordingBottomCluster({
     ...startedLabels(r.startedAt),
     durationMs: r.durationMs,
     lines: transcriptQueries[i]?.data ?? [],
+    linesLoaded: transcriptQueries[i]?.isSuccess ?? false,
     folded: folded.data?.has(r.id) ?? false,
     speakers: speakerQueries[i]?.data,
     identifyingSpeakers: finalizePhase(r) === 'identifying',
+    finalizeStatus: finalizePhase(r),
   }));
 
   // While any recording is being diarized, poll the whole surface (recordings → meta flips,
@@ -505,16 +499,19 @@ export function RecordingBottomCluster({
   };
 
   // The per-recording wand: enhance THAT recording. Routed through the same request store the
-  // auto-enhance uses, so it runs via the dock (Generating/Stop) and stages a diff to review.
+  // auto-enhance uses, so it runs through the skill bridge and stages a diff to review. An
+  // explicit click, so the Ask unit opens on the run's turn (mock: the record panel's Enhance
+  // chip expands Ask, then runs); the automatic on-stop lane stays on the collapsed pill.
   const onEnhanceRecording = (recordingId: string) => {
     if (!noteId) return;
-    // The dock consumes the request via the run button, which is hidden while a diff is staged — so
-    // don't queue onto an unreviewed suggestion (it would linger and fire at a confusing moment).
+    // Don't queue onto an unreviewed suggestion (the engine holds one candidate per note; the
+    // request would linger and fire at a confusing moment).
     if (useSkillDiffStore.getState().candidatesByNote.has(noteId)) {
       toast.info(t('recording.errors.currentSuggestion'));
       return;
     }
-    requestAutoEnhance({ noteId, recordingId });
+    requestAutoEnhance({ noteId, recordingId, source: 'wand' });
+    setExpandedUnit('ask');
   };
 
   const isAskOpen = expandedUnit === 'ask';
@@ -527,10 +524,10 @@ export function RecordingBottomCluster({
   const hasStagedCandidate = useSkillDiffStore(s =>
     noteId ? s.candidatesByNote.has(noteId) : false
   );
-  // A run in flight on this note (any lane: sparkle-engine, ask-slash,
-  // auto-enhance, inline) — the skill slot enters the row to show
-  // Generating/Stop while it lasts.
-  const skillRunActive = useSkillRunActive(noteId ?? '');
+  // The note-body run in flight on this note (any lane: chip, composer slash,
+  // wand, auto-enhance, inline, refine). Shown on the collapsed Ask pill (with
+  // Stop) and as a turn in the Ask thread — never as a third pill.
+  const activeRun = useActiveSkillRun(noteId);
   React.useEffect(() => {
     if (hasStagedCandidate) setExpandedUnit(null);
   }, [hasStagedCandidate]);
@@ -559,14 +556,20 @@ export function RecordingBottomCluster({
     setAskMaxi(false);
   }, [expandedUnit]);
 
-  // Ask composer `/skill` sends: route through the same
-  // bridge lane as auto-enhance so the run shows the dock's Generating/Stop and
-  // stages a diff; the panel collapses so the staged diff (and its bar) are
-  // visible over the note.
+  // Ask composer `/skill` sends and the pill's suggested chip: park a
+  // request for the skill bridge, which runs it and publishes to the run feed;
+  // the Ask unit stays/opens on the thread so the run shows as a turn ("/Cleanup"
+  // → Running… → Drafted), mock: runSkill() lives inside the Ask chat. Once the
+  // diff stages, the hasStagedCandidate effect below collapses the panel so the
+  // note (and the review pill) are in view.
   const onAskRunSkill = React.useMemo(() => {
     if (!currentNote) return undefined;
     const targetNoteId = currentNote.noteId;
-    return (skill: ComposerSkill, instruction: string) => {
+    return (
+      skill: ComposerSkill,
+      instruction: string,
+      source: Extract<SkillRunSource, 'chip' | 'composer'> = 'composer'
+    ) => {
       if (useSkillDiffStore.getState().candidatesByNote.has(targetNoteId)) {
         toast.info(t('recording.errors.currentSuggestion'));
         return;
@@ -576,18 +579,17 @@ export function RecordingBottomCluster({
         skillId: skill.id,
         skillName: skill.name,
         instruction: instruction || undefined,
+        source,
       });
-      setExpandedUnit(null);
+      setExpandedUnit('ask');
     };
   }, [currentNote, t]);
 
   // The collapsed pill's suggested-skill chip is ONE CLICK — it runs the skill
-  // immediately with no guidance.
-  // The run engine's presentation takes over from there: the Generating/Stop
-  // pill slides into the row, then the staged diff's Keep/Undo review pill.
+  // immediately with no guidance and expands Ask onto the run's turn.
   const onPickSuggestedSkill = React.useMemo(() => {
     if (!onAskRunSkill) return undefined;
-    return (skill: ComposerSkill) => onAskRunSkill(skill, '');
+    return (skill: ComposerSkill) => onAskRunSkill(skill, '', 'chip');
   }, [onAskRunSkill]);
 
   const toggleTranscription = () => setExpandedUnit(p => (p === 'rec' ? null : 'rec'));
@@ -682,7 +684,7 @@ export function RecordingBottomCluster({
   // The bridge is BOUNDED by the settle window: if the persisted transcript never
   // lands (offline after stop, genuinely empty recording), the panel must fall
   // back to the persisted log + idle bar rather than pinning "Finishing up…"
-  // forever — the bar is the only Start affordance.
+  // forever — the bar is now the only Start affordance.
   const showLiveTranscript =
     liveActive ||
     (!!finishedId && liveLines.length > 0 && !persistedHasFinished && settleUntil !== null);
@@ -820,7 +822,7 @@ export function RecordingBottomCluster({
       // Don't stack onto an unreviewed diff — if a candidate is already staged the dock won't run
       // anyway (it shows the diff bar, not the run button). Skip so the request can't linger.
       if (useSkillDiffStore.getState().candidatesByNote.has(targetNoteId)) return;
-      requestAutoEnhance({ noteId: targetNoteId, recordingId: finishedId });
+      requestAutoEnhance({ noteId: targetNoteId, recordingId: finishedId, source: 'auto-enhance' });
     });
   };
 
@@ -880,6 +882,19 @@ export function RecordingBottomCluster({
     const key = recordingErrorHintKey(rec.error, env.getEnv().platform);
     return key ? t(key) : null;
   }, [rec.error, env, t]);
+  // Core's own description wins when the failure came from it (a classified transcription
+  // fault): its title replaces the catalog line, its body the hint, and its first action this
+  // client can perform becomes the banner's link. Client-side causes keep the catalog copy.
+  const recErrorTitle = rec.error ? (rec.errorUser?.title ?? t(rec.error)) : null;
+  const recErrorBody = rec.errorUser?.body ?? recErrorHint;
+  const recErrorAction = React.useMemo(() => {
+    if (!rec.errorUser) return null;
+    const [first] = bindAiErrorActions(rec.errorUser.actions, {
+      'open-ai-models': () => router.push('/settings/ai-models'),
+      'choose-model': () => router.push('/settings/ai-models'),
+    });
+    return first ?? null;
+  }, [rec.errorUser, router]);
 
   return (
     <div
@@ -909,7 +924,7 @@ export function RecordingBottomCluster({
         {showErrorPill && rec.error ? (
           <span className="flex flex-col items-center gap-0.5">
             <span className="inline-flex items-center gap-1">
-              <span>{t(rec.error)}</span>
+              <span>{recErrorTitle}</span>
               <button
                 type="button"
                 onClick={rec.clearError}
@@ -920,7 +935,16 @@ export function RecordingBottomCluster({
               </button>
             </span>
             <span className="text-[12px] font-normal opacity-90">
-              {recErrorHint ? <>{recErrorHint} </> : null}
+              {recErrorBody ? <>{recErrorBody} </> : null}
+              {recErrorAction ? (
+                <button
+                  type="button"
+                  onClick={recErrorAction.onClick}
+                  className="mr-1 whitespace-nowrap underline underline-offset-2"
+                >
+                  {recErrorAction.label}
+                </button>
+              ) : null}
               <a
                 href={RECORDING_TROUBLESHOOTING_URL}
                 target="_blank"
@@ -994,8 +1018,9 @@ export function RecordingBottomCluster({
                       onStopRecording={onStop}
                       onPauseRecording={onPause}
                       onResumeRecording={onResume}
-                      errorText={isTranscriptionOpen && rec.error ? t(rec.error) : null}
-                      errorHint={isTranscriptionOpen ? recErrorHint : null}
+                      errorText={isTranscriptionOpen ? recErrorTitle : null}
+                      errorHint={isTranscriptionOpen ? recErrorBody : null}
+                      errorAction={isTranscriptionOpen ? recErrorAction : null}
                       onDismissError={rec.clearError}
                       finishedRecordingId={
                         !sessionActive &&
@@ -1007,16 +1032,22 @@ export function RecordingBottomCluster({
                     />
                   }
                 />
-                {/* Skill run pill / diff bar — kept mounted while a recording is engaged.
-                    The dock has exactly TWO units; skills live inside Ask (slash
-                    tokens + the suggested chip). The slot stays MOUNTED (it hosts the run
-                    engine consuming the auto-enhance / ask-slash / inline bridges) but only
-                    ENTERS the row while it has something to show: a run in flight (the
-                    Generating/Stop pill) or a staged candidate (the Keep/Undo review pill,
-                    which replaces the collapsed Ask pill). */}
+                {/* Skill slot — the dock has exactly TWO units; skills live inside
+                    Ask (slash tokens + the suggested chip, runs as thread turns). The slot
+                    stays MOUNTED (it hosts the run bridge consuming the auto-enhance /
+                    ask-slash / inline requests) but only ENTERS the row while a candidate
+                    is staged: the Keep/Undo review pill, which replaces the collapsed Ask
+                    pill during review. A run in flight never adds a pill here — it shows on
+                    the Ask pill and in the thread. */}
                 {
                   <DockRowmate
-                    collapsed={expandedUnit !== null || !(hasStagedCandidate || skillRunActive)}
+                    collapsed={
+                      expandedUnit !== null ||
+                      !hasStagedCandidate ||
+                      // Float (380px): the compact review pill is full-window-width, so next to
+                      // the live Record pill it overflows; it is inert while recording anyway.
+                      (compact && rec.state !== 'idle')
+                    }
                   >
                     <div
                       className={rec.state !== 'idle' ? 'dock-slot-dimmed pointer-events-none' : ''}
@@ -1072,8 +1103,9 @@ export function RecordingBottomCluster({
                     onStopRecording={onStop}
                     onPauseRecording={onPause}
                     onResumeRecording={onResume}
-                    errorText={isTranscriptionOpen && rec.error ? t(rec.error) : null}
-                    errorHint={isTranscriptionOpen ? recErrorHint : null}
+                    errorText={isTranscriptionOpen ? recErrorTitle : null}
+                    errorHint={isTranscriptionOpen ? recErrorBody : null}
+                    errorAction={isTranscriptionOpen ? recErrorAction : null}
                     onDismissError={rec.clearError}
                     onOpenNote={() => router.push(`/notes/${recordingNote.noteId}`)}
                   />
@@ -1085,47 +1117,48 @@ export function RecordingBottomCluster({
               </DockRowmate>
             )}
           </AnimatedWidth>
-          {!hideSecondary && (
-            <DockUnit
-              compact={compact}
-              expanded={isAskOpen}
-              // A staged skill diff hands the Ask slot to the review pill (the
-              // diff bar in the skill slot): the Ask pill becomes the
-              // review pill while an edit is under review.
-              collapsed={isTranscriptionOpen || hasStagedCandidate}
-              // Compact (the floating note window): the full composer-width pill would
-              // overflow the narrow window, so it shrinks to an icon-and-hint stub.
-              pillWidth={
-                compact
-                  ? 'min(300px, calc(100vw - 90px))'
-                  : `min(${ASK_PILL_WIDTH}px, calc(100vw - 106px))`
-              }
-              panelWidth={askPanelWidth}
-              panelHeight={panelHeight(askMaxi, 'ask')}
-              pill={
-                <AskPillFace
-                  onClick={() => setExpandedUnit('ask')}
-                  onPickSkill={onPickSuggestedSkill}
-                  noteId={noteId}
-                  runActive={skillRunActive}
-                />
-              }
-              panel={
-                <AskPanel
-                  open={isAskOpen}
-                  isMaximized={askMaxi}
-                  onToggleMaximized={() => setAskMaxi(v => !v)}
-                  onClose={() => setExpandedUnit(null)}
-                  recordingActive={sessionActive}
-                  recordingPaused={rec.isPaused}
-                  recordingSeconds={elapsedSeconds}
-                  onShowRecording={currentNote ? () => setExpandedUnit('rec') : undefined}
-                  onRunSkill={onAskRunSkill}
-                  compact={compact}
-                />
-              }
-            />
-          )}
+          <DockUnit
+            compact={compact}
+            expanded={isAskOpen}
+            // A staged skill diff hands the Ask slot to the review pill (the
+            // diff bar in the skill slot): the Ask pill becomes the
+            // review pill while an edit is under review.
+            collapsed={isTranscriptionOpen || hasStagedCandidate}
+            // Compact (the floating note window, 380px): the pill takes whatever the
+            // Record pill leaves — it stays in the row while recording too, so the Ask unit,
+            // its chip and the run state keep working mid-session. 26 = the row's
+            // horizontal padding (2×10) + the unit gap (6).
+            pillWidth={
+              compact
+                ? `min(300px, calc(100vw - ${recordingPillWidth(rec.state, rec.canPause, true) + 26}px))`
+                : `min(${ASK_PILL_WIDTH}px, calc(100vw - 106px))`
+            }
+            panelWidth={askPanelWidth}
+            panelHeight={panelHeight(askMaxi, 'ask')}
+            pill={
+              <AskPillFace
+                onClick={() => setExpandedUnit('ask')}
+                onPickSkill={onPickSuggestedSkill}
+                noteId={noteId}
+                activeRun={activeRun}
+              />
+            }
+            panel={
+              <AskPanel
+                open={isAskOpen}
+                isMaximized={askMaxi}
+                onToggleMaximized={() => setAskMaxi(v => !v)}
+                onClose={() => setExpandedUnit(null)}
+                recordingActive={sessionActive}
+                recordingPaused={rec.isPaused}
+                recordingSeconds={elapsedSeconds}
+                onShowRecording={currentNote ? () => setExpandedUnit('rec') : undefined}
+                onRunSkill={onAskRunSkill}
+                noteId={noteId}
+                compact={compact}
+              />
+            }
+          />
         </div>
       </div>
     </div>

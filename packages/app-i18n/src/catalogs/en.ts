@@ -544,6 +544,7 @@ const en = {
       openError: 'Couldn’t open this note — you may not have access, or your session expired.',
       placeholder: 'Start writing…',
       readOnly: 'Read-only — you don’t have permission to edit this note.',
+      slowConnect: 'Still loading. This is taking longer than usual.',
       reconnecting: 'Reconnecting…',
     },
     list: {
@@ -608,7 +609,7 @@ const en = {
       deadMicHelp: 'How to fix',
       deadMicTitle: 'No audio is reaching your microphone',
       deferredRecovery:
-        'The recording could not be transcribed yet — its audio upload will retry when you reconnect.',
+        'The recording could not be transcribed yet - its audio upload will retry when you reconnect.',
       endedUnexpectedly: 'Recording ended unexpectedly.',
       microphoneDenied: 'Microphone access was denied.',
       microphoneDeniedHintDesktop:
@@ -616,15 +617,15 @@ const en = {
       microphoneDeniedHintWeb:
         'Allow microphone access for this site in your browser, then try again.',
       troubleshoot: 'Troubleshooting guide',
-      microphoneDisconnected: 'The microphone was disconnected — stop and start a new recording.',
-      noMicrophone: 'No microphone is available — connect or enable an input.',
+      microphoneDisconnected: 'The microphone was disconnected - stop and start a new recording.',
+      noMicrophone: 'No microphone is available - connect or enable an input.',
       noMicrophoneSystemAudioContinues:
-        'No microphone is available — connect or enable an input. System audio is still being recorded.',
-      quotaExceeded: 'Cloud transcription limit reached.',
+        'No microphone is available - connect or enable an input. System audio is still being recorded.',
+      quotaExceeded: 'You’ve used this month’s included Cloud transcription.',
       renameSpeaker: 'Could not rename speaker',
       savedWithErrors: 'Recording saved with errors.',
       someAudioNotTranscribed: 'Some audio could not be transcribed.',
-      systemAudioUnavailable: 'System audio is unavailable — recording microphone only.',
+      systemAudioUnavailable: 'System audio is unavailable - recording microphone only.',
     },
     panel: {
       copied: 'Copied recording {{number}}’s transcript',
@@ -654,6 +655,8 @@ const en = {
       title: 'Transcription',
       transcribing: 'Transcribing…',
       transcriptReady: 'Transcript ready',
+      speakerLabelsUnavailable: 'Transcript saved - speaker labels unavailable',
+      transcriptionFailed: 'Transcription failed - the audio was saved',
       waitingFinal: 'Waiting for final transcript',
       you: 'You',
     },
@@ -662,17 +665,38 @@ const en = {
     collapse: 'Collapse Ask AI',
     conversation: 'Ask AI conversation',
     pillPlaceholder: 'Ask anything…',
+    errors: {
+      sessionChanged: 'You switched accounts. Ask again.',
+      offline: 'You’re offline.',
+      offlineBody: 'Reconnect and try again.',
+      modelFallback: 'The model you chose isn’t available, so Ask AI is using Prismical Cloud.',
+      chooseModel: 'Choose model',
+      continueMessage: 'Please continue.',
+    },
     composerPlaceholder: 'Ask anything — / for skills, @ to tag notes',
     composerPlaceholderShort: '/ for skills, @ to tag',
     dockDescription: 'Ask AI about your notes',
     dockHide: 'Hide Ask AI',
     dockLabel: 'Ask',
     empty: 'Ask anything about your notes.',
-    error: 'Something went wrong.',
+    error: 'Ask AI couldn’t answer.',
     newChat: 'New chat',
-    noResponse: 'No response — please try again.',
+    noResponse: 'The model didn’t answer this time.',
     placeholder: 'Ask a question…',
     thinking: 'Thinking…',
+    skillRun: {
+      running: 'Running {{name}}…',
+      stop: 'Stop {{name}}',
+      staged: '{{name}} drafted a suggestion',
+      reviewInNote: 'Review in note',
+      kept: 'Kept',
+      undone: 'Undone',
+      superseded: 'Replaced by the refinement below',
+      stopped: 'Stopped',
+      skipped: '{{name}} didn’t run',
+      failed: '{{name}} failed',
+      applied: '{{name}} applied',
+    },
     title: 'Ask AI',
     context: {
       add: 'Add context',
@@ -734,6 +758,7 @@ const en = {
       denied: 'denied',
       deny: 'Deny',
       failed: 'failed',
+      needsAuth: 'Reconnect this integration',
     },
   },
   ai: {
@@ -774,11 +799,7 @@ const en = {
     dock: {
       enhanceUnavailable: 'Enhance isn’t available right now.',
       skillUnavailable: 'That skill is no longer available.',
-      generating: 'Generating',
-      pick: 'Pick a different skill',
-      run: 'Run {{name}}',
       stopRun: 'Stop skill run',
-      stopRunning: 'Stop running skill',
     },
     diff: {
       accept: 'Accept',
@@ -786,9 +807,9 @@ const en = {
       describeEdits: 'Describe edits…',
       keep: 'Keep',
       cancelRefinement: 'Cancel refinement',
-      couldNotApply: 'Couldn’t apply {{name}} — invalid content',
-      couldNotSave: 'Couldn’t save {{name}} — {{error}}',
-      couldNotUndo: 'Couldn’t undo — {{error}}',
+      couldNotApply: 'Couldn’t apply {{name}} - invalid content',
+      couldNotSave: 'Couldn’t save {{name}}. Try again.',
+      couldNotUndo: 'Couldn’t undo this edit.',
       newSectionAdded: 'New section added',
       noteReplaced: 'Note replaced',
       previewRewriteFailed:
@@ -801,7 +822,7 @@ const en = {
       refining: 'Refining',
       reject: 'Reject',
       reopenUndo: 'Reopen the note to undo',
-      restoredLocallySyncFailed: 'Restored locally, but couldn’t sync the undo — {{error}}',
+      restoredLocallySyncFailed: 'Restored here, but the undo couldn’t sync. It will retry.',
       restoredPrevious: 'Restored the previous version',
       selectionUpdated: 'Selection updated',
       submitRefinement: 'Submit refinement',
@@ -813,9 +834,11 @@ const en = {
     },
     run: {
       failed: 'Couldn’t run {{name}}. Please try again.',
+      offline: 'You’re offline.',
+      offlineBody: 'Reconnect and try again.',
       noTranscript:
         'This recording has no transcript to enhance. Check the transcript or make a new recording.',
-      noUsableContent: 'Couldn’t run {{name}} — the model returned no usable content.',
+      noUsableContent: 'Couldn’t run {{name}} - the model returned no usable content.',
       noteAndTranscriptEmpty:
         'This note has no text or transcript yet. Add text or record audio before running {{name}}.',
       noteEmpty: 'Add some content to this note before running {{name}}.',
@@ -1294,11 +1317,11 @@ const en = {
       },
       catalog: {
         actions: {
-          comingSoon: 'Coming soon',
           connect: 'Connect',
           continueSetup: 'Continue setup',
           createAutomation: 'Create automation',
           manageConnection: 'Manage connection',
+          requestMore: 'Request an app',
         },
         categories: {
           all: 'All apps',
@@ -1321,6 +1344,11 @@ const en = {
         filterAria: 'Filter apps by category',
         noMatchDescription: 'Connect an unlisted provider through a custom MCP server.',
         noMatchTitle: 'No matching apps',
+        requestMore: {
+          description:
+            'Not seeing the app you need? Tell us which one and we’ll look at adding it.',
+          name: 'Request an integration',
+        },
         searchAria: 'Search apps',
         searchPlaceholder: 'Search apps…',
         title: 'Connect an app',
@@ -1512,9 +1540,8 @@ const en = {
         },
         free: {
           askAi: 'Ask AI',
-          askAiNote: 'limited time',
-          askAiTooltip:
-            'On the Free plan, Ask AI is included with unlimited use for a limited period.',
+          askAiNote: 'included',
+          askAiTooltip: 'Ask AI is included on the Free plan.',
           billingLabel: 'Free forever',
           communitySupport: 'Community support',
           cta: 'Free forever',

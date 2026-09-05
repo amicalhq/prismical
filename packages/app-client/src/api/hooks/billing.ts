@@ -27,7 +27,7 @@ export function usePlanAccess() {
         await apiClient.getRaw<unknown>(`${ME_PREFIX}/plan`, undefined, {
           activeOrgId,
         }),
-      ).result,
+      ),
   });
 }
 
@@ -41,7 +41,7 @@ export function useCreatePlanCheckout() {
           activeOrgId,
           credentials: true,
         }),
-      ).result,
+      ),
   });
 }
 
@@ -55,6 +55,6 @@ export function useCreateBillingPortal() {
           activeOrgId,
           credentials: true,
         }),
-      ).result,
+      ),
   });
 }

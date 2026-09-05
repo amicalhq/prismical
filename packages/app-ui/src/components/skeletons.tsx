@@ -59,6 +59,33 @@ export function NoteDetailSkeleton() {
   );
 }
 
+/**
+ * The note BODY only — the title and meta are already painted by the time this shows. Used while
+ * the collaboration document connects, where a lone spinner made an empty page look stalled;
+ * paragraph-shaped bars read as "your text is coming" instead.
+ *
+ * `max-w-2xl` and `ml-1` match the editor's own measure and offset (see NoteBodyEditor) so the bars
+ * sit exactly where the text will, and so this lines up with NoteDetailSkeleton's body block, which
+ * is often on screen immediately before it.
+ *
+ * The HEIGHT deliberately does not try to predict the content: five lines is a plausible note, not
+ * a measurement, and a note that loads empty will still collapse to a single line. That is
+ * acceptable here only because the body is the last block on the page above `pb-32`, so the page
+ * shortens rather than shoving anything downward. Widths are fixed rather than random because a
+ * ragged edge generated at render time would be a hydration mismatch.
+ */
+export function NoteBodySkeleton() {
+  return (
+    <div className="ml-1 max-w-2xl space-y-3 py-2" aria-hidden="true">
+      <Skeleton className="h-4 w-11/12" />
+      <Skeleton className="h-4 w-full" />
+      <Skeleton className="h-4 w-4/5" />
+      <Skeleton className="h-4 w-5/6" />
+      <Skeleton className="h-4 w-2/3" />
+    </div>
+  );
+}
+
 /** Mirrors the `SkillCard` grid: equal-height bordered cards. */
 export function SkillCardsSkeleton({ cards = 6 }: { cards?: number }) {
   return (

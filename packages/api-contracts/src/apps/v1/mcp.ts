@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import {
   AppsV1DateTimeResponseSchema,
-  AppsV1SuccessResponseSchema,
+  AppsV1NoContentResponseSchema,
   appsV1ListResponseSchema,
 } from './common.js';
 
@@ -102,25 +102,15 @@ export const CreateMcpServerResponseSchema = McpServerDetailSchema;
 export const McpServerListResponseSchema = appsV1ListResponseSchema(McpServerSchema);
 export const McpServerDetailResponseSchema = McpServerDetailSchema;
 export const UpdateMcpServerResponseSchema = McpServerDetailSchema;
-export const DeleteMcpServerResponseSchema = AppsV1SuccessResponseSchema;
+export const DeleteMcpServerResponseSchema = AppsV1NoContentResponseSchema;
 
-export const TestMcpServerResponseSchema = z.union([
-  z
-    .object({
-      success: z.literal(true),
-      status: z.string(),
-      toolCount: z.number().int().nonnegative(),
-      tools: z.array(z.object({ name: z.string(), description: z.string().nullable() }).strip()),
-    })
-    .strip(),
-  z
-    .object({
-      success: z.literal(false),
-      status: z.string(),
-      statusReason: z.string(),
-    })
-    .strip(),
-]);
+export const TestMcpServerResponseSchema = z
+  .object({
+    status: z.string(),
+    toolCount: z.number().int().nonnegative(),
+    tools: z.array(z.object({ name: z.string(), description: z.string().nullable() }).strip()),
+  })
+  .strip();
 export type TestMcpServerResponse = z.output<typeof TestMcpServerResponseSchema>;
 
 export const AuthorizeMcpServerRequestSchema = z.object({
@@ -133,14 +123,6 @@ export const AuthorizeMcpServerResponseSchema = z
   })
   .strip();
 export type AuthorizeMcpServerResponse = z.output<typeof AuthorizeMcpServerResponseSchema>;
-export const McpOAuthSetupErrorResponseSchema = z
-  .object({
-    success: z.literal(false),
-    error: z.literal('OAUTH_SETUP_FAILED'),
-    message: z.string(),
-  })
-  .strip();
-
 export const McpConnectCallbackQuerySchema = z.object({
   code: z.string().optional(),
   state: z.string().min(1),

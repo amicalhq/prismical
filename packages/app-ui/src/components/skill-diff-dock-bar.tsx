@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { ArrowUp, Check, Undo2 } from 'lucide-react';
+import { ArrowUp, Check, Undo2, X } from 'lucide-react';
 import type { Editor } from '@tiptap/react';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
@@ -11,7 +11,7 @@ import { clearDiffDecorations } from '@prismical/app-client';
 import { resolveVerifiedRange } from '@prismical/app-client';
 import { useAcceptArtifact, restoreLastSkillRun } from '@prismical/app-client';
 import { enhancedRecordingsKey } from '@prismical/app-client';
-import { useRunSkill } from '@prismical/app-client';
+import { useRunSkill, useSkillRunActivityStore } from '@prismical/app-client';
 import { DOCK_CTL_PRIMARY, DOCK_PILL_CHROME } from './dock-chrome';
 import { useTranslation } from 'react-i18next';
 
@@ -46,7 +46,7 @@ export function SkillDiffDockBar({ editor, noteId, compact = false }: Props) {
   const clear = useSkillDiffStore(s => s.clear);
   const accept = useAcceptArtifact();
   const qc = useQueryClient();
-  const { run, running: refining } = useRunSkill(noteId, editor);
+  const { run, cancel, running: refining } = useRunSkill(noteId, editor);
 
   // An accept/restore changes which recordings are folded — refresh the picker's wand/"in note" state.
   const refreshFolded = () =>
@@ -72,11 +72,9 @@ export function SkillDiffDockBar({ editor, noteId, compact = false }: Props) {
     try {
       editor.commands.setContent(JSON.parse(snapshot));
     } catch (err) {
-      toast.error(
-        t('skills.diff.couldNotUndo', {
-          error: err instanceof Error ? err.message : String(err),
-        })
-      );
+      // The parser/editor exception text is for the console, never the toast.
+      console.warn('skill undo: could not re-apply the snapshot', err);
+      toast.error(t('skills.diff.couldNotUndo'));
       return;
     }
     // 2) Now drop the artifact server-side so folded-detection un-folds the recording + the mode bias
@@ -86,11 +84,8 @@ export function SkillDiffDockBar({ editor, noteId, compact = false }: Props) {
       await restoreLastSkillRun(noteId);
     } catch (err) {
       refreshFolded();
-      toast.error(
-        t('skills.diff.restoredLocallySyncFailed', {
-          error: err instanceof Error ? err.message : String(err),
-        })
-      );
+      console.warn('skill undo: restore sync failed', err);
+      toast.error(t('skills.diff.restoredLocallySyncFailed'));
       return;
     }
     refreshFolded(); // the restored (soft-deleted) Enhance un-folds its recording
@@ -152,12 +147,8 @@ export function SkillDiffDockBar({ editor, noteId, compact = false }: Props) {
         usage: candidate.usage,
       });
     } catch (err) {
-      toast.error(
-        t('skills.diff.couldNotSave', {
-          name: candidate.skillName,
-          error: err instanceof Error ? err.message : String(err),
-        })
-      );
+      console.warn('skill accept: save failed', err);
+      toast.error(t('skills.diff.couldNotSave', { name: candidate.skillName }));
       clearDiffDecorations(editor);
       return;
     }
@@ -165,6 +156,8 @@ export function SkillDiffDockBar({ editor, noteId, compact = false }: Props) {
     // Release the editor lock BEFORE dispatching the accept's command (the lock filters mutating
     // txns while a candidate is staged; clearing first lets insertArtifactBlock / setContent land).
     clear(noteId);
+    // The Ask thread's run turn flips from "Drafted…" to "Kept" (dock v3 run feed).
+    useSkillRunActivityStore.getState().resolveStaged(noteId, 'kept');
 
     if (candidate.mode === 'append-section') {
       editor.commands.insertArtifactBlock({
@@ -228,6 +221,7 @@ export function SkillDiffDockBar({ editor, noteId, compact = false }: Props) {
   const reject = () => {
     clearDiffDecorations(editor);
     clear(noteId);
+    useSkillRunActivityStore.getState().resolveStaged(noteId, 'undone');
   };
 
   const submitRefine = () => {
@@ -244,6 +238,7 @@ export function SkillDiffDockBar({ editor, noteId, compact = false }: Props) {
       selectionAnchors: candidate.selectionAnchors,
       refineInstruction: instruction,
       previousOutput: candidate.rawMarkdown,
+      source: 'refine',
     });
     setRefineText('');
   };
@@ -260,8 +255,25 @@ export function SkillDiffDockBar({ editor, noteId, compact = false }: Props) {
 
       {/* The refine input is always live (no separate mode) — it widens on focus. */}
       {refining ? (
-        <span className="shimmer whitespace-nowrap px-2 text-[12.5px]">
-          {t('skills.diff.refining')}…
+        // The Ask unit is collapsed while a candidate is staged, so this is the refine's only
+        // reachable Stop.
+        <span className="flex items-center gap-1">
+          <span className="shimmer shimmer-duration-1400 text-dock-ink-3 whitespace-nowrap px-2 text-[12.5px]">
+            {t('skills.diff.refining')}…
+          </span>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={cancel}
+                aria-label={t('skills.dock.stopRun')}
+                className={`${REVIEW_BTN} w-7 justify-center px-0`}
+              >
+                <X className="size-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>{t('skills.dock.stopRun')}</TooltipContent>
+          </Tooltip>
         </span>
       ) : (
         <input
@@ -300,12 +312,7 @@ export function SkillDiffDockBar({ editor, noteId, compact = false }: Props) {
       {/* Undo = discard the suggestion (the note never changed); Keep = accept. */}
       <Tooltip>
         <TooltipTrigger asChild>
-          <button
-            type="button"
-            onClick={reject}
-            disabled={accept.isPending}
-            className={REVIEW_BTN}
-          >
+          <button type="button" onClick={reject} disabled={accept.isPending} className={REVIEW_BTN}>
             <Undo2 className="size-3.5" />
             {t('skills.diff.undo')}
           </button>

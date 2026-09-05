@@ -20,7 +20,9 @@ import { DOCK_SCROLL_BUTTON } from '../dock-chrome';
 import { formatSessionTimer } from '../note-recording-dock';
 import { AskComposer, type AskComposerHandle, type ComposerSkill } from './ask-composer';
 import { AskMessage } from './ask-message';
+import { AskSkillRunTurn } from './ask-skill-run-turn';
 import { AskSuggestions } from './ask-suggestions';
+import { useSkillRunActivityStore, useSkillRuns, type SkillRunRecord } from '@prismical/app-client';
 import { useLatestConversation } from '@prismical/app-client';
 import { useActiveOrgId, useActiveSessionKey } from '@prismical/app-client';
 import { askHeadersForPlatform, createAskTransport } from '@prismical/app-client';
@@ -35,7 +37,19 @@ import {
   saveModelPref,
   type AskModelSelection,
 } from '@prismical/app-client';
-import { EVENTS, usePorts } from '@prismical/app-client';
+import { EVENTS, usePorts, useNavigation } from '@prismical/app-client';
+import {
+  AskSessionChangedError,
+  askNoticeOf,
+  askStreamFailureOf,
+  bindAiErrorActions,
+  isAuto,
+  isNetworkFailure,
+  type AiUserErrorAction,
+} from '@prismical/app-client';
+import { Info, TriangleAlert } from 'lucide-react';
+import { toast } from 'sonner';
+import { STATUS_LINK } from './ask-skill-run-turn-styles';
 import { useTranslation } from 'react-i18next';
 
 /**
@@ -56,6 +70,76 @@ function streamErrorText(error: unknown): string | null {
   return text;
 }
 
+/** What the failed row shows: a title, an optional second line, and the actions the user can take. */
+interface AskFailure {
+  title: string;
+  body?: string;
+  actions: AiUserErrorAction[];
+}
+
+/**
+ * Describe a failed Ask turn for the user. Core renders the copy + recovery actions for anything
+ * that reached it (`describeAiError`, carried inside the stream's error part); the client only
+ * binds the action kinds it can perform. The remaining branches cover failures that never got a
+ * server answer: the login owner changed mid-request, the network was down, or an older producer
+ * (the desktop's local lane) wrote plain prose.
+ */
+function describeAskFailure(
+  error: unknown,
+  emptyAnswer: boolean,
+  t: (key: string) => string,
+  handlers: Partial<Record<string, () => void>>
+): AskFailure {
+  const retryOnly = bindAiErrorActions(
+    [{ kind: 'retry', label: t('common.actions.retry') }],
+    handlers
+  );
+  const failure = askStreamFailureOf(error);
+  if (failure?.user) {
+    return {
+      title: failure.user.title,
+      body: failure.user.body,
+      actions: bindAiErrorActions(failure.user.actions, handlers),
+    };
+  }
+  // An envelope with no user block: never echo its JSON.
+  if (failure) return { title: t('ask.error'), actions: retryOnly };
+  if (error instanceof AskSessionChangedError) {
+    return { title: t('ask.errors.sessionChanged'), actions: retryOnly };
+  }
+  if (isNetworkFailure(error)) {
+    return {
+      title: t('ask.errors.offline'),
+      body: t('ask.errors.offlineBody'),
+      actions: retryOnly,
+    };
+  }
+  if (emptyAnswer && !error) return { title: t('ask.noResponse'), actions: retryOnly };
+  return { title: streamErrorText(error) ?? t('ask.error'), actions: retryOnly };
+}
+
+/** The server's action links (dock v3 status-link style), first one as the primary button. */
+function AskFailureActions({ actions }: { actions: AiUserErrorAction[] }) {
+  const [primary, ...rest] = actions;
+  return (
+    <>
+      {primary && (
+        <Button type="button" size="xs" variant="outline" onClick={primary.onClick}>
+          {primary.label}
+        </Button>
+      )}
+      {rest.map(a => (
+        <button key={a.kind} type="button" onClick={a.onClick} className={STATUS_LINK}>
+          {a.label}
+        </button>
+      ))}
+    </>
+  );
+}
+
+/** The stale model pick already announced this page load (survives New chat remounts). */
+let fallbackToastedFor: string | null = null;
+
 export function AskPanel({
   open,
   isMaximized,
@@ -66,8 +150,7 @@ export function AskPanel({
   recordingSeconds = 0,
   onShowRecording,
   onRunSkill,
-  seedSkill = null,
-  onSeedConsumed,
+  noteId = null,
   compact = false,
 }: {
   open: boolean;
@@ -84,9 +167,8 @@ export function AskPanel({
   onShowRecording?: () => void;
   /** Run a `/skill` composer send against the current note; absent off-note. */
   onRunSkill?: (skill: ComposerSkill, instruction: string) => void;
-  /** A skill token to pre-insert (the collapsed pill's suggested-skill chip). */
-  seedSkill?: ComposerSkill | null;
-  onSeedConsumed?: () => void;
+  /** The note in focus — its skill runs render as turns in the thread (run feed). */
+  noteId?: string | null;
   /** Narrow surface (float window) — forwarded to the composer. */
   compact?: boolean;
 }) {
@@ -204,8 +286,8 @@ export function AskPanel({
           ownerSessionKey={activeSessionKey}
           ownerOrgId={activeOrgId}
           onRunSkill={onRunSkill}
-          seedSkill={seedSkill}
-          onSeedConsumed={onSeedConsumed}
+          noteId={noteId}
+          onReviewInNote={onClose}
           compact={compact}
         />
       ) : (
@@ -240,8 +322,8 @@ function AskChat({
   ownerSessionKey,
   ownerOrgId,
   onRunSkill,
-  seedSkill,
-  onSeedConsumed,
+  noteId = null,
+  onReviewInNote,
   compact = false,
 }: {
   conversationId: string;
@@ -249,8 +331,10 @@ function AskChat({
   ownerSessionKey: string;
   ownerOrgId: string | null;
   onRunSkill?: (skill: ComposerSkill, instruction: string) => void;
-  seedSkill?: ComposerSkill | null;
-  onSeedConsumed?: () => void;
+  /** The note in focus — its skill runs render as turns in the thread. */
+  noteId?: string | null;
+  /** "Review in note" on a staged run: collapse the panel over the diff. */
+  onReviewInNote?: () => void;
   /** Narrow surface (float window) — forwarded to the composer. */
   compact?: boolean;
 }) {
@@ -288,10 +372,30 @@ function AskChat({
   const activeModel = React.useMemo(() => resolveActiveModel(groups, model), [groups, model]);
   const activeModelRef = React.useRef(activeModel);
   activeModelRef.current = activeModel;
+  // "Use Prismical Cloud" on a failed turn: the NEXT request runs on Auto, once. The remembered
+  // pick is untouched, so the turn after that is back on the user's own key.
+  const cloudOnceRef = React.useRef(false);
   const chooseModel = React.useCallback((sel: AskModelSelection) => {
     setModel(sel);
     saveModelPref(sel);
   }, []);
+  const navigation = useNavigation();
+
+  // The remembered pick no longer resolves (instance deleted, model removed from its list): the
+  // panel silently runs Auto. Say so once per stale pick, with a way to choose again — otherwise
+  // the user believes their own key is answering when Prismical Cloud is.
+  React.useEffect(() => {
+    if (instances.length === 0 || isAuto(model) || !isAuto(activeModel)) return;
+    const key = `${model.instanceId}:${model.modelId}`;
+    if (fallbackToastedFor === key) return;
+    fallbackToastedFor = key;
+    toast.info(t('ask.errors.modelFallback'), {
+      action: {
+        label: t('ask.errors.chooseModel'),
+        onClick: () => navigation.push('/settings/ai-models'),
+      },
+    });
+  }, [instances.length, model, activeModel, t, navigation]);
 
   // The transport reads `contextRef`/`activeModelRef` at send time (freshest scope + model) and carries
   // the fixed conversation id.
@@ -304,7 +408,9 @@ function AskChat({
           return scope;
         },
         conversationId,
-        () => activeModelRef.current,
+        // Held for the whole `regenerate()` (which may chain a tool-approval resume request):
+        // the flag is cleared when that settles, not on the first read.
+        () => (cloudOnceRef.current ? AUTO_SELECTION : activeModelRef.current),
         () => askHeadersForPlatform(platform, auth, ownerSessionKey, ownerOrgId)
       ),
     [auth, conversationId, ownerOrgId, ownerSessionKey, platform]
@@ -372,19 +478,113 @@ function AskChat({
     last.parts.some(p => p.type === 'dynamic-tool' || p.type.startsWith('tool-'));
   const thinking =
     busy && (last?.role === 'user' || (lastIsEmptyAssistant && !lastHasToolActivity));
+  // The server's per-turn notice (`message.metadata.notice`): the answer was cut off, the tool
+  // loop ran dry, the turn fell back to Prismical Cloud. Rendered under the finished answer.
+  const lastNotice = last?.role === 'assistant' ? askNoticeOf(last.metadata) : null;
+  // A tool-only turn with no text used to read as "No response" — when the server explains it
+  // (steps exhausted), the notice is the explanation and the generic line stays hidden.
   const emptyAnswer =
-    status === 'ready' && lastIsEmptyAssistant && !lastAwaitsApproval && !lastHasToolActivity;
+    status === 'ready' &&
+    lastIsEmptyAssistant &&
+    !lastAwaitsApproval &&
+    !lastHasToolActivity &&
+    !lastNotice;
   const failed = status === 'error' || Boolean(error) || emptyAnswer;
+  const showNotice = status === 'ready' && !failed && !lastAwaitsApproval && lastNotice !== null;
+
+  const failureHandlers = React.useMemo<Partial<Record<string, () => void>>>(
+    () => ({
+      retry: () => void regenerate().catch(() => {}),
+      continue: () => void sendMessage({ text: t('ask.errors.continueMessage') }).catch(() => {}),
+      // One-off: this turn on Prismical Cloud. The remembered pick is untouched.
+      'use-cloud': () => {
+        cloudOnceRef.current = true;
+        // Every request `regenerate()` makes (including an approval resume) runs on Cloud; the
+        // flag is dropped when it settles so it never leaks into the next question.
+        regenerate()
+          .catch(() => {})
+          .finally(() => {
+            cloudOnceRef.current = false;
+          });
+      },
+      'choose-model': () => navigation.push('/settings/ai-models'),
+      'open-ai-models': () => navigation.push('/settings/ai-models'),
+    }),
+    [regenerate, sendMessage, t, navigation]
+  );
+  const failure = React.useMemo(
+    () => (failed ? describeAskFailure(error, emptyAnswer, t, failureHandlers) : null),
+    [failed, error, emptyAnswer, t, failureHandlers]
+  );
+  const noticeActions = React.useMemo(
+    () => (lastNotice ? bindAiErrorActions(lastNotice.actions, failureHandlers) : []),
+    [lastNotice, failureHandlers]
+  );
+
+  // Skill runs as turns (dock v3, skills-in-Ask): the note's run feed renders inline. A record is
+  // ANCHORED the first time this chat sees it — to this conversation and the message it follows —
+  // so a later Q&A turn lands below it instead of the run sinking under every new message.
+  // A record that SETTLED in another conversation stays there; one still running follows the user
+  // into a new thread (New chat / org switch mid-run) so its Stop is never stranded off-screen.
+  const runs = useSkillRuns(noteId);
+  const anchorRun = useSkillRunActivityStore(s => s.anchor);
+  const lastIdRef = React.useRef<string>('');
+  lastIdRef.current = last?.id ?? '';
+  React.useEffect(() => {
+    for (const r of runs) {
+      // Unanchored, or still running in a thread the user just left (New chat / org switch
+      // remounted us): it follows the user here. Settled records keep their thread.
+      const stale =
+        r.anchor && r.anchor.conversationId !== conversationId && r.status === 'running';
+      if (!r.anchor || stale) {
+        anchorRun(r.id, { conversationId, afterMessageId: lastIdRef.current });
+      }
+    }
+  }, [runs, conversationId, anchorRun]);
+  const messageIds = React.useMemo(() => new Set(messages.map(m => m.id)), [messages]);
+  const runsAfter = React.useMemo(() => {
+    const map = new Map<string, SkillRunRecord[]>();
+    for (const r of runs) {
+      let key: string | null;
+      if (!r.anchor || (r.anchor.conversationId !== conversationId && r.status === 'running')) {
+        // Not yet (re)anchored — first render after it appeared: follows the current last message.
+        key = lastIdRef.current;
+      } else if (r.anchor.conversationId !== conversationId) {
+        key = null; // settled in another conversation — not this thread's
+      } else {
+        // A regenerate re-ids the last assistant turn; a record anchored to the old id falls back
+        // to the end of the thread rather than vanishing.
+        key =
+          r.anchor.afterMessageId === '' || messageIds.has(r.anchor.afterMessageId)
+            ? r.anchor.afterMessageId
+            : lastIdRef.current;
+      }
+      if (key === null) continue;
+      map.set(key, [...(map.get(key) ?? []), r]);
+    }
+    return map;
+  }, [runs, conversationId, messageIds]);
+  const runTurns = (afterMessageId: string) =>
+    (runsAfter.get(afterMessageId) ?? []).map(r => (
+      <AskScrollerItem key={`run:${r.id}`} messageId={`run:${r.id}`} scrollAnchor>
+        <AskSkillRunTurn run={r} onReviewInNote={onReviewInNote} />
+      </AskScrollerItem>
+    ));
+  const hasRunTurns = runsAfter.size > 0;
+  // The composer's send button becomes Stop for a run THIS composer started (chip / slash send —
+  // the mock's streaming grammar); chat sends wait until it settles. Runs from other lanes
+  // (wand, auto-enhance on stop, inline, refine) never lock the composer — auto-enhance can wait
+  // on diarization for minutes — their Stop lives on the thread turn and the collapsed pill.
+  const activeRun = React.useMemo(() => {
+    const rendered = [...runsAfter.values()].flat();
+    for (let i = rendered.length - 1; i >= 0; i--) {
+      const r = rendered[i]!;
+      if (r.status === 'running' && (r.source === 'composer' || r.source === 'chip')) return r;
+    }
+    return null;
+  }, [runsAfter]);
 
   const composerRef = React.useRef<AskComposerHandle>(null);
-
-  // The collapsed pill's suggested-skill chip parks a token seed; consume it once
-  // the composer exists.
-  React.useEffect(() => {
-    if (!seedSkill) return;
-    composerRef.current?.insertSkill(seedSkill);
-    onSeedConsumed?.();
-  }, [seedSkill, onSeedConsumed]);
 
   const onComposerSend = (text: string, notes: { id: string; title: string }[]) => {
     if (!text || busy) return;
@@ -444,7 +644,7 @@ function AskChat({
             onPointerDown={releaseAnchorOnScrollbarDrag}
           >
             <MessageScrollerContent aria-busy={busy} className="gap-[18px] p-4">
-              {messages.length === 0 ? (
+              {messages.length === 0 && !hasRunTurns ? (
                 <AskScrollerItem className="flex min-h-full flex-1">
                   {/* Empty state: everything left-aligned at the bottom, next to
                       where the composer sits — title, then starter-question chips (send
@@ -467,27 +667,33 @@ function AskChat({
                   </div>
                 </AskScrollerItem>
               ) : (
-                messages.map(m => (
-                  <AskScrollerItem key={m.id} messageId={m.id} scrollAnchor={m.role === 'user'}>
-                    <AskMessage
-                      message={m}
-                      streaming={busy && m === last}
-                      isLast={m === last}
-                      busy={busy}
-                      onRegenerate={() => regenerate()}
-                      // No notes attached — deliberate: scope is per-send everywhere (a composer
-                      // send only scopes its own @-tokens too), and the prior turn's content is
-                      // already in the conversation the model sees.
-                      onFollowup={q => sendSuggested(q, { source: 'followup' })}
-                      approval={{
-                        respond: addToolApprovalResponse,
-                        autoApproved,
-                        addAutoApproved,
-                        takeAutoApproval,
-                      }}
-                    />
-                  </AskScrollerItem>
-                ))
+                <>
+                  {runTurns('')}
+                  {messages.map(m => (
+                    <React.Fragment key={m.id}>
+                      <AskScrollerItem messageId={m.id} scrollAnchor={m.role === 'user'}>
+                        <AskMessage
+                          message={m}
+                          streaming={busy && m === last}
+                          isLast={m === last}
+                          busy={busy}
+                          onRegenerate={() => regenerate()}
+                          // No notes attached — deliberate: scope is per-send everywhere (a composer
+                          // send only scopes its own @-tokens too), and the prior turn's content is
+                          // already in the conversation the model sees.
+                          onFollowup={q => sendSuggested(q, { source: 'followup' })}
+                          approval={{
+                            respond: addToolApprovalResponse,
+                            autoApproved,
+                            addAutoApproved,
+                            takeAutoApproval,
+                          }}
+                        />
+                      </AskScrollerItem>
+                      {runTurns(m.id)}
+                    </React.Fragment>
+                  ))}
+                </>
               )}
               {thinking && (
                 <AskScrollerItem messageId={`${conversationId}-thinking`}>
@@ -495,20 +701,54 @@ function AskChat({
                     <MarkerIcon>
                       <Loader size={14} />
                     </MarkerIcon>
-                    <MarkerContent className="shimmer">{t('ask.thinking')}</MarkerContent>
+                    <MarkerContent className="shimmer shimmer-duration-1400 text-dock-ink-3">
+                      {t('ask.thinking')}
+                    </MarkerContent>
                   </Marker>
                 </AskScrollerItem>
               )}
-              {failed && !thinking && (
+              {failure && !thinking && (
                 <AskScrollerItem messageId={`${conversationId}-failed`}>
-                  <div className="mr-auto flex items-center gap-2 py-1 text-sm">
-                    <span className="text-destructive">
-                      {emptyAnswer ? t('ask.noResponse') : streamErrorText(error) ?? t('ask.error')}
-                    </span>
-                    <Button type="button" size="xs" variant="outline" onClick={() => regenerate()}>
-                      {t('common.actions.retry')}
-                    </Button>
+                  <div className="mr-auto flex flex-col gap-1 py-1 text-sm" role="alert">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-destructive">{failure.title}</span>
+                      <AskFailureActions actions={failure.actions} />
+                    </div>
+                    {failure.body && (
+                      <span className="text-xs text-dock-ink-3">{failure.body}</span>
+                    )}
                   </div>
+                </AskScrollerItem>
+              )}
+              {showNotice && lastNotice && (
+                <AskScrollerItem messageId={`${conversationId}-notice`}>
+                  <Marker className="w-fit" role="status">
+                    <MarkerIcon>
+                      {lastNotice.severity === 'info' ? (
+                        <Info className="size-[14px]" />
+                      ) : (
+                        <TriangleAlert className="size-[14px]" />
+                      )}
+                    </MarkerIcon>
+                    <MarkerContent className="flex flex-col gap-0.5 text-xs text-dock-ink-3">
+                      <span>{lastNotice.title}</span>
+                      {lastNotice.body && <span>{lastNotice.body}</span>}
+                      {noticeActions.length > 0 && (
+                        <span className="flex flex-wrap items-center gap-2 pt-0.5">
+                          {noticeActions.map(a => (
+                            <button
+                              key={a.kind}
+                              type="button"
+                              onClick={a.onClick}
+                              className={STATUS_LINK}
+                            >
+                              {a.label}
+                            </button>
+                          ))}
+                        </span>
+                      )}
+                    </MarkerContent>
+                  </Marker>
                 </AskScrollerItem>
               )}
             </MessageScrollerContent>
@@ -521,10 +761,11 @@ function AskChat({
       <AskComposer
         ref={composerRef}
         compact={compact}
-        busy={busy}
+        busy={busy || activeRun !== null}
         onSend={onComposerSend}
         onRunSkill={onRunSkill}
-        onStop={() => void stop()}
+        // A chat stream and a composer-started run can overlap; Stop settles the stream first.
+        onStop={() => (busy ? void stop() : activeRun?.cancel?.())}
         modelGroups={groups}
         modelValue={activeModel}
         onModelChange={chooseModel}

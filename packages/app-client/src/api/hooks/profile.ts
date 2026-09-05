@@ -18,7 +18,6 @@ export function useViewerProfile() {
     queryKey: viewerProfileKey,
     staleTime: 5 * 60_000,
     queryFn: async () =>
-      ViewerProfileResponseSchema.parse(await apiClient.getRaw<unknown>(`${ME_PREFIX}/profile`))
-        .result,
+      ViewerProfileResponseSchema.parse(await apiClient.getRaw<unknown>(`${ME_PREFIX}/profile`)),
   });
 }

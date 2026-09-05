@@ -13,6 +13,7 @@ import {
   ExternalLink,
   KeyRound,
   Loader2,
+  Mail,
   Search,
   Server,
   Settings2,
@@ -54,7 +55,6 @@ import { Input } from '../../../ui/input';
 import { Label } from '../../../ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../ui/select';
 import { Textarea } from '../../../ui/textarea';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../../ui/tooltip';
 import {
   AutomationDialog,
   type AutomationPreset,
@@ -86,10 +86,16 @@ interface CatalogItem {
   descriptionKey?: AutomationCatalogDescriptionKey;
   entry?: McpDirectoryEntry;
   preset?: AutomationPreset;
-  comingSoon?: boolean;
 }
 
-const CURATED_DIRECTORY_KEYS = ['notion', 'slack', 'linear', 'hubspot', 'attio'];
+// Providers whose connect flow is actually live. The rest of MCP_DIRECTORY used to render as
+// disabled "Coming soon" cards; they are now simply absent, and the Request card below is how a
+// member asks for one. Add a key here when its flow ships.
+const CURATED_DIRECTORY_KEYS = ['notion'];
+
+/** Long-tail integration requests come in by mail — there is no in-product request queue yet. */
+const INTEGRATION_REQUEST_MAILTO =
+  'mailto:help@prismical.ai?subject=' + encodeURIComponent('Integration request');
 const CURATED_DIRECTORY = CURATED_DIRECTORY_KEYS.map(key =>
   MCP_DIRECTORY.find(entry => entry.key === key)
 ).filter((entry): entry is McpDirectoryEntry => Boolean(entry));
@@ -133,7 +139,6 @@ const APP_CATALOG: CatalogItem[] = [
     category: entry.category,
     kind: 'mcp' as const,
     entry,
-    comingSoon: entry.key !== 'notion',
   })),
 ];
 
@@ -733,17 +738,13 @@ function CatalogCard({
     ? isEstablishedMcpServer(server)
       ? t('settings.integrations.catalog.actions.manageConnection')
       : t('settings.integrations.catalog.actions.continueSetup')
-    : item.comingSoon
-      ? t('settings.integrations.catalog.actions.comingSoon')
-      : item.kind === 'automation'
-        ? t('settings.integrations.catalog.actions.createAutomation')
-        : t('settings.integrations.catalog.actions.connect');
+    : item.kind === 'automation'
+      ? t('settings.integrations.catalog.actions.createAutomation')
+      : t('settings.integrations.catalog.actions.connect');
 
   const className = cn(
     'group flex min-h-40 w-full flex-col rounded-xl border bg-card p-4 text-left shadow-xs transition-[border-color,box-shadow,transform,opacity] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transform-none motion-reduce:transition-none',
-    server || !item.comingSoon
-      ? 'hover:-translate-y-0.5 hover:border-foreground/20 hover:shadow-md'
-      : 'cursor-not-allowed bg-muted/20 opacity-60'
+    'hover:-translate-y-0.5 hover:border-foreground/20 hover:shadow-md'
   );
   const content = (
     <>
@@ -757,12 +758,10 @@ function CatalogCard({
       </span>
       <span className="mt-auto flex w-full items-center justify-between pt-4 text-xs font-medium text-muted-foreground">
         {action}
-        {item.comingSoon && !server ? null : (
-          <ArrowRight
-            aria-hidden="true"
-            className="size-3.5 transition-transform group-hover:translate-x-0.5 motion-reduce:transform-none motion-reduce:transition-none"
-          />
-        )}
+        <ArrowRight
+          aria-hidden="true"
+          className="size-3.5 transition-transform group-hover:translate-x-0.5 motion-reduce:transform-none motion-reduce:transition-none"
+        />
       </span>
     </>
   );
@@ -775,21 +774,41 @@ function CatalogCard({
     );
   }
 
-  const card = (
-    <button type="button" onClick={onClick} disabled={item.comingSoon} className={className}>
+  return (
+    <button type="button" onClick={onClick} className={className}>
       {content}
     </button>
   );
+}
 
-  if (!item.comingSoon) return card;
-
+/**
+ * Tail card of the catalog grid: the long tail is a mail request rather than a dead "coming soon"
+ * tile, so a member can name the app they need and we hear about it.
+ */
+function RequestIntegrationCard() {
+  const { t } = useTranslation();
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span className="block">{card}</span>
-      </TooltipTrigger>
-      <TooltipContent>{t('settings.integrations.catalog.actions.comingSoon')}</TooltipContent>
-    </Tooltip>
+    <a
+      href={INTEGRATION_REQUEST_MAILTO}
+      className="group flex min-h-40 w-full flex-col rounded-xl border border-dashed bg-card p-4 text-left shadow-xs transition-[border-color,box-shadow,transform] hover:-translate-y-0.5 hover:border-foreground/20 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transform-none motion-reduce:transition-none"
+    >
+      <span className="flex size-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+        <Mail aria-hidden="true" className="size-4" />
+      </span>
+      <span className="mt-4 text-sm font-semibold">
+        {t('settings.integrations.catalog.requestMore.name')}
+      </span>
+      <span className="mt-1 text-xs leading-relaxed text-muted-foreground">
+        {t('settings.integrations.catalog.requestMore.description')}
+      </span>
+      <span className="mt-auto flex w-full items-center justify-between pt-4 text-xs font-medium text-muted-foreground">
+        {t('settings.integrations.catalog.actions.requestMore')}
+        <ArrowRight
+          aria-hidden="true"
+          className="size-3.5 transition-transform group-hover:translate-x-0.5 motion-reduce:transform-none motion-reduce:transition-none"
+        />
+      </span>
+    </a>
   );
 }
 
@@ -800,6 +819,11 @@ export function IntegrationsScreen() {
   const searchParams = useSearchParams();
   const { enabled: integrationsEnabled, isResolved: integrationsResolved } =
     useFeatureFlag('integrations');
+  // Narrower gate: Advanced setup (connect any server by URL) is still in development, so it is
+  // off for customers while the curated connections above stay available. The server enforces
+  // this too — it omits custom rows from the list and 403s every custom-row operation.
+  const { enabled: customMcpEnabled } = useFeatureFlag('customMcpServers');
+  const customServersEnabled = integrationsEnabled && customMcpEnabled;
   const mcpQuery = useMcpServers(integrationsResolved && integrationsEnabled);
   const refetchMcpServers = mcpQuery.refetch;
   const automationQuery = useAutomations();
@@ -815,7 +839,11 @@ export function IntegrationsScreen() {
 
   // React Query retains cached data when a query becomes disabled. Mask it as well
   // as stopping the request so switching the flag off cannot leave stale MCP rows visible.
-  const servers = integrationsEnabled ? (mcpQuery.data ?? []) : [];
+  const servers = (integrationsEnabled ? (mcpQuery.data ?? []) : []).filter(
+    // Belt and braces with the server-side filter: never surface a connection the member cannot
+    // open, rename or disconnect.
+    server => customServersEnabled || Boolean(server.directoryKey)
+  );
   const connectedServers = servers.filter(isEstablishedMcpServer);
   const setupServers = servers.filter(server => !isEstablishedMcpServer(server));
   const automations = automationQuery.data ?? [];
@@ -1005,7 +1033,18 @@ export function IntegrationsScreen() {
             {t('settings.integrations.methods.description')}
           </p>
         </div>
-        <div className="grid gap-px overflow-hidden rounded-2xl border bg-border sm:grid-cols-2 xl:grid-cols-4">
+        {/*
+          Hairline tile strip: the container's `bg-border` shows through the 1px gaps, so an
+          unfilled cell renders as a solid grey block rather than empty space. With the custom
+          card gated away there are three tiles, not four — let the last one span the leftover
+          cell so the row stays flush at both the 2-col and 4-col breakpoints.
+        */}
+        <div
+          className={cn(
+            'grid gap-px overflow-hidden rounded-2xl border bg-border sm:grid-cols-2 xl:grid-cols-4',
+            !customServersEnabled && 'sm:[&>*:last-child]:col-span-2'
+          )}
+        >
           <ConnectionMethodCard
             icon={Braces}
             name={t('settings.integrations.methods.apiName')}
@@ -1030,7 +1069,7 @@ export function IntegrationsScreen() {
             tone="bg-blue-500/10 text-blue-700 dark:text-blue-300"
             onClick={() => openAutomation('webhook')}
           />
-          {integrationsEnabled ? (
+          {customServersEnabled ? (
             <ConnectionMethodCard
               icon={Server}
               name={t('settings.integrations.methods.customName')}
@@ -1100,39 +1139,50 @@ export function IntegrationsScreen() {
         </div>
 
         {catalog.length > 0 ? (
-          <TooltipProvider delayDuration={150}>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {catalog.map(item => (
-                <CatalogCard
-                  key={item.key}
-                  item={item}
-                  server={serverByDirectoryKey.get(item.key)}
-                  onClick={() => {
-                    if (item.kind === 'automation' && item.preset) {
-                      openAutomation(item.preset);
-                    } else if (item.entry) {
-                      setProviderEntry(item.entry);
-                    }
-                  }}
-                />
-              ))}
-            </div>
-          </TooltipProvider>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {catalog.map(item => (
+              <CatalogCard
+                key={item.key}
+                item={item}
+                server={serverByDirectoryKey.get(item.key)}
+                onClick={() => {
+                  if (item.kind === 'automation' && item.preset) {
+                    openAutomation(item.preset);
+                  } else if (item.entry) {
+                    setProviderEntry(item.entry);
+                  }
+                }}
+              />
+            ))}
+            <RequestIntegrationCard />
+          </div>
         ) : (
           <div className="rounded-xl border border-dashed p-8 text-center">
             <p className="text-sm font-medium">{t('settings.integrations.catalog.noMatchTitle')}</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              {t('settings.integrations.catalog.noMatchDescription')}
+              {/* The stock copy points at Advanced setup; when that is gated the only route is mail. */}
+              {customServersEnabled
+                ? t('settings.integrations.catalog.noMatchDescription')
+                : t('settings.integrations.catalog.requestMore.description')}
             </p>
-            <Button
-              variant="outline"
-              size="sm"
-              className="mt-4"
-              onClick={() => setAddDialog({ open: true })}
-            >
-              <Server className="size-4" />
-              {t('settings.integrations.actions.customMcp')}
-            </Button>
+            {customServersEnabled ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-4"
+                onClick={() => setAddDialog({ open: true })}
+              >
+                <Server className="size-4" />
+                {t('settings.integrations.actions.customMcp')}
+              </Button>
+            ) : (
+              <Button variant="outline" size="sm" className="mt-4" asChild>
+                <a href={INTEGRATION_REQUEST_MAILTO}>
+                  <Mail className="size-4" />
+                  {t('settings.integrations.catalog.actions.requestMore')}
+                </a>
+              </Button>
+            )}
           </div>
         )}
       </section>

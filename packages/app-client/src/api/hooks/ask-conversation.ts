@@ -21,7 +21,7 @@ export function useLatestConversation() {
     queryFn: async () =>
       AskConversationResponseSchema.parse(
         await apiClient.getRaw<unknown>(`${ME_PREFIX}/ask/conversations`),
-      ).result,
+      ),
     staleTime: Infinity,
     refetchOnWindowFocus: false,
   });

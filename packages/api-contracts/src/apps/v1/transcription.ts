@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import {
   AppsV1DateTimeResponseSchema,
-  appsV1ResultEnvelopeSchema,
   appsV1ListResponseSchema,
 } from './common.js';
 
@@ -72,7 +71,7 @@ export const RecordingSpeakerSchema = z
   })
   .strip();
 export type RecordingSpeaker = z.output<typeof RecordingSpeakerSchema>;
-export const RecordingSpeakerResponseSchema = appsV1ResultEnvelopeSchema(RecordingSpeakerSchema);
+export const RecordingSpeakerResponseSchema = RecordingSpeakerSchema;
 
 export const StagingLaneSchema = z.enum(['mic', 'system', 'mix']);
 export type StagingLane = z.output<typeof StagingLaneSchema>;

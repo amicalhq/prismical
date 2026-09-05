@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { appsV1ResultResponseSchema } from './common.js';
 
 export const AskMessageSchema = z.object({
   role: z.enum(['user', 'assistant']),
@@ -36,9 +35,7 @@ export const StoredConversationSchema = z
   .strip();
 export type StoredConversation = z.output<typeof StoredConversationSchema>;
 
-export const AskConversationResponseSchema = appsV1ResultResponseSchema(
-  StoredConversationSchema.nullable()
-);
+export const AskConversationResponseSchema = StoredConversationSchema.nullable();
 
 /** POST /me/ask uses the AI SDK UI-message SSE protocol, not a JSON body. */
 export const ASK_STREAM_MEDIA_TYPE = 'text/event-stream' as const;

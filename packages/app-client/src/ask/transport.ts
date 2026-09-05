@@ -1,4 +1,5 @@
 import { DefaultChatTransport, type UIMessage } from "ai";
+import { ASK_ERROR_FORMAT_ENVELOPE, ASK_ERROR_FORMAT_HEADER } from "@prismical/api-contracts";
 import { coreApiBaseUrl, getAskFetch } from "../runtime";
 import { getAuthHeaders, getAuthHeadersForToken } from "../api/auth";
 import { ME_PREFIX } from "../api/client";
@@ -23,7 +24,7 @@ function exactSessionKey(view: SessionView): string | null {
 function activeOrgId(view: SessionView): string | null {
   const sessionKey = exactSessionKey(view);
   return (
-    view.accounts.find(account => (account.sessionKey ?? account.sub) === sessionKey)
+    view.accounts.find((account) => (account.sessionKey ?? account.sub) === sessionKey)
       ?.activeOrgId ?? null
   );
 }
@@ -49,7 +50,11 @@ export async function exactSessionAskHeaders(
   if (!token || !ownsAskContext(auth.getSession(), ownerSessionKey, ownerOrgId)) {
     throw new AskSessionChangedError();
   }
-  return getAuthHeadersForToken(token, ownerOrgId);
+  return {
+    ...getAuthHeadersForToken(token, ownerOrgId),
+    // This client parses the Ask error envelope (askStreamFailureOf); core sends it only then.
+    [ASK_ERROR_FORMAT_HEADER]: ASK_ERROR_FORMAT_ENVELOPE,
+  };
 }
 
 /** Desktop Ask travels through main-owned IPC auth and must never request a

@@ -43,7 +43,7 @@ export function useAcceptArtifact() {
     mutationFn: async (body: AcceptArtifactBody) =>
       AcceptSkillRunResponseSchema.parse(
         await apiClient.postRaw<unknown>(`${ME_PREFIX}/skill-runs/accept`, body),
-      ).result,
+      ),
   });
 }
 
@@ -55,14 +55,14 @@ export type RestoreResult = RestoreSkillRunResult;
 export function restoreLastSkillRun(noteId: string): Promise<RestoreResult> {
   return apiClient
     .postRaw<unknown>(`${ME_PREFIX}/skill-runs/restore`, { noteId })
-    .then((response) => RestoreSkillRunResponseSchema.parse(response).result);
+    .then((response) => RestoreSkillRunResponseSchema.parse(response));
 }
 
 /** IDs of a note's recordings already folded in via a kept Enhance artifact. */
 export function listEnhancedRecordingIds(noteId: string): Promise<string[]> {
   return apiClient
     .getRaw<unknown>(`${ME_PREFIX}/enhanced-recordings`, { noteId })
-    .then((response) => EnhancedRecordingsResponseSchema.parse(response).result.recordingIds);
+    .then((response) => EnhancedRecordingsResponseSchema.parse(response).recordingIds);
 }
 
 export function mutateTitleRun(action: "apply" | "undo", runId: string) {

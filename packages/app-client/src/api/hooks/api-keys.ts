@@ -36,8 +36,6 @@ export function useCreateApiKey() {
   return useMutation({
     // The page renders the create error inline in the dialog.
     meta: { suppressErrorToast: true },
-    // postRaw, NOT post: the create response is un-enveloped ({ key, ... } at
-    // the top level), so apiClient.post (which unwraps `.result`) would drop it.
     mutationFn: async (input: CreateApiKeyInput) =>
       CreatedApiKeySchema.parse(await apiClient.postRaw<unknown>(`${ME_PREFIX}/api-keys`, input)),
     onSuccess: () => qc.invalidateQueries({ queryKey: apiKeysKey }),

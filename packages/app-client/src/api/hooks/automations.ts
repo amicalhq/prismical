@@ -50,7 +50,7 @@ export function useAutomation(id: string | null) {
     queryFn: async () =>
       AutomationResponseSchema.parse(
         await apiClient.getRaw<unknown>(`${ME_PREFIX}/automations/${id}`),
-      ).result,
+      ),
   });
 }
 
@@ -62,7 +62,7 @@ export function useCreateAutomation() {
     mutationFn: async (input: AutomationInput) =>
       CreatedAutomationResponseSchema.parse(
         await apiClient.postRaw<unknown>(`${ME_PREFIX}/automations`, input),
-      ).result,
+      ),
     onSuccess: () => qc.invalidateQueries({ queryKey: automationsKey, exact: true }),
   });
 }
@@ -80,7 +80,7 @@ export function useUpdateAutomation(opts?: { silent?: boolean }) {
     mutationFn: async ({ id, patch }: { id: string; patch: Partial<AutomationInput> }) =>
       AutomationResponseSchema.parse(
         await apiClient.patchRaw<unknown>(`${ME_PREFIX}/automations/${id}`, patch),
-      ).result,
+      ),
     onSuccess: (updated) => {
       qc.setQueryData<Automation[]>(automationsKey, (prev) =>
         prev?.map((a) => (a.id === updated.id ? { ...a, ...updated } : a)),
@@ -127,7 +127,7 @@ export function useRetryAutomationRun(automationId: string) {
     mutationFn: async (runId: string) =>
       AutomationRunResponseSchema.parse(
         await apiClient.postRaw<unknown>(`${ME_PREFIX}/automation-runs/${runId}/retry`, {}),
-      ).result,
+      ),
     onSuccess: () => qc.invalidateQueries({ queryKey: automationRunsKey(automationId) }),
   });
 }
@@ -142,7 +142,7 @@ export function useAutomationSecret(id: string | null, enabled: boolean) {
     queryFn: async () =>
       AutomationSecretResponseSchema.parse(
         await apiClient.getRaw<unknown>(`${ME_PREFIX}/automations/${id}/secret`),
-      ).result,
+      ),
   });
 }
 
@@ -153,7 +153,7 @@ export function useRotateAutomationSecret(id: string) {
     mutationFn: async () =>
       AutomationSecretResponseSchema.parse(
         await apiClient.postRaw<unknown>(`${ME_PREFIX}/automations/${id}/rotate-secret`, {}),
-      ).result,
+      ),
     onSuccess: (r) => qc.setQueryData(["automations", id, "secret"], r),
   });
 }

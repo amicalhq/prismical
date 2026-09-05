@@ -40,7 +40,7 @@ import { DOCK_CTL, DOCK_SCROLL_BUTTON } from './dock-chrome';
 import { formatSessionTimer } from './note-recording-dock';
 import { Avatar, AvatarFallback } from '../ui/avatar';
 import { UserAvatar } from '../ui/user-avatar';
-import { useSessionView, useViewerProfile } from '@prismical/app-client';
+import { useAutoEnhanceStore, useSessionView, useViewerProfile } from '@prismical/app-client';
 import type { RecState } from '@prismical/app-client';
 import type { TranscriptLine } from '@prismical/app-contracts';
 import { useTranslation } from 'react-i18next';
@@ -63,12 +63,18 @@ export interface RecordingLog {
   time: string;
   durationMs: number | null;
   lines: TranscriptLine[];
+  /** `lines` reflects the server (the transcript query settled), not a pending fetch's []. */
+  linesLoaded?: boolean;
   /** Already folded into the note via a kept Enhance. */
   folded: boolean;
   /** Speaker registry rows, once the finalize pass has minted them. */
   speakers?: RecordingSpeakerInfo[];
   /** Staged audio is being diarized — the "Identifying speakers…" window. */
   identifyingSpeakers?: boolean;
+  /** The settled finalize outcome from recording.meta ('done' | 'failed' | 'skipped' | 'stalled'
+   * for a pass that aged out unfinished), null while unknown. Drives the post-stop bar's final
+   * line: a failed or stalled pass is not "Transcript ready". */
+  finalizeStatus?: string | null;
 }
 
 type TranscriptPanelProps = {
@@ -105,6 +111,8 @@ type TranscriptPanelProps = {
   /** Concrete per-error fix (e.g. the platform's mic-permission path), shown
    * before the docs link. Null when the cause has no specific remedy. */
   errorHint?: string | null;
+  /** The server's first recovery action for the error (e.g. "Open AI models"), as a link. */
+  errorAction?: { label: string; onClick: () => void } | null;
   /** Dismiss the surfaced error (the banner's X). */
   onDismissError?: () => void;
   /** Off the recording's note, the live bar offers a jump back. */
@@ -158,6 +166,7 @@ function TranscriptPanelContent({
   onResumeRecording,
   errorText = null,
   errorHint = null,
+  errorAction = null,
   onDismissError,
   onOpenNote,
   finishedRecordingId = null,
@@ -218,11 +227,38 @@ function TranscriptPanelContent({
   const [doneDismissed, setDoneDismissed] = React.useState(false);
   React.useEffect(() => setDoneDismissed(false), [finishedRecordingId]);
   const doneReady = !!finished && !finished.identifyingSpeakers;
+  // What the settled bar says. A diarization pass that FAILED still leaves the live transcript
+  // (labels are what's missing); a failed pass on a recording with no lines (deferred mode,
+  // where that pass IS the transcript) means there is no transcript at all. 'skipped' is not a
+  // failure (a live recording never stages audio), and an empty `lines` only counts once the
+  // transcript query has actually answered - right after stop it is still pending.
+  const doneOutcome: 'ready' | 'noSpeakers' | 'noTranscript' = !finished
+    ? 'ready'
+    : finished.finalizeStatus === 'failed' || finished.finalizeStatus === 'stalled'
+      ? finished.lines.length === 0
+        ? finished.linesLoaded
+          ? 'noTranscript'
+          : 'ready'
+        : finished.finalizeStatus === 'failed'
+          ? 'noSpeakers'
+          : 'ready'
+      : 'ready';
+  // A failed Enhance (auto-on-stop or the chip) must not leave the recording stranded: the chip is
+  // its only retry affordance, and both the click and the hold below dismiss the bar that carries
+  // it. Bring the bar back, and hold it — an error is exactly the case the timer must not eat.
+  // The hold is escapable: while it stands the bar carries an explicit close, which consumes the
+  // marker so the effect below can't re-open what the user just dismissed.
+  const failedRecordingId = useAutoEnhanceStore(s => s.failedRecordingId);
+  const clearFailedRecording = useAutoEnhanceStore(s => s.clearFailed);
+  const enhanceFailed = !!finished && failedRecordingId === finished.id;
   React.useEffect(() => {
-    if (!doneReady || doneDismissed) return;
+    if (enhanceFailed) setDoneDismissed(false);
+  }, [enhanceFailed]);
+  React.useEffect(() => {
+    if (!doneReady || doneDismissed || enhanceFailed) return;
     const id = setTimeout(() => setDoneDismissed(true), 8000);
     return () => clearTimeout(id);
-  }, [doneReady, doneDismissed]);
+  }, [doneReady, doneDismissed, enhanceFailed]);
   const doneMode = !isRecording && recState === 'idle' && !!finished && !doneDismissed;
 
   // The refetch gap right after a stop with no live-line bridge (short/silent
@@ -374,7 +410,7 @@ function TranscriptPanelContent({
                     <MarkerIcon>
                       <Loader2 className="animate-spin" />
                     </MarkerIcon>
-                    <MarkerContent className="shimmer font-medium">
+                    <MarkerContent className="shimmer shimmer-duration-1400 text-dock-ink-3 font-medium">
                       {t('recording.panel.listening')}
                     </MarkerContent>
                   </Marker>
@@ -423,7 +459,7 @@ function TranscriptPanelContent({
                       <MarkerIcon>
                         <Loader2 className="animate-spin" />
                       </MarkerIcon>
-                      <MarkerContent className="text-2xs font-medium">
+                      <MarkerContent className="shimmer shimmer-duration-1400 text-dock-ink-3 text-2xs font-medium">
                         {rec.lines.length === 0
                           ? t('recording.panel.transcribing')
                           : t('recording.panel.identifyingSpeakers')}
@@ -458,6 +494,15 @@ function TranscriptPanelContent({
             {errorText}
             <span className="mt-0.5 block text-[12px] font-normal opacity-90">
               {errorHint ? <>{errorHint} </> : null}
+              {errorAction ? (
+                <button
+                  type="button"
+                  onClick={errorAction.onClick}
+                  className="mr-1 whitespace-nowrap underline underline-offset-2"
+                >
+                  {errorAction.label}
+                </button>
+              ) : null}
               <a
                 href={RECORDING_TROUBLESHOOTING_URL}
                 target="_blank"
@@ -545,7 +590,9 @@ function TranscriptPanelContent({
             <span className="flex pl-1.5 text-dock-ink-2">
               <PxOrbitLoader />
             </span>
-            <span className="shimmer text-[12.5px]">{t('recording.panel.finishing')}</span>
+            <span className="shimmer shimmer-duration-1400 text-dock-ink-3 text-[12.5px]">
+              {t('recording.panel.finishing')}
+            </span>
             <span className="flex-1" />
           </>
         ) : doneMode && finished ? (
@@ -559,15 +606,21 @@ function TranscriptPanelContent({
                 <span className="flex text-dock-ink-2">
                   <PxOrbitLoader />
                 </span>
-                <span className="shimmer text-[12.5px]">
+                <span className="shimmer shimmer-duration-1400 text-dock-ink-3 text-[12.5px]">
                   {finished.lines.length === 0
                     ? t('recording.panel.transcribing')
                     : t('recording.panel.identifyingSpeakers')}
                 </span>
               </>
             ) : (
-              <span className="text-[12.5px] font-medium text-success">
-                {t('recording.panel.transcriptReady')}
+              <span
+                className={`text-[12.5px] font-medium ${doneOutcome === 'ready' ? 'text-success' : 'text-warning'}`}
+              >
+                {doneOutcome === 'noTranscript'
+                  ? t('recording.panel.transcriptionFailed')
+                  : doneOutcome === 'noSpeakers'
+                    ? t('recording.panel.speakerLabelsUnavailable')
+                    : t('recording.panel.transcriptReady')}
               </span>
             )}
             <span className="flex-1" />
@@ -585,6 +638,21 @@ function TranscriptPanelContent({
                   /
                 </span>
                 {t('recording.panel.enhanceChip')}
+              </button>
+            ) : null}
+            {/* Only while a failed run is holding the bar open: the timer is suppressed then, so
+                this is the one way to close an error the user does not want to retry. */}
+            {enhanceFailed ? (
+              <button
+                type="button"
+                onClick={() => {
+                  clearFailedRecording(finished.id);
+                  setDoneDismissed(true);
+                }}
+                aria-label={t('common.actions.close')}
+                className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-dock-ink-3 opacity-70 transition-opacity hover:opacity-100"
+              >
+                <X className="size-3.5" />
               </button>
             ) : null}
           </>

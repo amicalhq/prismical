@@ -41,8 +41,8 @@ interface Props {
  * Floating "run a skill on this selection" popover. Appears over a settled,
  * non-empty selection inside a single textblock; lists enabled skills with the `inline` surface.
  * Clicking one captures the selection (text + Yjs relative anchors + live note markdown) and asks
- * the skill dock to run it in inline-rewrite mode (via useInlineRunStore, so the dock shows its
- * Generating/Stop UX and the result stages as a normal diff candidate).
+ * the dock's skill run bridge to run it in inline-rewrite mode (via useInlineRunStore; the run
+ * shows on the Ask pill / in the Ask thread and the result stages as a normal diff candidate).
  *
  * Hidden while: a run is in flight on this note (any surface), a candidate is staged (the diff is
  * under review), the selection spans blocks, or no inline skills exist. Mounted only when the

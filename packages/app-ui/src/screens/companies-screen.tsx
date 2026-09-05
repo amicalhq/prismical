@@ -22,7 +22,7 @@ export function CompaniesScreen() {
   const { resolvedLocale } = useApplicationLocale();
   const [search, setSearch] = React.useState('');
   const { data, isLoading, error } = useCompanies({ search: useDebouncedValue(search) });
-  const companies = data?.companies ?? [];
+  const companies = data?.results ?? [];
 
   return (
     <div className="mx-auto w-full max-w-4xl">

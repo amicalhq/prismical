@@ -44,7 +44,7 @@ export function usePeople(opts: { search?: string; filter?: PeopleFilter } = {})
       if (filter === "internal") query.internal = "true";
       return apiClient
         .getRaw<unknown>(`${ME_PREFIX}/people`, query)
-        .then((response) => PeopleListResponseSchema.parse(response).result);
+        .then((response) => PeopleListResponseSchema.parse(response));
     },
   });
 }
@@ -54,8 +54,9 @@ export function usePerson(id: string | undefined) {
     queryKey: ["person", id],
     enabled: Boolean(id),
     queryFn: async () =>
-      PersonDetailResponseSchema.parse(await apiClient.getRaw<unknown>(`${ME_PREFIX}/people/${id}`))
-        .result,
+      PersonDetailResponseSchema.parse(
+        await apiClient.getRaw<unknown>(`${ME_PREFIX}/people/${id}`),
+      ),
   });
 }
 
@@ -69,7 +70,7 @@ export function useCompanies(opts: { search?: string } = {}) {
       if (search) query.search = search;
       return apiClient
         .getRaw<unknown>(`${ME_PREFIX}/companies`, query)
-        .then((response) => CompaniesListResponseSchema.parse(response).result);
+        .then((response) => CompaniesListResponseSchema.parse(response));
     },
   });
 }
@@ -81,6 +82,6 @@ export function useCompany(id: string | undefined) {
     queryFn: async () =>
       CompanyDetailResponseSchema.parse(
         await apiClient.getRaw<unknown>(`${ME_PREFIX}/companies/${id}`),
-      ).result,
+      ),
   });
 }

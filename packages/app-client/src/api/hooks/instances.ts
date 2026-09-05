@@ -1,5 +1,6 @@
 "use client";
 
+import type { SyncWriteEnvelope } from "@prismical/api-contracts/apps/v1";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { InstanceModelsResponseSchema } from "@prismical/api-contracts/apps/v1";
 import { apiClient, ME_PREFIX } from "../client";
@@ -29,7 +30,7 @@ export function useInstanceModels(id: string | undefined, enabled: boolean) {
     queryFn: async () =>
       InstanceModelsResponseSchema.parse(
         await apiClient.getRaw<unknown>(`${ME_PREFIX}/instances/${id}/models`),
-      ).models,
+      ).results,
     enabled: Boolean(id) && enabled,
     staleTime: 5 * 60_000,
     refetchOnWindowFocus: false,
@@ -48,7 +49,10 @@ export function useCreateInstance() {
   const qc = useQueryClient();
   return useMutation({
     meta: { errorMessageKey: "common.mutationErrors.providerAdd" },
-    mutationFn: (v: InstanceWrite) => apiClient.post<CoreInstance>(`${ME_PREFIX}/instances`, v),
+    mutationFn: (v: InstanceWrite) =>
+      apiClient
+        .post<SyncWriteEnvelope<CoreInstance>>(`${ME_PREFIX}/instances`, v)
+        .then((response) => response.result),
     onSuccess: () => qc.invalidateQueries({ queryKey: instancesKey }),
   });
 }
@@ -58,7 +62,9 @@ export function useUpdateInstance() {
   return useMutation({
     meta: { errorMessageKey: "common.mutationErrors.providerSave" },
     mutationFn: ({ id, patch }: { id: string; patch: Partial<InstanceWrite> }) =>
-      apiClient.put<CoreInstance>(`${ME_PREFIX}/instances/${id}`, patch),
+      apiClient
+        .put<SyncWriteEnvelope<CoreInstance>>(`${ME_PREFIX}/instances/${id}`, patch)
+        .then((response) => response.result),
     onSuccess: () => qc.invalidateQueries({ queryKey: instancesKey }),
   });
 }

@@ -1,8 +1,7 @@
 import { z } from 'zod';
 import {
   AppsV1DateTimeResponseSchema,
-  AppsV1SuccessResponseSchema,
-  appsV1ResultResponseSchema,
+  AppsV1NoContentResponseSchema,
   appsV1ListResponseSchema,
 } from './common.js';
 
@@ -118,14 +117,13 @@ export const AutomationRunSchema = z
 export type AutomationRun = z.output<typeof AutomationRunSchema>;
 
 export const AutomationListResponseSchema = appsV1ListResponseSchema(AutomationSchema);
-export const AutomationResponseSchema = appsV1ResultResponseSchema(AutomationSchema);
-export const CreatedAutomationResponseSchema = appsV1ResultResponseSchema(CreatedAutomationSchema);
-export const AutomationRunResponseSchema = appsV1ResultResponseSchema(AutomationRunSchema);
-export const AutomationDeleteResponseSchema = AppsV1SuccessResponseSchema;
+export const AutomationResponseSchema = AutomationSchema;
+export const CreatedAutomationResponseSchema = CreatedAutomationSchema;
+export const AutomationRunResponseSchema = AutomationRunSchema;
+export const AutomationDeleteResponseSchema = AppsV1NoContentResponseSchema;
 
 export const AutomationRunsResponseSchema = z
   .object({
-    success: z.literal(true),
     results: z.array(AutomationRunSchema),
     hasMore: z.boolean(),
     nextBefore: z.iso.datetime().nullable(),
@@ -135,4 +133,4 @@ export const AutomationRunsResponseSchema = z
 export type AutomationRunsResponse = z.output<typeof AutomationRunsResponseSchema>;
 
 export const AutomationSecretSchema = z.object({ secret: z.string().min(1) }).strip();
-export const AutomationSecretResponseSchema = appsV1ResultResponseSchema(AutomationSecretSchema);
+export const AutomationSecretResponseSchema = AutomationSecretSchema;
