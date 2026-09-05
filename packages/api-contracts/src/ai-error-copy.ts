@@ -22,7 +22,7 @@ import {
  * user-fixable cause names the fix. Provider names are proper nouns and stay untranslated.
  */
 
-type Entry = { title: string; body?: string };
+type Entry = { title: string; body?: string; localBody?: string };
 
 interface Copy {
   keyInvalid: Entry;
@@ -75,14 +75,17 @@ export type AiErrorCopyLocale = (typeof AI_ERROR_COPY_LOCALES)[number];
 
 const en: Copy = {
   keyInvalid: {
+    localBody: 'Update it in Settings.',
     title: 'Your {{provider}} key was rejected.',
     body: 'Update it in Settings, or use Prismical Cloud for now.',
   },
   keyMissing: {
+    localBody: 'Add one in Settings.',
     title: 'No API key is saved for {{provider}}.',
     body: 'Add one in Settings, or use Prismical Cloud for now.',
   },
   quotaExceeded: {
+    localBody: 'Top it up with {{provider}}.',
     title: 'Your {{provider}} account is out of credit.',
     body: 'Top it up with {{provider}}, or use Prismical Cloud for now.',
   },
@@ -113,6 +116,7 @@ const en: Copy = {
     body: 'Try again in a few minutes.',
   },
   notConfigured: {
+    localBody: 'Add an API key or connect a local runtime in Settings → AI models.',
     title: 'AI isn’t set up for this workspace yet.',
     body: 'Add your own API key in Settings to keep working.',
   },
@@ -121,6 +125,7 @@ const en: Copy = {
     body: 'Pick another model in Settings.',
   },
   instanceNotFound: {
+    localBody: 'Pick another model in Settings.',
     title: 'The AI provider you chose was removed.',
     body: 'Pick another model in Settings, or use Prismical Cloud.',
   },
@@ -221,14 +226,17 @@ const en: Copy = {
 
 const de: Copy = {
   keyInvalid: {
+    localBody: 'Aktualisiere ihn in den Einstellungen.',
     title: 'Dein {{provider}}-Schlüssel wurde abgelehnt.',
     body: 'Aktualisiere ihn in den Einstellungen oder nutze vorerst Prismical Cloud.',
   },
   keyMissing: {
+    localBody: 'Füge einen in den Einstellungen hinzu.',
     title: 'Für {{provider}} ist kein API-Schlüssel gespeichert.',
     body: 'Füge einen in den Einstellungen hinzu oder nutze vorerst Prismical Cloud.',
   },
   quotaExceeded: {
+    localBody: 'Lade es bei {{provider}} auf.',
     title: 'Dein {{provider}}-Konto hat kein Guthaben mehr.',
     body: 'Lade es bei {{provider}} auf oder nutze vorerst Prismical Cloud.',
   },
@@ -265,6 +273,8 @@ const de: Copy = {
     body: 'Versuche es in ein paar Minuten erneut.',
   },
   notConfigured: {
+    localBody:
+      'Füge unter Einstellungen → KI-Modelle einen API-Schlüssel hinzu oder verbinde eine lokale Laufzeit.',
     title: 'KI ist für diesen Arbeitsbereich noch nicht eingerichtet.',
     body: 'Füge in den Einstellungen deinen eigenen API-Schlüssel hinzu, um weiterzuarbeiten.',
   },
@@ -273,6 +283,7 @@ const de: Copy = {
     body: 'Wähle in den Einstellungen ein anderes Modell.',
   },
   instanceNotFound: {
+    localBody: 'Wähle in den Einstellungen ein anderes Modell.',
     title: 'Der gewählte KI-Anbieter wurde entfernt.',
     body: 'Wähle in den Einstellungen ein anderes Modell oder nutze Prismical Cloud.',
   },
@@ -376,14 +387,17 @@ const de: Copy = {
 
 const es: Copy = {
   keyInvalid: {
+    localBody: 'Actualízala en Ajustes.',
     title: 'Tu clave de {{provider}} fue rechazada.',
     body: 'Actualízala en Ajustes o usa Prismical Cloud por ahora.',
   },
   keyMissing: {
+    localBody: 'Añade una en Ajustes.',
     title: 'No hay ninguna clave de API guardada para {{provider}}.',
     body: 'Añade una en Ajustes o usa Prismical Cloud por ahora.',
   },
   quotaExceeded: {
+    localBody: 'Recárgala en {{provider}}.',
     title: 'Tu cuenta de {{provider}} se quedó sin crédito.',
     body: 'Recárgala en {{provider}} o usa Prismical Cloud por ahora.',
   },
@@ -417,6 +431,7 @@ const es: Copy = {
     body: 'Inténtalo de nuevo en unos minutos.',
   },
   notConfigured: {
+    localBody: 'Añade una clave de API o conecta un motor local en Ajustes → Modelos de IA.',
     title: 'La IA aún no está configurada para este espacio de trabajo.',
     body: 'Añade tu propia clave de API en Ajustes para seguir trabajando.',
   },
@@ -425,6 +440,7 @@ const es: Copy = {
     body: 'Elige otro modelo en Ajustes.',
   },
   instanceNotFound: {
+    localBody: 'Elige otro modelo en Ajustes.',
     title: 'El proveedor de IA que elegiste fue eliminado.',
     body: 'Elige otro modelo en Ajustes o usa Prismical Cloud.',
   },
@@ -528,14 +544,17 @@ const es: Copy = {
 
 const ja: Copy = {
   keyInvalid: {
+    localBody: '設定で更新してください。',
     title: '{{provider}}のキーが拒否されました。',
     body: '設定で更新するか、当面は Prismical Cloud を使ってください。',
   },
   keyMissing: {
+    localBody: '設定で追加してください。',
     title: '{{provider}}のAPIキーが保存されていません。',
     body: '設定で追加するか、当面は Prismical Cloud を使ってください。',
   },
   quotaExceeded: {
+    localBody: '{{provider}}でチャージしてください。',
     title: '{{provider}}アカウントのクレジットが不足しています。',
     body: '{{provider}}でチャージするか、当面は Prismical Cloud を使ってください。',
   },
@@ -569,6 +588,7 @@ const ja: Copy = {
     body: '数分後にもう一度お試しください。',
   },
   notConfigured: {
+    localBody: '設定 → AIモデルでAPIキーを追加するか、ローカルランタイムに接続してください。',
     title: 'このワークスペースではAIがまだ設定されていません。',
     body: '設定で自分のAPIキーを追加すると続行できます。',
   },
@@ -577,6 +597,7 @@ const ja: Copy = {
     body: '設定で別のモデルを選んでください。',
   },
   instanceNotFound: {
+    localBody: '設定で別のモデルを選んでください。',
     title: '選択したAIプロバイダーは削除されました。',
     body: '設定で別のモデルを選ぶか、Prismical Cloud を使ってください。',
   },
@@ -692,14 +713,17 @@ const ja: Copy = {
 
 const zhTW: Copy = {
   keyInvalid: {
+    localBody: '請到設定更新。',
     title: '你的 {{provider}} 金鑰被拒絕。',
     body: '請到設定更新，或暫時改用 Prismical Cloud。',
   },
   keyMissing: {
+    localBody: '請到設定新增。',
     title: '尚未儲存 {{provider}} 的 API 金鑰。',
     body: '請到設定新增，或暫時改用 Prismical Cloud。',
   },
   quotaExceeded: {
+    localBody: '請到 {{provider}} 儲值。',
     title: '你的 {{provider}} 帳戶額度已用完。',
     body: '請到 {{provider}} 儲值，或暫時改用 Prismical Cloud。',
   },
@@ -730,6 +754,7 @@ const zhTW: Copy = {
     body: '請幾分鐘後再試。',
   },
   notConfigured: {
+    localBody: '請到設定 → AI 模型新增 API 金鑰，或連接本機執行環境。',
     title: '這個工作區尚未設定 AI。',
     body: '請到設定新增你自己的 API 金鑰以繼續使用。',
   },
@@ -738,6 +763,7 @@ const zhTW: Copy = {
     body: '請到設定選擇其他模型。',
   },
   instanceNotFound: {
+    localBody: '請到設定選擇其他模型。',
     title: '你選擇的 AI 供應商已被移除。',
     body: '請到設定選擇其他模型，或改用 Prismical Cloud。',
   },
@@ -865,6 +891,8 @@ export interface DescribeAiErrorInput {
   locale?: string | null;
   /** `skill` (a skill run, incl. naming), `ask` (Ask AI), `transcription`. */
   surface: 'skill' | 'ask' | 'transcription';
+  /** Local mode cannot offer a Cloud fallback. Defaults to true. */
+  cloudAvailable?: boolean;
   /** The skill's display name, for `{{name}}`. */
   skillName?: string;
   /**
@@ -894,18 +922,21 @@ export function describeAiError(input: DescribeAiErrorInput): AiUserError {
   const act = (...kinds: AiErrorActionKind[]): AiErrorAction[] =>
     kinds
       // "Use Prismical Cloud" only makes sense when the failing call ran on the user's own key.
-      .filter(k => k !== 'use-cloud' || byok)
+      .filter(k => k !== 'use-cloud' || (byok && input.cloudAvailable !== false))
       .map(kind => ({ kind, label: copy.actions[kind] }));
   const pick = (
     entry: Entry,
     severity: AiUserErrorSeverity,
     actions: AiErrorAction[] = []
-  ): AiUserError => ({
-    title: interpolate(entry.title, params),
-    ...(entry.body ? { body: interpolate(entry.body, params) } : {}),
-    severity,
-    actions,
-  });
+  ): AiUserError => {
+    const body = input.cloudAvailable === false ? (entry.localBody ?? entry.body) : entry.body;
+    return {
+      title: interpolate(entry.title, params),
+      ...(body ? { body: interpolate(body, params) } : {}),
+      severity,
+      actions,
+    };
+  };
   const isAsk = input.surface === 'ask';
   const isTranscription = input.surface === 'transcription';
 

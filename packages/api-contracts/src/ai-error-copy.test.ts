@@ -59,6 +59,37 @@ describe('describeAiError', () => {
     expect(d.actions.map(a => a.kind)).toEqual(['retry']);
   });
 
+  it('local recovery copy and actions never suggest Cloud, in every locale', () => {
+    for (const locale of AI_ERROR_COPY_LOCALES) {
+      for (const code of [
+        'PROVIDER_KEY_INVALID',
+        'PROVIDER_KEY_MISSING',
+        'PROVIDER_QUOTA_EXCEEDED',
+        'PROVIDER_MODEL_NOT_FOUND',
+        'INSTANCE_NOT_FOUND',
+        'MODEL_NOT_CONFIGURED',
+      ]) {
+        const description = describeAiError({
+          code,
+          locale,
+          surface: 'ask',
+          cloudAvailable: false,
+          details: { lane: 'your-key', provider: 'openai' },
+        });
+        expect(description.title + description.body).not.toContain('Prismical Cloud');
+        expect(description.actions.map(action => action.kind)).not.toContain('use-cloud');
+        expect(description.actions.length).toBeGreaterThan(0);
+      }
+    }
+    expect(
+      describeAiError({
+        code: 'MODEL_NOT_CONFIGURED',
+        surface: 'ask',
+        cloudAvailable: false,
+      }).body
+    ).toContain('local runtime');
+  });
+
   it('turns the reasoning-budget overrun into actionable copy with no Retry', () => {
     const d = describeAiError({
       code: 'OUTPUT_TOO_LONG',
