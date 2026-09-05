@@ -21,6 +21,8 @@ import {
   SUBMIT_OUTPUT_TOOL,
 } from '@prismical/ai-prompts';
 import type { TransportResponse } from '@prismical/desktop-contracts';
+import { parseAskStreamError } from '@prismical/api-contracts';
+import type { SupportedLocale } from '@prismical/app-i18n';
 import { createId } from '@prismical/id';
 import { LocalBackendLive } from '../../src/main/domains/local-backend/live';
 import { toMatchExpression } from '../../src/main/domains/local-backend/search';
@@ -32,7 +34,7 @@ import * as schema from '../../src/main/infra/product-db/schema';
 import { ProductDb, type ProductDbService } from '../../src/main/infra/product-db/service';
 import type { ToolSupport } from '../../src/main/domains/ai-provider/service';
 import { fakeAiProviderLayer } from '../helpers/fake-workspace-env';
-import { makeTestLogger, testConfigLayer } from '../helpers/test-layers';
+import { makeTestLogger, testConfigLayer, testI18nLayer } from '../helpers/test-layers';
 
 const tempDir = mkdtempSync(path.join(tmpdir(), 'prismical-local-ai-lanes-'));
 let dbSeq = 0;
@@ -148,13 +150,18 @@ interface Harness {
   readonly logger: ReturnType<typeof makeTestLogger>;
 }
 
-const buildWith = (model: LanguageModel | undefined, toolSupport?: ToolSupport) =>
+const buildWith = (
+  model: LanguageModel | undefined,
+  toolSupport?: ToolSupport,
+  locale: SupportedLocale = 'en'
+) =>
   Effect.gen(function* () {
     dbSeq += 1;
     const logger = makeTestLogger();
     const env = Layer.mergeAll(
       testConfigLayer({ localDbPath: path.join(tempDir, `lanes-${dbSeq}.db`) }),
       logger.layer,
+      testI18nLayer(locale),
       WorkspaceTransportLive,
       fakeAiProviderLayer(
         model === undefined
@@ -954,6 +961,81 @@ describe('artifact lanes', () => {
 describe('Ask stream', () => {
   const readAll = (response: Response) => Effect.promise(() => response.text());
 
+  const failureOf = (sse: string) => {
+    const parts = sse
+      .split('\n')
+      .filter(line => line.startsWith('data: {'))
+      .map(line => JSON.parse(line.slice(6)) as { type: string; errorText?: string });
+    const parsed = parseAskStreamError(parts.find(part => part.type === 'error')?.errorText);
+    assert.isNotNull(parsed);
+    return parsed!.prismicalError;
+  };
+
+  it.effect('missing configuration is localized and offers only local recovery', () =>
+    Effect.gen(function* () {
+      const { api, scope } = yield* buildWith(undefined, undefined, 'de');
+      const response = yield* api.openAskStream({ messages: [{ role: 'user', content: 'hi' }] });
+      const sse = yield* readAll(response);
+      const failure = failureOf(sse);
+      assert.strictEqual(failure.code, 'MODEL_NOT_CONFIGURED');
+      assert.strictEqual(
+        failure.details?.user?.title,
+        'KI ist für diesen Arbeitsbereich noch nicht eingerichtet.'
+      );
+      assert.deepStrictEqual(
+        failure.details?.user?.actions.map(action => action.kind),
+        ['open-ai-models']
+      );
+      assert.notInclude(sse, 'Prismical Cloud');
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+
+  for (const [status, message, code, action, retryable] of [
+    [401, 'PRIVATE_KEY', 'PROVIDER_KEY_INVALID', 'open-ai-models', false],
+    [402, 'PRIVATE_BILLING', 'PROVIDER_QUOTA_EXCEEDED', 'open-ai-models', false],
+    [404, 'PRIVATE_MODEL', 'PROVIDER_MODEL_NOT_FOUND', 'choose-model', false],
+    [429, 'PRIVATE_RATE', 'PROVIDER_RATE_LIMITED', 'retry', true],
+    [503, 'PRIVATE_OUTAGE', 'PROVIDER_UNAVAILABLE', 'retry', true],
+  ] as const) {
+    it.effect(`classifies local provider ${status} errors without exposing provider prose`, () =>
+      Effect.gen(function* () {
+        const error = new APICallError({
+          message,
+          url: 'https://provider.test',
+          requestBodyValues: {},
+          statusCode: status,
+          responseBody: message,
+          responseHeaders: { 'retry-after': '7' },
+        });
+        const model = new MockLanguageModelV4({
+          modelId: 'fake',
+          doStream: async () =>
+            ({
+              stream: simulateReadableStream({ chunks: [{ type: 'error', error }] }),
+            }) as Any,
+        });
+        const { api, scope } = yield* build(model);
+        const response = yield* api.openAskStream({ messages: [{ role: 'user', content: 'hi' }] });
+        const sse = yield* readAll(response);
+        const failure = failureOf(sse);
+        assert.strictEqual(failure.code, code);
+        assert.strictEqual(failure.details?.lane, 'your-key');
+        assert.strictEqual(failure.details?.provider, 'openai');
+        assert.strictEqual(failure.details?.model, 'fake');
+        assert.strictEqual(failure.details?.retryable, retryable);
+        assert.deepStrictEqual(
+          failure.details?.user?.actions.map(a => a.kind),
+          [action]
+        );
+        assert.notInclude(sse, 'PRIVATE_');
+        assert.notInclude(sse, 'Prismical Cloud');
+        if (status === 429) assert.strictEqual(failure.details?.retryAfterMs, 7000);
+        yield* Scope.close(scope, Exit.void);
+      })
+    );
+  }
+
   it.effect('streams the answer as UI-message SSE and persists the turn under the conversation', () =>
     Effect.gen(function* () {
       const { api, product, scope } = yield* build(streamingModel(['Hello from local.']));
@@ -1047,7 +1129,8 @@ describe('Ask stream', () => {
       const response = yield* api.openAskStream({ messages: [] });
       const sse = yield* readAll(response);
       assert.include(sse, '"type":"error"');
-      assert.include(sse, 'Invalid request');
+      assert.strictEqual(failureOf(sse).code, 'ASK_REQUEST_FAILED');
+      assert.strictEqual(failureOf(sse).details?.retryable, false);
       yield* Scope.close(scope, Exit.void);
     })
   );

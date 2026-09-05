@@ -25,6 +25,11 @@ import {
   TestClock,
 } from 'effect';
 import { afterEach, vi } from 'vitest';
+import {
+  describeAiError,
+  encodeAskStreamError,
+  parseAskStreamError,
+} from '@prismical/api-contracts';
 import type { TransportRequest, TransportResponse } from '@prismical/desktop-contracts';
 import {
   makeTestLogger,
@@ -293,6 +298,7 @@ describe('makeWorkspaceBackendRequest (header + URL stamping)', () => {
 const runOpen = (opts: {
   readonly fetchFn: FetchLike;
   readonly body?: unknown;
+  readonly locale?: string;
   readonly identity?: RequestIdentity;
   readonly resolveIdentity?: Effect.Effect<
     RequestIdentity,
@@ -301,6 +307,7 @@ const runOpen = (opts: {
 }): Effect.Effect<Response, AskStreamError> =>
   makeOpenAskStream({
     coreApiUrl: 'https://core.test',
+    locale: opts.locale,
     fetchFn: opts.fetchFn,
     resolveIdentity: opts.resolveIdentity ?? Effect.succeed(opts.identity ?? DEFAULT_IDENTITY),
   })(opts.body ?? { messages: [] });
@@ -308,6 +315,21 @@ const runOpen = (opts: {
 const sseResponse = (): Response =>
   new Response('data: {"type":"start"}\n\n', {
     headers: { 'content-type': 'text/event-stream' },
+  });
+
+const readAskFailure = (response: Response) =>
+  Effect.promise(async () => {
+    const sse = await response.text();
+    const parts = sse
+      .split('\n')
+      .filter(line => line.startsWith('data: {'))
+      .map(line => JSON.parse(line.slice(6)) as { type: string; errorText?: string });
+    const errorText = parts.find(part => part.type === 'error')?.errorText;
+    assert.isString(errorText);
+    assert.notInclude(errorText!, 'PRIVATE_');
+    const parsed = parseAskStreamError(errorText);
+    assert.isNotNull(parsed);
+    return parsed!.prismicalError;
   });
 
 describe('makeOpenAskStream (Ask lane)', () => {
@@ -318,6 +340,7 @@ describe('makeOpenAskStream (Ask lane)', () => {
       const res = yield* runOpen({
         fetchFn,
         identity: { idToken: 'ASK-TOKEN', activeOrgId: 'org_7' },
+        locale: 'de',
         body,
       });
       assert.strictEqual(calls.length, 1);
@@ -327,6 +350,9 @@ describe('makeOpenAskStream (Ask lane)', () => {
       assert.strictEqual(calls[0].headers['x-active-org-id'], 'org_7');
       assert.strictEqual(calls[0].headers['Content-Type'], 'application/json');
       assert.strictEqual(calls[0].headers['Accept'], 'text/event-stream');
+      assert.strictEqual(calls[0].headers['x-prismical-ask-error-format'], 'envelope');
+      assert.strictEqual(calls[0].headers['x-prismical-locale'], 'de');
+      assert.strictEqual(calls[0].headers['Accept-Language'], 'de');
       assert.strictEqual(calls[0].body, JSON.stringify(body));
       // The raw SSE Response is handed back untouched (the broker forwards it).
       assert.strictEqual(res.headers.get('content-type'), 'text/event-stream');
@@ -357,12 +383,78 @@ describe('makeOpenAskStream (Ask lane)', () => {
     })
   );
 
-  it.effect('a connect failure → AskStreamError(connect)', () =>
+  it.effect('a connection failure becomes a localized envelope error part', () =>
     Effect.gen(function* () {
       const { fetchFn } = recordingFetch(() => Promise.reject(new Error('ECONNREFUSED')));
-      const error = yield* runOpen({ fetchFn }).pipe(Effect.flip);
-      assert.strictEqual(error._tag, 'AskStreamError');
-      assert.strictEqual(error.reason, 'connect');
+      const response = yield* runOpen({ fetchFn, locale: 'de' });
+      const failure = yield* readAskFailure(response);
+      assert.strictEqual(failure.code, 'ASK_REQUEST_FAILED');
+      assert.strictEqual(failure.details?.user?.title, 'Ask AI konnte nicht antworten.');
+      assert.deepStrictEqual(
+        failure.details?.user?.actions.map(action => action.kind),
+        ['retry']
+      );
+    })
+  );
+
+  it.effect('preserves a core pre-stream error envelope and its recovery actions over SSE', () =>
+    Effect.gen(function* () {
+      const details = {
+        lane: 'your-key' as const,
+        provider: 'openai',
+        retryable: false,
+        user: describeAiError({
+          code: 'PROVIDER_KEY_INVALID',
+          details: { lane: 'your-key', provider: 'openai' },
+          locale: 'ja',
+          surface: 'ask',
+        }),
+      };
+      const { fetchFn } = recordingFetch(() =>
+        Promise.resolve(
+          jsonResponse(
+            {
+              error: { code: 'PROVIDER_KEY_INVALID', message: 'PRIVATE_PROVIDER_PROSE', details },
+            },
+            422
+          )
+        )
+      );
+      const response = yield* runOpen({ fetchFn });
+      assert.strictEqual(response.status, 200);
+      assert.include(response.headers.get('content-type') ?? '', 'text/event-stream');
+      assert.deepStrictEqual(yield* readAskFailure(response), {
+        code: 'PROVIDER_KEY_INVALID',
+        details,
+      });
+    })
+  );
+
+  it.effect('an HTML gateway failure produces safe fallback copy', () =>
+    Effect.gen(function* () {
+      const { fetchFn } = recordingFetch(() =>
+        Promise.resolve(new Response('<html>PRIVATE_GATEWAY_DETAIL</html>', { status: 502 }))
+      );
+      const failure = yield* readAskFailure(yield* runOpen({ fetchFn }));
+      assert.strictEqual(failure.code, 'ASK_REQUEST_FAILED');
+      assert.strictEqual(failure.details?.user?.title, 'Ask AI couldn’t answer.');
+    })
+  );
+
+  it.effect('core streaming envelopes pass through byte-for-byte', () =>
+    Effect.gen(function* () {
+      const wire =
+        'data: ' +
+        JSON.stringify({
+          type: 'error',
+          errorText: encodeAskStreamError('PROVIDER_RATE_LIMITED', { retryAfterMs: 7000 }),
+        }) +
+        '\n\n';
+      const upstream = new Response(wire, { headers: { 'content-type': 'text/event-stream' } });
+      const { fetchFn } = recordingFetch(() => Promise.resolve(upstream));
+      const response = yield* runOpen({ fetchFn });
+      assert.strictEqual(response, upstream);
+      assert.strictEqual(yield* Effect.promise(() => response.text()), wire);
     })
   );
 });

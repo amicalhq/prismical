@@ -7,12 +7,16 @@
  * (search.ts); `get_note` serves the markdown projection; ACL reduces to
  * "not trashed, not deleted". A conversation id persists the turn like core.
  */
+import {
+  AI_ERROR_CODES,
+  describeAiError,
+  encodeAskStreamError,
+  type AiErrorDetails,
+} from '@prismical/api-contracts';
 import { desc, eq, inArray } from 'drizzle-orm';
 import {
   APICallError,
   convertToModelMessages,
-  createUIMessageStream,
-  createUIMessageStreamResponse,
   isStepCount,
   streamText,
   tool,
@@ -32,18 +36,21 @@ import {
   ASK_SEARCH_NOTES_SPEC,
   ASK_SNIPPET_CHARS,
   askStepBudget,
+  classifyProviderError,
   buildAskSystemPrompt,
   type AskGetNoteResult,
   type AskSearchResult,
   type FocusNote,
 } from '@prismical/ai-prompts';
 import type Database from 'better-sqlite3';
+import { askErrorResponse } from '../transport/ask-error';
 import * as schema from '../../infra/product-db/schema';
 import type { LocalAiPort } from './ai-port';
 import { searchNotes, type SearchScope } from './search';
 import { describeDbError, ok, type LocalDb, type RouteResult } from './wire';
 
 export interface AskDeps {
+  readonly locale: string;
   readonly db: LocalDb;
   readonly client: Database.Database;
   readonly ai: LocalAiPort;
@@ -134,17 +141,23 @@ export async function appendTurn(
 
 // ── POST /me/ask (the stream producer) ─────────────────────────────────────
 
-const errorResponse = (errorText: string): Response =>
-  createUIMessageStreamResponse({
-    stream: createUIMessageStream({
-      execute: ({ writer }) => {
-        writer.write({ type: 'error', errorText });
-      },
-    }),
+const localErrorText = (locale: string, code: string, details: AiErrorDetails = {}): string => {
+  const localDetails: AiErrorDetails = { ...details, lane: 'your-key' };
+  const user = describeAiError({
+    code,
+    details: localDetails,
+    locale,
+    surface: 'ask',
+    cloudAvailable: false,
   });
+  return encodeAskStreamError(code, {
+    ...localDetails,
+    user,
+  });
+};
 
-const NOT_CONFIGURED_TEXT =
-  'Ask AI needs an AI provider. Add an API key or connect a local runtime under Settings → AI models.';
+export const localAskRequestFailure = (locale: string): Response =>
+  askErrorResponse(localErrorText(locale, AI_ERROR_CODES.ASK_REQUEST_FAILED, { retryable: true }));
 
 const loadFocusNotes = async (db: LocalDb, ids: ReadonlyArray<string>): Promise<FocusNote[]> => {
   if (ids.length === 0) return [];
@@ -228,17 +241,23 @@ export async function openLocalAskStream(
   /** The broker's producer-fiber interruption (Stop, port close, scope close). */
   signal?: AbortSignal
 ): Promise<Response> {
+  const errorResponse = (code: string, details: AiErrorDetails = {}): Response =>
+    askErrorResponse(localErrorText(deps.locale, code, details));
   const parsed = AskRequestSchema.safeParse(body);
-  if (!parsed.success) return errorResponse('Invalid request.');
+  if (!parsed.success)
+    return errorResponse(AI_ERROR_CODES.ASK_REQUEST_FAILED, { retryable: false });
   const { messages, scope, conversationId, instanceId, modelId } = parsed.data;
 
   const resolved = await deps.ai.resolve({ instanceId, modelId });
   if (!resolved.ok) {
     deps.log('ask: provider unavailable', { reason: resolved.error.reason });
     return errorResponse(
-      resolved.error.reason === 'not-configured'
-        ? NOT_CONFIGURED_TEXT
-        : 'The selected AI model is not available. Pick another model.'
+      {
+        'not-configured': AI_ERROR_CODES.MODEL_NOT_CONFIGURED,
+        'unknown-instance': AI_ERROR_CODES.INSTANCE_NOT_FOUND,
+        'model-required': AI_ERROR_CODES.MODEL_SELECTION_INVALID,
+      }[resolved.error.reason],
+      { provider: resolved.error.provider ?? undefined, model: modelId, retryable: false }
     );
   }
   const { model, provider, modelId: resolvedModelId, toolSupport } = resolved.value;
@@ -265,17 +284,16 @@ export async function openLocalAskStream(
         parts: (m.parts ?? [{ type: 'text', text: m.content }]) as UIMessage['parts'],
       })) as UIMessage[];
       modelMessages = await convertToModelMessages(ui, { tools, ignoreIncompleteToolCalls: true });
-    } catch (error) {
-      return errorResponse(
-        `Malformed message parts: ${error instanceof Error ? error.message : String(error)}`
-      );
+    } catch {
+      return errorResponse(AI_ERROR_CODES.ASK_REQUEST_FAILED, { retryable: false });
     }
   } else {
     modelMessages = messages.map(m => ({ role: m.role, content: m.content })) as ModelMessage[];
   }
 
   const ac = new AbortController();
-  if (signal?.aborted) return errorResponse('Cancelled.');
+  if (signal?.aborted)
+    return errorResponse(AI_ERROR_CODES.ASK_REQUEST_FAILED, { retryable: false });
   signal?.addEventListener('abort', () => ac.abort(), { once: true });
   const result = streamText({
     model,
@@ -305,10 +323,18 @@ export async function openLocalAskStream(
   const response = result.toUIMessageStreamResponse({
     sendReasoning: false,
     // The message the renderer shows; provider detail stays in main.log.
-    onError: () => 'The AI provider returned an error. Check your key, model and connection.',
+    onError: error => {
+      const failure = classifyProviderError(error);
+      return localErrorText(deps.locale, failure?.code ?? AI_ERROR_CODES.ASK_REQUEST_FAILED, {
+        provider,
+        model: resolvedModelId,
+        retryable: failure?.retryable ?? true,
+        ...(failure?.retryAfterMs !== undefined ? { retryAfterMs: failure.retryAfterMs } : {}),
+      });
+    },
   });
   const upstream = response.body;
-  if (upstream === null) return errorResponse('Ask AI stream unavailable.');
+  if (upstream === null) return localAskRequestFailure(deps.locale);
   const reader = upstream.getReader();
   const piped = new ReadableStream<Uint8Array>({
     async pull(controller) {

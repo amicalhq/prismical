@@ -25,7 +25,7 @@ import {
 } from '@prismical/api-contracts/apps/v1';
 import { createId } from '@prismical/id';
 import { fakeAiProviderLayer } from '../helpers/fake-workspace-env';
-import { makeTestLogger, testConfigLayer } from '../helpers/test-layers';
+import { makeTestLogger, testConfigLayer, testI18nLayer } from '../helpers/test-layers';
 import { SYSTEM_SKILLS } from '@prismical/ai-prompts';
 import { AuthStateError } from '../../src/main/domains/auth/service';
 import { LocalBackendLive } from '../../src/main/domains/local-backend/live';
@@ -50,6 +50,7 @@ const buildBackend = Effect.gen(function* () {
   const env = Layer.mergeAll(
     testConfigLayer({ localDbPath: path.join(tempDir, `local-backend-${dbSeq}.db`) }),
     logger.layer,
+    testI18nLayer(),
     WorkspaceTransportLive,
     fakeAiProviderLayer()
   );
@@ -282,7 +283,7 @@ describe('LocalBackendLive', () => {
       const response = yield* api.openAskStream({ messages: [{ role: 'user', content: 'hi' }] });
       const text = yield* Effect.promise(() => response.text());
       assert.include(text, '"type":"error"');
-      assert.include(text, 'Ask AI needs an AI provider');
+      assert.include(text, 'MODEL_NOT_CONFIGURED');
       // WorkspaceTransport folds this to None → the renderer sees null.
       const collab = failureOf(yield* Effect.exit(api.collabToken));
       assert.instanceOf(collab, AuthStateError);

@@ -29,7 +29,6 @@ import { ProductDb, ProductDbError } from '../../infra/product-db/service';
 import { AiProvider } from '../ai-provider/service';
 import { AuthStateError } from '../auth/service';
 import {
-  AskStreamError,
   WorkspaceBackend,
   WorkspaceTransport,
   type RecordingLaneResult,
@@ -37,7 +36,8 @@ import {
   type WorkspaceBackendApi,
 } from '../transport/service';
 import { makeLocalAiPort } from './ai-port';
-import { openLocalAskStream } from './ask';
+import { DesktopI18n } from '../i18n/service';
+import { localAskRequestFailure, openLocalAskStream } from './ask';
 import { handleLocalRequest, type LocalRouteContext } from './router';
 import { seedSystemSkills } from './skills';
 import { describeDbError } from './wire';
@@ -75,7 +75,7 @@ const makeSerialLock = (): (<T>(work: () => Promise<T>) => Promise<T>) => {
 export const LocalBackendLive: Layer.Layer<
   WorkspaceBackend,
   never,
-  ProductDb | MainLogger | WorkspaceTransport | AiProvider
+  ProductDb | MainLogger | WorkspaceTransport | AiProvider | DesktopI18n
 > = Layer.scoped(
   WorkspaceBackend,
   Effect.gen(function* () {
@@ -85,6 +85,7 @@ export const LocalBackendLive: Layer.Layer<
     const unsafeLog = logger.scopedUnsafe('local-backend');
     const coreTransport = yield* WorkspaceTransport;
     const aiProvider = yield* AiProvider;
+    const { locale } = yield* DesktopI18n;
     const runtime = yield* Effect.runtime<never>();
 
     const ctx: LocalRouteContext = {
@@ -146,19 +147,20 @@ export const LocalBackendLive: Layer.Layer<
 
     const api: WorkspaceBackendApi = {
       request,
-      // The local Ask producer: a failure to even open the stream folds to
-      // the broker's typed connect error (a clean termination); provider and
-      // request problems ride the stream as error parts instead.
+      // Every local Ask failure rides the stream as an envelope error part.
       openAskStream: body =>
         Effect.tryPromise({
           // The signal-aware overload: interrupting the broker's producer
           // fiber (Stop, port close) aborts the model call instead of leaving
           // it running behind a Response nobody reads.
-          try: signal => openLocalAskStream(ctx, body, signal),
-          catch: () => new AskStreamError({ reason: 'connect' }),
+          try: signal => openLocalAskStream({ ...ctx, locale }, body, signal),
+          catch: () => undefined,
         }).pipe(
-          Effect.tapError(() => log.error('local ask stream could not open')),
-          Effect.mapError(() => new AskStreamError({ reason: 'connect' }))
+          Effect.catchAll(() =>
+            log
+              .error('local ask stream could not open')
+              .pipe(Effect.as(localAskRequestFailure(locale)))
+          )
         ),
       collabToken: Effect.fail(new AuthStateError({ reason: 'no-active-account' })),
       createRecording: input =>

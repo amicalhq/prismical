@@ -41,7 +41,7 @@ import {
 import { createId } from '@prismical/id';
 import { startFakeSyncServer } from '../../e2e/helpers/fake-sync';
 import { fakeAiProviderLayer } from '../helpers/fake-workspace-env';
-import { makeTestLogger, testConfigLayer } from '../helpers/test-layers';
+import { makeTestLogger, testConfigLayer, testI18nLayer } from '../helpers/test-layers';
 import { LocalBackendLive } from '../../src/main/domains/local-backend/live';
 import { CloudBackendLive, WorkspaceTransportLive } from '../../src/main/domains/transport/live';
 import { WorkspaceBackend, type WorkspaceBackendApi } from '../../src/main/domains/transport/service';
@@ -85,6 +85,7 @@ const cloudFactory: BackendFactory = {
         },
       }),
       logger.layer,
+      testI18nLayer(),
       WorkspaceTransportLive,
       Layer.succeed(SignedInSession, {
         pinned: { sub: 'user_conformance', email: 'conformance@example.com' },
@@ -117,6 +118,7 @@ const localFactory: BackendFactory = {
     const env = Layer.mergeAll(
       testConfigLayer({ localDbPath: path.join(tempDir, `conformance-${dbSeq}.db`) }),
       logger.layer,
+      testI18nLayer(),
       WorkspaceTransportLive,
       fakeAiProviderLayer()
     );

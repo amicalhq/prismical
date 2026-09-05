@@ -165,6 +165,8 @@ test.describe('Ask streaming lane', () => {
     const askReq = server!.requests.find(r => r.method === 'POST' && r.path === '/apps/v1/me/ask');
     expect(askReq).toBeDefined();
     expect(askReq?.headers['authorization']).toBe(`Bearer ${server!.minted[0].idToken}`);
+    expect(askReq?.headers['x-prismical-ask-error-format']).toBe('envelope');
+    expect(askReq?.headers['x-prismical-locale']).toBe('en');
     expect(server!.askConnections).toHaveLength(1);
     expect(server!.askConnections[0]).toMatchObject({ finished: true, aborted: false });
   });

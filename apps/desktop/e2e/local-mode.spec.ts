@@ -393,6 +393,33 @@ test.describe('local mode (seeded app:mode profile, no servers)', () => {
     expect(mainLog).not.toContain(AI_KEY);
   });
 
+  test('Ask configuration errors show local recovery actions from the envelope', async () => {
+    const profileDir = await createLocalModeProfile();
+    const opened = await openLocalApp(profileDir);
+    launched = opened.launch;
+    const page = opened.page;
+
+    await page.evaluate(() => { window.location.hash = '#/settings/ai-models'; });
+    await expect(page.getByTestId('ai-provider')).toBeVisible();
+    await page.getByLabel('Model', { exact: true }).fill('test-model');
+    await page.getByLabel('Model', { exact: true }).press('Enter');
+    await expect.poll(() => aiSetting(page)).toMatchObject({ model: 'test-model' });
+    await expect(page.getByTestId('ai-provider-key-status')).toHaveAttribute('data-has-key', 'false');
+    await page.evaluate(() => { window.location.hash = '#/notes'; });
+    await createNoteViaUi(page);
+    await page.getByRole('button', { name: 'Ask AI', exact: true }).click();
+    const composer = page.getByLabel('Ask anything — / for skills, @ to tag notes');
+    await composer.fill('Hello');
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
+
+    await expect(page.getByText('AI isn’t set up for this workspace yet.')).toBeVisible();
+    await expect(page.getByText('Add an API key or connect a local runtime in Settings → AI models.')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Use Prismical Cloud', exact: true })).toHaveCount(0);
+    await expect(page.getByText('prismicalError', { exact: false })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Open AI models', exact: true }).click();
+    await expect(page.getByTestId('ai-provider')).toBeVisible();
+  });
+
   test('Cleanup, Name-note and Ask run against the scripted provider with no server', async () => {
     const profileDir = await createLocalModeProfile();
     const opened = await openLocalApp(profileDir, { PRISMICAL_E2E_FAKE_AI: '1' });

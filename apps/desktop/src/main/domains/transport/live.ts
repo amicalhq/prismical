@@ -14,6 +14,17 @@
  * Authorization header and NEVER passed to a log call. Only method/path/status
  * are ever logged.
  */
+import {
+  AI_ERROR_CODES,
+  ASK_ERROR_FORMAT_HEADER,
+  ASK_ERROR_FORMAT_ENVELOPE,
+  ApiErrorResponseSchema,
+  describeAiError,
+  encodeAskStreamError,
+  parseAiErrorDetails,
+} from '@prismical/api-contracts';
+import { askErrorResponse } from './ask-error';
+import { DesktopI18n } from '../i18n/service';
 import { Duration, Effect, Layer, Option, SubscriptionRef } from 'effect';
 import type { TransportRequest, TransportResponse } from '@prismical/desktop-contracts';
 import { AppConfig } from '../../infra/config/service';
@@ -72,6 +83,7 @@ export interface RequestIdentity {
 
 export interface CloudBackendDeps {
   readonly coreApiUrl: string;
+  readonly locale?: string;
   readonly fetchFn: FetchLike;
   /**
    * Resolves the current id_token (transparently refreshed) + active org, or
@@ -106,11 +118,14 @@ const stampHeaders = (identity: RequestIdentity, req: TransportRequest): Record<
 };
 
 /** Ask POST headers — same MAIN-stamped Bearer + org as REST, plus SSE Accept. */
-const askHeaders = (identity: RequestIdentity): Record<string, string> => {
+const askHeaders = (identity: RequestIdentity, locale: string): Record<string, string> => {
   const headers: Record<string, string> = {
     Authorization: `Bearer ${identity.idToken}`,
     'Content-Type': 'application/json',
     Accept: 'text/event-stream',
+    [ASK_ERROR_FORMAT_HEADER]: ASK_ERROR_FORMAT_ENVELOPE,
+    'x-prismical-locale': locale,
+    'Accept-Language': locale,
   };
   if (identity.activeOrgId !== undefined) headers['x-active-org-id'] = identity.activeOrgId;
   return headers;
@@ -128,22 +143,38 @@ const askHeaders = (identity: RequestIdentity): Record<string, string> => {
  */
 export const makeOpenAskStream =
   (deps: CloudBackendDeps) =>
-  (body: unknown): Effect.Effect<Response, AskStreamError> =>
-    deps.resolveIdentity.pipe(
+  (body: unknown): Effect.Effect<Response, AskStreamError> => {
+    const locale = deps.locale ?? 'en';
+    const failureResponse = (bodyJson: unknown): Response => {
+      const parsed = ApiErrorResponseSchema.safeParse(bodyJson);
+      const code = parsed.success ? parsed.data.error.code : AI_ERROR_CODES.ASK_REQUEST_FAILED;
+      const details = parseAiErrorDetails(parsed.success ? parsed.data.error.details : undefined);
+      return askErrorResponse(
+        encodeAskStreamError(code, {
+          ...details,
+          user: details.user ?? describeAiError({ code, details, locale, surface: 'ask' }),
+        })
+      );
+    };
+    return deps.resolveIdentity.pipe(
       Effect.mapError(() => new AskStreamError({ reason: 'no-identity' })),
       Effect.flatMap(identity =>
         Effect.tryPromise({
-          try: signal =>
-            deps.fetchFn(`${deps.coreApiUrl}${ASK_PATH}`, {
+          try: async signal => {
+            const response = await deps.fetchFn(`${deps.coreApiUrl}${ASK_PATH}`, {
               method: 'POST',
-              headers: askHeaders(identity),
+              headers: askHeaders(identity, locale),
               body: JSON.stringify(body ?? {}),
               signal,
-            }),
+            });
+            if (response.ok) return response;
+            return failureResponse(await response.json().catch(() => null));
+          },
           catch: () => new AskStreamError({ reason: 'connect' }),
-        })
+        }).pipe(Effect.catchAll(() => Effect.succeed(failureResponse(null))))
       )
     );
+  };
 
 /**
  * The pure request mapper — the WorkspaceBackend's whole behavior, testable with an
@@ -555,11 +586,16 @@ export interface CloudBackendLiveOptions {
  */
 export const makeCloudBackendLive = (
   options: CloudBackendLiveOptions = {}
-): Layer.Layer<WorkspaceBackend, never, SignedInSession | AppConfig | MainLogger | WorkspaceTransport> =>
+): Layer.Layer<
+  WorkspaceBackend,
+  never,
+  SignedInSession | AppConfig | MainLogger | WorkspaceTransport | DesktopI18n
+> =>
   Layer.scoped(
     WorkspaceBackend,
     Effect.gen(function* () {
       const session = yield* SignedInSession;
+      const { locale } = yield* DesktopI18n;
       const config = yield* AppConfig;
       const coreTransport = yield* WorkspaceTransport;
       const fetchFn: FetchLike = options.fetchFn ?? ((url, init) => fetch(url, init));
@@ -573,6 +609,7 @@ export const makeCloudBackendLive = (
       );
       const deps: CloudBackendDeps = {
         coreApiUrl: config.endpoints.coreApiUrl,
+        locale,
         fetchFn,
         resolveIdentity,
       };
@@ -605,7 +642,7 @@ export const makeCloudBackendLive = (
 export const CloudBackendLive: Layer.Layer<
   WorkspaceBackend,
   never,
-  SignedInSession | AppConfig | MainLogger | WorkspaceTransport
+  SignedInSession | AppConfig | MainLogger | WorkspaceTransport | DesktopI18n
 > = makeCloudBackendLive();
 
 /**
