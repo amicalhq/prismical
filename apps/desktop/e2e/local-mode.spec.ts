@@ -169,11 +169,11 @@ test.describe('local mode (seeded app:mode profile, no servers)', () => {
     const res = (await transportGet(page, { path: '/apps/v1/me/notes' })) as {
       ok: true;
       status: number;
-      bodyJson: { success: boolean; results: unknown[] };
+      bodyJson: { results: unknown[] };
     };
     expect(res.ok).toBe(true);
     expect(res.status).toBe(200);
-    expect(res.bodyJson.success).toBe(true);
+    expect(res.bodyJson).not.toHaveProperty('success');
     expect(Array.isArray(res.bodyJson.results)).toBe(true);
 
     // The pre-dispatch gates are mode-independent — foreign paths still never

@@ -414,7 +414,7 @@ export async function runSkill(
       runResult.title = title;
       runResult.titleRunId = runId;
     }
-    return ok({ success: true, result: runResult });
+    return ok(runResult);
   } catch (error) {
     if (deadline.aborted) {
       deps.log('skill run timed out', { skillId: skill.id, titleTarget });
@@ -475,7 +475,7 @@ export async function acceptSkillRun(db: LocalDb, body: unknown): Promise<RouteR
     updatedAt: now,
     deletedAt: null,
   });
-  return ok({ success: true, result: { artifactId: id, version, generatedAt: now } });
+  return ok({ artifactId: id, version, generatedAt: now });
 }
 
 /** POST /me/skill-runs/restore — undo the LATEST accept if it kept a snapshot. */
@@ -491,7 +491,7 @@ export async function restoreSkillRun(db: LocalDb, body: unknown): Promise<Route
     .limit(1);
   const row = rows[0];
   if (row === undefined || row.prevContent === null) {
-    return ok({ success: true, result: { restored: false } });
+    return ok({ restored: false });
   }
   const now = new Date().toISOString();
   // The updatedAt bump is load-bearing: the delta engine ships tombstones by it.
@@ -499,10 +499,7 @@ export async function restoreSkillRun(db: LocalDb, body: unknown): Promise<Route
     .update(schema.artifact)
     .set({ deletedAt: now, updatedAt: now })
     .where(eq(schema.artifact.id, row.id));
-  return ok({
-    success: true,
-    result: { restored: true, artifactId: row.id, prevContent: row.prevContent },
-  });
+  return ok({ restored: true, artifactId: row.id, prevContent: row.prevContent });
 }
 
 /** GET /me/enhanced-recordings?noteId= — recordings an Enhance run has folded (derived, never a flag). */
@@ -524,8 +521,7 @@ export async function enhancedRecordings(
       )
     );
   return ok({
-    success: true,
-    result: { recordingIds: rows.map(r => r.recordingId).filter((id): id is string => id !== null) },
+    recordingIds: rows.map(r => r.recordingId).filter((id): id is string => id !== null),
   });
 }
 
@@ -555,13 +551,10 @@ export async function titleRun(db: LocalDb, undo: boolean, body: unknown): Promi
   }
   const result = (row: typeof current) =>
     ok({
-      success: true,
-      result: {
-        noteId: row.id,
-        title: row.title,
-        titleSource: row.titleSource,
-        titleRevision: row.titleRevision,
-      },
+      noteId: row.id,
+      title: row.title,
+      titleSource: row.titleSource,
+      titleRevision: row.titleRevision,
     });
 
   // A retried completed call is a success, even after a later rename.

@@ -178,10 +178,12 @@ export const makeWorkspaceBackendRequest =
           // status is still carried through (renderer's toApiError/onUnauthorized).
           Effect.flatMap(response =>
             Effect.promise(() =>
-              response.json().then(
-                (json: unknown) => json,
-                () => null
-              )
+              response.status === 204
+                ? Promise.resolve(undefined)
+                : response.json().then(
+                    (json: unknown) => json,
+                    () => null
+                  )
             ).pipe(
               Effect.map(
                 (bodyJson): TransportResponse => ({ ok: true, status: response.status, bodyJson })
@@ -241,7 +243,7 @@ const recordingHeaders = (
   return headers;
 };
 
-/** create/finalize echo `{ success, result:<row> }`; we only need the id back, falling back to
+/** create/finalize echo `{ result:<row>, applied, created? }`; we only need the id back, falling back to
  * the client-minted id (authoritative) if the echoed row's id is absent. */
 const parseRecordingId = (bodyJson: unknown, fallback: string): { readonly recordingId: string } => {
   const result = (bodyJson as { result?: { id?: unknown } } | null)?.result;

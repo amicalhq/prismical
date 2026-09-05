@@ -210,19 +210,37 @@ for (const factory of [cloudFactory, localFactory]) {
         }).pipe(Effect.scoped)
       );
 
-      it.effect('envelope {success:true, results} ordered (updatedAt, id) — zod-parsed', () =>
+      it.effect('envelope {results} ordered (updatedAt, id) — zod-parsed', () =>
         Effect.gen(function* () {
           const { api } = yield* factory.make;
           const idA = createId('tag');
           const idB = createId('tag');
           const idC = createId('tag');
           // Two rows share a stamp (id tie-break), one is later.
-          yield* post(api, `${BASE}/tags`, { id: idA, name: 'OrderA', color: '#111', updatedAt: T1 });
-          yield* post(api, `${BASE}/tags`, { id: idB, name: 'OrderB', color: '#222', updatedAt: T1 });
-          yield* post(api, `${BASE}/tags`, { id: idC, name: 'OrderC', color: '#333', updatedAt: T2 });
+          yield* post(api, `${BASE}/tags`, {
+            id: idA,
+            name: 'OrderA',
+            color: '#111',
+            updatedAt: T1,
+          });
+          yield* post(api, `${BASE}/tags`, {
+            id: idB,
+            name: 'OrderB',
+            color: '#222',
+            updatedAt: T1,
+          });
+          yield* post(api, `${BASE}/tags`, {
+            id: idC,
+            name: 'OrderC',
+            color: '#333',
+            updatedAt: T2,
+          });
           const res = expectOk(yield* get(api, `${BASE}/tags`), 200);
-          assert.strictEqual(res.bodyJson.success, true);
-          const results = SyncListResponseSchema.parse(res.bodyJson).results as Record<string, any>[];
+          assert.notProperty(res.bodyJson, 'success');
+          const results = SyncListResponseSchema.parse(res.bodyJson).results as Record<
+            string,
+            any
+          >[];
           const mine = results.filter(r => [idA, idB, idC].includes(r.id as string));
           assert.deepStrictEqual(
             mine.map(r => r.id),
@@ -250,7 +268,7 @@ for (const factory of [cloudFactory, localFactory]) {
           const id = createId('tag');
           const res = expectOk(yield* post(api, `${BASE}/tags`, { id, name: 'Mint', color: '#444' }), 201);
           const body = SyncWriteResponseSchema.parse(res.bodyJson);
-          assert.strictEqual(body.success, true);
+          assert.notProperty(body, 'success');
           assert.strictEqual(body.applied, true);
           assert.strictEqual(body.created, true);
           assert.strictEqual((body.result as any).id, id);
@@ -311,30 +329,33 @@ for (const factory of [cloudFactory, localFactory]) {
     });
 
     describe('tombstones', () => {
-      it.effect('DELETE is exactly {success:true}; hidden live; includeDeleted shows the bumped stamp', () =>
-        Effect.gen(function* () {
-          const { api } = yield* factory.make;
-          const id = createId('tag');
-          // Server-now stamp, like a real create.
-          yield* post(api, `${BASE}/tags`, { id, name: 'Tomb', color: '#999' });
-          const preDelete = Date.parse(
-            listOf(yield* get(api, `${BASE}/tags`, { includeDeleted: '1' })).find(r => r.id === id)!
-              .updatedAt as string
-          );
-          const delRes = expectOk(yield* del(api, `${BASE}/tags/${id}`), 200);
-          assert.deepStrictEqual(SyncDeleteResponseSchema.parse(delRes.bodyJson), { success: true });
-          assert.deepStrictEqual(delRes.bodyJson, { success: true });
+      it.effect(
+        'DELETE is exactly HTTP 204; hidden live; includeDeleted shows the bumped stamp',
+        () =>
+          Effect.gen(function* () {
+            const { api } = yield* factory.make;
+            const id = createId('tag');
+            // Server-now stamp, like a real create.
+            yield* post(api, `${BASE}/tags`, { id, name: 'Tomb', color: '#999' });
+            const preDelete = Date.parse(
+              listOf(yield* get(api, `${BASE}/tags`, { includeDeleted: '1' })).find(
+                r => r.id === id
+              )!.updatedAt as string
+            );
+            const delRes = expectOk(yield* del(api, `${BASE}/tags/${id}`), 204);
+            assert.deepStrictEqual(SyncDeleteResponseSchema.parse(delRes.bodyJson), undefined);
+            assert.deepStrictEqual(delRes.bodyJson, undefined);
 
-          const live = listOf(yield* get(api, `${BASE}/tags`)).map(r => r.id);
-          assert.notInclude(live, id);
+            const live = listOf(yield* get(api, `${BASE}/tags`)).map(r => r.id);
+            assert.notInclude(live, id);
 
-          const tomb = listOf(yield* get(api, `${BASE}/tags`, { includeDeleted: '1' })).find(
-            r => r.id === id
-          )!;
-          assert.isOk(tomb.deletedAt);
-          // The bump carries the delete past cursors ≥ the live row's stamp.
-          assert.isAtLeast(Date.parse(tomb.updatedAt as string), preDelete);
-        }).pipe(Effect.scoped)
+            const tomb = listOf(yield* get(api, `${BASE}/tags`, { includeDeleted: '1' })).find(
+              r => r.id === id
+            )!;
+            assert.isOk(tomb.deletedAt);
+            // The bump carries the delete past cursors ≥ the live row's stamp.
+            assert.isAtLeast(Date.parse(tomb.updatedAt as string), preDelete);
+          }).pipe(Effect.scoped)
       );
 
       it.effect('re-DELETE is 404 (client ack)', () =>
@@ -342,7 +363,7 @@ for (const factory of [cloudFactory, localFactory]) {
           const { api } = yield* factory.make;
           const id = createId('tag');
           yield* post(api, `${BASE}/tags`, { id, name: 'Twice', color: '#aaa' });
-          assert.strictEqual(statusOf(yield* del(api, `${BASE}/tags/${id}`)), 200);
+          assert.strictEqual(statusOf(yield* del(api, `${BASE}/tags/${id}`)), 204);
           assert.strictEqual(statusOf(yield* del(api, `${BASE}/tags/${id}`)), 404);
         }).pipe(Effect.scoped)
       );
@@ -437,7 +458,7 @@ for (const factory of [cloudFactory, localFactory]) {
           yield* post(api, `${BASE}/notes`, { id: nId, title: 'J' });
           yield* post(api, `${BASE}/tags`, { id: tId, name: 'JEcho', color: '#ddd' });
           const res = expectOk(yield* post(api, `${BASE}/note-tags`, { noteId: nId, tagId: tId }), 201);
-          assert.deepStrictEqual(res.bodyJson, { success: true, result: { noteId: nId, tagId: tId } });
+          assert.deepStrictEqual(res.bodyJson, { noteId: nId, tagId: tId });
           NoteTagResponseSchema.parse(res.bodyJson);
         }).pipe(Effect.scoped)
       );
@@ -462,7 +483,7 @@ for (const factory of [cloudFactory, localFactory]) {
         }).pipe(Effect.scoped)
       );
 
-      it.effect('unlink {success:true}; replay 404; re-POST revives the link', () =>
+      it.effect('unlink HTTP 204; replay 404; re-POST revives the link', () =>
         Effect.gen(function* () {
           const { api } = yield* factory.make;
           const nId = createId('note');
@@ -471,13 +492,16 @@ for (const factory of [cloudFactory, localFactory]) {
           yield* post(api, `${BASE}/tags`, { id: tId, name: 'JRevive', color: '#ddf' });
           yield* post(api, `${BASE}/note-tags`, { noteId: nId, tagId: tId });
 
-          const first = expectOk(yield* del(api, `${BASE}/note-tags/${nId}/${tId}`), 200);
-          assert.deepStrictEqual(first.bodyJson, { success: true });
+          const first = expectOk(yield* del(api, `${BASE}/note-tags/${nId}/${tId}`), 204);
+          assert.deepStrictEqual(first.bodyJson, undefined);
           assert.strictEqual(statusOf(yield* del(api, `${BASE}/note-tags/${nId}/${tId}`)), 404);
 
           // The junction POST is the dialect's ONE revive: the link comes back live.
-          const revived = expectOk(yield* post(api, `${BASE}/note-tags`, { noteId: nId, tagId: tId }), 201);
-          assert.deepStrictEqual(revived.bodyJson, { success: true, result: { noteId: nId, tagId: tId } });
+          const revived = expectOk(
+            yield* post(api, `${BASE}/note-tags`, { noteId: nId, tagId: tId }),
+            201
+          );
+          assert.deepStrictEqual(revived.bodyJson, { noteId: nId, tagId: tId });
           const live = listOf(yield* get(api, `${BASE}/note-tags`)).find(
             r => r.noteId === nId && r.tagId === tId
           )!;

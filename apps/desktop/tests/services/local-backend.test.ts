@@ -110,13 +110,13 @@ describe('LocalBackendLive', () => {
     })
   );
 
-  it.effect('profile: LEGACY {result} envelope built from LOCAL_WORKSPACE', () =>
+  it.effect('profile: direct resource built from LOCAL_WORKSPACE', () =>
     Effect.gen(function* () {
       const { api, scope } = yield* buildBackend;
       const res = expectOk(yield* api.request({ method: 'GET', path: '/apps/v1/me/profile' }), 200);
       assert.notProperty(res.bodyJson, 'success');
       const parsed = ViewerProfileResponseSchema.parse(res.bodyJson);
-      assert.deepStrictEqual(parsed.result, {
+      assert.deepStrictEqual(parsed, {
         id: LOCAL_WORKSPACE.sub,
         email: LOCAL_WORKSPACE.email,
         name: LOCAL_WORKSPACE.name,
@@ -126,7 +126,7 @@ describe('LocalBackendLive', () => {
     })
   );
 
-  it.effect('cloud-only/deferred lanes answer GET-empty {success:true, results:[]}', () =>
+  it.effect('cloud-only/deferred lanes answer GET-empty {results:[]}', () =>
     Effect.gen(function* () {
       const { api, scope } = yield* buildBackend;
       for (const route of [
@@ -136,8 +136,11 @@ describe('LocalBackendLive', () => {
         'note-generation-audits',
         'team-vocabulary',
       ]) {
-        const res = expectOk(yield* api.request({ method: 'GET', path: `/apps/v1/me/${route}` }), 200);
-        assert.deepStrictEqual(res.bodyJson, { success: true, results: [] }, route);
+        const res = expectOk(
+          yield* api.request({ method: 'GET', path: `/apps/v1/me/${route}` }),
+          200
+        );
+        assert.deepStrictEqual(res.bodyJson, { results: [] }, route);
       }
       yield* Scope.close(scope, Exit.void);
     })
@@ -146,7 +149,7 @@ describe('LocalBackendLive', () => {
   it.effect('anything else is a completed 404 exchange — never the INTERNAL arm', () =>
     Effect.gen(function* () {
       const { api, scope } = yield* buildBackend;
-      const notFoundBody = { success: false, error: { code: 'NOT_FOUND' } };
+      const notFoundBody = { error: { code: 'NOT_FOUND', message: 'Not found' } };
       // Unknown route, the bare /apps/v1/me bootstrap, a write to a GET-empty
       // lane, and an unregistered method on a sync lane.
       for (const req of [
@@ -224,7 +227,7 @@ describe('LocalBackendLive', () => {
         }),
         409
       );
-      assert.deepStrictEqual(dup.bodyJson, { success: false, error: { code: 'CONFLICT' } });
+      assert.deepStrictEqual(dup.bodyJson, { error: { code: 'CONFLICT', message: 'Conflict' } });
       yield* Scope.close(scope, Exit.void);
     })
   );
@@ -312,7 +315,7 @@ describe('LocalBackendLive', () => {
         yield* api.request({ method: 'DELETE', path: `/apps/v1/me/skills/${SYSTEM_SKILLS[0]!.id}` }),
         403
       );
-      assert.deepStrictEqual(del.bodyJson, { success: false, error: { code: 'FORBIDDEN' } });
+      assert.deepStrictEqual(del.bodyJson, { error: { code: 'FORBIDDEN', message: 'Forbidden' } });
       yield* Scope.close(scope, Exit.void);
     })
   );
@@ -326,7 +329,7 @@ describe('LocalBackendLive', () => {
         yield* transport.request({ method: 'GET', path: '/apps/v1/me/folders' }),
         200
       );
-      assert.deepStrictEqual(served.bodyJson, { success: true, results: [] });
+      assert.deepStrictEqual(served.bodyJson, { results: [] });
       // Transport-level collabToken folds the typed failure to None.
       assert.isTrue(Option.isNone(yield* transport.collabToken));
 

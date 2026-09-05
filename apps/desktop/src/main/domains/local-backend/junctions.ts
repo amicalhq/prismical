@@ -2,7 +2,7 @@
  * The note-tags junction lane implements the
  * server sync dialect over the product store. Composite
  * key (noteId, tagId); wire rows carry NO id column; the POST echo is EXACTLY
- * `{success:true, result:{noteId, tagId}}` (201, timestamp-less) and revives a
+ * `{noteId, tagId}` (201, timestamp-less) and revives a
  * tombstoned link (the ONE revive in the dialect); DELETE at /:noteId/:tagId
  * tombstones; both parents must exist AND be live or the link 404s (no-leak).
  */
@@ -42,7 +42,7 @@ export const listNoteTags = async (
     .from(schema.noteTag)
     .where(conds.length > 0 ? and(...conds) : undefined)
     .orderBy(asc(schema.noteTag.updatedAt), asc(schema.noteTag.noteId), asc(schema.noteTag.tagId));
-  return ok({ success: true, results: rows });
+  return ok({ results: rows });
 };
 
 const liveNote = async (db: LocalDb, noteId: string): Promise<boolean> => {
@@ -86,7 +86,7 @@ export const createNoteTag = async (db: LocalDb, body: unknown): Promise<RouteRe
       .insert(schema.noteTag)
       .values({ noteId, tagId, addedAt: now, updatedAt: now, deletedAt: null });
   }
-  return ok({ success: true, result: { noteId, tagId } }, 201);
+  return ok({ noteId, tagId }, 201);
 };
 
 /** DELETE /apps/v1/me/note-tags/:noteId/:tagId — tombstone; replay → 404 (ack). */
@@ -106,5 +106,5 @@ export const deleteNoteTag = async (
     .update(schema.noteTag)
     .set({ deletedAt: now, updatedAt: now })
     .where(linkWhere(noteId, tagId));
-  return ok({ success: true });
+  return ok(undefined, 204);
 };

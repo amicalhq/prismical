@@ -5,7 +5,7 @@
  * an empty query is the browse-recent lane (most recently updated first).
  */
 import type Database from 'better-sqlite3';
-import { legacyError, ok, type RouteResult } from './wire';
+import { invalidRequest, ok, type RouteResult } from './wire';
 
 export interface SearchScope {
   readonly folderIds?: ReadonlyArray<string>;
@@ -210,11 +210,10 @@ export const handleSearch = async (
   const limit = readInt(query.limit, SEARCH_DEFAULT_LIMIT, 1, SEARCH_MAX_LIMIT);
   const offset = readInt(query.offset, 0, 0, Number.MAX_SAFE_INTEGER);
   if (text.length > SEARCH_MAX_QUERY || Number.isNaN(limit) || Number.isNaN(offset)) {
-    return legacyError(400, 'Invalid request');
+    return invalidRequest();
   }
   const { hits, total } = await searchNotes(client, { query: text, limit, offset });
   return ok({
-    success: true,
     results: hits.map(hit => ({
       id: hit.noteId,
       noteId: hit.noteId,

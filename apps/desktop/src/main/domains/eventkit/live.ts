@@ -192,18 +192,14 @@ export const EventKitServiceLive: Layer.Layer<
           },
         });
         const configBody = yield* request<{
-          result?: {
-            enabledCalendarExternalIds?: unknown;
-            lastSequence?: unknown;
-          };
+          enabledCalendarExternalIds?: unknown;
+          lastSequence?: unknown;
         }>('device-config', {
           method: 'GET',
           path: `/apps/v1/me/eventkit/devices/${encodeURIComponent(deviceId)}/config`,
         });
-        const enabledCalendarExternalIds = Array.isArray(
-          configBody.result?.enabledCalendarExternalIds
-        )
-          ? configBody.result.enabledCalendarExternalIds.filter(
+        const enabledCalendarExternalIds = Array.isArray(configBody.enabledCalendarExternalIds)
+          ? configBody.enabledCalendarExternalIds.filter(
               (value): value is string => typeof value === 'string'
             )
           : [];
@@ -236,9 +232,9 @@ export const EventKitServiceLive: Layer.Layer<
           Effect.catchAll(() => Effect.succeed(-1))
         );
         const serverSequence =
-          typeof configBody.result?.lastSequence === 'number' &&
-          Number.isSafeInteger(configBody.result.lastSequence)
-            ? configBody.result.lastSequence
+          typeof configBody.lastSequence === 'number' &&
+          Number.isSafeInteger(configBody.lastSequence)
+            ? configBody.lastSequence
             : -1;
         const sequence = Math.max(localSequence, serverSequence) + 1;
         yield* operationalDb
@@ -246,7 +242,7 @@ export const EventKitServiceLive: Layer.Layer<
           .pipe(Effect.catchAll(() => Effect.void));
 
         const chunks = chunkEventKitEvents(events);
-        const begin = yield* request<{ result?: { snapshotId?: unknown } }>('begin-snapshot', {
+        const begin = yield* request<{ snapshotId?: unknown }>('begin-snapshot', {
           method: 'POST',
           path: `/apps/v1/me/eventkit/devices/${encodeURIComponent(deviceId)}/snapshots`,
           body: {
@@ -258,7 +254,7 @@ export const EventKitServiceLive: Layer.Layer<
             expectedEvents: events.length,
           },
         });
-        const snapshotId = begin.result?.snapshotId;
+        const snapshotId = begin.snapshotId;
         if (typeof snapshotId !== 'string') {
           return yield* Effect.fail(
             new EventKitSyncError({ operation: 'begin-snapshot', detail: 'missing-id' })

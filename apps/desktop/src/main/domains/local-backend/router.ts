@@ -13,10 +13,10 @@
  *    stream lane (LocalBackendLive.openAskStream), never a unary request;
  *  - GET-empty lists for the cloud-only/deferred lanes the shell polls
  *    (calendars, events, recording-speakers, note-generation-audits,
- *    team-vocabulary) — `{success:true, results:[]}` keeps their consumers in
+ *    team-vocabulary) — `{results:[]}` keeps their consumers in
  *    clean empty states instead of error states;
- *  - organizations/profile from the LOCAL_WORKSPACE constants, in the LEGACY
- *    envelopes ({results}/{result} — NO success field, matching
+ *  - organizations/profile from the LOCAL_WORKSPACE constants, as a list
+ *    ({results}) and a direct profile respectively, matching
  *    OrganizationsResponseSchema/ViewerProfileResponseSchema);
  *  - anything else → 404 with fake-sync's NOT_FOUND body (a deterministic
  *    4xx: react-query renders an error/empty state and never retries it).
@@ -133,10 +133,10 @@ export const handleLocalRequest = async (
     return method === 'GET' && rest.length === 0 ? ok({ results: [LOCAL_ORGANIZATION] }) : notFound();
   }
   if (route === 'profile') {
-    return method === 'GET' && rest.length === 0 ? ok({ result: LOCAL_PROFILE }) : notFound();
+    return method === 'GET' && rest.length === 0 ? ok(LOCAL_PROFILE) : notFound();
   }
   if (EMPTY_LIST_ROUTES.has(route)) {
-    return method === 'GET' && rest.length === 0 ? ok({ success: true, results: [] }) : notFound();
+    return method === 'GET' && rest.length === 0 ? ok({ results: [] }) : notFound();
   }
 
   if (route === 'notes') {
@@ -189,7 +189,7 @@ export const handleLocalRequest = async (
   if (route === 'model-defaults' && rest.length === 0) {
     if (method === 'GET') return getModelDefaults(ai);
     if (method === 'PUT') return setModelDefault(ai, req.body);
-    if (method === 'DELETE') return ok({ success: true });
+    if (method === 'DELETE') return ok(undefined, 204);
     return notFound();
   }
 

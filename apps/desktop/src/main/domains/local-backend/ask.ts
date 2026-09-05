@@ -70,10 +70,7 @@ export async function askConversations(db: LocalDb): Promise<RouteResult> {
     .orderBy(desc(schema.askConversation.updatedAt))
     .limit(1);
   const row = rows[0];
-  return ok({
-    success: true,
-    result: row === undefined ? null : { id: row.id, messages: storedMessages(row.messages) },
-  });
+  return ok(row === undefined ? null : { id: row.id, messages: storedMessages(row.messages) });
 }
 
 const deriveTitle = (content: string): string => {

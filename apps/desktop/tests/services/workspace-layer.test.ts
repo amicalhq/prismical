@@ -778,7 +778,7 @@ describe('SignedInRuntime lifecycle', () => {
       // NoteBodyStore registered into the boot-scoped CollabBridge.
       assert.isTrue(Option.isSome(yield* collabBridge.current), 'note-body store registered');
       const served = yield* transport.request({ method: 'GET', path: '/apps/v1/me/tags' });
-      assert.deepStrictEqual(served, { ok: true, status: 200, bodyJson: { success: true, results: [] } });
+      assert.deepStrictEqual(served, { ok: true, status: 200, bodyJson: { results: [] } });
 
       // Auth traffic never swaps or tears the local workspace down.
       yield* SubscriptionRef.set(

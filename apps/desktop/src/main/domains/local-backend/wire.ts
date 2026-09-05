@@ -8,6 +8,7 @@
  * core's dialect; the reserved `{error:{code:'INTERNAL'}}` envelope arm never
  * originates here.
  */
+import type { AppsV1ErrorResponse } from '@prismical/api-contracts/apps/v1';
 import type { ProductDbService } from '../../infra/product-db/service';
 
 /** The drizzle handle handlers run against (typed by the product schema). */
@@ -23,7 +24,7 @@ export const ok = (body: unknown, status = 200): RouteResult => ({ status, body 
 
 export const notFound = (): RouteResult => ({
   status: 404,
-  body: { success: false, error: { code: 'NOT_FOUND' } },
+  body: { error: { code: 'NOT_FOUND', message: 'Not found' } },
 });
 
 /**
@@ -57,22 +58,21 @@ const receivedType = (value: unknown): string =>
         ? 'array'
         : typeof value;
 
-export const invalidRequest = (message?: string): RouteResult => ({
+export const invalidRequest = (message = 'Invalid request'): RouteResult => ({
   status: 400,
   body: {
-    success: false,
-    error: { code: 'INVALID_REQUEST', ...(message === undefined ? {} : { message }) },
+    error: { code: 'INVALID_REQUEST', message },
   },
 });
 
 export const conflict = (): RouteResult => ({
   status: 409,
-  body: { success: false, error: { code: 'CONFLICT' } },
+  body: { error: { code: 'CONFLICT', message: 'Conflict' } },
 });
 
 export const forbidden = (): RouteResult => ({
   status: 403,
-  body: { success: false, error: { code: 'FORBIDDEN' } },
+  body: { error: { code: 'FORBIDDEN', message: 'Forbidden' } },
 });
 
 /**
@@ -126,16 +126,7 @@ export const apiError = (
   details?: unknown
 ): RouteResult => ({
   status,
-  body: { error: { code, message, ...(details === undefined ? {} : { details }) } },
-});
-
-/**
- * The LEGACY flat envelope (`{ error, message?, details? }`) the Ask and
- * search handlers emit; the client uppercases `error` into a code.
- */
-export const legacyError = (status: number, error: string, message?: string): RouteResult => ({
-  status,
-  body: { error, ...(message === undefined ? {} : { message }) },
+  body: { error: { code, message, ...(details === undefined ? {} : { details }) } } satisfies AppsV1ErrorResponse,
 });
 
 /**

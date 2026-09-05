@@ -179,7 +179,7 @@ export const listNotes = async (
       ...(includeBody ? { contentText: contentMarkdown ?? contentText } : {}),
     };
   });
-  return ok({ success: true, results });
+  return ok({ results });
 };
 
 /** POST /apps/v1/me/notes — LWW upsert; the server defaults the title on create. */
@@ -198,7 +198,7 @@ export const createNote = async (db: LocalDb, body: unknown): Promise<RouteResul
   if (existing !== undefined) {
     // LWW against the explicit-metadata clock, not the row clock.
     if (incomingMs < Date.parse(existing.metadataUpdatedAt)) {
-      return ok({ success: true, result: rawEcho(existing), applied: false, created: false });
+      return ok({ result: rawEcho(existing), applied: false, created: false });
     }
     const titlePlan = resolveNoteTitle(
       existing,
@@ -220,7 +220,7 @@ export const createNote = async (db: LocalDb, body: unknown): Promise<RouteResul
       })
       .where(eq(schema.note.id, existing.id))
       .returning();
-    return ok({ success: true, result: rawEcho(updated), applied: true, created: false });
+    return ok({ result: rawEcho(updated), applied: true, created: false });
   }
 
   const titlePlan = resolveNoteTitle(
@@ -250,7 +250,7 @@ export const createNote = async (db: LocalDb, body: unknown): Promise<RouteResul
       deletedAt: null,
     })
     .returning();
-  return ok({ success: true, result: rawEcho(inserted), applied: true, created: true }, 201);
+  return ok({ result: rawEcho(inserted), applied: true, created: true }, 201);
 };
 
 /** PUT /apps/v1/me/notes/:id — LWW metadata update; empty title = reset-to-default. */
@@ -270,7 +270,7 @@ export const updateNote = async (
   if (existing === undefined) return notFound();
   const incomingMs = parseTimestampMs(updatedAt) ?? Date.now();
   if (incomingMs < Date.parse(existing.metadataUpdatedAt)) {
-    return ok({ success: true, result: rawEcho(existing), applied: false, created: false });
+    return ok({ result: rawEcho(existing), applied: false, created: false });
   }
   // A blank title asks for the current default; absent leaves the title alone.
   const titlePlan = resolveNoteTitle(
@@ -293,7 +293,7 @@ export const updateNote = async (
     })
     .where(eq(schema.note.id, id))
     .returning();
-  return ok({ success: true, result: rawEcho(updated), applied: true, created: false });
+  return ok({ result: rawEcho(updated), applied: true, created: false });
 };
 
 /** DELETE /apps/v1/me/notes/:id — tombstone + unpublish; replay → 404 (ack). */
@@ -315,5 +315,5 @@ export const removeNote = async (db: LocalDb, id: string): Promise<RouteResult> 
       publishedAt: null,
     })
     .where(eq(schema.note.id, id));
-  return ok({ success: true });
+  return ok(undefined, 204);
 };

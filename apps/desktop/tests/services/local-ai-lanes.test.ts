@@ -316,7 +316,9 @@ describe('FTS5 search', () => {
 
       // Limits are validated the legacy way.
       const bad = expectOk(yield* get(api, '/apps/v1/me/search', { query: 'x', limit: 'abc' }), 400);
-      assert.deepStrictEqual(bad.bodyJson, { error: 'Invalid request' });
+      assert.deepStrictEqual(bad.bodyJson, {
+        error: { code: 'INVALID_REQUEST', message: 'Invalid request' },
+      });
       yield* Scope.close(scope, Exit.void);
     })
   );
@@ -378,8 +380,9 @@ describe('FTS5 search', () => {
       );
       assert.deepStrictEqual(inline.bodyJson.results.map((r: Any) => r.noteId), [note]);
       expectOk(
-        yield* api.request({ method: 'DELETE', path: '/apps/v1/me/model-defaults?useCase=formatting' }),
-        200
+        yield*
+          api.request({ method: 'DELETE', path: '/apps/v1/me/model-defaults?useCase=formatting' }),
+        204
       );
       yield* Scope.close(scope, Exit.void);
     })
@@ -399,7 +402,7 @@ describe('skill runs', () => {
         yield* post(api, `/apps/v1/me/skills/${CLEANUP_SKILL_ID}/run`, { noteId }),
         200
       );
-      const result = res.bodyJson.result;
+      const result = res.bodyJson;
       assert.strictEqual(result.mode, 'replace-doc');
       assert.strictEqual(result.skillId, CLEANUP_SKILL_ID);
       assert.strictEqual(result.skillName, 'Cleanup');
@@ -452,6 +455,10 @@ describe('skill runs', () => {
         422
       );
       assert.strictEqual(noteEmpty.bodyJson.error.code, 'NOTE_EMPTY');
+      assert.strictEqual(
+        noteEmpty.bodyJson.error.message,
+        'This note has no text yet. Add some text before running this skill.'
+      );
       assert.deepStrictEqual(noteEmpty.bodyJson.error.details, { includesTranscript: false });
 
       const enhanceEmpty = expectOk(
@@ -459,6 +466,10 @@ describe('skill runs', () => {
         422
       );
       assert.strictEqual(enhanceEmpty.bodyJson.error.code, 'NOTE_EMPTY');
+      assert.strictEqual(
+        enhanceEmpty.bodyJson.error.message,
+        'This note has no text or transcript yet. Add text or record audio before running this skill.'
+      );
       assert.deepStrictEqual(enhanceEmpty.bodyJson.error.details, { includesTranscript: true });
 
       const unconfigured = expectOk(
@@ -484,8 +495,8 @@ describe('skill runs', () => {
         yield* post(api, `/apps/v1/me/skills/${ENHANCE_SKILL_ID}/run`, { noteId, recordingId }),
         200
       );
-      assert.strictEqual(first.bodyJson.result.mode, 'replace-doc');
-      assert.strictEqual(first.bodyJson.result.recordingId, recordingId);
+      assert.strictEqual(first.bodyJson.mode, 'replace-doc');
+      assert.strictEqual(first.bodyJson.recordingId, recordingId);
       const system = model.doGenerateCalls[0]!.prompt.find(m => m.role === 'system') as Any;
       assert.include(system.content, '# Recording transcript');
       assert.include(system.content, 'You: we ship the roadmap\nThem: agreed');
@@ -509,9 +520,9 @@ describe('skill runs', () => {
         yield* post(api, `/apps/v1/me/skills/${ENHANCE_SKILL_ID}/run`, { noteId, recordingId }),
         200
       );
-      assert.strictEqual(second.bodyJson.result.mode, 'append-section');
+      assert.strictEqual(second.bodyJson.mode, 'append-section');
       const enhanced = expectOk(yield* get(api, '/apps/v1/me/enhanced-recordings', { noteId }), 200);
-      assert.deepStrictEqual(enhanced.bodyJson.result, { recordingIds: [recordingId] });
+      assert.deepStrictEqual(enhanced.bodyJson, { recordingIds: [recordingId] });
 
       // A recording with no segments: NO_TRANSCRIPT.
       const silent = yield* insertRecording(product, { noteId, segments: [] });
@@ -552,7 +563,7 @@ describe('skill runs', () => {
         yield* post(api, `/apps/v1/me/skills/${CLEANUP_SKILL_ID}/run`, { noteId }),
         200
       );
-      assert.strictEqual(res.bodyJson.result.rawMarkdown, MARKDOWN);
+      assert.strictEqual(res.bodyJson.rawMarkdown, MARKDOWN);
       assert.deepStrictEqual(
         model.doGenerateCalls.map(c => c.toolChoice?.type),
         ['required', 'auto']
@@ -581,8 +592,8 @@ describe('skill runs', () => {
         yield* post(a.api, `/apps/v1/me/skills/${CLEANUP_SKILL_ID}/run`, { noteId: noteA }),
         200
       );
-      assert.strictEqual(parsed.bodyJson.result.rawMarkdown, '## Cleaned\n\nBody.');
-      assert.strictEqual(parsed.bodyJson.result.reasoning, 'tidy');
+      assert.strictEqual(parsed.bodyJson.rawMarkdown, '## Cleaned\n\nBody.');
+      assert.strictEqual(parsed.bodyJson.reasoning, 'tidy');
       // native (400) → auto (400) → none (text): three calls, tools only on the first two.
       assert.deepStrictEqual(
         json.doGenerateCalls.map(c => (c.tools?.length ?? 0) > 0),
@@ -599,7 +610,7 @@ describe('skill runs', () => {
         yield* post(b.api, `/apps/v1/me/skills/${CLEANUP_SKILL_ID}/run`, { noteId: noteB }),
         200
       );
-      assert.strictEqual(raw.bodyJson.result.rawMarkdown, '## Cleaned\n\nJust prose, no JSON.');
+      assert.strictEqual(raw.bodyJson.rawMarkdown, '## Cleaned\n\nJust prose, no JSON.');
       yield* Scope.close(b.scope, Exit.void);
     })
   );
@@ -676,8 +687,8 @@ describe('skill runs', () => {
         yield* post(a.api, `/apps/v1/me/skills/${CLEANUP_SKILL_ID}/run`, { noteId: noteA }),
         200
       );
-      assert.strictEqual(salvaged.bodyJson.result.rawMarkdown, '## Fixed\n\nBody.');
-      assert.isNull(salvaged.bodyJson.result.reasoning);
+      assert.strictEqual(salvaged.bodyJson.rawMarkdown, '## Fixed\n\nBody.');
+      assert.isNull(salvaged.bodyJson.reasoning);
       yield* Scope.close(a.scope, Exit.void);
 
       const wrong = textOnlyModel('{"markdown": 42, "reasoning": null}');
@@ -707,7 +718,7 @@ describe('Name-note: run and apply/undo revision CAS', () => {
         yield* post(api, `/apps/v1/me/skills/${NAME_NOTE_SKILL_ID}/run`, { noteId }),
         200
       );
-      const result = run.bodyJson.result;
+      const result = run.bodyJson;
       assert.strictEqual(result.outputTarget, 'note-title');
       assert.strictEqual(result.title, 'Product launch planning');
       assert.strictEqual(result.mode, 'replace-doc');
@@ -720,7 +731,7 @@ describe('Name-note: run and apply/undo revision CAS', () => {
         yield* post(api, '/apps/v1/me/title-runs/apply', { runId: result.titleRunId }),
         200
       );
-      assert.deepStrictEqual(applied.bodyJson.result, {
+      assert.deepStrictEqual(applied.bodyJson, {
         noteId,
         title: 'Product launch planning',
         titleSource: 'ai',
@@ -731,20 +742,20 @@ describe('Name-note: run and apply/undo revision CAS', () => {
         yield* post(api, '/apps/v1/me/title-runs/apply', { runId: result.titleRunId }),
         200
       );
-      assert.strictEqual(retried.bodyJson.result.titleRevision, 1);
+      assert.strictEqual(retried.bodyJson.titleRevision, 1);
 
       // Undo restores the DERIVED default (previous source was the placeholder).
       const undone = expectOk(
         yield* post(api, '/apps/v1/me/title-runs/undo', { runId: result.titleRunId }),
         200
       );
-      assert.strictEqual(undone.bodyJson.result.titleSource, 'first-line');
-      assert.strictEqual(undone.bodyJson.result.titleRevision, 2);
+      assert.strictEqual(undone.bodyJson.titleSource, 'first-line');
+      assert.strictEqual(undone.bodyJson.titleRevision, 2);
       const undoneAgain = expectOk(
         yield* post(api, '/apps/v1/me/title-runs/undo', { runId: result.titleRunId }),
         200
       );
-      assert.strictEqual(undoneAgain.bodyJson.result.titleRevision, 2);
+      assert.strictEqual(undoneAgain.bodyJson.titleRevision, 2);
 
       // A second run whose base revision is stale by the time it applies → 409.
       const stale = expectOk(
@@ -758,7 +769,7 @@ describe('Name-note: run and apply/undo revision CAS', () => {
           .where(eq(schema.note.id, noteId))
       );
       const conflict = expectOk(
-        yield* post(api, '/apps/v1/me/title-runs/apply', { runId: stale.bodyJson.result.titleRunId }),
+        yield* post(api, '/apps/v1/me/title-runs/apply', { runId: stale.bodyJson.titleRunId }),
         409
       );
       assert.strictEqual(conflict.bodyJson.error.code, 'TITLE_CHANGED');
@@ -777,7 +788,7 @@ describe('Name-note: run and apply/undo revision CAS', () => {
         yield* post(a.api, `/apps/v1/me/skills/${NAME_NOTE_SKILL_ID}/run`, { noteId: noteA }),
         200
       );
-      assert.strictEqual(named.bodyJson.result.title, 'Q3 launch plan');
+      assert.strictEqual(named.bodyJson.title, 'Q3 launch plan');
       yield* Scope.close(a.scope, Exit.void);
 
       // Server parity: a naming run that never delivered a title is OUTPUT_NOT_SUBMITTED —
@@ -876,7 +887,9 @@ describe('skill-run gates', () => {
         }),
         403
       );
-      assert.deepStrictEqual(rewrite.bodyJson, { success: false, error: { code: 'FORBIDDEN' } });
+      assert.deepStrictEqual(rewrite.bodyJson, {
+        error: { code: 'FORBIDDEN', message: 'Forbidden' },
+      });
       const upsert = expectOk(
         yield* post(api, '/apps/v1/me/skills', {
           id: CLEANUP_SKILL_ID,
@@ -910,20 +923,20 @@ describe('artifact lanes', () => {
           usage: { totalTokens: 3 },
         });
       const first = expectOk(yield* accept('[]'), 200);
-      assert.strictEqual(first.bodyJson.result.version, 1);
-      assert.match(first.bodyJson.result.artifactId, /^art_/);
+      assert.strictEqual(first.bodyJson.version, 1);
+      assert.match(first.bodyJson.artifactId, /^art_/);
       const second = expectOk(yield* accept(), 200);
-      assert.strictEqual(second.bodyJson.result.version, 2);
+      assert.strictEqual(second.bodyJson.version, 2);
 
       // The latest accept kept no snapshot → nothing to undo (never an older one).
       const none = expectOk(yield* post(api, '/apps/v1/me/skill-runs/restore', { noteId }), 200);
-      assert.deepStrictEqual(none.bodyJson.result, { restored: false });
+      assert.deepStrictEqual(none.bodyJson, { restored: false });
 
       const third = expectOk(yield* accept('[{"type":"heading"}]'), 200);
       const restored = expectOk(yield* post(api, '/apps/v1/me/skill-runs/restore', { noteId }), 200);
-      assert.deepStrictEqual(restored.bodyJson.result, {
+      assert.deepStrictEqual(restored.bodyJson, {
         restored: true,
-        artifactId: third.bodyJson.result.artifactId,
+        artifactId: third.bodyJson.artifactId,
         prevContent: '[{"type":"heading"}]',
       });
       // The tombstone rides the artifacts sync lane under includeDeleted.
@@ -959,7 +972,7 @@ describe('Ask stream', () => {
       // Persisted like the server: the [user, assistant] pair under the conversation id.
       yield* Effect.promise(() => new Promise(resolve => setImmediate(resolve)));
       const conv = expectOk(yield* get(api, '/apps/v1/me/ask/conversations'), 200);
-      assert.deepStrictEqual(conv.bodyJson.result, {
+      assert.deepStrictEqual(conv.bodyJson, {
         id: 'cnv_local_1',
         messages: [
           { role: 'user', content: 'What is in my focus note?' },
@@ -1051,13 +1064,12 @@ describe('provider routes', () => {
       );
       const models = expectOk(yield* get(api, '/apps/v1/me/instances/inst_local_openai/models'), 200);
       assert.deepStrictEqual(models.bodyJson, {
-        success: true,
-        models: [{ id: 'fake', name: 'fake', type: 'language' }],
+        results: [{ id: 'fake', name: 'fake', type: 'language' }],
       });
       expectOk(yield* get(api, '/apps/v1/me/instances/inst_other/models'), 404);
 
       const defaults = expectOk(yield* get(api, '/apps/v1/me/model-defaults'), 200);
-      assert.deepStrictEqual(defaults.bodyJson.result, {
+      assert.deepStrictEqual(defaults.bodyJson, {
         formatting: { instanceId: 'inst_local_openai', modelId: 'fake' },
         transcription: null,
       });
@@ -1069,7 +1081,7 @@ describe('provider routes', () => {
         }),
         200
       );
-      assert.deepStrictEqual(set.bodyJson.result, {
+      assert.deepStrictEqual(set.bodyJson, {
         useCase: 'formatting',
         instanceId: 'inst_local_openai',
         modelId: 'fake',
@@ -1083,7 +1095,7 @@ describe('provider routes', () => {
         422
       );
       assert.strictEqual(missingModel.bodyJson.error.code, 'MODEL_REQUIRED');
-      expectOk(yield* api.request({ method: 'DELETE', path: '/apps/v1/me/model-defaults' }), 200);
+      expectOk(yield* api.request({ method: 'DELETE', path: '/apps/v1/me/model-defaults' }), 204);
       yield* Scope.close(scope, Exit.void);
     })
   );

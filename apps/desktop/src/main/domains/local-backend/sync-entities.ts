@@ -235,7 +235,6 @@ export const listEntity = async (
     .orderBy(asc(table.updatedAt), asc(table.id));
   const present = entity.present;
   return ok({
-    success: true,
     results: present ? (rows as Record<string, unknown>[]).map(present) : rows,
   });
 };
@@ -294,7 +293,7 @@ export const upsertEntity = async (
     if (existing !== undefined) {
       // LWW: ignore stale writes; the server-winning row rides back.
       if (parsed.incomingMs < Date.parse(existing.updatedAt as string)) {
-        return ok({ success: true, result: echo(entity, existing), applied: false, created: false });
+        return ok({ result: echo(entity, existing), applied: false, created: false });
       }
       const guarded = entity.guardMutation?.(existing, 'update', parsed.fields);
       if (guarded) return guarded;
@@ -303,7 +302,7 @@ export const upsertEntity = async (
         .set({ ...parsed.fields, updatedAt: new Date(parsed.incomingMs).toISOString() })
         .where(eq(table.id, existing.id))
         .returning()) as Record<string, any>[];
-      return ok({ success: true, result: echo(entity, updated[0]), applied: true, created: false });
+      return ok({ result: echo(entity, updated[0]), applied: true, created: false });
     }
     const inserted = (await db
       .insert(table)
@@ -317,7 +316,7 @@ export const upsertEntity = async (
         deletedAt: null,
       })
       .returning()) as Record<string, any>[];
-    return ok({ success: true, result: echo(entity, inserted[0]), applied: true, created: true }, 201);
+    return ok({ result: echo(entity, inserted[0]), applied: true, created: true }, 201);
   } catch (error) {
     if (isUniqueViolation(error)) return conflict();
     throw error;
@@ -352,7 +351,7 @@ export const updateEntity = async (
     return conflict();
   }
   if (parsed.incomingMs < Date.parse(existing.updatedAt as string)) {
-    return ok({ success: true, result: echo(entity, existing), applied: false, created: false });
+    return ok({ result: echo(entity, existing), applied: false, created: false });
   }
   const guarded = entity.guardMutation?.(existing, 'update', parsed.fields);
   if (guarded) return guarded;
@@ -362,7 +361,7 @@ export const updateEntity = async (
       .set({ ...parsed.fields, updatedAt: new Date(parsed.incomingMs).toISOString() })
       .where(eq(table.id, id))
       .returning()) as Record<string, any>[];
-    return ok({ success: true, result: echo(entity, updated[0]), applied: true, created: false });
+    return ok({ result: echo(entity, updated[0]), applied: true, created: false });
   } catch (error) {
     if (isUniqueViolation(error)) return conflict();
     throw error;
@@ -382,5 +381,5 @@ export const removeEntity = async (
   if (guarded) return guarded;
   const now = new Date().toISOString();
   await db.update(table).set({ deletedAt: now, updatedAt: now }).where(eq(table.id, id));
-  return ok({ success: true });
+  return ok(undefined, 204);
 };

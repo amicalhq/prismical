@@ -16,7 +16,6 @@ const SYNTHETIC_STAMP = '2026-01-01T00:00:00.000Z';
 export async function listInstances(ai: LocalAiPort): Promise<RouteResult> {
   const rows = await ai.instances();
   return ok({
-    success: true,
     results: rows.map(row => ({
       id: row.instanceId,
       provider: row.provider,
@@ -34,14 +33,13 @@ export async function instanceModels(ai: LocalAiPort, instanceId: string): Promi
   if (provider === null) return notFound();
   const listing = await ai.listModels(provider);
   return ok({
-    success: true,
-    models: listing.models.map(id => ({ id, name: id, type: 'language' })),
+    results: listing.models.map(id => ({ id, name: id, type: 'language' })),
   });
 }
 
 export async function getModelDefaults(ai: LocalAiPort): Promise<RouteResult> {
   const formatting = await ai.defaultSelection();
-  return ok({ success: true, result: { formatting, transcription: null } });
+  return ok({ formatting, transcription: null });
 }
 
 export async function setModelDefault(ai: LocalAiPort, body: unknown): Promise<RouteResult> {
@@ -50,10 +48,10 @@ export async function setModelDefault(ai: LocalAiPort, body: unknown): Promise<R
   const { useCase, instanceId, modelId } = parsed.data;
   // Transcription defaults belong to the engine setting; accept as a no-op.
   if (useCase === 'transcription' || instanceId === undefined) {
-    return ok({ success: true, result: { useCase, instanceId: null, modelId: null } });
+    return ok({ useCase, instanceId: null, modelId: null });
   }
   if (modelId === undefined) return apiError(422, 'MODEL_REQUIRED', 'Invalid model selection');
   const applied = await ai.setDefault({ instanceId, modelId });
   if (!applied) return apiError(404, 'INSTANCE_NOT_FOUND', 'Provider instance not found');
-  return ok({ success: true, result: { useCase, instanceId, modelId } });
+  return ok({ useCase, instanceId, modelId });
 }

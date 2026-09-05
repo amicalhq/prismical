@@ -399,7 +399,7 @@ export async function startFakeOAuthServer(
               slug: 'e2e-organization',
               role: organizationRole,
               allowPublicSharing: false,
-              features: { integrations: integrationsEnabled },
+              features: { integrations: integrationsEnabled, customMcpServers: true },
               memberCount: 1,
             },
           ],

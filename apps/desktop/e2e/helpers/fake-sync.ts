@@ -153,7 +153,7 @@ export async function startFakeSyncServer(options: FakeSyncOptions = {}): Promis
   };
 
   const notFound = (response: ServerResponse): void =>
-    json(response, 404, { success: false, error: { code: 'NOT_FOUND' } });
+    json(response, 404, { error: { code: 'NOT_FOUND', message: 'Not found' } });
 
   /** Delta list over a store: strict-gt since, tombstone gate, (updatedAt, id) asc. */
   const deltaRows = (store: Map<string, SyncRow>, query: Record<string, string>): SyncRow[] => {
@@ -208,7 +208,6 @@ export async function startFakeSyncServer(options: FakeSyncOptions = {}): Promis
     const id = pathId ?? (typeof body.id === 'string' ? body.id : null);
     if (id !== null && entity.idEntity !== null && !isValidPrefixedId(entity.idEntity, id)) {
       json(response, 400, {
-        success: false,
         error: { code: 'INVALID_REQUEST', message: `id must be a ${entity.idEntity} id` },
       });
       return;
@@ -233,7 +232,7 @@ export async function startFakeSyncServer(options: FakeSyncOptions = {}): Promis
           row.name.toLowerCase() === (fields.name as string).toLowerCase()
       );
       if (collision) {
-        json(response, 409, { success: false, error: { code: 'CONFLICT' } });
+        json(response, 409, { error: { code: 'CONFLICT', message: 'Conflict' } });
         return;
       }
     }
@@ -243,7 +242,7 @@ export async function startFakeSyncServer(options: FakeSyncOptions = {}): Promis
         ? new Date(updatedAt).getTime()
         : Date.now();
     if (existing && incomingMs < new Date(existing.updatedAt).getTime()) {
-      json(response, 200, { success: true, result: existing, applied: false, created: false });
+      json(response, 200, { result: existing, applied: false, created: false });
       return;
     }
 
@@ -265,7 +264,6 @@ export async function startFakeSyncServer(options: FakeSyncOptions = {}): Promis
     store.set(rowId, next);
     const echo = entity.route === 'notes' ? toNoteEchoRow(next) : next;
     json(response, existing ? 200 : 201, {
-      success: true,
       result: echo,
       applied: true,
       created: !existing,
@@ -295,7 +293,9 @@ export async function startFakeSyncServer(options: FakeSyncOptions = {}): Promis
 
       const injected = failures.shift();
       if (injected !== undefined) {
-        json(response, injected, { success: false, error: { code: 'INJECTED_FAILURE' } });
+        json(response, injected, {
+          error: { code: 'INJECTED_FAILURE', message: 'Injected failure' },
+        });
         return;
       }
 
@@ -307,7 +307,7 @@ export async function startFakeSyncServer(options: FakeSyncOptions = {}): Promis
       }
       const orgUserId = resolveOrgUser(request);
       if (!orgUserId) {
-        json(response, 401, { success: false, error: { code: 'UNAUTHORIZED' } });
+        json(response, 401, { error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } });
         return;
       }
 
@@ -322,7 +322,7 @@ export async function startFakeSyncServer(options: FakeSyncOptions = {}): Promis
         const tags = scopeStore(orgUserId, 'tags');
         if (method === 'GET' && rest.length === 0) {
           const rows = deltaRows(store, query).map(({ id: _id, orgUserId: _ou, ...wire }) => wire);
-          json(response, 200, { success: true, results: rows });
+          json(response, 200, { results: rows });
           return;
         }
         if (method === 'POST' && rest.length === 0) {
@@ -346,7 +346,7 @@ export async function startFakeSyncServer(options: FakeSyncOptions = {}): Promis
             createdAt: existing?.createdAt ?? now,
             deletedAt: null, // link POST is an upsert-with-revive (junctions.ts)
           });
-          json(response, 201, { success: true, result: { noteId, tagId } });
+          json(response, 201, { noteId, tagId });
           return;
         }
         if (method === 'DELETE' && rest.length === 2) {
@@ -358,7 +358,7 @@ export async function startFakeSyncServer(options: FakeSyncOptions = {}): Promis
           }
           const now = new Date().toISOString();
           store.set(key, { ...existing, deletedAt: now, updatedAt: now });
-          json(response, 200, { success: true });
+          json(response, 204, undefined);
           return;
         }
         notFound(response);
@@ -379,7 +379,7 @@ export async function startFakeSyncServer(options: FakeSyncOptions = {}): Promis
         const rows = deltaRows(store, query).map(row =>
           entity.route === 'notes' ? toNoteWireRow(row, folders, includeBody) : row
         );
-        json(response, 200, { success: true, results: rows });
+        json(response, 200, { results: rows });
         return;
       }
       if (method === 'POST' && rest.length === 0 && body) {
@@ -398,7 +398,7 @@ export async function startFakeSyncServer(options: FakeSyncOptions = {}): Promis
         }
         const now = new Date().toISOString();
         store.set(rest[0], { ...existing, deletedAt: now, updatedAt: now });
-        json(response, 200, { success: true });
+        json(response, 204, undefined);
         return;
       }
       notFound(response);

@@ -77,10 +77,10 @@ describe('delta list', () => {
     expect(ids).not.toContain(idA);
   });
 
-  it('envelope {success:true, results} ordered (updatedAt, id)', async () => {
+  it('envelope {results} ordered (updatedAt, id)', async () => {
     const res = await get(`${BASE}/tags`);
-    const body = (await res.json()) as { success: boolean; results: Record<string, unknown>[] };
-    expect(body.success).toBe(true);
+    const body = (await res.json()) as { results: Record<string, unknown>[] };
+    expect(body).not.toHaveProperty('success');
     const mine = body.results.filter(r => [idA, idB].includes(r.id as string));
     expect(mine.map(r => r.id)).toEqual([idA, idB]);
   });
@@ -97,7 +97,7 @@ describe('writes', () => {
     const res = await post(`${BASE}/tags`, { id, name: 'Mint', color: '#444' });
     expect(res.status).toBe(201);
     const body = (await res.json()) as Record<string, any>;
-    expect(body).toMatchObject({ success: true, created: true, applied: true });
+    expect(body).toMatchObject({ created: true, applied: true });
     expect(body.result.id).toBe(id);
     expect(body.result.createdAt).toBeTruthy();
   });
@@ -135,15 +135,16 @@ describe('writes', () => {
 });
 
 describe('tombstones', () => {
-  it('DELETE is exactly {success:true}; row hidden live, present under includeDeleted with bumped updatedAt', async () => {
+  it('DELETE is exactly HTTP 204; row hidden live, present under includeDeleted with bumped updatedAt', async () => {
     const id = createId('tag');
     await post(`${BASE}/tags`, { id, name: 'Tomb', color: '#999' }); // server-now stamp, like a real create
     const preDelete = new Date(
-      ((await listOf(await get(`${BASE}/tags?includeDeleted=1`))).find(r => r.id === id)!.updatedAt) as string
+      (await listOf(await get(`${BASE}/tags?includeDeleted=1`))).find(r => r.id === id)!
+        .updatedAt as string
     );
     const delRes = await del(`${BASE}/tags/${id}`);
-    expect(delRes.status).toBe(200);
-    expect(await delRes.json()).toEqual({ success: true });
+    expect(delRes.status).toBe(204);
+    expect(await delRes.text()).toBe('');
 
     const live = (await listOf(await get(`${BASE}/tags`))).map(r => r.id);
     expect(live).not.toContain(id);
@@ -151,7 +152,9 @@ describe('tombstones', () => {
     const tomb = (await listOf(await get(`${BASE}/tags?includeDeleted=1`))).find(r => r.id === id)!;
     expect(tomb.deletedAt).toBeTruthy();
     // The bump carries the delete past cursors ≥ the live row's stamp.
-    expect(new Date(tomb.updatedAt as string).getTime()).toBeGreaterThanOrEqual(preDelete.getTime());
+    expect(new Date(tomb.updatedAt as string).getTime()).toBeGreaterThanOrEqual(
+      preDelete.getTime()
+    );
   });
 
   it('re-DELETE is 404 (client ack)', async () => {
@@ -233,7 +236,7 @@ describe('note-tags junction', () => {
   it('POST echo carries ONLY {noteId, tagId}', async () => {
     const res = await post(`${BASE}/note-tags`, { noteId: nId, tagId: tId });
     expect(res.status).toBe(201);
-    expect(await res.json()).toEqual({ success: true, result: { noteId: nId, tagId: tId } });
+    expect(await res.json()).toEqual({ noteId: nId, tagId: tId });
   });
 
   it('delta list supports since + includeDeleted; rows carry updatedAt', async () => {
@@ -242,10 +245,10 @@ describe('note-tags junction', () => {
     expect(row.updatedAt).toBeTruthy();
   });
 
-  it('unlink {success:true}; replay 404 (ack)', async () => {
+  it('unlink HTTP 204; replay 404 (ack)', async () => {
     const first = await del(`${BASE}/note-tags/${nId}/${tId}`);
-    expect(first.status).toBe(200);
-    expect(await first.json()).toEqual({ success: true });
+    expect(first.status).toBe(204);
+    expect(await first.text()).toBe('');
     expect((await del(`${BASE}/note-tags/${nId}/${tId}`)).status).toBe(404);
   });
 });
