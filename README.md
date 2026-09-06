@@ -47,6 +47,8 @@ seam in `apps/desktop/src/renderer/main/app/ports/`.
 ### Prerequisites
 
 - Node.js 24 and pnpm 10.27.0 (`corepack enable` picks the pinned version)
+- Portless 0.5 or later (`npm install -g portless`), with its HTTPS proxy on port 443
+  and local CA trusted (`portless proxy start --https` and `portless trust`)
 - CMake 3.20 or later (the whisper addon builds with cmake-js)
 - **macOS:** Xcode or the Command Line Tools (Swift 5.10+). At runtime, local transcription
   needs macOS 14 or later (the whisper addon's deployment target) and capturing other
@@ -87,6 +89,10 @@ Cloud mode against a Prismical backend needs `PRISMICAL_CLIENT_ID` (the public P
 client id registered on that backend) and, for a self-hosted or dev backend, the endpoint
 overrides — copy `apps/desktop/.env.example` to `apps/desktop/.env`. Dev builds default to a
 local `*.localhost` stack; packaged builds default to the public Prismical cloud. `pnpm dev`
+starts a persistent Forge runner through portless, which assigns the internal OAuth listener port.
+In-app restarts recreate Forge and Vite while retaining that route; a normal quit stops the runner.
+Register `https://prismical-desktop.localhost/oauth/callback` on the backend's OAuth client;
+the internal port does not appear in the redirect URI. The launcher also
 adds a trusted dev-proxy CA (`~/.portless/ca.pem`) to Node only when that file exists; set
 `NODE_EXTRA_CA_CERTS` yourself for any other self-signed dev stack.
 

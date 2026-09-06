@@ -1,4 +1,5 @@
 import { app, shell } from 'electron';
+import { writeFileSync } from 'node:fs';
 import { Effect, Layer } from 'effect';
 import { log } from '../../logger';
 import { NativeOs, type NativeOsApi } from './service';
@@ -40,10 +41,16 @@ export const NativeOsLive: Layer.Layer<NativeOs> = Layer.succeed(
     // (before-quit → boot scope close → runtime dispose → app.exit), so the
     // product DBs close, the whisper child dies, a live recording parks and
     // in-flight downloads drop their `.part` — the destructive reset's boot-time
-    // purge then finds no open handles. Electron honours the queued
-    // `relaunch()` when the process finally exits.
+    // purge then finds no open handles. In dev the runner restarts Forge after
+    // this process exits, preserving Portless and recreating Vite. Packaged
+    // builds let Electron perform the relaunch.
     relaunch: Effect.sync(() => {
-      app.relaunch();
+      const restartFile = process.env.PRISMICAL_DEV_RESTART_FILE;
+      if (!app.isPackaged && restartFile) {
+        writeFileSync(restartFile, '');
+      } else {
+        app.relaunch();
+      }
       app.quit();
     }),
   } satisfies NativeOsApi

@@ -45,11 +45,11 @@ describe('AppConfig auth block', () => {
     const config = makeAppConfig();
     expect(config.auth).toEqual({
       oauthClientId: '',
-      // Dev uses the RFC 8252 loopback receiver (deep-link/dev-loopback.ts) —
+      // Dev uses the portless loopback receiver (deep-link/dev-loopback.ts) —
       // unpackaged Electron cannot reliably win a custom-scheme registration
       // (see config/live.ts readAuth). Packaged builds keep prismical://.
       // The suite keeps the loopback and packaged custom-scheme behavior distinct.
-      redirectUri: 'http://127.0.0.1:17829/oauth/callback',
+      redirectUri: 'https://prismical-desktop.localhost/oauth/callback',
       authorizeUrl: 'https://prismical-core.localhost/api/auth/oauth2/authorize',
       tokenUrl: 'https://prismical-core.localhost/api/auth/oauth2/token',
       revokeUrl: 'https://prismical-core.localhost/api/auth/oauth2/revoke',

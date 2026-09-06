@@ -50,8 +50,9 @@ silence,editor-markdown,editor-schema,id,note-derive,ai-prompts}`) — the scree
   the renderer graph. Vite keys bare imports by package name, so one package pinning `"zod": "^3"`
   poisons the shared chunk. Every renderer-graph package must use `"zod": "catalog:"`; after
   fixing, `rm -rf apps/desktop/node_modules/.vite` and restart.
-- **Dev sign-in uses an RFC 8252 loopback** (`http://127.0.0.1:17829/oauth/callback`). Custom
-  schemes cannot work unpackaged because every Electron checkout shares the `com.github.Electron`
+- **Dev sign-in uses portless** (`https://prismical-desktop.localhost/oauth/callback`).
+  `pnpm dev` starts Forge through portless, which assigns the loopback listener's `PORT`.
+  Custom schemes cannot work unpackaged because every Electron checkout shares the `com.github.Electron`
   bundle id; packaged builds use `prismical://`.
 - **Sign-in fails `invalid_redirect`** → the loopback URI is missing from the OAuth client's
   redirect allow-list on the backend you sign in against.

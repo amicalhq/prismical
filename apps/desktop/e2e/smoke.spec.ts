@@ -14,9 +14,9 @@ import {
  *
  *  - A FRESH profile (no `app:mode` row) boots into the first-run MODE CHOOSER —
  *    never a product shell, and no sign-in before a mode is chosen.
- *  - Choosing the Prismical account reveals the sign-in gate in the SAME
+ *  - Choosing the Prismical account starts browser sign-in in the SAME
  *    process (the fresh install already booted in cloud mode) and persists the
- *    choice; a renderer reload does not resurface the chooser.
+ *    choice; a renderer reload does not resurface the chooser or restart sign-in.
  *  - Choosing on-device mode persists it and RESTARTS the app (the mode is
  *    immutable per process); the next boot is the accountless local shell.
  *  - A cloud-mode profile (what every other cloud spec launches into) boots
@@ -103,22 +103,27 @@ test.describe('smoke', () => {
     await assertPosture(launched);
   });
 
-  test('choosing the Prismical account reveals the sign-in gate in-process, persists, and survives a reload', async () => {
-    launched = await launchPrismical({}, { seedMode: null });
+  test('choosing the Prismical account starts sign-in directly, persists, and survives a reload', async () => {
+    launched = await launchPrismical(
+      { PRISMICAL_CLIENT_ID: 'desktop-e2e-client' },
+      { seedMode: null }
+    );
     const page = await firstWindow(launched.app);
     await expect(page.getByTestId('mode-chooser')).toBeVisible();
 
     await page.getByTestId('mode-choose-cloud').click();
 
-    // The chooser unmounts; the gate underneath is now the surface — the same
-    // signed-out gate every cloud spec pins.
+    // One click starts the PKCE flow and reveals the browser-pending surface.
     await expect(page.getByTestId('mode-chooser')).toHaveCount(0);
     const gate = page.getByTestId('auth-gate');
     await expect(gate).toBeVisible();
-    await expect(gate).toHaveAttribute('data-mode', 'gate');
-    await expect(gate).toHaveAttribute('data-gate-state', 'signed-out');
+    await expect(gate).toHaveAttribute('data-mode', 'pending');
+    await expect(gate).toHaveAttribute('data-gate-state', 'signing-in');
     await expect(page.getByTestId('auth-brand')).toHaveText('Prismical');
-    await expect(page.getByTestId('auth-sign-in')).toBeVisible();
+    await expect(page.getByTestId('auth-sign-in')).toHaveCount(0);
+    const pendingState = () => page.evaluate(() => window.desktop.e2e!.authPendingState());
+    const state = await pendingState();
+    expect(state).not.toBeNull();
     await expect(page.getByTestId('desktop-shell')).toHaveCount(0);
     expect(readAppModeRow(launched.userDataDir)).toBe('cloud');
 
@@ -126,8 +131,24 @@ test.describe('smoke', () => {
     // (not the chooser) comes back.
     await page.reload();
     await page.waitForLoadState('domcontentloaded');
-    await expect(page.getByTestId('auth-gate')).toHaveAttribute('data-mode', 'gate');
+    await expect(page.getByTestId('auth-gate')).toHaveAttribute('data-mode', 'pending');
     await expect(page.getByTestId('mode-chooser')).toHaveCount(0);
+    expect(await pendingState()).toBe(state);
+  });
+
+  test('a first-run sign-in failure shows the auth notice and allows retry', async () => {
+    launched = await launchPrismical({ PRISMICAL_CLIENT_ID: '' }, { seedMode: null });
+    const page = await firstWindow(launched.app);
+
+    await page.getByTestId('mode-choose-cloud').click();
+
+    await expect(page.getByTestId('mode-chooser')).toHaveCount(0);
+    await expect(page.getByTestId('auth-gate')).toHaveAttribute('data-mode', 'gate');
+    await expect(page.getByTestId('auth-notice')).toHaveAttribute('data-kind', 'error');
+    await expect(page.getByTestId('auth-sign-in')).toBeEnabled();
+    await page.getByTestId('auth-sign-in').click();
+    await expect(page.getByTestId('auth-notice')).toHaveAttribute('data-kind', 'error');
+    expect(readAppModeRow(launched.userDataDir)).toBe('cloud');
   });
 
   test('choosing on-device mode restarts into the accountless local shell', async () => {

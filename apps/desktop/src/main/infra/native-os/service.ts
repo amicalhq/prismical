@@ -21,7 +21,7 @@ export interface NativeOsApi {
   readonly openExternal: (url: string) => Effect.Effect<void>;
   /** `shell.showItemInFolder(<electron-log file>)` — reveal the log. */
   readonly revealLogs: Effect.Effect<void>;
-  /** `app.relaunch(); app.exit(0)` — the post-reset restart. */
+  /** Request a relaunch (through the launcher in dev), then quit gracefully. */
   readonly relaunch: Effect.Effect<void>;
 }
 

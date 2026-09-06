@@ -15,7 +15,7 @@
  * so the app and the page it hands off to read as one product.
  *
  * Render modes (container data-mode, asserted by the e2e suite):
- * - 'gate'    — signed out: the branded card with sign-in / create-account.
+ * - 'gate'    — signed out: the branded card with a single Prismical sign-in.
  * - 'pending' — signing-in with no active account: the browser dance is under
  *               way. Retry re-invokes signIn; FLOW_ALREADY_PENDING is the
  *               normal answer while one attempt is parked, so it surfaces as a
@@ -29,12 +29,22 @@
  * Nothing here writes to localStorage or sessionStorage: the auth sentinel spec
  * asserts renderer storage stays empty/allowlisted.
  */
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  createRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type ReactNode,
+  type Ref,
+} from 'react';
 import { createRoot } from 'react-dom/client';
 import type { i18n, TFunction } from 'i18next';
 import { I18nextProvider, useTranslation } from 'react-i18next';
 import type { SessionAccount, SessionView } from '@prismical/desktop-contracts';
 import { Button } from '@prismical/app-ui/ui/button';
+import { ShineBorder } from '@prismical/app-ui/ui/shine-border';
 import { resetAnalyticsIdentity } from './app/analytics/posthog';
 import { GateCard } from './gate-card';
 import './app/globals.css';
@@ -94,7 +104,7 @@ function NoticeText({ notice }: { notice: Notice }) {
   );
 }
 
-function AuthGate() {
+function AuthGate({ ref }: { ref: Ref<Pick<AuthGateHandle, 'startSignIn'>> }) {
   const { t } = useTranslation();
   const [view, setView] = useState<SessionView | null>(null);
   const [dismissedPending, setDismissedPending] = useState(false);
@@ -171,6 +181,8 @@ function AuthGate() {
     );
   }, [busy, t]);
 
+  useImperativeHandle(ref, () => ({ startSignIn }), [startSignIn]);
+
   const signOut = useCallback((): void => {
     if (busyRef.current) return;
     busyRef.current = true;
@@ -197,46 +209,37 @@ function AuthGate() {
 
   const renderGate = (): ReactNode => (
     <GateCard>
-      {/* text-center matches the pending/session bodies — the old plain-DOM
-          card centred all three, and a left-aligned notice under two centred
-          full-width buttons reads as a layout bug. */}
       <div className="grid gap-3 text-center">
-        <Button
-          type="button"
-          className="w-full"
-          data-testid="auth-sign-in"
-          disabled={busy}
-          onClick={startSignIn}
-        >
-          {t('desktop.auth.signIn')}
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          className="w-full"
-          data-testid="auth-sign-up"
-          disabled={busy}
-          onClick={startSignIn}
-        >
-          {t('desktop.auth.createAccount')}
-        </Button>
-        {notice === null ? null : <NoticeText notice={notice} />}
+        <div className="relative rounded-md">
+          <Button
+            type="button"
+            className="w-full"
+            data-testid="auth-sign-in"
+            disabled={busy}
+            onClick={startSignIn}
+          >
+            {t('desktop.modeChooser.cloud.choose')}
+          </Button>
+          <ShineBorder shineColor={['#6366f1', '#a5b4fc', '#4f46e5']} borderWidth={2} />
+        </div>
         {/* The way back to on-device mode for a user who chose the account
             path and never signed in: the mode switch lives in
             Settings, which only exists behind this gate. The switch is the
             destructive reset — signed out, nothing of theirs is at stake. */}
-        <button
+        <Button
           type="button"
+          variant="link"
           data-testid="auth-use-locally"
           disabled={busy}
           onClick={() => {
             resetAnalyticsIdentity();
             void window.desktop.capabilities.resetApp({ mode: 'local' }).catch(() => {});
           }}
-          className="text-muted-foreground mx-auto mt-1 text-xs underline-offset-4 hover:underline disabled:opacity-50"
+          className="text-muted-foreground hover:text-foreground justify-self-center text-xs font-normal"
         >
-          {t('desktop.auth.useLocally')}
-        </button>
+          {t('desktop.modeChooser.local.choose')}
+        </Button>
+        {notice === null ? null : <NoticeText notice={notice} />}
       </div>
     </GateCard>
   );
@@ -357,6 +360,8 @@ function AuthGate() {
 }
 
 export interface AuthGateHandle {
+  /** Start the browser flow directly after the first-run cloud choice. */
+  readonly startSignIn: () => void;
   /**
    * `inert` makes the gate non-interactive AND hidden from assistive tech
    * while the first-run chooser paints over it: without it
@@ -371,15 +376,17 @@ export const mountAuthGate = (
   instance: i18n,
   options: { readonly inert?: boolean } = {}
 ): AuthGateHandle => {
+  const gateRef = createRef<Pick<AuthGateHandle, 'startSignIn'>>();
   const container = document.createElement('div');
   if (options.inert) container.setAttribute('inert', '');
   root.append(container);
   createRoot(container).render(
     <I18nextProvider i18n={instance}>
-      <AuthGate />
+      <AuthGate ref={gateRef} />
     </I18nextProvider>
   );
   return {
+    startSignIn: () => gateRef.current?.startSignIn(),
     setInert: inert => {
       if (inert) container.setAttribute('inert', '');
       else container.removeAttribute('inert');

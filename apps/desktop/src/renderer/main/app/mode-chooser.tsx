@@ -9,7 +9,7 @@
  *    card shows a restarting state until the window goes away.
  *  - "Sign in with Prismical" → { mode: 'cloud' } — equals the boot
  *    mode, so main persists it and answers { relaunch: false }; the chooser
- *    unmounts and the gate underneath owns the surface.
+ *    unmounts and onChosen starts the gate's browser sign-in flow.
  * A persist failure surfaces as a notice; the chooser stays (a relaunch would
  * only show it again). Nothing here writes localStorage/sessionStorage (the
  * auth sentinel spec asserts renderer storage stays allowlisted).

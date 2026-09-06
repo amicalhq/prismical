@@ -27,7 +27,7 @@ const CLIENT_ID = 'desktop-e2e-client';
 /** Both test targets currently accept the production callback scheme. */
 const REDIRECT_URI = 'prismical://oauth/callback';
 // What the app SENDS as redirect_uri in the token exchange: config/live.ts
-// derives it from packaging — unpackaged (the bundle target) uses the RFC 8252
+// derives it from packaging — unpackaged (the bundle target) uses the portless
 // loopback receiver, packaged keeps the custom scheme. The prismical://
 // deliverOpenUrl above stays valid either way (the deep-link queue accepts the
 // scheme regardless of which redirect the exchange used). This expectation
@@ -35,7 +35,7 @@ const REDIRECT_URI = 'prismical://oauth/callback';
 const TOKEN_REDIRECT_URI =
   resolveTarget() === 'packaged'
     ? 'prismical://oauth/callback'
-    : 'http://127.0.0.1:17829/oauth/callback';
+    : 'https://prismical-desktop.localhost/oauth/callback';
 
 /**
  * A navigation deep link, `prismical(-dev)://app/<path>`, parses to a Navigate
@@ -172,6 +172,27 @@ test.describe('authentication flow (fake OIDC server)', () => {
     keptProfile = undefined;
     await server?.close();
     server = undefined;
+  });
+
+  test('first-run sign-in goes directly to the browser flow and completes into the shell', async () => {
+    server = await startFakeOAuthServer();
+    launched = await launchPrismical(authEnv(server), { seedMode: null });
+    const page = await launched.app.firstWindow({ timeout: 60_000 });
+    assertNotStaleDevBundle(page.url());
+
+    await page.getByTestId('mode-choose-cloud').click();
+    await expect(page.getByTestId('auth-gate')).toHaveAttribute('data-mode', 'pending');
+    await expect(page.getByTestId('mode-chooser')).toHaveCount(0);
+    const state = await pendingState(page);
+    expect(state).not.toBeNull();
+
+    await deliverOpenUrl(
+      launched.app,
+      `${REDIRECT_URI}?code=C1&state=${encodeURIComponent(state!)}`
+    );
+    await expect(page.getByTestId('auth-account-email')).toHaveText(server.email);
+    await expect(page.getByTestId('desktop-shell')).toBeVisible();
+    expect(server.exchangeRequests()).toHaveLength(1);
   });
 
   test('happy path: gate → pending → open-url callback → session, exactly one exchange', async () => {

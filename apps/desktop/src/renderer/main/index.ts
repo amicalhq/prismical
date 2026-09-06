@@ -118,9 +118,12 @@ const bootstrap = async (): Promise<void> => {
   // In cloud mode the shell renders nothing until an account is active, so the
   // gate above owns the pre-auth surface. Both roots share the exact same i18n
   // instance. Choosing the boot mode (cloud) in-process hands the surface to
-  // the gate by lifting `inert`.
+  // the gate by lifting `inert` and starts browser sign-in from that same click.
   await mountAppShell(root, desktopEnv, applicationI18n, appModeState, {
-    onModeChosen: () => gate?.setInert(false),
+    onModeChosen: () => {
+      gate?.setInert(false);
+      gate?.startSignIn();
+    },
   });
 };
 

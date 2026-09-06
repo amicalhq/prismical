@@ -82,11 +82,12 @@ const readAuth = (isPackaged: boolean, endpoints: EndpointDescriptor): AuthDescr
     // scheme at all: every electron dev checkout shares com.github.Electron,
     // so the OS may launch a bare Electron from another repo's node_modules
     // instead of this running app (and an installed Prismical.app contends for
-    // prismical:// too). Dev therefore uses the RFC 8252 loopback receiver in
-    // deep-link/dev-loopback.ts; the URI is in the seeded client allowlist.
+    // prismical:// too). Dev therefore uses the local receiver in
+    // deep-link/dev-loopback.ts through portless; the public callback URL
+    // stays fixed while portless allocates the listener's internal port.
     redirectUri: isPackaged
       ? 'prismical://oauth/callback'
-      : 'http://127.0.0.1:17829/oauth/callback',
+      : 'https://prismical-desktop.localhost/oauth/callback',
     // All derived from coreApiUrl — PRISMICAL_CORE_API_URL retargets the lot
     // (single knob; e2e points it at the fake OAuth server).
     authorizeUrl: `${core}/api/auth/oauth2/authorize`,
