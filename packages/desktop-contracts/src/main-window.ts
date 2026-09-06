@@ -115,6 +115,8 @@ export const CHANNELS = {
   recordingStart: 'recording:start',
   /** invoke(StopRecordingRequest) → void. Gracefully stop + finalize a recording. */
   recordingStop: 'recording:stop',
+  /** Claim completion once across main and floating windows. */
+  recordingClaimCompletion: 'recording:claimCompletion',
   /** invoke(RecordingControlRequest) → boolean. Flush and pause without finalizing. */
   recordingPause: 'recording:pause',
   /** invoke(RecordingControlRequest) → boolean. Resume the same recording timeline. */
@@ -655,7 +657,13 @@ export const startRecordingResultSchema = z.discriminatedUnion('ok', [
   z
     .object({
       ok: z.literal(false),
-      reason: z.enum(['permission-denied', 'busy', 'no-session']),
+      reason: z.enum([
+        'permission-denied',
+        'busy',
+        'no-session',
+        'model-missing',
+        'storage-unavailable',
+      ]),
     })
     .strict(),
 ]);
@@ -1013,7 +1021,9 @@ export type PermissionRequest = z.infer<typeof permissionRequestSchema>;
  * capability:setTranscriptionByokKey payload. The ONE crossing
  * that carries the key, renderer → main; main stores it and never echoes it.
  */
-export const transcriptionByokKeyRequestSchema = z.object({ key: z.string().min(1) }).strict();
+export const transcriptionByokKeyRequestSchema = z
+  .object({ key: z.string().min(1), baseUrl: z.string().trim().min(1) })
+  .strict();
 export type TranscriptionByokKeyRequest = z.infer<typeof transcriptionByokKeyRequestSchema>;
 
 // ---------------------------------------------------------------------------
@@ -1026,9 +1036,7 @@ export const appModeSchema = z.enum(['cloud', 'local']);
 export type AppModeValue = z.infer<typeof appModeSchema>;
 
 /** capability:getAppModeState result: the boot mode + whether the user ever chose one. */
-export const appModeStateSchema = z
-  .object({ mode: appModeSchema, chosen: z.boolean() })
-  .strict();
+export const appModeStateSchema = z.object({ mode: appModeSchema, chosen: z.boolean() }).strict();
 export type AppModeState = z.infer<typeof appModeStateSchema>;
 
 /** capability:chooseAppMode payload: the first-run choice. */
@@ -1391,6 +1399,7 @@ export interface MainWindowAuthApi {
 export interface MainWindowRecordingApi {
   readonly start: (request: StartRecordingRequest) => Promise<StartRecordingResult>;
   readonly stop: (request: StopRecordingRequest) => Promise<void>;
+  readonly claimCompletion: (request: RecordingControlRequest) => Promise<boolean>;
   readonly pause: (request: RecordingControlRequest) => Promise<boolean>;
   readonly resume: (request: RecordingControlRequest) => Promise<boolean>;
   readonly onStateChanged: (listener: (state: RecordingStateView) => void) => () => void;

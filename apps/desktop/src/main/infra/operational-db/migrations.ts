@@ -14,6 +14,7 @@ import migration0001 from '../../../../drizzle/0001_recovery_outbox.sql?raw';
 import migration0002 from '../../../../drizzle/0002_pause_cut_points.sql?raw';
 import migration0003 from '../../../../drizzle/0003_local_models.sql?raw';
 import migration0004 from '../../../../drizzle/0004_recovery_engine.sql?raw';
+import migration0005 from '../../../../drizzle/0005_recovery_lifecycle.sql?raw';
 
 export interface Migration {
   readonly version: number;
@@ -27,6 +28,7 @@ export const MIGRATIONS: ReadonlyArray<Migration> = [
   { version: 2, name: 'pause_cut_points', sql: migration0002 },
   { version: 3, name: 'local_models', sql: migration0003 },
   { version: 4, name: 'recovery_engine', sql: migration0004 },
+  { version: 5, name: 'recovery_lifecycle', sql: migration0005 },
 ];
 
 const STATEMENT_BREAKPOINT = '--> statement-breakpoint';

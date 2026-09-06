@@ -15,25 +15,31 @@
  *    WAV behind (retained for the drain) — not a placeholder-header stub;
  *  - the graceful-stop path calls `finalizeAndClose` explicitly BEFORE deleting
  *    the directory, so files are closed when they are removed. The
- *    call is idempotent, so the finalizer re-running is a no-op.
+ *    call is idempotent, so the finalizer never reopens a closed writer.
  * A true `kill -9` skips the finalizer; the header keeps placeholder sizes, and
  * the drain recovers the sample count from the on-disk file size instead.
  */
 import * as fs from 'node:fs';
 import path from 'node:path';
-import { Effect, type Scope } from 'effect';
+import { Data, Effect, Either, type Scope } from 'effect';
 import type { MeetingCaptureMode } from '@/types/meeting';
 import { StreamingWavWriter } from '../../infra/audio/streaming-wav-writer';
 import type { ScopedLog } from '../../infra/logging/service';
 import { CAPTURE_SAMPLE_RATE, type ChunkSource } from './chunker';
 
+export class RecoveryWriteError extends Data.TaggedError('RecoveryWriteError')<{
+  readonly op: 'open' | 'append' | 'finalize';
+  readonly source?: ChunkSource;
+  readonly cause: unknown;
+}> {}
+
 export interface RecoveryWavSet {
   /** Directory holding the per-source WAV(s) — the outbox row's `wavPath`. */
   readonly dir: string;
-  /** Append a source's samples; disk errors are logged and swallowed (best-effort artifact). */
-  readonly append: (source: ChunkSource, samples: Float32Array) => Effect.Effect<void>;
+  /** Append a source's samples before the pipeline accepts the frame. */
+  readonly append: (source: ChunkSource, samples: Float32Array) => Effect.Effect<void, RecoveryWriteError>;
   /** Fix headers + close every open writer. Idempotent; safe to call before delete. */
-  readonly finalizeAndClose: Effect.Effect<void>;
+  readonly finalizeAndClose: Effect.Effect<void, RecoveryWriteError>;
 }
 
 /** Per-source WAV file names within the recovery directory — the drain reopens
@@ -49,16 +55,20 @@ export const makeRecoveryWavSet = (params: {
   readonly mode: MeetingCaptureMode;
   readonly log: ScopedLog;
   readonly sampleRate?: number;
-}): Effect.Effect<RecoveryWavSet, never, Scope.Scope> =>
+}): Effect.Effect<RecoveryWavSet, RecoveryWriteError, Scope.Scope> =>
   Effect.acquireRelease(
     Effect.gen(function* () {
       const sampleRate = params.sampleRate ?? CAPTURE_SAMPLE_RATE;
-      yield* Effect.sync(() => fs.mkdirSync(params.dir, { recursive: true }));
+      yield* Effect.try({
+        try: () => fs.mkdirSync(params.dir, { recursive: true }),
+        catch: cause => new RecoveryWriteError({ op: 'open', cause }),
+      });
 
       // Single-fiber access (the frame fiber appends; finalize runs only after it
       // is interrupted), so a plain map needs no lock.
       const writers = new Map<ChunkSource, StreamingWavWriter>();
       let closed = false;
+      let closeFailure: RecoveryWriteError | undefined;
 
       const writerFor = (source: ChunkSource): StreamingWavWriter => {
         const existing = writers.get(source);
@@ -73,36 +83,37 @@ export const makeRecoveryWavSet = (params: {
         return created;
       };
 
-      const finalizeAndClose: Effect.Effect<void> = Effect.gen(function* () {
-        if (closed) return;
-        closed = true;
-        for (const [source, writer] of writers) {
-          yield* Effect.tryPromise(() => writer.finalize()).pipe(
-            Effect.catchAll(cause =>
-              params.log.warn('recovery WAV finalize failed', {
-                source,
-                reason: cause instanceof Error ? cause.message : String(cause),
-              })
-            )
-          );
+      const finalizeAndClose = Effect.gen(function* () {
+        if (!closed) {
+          closed = true;
+          for (const [source, writer] of writers) {
+            const result = yield* Effect.either(Effect.tryPromise({
+              try: () => writer.finalize(),
+              catch: cause => new RecoveryWriteError({ op: 'finalize', source, cause }),
+            }));
+            // Close every source, including when its sibling failed to close.
+            if (Either.isLeft(result)) closeFailure ??= result.left;
+          }
         }
-      });
+        if (closeFailure) yield* Effect.fail(closeFailure);
+      }).pipe(Effect.uninterruptible);
 
-      const append = (source: ChunkSource, samples: Float32Array): Effect.Effect<void> => {
+      const append = (source: ChunkSource, samples: Float32Array) => Effect.suspend(() => {
         if (closed || samples.length === 0) return Effect.void;
-        return Effect.tryPromise(() => writerFor(source).appendAudio(samples)).pipe(
-          Effect.catchAll(cause =>
-            params.log.warn('recovery WAV append failed', {
-              source,
-              reason: cause instanceof Error ? cause.message : String(cause),
-            })
-          )
-        );
-      };
+        return Effect.tryPromise({
+          try: () => writerFor(source).appendAudio(samples),
+          catch: cause => new RecoveryWriteError({ op: 'append', source, cause }),
+        });
+      });
 
       const set: RecoveryWavSet = { dir: params.dir, append, finalizeAndClose };
       return set;
     }),
     // On ANY scope close, fix headers + close so an interrupt retains valid WAVs.
-    set => set.finalizeAndClose
+    set => set.finalizeAndClose.pipe(Effect.catchAll(error =>
+      params.log.warn('recovery WAV finalize failed', {
+        source: error.source,
+        reason: error.cause instanceof Error ? error.cause.message : String(error.cause),
+      })
+    ))
   );

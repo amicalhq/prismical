@@ -13,6 +13,7 @@ import { assert, describe, it } from '@effect/vitest';
 import {
   Cause,
   Context,
+  Deferred,
   Effect,
   Exit,
   Fiber,
@@ -528,6 +529,37 @@ describe('SignedInRuntime lifecycle', () => {
 
       // The stale session never reached the token seam again.
       assert.deepStrictEqual(stub.getIdTokenCalls, ['user_1', 'user_1', 'user_1']);
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+
+  it.effect('rejects a token resolved after the pinned org changed', () =>
+    Effect.gen(function* () {
+      const logger = makeTestLogger();
+      const stub = yield* makeAuthStub;
+      const resolving = yield* Deferred.make<void>();
+      const token = yield* Deferred.make<string>();
+      yield* SubscriptionRef.set(stub.sessionState, authState('signed-in', [account('user_1', 'org_a')], 'user_1'));
+      const env = Layer.mergeAll(
+        Layer.succeed(AuthService, {
+          ...stub.api,
+          getIdToken: () => Deferred.succeed(resolving, undefined).pipe(Effect.zipRight(Deferred.await(token))),
+        }),
+        logger.layer, testConfigLayer({ platform: 'linux' }), testI18nLayer(), WorkspaceTransportLive,
+        OperationalDbLive.pipe(Layer.provide(testConfigLayer()), Layer.provide(logger.layer)),
+        RecordingBridgeLive, DetectionBridgeLive, EventKitBridgeLive, CollabBridgeLive, workspaceEnvStubs('cloud')
+      );
+      const scope = yield* Scope.make();
+      const ctx = yield* Layer.build(makeCloudWorkspaceLayer({
+        sub: 'user_1', email: 'user_1@example.com', activeOrgId: 'org_a',
+      }).pipe(Layer.provide(env))).pipe(Scope.extend(scope));
+      const pending = yield* Effect.fork(Context.get(ctx, SignedInSession).idToken);
+      yield* Deferred.await(resolving);
+      yield* SubscriptionRef.set(stub.sessionState, authState('signed-in', [account('user_1', 'org_b')], 'user_1'));
+      yield* Deferred.succeed(token, 'late-token');
+      const failure = failureOf(yield* Fiber.await(pending));
+      assert.instanceOf(failure, StaleSessionError);
+      assert.strictEqual((failure as StaleSessionError).reason, 'org-switched');
       yield* Scope.close(scope, Exit.void);
     })
   );

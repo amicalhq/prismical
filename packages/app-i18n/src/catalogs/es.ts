@@ -584,6 +584,8 @@ const es = {
       couldNotPause: 'No se ha podido pausar la grabación.',
       couldNotResume: 'No se ha podido reanudar la grabación.',
       couldNotStart: 'No se ha podido iniciar la grabación.',
+      modelMissing: 'Descarga un modelo de transcripción en Ajustes antes de grabar.',
+      storageUnavailable: 'No se pudo guardar la grabación. Comprueba el espacio disponible y vuelve a intentarlo.',
       currentSuggestion: 'Revisa o descarta primero la sugerencia actual.',
       deadMicDescription:
         'Es posible que el sistema esté bloqueando el acceso del navegador al micrófono.',
@@ -618,6 +620,7 @@ const es = {
       empty:
         'Aún no hay transcripción. Inicia una grabación para capturar tu reunión o nota de voz.',
       finishing: 'Finalizando…',
+      uploadingAudio: 'Subiendo audio…',
       identifyingSpeakers: 'Identificando hablantes…',
       input: 'Entrada',
       allAudioSettings: 'Todos los ajustes de audio…',

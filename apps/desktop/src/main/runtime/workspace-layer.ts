@@ -59,6 +59,7 @@ import { ProductDb, type ProductDbError } from '../infra/product-db/service';
 import { SecureStore } from '../infra/secure-store/service';
 import { SystemPermissionsLive } from '../infra/system-permissions/live';
 import { WhisperEngine } from '../infra/whisper/service';
+import { WorkspaceIdentity } from './workspace-identity';
 
 /**
  * Identity + display claims captured from the AuthState snapshot that
@@ -197,9 +198,9 @@ const makeSignedInSessionLayer = (
 
       const api: SignedInSessionApi = {
         pinned,
-        // Guard re-checks per call: staleness can arrive between the swap
-        // decision and this session's scope actually closing.
-        idToken: guard.pipe(Effect.zipRight(auth.getIdToken(pinned.sub))),
+        // A refresh can outlast an account/org switch. Check again after the
+        // await so callers cannot receive a token from a stale workspace.
+        idToken: guard.pipe(Effect.zipRight(auth.getIdToken(pinned.sub)), Effect.zipLeft(guard)),
       };
       return api;
     })
@@ -258,6 +259,7 @@ const sharedWorkspaceServices = (): Layer.Layer<
   | SecureStore
   | ModelManager
   | WhisperEngine
+  | WorkspaceIdentity
 > => {
   const micActivity = MicActivityLive;
   const recordingStore = RecordingStoreLive;
@@ -318,7 +320,16 @@ export const makeCloudWorkspaceLayer = (
     ...(pinned.activeOrgId === undefined ? {} : { orgId: pinned.activeOrgId }),
   });
   const noteBody = NoteBodyStoreLive.pipe(Layer.provide(cache));
-  const shared = sharedWorkspaceServices().pipe(Layer.provide(backend), Layer.provide(cache));
+  const identity = Layer.succeed(WorkspaceIdentity, {
+    mode: 'cloud',
+    sub: pinned.sub,
+    orgId: pinned.activeOrgId ?? null,
+  });
+  const shared = sharedWorkspaceServices().pipe(
+    Layer.provide(backend),
+    Layer.provide(cache),
+    Layer.provide(identity)
+  );
   const eventkit = EventKitServiceLive.pipe(Layer.provide(backend), Layer.provide(session));
   return Layer.mergeAll(session, backend, cache, noteBody, shared, eventkit);
 };
@@ -346,7 +357,11 @@ export const makeLocalWorkspaceLayer = (): Layer.Layer<
   const productDb = makeProductDbLayer({ kind: 'local' });
   const backend = LocalBackendLive.pipe(Layer.provide(productDb));
   const noteBody = NoteBodyStoreLive.pipe(Layer.provide(productDb));
-  const shared = sharedWorkspaceServices().pipe(Layer.provide(backend), Layer.provide(productDb));
+  const shared = sharedWorkspaceServices().pipe(
+    Layer.provide(backend),
+    Layer.provide(productDb),
+    Layer.provide(Layer.succeed(WorkspaceIdentity, { mode: 'local' }))
+  );
   const scopeLog = Layer.scopedDiscard(
     Effect.gen(function* () {
       const log = (yield* MainLogger).scoped('workspace');

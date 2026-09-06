@@ -29,7 +29,15 @@ import {
  */
 export type StartRecordingOutcome =
   | { readonly ok: true; readonly recordingId: string }
-  | { readonly ok: false; readonly reason: 'permission-denied' | 'busy' | 'no-session' };
+  | {
+      readonly ok: false;
+      readonly reason:
+        | 'permission-denied'
+        | 'busy'
+        | 'no-session'
+        | 'model-missing'
+        | 'storage-unavailable';
+    };
 
 export interface RecordingBridgeApi {
   /**
@@ -43,6 +51,7 @@ export interface RecordingBridgeApi {
   readonly start: (input: StartRecordingInput) => Effect.Effect<StartRecordingOutcome>;
   /** Stop via the current workspace; a no-op when none is mounted or the id is stale. */
   readonly stop: (recordingId: string) => Effect.Effect<void>;
+  readonly claimCompletion: (recordingId: string) => Effect.Effect<boolean>;
   /** Pause/resume a matching recording; false when no workspace/id/state accepts it. */
   readonly pause: (recordingId: string) => Effect.Effect<boolean>;
   readonly resume: (recordingId: string) => Effect.Effect<boolean>;
@@ -118,6 +127,9 @@ export const RecordingBridgeLive: Layer.Layer<RecordingBridge> = Layer.effect(
                   Effect.catchTag('RecordingBusyError', () =>
                     Effect.succeed<StartRecordingOutcome>({ ok: false, reason: 'busy' })
                   ),
+                  Effect.catchTag('RecordingStartError', error =>
+                    Effect.succeed<StartRecordingOutcome>({ ok: false, reason: error.reason })
+                  ),
                   Effect.catchTag('PermissionError', () =>
                     Effect.succeed<StartRecordingOutcome>({
                       ok: false,
@@ -135,6 +147,16 @@ export const RecordingBridgeLive: Layer.Layer<RecordingBridge> = Layer.effect(
             Option.match({
               onNone: () => Effect.void,
               onSome: service => service.stop(recordingId),
+            })
+          )
+        ),
+
+      claimCompletion: recordingId =>
+        SubscriptionRef.get(currentRef).pipe(
+          Effect.flatMap(
+            Option.match({
+              onNone: () => Effect.succeed(false),
+              onSome: service => service.claimCompletion(recordingId),
             })
           )
         ),

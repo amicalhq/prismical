@@ -59,13 +59,13 @@ describe('staging buffer durability', () => {
         transcriptionDeferred: true,
         needsFinalize: false,
         action: 'upload',
-      }),
+      })
     ).toBe(true);
 
     expect(JSON.stringify(localStorage)).not.toContain('support_lifecycle_1');
     expect(Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i))).toEqual([]);
     expect(sessionStorage.getItem('prismical-staging-recovery-v2:rec_private')).toContain(
-      'support_lifecycle_1',
+      'support_lifecycle_1'
     );
   });
 
@@ -86,7 +86,7 @@ describe('staging buffer durability', () => {
         transcriptionDeferred: true,
         needsFinalize: false,
         action: 'upload',
-      }),
+      })
     );
 
     expect(listPendingStagingRecoveries()).toEqual([
@@ -98,9 +98,25 @@ describe('staging buffer durability', () => {
     ]);
     expect(localStorage.getItem('prismical-staging-recovery-v1:rec_legacy')).toBeNull();
     expect(localStorage.getItem('prismical-staging-recovery-v2:rec_legacy')).toContain(
-      '"ownerSessionKey":"user_1"',
+      '"ownerSessionKey":"user_1"'
     );
   });
+
+  it.each(['pause', 'resume'] as const)(
+    'rejects the buffer when recorder %s fails',
+    async action => {
+      vi.stubGlobal('MediaRecorder', BrokenMediaRecorder);
+      const buffer = await startStagingBuffer({} as MediaStream, 'rec_transition');
+      const recorder = BrokenMediaRecorder.last!;
+      recorder.ondataavailable?.({ data: new Blob(['audio']) } as BlobEvent);
+      recorder.state = action === 'pause' ? 'recording' : 'paused';
+      recorder[action] = () => {
+        throw new Error('recorder transition failed');
+      };
+      buffer![action]();
+      await expect(buffer!.stop()).resolves.toBeNull();
+    }
+  );
 
   it('closes and deletes a broken OPFS writer instead of exposing partial audio to recovery', async () => {
     const write = vi.fn(async () => {});

@@ -1,64 +1,20 @@
 /**
- * The recovery drain resolves recordings that a crash /
- * kill / logout / quit interrupted, on the NEXT signed-in session.
- *
- * The live pipeline leaves the durable trail: a recovery-outbox row (written before the first
- * frame, so even a `kill -9` leaves one) plus a per-source recovery WAV retained
- * on disk. This drain picks up where the live pipeline stopped: it re-derives the
- * upload chunks from the retained WAV using the same chunker (so chunkIndex /
- * chunkStartMs land on the same boundaries the server's (recordingId, chunkIndex)
- * idempotency key expects), re-sends only the chunks past `lastChunkIndex`
- * (idempotent — a chunk that was in flight at the crash re-sends safely), then
- * finalizes and — on full success — deletes the WAV + row with no residue.
- *
- * Runs on SignedInRuntime acquire (RecoveryDrainLive forks it into the session
- * scope), so it is interrupted by sign-out / quit; a mid-drain interrupt parks
- * progress through the same `lastChunkIndex` bookkeeping (no double-send beyond
- * idempotency). One pass per acquire: a retryable failure bumps backoff and
- * leaves the row for the NEXT session's pass; a non-retryable failure or the
- * attempt cap marks the row `failed` (deterministic give-up, WAV retained).
- *
- * The live recording owns a Semaphore(1), so the drain yields to live capture: it
- * re-reads the RecordingService's active id
- * before every row and every chunk, and the moment ANY recording is active the
- * pass defers everything left (no attempt bump, no DB write; the rows simply
- * wait for the next workspace acquire) and ends, so drain decodes never
- * interleave with a live recording's under the shared WhisperEngine
- * Semaphore(1).
- *
- * The outbox row freezes the engine kind at recording start
- * (NULL on a legacy row means 'cloud'), and every engine-dependent decision —
- * chunk routing, stagingExpected, staging the retained WAVs — follows the
- * ROW's engine, never the current preference. Only the model/BYOK details
- * resolve from the current settings; a 'local' row whose model is missing
- * PARKS ('model-missing') instead of acking empty, so audio is never dropped.
- *
- * Pure + headless-testable: no timers (Clock only, so TestClock drives backoff),
- * no device. The upload/finalize go through the guarded session
- * WorkspaceBackend; the product-store mirror is a best-effort
- * cache write; everything folds to data (E = never).
+ * Workspace-owned recovery of durable recording jobs. One worker processes
+ * stopped/interrupted recordings and wakes on recording state changes or the
+ * next persisted retry deadline. Capture and recovery never own a job together.
  */
 import * as fs from 'node:fs';
 import path from 'node:path';
-import { Clock, Effect, Layer, SubscriptionRef } from 'effect';
+import { Clock, Data, Effect, Layer, Queue, Stream, SubscriptionRef } from 'effect';
 import { MainLogger } from '../../infra/logging/service';
-import {
-  OperationalDb,
-  type LocalModelRow,
-  type RecoveryOutboxRow,
-} from '../../infra/operational-db/service';
+import { OperationalDb, type RecoveryOutboxRow } from '../../infra/operational-db/service';
 import type { RecoveryPauseCutPoint } from '../../infra/operational-db/schema';
 import type { ProductDbError } from '../../infra/product-db/service';
-import { AppModeService } from '../app-mode/service';
-import { SettingsService } from '../settings/service';
-import { resolveRecordingEngine, type RecordingEngine } from '../transcriber/engine';
 import { detectedSpeakerCountFor } from '../transcriber/segment';
 import { Transcriber } from '../transcriber/service';
 import {
   WorkspaceBackend,
   type RecordingLaneFailure,
-  type RecordingSegment,
-  type StageLaneInput,
   type StagingAbandonReason,
 } from '../transport/service';
 import { mirrorSegmentsToCore } from './segment-mirror';
@@ -73,12 +29,12 @@ import {
   type PendingChunk,
 } from './chunker';
 import { wavFileName } from './recovery-writer';
-import { RecordingService } from './service';
+import { readStagingLanes } from './staging-lanes';
+import { RecordingService, type RecordingServiceApi, type RecordingState } from './service';
+import { WorkspaceIdentity, sameWorkspace } from '../../runtime/workspace-identity';
 import { RecordingStore } from './store';
-import { encodeWavPcm16 } from './wav';
 
-/** Deterministic give-up: after this many failed drain attempts a row is marked
- * `failed` so a permanently-bad recording can't drain forever. */
+/** Optional staging may be abandoned after this many attempts. Required work keeps retrying. */
 export const MAX_DRAIN_ATTEMPTS = 5;
 
 /** Exponential backoff between drain attempts (per row), capped. Clock-driven —
@@ -201,36 +157,39 @@ export interface DrainSummary {
   deferred: number;
 }
 
-/**
- * One drain pass. Lists the outbox ONCE (the work set), then resolves each
- * recoverable row sequentially. `activeRecordingId` yields the id of a
- * genuinely ACTIVE recording (or null) — re-read before every row and every chunk, and the pass
- * defers everything left the moment it is non-null. Every
- * failure folds to data so a drain fiber can never crash the session it runs in.
- */
+class RecoveryFileError extends Data.TaggedError('RecoveryFileError')<{
+  readonly cause: unknown;
+}> {}
+
+const fileOperation = <A>(run: () => A): Effect.Effect<A, RecoveryFileError> =>
+  Effect.try({ try: run, catch: cause => new RecoveryFileError({ cause }) });
+
+/** A pass is serial and only touches jobs belonging to the mounted workspace. */
 export const drainRecoveries = (
-  activeRecordingId: Effect.Effect<string | null>
+  activeRecordingId: Effect.Effect<string | null>,
+  resolveCompletion: RecordingServiceApi['resolveCompletion']
 ): Effect.Effect<
   DrainSummary,
   never,
-  | OperationalDb
-  | WorkspaceBackend
-  | RecordingStore
-  | MainLogger
-  | Transcriber
-  | SettingsService
-  | AppModeService
+  OperationalDb | WorkspaceBackend | RecordingStore | MainLogger | Transcriber | WorkspaceIdentity
 > =>
   Effect.gen(function* () {
     const db = yield* OperationalDb;
-    const coreClient = yield* WorkspaceBackend;
+    const backend = yield* WorkspaceBackend;
     const store = yield* RecordingStore;
     const transcriber = yield* Transcriber;
-    const settings = yield* SettingsService;
-    const { mode: appMode } = yield* AppModeService;
+    const owner = yield* WorkspaceIdentity;
+    const appMode = owner.mode;
     const log = (yield* MainLogger).scoped('recovery-drain');
-
-    const rows = yield* db.listRecoveryOutbox().pipe(Effect.catchAll(() => Effect.succeed([])));
+    const rows = (yield* db
+      .listRecoveryOutbox()
+      .pipe(
+        Effect.catchAll(error =>
+          log
+            .warn('recovery work could not be listed', { cause: String(error.cause) })
+            .pipe(Effect.as([]))
+        )
+      )).filter(row => sameWorkspace(row.owner, owner));
     const summary: DrainSummary = {
       total: rows.length,
       resolved: 0,
@@ -239,97 +198,60 @@ export const drainRecoveries = (
       skipped: 0,
       deferred: 0,
     };
-    if (rows.length === 0) return summary;
-    // The engine kind is per row — frozen into the outbox row at
-    // recording start (NULL on a legacy row means 'cloud'). A
-    // 'local'/'byok' row never routes chunks through the cloud lane and never
-    // stages its WAVs; a 'cloud' row keeps its promised staging even when the
-    // current setting is non-cloud. Only the model/BYOK DETAILS come from the
-    // current settings (resolveRecordingEngine also re-applies the local-mode
-    // coercion for a legacy 'cloud' row draining in local mode).
-    const transcription = (yield* settings.get).transcription;
-    const engineForRow = (row: RecoveryOutboxRow): RecordingEngine =>
-      resolveRecordingEngine(appMode, { ...transcription, engine: row.engine ?? 'cloud' });
-    // The drain yields to live capture. Checked before every row and
-    // every chunk — a recording started mid-pass must not have its decodes
-    // interleave 1:1 with drain decodes under the WhisperEngine Semaphore(1).
-    const liveActive = Effect.map(activeRecordingId, id => id !== null);
-    let yieldedToLive = false;
-    const yieldRow = (row: RecoveryOutboxRow): Effect.Effect<DrainOutcome> =>
-      Effect.gen(function* () {
-        yieldedToLive = true;
-        // Cheap defer: no attempt bump, no backoff, no DB write — chunk
-        // progress is already persisted via lastChunkIndex, and the row simply
-        // waits for the next workspace acquire's pass.
-        yield* log.info('recovery drain yielded — live recording active', {
-          recordingId: row.recordingId,
-          reason: 'live-recording-active',
-        });
-        return 'deferred' as const;
-      });
-    yield* log.info('recovery drain started', { rows: rows.length });
-
-    // DB writes are best-effort here — a failed bookkeeping write must not abort
-    // the pass (the row simply re-drains next session).
-    const update = (
-      recordingId: string,
-      patch: Parameters<(typeof db)['updateRecoveryOutbox']>[1]
-    ): Effect.Effect<void> =>
-      db.updateRecoveryOutbox(recordingId, patch).pipe(Effect.catchAll(() => Effect.void));
-
-    // Product-store writes are best-effort here too: a failed cache
-    // write never changes a drain outcome — the row/segments just miss local.
-    const persist = (
-      recordingId: string,
-      effect: Effect.Effect<void, ProductDbError>
-    ): Effect.Effect<void> =>
+    const bestEffort = (effect: Effect.Effect<void, ProductDbError>): Effect.Effect<void> =>
       effect.pipe(
         Effect.catchAll(error =>
-          log.warn('recovery persistence failed', {
-            recordingId,
+          log.warn('recovery cache write failed', {
             op: error.op,
             cause: String(error.cause),
           })
         )
       );
-
-    // Retryable failure → bump attempt + backoff and RETAIN the row (next pass);
-    // once the attempt cap is hit, give up deterministically → `failed`.
+    // Local storage is authoritative. A cloud recording already has another durable copy.
+    const persist = (effect: Effect.Effect<void, ProductDbError>) =>
+      appMode === 'local' ? effect : bestEffort(effect);
     const park = (row: RecoveryOutboxRow, reason: string): Effect.Effect<DrainOutcome> =>
       Effect.gen(function* () {
         const attempt = row.attemptCount + 1;
-        if (attempt >= MAX_DRAIN_ATTEMPTS) {
-          yield* update(row.recordingId, {
-            status: 'failed',
-            attemptCount: attempt,
-            lastError: `give-up:${reason}`,
-          });
-          yield* log.warn('recovery gave up after max attempts — marked failed (WAV retained)', {
-            recordingId: row.recordingId,
-            attempt,
-            reason,
-          });
-          return 'failed';
-        }
         const now = yield* Clock.currentTimeMillis;
         const nextAttemptAt = new Date(now + backoffMsFor(attempt)).toISOString();
-        yield* update(row.recordingId, { attemptCount: attempt, nextAttemptAt, lastError: reason });
-        yield* log.warn('recovery retryable failure — backoff bumped, retained for next pass', {
+        yield* db
+          .updateRecoveryOutbox(row.recordingId, {
+            attemptCount: attempt,
+            nextAttemptAt,
+            lastError: reason,
+          })
+          .pipe(
+            Effect.catchAll(error =>
+              log.warn('recovery retry state could not be saved', {
+                recordingId: row.recordingId,
+                cause: String(error.cause),
+              })
+            )
+          );
+        yield* log.warn('recovery work retained for retry', {
           recordingId: row.recordingId,
           attempt,
           nextAttemptAt,
           reason,
         });
-        return 'parked';
+        return 'parked' as const;
       });
-
-    // Non-retryable failure (404/410/422/…) → deterministic give-up now. Keep the
-    // WAV + row as `failed` (matches live-capture give-up: only a clean finalize
-    // deletes the artifact).
     const fail = (row: RecoveryOutboxRow, reason: string): Effect.Effect<DrainOutcome> =>
-      update(row.recordingId, { status: 'failed', lastError: reason }).pipe(
+      db.updateRecoveryOutbox(row.recordingId, { status: 'failed', lastError: reason }).pipe(
+        Effect.catchAll(error =>
+          log.warn('recovery failure state could not be saved', {
+            recordingId: row.recordingId,
+            cause: String(error.cause),
+          })
+        ),
         Effect.zipRight(
-          log.warn('recovery non-retryable failure — marked failed (WAV retained)', {
+          row.phase === 'staging' || row.phase === 'cleanup'
+            ? Effect.void
+            : resolveCompletion(row.recordingId, false)
+        ),
+        Effect.zipRight(
+          log.warn('recovery rejected — audio retained', {
             recordingId: row.recordingId,
             reason,
           })
@@ -337,266 +259,300 @@ export const drainRecoveries = (
         Effect.as('failed')
       );
 
-    const drainRow = (row: RecoveryOutboxRow): Effect.Effect<DrainOutcome> =>
-      Effect.gen(function* () {
-        if (row.status === 'failed') return 'skipped'; // terminal give-up already
-        if (row.nextAttemptAt !== null) {
-          const now = yield* Clock.currentTimeMillis;
-          if (Date.parse(row.nextAttemptAt) > now) {
-            yield* log.info('recovery drain defer: backoff not elapsed', {
-              recordingId: row.recordingId,
-              nextAttemptAt: row.nextAttemptAt,
-            });
-            return 'deferred';
-          }
+    const drainRow = (original: RecoveryOutboxRow): Effect.Effect<DrainOutcome> => {
+      let row = original;
+      const update = (patch: Parameters<typeof db.updateRecoveryOutbox>[1]) =>
+        db.updateRecoveryOutbox(row.recordingId, patch).pipe(
+          Effect.tap(() =>
+            Effect.sync(() => {
+              row = { ...row, ...patch };
+            })
+          )
+        );
+      const transition = (phase: NonNullable<RecoveryOutboxRow['phase']>) =>
+        update({ phase, attemptCount: 0, nextAttemptAt: null, lastError: null });
+      const process = Effect.gen(function* () {
+        if (row.status === 'failed') {
+          yield* resolveCompletion(
+            row.recordingId,
+            row.phase === 'staging' || row.phase === 'cleanup'
+          );
+          return 'skipped' as const;
         }
-
-        // Every engine-dependent decision below follows the row's engine.
-        const engine = engineForRow(row);
+        if (
+          row.nextAttemptAt !== null &&
+          Date.parse(row.nextAttemptAt) > (yield* Clock.currentTimeMillis)
+        ) {
+          return 'deferred' as const;
+        }
+        if (row.phase === null || row.createInput === null || row.engineConfig === null) {
+          return yield* fail(row, 'recovery-metadata-missing');
+        }
+        if (row.phase === 'cleanup') {
+          yield* resolveCompletion(row.recordingId, true);
+          yield* fileOperation(() => fs.rmSync(row.wavPath, { recursive: true, force: true }));
+          yield* db.deleteRecoveryOutbox(row.recordingId);
+          return 'resolved' as const;
+        }
+        const engine = row.engineConfig;
         const mirrorToCore = appMode === 'cloud' && engine.engine !== 'cloud';
         const sources = sourcesForMode(row.captureMode);
-        const mic = sources.includes('mic')
-          ? readRecoveryWav(path.join(row.wavPath, wavFileName.mic))
-          : null;
-        const system = sources.includes('system')
-          ? readRecoveryWav(path.join(row.wavPath, wavFileName.system))
-          : null;
-        const durationMs = Math.round(
-          (Math.max(mic?.length ?? 0, system?.length ?? 0) / CAPTURE_SAMPLE_RATE) * 1000
-        );
-
-        // A row parked by the graceful-stop path with only staging left: chunks
-        // were all acked and finalize landed at stop with the accurate endedAt — re-uploading /
-        // re-finalizing here would overwrite endedAt with a later sign-in's wall clock.
-        const stagingOnly = row.lastError !== null && row.lastError.startsWith('staging');
-
-        if (!stagingOnly) {
+        const { mic, system, mediaDuration, lastWriteAt } = yield* fileOperation(() => {
+          // Completed transcription uses its durable stop metadata. Optional
+          // staging reads raw WAVs with a size cap below; do not decode them here.
+          if (
+            (row.phase === 'finalize' || row.phase === 'staging') &&
+            row.endedAt !== null &&
+            row.durationMs !== null
+          ) {
+            return {
+              mic: null,
+              system: null,
+              mediaDuration: row.durationMs,
+              lastWriteAt: row.endedAt,
+            };
+          }
+          const samples = (source: ChunkSource) =>
+            sources.includes(source)
+              ? readRecoveryWav(path.join(row.wavPath, wavFileName[source]))
+              : null;
+          const mic = samples('mic');
+          const system = samples('system');
+          const mediaDuration = Math.round(
+            (Math.max(mic?.length ?? 0, system?.length ?? 0) / CAPTURE_SAMPLE_RATE) * 1000
+          );
+          const lastWriteAt = Math.max(
+            row.createInput!.startedAt,
+            ...sources.map(source => {
+              const file = path.join(row.wavPath, wavFileName[source]);
+              return fs.existsSync(file) ? Math.round(fs.statSync(file).mtimeMs) : 0;
+            })
+          );
+          return { mic, system, mediaDuration, lastWriteAt };
+        });
+        // Graceful stop writes exact metadata. For a crash, freeze the last media
+        // write time once, so retries never move endedAt to a later session.
+        if (row.endedAt === null || row.durationMs === null) {
+          yield* update({
+            endedAt: row.endedAt ?? lastWriteAt,
+            durationMs: row.durationMs ?? mediaDuration,
+          });
+        }
+        if (row.durationMs !== mediaDuration) {
+          return yield* fail(row, 'recovery-audio-incomplete');
+        }
+        if (row.phase === 'create') {
+          const startWrite = store.recordingStarted({
+            ...row.createInput,
+            id: row.recordingId,
+            noteId: row.createInput.noteId ?? null,
+            status: 'recording',
+          });
+          yield* engine.engine === 'cloud' ? bestEffort(startWrite) : startWrite;
+          const created = yield* backend.createRecording(row.createInput);
+          if (!created.ok)
+            return yield* created.retryable
+              ? park(row, `create:${failureLabel(created.failure)}`)
+              : fail(row, `create:${failureLabel(created.failure)}`);
+          yield* transition('chunks');
+        }
+        if (row.phase === 'chunks') {
           const chunks = yield* Effect.try({
             try: () => deriveDrainChunks(mic, system, row.pauseCutPoints),
             catch: () => null,
           }).pipe(Effect.catchAll(() => Effect.succeed(null)));
-          if (chunks === null) {
-            return yield* fail(row, 'pause-cut-points-invalid');
-          }
-          const lastIndex = row.lastChunkIndex ?? -1;
-          const remaining = chunks.filter(chunk => chunk.index > lastIndex);
-
-          // A 'local' row transcribes on-device or not at all. If its
-          // model is not installed the lane would ack [] and the audio would
-          // be silently dropped at resolve — PARK instead (normal backoff,
-          // then 'failed' keeps the WAV), so installing the model later still
-          // recovers the transcript from the retained audio.
+          if (chunks === null) return yield* fail(row, 'pause-cut-points-invalid');
+          const remaining = chunks.filter(chunk => chunk.index > (row.lastChunkIndex ?? -1));
           if (engine.engine === 'local' && remaining.length > 0) {
-            const models = yield* db
-              .listLocalModels()
-              .pipe(Effect.catchAll(() => Effect.succeed<readonly LocalModelRow[]>([])));
+            const models = yield* db.listLocalModels();
             const installed = models.find(model => model.modelId === engine.modelId);
-            if (installed === undefined || !fs.existsSync(installed.path)) {
+            if (installed === undefined || !fs.existsSync(installed.path))
               return yield* park(row, 'model-missing');
-            }
           }
-
-          // Re-send the un-acked tail. Chunks are ascending + contiguous, so we stop
-          // at the first failure; the cursor advances (persisted) through successes,
-          // so a mid-drain interrupt resumes from here next session.
-          const produced: RecordingSegment[] = [];
           for (const chunk of remaining) {
-            // Yield mid-row the moment a live recording starts.
-            if (yield* liveActive) return yield* yieldRow(row);
-            // Through the Transcriber seam, the cloud lane WAV-encodes + uploads
-            // exactly as before; an on-device lane transcribes the retained audio).
+            if ((yield* activeRecordingId) !== null) return 'deferred' as const;
             const res = yield* transcriber.transcribeChunk(
               row.recordingId,
               { chunkIndex: chunk.index, chunkStartMs: chunk.chunkStartMs, source: chunk.source },
               { samples: chunk.samples, sampleRate: CAPTURE_SAMPLE_RATE },
               engine
             );
-            if (res.ok) {
-              if (res.value.length > 0) {
-                // Recovered segments persist too — the live path never
-                // saw these chunks, so the drain is their only writer.
-                yield* persist(row.recordingId, store.segmentsReceived(res.value));
-                // In cloud mode with a non-cloud engine, the server never saw this chunk either.
-                if (mirrorToCore) {
-                  yield* mirrorSegmentsToCore(coreClient, log, row.recordingId, res.value);
-                }
-                produced.push(...res.value);
+            if (!res.ok)
+              return yield* res.retryable
+                ? park(row, `chunk-upload:${failureLabel(res.failure)}`)
+                : fail(row, `chunk-upload:${failureLabel(res.failure)}`);
+            if (res.value.length > 0) {
+              // Locally produced text has no durable server copy yet, even in cloud mode.
+              yield* engine.engine === 'cloud'
+                ? bestEffort(store.segmentsReceived(res.value))
+                : store.segmentsReceived(res.value);
+              if (mirrorToCore) {
+                const mirrored = yield* mirrorSegmentsToCore(
+                  backend,
+                  log,
+                  row.recordingId,
+                  res.value
+                );
+                if (!mirrored.ok)
+                  return yield* mirrored.retryable
+                    ? park(row, `segment-mirror:${failureLabel(mirrored.failure)}`)
+                    : fail(row, `segment-mirror:${failureLabel(mirrored.failure)}`);
               }
-              yield* update(row.recordingId, { lastChunkIndex: chunk.index });
-            } else if (res.retryable) {
-              return yield* park(row, `chunk-upload:${failureLabel(res.failure)}`);
-            } else {
-              return yield* fail(row, `chunk-upload:${failureLabel(res.failure)}`);
             }
+            yield* update({ lastChunkIndex: chunk.index });
           }
-
-          // Derive the speaker count for a non-cloud engine from this
-          // pass's segments only (the live session's are already merged, and the
-          // store's max-merge never lowers what it wrote).
+          yield* transition('finalize');
+        }
+        if (row.phase === 'finalize') {
           if (engine.engine !== 'cloud') {
-            yield* persist(
-              row.recordingId,
-              store.recordingMetaMerged(row.recordingId, {
-                detectedSpeakerCount: detectedSpeakerCountFor(row.captureMode, produced),
-              })
-            );
+            const segments = yield* store.segmentsForRecording(row.recordingId);
+            yield* store.recordingMetaMerged(row.recordingId, {
+              detectedSpeakerCount: detectedSpeakerCountFor(row.captureMode, segments),
+            });
           }
-
-          // Tail sent (or already complete) → finalize. `stagingExpected` follows the
-          // engine: only the cloud engine stages for the server finalize pass.
-          const endedAt = yield* Clock.currentTimeMillis;
-          const finalizeRes = yield* coreClient.finalizeRecording(row.recordingId, {
-            endedAt,
-            durationMs,
+          const finalized = yield* backend.finalizeRecording(row.recordingId, {
+            endedAt: row.endedAt!,
+            durationMs: row.durationMs!,
             stagingExpected: engine.engine === 'cloud',
             transcriptionDeferred: false,
           });
-          if (!finalizeRes.ok) {
-            if (finalizeRes.retryable) return yield* park(row, 'finalize');
-            return yield* fail(row, `finalize:${failureLabel(finalizeRes.failure)}`);
-          }
-          // Mark the product-store row completed with the drain's
-          // endedAt (a next-session clock, a known approximation) + the
-          // WAV-derived pause-compressed durationMs (best-effort).
+          if (!finalized.ok)
+            return yield* finalized.retryable
+              ? park(row, `finalize:${failureLabel(finalized.failure)}`)
+              : fail(row, `finalize:${failureLabel(finalized.failure)}`);
           yield* persist(
-            row.recordingId,
-            store.recordingCompleted(row.recordingId, { endedAt, durationMs })
+            store.recordingCompleted(row.recordingId, {
+              endedAt: row.endedAt!,
+              durationMs: row.durationMs!,
+            })
           );
+          yield* transition('staging');
         }
-
-        // Stage the recovered session audio for the finalize pass before deleting recovery data.
-        // Re-encode from the decoded samples, not the on-disk files — a crash can
-        // leave WAV header sizes unpatched, and the staged artifact must be well-formed for
-        // the server-side providers. Staging is BEST-EFFORT on top of a fully-transcribed
-        // recording: a transient failure parks for another pass, but at the attempt cap (or on
-        // a deterministic rejection) we resolve by DELETING — never strand raw session audio
-        // on disk for a recording whose transcript already landed.
-        // Only the cloud engine stages — a device-transcribed recording must never be
-        // re-transcribed server-side, so it takes the 'staging-disabled' abandon path.
-        const stageLanes: StageLaneInput[] = [];
-        if (engine.engine === 'cloud' && mic?.length) {
-          stageLanes.push({
-            lane: 'mic',
-            contentType: 'audio/wav',
-            data: encodeWavPcm16(mic, CAPTURE_SAMPLE_RATE),
-            durationMs,
-          });
-        }
-        if (engine.engine === 'cloud' && system?.length) {
-          stageLanes.push({
-            lane: 'system',
-            contentType: 'audio/wav',
-            data: encodeWavPcm16(system, CAPTURE_SAMPLE_RATE),
-            durationMs,
-          });
-        }
-        const stageRes =
-          stageLanes.length === 0
+        // Required transcript work is durable. Optional staging can keep retrying
+        // while the owning renderer waits on the server's diarization gate.
+        yield* resolveCompletion(row.recordingId, true);
+        const lanes =
+          engine.engine === 'cloud'
+            ? yield* fileOperation(() => readStagingLanes(row.wavPath, row.durationMs!))
+            : [];
+        const staged =
+          lanes.length === 0
             ? ({ ok: true, value: { staged: false } } as const)
-            : yield* coreClient.stageRecordingAudio(row.recordingId, stageLanes);
+            : yield* backend.stageRecordingAudio(row.recordingId, lanes);
         if (
-          !stageRes.ok &&
-          stageRes.failure.kind === 'http' &&
-          stageRes.failure.code === 'STAGING_FINALIZATION_INTENT_MISSING'
+          !staged.ok &&
+          staged.failure.kind === 'http' &&
+          staged.failure.code === 'STAGING_FINALIZATION_INTENT_MISSING'
         ) {
-          // A historical stop with no durable intent cannot safely be finalized now: a skill may
-          // already have run in that old no-row gap. Retain the sole recovery audio for manual
-          // repair instead of exhausting retries and deleting it.
           return yield* fail(row, 'staging-finalization-intent-missing');
         }
-        let abandonReason: StagingAbandonReason | null = null;
-        if (!stageRes.ok && stageRes.retryable) {
+        let abandon: StagingAbandonReason | null = null;
+        if (!staged.ok && staged.retryable) {
           if (row.attemptCount + 1 < MAX_DRAIN_ATTEMPTS) return yield* park(row, 'staging');
-          yield* log.warn('staging given up at attempt cap — resolving without staged audio', {
-            recordingId: row.recordingId,
-          });
-          abandonReason = 'upload-gave-up';
-        } else if (stageLanes.length === 0) {
-          abandonReason = engine.engine === 'cloud' ? 'no-audio' : 'staging-disabled';
-        } else if (stageRes.ok && !stageRes.value.staged) {
-          abandonReason = 'staging-disabled';
-        } else if (!stageRes.ok) {
-          abandonReason = 'upload-failed';
+          abandon = 'upload-gave-up';
+        } else if (lanes.length === 0) {
+          abandon = engine.engine === 'cloud' ? 'no-audio' : 'staging-disabled';
+        } else if (staged.ok && !staged.value.staged) {
+          abandon = 'staging-disabled';
+        } else if (!staged.ok) {
+          abandon = 'upload-failed';
         }
-        if (abandonReason) {
-          const abandonRes = yield* coreClient.abandonRecordingStaging(
-            row.recordingId,
-            abandonReason
-          );
-          if (!abandonRes.ok) {
-            const recordingGone =
-              abandonRes.failure.kind === 'http' &&
-              (abandonRes.failure.status === 404 || abandonRes.failure.status === 410);
-            if (!recordingGone) {
-              if (abandonRes.retryable && row.attemptCount + 1 < MAX_DRAIN_ATTEMPTS) {
-                return yield* park(row, 'staging-abandon');
-              }
-              return yield* fail(
-                row,
-                `staging-abandon:${failureLabel(abandonRes.failure)}`
-              );
-            }
+        if (abandon) {
+          const result = yield* backend.abandonRecordingStaging(row.recordingId, abandon);
+          if (!result.ok) {
+            const gone =
+              result.failure.kind === 'http' &&
+              (result.failure.status === 404 || result.failure.status === 410);
+            if (!gone)
+              return yield* result.retryable
+                ? park(row, `staging-abandon:${failureLabel(result.failure)}`)
+                : fail(row, `staging-abandon:${failureLabel(result.failure)}`);
           }
         }
-
-        // Nothing left to recover: delete the WAV directory + outbox row.
-        yield* Effect.sync(() => fs.rmSync(row.wavPath, { recursive: true, force: true }));
-        yield* db.deleteRecoveryOutbox(row.recordingId).pipe(Effect.catchAll(() => Effect.void));
+        yield* transition('cleanup');
+        yield* fileOperation(() => fs.rmSync(row.wavPath, { recursive: true, force: true }));
+        yield* db.deleteRecoveryOutbox(row.recordingId);
         yield* log.info('recovery resolved — WAV + outbox row deleted', {
           recordingId: row.recordingId,
-          staged: stageRes.ok && stageRes.value.staged,
         });
-        return 'resolved';
+        return 'resolved' as const;
       });
+      return process.pipe(
+        Effect.catchAll(error =>
+          park(
+            row,
+            error._tag === 'RecoveryFileError' ? 'recovery-file' : `persistence:${error.op}`
+          )
+        )
+      );
+    };
 
     for (const row of rows) {
-      if (!yieldedToLive && (yield* liveActive)) {
-        yieldedToLive = true;
-        yield* log.info('recovery drain yielded — live recording active', {
-          reason: 'live-recording-active',
-        });
-      }
-      if (yieldedToLive) {
-        // Cheap defer for everything left: no attempt bump, no DB write.
+      if ((yield* activeRecordingId) !== null) {
         summary.deferred += 1;
         continue;
       }
-      const outcome = yield* drainRow(row);
-      summary[outcome] += 1;
+      const result = yield* drainRow(row);
+      summary[result] += 1;
     }
-    yield* log.info('recovery drain complete', { ...summary });
     return summary;
   });
 
-/**
- * Session-scoped mount: fork one drain pass on SignedInRuntime acquire,
- * reading the live RecordingService's active id so the pass never touches the
- * in-flight recording. `forkScoped` ties the fiber to the session scope, so
- * sign-out / quit interrupts it mid-drain (progress parked via `lastChunkIndex`).
- * Provides no service (Layer<never>) — it exists only for its acquire effect.
- */
-export const RecoveryDrainLive: Layer.Layer<
-  never,
-  never,
-  | OperationalDb
-  | WorkspaceBackend
-  | RecordingStore
-  | MainLogger
-  | RecordingService
-  | Transcriber
-  | SettingsService
-  | AppModeService
-> = Layer.scopedDiscard(
+/** One serial, workspace-scoped worker; waits for state changes or actual retry deadlines. */
+export const runRecoveryWorker = (
+  state: SubscriptionRef.SubscriptionRef<RecordingState>,
+  resolveCompletion: RecordingServiceApi['resolveCompletion']
+) =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const db = yield* OperationalDb;
+      const owner = yield* WorkspaceIdentity;
+      const wakeups = yield* Queue.sliding<void>(1);
+      const activeId = SubscriptionRef.get(state).pipe(
+        Effect.map(value =>
+          value.status === 'idle' || value.status === 'error'
+            ? null
+            : (value.recordingId ?? 'starting')
+        )
+      );
+      yield* Stream.runForEach(state.changes, value =>
+        value.status === 'idle' || value.status === 'error'
+          ? Queue.offer(wakeups, undefined)
+          : Effect.void
+      ).pipe(Effect.forkScoped);
+      while (true) {
+        yield* drainRecoveries(activeId, resolveCompletion);
+        const rows = yield* db
+          .listRecoveryOutbox()
+          .pipe(Effect.catchAll(() => Effect.succeed(null)));
+        if (rows === null) {
+          yield* Queue.take(wakeups).pipe(Effect.raceFirst(Effect.sleep(BACKOFF_BASE_MS)));
+          continue;
+        }
+        const pending = rows.filter(
+          row => sameWorkspace(row.owner, owner) && row.status !== 'failed'
+        );
+        if ((yield* activeId) !== null || pending.length === 0) {
+          yield* Queue.take(wakeups);
+        } else {
+          const now = yield* Clock.currentTimeMillis;
+          // A bookkeeping failure can leave no deadline. Bound that retry too.
+          const next = Math.min(
+            ...pending.map(row =>
+              row.nextAttemptAt === null || Date.parse(row.nextAttemptAt) <= now
+                ? now + BACKOFF_BASE_MS
+                : Date.parse(row.nextAttemptAt)
+            )
+          );
+          yield* Queue.take(wakeups).pipe(Effect.raceFirst(Effect.sleep(Math.max(1, next - now))));
+        }
+      }
+    })
+  );
+
+export const RecoveryDrainLive = Layer.scopedDiscard(
   Effect.gen(function* () {
     const recording = yield* RecordingService;
-    // Only a genuinely ACTIVE recording counts — the state deliberately
-    // retains the last finished recordingId while idle, so gate on
-    // status; the drain yields whenever this resolves non-null.
-    const activeRecordingId = SubscriptionRef.get(recording.state).pipe(
-      Effect.map(state =>
-        state.status === 'idle' || state.status === 'error' ? null : state.recordingId
-      )
-    );
-    yield* Effect.forkScoped(drainRecoveries(activeRecordingId));
+    yield* runRecoveryWorker(recording.state, recording.resolveCompletion).pipe(Effect.forkScoped);
   })
 );

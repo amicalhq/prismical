@@ -14,7 +14,8 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { assert, describe, it } from '@effect/vitest';
-import { asc, eq } from 'drizzle-orm';
+import { afterEach, vi } from 'vitest';
+import { asc, eq, sql } from 'drizzle-orm';
 import {
   Cause,
   Clock,
@@ -23,6 +24,7 @@ import {
   Duration,
   Effect,
   Exit,
+  Fiber,
   Layer,
   Option,
   Queue,
@@ -39,7 +41,20 @@ import {
   makeFakeWorkspaceBackend,
   makeFakeSystemPermissions,
 } from '../helpers/fake-recording';
-import { makeFakeSettings, makeTranscriberStack } from '../helpers/fake-workspace-env';
+import {
+  fakeModelManagerLayer,
+  makeFakeSettings,
+  makeTranscriberStack,
+} from '../helpers/fake-workspace-env';
+import {
+  drainRecoveries,
+  type DrainSummary,
+} from '../../src/main/domains/recording/recovery-drain';
+import { WorkspaceIdentity } from '../../src/main/runtime/workspace-identity';
+import {
+  WorkspaceBackend,
+  type WorkspaceBackendApi,
+} from '../../src/main/domains/transport/service';
 import { AppModeService, type AppMode } from '../../src/main/domains/app-mode/service';
 import type { DeviceSettings } from '@prismical/desktop-contracts';
 import { SyncTranscriptSegmentCreateRequestSchema } from '@prismical/api-contracts';
@@ -58,6 +73,7 @@ import type {
 } from '../../src/main/domains/transport/service';
 import type { MainLogger } from '../../src/main/infra/logging/service';
 import { CaptureExitError } from '../../src/main/domains/recording/capture/service';
+import { StreamingWavWriter } from '../../src/main/infra/audio/streaming-wav-writer';
 import { PermissionServiceLive } from '../../src/main/domains/recording/permission/live';
 import { PermissionError } from '../../src/main/domains/recording/permission/service';
 import { RecordingBridgeLive } from '../../src/main/domains/recording/bridge';
@@ -122,11 +138,14 @@ interface Harness {
   readonly logger: ReturnType<typeof makeTestLogger>;
   readonly micActivityLatest: SubscriptionRef.SubscriptionRef<Option.Option<LatestMicActivity>>;
   readonly sessionScope: Scope.CloseableScope;
+  readonly drain: Effect.Effect<DrainSummary>;
   readonly recoveryDir: (recordingId: string) => string;
 }
 
 /** Engine knobs for a harness: the boot mode, stored preference, and injected local lane. */
 interface SetupOptions {
+  readonly installedModels?: Record<string, string>;
+  readonly backendTransform?: (api: WorkspaceBackendApi) => WorkspaceBackendApi;
   readonly mode?: AppMode;
   readonly transcription?: Partial<DeviceSettings['transcription']>;
   /** Replaces the placeholder local lane with an injected implementation. */
@@ -152,6 +171,21 @@ const setup = (
     });
     const fakeCapture = makeFakeCapture();
     const fakeCloud = makeFakeWorkspaceBackend();
+    const backendLayer = Layer.effect(
+      WorkspaceBackend,
+      WorkspaceBackend.pipe(
+        Effect.provide(fakeCloud.layer),
+        Effect.map(api => options.backendTransform?.(api) ?? api)
+      )
+    );
+    const modeLayer = Layer.succeed(AppModeService, {
+      mode: options.mode ?? 'cloud',
+      chosen: true,
+    });
+    const ownerLayer = Layer.succeed(
+      WorkspaceIdentity,
+      options.mode === 'local' ? { mode: 'local' } : { mode: 'cloud', sub: 'user-one', orgId: null }
+    );
     const fakePermissions = makeFakeSystemPermissions(permissionInit);
     const micActivityLatest = yield* SubscriptionRef.make(Option.none<LatestMicActivity>());
 
@@ -177,7 +211,7 @@ const setup = (
     const recordingStore = storeOverride ?? RecordingStoreLive.pipe(Layer.provide(productDb));
     // The Transcriber seam over the same fake backend (its cloud lane keeps
     // feeding `uploadCalls`), the engine preference, and the boot mode.
-    const transcriber = makeTranscriberStack(fakeCloud.layer, { local: options.localLane });
+    const transcriber = makeTranscriberStack(backendLayer, { local: options.localLane });
     const settings = makeFakeSettings({
       transcription: {
         engine: 'cloud',
@@ -189,14 +223,28 @@ const setup = (
     });
     const svcLayer = Layer.mergeAll(
       productDb,
+      recordingStore,
+      transcriber,
+      backendLayer,
+      modeLayer,
+      ownerLayer,
+      settings.layer,
       RecordingServiceLive.pipe(
         Layer.provide(fakeCapture.layer),
-        Layer.provide(fakeCloud.layer),
+        Layer.provide(backendLayer),
         Layer.provide(permission),
         Layer.provide(recordingStore),
         Layer.provide(transcriber),
         Layer.provide(settings.layer),
-        Layer.provide(Layer.succeed(AppModeService, { mode: options.mode ?? 'cloud', chosen: true })),
+        Layer.provide(modeLayer),
+        Layer.provide(ownerLayer),
+        Layer.provide(
+          fakeModelManagerLayer(
+            options.installedModels ?? {
+              [options.transcription?.modelId ?? RECOMMENDED_MODEL_ID]: '/models/fixture.bin',
+            }
+          )
+        ),
         // RecordingServiceLive self-publishes into the boot-scoped bridge; a
         // throwaway leaf satisfies the dep (these tests exercise the service, not
         // the bridge — the IPC round-trip is covered in ipc.test.ts).
@@ -220,6 +268,10 @@ const setup = (
       logger,
       micActivityLatest,
       sessionScope,
+      drain: drainRecoveries(Effect.succeed(null), Context.get(svcCtx, RecordingService).resolveCompletion).pipe(
+        Effect.provide(svcCtx),
+        Effect.provide(envCtx)
+      ),
       recoveryDir: (recordingId: string) => path.join(userDataDir, 'recovery', recordingId),
     } satisfies Harness;
   });
@@ -424,9 +476,11 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
         );
         assert.strictEqual((yield* productSegments(h, recordingId)).length, 4);
 
+        assert.strictEqual((yield* h.db.getRecoveryOutbox(recordingId))?.phase, 'staging');
+        yield* h.drain;
         assert.isNull(
           yield* h.db.getRecoveryOutbox(recordingId),
-          'outbox row deleted on clean finalize'
+          'outbox row deleted after staging'
         );
         assert.isFalse(fs.existsSync(h.recoveryDir(recordingId)), 'recovery WAV deleted');
         assert.isTrue(h.fakeCapture.current().released, 'capture child reaped on stop');
@@ -441,13 +495,13 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
 
   it.effect('best-effort product-store failures never break the audio path', () =>
     Effect.gen(function* () {
-      const dbError = (op: string) =>
-        Effect.fail(new ProductDbError({ op, cause: 'boom' }));
+      const dbError = (op: string) => Effect.fail(new ProductDbError({ op, cause: 'boom' }));
       const failingStore: RecordingStoreApi = {
         recordingStarted: () => dbError('recording-started'),
         recordingCompleted: () => dbError('recording-completed'),
         recordingFailed: () => dbError('recording-failed'),
         segmentsReceived: () => dbError('segments-received'),
+        segmentsForRecording: () => dbError('segments-for-recording'),
         recordingMetaMerged: () => dbError('recording-meta-merged'),
       };
       const h = yield* setup({}, Layer.succeed(RecordingStore, failingStore));
@@ -500,10 +554,11 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
       yield* settle;
 
       yield* h.service.stop(recordingId);
+      yield* h.drain;
       yield* poll(
         h.db
           .getRecoveryOutbox(recordingId)
-          .pipe(Effect.map(row => row?.lastError === 'staging-abandon-incomplete')),
+          .pipe(Effect.map(row => row?.phase === 'staging' && row.attemptCount === 1)),
         'staging abandon parked'
       );
 
@@ -841,7 +896,7 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
 
       let crashed = 0;
       for (let guard = 0; guard < 40; guard += 1) {
-        if ((yield* status(h, recordingId)) === 'failed') break;
+        if ((yield* SubscriptionRef.get(h.service.state)).status === 'error') break;
         if (crashed < h.fakeCapture.sessions.length) {
           const session = h.fakeCapture.sessions[crashed];
           if (!session.released) {
@@ -859,15 +914,15 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
 
       assert.strictEqual(
         yield* status(h, recordingId),
-        'failed',
-        'a persistently-failing capture ends the recording'
+        'finalizing',
+        'a persistently-failing capture ends acquisition while retaining processing'
       );
       assert.isBelow(h.fakeCapture.sessions.length, 12, 'restarts are bounded (no infinite loop)');
       assert.strictEqual((yield* SubscriptionRef.get(h.service.state)).status, 'error');
       // Give-up also failed the product-store row.
       yield* poll(
-        productRecording(h, recordingId).pipe(Effect.map(row => row?.status === 'failed')),
-        'product recording row failed'
+        productRecording(h, recordingId).pipe(Effect.map(row => row?.status === 'completed')),
+        'captured recording finalized'
       );
       assert.isTrue(
         fs.existsSync(h.recoveryDir(recordingId)),
@@ -925,54 +980,56 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
     })
   );
 
-  it.effect('an OOM-valve drop parks the row (buffer-overflow) at stop — the WAV is never deleted', () =>
-    Effect.gen(function* () {
-      const h = yield* setup();
-      const recordingId = yield* h.service.start({ captureMode: 'mic', title: 'Overflow' });
-      yield* poll(
-        SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')),
-        'recording'
-      );
-      // 31 s arrive with no cut tick in between: the 30 s per-source cap drops
-      // the newest 1 s from the in-memory buffer (the recovery WAV keeps it).
-      yield* Queue.offer(h.fakeCapture.current().frames, fakeFrame('mic_raw', seconds(31)));
-      yield* settle;
-      yield* poll(
-        Effect.sync(() =>
-          h.logger.entries.some(
-            e =>
-              e.message ===
-              'recording buffer overflow — dropped samples (recovery WAV retains them)'
-          )
-        ),
-        'overflow metered'
-      );
+  it.effect(
+    'an OOM-valve drop parks the row (buffer-overflow) at stop — the WAV is never deleted',
+    () =>
+      Effect.gen(function* () {
+        const h = yield* setup();
+        const recordingId = yield* h.service.start({ captureMode: 'mic', title: 'Overflow' });
+        yield* poll(
+          SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')),
+          'recording'
+        );
+        // 31 s arrive with no cut tick in between: the 30 s per-source cap drops
+        // the newest 1 s from the in-memory buffer (the recovery WAV keeps it).
+        yield* Queue.offer(h.fakeCapture.current().frames, fakeFrame('mic_raw', seconds(31)));
+        yield* settle;
+        yield* poll(
+          Effect.sync(() =>
+            h.logger.entries.some(
+              e =>
+                e.message ===
+                'recording buffer overflow — dropped samples (recovery WAV retains them)'
+            )
+          ),
+          'overflow metered'
+        );
 
-      // Graceful stop: all six CUT chunks ack contiguously, the finalize lands
-      // — and the recording must STILL park, because the cut chunks silently
-      // skipped audio only the WAV holds.
-      yield* h.service.stop(recordingId);
+        // Graceful stop: all six CUT chunks ack contiguously, the finalize lands
+        // — and the recording must STILL park, because the cut chunks silently
+        // skipped audio only the WAV holds.
+        yield* h.service.stop(recordingId);
 
-      assert.strictEqual(h.fakeCloud.finalizeCalls.length, 1, 'finalize still ran');
-      const parked = yield* h.db.getRecoveryOutbox(recordingId);
-      assert.strictEqual(parked?.status, 'finalizing');
-      assert.strictEqual(parked?.lastError, 'buffer-overflow');
-      assert.isNull(
-        parked?.lastChunkIndex,
-        'cursor reset — the drain re-transcribes the FULL recording from the WAV'
-      );
-      const wavPath = path.join(h.recoveryDir(recordingId), 'mic.wav');
-      assert.isTrue(fs.existsSync(wavPath), 'recovery WAV retained');
-      const wav = fs.readFileSync(wavPath);
-      assert.strictEqual(
-        wav.length,
-        44 + 31 * 48_000 * 2,
-        'the WAV holds ALL 31 s including the dropped second'
-      );
-      assert.strictEqual((yield* SubscriptionRef.get(h.service.state)).status, 'idle');
+        assert.strictEqual(h.fakeCloud.finalizeCalls.length, 0, 'finalize waits for missing audio');
+        const parked = yield* h.db.getRecoveryOutbox(recordingId);
+        assert.strictEqual(parked?.status, 'finalizing');
+        assert.strictEqual(parked?.lastError, 'buffer-overflow');
+        assert.isNull(
+          parked?.lastChunkIndex,
+          'cursor reset — the drain re-transcribes the FULL recording from the WAV'
+        );
+        const wavPath = path.join(h.recoveryDir(recordingId), 'mic.wav');
+        assert.isTrue(fs.existsSync(wavPath), 'recovery WAV retained');
+        const wav = fs.readFileSync(wavPath);
+        assert.strictEqual(
+          wav.length,
+          44 + 31 * 48_000 * 2,
+          'the WAV holds ALL 31 s including the dropped second'
+        );
+        assert.strictEqual((yield* SubscriptionRef.get(h.service.state)).status, 'idle');
 
-      yield* Scope.close(h.sessionScope, Exit.void);
-    })
+        yield* Scope.close(h.sessionScope, Exit.void);
+      })
   );
 
   it.effect('Semaphore(1): a second concurrent start is rejected (one active recording)', () =>
@@ -1578,281 +1635,321 @@ const mintingLocalLane = (
       ),
   } satisfies TranscriberLaneApi);
 
-const LOCAL_CONFIG = (modelId: string) => ({ provider: 'local-whisper', model: `local:${modelId}`, language: 'en' });
+const LOCAL_CONFIG = (modelId: string) => ({
+  provider: 'local-whisper',
+  model: `local:${modelId}`,
+  language: 'en',
+});
 
 describe('RecordingService — transcription engine', () => {
-  it.effect('cloud engine (the default): managed config frozen, stagingExpected:true, no mirror, no speaker meta', () =>
-    Effect.gen(function* () {
-      const h = yield* setup();
-      const recordingId = yield* h.service.start({ captureMode: 'mic', title: 'Cloud' });
-      yield* poll(
-        Effect.sync(() => h.fakeCloud.createCalls.length === 1),
-        'createRecording'
-      );
-      assert.deepStrictEqual(h.fakeCloud.createCalls[0].transcriptionConfig, MANAGED_TRANSCRIPTION_CONFIG);
-      assert.deepStrictEqual(
-        h.logger.find(e => e.message === 'recording engine resolved')?.data,
-        { recordingId, engine: 'cloud' }
-      );
-      yield* poll(
-        SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')),
-        'recording'
-      );
-      yield* Queue.offer(h.fakeCapture.current().frames, fakeFrame('mic_raw', oneSecond()));
-      yield* settle;
-      yield* h.service.stop(recordingId);
-
-      // The upload went through the cloud lane (the seam did not swallow it).
-      assert.strictEqual(h.fakeCloud.uploadCalls.length, 1);
-      assert.strictEqual(h.fakeCloud.finalizeCalls[0].input.stagingExpected, true);
-      assert.strictEqual(h.fakeCloud.finalizeCalls[0].input.transcriptionDeferred, false);
-      yield* poll(
-        Effect.sync(() => h.fakeCloud.abandonCalls.length === 1),
-        'staging daemon settled'
-      );
-      // Lanes were READ (the WAV has audio) and staging answered disabled — today's path.
-      assert.deepStrictEqual(h.fakeCloud.abandonCalls, [{ recordingId, reason: 'staging-disabled' }]);
-      assert.strictEqual(h.fakeCloud.requestCalls.length, 0, 'the cloud engine never mirrors');
-      const row = (yield* productRecording(h, recordingId))!;
-      assert.deepStrictEqual(row.transcriptionConfig, MANAGED_TRANSCRIPTION_CONFIG);
-      assert.isNull(row.meta, 'the cloud engine writes no channel speaker count');
-      yield* Scope.close(h.sessionScope, Exit.void);
-    })
-  );
-
-  it.effect('cloud mode and placeholder local engine: chunks acknowledge empty through the seam, warn once, and complete without staging', () =>
-    Effect.gen(function* () {
-      const h = yield* setup({}, undefined, { transcription: { engine: 'local' } });
-      const recordingId = yield* h.service.start({ captureMode: 'mic', title: 'Local' });
-      yield* poll(
-        Effect.sync(() => h.fakeCloud.createCalls.length === 1),
-        'createRecording'
-      );
-      // The frozen config names the recommended model (no modelId preference) — never an instanceId.
-      assert.deepStrictEqual(
-        h.fakeCloud.createCalls[0].transcriptionConfig,
-        LOCAL_CONFIG(RECOMMENDED_MODEL_ID)
-      );
-      assert.deepStrictEqual(
-        h.logger.find(e => e.message === 'recording engine resolved')?.data,
-        { recordingId, engine: 'local', modelId: RECOMMENDED_MODEL_ID }
-      );
-      yield* poll(
-        SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')),
-        'recording'
-      );
-      yield* Queue.offer(h.fakeCapture.current().frames, fakeFrame('mic_raw', seconds(10)));
-      yield* settle;
-      yield* TestClock.adjust(CHUNK_INTERVAL);
-      yield* poll(
-        h.db.getRecoveryOutbox(recordingId).pipe(Effect.map(r => r?.lastChunkIndex === 1)),
-        'both chunks acked (cursor advanced to 1)'
-      );
-      assert.strictEqual(h.fakeCloud.uploadCalls.length, 0, 'the cloud lane was never reached');
-      const warns = () =>
-        h.logger.entries.filter(
-          e => e.message === 'transcription engine not available in this build — chunks ack empty'
+  it.effect(
+    'cloud engine (the default): managed config frozen, stagingExpected:true, no mirror, no speaker meta',
+    () =>
+      Effect.gen(function* () {
+        const h = yield* setup();
+        const recordingId = yield* h.service.start({ captureMode: 'mic', title: 'Cloud' });
+        yield* poll(
+          Effect.sync(() => h.fakeCloud.createCalls.length === 1),
+          'createRecording'
         );
-      assert.strictEqual(warns().length, 1, 'ONE warn per recording, not per chunk');
-      assert.deepStrictEqual(warns()[0].data, { recordingId, engine: 'local' });
+        assert.deepStrictEqual(
+          h.fakeCloud.createCalls[0].transcriptionConfig,
+          MANAGED_TRANSCRIPTION_CONFIG
+        );
+        assert.deepStrictEqual(
+          h.logger.find(e => e.message === 'recording engine resolved')?.data,
+          { recordingId, engine: 'cloud' }
+        );
+        yield* poll(
+          SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')),
+          'recording'
+        );
+        yield* Queue.offer(h.fakeCapture.current().frames, fakeFrame('mic_raw', oneSecond()));
+        yield* settle;
+        yield* h.service.stop(recordingId);
 
-      yield* h.service.stop(recordingId);
-      assert.strictEqual(h.fakeCloud.uploadCalls.length, 0);
-      assert.strictEqual(h.fakeCloud.finalizeCalls.length, 1);
-      assert.strictEqual(h.fakeCloud.finalizeCalls[0].input.stagingExpected, false);
-      assert.strictEqual(h.fakeCloud.finalizeCalls[0].input.transcriptionDeferred, false);
-      // The staging daemon skipped the upload and deleted the staging-disabled recovery.
-      yield* poll(
-        h.db.getRecoveryOutbox(recordingId).pipe(Effect.map(r => r === null)),
-        'outbox row deleted'
-      );
-      assert.deepStrictEqual(h.fakeCloud.abandonCalls, [{ recordingId, reason: 'staging-disabled' }]);
-      assert.isFalse(fs.existsSync(h.recoveryDir(recordingId)), 'WAVs deleted (never staged)');
-      assert.strictEqual(h.fakeCloud.requestCalls.length, 0, 'nothing to mirror (no segments)');
-      const row = (yield* productRecording(h, recordingId))!;
-      assert.strictEqual(row.status, 'completed');
-      assert.deepStrictEqual(row.transcriptionConfig, LOCAL_CONFIG(RECOMMENDED_MODEL_ID));
-      assert.deepStrictEqual(row.meta, { detectedSpeakerCount: 1 });
-      yield* Scope.close(h.sessionScope, Exit.void);
-    })
+        // The upload went through the cloud lane (the seam did not swallow it).
+        assert.strictEqual(h.fakeCloud.uploadCalls.length, 1);
+        assert.strictEqual(h.fakeCloud.finalizeCalls[0].input.stagingExpected, true);
+        assert.strictEqual(h.fakeCloud.finalizeCalls[0].input.transcriptionDeferred, false);
+        yield* h.drain;
+        yield* poll(
+          Effect.sync(() => h.fakeCloud.abandonCalls.length === 1),
+          'staging daemon settled'
+        );
+        // Lanes were READ (the WAV has audio) and staging answered disabled — today's path.
+        assert.deepStrictEqual(h.fakeCloud.abandonCalls, [
+          { recordingId, reason: 'staging-disabled' },
+        ]);
+        assert.strictEqual(h.fakeCloud.requestCalls.length, 0, 'the cloud engine never mirrors');
+        const row = (yield* productRecording(h, recordingId))!;
+        assert.deepStrictEqual(row.transcriptionConfig, MANAGED_TRANSCRIPTION_CONFIG);
+        assert.isNull(row.meta, 'the cloud engine writes no channel speaker count');
+        yield* Scope.close(h.sessionScope, Exit.void);
+      })
   );
 
-  it.effect('cloud mode with a minting local lane: segments persist, mirror to the server before finalize, speaker count 2', () =>
-    Effect.gen(function* () {
-      const h = yield* setup({}, undefined, {
-        transcription: { engine: 'local', modelId: 'whisper-tiny' },
-        localLane: mintingLocalLane(p => (p.source === 'system' ? 'them talking' : 'me talking')),
-      });
-      const recordingId = yield* h.service.start({ captureMode: 'dual', title: 'Mirror' });
-      yield* poll(
-        Effect.sync(() => h.fakeCloud.createCalls.length === 1),
-        'createRecording'
-      );
-      assert.deepStrictEqual(h.fakeCloud.createCalls[0].transcriptionConfig, LOCAL_CONFIG('whisper-tiny'));
-      yield* poll(
-        SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')),
-        'recording'
-      );
-      const session = h.fakeCapture.current();
-      yield* Queue.offer(session.frames, fakeFrame('mic_processed', seconds(6)));
-      yield* Queue.offer(session.frames, fakeFrame('system', seconds(6)));
-      // The chunk cut rides the TestClock: if it fires before the frame consumer
-      // has taken both frames (a loaded machine or a hosted runner), the cut is
-      // empty and nothing ever mints — wait for the queue to drain first.
-      yield* poll(Queue.size(session.frames).pipe(Effect.map(n => n === 0)), 'frames consumed');
-      yield* settle;
-      yield* TestClock.adjust(CHUNK_INTERVAL);
-      yield* poll(
-        SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.segments.length === 2)),
-        'two live segments minted on-device'
-      );
-      yield* h.service.stop(recordingId);
+  it.effect(
+    'cloud mode and placeholder local engine: chunks acknowledge empty through the seam, warn once, and complete without staging',
+    () =>
+      Effect.gen(function* () {
+        const h = yield* setup({}, undefined, { transcription: { engine: 'local' } });
+        const recordingId = yield* h.service.start({ captureMode: 'mic', title: 'Local' });
+        yield* poll(
+          Effect.sync(() => h.fakeCloud.createCalls.length === 1),
+          'createRecording'
+        );
+        // The frozen config names the recommended model (no modelId preference) — never an instanceId.
+        assert.deepStrictEqual(
+          h.fakeCloud.createCalls[0].transcriptionConfig,
+          LOCAL_CONFIG(RECOMMENDED_MODEL_ID)
+        );
+        assert.deepStrictEqual(
+          h.logger.find(e => e.message === 'recording engine resolved')?.data,
+          { recordingId, engine: 'local', modelId: RECOMMENDED_MODEL_ID }
+        );
+        yield* poll(
+          SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')),
+          'recording'
+        );
+        yield* Queue.offer(h.fakeCapture.current().frames, fakeFrame('mic_raw', seconds(10)));
+        yield* settle;
+        yield* TestClock.adjust(CHUNK_INTERVAL);
+        yield* poll(
+          h.db.getRecoveryOutbox(recordingId).pipe(Effect.map(r => r?.lastChunkIndex === 1)),
+          'both chunks acked (cursor advanced to 1)'
+        );
+        assert.strictEqual(h.fakeCloud.uploadCalls.length, 0, 'the cloud lane was never reached');
+        const warns = () =>
+          h.logger.entries.filter(
+            e => e.message === 'transcription engine not available in this build — chunks ack empty'
+          );
+        assert.strictEqual(warns().length, 1, 'ONE warn per recording, not per chunk');
+        assert.deepStrictEqual(warns()[0].data, { recordingId, engine: 'local' });
 
-      assert.strictEqual(h.fakeCloud.uploadCalls.length, 0, 'never the cloud lane');
-      const persisted = yield* productSegments(h, recordingId);
-      assert.deepStrictEqual(
-        persisted.map(r => [r.segmentOrder, r.source, r.speaker, r.text]),
-        [
-          [1_000_000, 'mic', 'you', 'me talking'],
-          [1_001_000, 'system', 'them', 'them talking'],
-          [1_002_000, 'mic', 'you', 'me talking'],
-          [1_003_000, 'system', 'them', 'them talking'],
-        ]
-      );
-      // One mirror POST per segment, sync-create dialect, the store's ids + orders, all before finalize.
-      assert.strictEqual(h.fakeCloud.requestCalls.length, 4);
-      for (const [i, call] of h.fakeCloud.requestCalls.entries()) {
-        assert.strictEqual(call.method, 'POST');
-        assert.strictEqual(call.path, TRANSCRIPT_SEGMENTS_PATH);
-        const parsed = SyncTranscriptSegmentCreateRequestSchema.safeParse(call.body);
-        assert.isTrue(parsed.success, JSON.stringify(parsed.error?.issues));
-        assert.deepStrictEqual(parsed.data, call.body, 'no field outside the contract');
-        assert.strictEqual(parsed.data!.id, persisted[i].id);
-        assert.strictEqual(parsed.data!.segmentOrder, persisted[i].segmentOrder);
-        assert.strictEqual(parsed.data!.recordingId, recordingId);
-        assert.strictEqual(parsed.data!.isFinal, true);
-      }
-      const finalizeAt = h.fakeCloud.timeline.indexOf('finalize');
-      const mirrors = h.fakeCloud.timeline
-        .map((entry, i) => [entry, i] as const)
-        .filter(([entry]) => entry.startsWith('request:'));
-      assert.strictEqual(mirrors.length, 4);
-      assert.isTrue(mirrors.every(([, i]) => i < finalizeAt), 'every mirror lands BEFORE the finalize PUT');
-      assert.strictEqual(h.fakeCloud.finalizeCalls[0].input.stagingExpected, false);
-      const row = (yield* productRecording(h, recordingId))!;
-      assert.deepStrictEqual(row.meta, { detectedSpeakerCount: 2 }, 'dual + system speech → 2');
-      yield* poll(
-        h.db.getRecoveryOutbox(recordingId).pipe(Effect.map(r => r === null)),
-        'resolved'
-      );
-      yield* Scope.close(h.sessionScope, Exit.void);
-    })
+        yield* h.service.stop(recordingId);
+        assert.strictEqual(h.fakeCloud.uploadCalls.length, 0);
+        assert.strictEqual(h.fakeCloud.finalizeCalls.length, 1);
+        assert.strictEqual(h.fakeCloud.finalizeCalls[0].input.stagingExpected, false);
+        assert.strictEqual(h.fakeCloud.finalizeCalls[0].input.transcriptionDeferred, false);
+        yield* h.drain;
+        yield* poll(
+          h.db.getRecoveryOutbox(recordingId).pipe(Effect.map(r => r === null)),
+          'outbox row deleted'
+        );
+        assert.deepStrictEqual(h.fakeCloud.abandonCalls, [
+          { recordingId, reason: 'staging-disabled' },
+        ]);
+        assert.isFalse(fs.existsSync(h.recoveryDir(recordingId)), 'WAVs deleted (never staged)');
+        assert.strictEqual(h.fakeCloud.requestCalls.length, 0, 'nothing to mirror (no segments)');
+        const row = (yield* productRecording(h, recordingId))!;
+        assert.strictEqual(row.status, 'completed');
+        assert.deepStrictEqual(row.transcriptionConfig, LOCAL_CONFIG(RECOMMENDED_MODEL_ID));
+        assert.deepStrictEqual(row.meta, { detectedSpeakerCount: 1 });
+        yield* Scope.close(h.sessionScope, Exit.void);
+      })
   );
 
-  it.effect('local mode: the stored cloud default coerces to the local engine and NOTHING is mirrored', () =>
-    Effect.gen(function* () {
-      const h = yield* setup({}, undefined, {
-        mode: 'local',
-        localLane: mintingLocalLane(() => 'local words'),
-      });
-      const recordingId = yield* h.service.start({ captureMode: 'mic', title: 'Local mode' });
-      yield* poll(
-        Effect.sync(() => h.fakeCloud.createCalls.length === 1),
-        'createRecording'
-      );
-      assert.deepStrictEqual(
-        h.fakeCloud.createCalls[0].transcriptionConfig,
-        LOCAL_CONFIG(RECOMMENDED_MODEL_ID)
-      );
-      assert.strictEqual(
-        (h.logger.find(e => e.message === 'recording engine resolved')?.data as { engine: string }).engine,
-        'local'
-      );
-      yield* poll(
-        SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')),
-        'recording'
-      );
-      yield* Queue.offer(h.fakeCapture.current().frames, fakeFrame('mic_raw', seconds(5)));
-      yield* settle;
-      yield* TestClock.adjust(CHUNK_INTERVAL);
-      yield* poll(
-        SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.segments.length === 1)),
-        'segment minted'
-      );
-      yield* h.service.stop(recordingId);
+  it.effect(
+    'cloud mode with a minting local lane: segments persist, mirror to the server before finalize, speaker count 2',
+    () =>
+      Effect.gen(function* () {
+        const h = yield* setup({}, undefined, {
+          transcription: { engine: 'local', modelId: 'whisper-tiny' },
+          localLane: mintingLocalLane(p => (p.source === 'system' ? 'them talking' : 'me talking')),
+        });
+        const recordingId = yield* h.service.start({ captureMode: 'dual', title: 'Mirror' });
+        yield* poll(
+          Effect.sync(() => h.fakeCloud.createCalls.length === 1),
+          'createRecording'
+        );
+        assert.deepStrictEqual(
+          h.fakeCloud.createCalls[0].transcriptionConfig,
+          LOCAL_CONFIG('whisper-tiny')
+        );
+        yield* poll(
+          SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')),
+          'recording'
+        );
+        const session = h.fakeCapture.current();
+        yield* Queue.offer(session.frames, fakeFrame('mic_processed', seconds(6)));
+        yield* Queue.offer(session.frames, fakeFrame('system', seconds(6)));
+        // A dequeued frame can still be awaiting its WAV write. Keep the periodic
+        // worker ticking until both durable frames reach the chunk buffers.
+        yield* poll(
+          SubscriptionRef.get(h.service.state).pipe(Effect.flatMap(s =>
+            s.segments.length === 2
+              ? Effect.succeed(true)
+              : TestClock.adjust(CHUNK_INTERVAL).pipe(Effect.as(false))
+          )),
+          'two live segments minted on-device'
+        );
+        yield* h.service.stop(recordingId);
 
-      assert.strictEqual(h.fakeCloud.requestCalls.length, 0, 'local mode never mirrors');
-      assert.strictEqual(h.fakeCloud.uploadCalls.length, 0);
-      assert.strictEqual(h.fakeCloud.finalizeCalls[0].input.stagingExpected, false);
-      assert.strictEqual((yield* productSegments(h, recordingId)).length, 1);
-      const row = (yield* productRecording(h, recordingId))!;
-      assert.deepStrictEqual(row.transcriptionConfig, LOCAL_CONFIG(RECOMMENDED_MODEL_ID));
-      assert.deepStrictEqual(row.meta, { detectedSpeakerCount: 1 });
-      yield* Scope.close(h.sessionScope, Exit.void);
-    })
+        assert.strictEqual(h.fakeCloud.uploadCalls.length, 0, 'never the cloud lane');
+        const persisted = yield* productSegments(h, recordingId);
+        assert.deepStrictEqual(
+          persisted.map(r => [r.segmentOrder, r.source, r.speaker, r.text]),
+          [
+            [1_000_000, 'mic', 'you', 'me talking'],
+            [1_001_000, 'system', 'them', 'them talking'],
+            [1_002_000, 'mic', 'you', 'me talking'],
+            [1_003_000, 'system', 'them', 'them talking'],
+          ]
+        );
+        // One mirror POST per segment, sync-create dialect, the store's ids + orders, all before finalize.
+        assert.strictEqual(h.fakeCloud.requestCalls.length, 4);
+        for (const [i, call] of h.fakeCloud.requestCalls.entries()) {
+          assert.strictEqual(call.method, 'POST');
+          assert.strictEqual(call.path, TRANSCRIPT_SEGMENTS_PATH);
+          const parsed = SyncTranscriptSegmentCreateRequestSchema.safeParse(call.body);
+          assert.isTrue(parsed.success, JSON.stringify(parsed.error?.issues));
+          assert.deepStrictEqual(parsed.data, call.body, 'no field outside the contract');
+          assert.strictEqual(parsed.data!.id, persisted[i].id);
+          assert.strictEqual(parsed.data!.segmentOrder, persisted[i].segmentOrder);
+          assert.strictEqual(parsed.data!.recordingId, recordingId);
+          assert.strictEqual(parsed.data!.isFinal, true);
+        }
+        const finalizeAt = h.fakeCloud.timeline.indexOf('finalize');
+        const mirrors = h.fakeCloud.timeline
+          .map((entry, i) => [entry, i] as const)
+          .filter(([entry]) => entry.startsWith('request:'));
+        assert.strictEqual(mirrors.length, 4);
+        assert.isTrue(
+          mirrors.every(([, i]) => i < finalizeAt),
+          'every mirror lands BEFORE the finalize PUT'
+        );
+        assert.strictEqual(h.fakeCloud.finalizeCalls[0].input.stagingExpected, false);
+        const row = (yield* productRecording(h, recordingId))!;
+        assert.deepStrictEqual(row.meta, { detectedSpeakerCount: 2 }, 'dual + system speech → 2');
+        yield* h.drain;
+        yield* poll(
+          h.db.getRecoveryOutbox(recordingId).pipe(Effect.map(r => r === null)),
+          'resolved'
+        );
+        yield* Scope.close(h.sessionScope, Exit.void);
+      })
   );
 
-  it.effect('an engine failure classifies like an upload failure: retryable freezes the cursor, non-retryable loses the chunk', () =>
-    Effect.gen(function* () {
-      let calls = 0;
-      const flakyLane = Layer.succeed(LocalTranscriberLane, {
-        transcribeChunk: () =>
-          Effect.sync((): RecordingLaneResult<readonly RecordingSegment[]> => {
-            calls += 1;
-            if (calls === 1)
-              return laneFail(true, { kind: 'engine', reason: 'worker-crashed' });
-            if (calls === 2)
-              return laneFail(false, { kind: 'engine', reason: 'inference-failed' });
-            return { ok: true, value: [] };
-          }),
-      } satisfies TranscriberLaneApi);
-      const h = yield* setup({}, undefined, {
-        transcription: { engine: 'local' },
-        localLane: flakyLane,
-      });
-      const recordingId = yield* h.service.start({ captureMode: 'mic' });
-      yield* poll(
-        SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')),
-        'recording'
-      );
-      const session = h.fakeCapture.current();
-      yield* Queue.offer(session.frames, fakeFrame('mic_raw', seconds(5)));
-      yield* settle;
-      yield* TestClock.adjust(CHUNK_INTERVAL);
-      yield* poll(
-        Effect.sync(() => calls === 1),
-        'first chunk attempted'
-      );
-      yield* Queue.offer(session.frames, fakeFrame('mic_raw', seconds(5)));
-      yield* settle;
-      yield* TestClock.adjust(CHUNK_INTERVAL);
-      yield* poll(
-        Effect.sync(() => calls === 2),
-        'second chunk attempted'
-      );
+  it.effect(
+    'local mode: the stored cloud default coerces to the local engine and NOTHING is mirrored',
+    () =>
+      Effect.gen(function* () {
+        const h = yield* setup({}, undefined, {
+          mode: 'local',
+          localLane: mintingLocalLane(() => 'local words'),
+        });
+        const recordingId = yield* h.service.start({ captureMode: 'mic', title: 'Local mode' });
+        yield* poll(
+          Effect.sync(() => h.fakeCloud.createCalls.length === 1),
+          'createRecording'
+        );
+        assert.deepStrictEqual(
+          h.fakeCloud.createCalls[0].transcriptionConfig,
+          LOCAL_CONFIG(RECOMMENDED_MODEL_ID)
+        );
+        assert.strictEqual(
+          (
+            h.logger.find(e => e.message === 'recording engine resolved')?.data as {
+              engine: string;
+            }
+          ).engine,
+          'local'
+        );
+        yield* poll(
+          SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')),
+          'recording'
+        );
+        yield* Queue.offer(h.fakeCapture.current().frames, fakeFrame('mic_raw', seconds(5)));
+        yield* settle;
+        yield* TestClock.adjust(CHUNK_INTERVAL);
+        yield* poll(
+          SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.segments.length === 1)),
+          'segment minted'
+        );
+        yield* h.service.stop(recordingId);
 
-      const row = yield* h.db.getRecoveryOutbox(recordingId);
-      assert.isNull(row?.lastChunkIndex, 'cursor frozen behind the retryable engine failure');
-      assert.deepStrictEqual(
-        h.logger.find(e => e.message === 'chunk upload retryable — deferred to drain')?.data,
-        { recordingId, index: 0, failure: { kind: 'engine', reason: 'worker-crashed' } }
-      );
-      assert.deepStrictEqual(
-        h.logger.find(e => e.message === 'chunk upload permanently failed — segment lost')?.data,
-        { recordingId, index: 1, failure: { kind: 'engine', reason: 'inference-failed' } }
-      );
-
-      // Stop with an unacked chunk → parked for the drain, WAV retained (today's contract).
-      yield* h.service.stop(recordingId);
-      const parked = yield* h.db.getRecoveryOutbox(recordingId);
-      assert.strictEqual(parked?.status, 'finalizing');
-      assert.strictEqual(parked?.lastError, 'stop-incomplete');
-      assert.isTrue(fs.existsSync(path.join(h.recoveryDir(recordingId), 'mic.wav')));
-      yield* Scope.close(h.sessionScope, Exit.void);
-    })
+        assert.strictEqual(h.fakeCloud.requestCalls.length, 0, 'local mode never mirrors');
+        assert.strictEqual(h.fakeCloud.uploadCalls.length, 0);
+        assert.strictEqual(h.fakeCloud.finalizeCalls[0].input.stagingExpected, false);
+        assert.strictEqual((yield* productSegments(h, recordingId)).length, 1);
+        const row = (yield* productRecording(h, recordingId))!;
+        assert.deepStrictEqual(row.transcriptionConfig, LOCAL_CONFIG(RECOMMENDED_MODEL_ID));
+        assert.deepStrictEqual(row.meta, { detectedSpeakerCount: 1 });
+        yield* Scope.close(h.sessionScope, Exit.void);
+      })
   );
 
-  it.effect('a failing mirror POST is a warn — the chunk still acks, the segment stays in the product store', () =>
+  it.effect(
+    'an engine failure classifies like an upload failure: retryable freezes the cursor, non-retryable loses the chunk',
+    () =>
+      Effect.gen(function* () {
+        let calls = 0;
+        const flakyLane = Layer.succeed(LocalTranscriberLane, {
+          transcribeChunk: () =>
+            Effect.sync((): RecordingLaneResult<readonly RecordingSegment[]> => {
+              calls += 1;
+              if (calls === 1) return laneFail(true, { kind: 'engine', reason: 'worker-crashed' });
+              if (calls === 2)
+                return laneFail(false, { kind: 'engine', reason: 'inference-failed' });
+              return { ok: true, value: [] };
+            }),
+        } satisfies TranscriberLaneApi);
+        const h = yield* setup({}, undefined, {
+          transcription: { engine: 'local' },
+          localLane: flakyLane,
+        });
+        const recordingId = yield* h.service.start({ captureMode: 'mic' });
+        yield* poll(
+          SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')),
+          'recording'
+        );
+        const session = h.fakeCapture.current();
+        yield* Queue.offer(session.frames, fakeFrame('mic_raw', seconds(5)));
+        yield* settle;
+        yield* TestClock.adjust(CHUNK_INTERVAL);
+        yield* poll(
+          Effect.sync(() => calls === 1),
+          'first chunk attempted'
+        );
+        yield* Queue.offer(session.frames, fakeFrame('mic_raw', seconds(5)));
+        yield* settle;
+        yield* TestClock.adjust(CHUNK_INTERVAL);
+        yield* poll(
+          Effect.sync(() => calls === 2),
+          'second chunk attempted'
+        );
+
+        const row = yield* h.db.getRecoveryOutbox(recordingId);
+        assert.isNull(row?.lastChunkIndex, 'cursor frozen behind the retryable engine failure');
+        assert.deepStrictEqual(
+          h.logger.find(
+            e =>
+              e.message === 'chunk processing failed — retained for recovery' &&
+              (e.data as { index?: number })?.index === 0
+          )?.data,
+          { recordingId, index: 0, failure: { kind: 'engine', reason: 'worker-crashed' } }
+        );
+        assert.deepStrictEqual(
+          h.logger.find(
+            e =>
+              e.message === 'chunk processing failed — retained for recovery' &&
+              (e.data as { index?: number })?.index === 1
+          )?.data,
+          { recordingId, index: 1, failure: { kind: 'engine', reason: 'inference-failed' } }
+        );
+
+        // Stop with an unacked chunk → parked for the drain, WAV retained (today's contract).
+        yield* h.service.stop(recordingId);
+        const parked = yield* h.db.getRecoveryOutbox(recordingId);
+        assert.strictEqual(parked?.status, 'finalizing');
+        assert.strictEqual(parked?.lastError, 'stop-incomplete');
+        assert.isTrue(fs.existsSync(path.join(h.recoveryDir(recordingId), 'mic.wav')));
+        yield* Scope.close(h.sessionScope, Exit.void);
+      })
+  );
+
+  it.effect('a failing mirror retains its chunk until required server delivery succeeds', () =>
     Effect.gen(function* () {
       const h = yield* setup({}, undefined, {
         transcription: { engine: 'local' },
@@ -1868,16 +1965,461 @@ describe('RecordingService — transcription engine', () => {
       yield* settle;
       yield* TestClock.adjust(CHUNK_INTERVAL);
       yield* poll(
-        h.db.getRecoveryOutbox(recordingId).pipe(Effect.map(r => r?.lastChunkIndex === 0)),
-        'chunk acked despite the failed mirror'
+        Effect.sync(() => h.fakeCloud.requestCalls.length === 1),
+        'mirror attempted'
       );
       assert.strictEqual(h.fakeCloud.requestCalls.length, 1);
+      assert.isNull((yield* h.db.getRecoveryOutbox(recordingId))?.lastChunkIndex);
       assert.deepStrictEqual(
-        h.logger.find(e => e.message === 'segment mirror to core failed — kept locally')?.data,
+        h.logger.find(e => e.message === 'segment mirror to core failed — retained for recovery')
+          ?.data,
         { recordingId, segmentOrder: 1_000_000, status: 500 }
       );
       assert.strictEqual((yield* productSegments(h, recordingId)).length, 1);
       yield* h.service.stop(recordingId);
+      yield* Scope.close(h.sessionScope, Exit.void);
+    })
+  );
+});
+
+describe('RecordingService — lifecycle ownership and durability', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it.effect('completion waits for recovery and preserves claims while another recording starts', () =>
+    Effect.gen(function* () {
+      const h = yield* setup();
+      h.fakeCloud.setCreateResponder(() => laneFail(true, { kind: 'http', status: 503 }));
+      const first = yield* h.service.start({ captureMode: 'mic' });
+      yield* h.service.stop(first);
+      const claims = yield* Effect.all([
+        Effect.fork(h.service.claimCompletion(first)),
+        Effect.fork(h.service.claimCompletion(first)),
+      ]);
+      yield* settle;
+      for (const claim of claims) assert.isTrue(Option.isNone(yield* Fiber.poll(claim)));
+      const second = yield* h.service.start({ captureMode: 'mic' });
+      yield* h.service.stop(second);
+      const secondClaim = yield* Effect.fork(h.service.claimCompletion(second));
+      yield* settle;
+      assert.isTrue(Option.isNone(yield* Fiber.poll(secondClaim)));
+      h.fakeCloud.setCreateResponder(input => ({ ok: true, value: { recordingId: input.recordingId } }));
+      yield* h.drain;
+      const results = yield* Effect.forEach(claims, Fiber.join);
+      assert.strictEqual(results.filter(Boolean).length, 1);
+      assert.isTrue(yield* Fiber.join(secondClaim));
+      assert.strictEqual(h.fakeCloud.finalizeCalls.length, 2);
+      assert.isFalse(yield* h.service.claimCompletion(first));
+      yield* Scope.close(h.sessionScope, Exit.void);
+    })
+  );
+
+  it.effect('completion waits for unresolved chunks to be transcribed and finalized', () =>
+    Effect.gen(function* () {
+      const h = yield* setup();
+      h.fakeCloud.setUploadResponder(() => laneFail(true, { kind: 'http', status: 503 }));
+      const id = yield* h.service.start({ captureMode: 'mic' });
+      yield* poll(SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')), 'recording');
+      yield* Queue.offer(h.fakeCapture.current().frames, fakeFrame('mic_raw', oneSecond()));
+      yield* settle;
+      yield* h.service.stop(id);
+      const claim = yield* Effect.fork(h.service.claimCompletion(id));
+      yield* settle;
+      assert.isTrue(Option.isNone(yield* Fiber.poll(claim)));
+      assert.strictEqual(h.fakeCloud.finalizeCalls.length, 0);
+      h.fakeCloud.setUploadResponder(() => ({ ok: true, value: [] }));
+      yield* h.drain;
+      assert.isTrue(yield* Fiber.join(claim));
+      assert.strictEqual(h.fakeCloud.finalizeCalls.length, 1);
+      yield* Scope.close(h.sessionScope, Exit.void);
+    })
+  );
+
+  it.effect('workspace release refuses pending completion claims', () =>
+    Effect.gen(function* () {
+      const h = yield* setup();
+      h.fakeCloud.setCreateResponder(() => laneFail(true, { kind: 'http', status: 503 }));
+      const id = yield* h.service.start({ captureMode: 'mic' });
+      yield* h.service.stop(id);
+      const claim = yield* Effect.fork(h.service.claimCompletion(id));
+      yield* settle;
+      assert.isTrue(Option.isNone(yield* Fiber.poll(claim)));
+      yield* Scope.close(h.sessionScope, Exit.void);
+      assert.isFalse(yield* Fiber.join(claim));
+      assert.isFalse(yield* h.service.claimCompletion(id));
+    })
+  );
+
+  it.effect('a deterministic recovery rejection refuses completion instead of enhancing partial text', () =>
+    Effect.gen(function* () {
+      const h = yield* setup();
+      h.fakeCloud.setCreateResponder(() => laneFail(false, { kind: 'http', status: 404 }));
+      const id = yield* h.service.start({ captureMode: 'mic' });
+      yield* h.service.stop(id);
+      const claim = yield* Effect.fork(h.service.claimCompletion(id));
+      yield* settle;
+      assert.isTrue(Option.isNone(yield* Fiber.poll(claim)));
+      yield* h.drain;
+      assert.isFalse(yield* Fiber.join(claim));
+      assert.strictEqual((yield* h.db.getRecoveryOutbox(id))?.status, 'failed');
+      yield* Scope.close(h.sessionScope, Exit.void);
+    })
+  );
+
+  it.effect('recovery directory failure stops before capture and retains the job', () =>
+    Effect.gen(function* () {
+      const h = yield* setup();
+      fs.writeFileSync(path.dirname(h.recoveryDir('fixture')), 'not a directory');
+      const id = yield* h.service.start({ captureMode: 'mic' });
+      yield* poll(
+        SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'error')),
+        'storage failure published'
+      );
+      yield* h.service.stop(id);
+      assert.strictEqual(h.fakeCapture.sessions.length, 0);
+      assert.strictEqual(h.fakeCloud.uploadCalls.length, 0);
+      assert.strictEqual(h.fakeCloud.finalizeCalls.length, 0);
+      assert.strictEqual((yield* SubscriptionRef.get(h.service.state)).elapsedMs, 0);
+      assert.strictEqual((yield* h.db.getRecoveryOutbox(id))?.status, 'interrupted');
+      yield* Scope.close(h.sessionScope, Exit.void);
+    })
+  );
+
+  it.effect('WAV append failure stops without a restart and completes only saved samples', () =>
+    Effect.gen(function* () {
+      const h = yield* setup();
+      const id = yield* h.service.start({ captureMode: 'mic' });
+      yield* poll(
+        SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')),
+        'recording'
+      );
+      yield* Queue.offer(h.fakeCapture.current().frames, fakeFrame('mic_raw', oneSecond()));
+      yield* settle;
+      vi.spyOn(StreamingWavWriter.prototype, 'appendAudio').mockRejectedValueOnce(
+        new Error('ENOSPC')
+      );
+      yield* Queue.offer(h.fakeCapture.current().frames, fakeFrame('mic_raw', oneSecond()));
+      yield* poll(
+        SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'error')),
+        'write failure stopped capture'
+      );
+      yield* h.service.stop(id);
+      assert.strictEqual(h.fakeCapture.sessions.length, 1, 'disk errors do not restart capture');
+      assert.isTrue(h.fakeCapture.current().released);
+      assert.strictEqual((yield* SubscriptionRef.get(h.service.state)).elapsedMs, 1000);
+      assert.strictEqual(h.fakeCloud.uploadCalls.length, 1);
+      assertWav(h.fakeCloud.uploadCalls[0].wav, 48_000);
+      assert.strictEqual(h.fakeCloud.finalizeCalls[0].input.durationMs, 1000);
+      assert.strictEqual((yield* h.db.getRecoveryOutbox(id))?.durationMs, 1000);
+      assertWav(fs.readFileSync(path.join(h.recoveryDir(id), 'mic.wav')), 48_000);
+      assert.isTrue(yield* h.service.claimCompletion(id));
+      yield* Scope.close(h.sessionScope, Exit.void);
+    })
+  );
+
+  it.effect('WAV close failure retains audio and does not advance to backend finalization', () =>
+    Effect.gen(function* () {
+      const h = yield* setup();
+      const id = yield* h.service.start({ captureMode: 'mic' });
+      yield* poll(
+        SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')),
+        'recording'
+      );
+      yield* Queue.offer(h.fakeCapture.current().frames, fakeFrame('mic_raw', oneSecond()));
+      yield* settle;
+      const original = StreamingWavWriter.prototype.finalize;
+      vi.spyOn(StreamingWavWriter.prototype, 'finalize').mockImplementationOnce(async function (
+        this: StreamingWavWriter
+      ) {
+        await original.call(this);
+        throw new Error('header update failed');
+      });
+      yield* h.service.stop(id);
+      assert.strictEqual((yield* SubscriptionRef.get(h.service.state)).status, 'error');
+      assert.strictEqual(h.fakeCloud.finalizeCalls.length, 0);
+      assert.strictEqual(h.fakeCapture.sessions.length, 1);
+      assert.isTrue(h.fakeCapture.current().released);
+      const row = yield* h.db.getRecoveryOutbox(id);
+      assert.strictEqual(row?.status, 'interrupted');
+      assert.strictEqual(row?.phase, 'chunks');
+      assertWav(fs.readFileSync(path.join(h.recoveryDir(id), 'mic.wav')), 48_000);
+      yield* Scope.close(h.sessionScope, Exit.void);
+    })
+  );
+
+  it.effect('Stop drains an in-flight upload without moving the capture end time', () =>
+    Effect.gen(function* () {
+      const entered = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      let cancelled = false;
+      const h = yield* setup({}, undefined, {
+        backendTransform: api => ({
+          ...api,
+          uploadTranscriptionChunk: (id, params, wav) =>
+            (params.chunkIndex === 0
+              ? Deferred.succeed(entered, undefined).pipe(Effect.zipRight(Deferred.await(release)))
+              : Effect.void
+            ).pipe(
+              Effect.zipRight(api.uploadTranscriptionChunk(id, params, wav)),
+              Effect.onInterrupt(() =>
+                Effect.sync(() => {
+                  cancelled = true;
+                })
+              )
+            ),
+        }),
+      });
+      const id = yield* h.service.start({ captureMode: 'mic' });
+      yield* poll(
+        SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')),
+        'recording'
+      );
+      yield* Queue.offer(h.fakeCapture.current().frames, fakeFrame('mic_raw', seconds(6)));
+      yield* settle;
+      yield* TestClock.adjust(CHUNK_INTERVAL);
+      yield* Deferred.await(entered);
+      const stoppingAt = yield* Clock.currentTimeMillis;
+      const stopFiber = yield* Effect.forkDaemon(h.service.stop(id));
+      yield* poll(
+        SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'stopping')),
+        'stopping'
+      );
+      assert.isTrue(Option.isNone(yield* Fiber.poll(stopFiber)));
+      assert.isTrue(h.fakeCapture.current().released, 'capture already closed while upload drains');
+      yield* TestClock.adjust(Duration.seconds(15));
+      yield* Deferred.succeed(release, undefined);
+      yield* Fiber.join(stopFiber);
+      assert.isFalse(cancelled);
+      assert.deepStrictEqual(
+        h.fakeCloud.uploadCalls.map(c => c.params.chunkIndex),
+        [0, 1]
+      );
+      assert.strictEqual(h.fakeCloud.finalizeCalls[0].input.endedAt, stoppingAt);
+      assert.strictEqual(h.fakeCloud.finalizeCalls[0].input.durationMs, 6000);
+      assert.strictEqual((yield* h.db.getRecoveryOutbox(id))?.phase, 'staging');
+      yield* h.drain;
+      assert.isNull(yield* h.db.getRecoveryOutbox(id));
+      yield* Scope.close(h.sessionScope, Exit.void);
+    })
+  );
+
+  it.effect(
+    'failed creation retains audio and retries the original create intent before chunks',
+    () =>
+      Effect.gen(function* () {
+        const h = yield* setup();
+        h.fakeCloud.setCreateResponder(() => laneFail(true, { kind: 'http', status: 503 }));
+        const id = yield* h.service.start({
+          captureMode: 'mic',
+          noteId: 'nt_owner',
+          title: 'Original title',
+        });
+        yield* poll(
+          SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')),
+          'recording'
+        );
+        yield* Queue.offer(h.fakeCapture.current().frames, fakeFrame('mic_raw', oneSecond()));
+        yield* settle;
+        yield* h.service.stop(id);
+        const intent = h.fakeCloud.createCalls[0];
+        assert.deepStrictEqual((yield* h.db.getRecoveryOutbox(id))?.createInput, intent);
+        assert.strictEqual((yield* h.db.getRecoveryOutbox(id))?.phase, 'create');
+        assert.strictEqual(h.fakeCloud.uploadCalls.length, 0);
+        assert.strictEqual(h.fakeCloud.finalizeCalls.length, 0);
+        assert.isTrue(fs.existsSync(h.recoveryDir(id)));
+        h.fakeCloud.setCreateResponder(input => ({
+          ok: true,
+          value: { recordingId: input.recordingId },
+        }));
+        yield* h.drain;
+        assert.deepStrictEqual(h.fakeCloud.createCalls[1], intent);
+        assert.strictEqual(h.fakeCloud.uploadCalls.length, 1);
+        assert.strictEqual(h.fakeCloud.finalizeCalls.length, 1);
+        assert.isNull(yield* h.db.getRecoveryOutbox(id));
+        yield* Scope.close(h.sessionScope, Exit.void);
+      })
+  );
+
+  it.effect('silence grace can pause and Stop can finish without reacquiring the frame gate', () =>
+    Effect.gen(function* () {
+      const h = yield* setup();
+      const id = yield* h.service.start({
+        captureMode: 'mic',
+        autoPause: {
+          silenceSeconds: 1,
+          graceSeconds: 1,
+          autoStopAfterPausedMinutes: 1,
+        },
+      });
+      yield* poll(
+        SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')),
+        'recording'
+      );
+      yield* Queue.offer(
+        h.fakeCapture.current().frames,
+        fakeFrame('mic_raw', new Float32Array(30 * 48_000))
+      );
+      yield* poll(
+        SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.autoPausePrompt !== null)),
+        'grace prompt'
+      );
+      yield* settle;
+      yield* Queue.offer(
+        h.fakeCapture.current().frames,
+        fakeFrame('mic_raw', new Float32Array(48_000))
+      );
+      yield* poll(
+        SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'paused')),
+        'auto-pause completed'
+      );
+      yield* h.service.stop(id);
+      assert.strictEqual((yield* SubscriptionRef.get(h.service.state)).status, 'idle');
+      assert.isTrue(h.fakeCapture.current().released);
+      yield* Scope.close(h.sessionScope, Exit.void);
+    })
+  );
+
+  it.effect('a manually paused recording auto-stops without a mounted renderer', () =>
+    Effect.gen(function* () {
+      const h = yield* setup();
+      const id = yield* h.service.start({
+        captureMode: 'mic',
+        autoPause: {
+          silenceSeconds: 1,
+          graceSeconds: 1,
+          autoStopAfterPausedMinutes: 1,
+        },
+      });
+      yield* poll(
+        SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')),
+        'recording'
+      );
+      yield* Queue.offer(h.fakeCapture.current().frames, fakeFrame('mic_raw', oneSecond()));
+      yield* settle;
+      assert.isTrue(yield* h.service.pause(id));
+      yield* TestClock.adjust(Duration.minutes(1));
+      yield* poll(
+        SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'idle')),
+        'automatic stop completed'
+      );
+      assert.isFalse(yield* h.service.resume(id));
+      assert.strictEqual(h.fakeCloud.finalizeCalls.length, 1);
+      assert.isTrue(yield* h.service.claimCompletion(id));
+      yield* Scope.close(h.sessionScope, Exit.void);
+    })
+  );
+
+  it.effect('missing local model refuses Start before capture or durable job creation', () =>
+    Effect.gen(function* () {
+      const h = yield* setup({}, undefined, { mode: 'local', installedModels: {} });
+      const result = yield* Effect.exit(h.service.start({ captureMode: 'mic' }));
+      assert.isTrue(Exit.isFailure(result));
+      if (Exit.isFailure(result)) {
+        const error = Cause.failureOption(result.cause);
+        assert.isTrue(Option.isSome(error));
+        if (Option.isSome(error))
+          assert.deepInclude(error.value, { _tag: 'RecordingStartError', reason: 'model-missing' });
+      }
+      assert.strictEqual(h.fakeCapture.sessions.length, 0);
+      assert.strictEqual(h.fakeCloud.createCalls.length, 0);
+      assert.strictEqual((yield* SubscriptionRef.get(h.service.state)).status, 'idle');
+      assert.deepStrictEqual(yield* h.db.listRecoveryOutbox(), []);
+      yield* Scope.close(h.sessionScope, Exit.void);
+    })
+  );
+
+  it.effect('failed local transcript persistence keeps its cursor and audio for recovery', () =>
+    Effect.gen(function* () {
+      const h = yield* setup({}, undefined, {
+        mode: 'local',
+        localLane: mintingLocalLane(() => 'Keep these words'),
+      });
+      yield* Effect.sync(() =>
+        h.product.client.exec(
+          "CREATE TRIGGER fail_segments BEFORE INSERT ON transcript_segment BEGIN SELECT RAISE(ABORT, 'storage unavailable'); END"
+        )
+      );
+      const id = yield* h.service.start({ captureMode: 'mic' });
+      yield* poll(
+        SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')),
+        'recording'
+      );
+      yield* Queue.offer(h.fakeCapture.current().frames, fakeFrame('mic_raw', oneSecond()));
+      yield* settle;
+      yield* h.service.stop(id);
+      const row = yield* h.db.getRecoveryOutbox(id);
+      assert.isNull(row?.lastChunkIndex);
+      assert.strictEqual(row?.phase, 'chunks');
+      assert.strictEqual(h.fakeCloud.finalizeCalls.length, 0);
+      assert.isTrue(fs.existsSync(h.recoveryDir(id)));
+      assert.deepStrictEqual(yield* productSegments(h, id), []);
+      yield* Scope.close(h.sessionScope, Exit.void);
+    })
+  );
+
+  it.effect('failed authoritative recording creation stays in create phase', () =>
+    Effect.gen(function* () {
+      const h = yield* setup({}, undefined, {
+        mode: 'local',
+        localLane: mintingLocalLane(() => 'words'),
+      });
+      yield* Effect.sync(() =>
+        h.product.client.exec(
+          "CREATE TRIGGER fail_recording BEFORE INSERT ON recording BEGIN SELECT RAISE(ABORT, 'storage unavailable'); END"
+        )
+      );
+      const id = yield* h.service.start({ captureMode: 'mic' });
+      yield* poll(
+        SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')),
+        'recording'
+      );
+      yield* Queue.offer(h.fakeCapture.current().frames, fakeFrame('mic_raw', oneSecond()));
+      yield* settle;
+      yield* h.service.stop(id);
+      assert.strictEqual((yield* h.db.getRecoveryOutbox(id))?.phase, 'create');
+      assert.strictEqual(h.fakeCloud.finalizeCalls.length, 0);
+      assert.deepStrictEqual(yield* productSegments(h, id), []);
+      assert.isTrue(fs.existsSync(h.recoveryDir(id)));
+      yield* Scope.close(h.sessionScope, Exit.void);
+    })
+  );
+
+  it.effect('failed durable job creation releases Start ownership for a retry', () =>
+    Effect.gen(function* () {
+      const h = yield* setup();
+      yield* Effect.sync(() =>
+        h.db.db.run(
+          sql`CREATE TRIGGER fail_job BEFORE INSERT ON recovery_outbox BEGIN SELECT RAISE(ABORT, 'storage unavailable'); END`
+        )
+      );
+      const refused = yield* Effect.either(h.service.start({ captureMode: 'mic' }));
+      assert.deepInclude(refused, { _tag: 'Left' });
+      assert.strictEqual((yield* SubscriptionRef.get(h.service.state)).status, 'idle');
+      assert.strictEqual(h.fakeCapture.sessions.length, 0);
+      yield* Effect.sync(() => h.db.db.run(sql`DROP TRIGGER fail_job`));
+      const id = yield* h.service.start({ captureMode: 'mic' });
+      yield* h.service.stop(id);
+      assert.strictEqual((yield* SubscriptionRef.get(h.service.state)).status, 'idle');
+      yield* Scope.close(h.sessionScope, Exit.void);
+    })
+  );
+
+  it.effect('one window can claim completion after any Stop initiator', () =>
+    Effect.gen(function* () {
+      const h = yield* setup();
+      const id = yield* h.service.start({ captureMode: 'mic', noteId: 'nt_owner' });
+      assert.isFalse(yield* h.service.claimCompletion(id), 'active capture has no completion');
+      yield* poll(
+        SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')),
+        'recording'
+      );
+      yield* h.service.stop(id);
+      assert.isFalse(yield* h.service.claimCompletion('rec_stale'));
+      const claims = yield* Effect.all(
+        [h.service.claimCompletion(id), h.service.claimCompletion(id)],
+        { concurrency: 'unbounded' }
+      );
+      assert.strictEqual(claims.filter(Boolean).length, 1);
+      assert.isFalse(yield* h.service.claimCompletion(id));
       yield* Scope.close(h.sessionScope, Exit.void);
     })
   );

@@ -117,6 +117,10 @@ export const OperationalDbLive: Layer.Layer<OperationalDb, BootError, AppConfig 
             db.insert(schema.recoveryOutbox)
               .values({
                 recordingId: row.recordingId,
+                owner: row.owner,
+                createInput: row.createInput,
+                engineConfig: row.engineConfig,
+                phase: row.phase ?? 'create',
                 noteId: row.noteId ?? null,
                 captureMode: row.captureMode,
                 wavPath: row.wavPath,
@@ -134,6 +138,9 @@ export const OperationalDbLive: Layer.Layer<OperationalDb, BootError, AppConfig 
               updatedAt: new Date().toISOString(),
             };
             if (patch.status !== undefined) set.status = patch.status;
+            if (patch.phase !== undefined) set.phase = patch.phase;
+            if (patch.endedAt !== undefined) set.endedAt = patch.endedAt;
+            if (patch.durationMs !== undefined) set.durationMs = patch.durationMs;
             if (patch.attemptCount !== undefined) set.attemptCount = patch.attemptCount;
             if (patch.nextAttemptAt !== undefined) set.nextAttemptAt = patch.nextAttemptAt;
             if (patch.lastChunkIndex !== undefined) set.lastChunkIndex = patch.lastChunkIndex;

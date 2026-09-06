@@ -10,7 +10,6 @@ import { X } from 'lucide-react';
 import { RecordingPillFace, recordingPillWidth } from './note-recording-dock';
 import { DockUnit, DockRowmate } from './dock-unit';
 import { SkillDockSlot } from './skill-dock-slot';
-import { getAutoEnhanceEnabled } from '@prismical/app-client';
 import {
   consumePendingAutoTranscribe,
   getRecordingPreferences,
@@ -35,8 +34,9 @@ import { useAskSkillRunStore } from '@prismical/app-client';
 import { useActiveSkillRun, type SkillRunSource } from '@prismical/app-client';
 import { useNavigation, bindAiErrorActions } from '@prismical/app-client';
 import { AskPanel } from './ask/ask-panel';
+import { recordingFinalizePhase, recordingIsProcessing } from '../lib/recording-finalize-phase';
 import { useRecording } from '@prismical/app-client';
-import { EVENTS, usePorts } from '@prismical/app-client';
+import { EVENTS, usePorts, activeOrgIdOf } from '@prismical/app-client';
 import { listTranscriptSegments } from '@prismical/app-client';
 import {
   useNoteRecordings,
@@ -44,9 +44,7 @@ import {
   segmentToLine,
   byTranscriptTime,
   transcriptKey,
-  recordingsKey,
   noteRecordingsKey,
-  enhancedRecordingsKey,
   speakersKey,
   listRecordingSpeakers,
   renameRecordingSpeaker,
@@ -75,7 +73,7 @@ export function RecordingBottomCluster({
   onAutoStartConsumed,
 }: {
   /**
-   * Narrow-surface mode (the floating note, PRSMPRO-166 / dock v3): the pills
+   * Narrow-surface mode (the floating note, dock v3): the pills
    * shrink to the float scale and the Ask pill takes whatever width the Record
    * pill leaves, so both units stay in the row while recording (mock
    * floating-compare). Only the full-width review pill still leaves the row
@@ -99,7 +97,7 @@ export function RecordingBottomCluster({
   const { currentNote } = useCurrentNote();
   const qc = useQueryClient();
   // Product analytics via the injected AnalyticsPort.
-  const { analytics, recording, env } = usePorts();
+  const { analytics, recording, env, auth } = usePorts();
   const router = useNavigation();
   const syncStore = useSyncStore();
 
@@ -111,7 +109,7 @@ export function RecordingBottomCluster({
   const [recMaxi, setRecMaxi] = React.useState(false);
   const [askMaxi, setAskMaxi] = React.useState(false);
 
-  const rec = useRecording();
+  const rec = useRecording({ handleCompletion: true });
 
   // Session timer: shared by the pill, the panel bar and Ask's
   // recording-continues chip. Timestamp-DERIVED, not tick-accumulated: hidden
@@ -383,33 +381,7 @@ export function RecordingBottomCluster({
     })),
   });
 
-  // The finalize lifecycle from recording.meta (written server-side by the drain): 'identifying'
-  // = staged audio exists but the diarized pass hasn't settled — the panel shows its state and
-  // we poll below until it does. Bounded by stagedAt age: a drain that never runs (engine
-  // unconfigured, dead scheduler) must not leave an eternal spinner + 4s poll.
-  const finalizePhase = (r: (typeof recs)[number]): string | null => {
-    const meta = (r.meta ?? {}) as {
-      staging?: { status?: string; stagedAt?: string };
-      finalize?: { status?: string };
-    };
-    // Everything below is bounded by age: an in-progress finalize status OR
-    // staged audio older than the window means the pipeline died (upload never
-    // completed, dead scheduler) — surface "settled" rather than pinning the
-    // panel's post-stop bar (and the 4s poll) on an eternal spinner. The bound
-    // reads stagedAt when present, else the recording's own start time.
-    const anchorTs = Date.parse(meta.staging?.stagedAt ?? r.startedAt ?? '');
-    const fresh = Number.isFinite(anchorTs) && Date.now() - anchorTs < 30 * 60_000;
-    // Aged out of the window = the pipeline died: 'stalled' (settled for the spinner/poll, but
-    // the panel must not call a deferred recording with no lines "ready").
-    if (['awaiting_upload', 'pending', 'running'].includes(meta.finalize?.status ?? '')) {
-      return fresh ? 'identifying' : 'stalled';
-    }
-    if (meta.finalize?.status) return meta.finalize.status;
-    if (meta.staging?.status === 'staged') {
-      return fresh ? 'identifying' : 'stalled';
-    }
-    return null;
-  };
+  const finalizePhase = recordingFinalizePhase;
 
   // RecordingLog[] (newest first): the picker order. `number` is chronological (oldest = 1).
   const recordingLogs: RecordingLog[] = recs.map((r, i) => ({
@@ -421,7 +393,7 @@ export function RecordingBottomCluster({
     linesLoaded: transcriptQueries[i]?.isSuccess ?? false,
     folded: folded.data?.has(r.id) ?? false,
     speakers: speakerQueries[i]?.data,
-    identifyingSpeakers: finalizePhase(r) === 'identifying',
+    processing: recordingIsProcessing(finalizePhase(r)),
     finalizeStatus: finalizePhase(r),
   }));
 
@@ -430,7 +402,7 @@ export function RecordingBottomCluster({
   // a recording already showing 'identifying', OR a bounded post-stop settle window — staging
   // completes AFTER stop() resolves (fire-and-forget upload), so without the window the meta
   // flip is invisible (staleTime 30s, no focus refetch) and the lifecycle would never start.
-  const anyIdentifying = recs.some(r => finalizePhase(r) === 'identifying');
+  const anyIdentifying = recs.some(r => recordingIsProcessing(finalizePhase(r)));
   const [settleUntil, setSettleUntil] = React.useState<number | null>(null);
   const finishedRecordingId = rec.recordingId;
   // The just-finished session, WITH a timestamp: rec.recordingId survives for the
@@ -458,7 +430,7 @@ export function RecordingBottomCluster({
       if (settleUntil !== null && Date.now() > settleUntil) setSettleUntil(null);
       void qc.invalidateQueries({ queryKey: noteRecordingsKey(noteId) });
       for (const r of recsRef.current) {
-        if (finalizePhase(r) === 'identifying') {
+        if (recordingIsProcessing(finalizePhase(r))) {
           void qc.invalidateQueries({ queryKey: transcriptKey(r.id) });
           void qc.invalidateQueries({ queryKey: speakersKey(r.id) });
         }
@@ -510,7 +482,11 @@ export function RecordingBottomCluster({
       toast.info(t('recording.errors.currentSuggestion'));
       return;
     }
-    requestAutoEnhance({ noteId, recordingId, source: 'wand' });
+    const owner = auth.getSession();
+    const ownerSessionKey = owner.activeSessionKey ?? owner.activeSub;
+    const ownerOrgId = activeOrgIdOf(owner);
+    if (!ownerSessionKey || !ownerOrgId) return;
+    requestAutoEnhance({ noteId, recordingId, source: 'wand', ownerSessionKey, ownerOrgId });
     setExpandedUnit('ask');
   };
 
@@ -613,18 +589,26 @@ export function RecordingBottomCluster({
   /** Set right before the stop-triggered navigation back to the recording's note. */
   const autoNavNoteIdRef = React.useRef<string | null>(null);
   React.useEffect(() => {
-    if (!liveActive) {
+    if (!liveActive && rec.state !== 'starting') {
       sessionNoteIdRef.current = null;
       setRecordingNote(null);
       return;
     }
-    if (sessionNoteIdRef.current === null && currentNote) {
-      sessionNoteIdRef.current = currentNote.noteId;
+    sessionNoteIdRef.current = rec.noteId;
+    if (rec.noteId && currentNote?.noteId !== rec.noteId) {
+      setRecordingNote(previous =>
+        previous?.noteId === rec.noteId
+          ? previous
+          : {
+              noteId: rec.noteId!,
+              title: t('recording.untitledRecording'),
+            }
+      );
     }
     if (currentNote && currentNote.noteId === sessionNoteIdRef.current) {
       setRecordingNote({ noteId: currentNote.noteId, title: currentNote.title });
     }
-  }, [liveActive, currentNote]);
+  }, [liveActive, currentNote, rec.noteId, rec.state, t]);
 
   // The tab title carries the session for anyone who has tabbed away. Reads
   // off `recordingNote` rather than `currentNote` so it keeps naming the RECORDING's note after
@@ -660,10 +644,8 @@ export function RecordingBottomCluster({
     ) {
       void stopRef.current();
     }
-    // Drop any auto-enhance or ask-slash request that never got consumed (e.g.
-    // navigated away before the dock ran it) so it can't fire against the wrong
-    // note or re-fire on return.
-    useAutoEnhanceStore.getState().clear();
+    // Ask gestures belong to the page being left. Recording enhancement keeps
+    // its immutable owner and waits until that note editor is available.
     useAskSkillRunStore.getState().clear();
   }, [noteId]);
 
@@ -782,48 +764,26 @@ export function RecordingBottomCluster({
       if (ok) analytics.capture(EVENTS.RECORDING_RESUMED, props);
     });
   };
-  const onStop = (opts?: { returnToNote?: boolean }) => {
-    const finishedId = rec.recordingId;
-    const note = currentNote;
-    // The note this session belongs to — the CURRENT note, or (stopped while
-    // away) the recording's own note. Cache invalidations and auto-enhance key
-    // on it, so a stop behaves the same wherever it was pressed.
-    const targetNoteId = note?.noteId ?? recordingNote?.noteId ?? null;
-    // Stopped away from the recording's note via a USER gesture: bring the user
-    // back to it (the transcript + done sequence live there) with the record
-    // panel open. An unattended auto-stop must never hijack navigation.
-    const returnTo =
-      (opts?.returnToNote ?? true) && !note && recordingNote ? recordingNote.noteId : null;
-    void rec.stop().then(({ segments }) => {
-      if (returnTo) {
-        autoNavNoteIdRef.current = returnTo;
-        router.push(`/notes/${returnTo}`);
-      }
-      analytics.capture(EVENTS.RECORDING_COMPLETED, {
-        note_id: targetNoteId,
-        recording_id: finishedId,
-        segments,
-      });
-      // Pull the now-persisted transcript + recording lists for the finished session. Both the latest
-      // (recordingsKey) AND the picker (noteRecordingsKey) lists need it — they're separate query keys,
-      // and the picker one is disabled during recording, so it won't otherwise show the new recording
-      // until its staleTime lapses. Folded state can shift too (re-enhance).
-      if (finishedId) void qc.invalidateQueries({ queryKey: transcriptKey(finishedId) });
-      if (targetNoteId) {
-        void qc.invalidateQueries({ queryKey: recordingsKey(targetNoteId) });
-        void qc.invalidateQueries({ queryKey: noteRecordingsKey(targetNoteId) });
-        void qc.invalidateQueries({ queryKey: enhancedRecordingsKey(targetNoteId) });
-      }
+  const returnToAfterStopRef = React.useRef<{ recordingId: string; noteId: string } | null>(null);
+  const completedIdsRef = React.useRef(new Set<string>());
+  React.useEffect(() => {
+    const finished = rec.completedRecording;
+    if (!finished || completedIdsRef.current.has(finished.recordingId)) return;
+    completedIdsRef.current.add(finished.recordingId);
+    const targetNoteId = finished.noteId;
+    const returnTo = returnToAfterStopRef.current;
+    if (returnTo?.recordingId === finished.recordingId) {
+      returnToAfterStopRef.current = null;
+      autoNavNoteIdRef.current = targetNoteId;
+      router.push(`/notes/${targetNoteId}`);
+    }
+  }, [rec.completedRecording, router]);
 
-      // Auto-enhance the just-stopped recording: queue even when the live lane
-      // produced zero segments — deferred finalization creates the first transcript, and the
-      // server readiness gate holds this run until that pass settles.
-      if (!finishedId || !targetNoteId || !getAutoEnhanceEnabled()) return;
-      // Don't stack onto an unreviewed diff — if a candidate is already staged the dock won't run
-      // anyway (it shows the diff bar, not the run button). Skip so the request can't linger.
-      if (useSkillDiffStore.getState().candidatesByNote.has(targetNoteId)) return;
-      requestAutoEnhance({ noteId: targetNoteId, recordingId: finishedId, source: 'auto-enhance' });
-    });
+  const onStop = (opts?: { returnToNote?: boolean }) => {
+    if ((opts?.returnToNote ?? true) && !currentNote && rec.recordingId && rec.noteId) {
+      returnToAfterStopRef.current = { recordingId: rec.recordingId, noteId: rec.noteId };
+    }
+    void rec.stop();
   };
 
   // Auto-stop: the hook detects the deadline, but the stop runs through the SAME

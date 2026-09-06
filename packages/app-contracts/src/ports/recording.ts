@@ -88,7 +88,7 @@ export interface NativeRecordingState {
  */
 export type NativeStartResult =
   | { readonly ok: true; readonly recordingId: string }
-  | { readonly ok: false; readonly reason: 'permission-denied' | 'busy' | 'no-session' };
+  | { readonly ok: false; readonly reason: 'permission-denied' | 'busy' | 'no-session' | 'model-missing' | 'storage-unavailable' };
 
 export interface NativeRecordingControl {
   /**
@@ -113,6 +113,8 @@ export interface NativeRecordingControl {
   }): Promise<NativeStartResult>;
   /** Gracefully stop + finalize the given recording (no-op if it is not active). */
   stop(recordingId: string): Promise<void>;
+  /** Claim the completed recording once across native windows. */
+  claimCompletion(recordingId: string): Promise<boolean>;
   /** Pause/resume without ending or replacing the native recording. */
   pause(recordingId: string): Promise<boolean>;
   resume(recordingId: string): Promise<boolean>;

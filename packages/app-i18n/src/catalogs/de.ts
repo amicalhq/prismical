@@ -591,6 +591,8 @@ const de = {
       couldNotPause: 'Die Aufnahme konnte nicht pausiert werden.',
       couldNotResume: 'Die Aufnahme konnte nicht fortgesetzt werden.',
       couldNotStart: 'Die Aufnahme konnte nicht gestartet werden.',
+      modelMissing: 'Lade vor der Aufnahme in den Einstellungen ein Transkriptionsmodell herunter.',
+      storageUnavailable: 'Die Aufnahme konnte nicht gespeichert werden. Prüfe den freien Speicherplatz und versuche es erneut.',
       currentSuggestion: 'Prüfe oder verwirf zuerst den aktuellen Vorschlag.',
       deadMicDescription:
         'Dein System blockiert möglicherweise den Mikrofonzugriff dieses Browsers.',
@@ -625,6 +627,7 @@ const de = {
       empty:
         'Noch kein Transkript. Starte eine Aufnahme, um deine Besprechung oder Sprachnotiz zu erfassen.',
       finishing: 'Wird abgeschlossen…',
+      uploadingAudio: 'Audio wird hochgeladen…',
       identifyingSpeakers: 'Sprecher werden erkannt…',
       input: 'Eingang',
       allAudioSettings: 'Alle Audioeinstellungen…',

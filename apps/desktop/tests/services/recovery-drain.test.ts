@@ -15,7 +15,8 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { assert, describe, it } from '@effect/vitest';
-import { asc, eq } from 'drizzle-orm';
+import { vi } from 'vitest';
+import { asc, eq, sql } from 'drizzle-orm';
 import {
   Clock,
   Context,
@@ -26,6 +27,7 @@ import {
   Fiber,
   Layer,
   Scope,
+  SubscriptionRef,
   TestClock,
 } from 'effect';
 import { makeTestLogger, testConfigLayer } from '../helpers/test-layers';
@@ -33,12 +35,15 @@ import { fakeSegment, laneFail, laneOk, makeFakeWorkspaceBackend } from '../help
 import { makeFakeSettings, makeTranscriberStack } from '../helpers/fake-workspace-env';
 import type { DeviceSettings } from '@prismical/desktop-contracts';
 import { SyncTranscriptSegmentCreateRequestSchema } from '@prismical/api-contracts';
+import { WorkspaceIdentity, type RecoveryOwner } from '../../src/main/runtime/workspace-identity';
 import { AppModeService, type AppMode } from '../../src/main/domains/app-mode/service';
 import { TRANSCRIPT_SEGMENTS_PATH } from '../../src/main/domains/recording/segment-mirror';
 import { RECOMMENDED_MODEL_ID } from '../../src/main/domains/models/catalogue';
+import { resolveRecordingEngine } from '../../src/main/domains/transcriber/engine';
 import { mintChunkSegment } from '../../src/main/domains/transcriber/segment';
 import {
   LocalTranscriberLane,
+  Transcriber,
   type TranscriberLaneApi,
 } from '../../src/main/domains/transcriber/service';
 import type {
@@ -52,6 +57,7 @@ import {
   MAX_DRAIN_ATTEMPTS,
   deriveDrainChunks,
   drainRecoveries,
+  runRecoveryWorker,
 } from '../../src/main/domains/recording/recovery-drain';
 import {
   AskStreamError,
@@ -61,14 +67,20 @@ import {
 import {
   OperationalDb,
   type OperationalDbService,
+  type NewRecoveryOutbox,
 } from '../../src/main/infra/operational-db/service';
 import { OperationalDbLive } from '../../src/main/infra/operational-db/live';
+import { idleRecordingState, type RecordingState } from '../../src/main/domains/recording/service';
+import * as operationalSchema from '../../src/main/infra/operational-db/schema';
 import { RecordingStore } from '../../src/main/domains/recording/store';
 import { RecordingStoreLive } from '../../src/main/domains/recording/store-live';
 import { makeProductDbLayer } from '../../src/main/infra/product-db/live';
 import * as productSchema from '../../src/main/infra/product-db/schema';
 import { ProductDb, type ProductDbService } from '../../src/main/infra/product-db/service';
 
+vi.mock('node:fs', async importOriginal => ({ ...await importOriginal<typeof import('node:fs')>() }));
+
+const ignoreCompletion = () => Effect.void;
 const RATE = 48_000;
 const seconds = (n: number): Float32Array => new Float32Array(n * RATE).fill(0.25);
 
@@ -110,6 +122,7 @@ const poll = (cond: Effect.Effect<boolean, unknown>, label: string): Effect.Effe
 
 /** Engine knobs for a drain environment: boot mode, stored preference, and injected local lane. */
 interface EnvOptions {
+  readonly owner?: RecoveryOwner;
   readonly mode?: AppMode;
   readonly transcription?: Partial<DeviceSettings['transcription']>;
   readonly localLane?: Layer.Layer<LocalTranscriberLane, never, MainLogger>;
@@ -130,7 +143,13 @@ const buildEnv = (coreLayer: Layer.Layer<WorkspaceBackend>, options: EnvOptions 
       Layer.provide(config),
       Layer.provide(logger.layer)
     );
+    const owner: RecoveryOwner =
+      options.owner ??
+      (options.mode === 'local'
+        ? { mode: 'local' }
+        : { mode: 'cloud', sub: 'account-a', orgId: 'org-a' });
     const envLayer = Layer.mergeAll(
+      Layer.succeed(WorkspaceIdentity, owner),
       OperationalDbLive.pipe(Layer.provide(config), Layer.provide(logger.layer)),
       productDb,
       RecordingStoreLive.pipe(Layer.provide(productDb)),
@@ -159,6 +178,32 @@ const buildEnv = (coreLayer: Layer.Layer<WorkspaceBackend>, options: EnvOptions 
       scope,
       ctx,
       db,
+      owner,
+      insertRecovery: (
+        row: Omit<NewRecoveryOutbox, 'owner' | 'createInput' | 'engineConfig'> &
+          Partial<Pick<NewRecoveryOutbox, 'owner' | 'createInput' | 'engineConfig'>>
+      ) =>
+        db.insertRecoveryOutbox({
+          ...row,
+          owner: row.owner ?? owner,
+          engineConfig:
+            row.engineConfig ??
+            resolveRecordingEngine(options.mode ?? 'cloud', {
+              modelId: null,
+              byokBaseUrl: null,
+              byokModel: null,
+              ...options.transcription,
+              engine: row.engine ?? 'cloud',
+            }),
+          phase: row.phase ?? 'chunks',
+          createInput: row.createInput ?? {
+            recordingId: row.recordingId,
+            title: 'Recovered recording',
+            captureMode: row.captureMode,
+            noteId: row.noteId ?? null,
+            startedAt: 0,
+          },
+        }),
       product: Context.get(ctx, ProductDb),
       store: Context.get(ctx, RecordingStore),
       recoveryDir: (recordingId: string) => path.join(userDataDir, 'recovery', recordingId),
@@ -174,7 +219,7 @@ const setupWith = (options: EnvOptions) =>
       ...env,
       fakeCloud,
       drain: (activeId: string | null = null) =>
-        drainRecoveries(Effect.succeed(activeId)).pipe(Effect.provide(env.ctx)),
+        drainRecoveries(Effect.succeed(activeId), ignoreCompletion).pipe(Effect.provide(env.ctx)),
     };
   });
 const setup = setupWith({});
@@ -295,7 +340,7 @@ describe('RecoveryDrain (re-chunk retained WAV → resend tail → finalize → 
       const recordingId = 'rec_bad_pause_cut';
       const dir = h.recoveryDir(recordingId);
       yield* writeWav(dir, 'mic', seconds(2));
-      yield* h.db.insertRecoveryOutbox({
+      yield* h.insertRecovery({
         recordingId,
         captureMode: 'mic',
         wavPath: dir,
@@ -322,7 +367,7 @@ describe('RecoveryDrain (re-chunk retained WAV → resend tail → finalize → 
         const dir = h.recoveryDir(recordingId);
         yield* writeWav(dir, 'mic', seconds(12)); // chunks 0,1,2
 
-        yield* h.db.insertRecoveryOutbox({ recordingId, captureMode: 'mic', wavPath: dir });
+        yield* h.insertRecovery({ recordingId, captureMode: 'mic', wavPath: dir });
         yield* h.db.updateRecoveryOutbox(recordingId, { status: 'interrupted', lastChunkIndex: 1 });
 
         const summary = yield* h.drain();
@@ -357,7 +402,7 @@ describe('RecoveryDrain (re-chunk retained WAV → resend tail → finalize → 
       const dir = h.recoveryDir(recordingId);
       yield* writeWav(dir, 'mic', seconds(10)); // chunks 0,1
 
-      yield* h.db.insertRecoveryOutbox({ recordingId, captureMode: 'mic', wavPath: dir });
+      yield* h.insertRecovery({ recordingId, captureMode: 'mic', wavPath: dir });
       yield* h.db.updateRecoveryOutbox(recordingId, { status: 'finalizing', lastChunkIndex: 1 });
 
       const summary = yield* h.drain();
@@ -380,7 +425,7 @@ describe('RecoveryDrain (re-chunk retained WAV → resend tail → finalize → 
       yield* writeWav(dir, 'mic', seconds(6));
       yield* writeWav(dir, 'system', seconds(6));
 
-      yield* h.db.insertRecoveryOutbox({ recordingId, captureMode: 'dual', wavPath: dir });
+      yield* h.insertRecovery({ recordingId, captureMode: 'dual', wavPath: dir });
       yield* h.db.updateRecoveryOutbox(recordingId, { status: 'interrupted' }); // nothing uploaded yet
 
       const summary = yield* h.drain();
@@ -412,7 +457,7 @@ describe('RecoveryDrain (re-chunk retained WAV → resend tail → finalize → 
       const dir = h.recoveryDir(recordingId);
       yield* writeWav(dir, 'mic', seconds(10)); // chunks 0,1
 
-      yield* h.db.insertRecoveryOutbox({ recordingId, captureMode: 'mic', wavPath: dir });
+      yield* h.insertRecovery({ recordingId, captureMode: 'mic', wavPath: dir });
       yield* h.db.updateRecoveryOutbox(recordingId, { status: 'interrupted' }); // nothing acked
       // The prior session's start hook persisted the row before the crash.
       yield* h.store.recordingStarted({
@@ -476,7 +521,7 @@ describe('RecoveryDrain (re-chunk retained WAV → resend tail → finalize → 
         const dir = h.recoveryDir(recordingId);
         yield* writeWav(dir, 'mic', seconds(5)); // chunk 0
 
-        yield* h.db.insertRecoveryOutbox({ recordingId, captureMode: 'mic', wavPath: dir });
+        yield* h.insertRecovery({ recordingId, captureMode: 'mic', wavPath: dir });
         yield* h.db.updateRecoveryOutbox(recordingId, { status: 'interrupted' });
 
         let attempts = 0;
@@ -521,7 +566,7 @@ describe('RecoveryDrain (re-chunk retained WAV → resend tail → finalize → 
       const dir = h.recoveryDir(recordingId);
       yield* writeWav(dir, 'mic', seconds(5));
 
-      yield* h.db.insertRecoveryOutbox({ recordingId, captureMode: 'mic', wavPath: dir });
+      yield* h.insertRecovery({ recordingId, captureMode: 'mic', wavPath: dir });
       yield* h.db.updateRecoveryOutbox(recordingId, { status: 'interrupted' });
       h.fakeCloud.setUploadResponder(() => laneFail(false, { kind: 'http', status: 404 }));
 
@@ -542,15 +587,15 @@ describe('RecoveryDrain (re-chunk retained WAV → resend tail → finalize → 
     })
   );
 
-  it.effect(`give-up after ${MAX_DRAIN_ATTEMPTS} attempts → row marked failed`, () =>
+  it.effect('required work remains retryable beyond the optional staging attempt budget', () =>
     Effect.gen(function* () {
       const h = yield* setup;
       const recordingId = 'rec_capped';
       const dir = h.recoveryDir(recordingId);
       yield* writeWav(dir, 'mic', seconds(5));
 
-      // Pre-seed one attempt short of the cap: one more retryable failure tips it.
-      yield* h.db.insertRecoveryOutbox({ recordingId, captureMode: 'mic', wavPath: dir });
+      // Required processing remains eligible through a long outage.
+      yield* h.insertRecovery({ recordingId, captureMode: 'mic', wavPath: dir });
       yield* h.db.updateRecoveryOutbox(recordingId, {
         status: 'interrupted',
         attemptCount: MAX_DRAIN_ATTEMPTS - 1,
@@ -559,9 +604,9 @@ describe('RecoveryDrain (re-chunk retained WAV → resend tail → finalize → 
 
       const summary = yield* h.drain();
 
-      assert.strictEqual(summary.failed, 1, 'retryable failure at the cap becomes a give-up');
+      assert.strictEqual(summary.parked, 1, 'required work retains its retry obligation');
       const row = yield* h.db.getRecoveryOutbox(recordingId);
-      assert.strictEqual(row?.status, 'failed');
+      assert.strictEqual(row?.status, 'interrupted');
       assert.strictEqual(row?.attemptCount, MAX_DRAIN_ATTEMPTS);
       assert.isTrue(fs.existsSync(dir), 'WAV retained on give-up');
 
@@ -581,8 +626,9 @@ describe('RecoveryDrain (re-chunk retained WAV → resend tail → finalize → 
       const onDisk = fs.readFileSync(path.join(dir, 'mic.wav'));
       assert.strictEqual(onDisk.readUInt32LE(40), 0, 'kill -9 leaves the data size un-patched');
       assert.strictEqual(onDisk.length, 44 + 7 * RATE * 2, 'but the data is all on disk');
+      fs.appendFileSync(path.join(dir, 'mic.wav'), Buffer.from([1])); // incomplete last sample
 
-      yield* h.db.insertRecoveryOutbox({ recordingId, captureMode: 'mic', wavPath: dir });
+      yield* h.insertRecovery({ recordingId, captureMode: 'mic', wavPath: dir });
       yield* h.db.updateRecoveryOutbox(recordingId, { status: 'capturing' }); // never left 'capturing'
 
       const summary = yield* h.drain();
@@ -599,12 +645,48 @@ describe('RecoveryDrain (re-chunk retained WAV → resend tail → finalize → 
       );
       assertWavSamples(h.fakeCloud.uploadCalls[0].wav, 240_000);
       assertWavSamples(h.fakeCloud.uploadCalls[1].wav, 96_000);
+      assertWavSamples(h.fakeCloud.stageCalls[0].lanes[0].data, 7 * RATE);
+      assert.deepStrictEqual(Buffer.from(h.fakeCloud.stageCalls[0].lanes[0].data).subarray(44), onDisk.subarray(44));
       assert.strictEqual(summary.resolved, 1);
       assert.isNull(yield* h.db.getRecoveryOutbox(recordingId));
 
       yield* Scope.close(h.scope, Exit.void);
     })
   );
+
+  for (const phase of ['finalize', 'staging'] as const) {
+    it.effect(`${phase} caps optional staging before reading a completed recording`, () =>
+      Effect.gen(function* () {
+        const h = yield* setup;
+        const recordingId = `rec_large_${phase}`;
+        const dir = h.recoveryDir(recordingId);
+        yield* writeWav(dir, 'mic', seconds(1));
+        const wavPath = path.join(dir, 'mic.wav');
+        // A sparse temp file exercises the real stat cap without allocating its contents.
+        fs.truncateSync(wavPath, 1.5 * 1024 * 1024 * 1024 + 2);
+        yield* h.insertRecovery({ recordingId, captureMode: 'mic', wavPath: dir, phase });
+        yield* h.db.updateRecoveryOutbox(recordingId, { endedAt: 1000, durationMs: 1000 });
+        const original = fs.readFileSync;
+        let audioReads = 0;
+        const read = vi.spyOn(fs, 'readFileSync').mockImplementation(file => {
+          if (String(file) === wavPath) {
+            audioReads += 1;
+            throw new Error('oversized audio must not be read');
+          }
+          return original(file);
+        });
+        const result = yield* h.drain().pipe(Effect.ensuring(Effect.sync(() => read.mockRestore())));
+        assert.strictEqual(audioReads, 0);
+        assert.strictEqual(result.resolved, 1);
+        assert.strictEqual(h.fakeCloud.uploadCalls.length, 0, 'required chunks were already durable');
+        assert.strictEqual(h.fakeCloud.finalizeCalls.length, phase === 'finalize' ? 1 : 0);
+        assert.strictEqual(h.fakeCloud.stageCalls.length, 0);
+        assert.deepStrictEqual(h.fakeCloud.abandonCalls, [{ recordingId, reason: 'no-audio' }]);
+        assert.isNull(yield* h.db.getRecoveryOutbox(recordingId));
+        yield* Scope.close(h.scope, Exit.void);
+      })
+    );
+  }
 
   it.effect('yields to a live recording — the whole pass defers cheaply', () =>
     Effect.gen(function* () {
@@ -613,7 +695,7 @@ describe('RecoveryDrain (re-chunk retained WAV → resend tail → finalize → 
       const dir = h.recoveryDir(recordingId);
       yield* writeWav(dir, 'mic', seconds(5));
 
-      yield* h.db.insertRecoveryOutbox({ recordingId, captureMode: 'mic', wavPath: dir });
+      yield* h.insertRecovery({ recordingId, captureMode: 'mic', wavPath: dir });
       yield* h.db.updateRecoveryOutbox(recordingId, { status: 'capturing' });
 
       // A recording (any recording) is live — the pass must not contend for
@@ -673,10 +755,10 @@ describe('RecoveryDrain (re-chunk retained WAV → resend tail → finalize → 
         const recordingId = 'rec_interrupt';
         const dir = env.recoveryDir(recordingId);
         yield* writeWav(dir, 'mic', seconds(12)); // chunks 0,1,2
-        yield* env.db.insertRecoveryOutbox({ recordingId, captureMode: 'mic', wavPath: dir });
+        yield* env.insertRecovery({ recordingId, captureMode: 'mic', wavPath: dir });
         yield* env.db.updateRecoveryOutbox(recordingId, { status: 'interrupted' });
 
-        const fiber = yield* drainRecoveries(Effect.succeed(null)).pipe(
+        const fiber = yield* drainRecoveries(Effect.succeed(null), ignoreCompletion).pipe(
           Effect.provide(env.ctx),
           Effect.fork
         );
@@ -755,7 +837,7 @@ describe('RecoveryDrain — transcription engine at drain time', () => {
       const recordingId = 'rec_cloud_engine';
       const dir = h.recoveryDir(recordingId);
       yield* writeWav(dir, 'mic', seconds(5));
-      yield* h.db.insertRecoveryOutbox({ recordingId, captureMode: 'mic', wavPath: dir });
+      yield* h.insertRecovery({ recordingId, captureMode: 'mic', wavPath: dir });
       yield* h.db.updateRecoveryOutbox(recordingId, { status: 'interrupted' });
 
       const summary = yield* h.drain();
@@ -781,7 +863,7 @@ describe('RecoveryDrain — transcription engine at drain time', () => {
       yield* writeWav(dir, 'mic', seconds(6));
       yield* writeWav(dir, 'system', seconds(6));
       yield* installModel(h, 'whisper-tiny');
-      yield* h.db.insertRecoveryOutbox({
+      yield* h.insertRecovery({
         recordingId,
         captureMode: 'dual',
         wavPath: dir,
@@ -851,7 +933,7 @@ describe('RecoveryDrain — transcription engine at drain time', () => {
       yield* writeWav(dir, 'mic', seconds(5));
       yield* installModel(h, RECOMMENDED_MODEL_ID);
       // Engine NULL (legacy): local mode re-applies the cloud→local coercion.
-      yield* h.db.insertRecoveryOutbox({ recordingId, captureMode: 'mic', wavPath: dir });
+      yield* h.insertRecovery({ recordingId, captureMode: 'mic', wavPath: dir });
       yield* h.db.updateRecoveryOutbox(recordingId, { status: 'interrupted' });
 
       const summary = yield* h.drain();
@@ -884,7 +966,7 @@ describe('RecoveryDrain — transcription engine at drain time', () => {
       const recordingId = 'rec_model_missing';
       const dir = h.recoveryDir(recordingId);
       yield* writeWav(dir, 'mic', seconds(5));
-      yield* h.db.insertRecoveryOutbox({
+      yield* h.insertRecovery({
         recordingId,
         captureMode: 'mic',
         wavPath: dir,
@@ -953,7 +1035,7 @@ describe('RecoveryDrain — engine follows the row and yields to live capture', 
       const recordingId = 'rec_legacy_null';
       const dir = h.recoveryDir(recordingId);
       yield* writeWav(dir, 'mic', seconds(5));
-      yield* h.db.insertRecoveryOutbox({ recordingId, captureMode: 'mic', wavPath: dir });
+      yield* h.insertRecovery({ recordingId, captureMode: 'mic', wavPath: dir });
       yield* h.db.updateRecoveryOutbox(recordingId, { status: 'interrupted' });
 
       const summary = yield* h.drain();
@@ -983,7 +1065,7 @@ describe('RecoveryDrain — engine follows the row and yields to live capture', 
       const recordingId = 'rec_row_local';
       const dir = h.recoveryDir(recordingId);
       yield* writeWav(dir, 'mic', seconds(5));
-      yield* h.db.insertRecoveryOutbox({
+      yield* h.insertRecovery({
         recordingId,
         captureMode: 'mic',
         wavPath: dir,
@@ -1013,7 +1095,7 @@ describe('RecoveryDrain — engine follows the row and yields to live capture', 
       const recordingId = 'rec_staging_promise';
       const dir = h.recoveryDir(recordingId);
       yield* writeWav(dir, 'mic', seconds(5));
-      yield* h.db.insertRecoveryOutbox({
+      yield* h.insertRecovery({
         recordingId,
         captureMode: 'mic',
         wavPath: dir,
@@ -1023,6 +1105,7 @@ describe('RecoveryDrain — engine follows the row and yields to live capture', 
         status: 'finalizing',
         lastChunkIndex: 0,
         lastError: 'staging-incomplete',
+        phase: 'staging',
       });
 
       const summary = yield* h.drain();
@@ -1051,7 +1134,7 @@ describe('RecoveryDrain — engine follows the row and yields to live capture', 
       const recordingId = 'rec_mid_row_yield';
       const dir = h.recoveryDir(recordingId);
       yield* writeWav(dir, 'mic', seconds(12)); // chunks 0,1,2
-      yield* h.db.insertRecoveryOutbox({ recordingId, captureMode: 'mic', wavPath: dir });
+      yield* h.insertRecovery({ recordingId, captureMode: 'mic', wavPath: dir });
       yield* h.db.updateRecoveryOutbox(recordingId, { status: 'interrupted' });
 
       // A recording starts while chunk 0 is in flight — the per-chunk check
@@ -1061,7 +1144,7 @@ describe('RecoveryDrain — engine follows the row and yields to live capture', 
         activeId = 'rec_live_now';
         return laneOk([]);
       });
-      const summary = yield* drainRecoveries(Effect.sync(() => activeId)).pipe(
+      const summary = yield* drainRecoveries(Effect.sync(() => activeId), ignoreCompletion).pipe(
         Effect.provide(h.ctx)
       );
 
@@ -1077,6 +1160,484 @@ describe('RecoveryDrain — engine follows the row and yields to live capture', 
       );
       assert.strictEqual(row?.attemptCount, 0, 'not counted as a failed attempt');
       assert.isTrue(fs.existsSync(dir), 'WAV retained');
+      yield* Scope.close(h.scope, Exit.void);
+    })
+  );
+});
+
+describe('RecoveryDrain durability and row isolation', () => {
+  it.effect('retains local audio and cursor when the transcript cannot be saved', () =>
+    Effect.gen(function* () {
+      const h = yield* setupWith({
+        mode: 'local',
+        localLane: mintingLocalLane(() => 'retained speech'),
+      });
+      yield* installModel(h, RECOMMENDED_MODEL_ID);
+      const recordingId = 'rec_store_unavailable';
+      const dir = h.recoveryDir(recordingId);
+      yield* h.store.recordingStarted({
+        id: recordingId,
+        title: 'Local recording',
+        captureMode: 'mic',
+        status: 'recording',
+        noteId: null,
+        startedAt: 0,
+      });
+      yield* writeWav(dir, 'mic', seconds(5));
+      yield* h.insertRecovery({ recordingId, captureMode: 'mic', wavPath: dir, engine: 'local' });
+      yield* h.db.updateRecoveryOutbox(recordingId, { status: 'interrupted' });
+      yield* Effect.sync(() =>
+        h.product.client.exec(
+          "CREATE TRIGGER fail_segments BEFORE INSERT ON transcript_segment BEGIN SELECT RAISE(ABORT, 'storage unavailable'); END"
+        )
+      );
+      const result = yield* h.drain();
+      assert.strictEqual(result.parked, 1);
+      const row = yield* h.db.getRecoveryOutbox(recordingId);
+      assert.isNull(row?.lastChunkIndex);
+      assert.isTrue(fs.existsSync(dir));
+      yield* Effect.sync(() => h.product.client.exec('DROP TRIGGER fail_segments'));
+      yield* TestClock.adjust(Duration.minutes(1));
+      assert.strictEqual((yield* h.drain()).resolved, 1);
+      const segments = yield* Effect.promise(() =>
+        h.product.db.select().from(productSchema.transcriptSegment)
+      );
+      assert.strictEqual(segments.length, 1);
+      yield* Scope.close(h.scope, Exit.void);
+      yield* Effect.sync(() => fs.rmSync(h.userDataDir, { recursive: true, force: true }));
+    })
+  );
+
+  it.effect('parks an unreadable WAV and continues with the next recording', () =>
+    Effect.gen(function* () {
+      const h = yield* setup;
+      const first = 'rec_unreadable';
+      const second = 'rec_readable';
+      const dir = h.recoveryDir(first);
+      yield* writeWav(dir, 'mic', seconds(5));
+      yield* writeWav(h.recoveryDir(second), 'mic', seconds(5));
+      yield* h.insertRecovery({ recordingId: first, captureMode: 'mic', wavPath: dir });
+      yield* h.insertRecovery({
+        recordingId: second,
+        captureMode: 'mic',
+        wavPath: h.recoveryDir(second),
+      });
+      const file = path.join(dir, 'mic.wav');
+      yield* Effect.sync(() => fs.chmodSync(file, 0));
+      const result = yield* Effect.exit(h.drain());
+      yield* Effect.sync(() => fs.chmodSync(file, 0o600));
+      assert.isTrue(Exit.isSuccess(result));
+      if (Exit.isSuccess(result)) {
+        assert.strictEqual(result.value.parked, 1);
+        assert.strictEqual(result.value.resolved, 1);
+      }
+      assert.strictEqual(h.fakeCloud.uploadCalls[0]?.recordingId, second);
+      assert.isTrue(fs.existsSync(dir));
+      assert.strictEqual((yield* h.db.getRecoveryOutbox(first))?.attemptCount, 1);
+      yield* Scope.close(h.scope, Exit.void);
+      yield* Effect.sync(() => fs.rmSync(h.userDataDir, { recursive: true, force: true }));
+    })
+  );
+});
+
+describe('RecoveryDrain owned processing lifecycle', () => {
+  it.effect('leaves foreign accounts, organizations, and ownerless jobs untouched', () =>
+    Effect.gen(function* () {
+      const h = yield* setup;
+      const recordingId = 'rec_original_owner';
+      const dir = h.recoveryDir(recordingId);
+      yield* writeWav(dir, 'mic', seconds(5));
+      yield* h.insertRecovery({ recordingId, captureMode: 'mic', wavPath: dir });
+      yield* Effect.sync(() =>
+        h.db.db
+          .insert(operationalSchema.recoveryOutbox)
+          .values({
+            recordingId: 'rec_ownerless',
+            captureMode: 'mic',
+            wavPath: '/unowned/path',
+            status: 'interrupted',
+            createdAt: new Date(0).toISOString(),
+            updatedAt: new Date(0).toISOString(),
+          })
+          .run()
+      );
+      const before = yield* h.db.listRecoveryOutbox();
+      h.fakeCloud.setUploadResponder(() => laneFail(false, { kind: 'http', status: 404 }));
+      for (const owner of [
+        { mode: 'cloud', sub: 'account-b', orgId: 'org-a' },
+        { mode: 'cloud', sub: 'account-a', orgId: 'org-b' },
+      ] as const) {
+        const foreign = Context.add(h.ctx, WorkspaceIdentity, owner);
+        assert.strictEqual(
+          (yield* drainRecoveries(Effect.succeed(null), ignoreCompletion).pipe(Effect.provide(foreign))).total,
+          0
+        );
+      }
+      assert.strictEqual(h.fakeCloud.uploadCalls.length, 0);
+      assert.deepStrictEqual(yield* h.db.listRecoveryOutbox(), before);
+      h.fakeCloud.setUploadResponder(() => laneOk([]));
+      assert.strictEqual((yield* h.drain()).resolved, 1);
+      assert.isNotNull(yield* h.db.getRecoveryOutbox('rec_ownerless'));
+      yield* Scope.close(h.scope, Exit.void);
+    })
+  );
+
+  it.effect(
+    'replays uncertain creation before chunks and preserves the original stop metadata',
+    () =>
+      Effect.gen(function* () {
+        const h = yield* setup;
+        const recordingId = 'rec_pending_create';
+        const dir = h.recoveryDir(recordingId);
+        const createInput = {
+          recordingId,
+          title: 'Interrupted recording',
+          captureMode: 'mic' as const,
+          startedAt: 20_000,
+          noteId: 'note_owner',
+          transcriptionConfig: { language: 'en' },
+        };
+        yield* writeWav(dir, 'mic', seconds(5));
+        yield* h.insertRecovery({
+          recordingId,
+          captureMode: 'mic',
+          wavPath: dir,
+          phase: 'create',
+          createInput,
+        });
+        yield* h.db.updateRecoveryOutbox(recordingId, { endedAt: 25_000, durationMs: 5000 });
+        h.fakeCloud.setCreateResponder(() => laneFail(true, { kind: 'http', status: 503 }));
+        assert.strictEqual((yield* h.drain()).parked, 1);
+        assert.strictEqual(h.fakeCloud.uploadCalls.length, 0);
+        assert.strictEqual(h.fakeCloud.finalizeCalls.length, 0);
+        assert.isTrue(fs.existsSync(dir));
+        h.fakeCloud.setCreateResponder(input => laneOk({ recordingId: input.recordingId }));
+        yield* TestClock.adjust(Duration.days(1));
+        assert.strictEqual((yield* h.drain()).resolved, 1);
+        assert.deepStrictEqual(h.fakeCloud.createCalls, [createInput, createInput]);
+        assert.strictEqual(h.fakeCloud.finalizeCalls[0]?.input.endedAt, 25_000);
+        assert.strictEqual(h.fakeCloud.finalizeCalls[0]?.input.durationMs, 5000);
+        assert.isNull(yield* h.db.getRecoveryOutbox(recordingId));
+        yield* Scope.close(h.scope, Exit.void);
+      })
+  );
+
+  it.effect('diagnostic text cannot skip unfinished transcription or finalization', () =>
+    Effect.gen(function* () {
+      const h = yield* setup;
+      const recordingId = 'rec_explicit_phase';
+      const dir = h.recoveryDir(recordingId);
+      yield* writeWav(dir, 'mic', seconds(5));
+      yield* h.insertRecovery({ recordingId, captureMode: 'mic', wavPath: dir, phase: 'chunks' });
+      yield* h.db.updateRecoveryOutbox(recordingId, {
+        lastError: 'staging-diagnostic',
+        endedAt: 5000,
+        durationMs: 5000,
+      });
+      assert.strictEqual((yield* h.drain()).resolved, 1);
+      assert.strictEqual(h.fakeCloud.uploadCalls.length, 1);
+      assert.strictEqual(h.fakeCloud.finalizeCalls.length, 1);
+      yield* Scope.close(h.scope, Exit.void);
+    })
+  );
+
+  it.effect(
+    'resumes newly stopped work in the same workspace and waits while capture is starting',
+    () =>
+      Effect.gen(function* () {
+        const h = yield* setup;
+        const recordingId = 'rec_stopped';
+        const dir = h.recoveryDir(recordingId);
+        yield* writeWav(dir, 'mic', seconds(5));
+        yield* h.insertRecovery({
+          recordingId,
+          captureMode: 'mic',
+          wavPath: dir,
+          phase: 'staging',
+        });
+        yield* h.db.updateRecoveryOutbox(recordingId, { endedAt: 5000, durationMs: 5000 });
+        const state = yield* SubscriptionRef.make<RecordingState>({
+          ...idleRecordingState,
+          status: 'starting',
+        });
+        const worker = yield* runRecoveryWorker(state, ignoreCompletion).pipe(Effect.provide(h.ctx), Effect.fork);
+        yield* TestClock.adjust(Duration.seconds(30));
+        assert.strictEqual(h.fakeCloud.stageCalls.length, 0);
+        yield* SubscriptionRef.set(state, idleRecordingState);
+        yield* poll(
+          h.db.getRecoveryOutbox(recordingId).pipe(Effect.map(row => row === null)),
+          'stopped recording processed'
+        );
+        assert.strictEqual(h.fakeCloud.stageCalls.length, 1);
+        assert.strictEqual(h.fakeCloud.finalizeCalls.length, 0);
+        yield* Fiber.interrupt(worker);
+        yield* Scope.close(h.scope, Exit.void);
+      })
+  );
+
+  it.effect('retries required work at its deadline without another workspace acquisition', () =>
+    Effect.gen(function* () {
+      const h = yield* setup;
+      const recordingId = 'rec_retry_in_session';
+      const dir = h.recoveryDir(recordingId);
+      yield* writeWav(dir, 'mic', seconds(5));
+      yield* h.insertRecovery({ recordingId, captureMode: 'mic', wavPath: dir });
+      let attempts = 0;
+      h.fakeCloud.setUploadResponder(() =>
+        ++attempts === 1 ? laneFail(true, { kind: 'network' }) : laneOk([])
+      );
+      const state = yield* SubscriptionRef.make(idleRecordingState);
+      const worker = yield* runRecoveryWorker(state, ignoreCompletion).pipe(Effect.provide(h.ctx), Effect.fork);
+      yield* poll(
+        h.db.getRecoveryOutbox(recordingId).pipe(Effect.map(row => row?.attemptCount === 1)),
+        'retry deadline saved'
+      );
+      yield* TestClock.adjust(Duration.seconds(29));
+      assert.strictEqual(attempts, 1);
+      yield* TestClock.adjust(Duration.seconds(1));
+      yield* poll(
+        h.db.getRecoveryOutbox(recordingId).pipe(Effect.map(row => row === null)),
+        'retry resolves'
+      );
+      assert.strictEqual(attempts, 2);
+      yield* Fiber.interrupt(worker);
+      yield* Scope.close(h.scope, Exit.void);
+    })
+  );
+});
+
+describe('RecoveryDrain processing ownership', () => {
+  it.effect('publishes completion after durable finalization while optional staging is still in flight', () =>
+    Effect.gen(function* () {
+      const h = yield* setup;
+      const recordingId = 'rec_ready_before_staging';
+      const dir = h.recoveryDir(recordingId);
+      yield* writeWav(dir, 'mic', seconds(1));
+      yield* h.insertRecovery({ recordingId, captureMode: 'mic', wavPath: dir });
+      const stageStarted = yield* Deferred.make<void>();
+      const releaseStage = yield* Deferred.make<void>();
+      const backend = Context.get(h.ctx, WorkspaceBackend);
+      const ctx = Context.add(h.ctx, WorkspaceBackend, {
+        ...backend,
+        stageRecordingAudio: (id, lanes) => Deferred.succeed(stageStarted, undefined).pipe(
+          Effect.zipRight(Deferred.await(releaseStage)),
+          Effect.zipRight(backend.stageRecordingAudio(id, lanes))
+        ),
+      });
+      const completions: { id: string; ready: boolean; phase: string | null }[] = [];
+      const drain = yield* drainRecoveries(Effect.succeed(null), (id, ready) =>
+        h.db.getRecoveryOutbox(id).pipe(
+          Effect.orDie,
+          Effect.map(row => { completions.push({ id, ready, phase: row?.phase ?? null }); })
+        )
+      ).pipe(Effect.provide(ctx), Effect.fork);
+      yield* Deferred.await(stageStarted);
+      assert.deepStrictEqual(completions, [{ id: recordingId, ready: true, phase: 'staging' }]);
+      assert.strictEqual(h.fakeCloud.finalizeCalls.length, 1);
+      assert.isTrue(fs.existsSync(dir), 'optional staging still owns the WAV');
+      yield* Deferred.succeed(releaseStage, undefined);
+      assert.strictEqual((yield* Fiber.join(drain)).resolved, 1);
+      yield* Scope.close(h.scope, Exit.void);
+    })
+  );
+
+  it.effect('resumes cleanup without repeating finalized work when deleting the job fails', () =>
+    Effect.gen(function* () {
+      const h = yield* setup;
+      const recordingId = 'rec_cleanup_retry';
+      const dir = h.recoveryDir(recordingId);
+      yield* writeWav(dir, 'mic', seconds(5));
+      yield* h.insertRecovery({ recordingId, captureMode: 'mic', wavPath: dir });
+      yield* Effect.sync(() =>
+        h.db.db.run(
+          sql`CREATE TRIGGER fail_delete BEFORE DELETE ON recovery_outbox BEGIN SELECT RAISE(ABORT, 'storage unavailable'); END`
+        )
+      );
+      assert.strictEqual((yield* h.drain()).parked, 1);
+      assert.strictEqual((yield* h.db.getRecoveryOutbox(recordingId))?.phase, 'cleanup');
+      assert.isFalse(fs.existsSync(dir));
+      yield* Effect.sync(() => h.db.db.run(sql`DROP TRIGGER fail_delete`));
+      yield* TestClock.adjust(Duration.minutes(1));
+      assert.strictEqual((yield* h.drain()).resolved, 1);
+      assert.strictEqual(h.fakeCloud.uploadCalls.length, 1);
+      assert.strictEqual(h.fakeCloud.finalizeCalls.length, 1);
+      assert.strictEqual(h.fakeCloud.stageCalls.length, 1);
+      yield* Scope.close(h.scope, Exit.void);
+    })
+  );
+
+  it.effect('coalesces state wakeups while one staging request is in flight', () =>
+    Effect.gen(function* () {
+      const h = yield* setup;
+      const recordingId = 'rec_one_processor';
+      const dir = h.recoveryDir(recordingId);
+      yield* writeWav(dir, 'mic', seconds(5));
+      yield* h.insertRecovery({ recordingId, captureMode: 'mic', wavPath: dir, phase: 'staging' });
+      yield* h.db.updateRecoveryOutbox(recordingId, { endedAt: 5000, durationMs: 5000 });
+      const gate = yield* Deferred.make<void>();
+      let stages = 0;
+      const backend = Context.get(h.ctx, WorkspaceBackend);
+      const ctx = Context.add(h.ctx, WorkspaceBackend, {
+        ...backend,
+        stageRecordingAudio: () =>
+          Effect.gen(function* () {
+            stages += 1;
+            yield* Deferred.await(gate);
+            return laneOk({ staged: true });
+          }),
+      });
+      const state = yield* SubscriptionRef.make(idleRecordingState);
+      const worker = yield* runRecoveryWorker(state, ignoreCompletion).pipe(Effect.provide(ctx), Effect.fork);
+      yield* poll(
+        Effect.sync(() => stages === 1),
+        'staging started'
+      );
+      yield* SubscriptionRef.set(state, { ...idleRecordingState, elapsedMs: 1 });
+      yield* SubscriptionRef.set(state, { ...idleRecordingState, elapsedMs: 2 });
+      yield* TestClock.adjust(Duration.minutes(1));
+      assert.strictEqual(stages, 1);
+      yield* Deferred.succeed(gate, undefined);
+      yield* poll(
+        h.db.getRecoveryOutbox(recordingId).pipe(Effect.map(row => row === null)),
+        'staging resolved'
+      );
+      assert.strictEqual(stages, 1);
+      yield* Fiber.interrupt(worker);
+      yield* Scope.close(h.scope, Exit.void);
+    })
+  );
+});
+
+describe('RecoveryDrain finalized data and frozen engine', () => {
+  it.effect('retries speaker metadata from all durable segments before finalizing', () =>
+    Effect.gen(function* () {
+      const h = yield* setupWith({ mode: 'local' });
+      const recordingId = 'rec_saved_speakers';
+      yield* h.store.recordingStarted({
+        id: recordingId,
+        title: 'Conversation',
+        captureMode: 'dual',
+        status: 'recording',
+        noteId: null,
+        startedAt: 0,
+      });
+      yield* h.store.segmentsReceived([
+        fakeSegment(recordingId, 'system', 0, 'Earlier captured speech'),
+      ]);
+      yield* h.insertRecovery({
+        recordingId,
+        captureMode: 'dual',
+        wavPath: h.recoveryDir(recordingId),
+        engine: 'local',
+        phase: 'finalize',
+      });
+      yield* h.db.updateRecoveryOutbox(recordingId, {
+        endedAt: 5000,
+        durationMs: 5000,
+        lastChunkIndex: 0,
+      });
+      yield* Effect.sync(() =>
+        h.product.client.exec(
+          "CREATE TRIGGER fail_meta BEFORE UPDATE OF meta ON recording BEGIN SELECT RAISE(ABORT, 'storage unavailable'); END"
+        )
+      );
+      assert.strictEqual((yield* h.drain()).parked, 1);
+      assert.strictEqual(h.fakeCloud.finalizeCalls.length, 0);
+      assert.strictEqual((yield* h.db.getRecoveryOutbox(recordingId))?.phase, 'finalize');
+      yield* Effect.sync(() => h.product.client.exec('DROP TRIGGER fail_meta'));
+      yield* TestClock.adjust(Duration.minutes(1));
+      assert.strictEqual((yield* h.drain()).resolved, 1);
+      assert.deepStrictEqual((yield* productRecordingRow(h.product, recordingId))?.meta, {
+        detectedSpeakerCount: 2,
+      });
+      yield* Scope.close(h.scope, Exit.void);
+    })
+  );
+
+  it.effect('retains incomplete audio instead of finalizing a shorter recovery WAV', () =>
+    Effect.gen(function* () {
+      const h = yield* setup;
+      const recordingId = 'rec_partial_audio';
+      const dir = h.recoveryDir(recordingId);
+      yield* writeWav(dir, 'mic', seconds(4));
+      yield* h.insertRecovery({ recordingId, captureMode: 'mic', wavPath: dir });
+      yield* h.db.updateRecoveryOutbox(recordingId, { endedAt: 5000, durationMs: 5000 });
+      assert.strictEqual((yield* h.drain()).failed, 1);
+      assert.strictEqual(
+        (yield* h.db.getRecoveryOutbox(recordingId))?.lastError,
+        'recovery-audio-incomplete'
+      );
+      assert.strictEqual(h.fakeCloud.uploadCalls.length, 0);
+      assert.strictEqual(h.fakeCloud.finalizeCalls.length, 0);
+      assert.isTrue(fs.existsSync(dir));
+      yield* Scope.close(h.scope, Exit.void);
+    })
+  );
+
+  it.effect('keeps the recorded BYOK endpoint and model after settings change', () =>
+    Effect.gen(function* () {
+      const h = yield* setupWith({
+        transcription: {
+          engine: 'byok',
+          byokBaseUrl: 'https://new-provider.invalid',
+          byokModel: 'new-model',
+        },
+      });
+      const recordingId = 'rec_frozen_provider';
+      const dir = h.recoveryDir(recordingId);
+      const engineConfig = {
+        engine: 'byok' as const,
+        modelId: RECOMMENDED_MODEL_ID,
+        byokBaseUrl: 'https://original-provider.invalid',
+        byokModel: 'original-model',
+      };
+      yield* writeWav(dir, 'mic', seconds(5));
+      yield* h.insertRecovery({
+        recordingId,
+        captureMode: 'mic',
+        wavPath: dir,
+        engine: 'byok',
+        engineConfig,
+      });
+      let received: unknown;
+      const ctx = Context.add(h.ctx, Transcriber, {
+        transcribeChunk: (_id, _params, _audio, engine) =>
+          Effect.sync(() => {
+            received = engine;
+            return laneOk([]);
+          }),
+      });
+      assert.strictEqual(
+        (yield* drainRecoveries(Effect.succeed(null), ignoreCompletion).pipe(Effect.provide(ctx))).resolved,
+        1
+      );
+      assert.deepStrictEqual(received, engineConfig);
+      yield* Scope.close(h.scope, Exit.void);
+    })
+  );
+
+  it.effect('waits for the originally selected local model instead of using a new preference', () =>
+    Effect.gen(function* () {
+      const h = yield* setupWith({ mode: 'local', transcription: { modelId: 'new-model' } });
+      const recordingId = 'rec_frozen_model';
+      const dir = h.recoveryDir(recordingId);
+      yield* installModel(h, 'new-model');
+      yield* writeWav(dir, 'mic', seconds(5));
+      yield* h.insertRecovery({
+        recordingId,
+        captureMode: 'mic',
+        wavPath: dir,
+        engine: 'local',
+        engineConfig: {
+          engine: 'local',
+          modelId: 'original-model',
+          byokBaseUrl: null,
+          byokModel: null,
+        },
+      });
+      assert.strictEqual((yield* h.drain()).parked, 1);
+      assert.strictEqual((yield* h.db.getRecoveryOutbox(recordingId))?.lastError, 'model-missing');
+      assert.isTrue(fs.existsSync(dir));
       yield* Scope.close(h.scope, Exit.void);
     })
   );

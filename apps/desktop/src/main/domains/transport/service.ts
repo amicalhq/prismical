@@ -44,6 +44,8 @@ export interface RecordingSegment {
  *  - `network`         the fetch rejected (offline / DNS / reset) — transient.
  *  - `timeout`         exceeded the 15s budget — transient (a premature timeout on a
  *                      chunk is safe: the retry is idempotent per (recordingId,chunkIndex)).
+ *  - `invalid-response` the successful response could not be decoded or validated;
+ *                      retain the pending work because acknowledgement is unknown.
  *  - `http`            a completed non-2xx exchange; `status` decides retryable and an API error
  *                      `code` is retained when present for safety-critical recovery decisions.
  *  - `engine`          an on-device transcription engine failed (the local
@@ -56,6 +58,7 @@ export type RecordingLaneFailure =
   | { readonly kind: 'stale-identity' }
   | { readonly kind: 'network' }
   | { readonly kind: 'timeout' }
+  | { readonly kind: 'invalid-response' }
   | { readonly kind: 'http'; readonly status: number; readonly code?: string }
   | {
       readonly kind: 'engine';

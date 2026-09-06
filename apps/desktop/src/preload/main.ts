@@ -228,6 +228,7 @@ const api: MainWindowDesktopApi = {
   recording: {
     start: (request: StartRecordingRequest) => ipcRenderer.invoke(CHANNELS.recordingStart, request),
     stop: (request: StopRecordingRequest) => ipcRenderer.invoke(CHANNELS.recordingStop, request),
+    claimCompletion: (request: RecordingControlRequest) => ipcRenderer.invoke(CHANNELS.recordingClaimCompletion, request),
     pause: (request: RecordingControlRequest) =>
       ipcRenderer.invoke(CHANNELS.recordingPause, request),
     resume: (request: RecordingControlRequest) =>

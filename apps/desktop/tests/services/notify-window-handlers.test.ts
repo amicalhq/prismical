@@ -336,6 +336,8 @@ describe('notify-window IPC handlers', () => {
 
       const starts: unknown[] = [];
       const recApi: RecordingServiceApi = {
+        claimCompletion: () => Effect.succeed(false),
+        resolveCompletion: () => Effect.void,
         state: yield* SubscriptionRef.make<RecordingState>(idleRecordingState),
         level: yield* SubscriptionRef.make(0),
         start: input =>
@@ -420,6 +422,8 @@ describe('notify-window IPC handlers', () => {
         const h = yield* setup();
         const recState = yield* SubscriptionRef.make<RecordingState>(idleRecordingState);
         const recApi: RecordingServiceApi = {
+          claimCompletion: () => Effect.succeed(false),
+        resolveCompletion: () => Effect.void,
           state: recState,
           level: yield* SubscriptionRef.make(0),
           start: () => Effect.succeed('rec_1'),
@@ -474,6 +478,8 @@ describe('notify-window IPC handlers', () => {
         autoPausePrompt: { graceMs: 20_000, deadlineMs: 1_020_000 },
       });
       const recApi: RecordingServiceApi = {
+        claimCompletion: () => Effect.succeed(false),
+        resolveCompletion: () => Effect.void,
         state: recState,
         level: yield* SubscriptionRef.make(0),
         start: () => Effect.succeed('rec_1'),

@@ -5,9 +5,8 @@
  * row + transcript segments survive the session and the local backend's
  * GET /apps/v1/me/recordings|transcript-segments delta lanes serve them.
  *
- * Ops fail typed (ProductDbError) like the NoteBodyStore; the CALL SITES in
- * live.ts / recovery-drain.ts fold every failure to a warn log — a product-db
- * hiccup must never break the audio path or the drain.
+ * Ops fail with ProductDbError. Callers retain recovery work when an authoritative
+ * save fails; optional cloud cache writes can fail without losing server content.
  */
 import { Context, type Effect } from 'effect';
 import type { ProductDbError } from '../../infra/product-db/service';
@@ -40,14 +39,16 @@ export interface RecordingEndFields {
 }
 
 export interface RecordingStoreApi {
+  /** All durable segments for finalization, including chunks acknowledged by an earlier session. */
+  readonly segmentsForRecording: (
+    recordingId: string
+  ) => Effect.Effect<readonly RecordingSegment[], ProductDbError>;
   /**
    * Upsert the recording row at start. Upsert (not insert) so a re-entrant
    * write — e.g. a drain resolving a recording whose start already persisted —
    * replaces the fields instead of failing, keeping the original createdAt.
    */
-  readonly recordingStarted: (
-    fields: RecordingStartFields
-  ) => Effect.Effect<void, ProductDbError>;
+  readonly recordingStarted: (fields: RecordingStartFields) => Effect.Effect<void, ProductDbError>;
   /** Finalize: status 'completed' + endedAt/durationMs + updatedAt bump (existing row only). */
   readonly recordingCompleted: (
     id: string,
@@ -57,8 +58,7 @@ export interface RecordingStoreApi {
   readonly recordingFailed: (id: string) => Effect.Effect<void, ProductDbError>;
   /**
    * Persist the wire rows a transcribe call returned. The runtime objects
-   * carry the full 13-field server row (main's RecordingSegment type declares
-   * 8 — parseSegments is a cast); the store normalizes the untyped extras
+   * carry the full server row; the store normalizes optional extras
    * (isFinal ?? true, createdAt/updatedAt ?? now, deletedAt ?? null) and
    * writes ON CONFLICT (recordingId, segmentOrder) DO UPDATE: a retried chunk
    * re-minted a NEW tsg_ id server-side, so the (recordingId, segmentOrder)

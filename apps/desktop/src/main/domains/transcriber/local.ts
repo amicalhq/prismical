@@ -5,8 +5,7 @@
  *
  * Per chunk, in order:
  *   1. installed weights for the frozen engine.modelId (ModelManager) — none →
- *      `{ ok, [] }` + ONE warn per recording (the recording persists without
- *      a transcript; a missing model NEVER parks a recording);
+ *      a retryable model-missing result, retaining audio until weights are available;
  *   2. the near-silence guard on the 48 kHz samples → `[]` without
  *      touching the engine (whisper hallucinates on near-silence);
  *   3. 48 kHz → 16 kHz through a per-(recording, source) StreamingLinearResampler
@@ -167,7 +166,7 @@ export const LocalWhisperLive: Layer.Layer<
         Effect.flatMap(seen =>
           seen
             ? Effect.void
-            : log.warn('local whisper model not installed — chunks ack empty', {
+            : log.warn('local whisper model not installed — audio retained for recovery', {
                 recordingId,
                 modelId,
               })
@@ -205,7 +204,11 @@ export const LocalWhisperLive: Layer.Layer<
         const installed = yield* models.installedPath(engine.modelId);
         if (Option.isNone(installed)) {
           yield* warnModelMissingOnce(recordingId, engine.modelId);
-          return EMPTY_OK;
+          return {
+            ok: false,
+            retryable: true,
+            failure: { kind: 'engine', reason: 'model-missing' },
+          };
         }
         // The VAD weights are optional: Some(path) ⇒ whisper.cpp decodes only
         // detected speech spans (no-speech chunks come back empty instead of

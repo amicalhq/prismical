@@ -3,7 +3,7 @@ import { useAutoEnhanceStore } from './auto-enhance-store';
 
 describe('useAutoEnhanceStore', () => {
   beforeEach(() => {
-    useAutoEnhanceStore.setState({ request: null, failedRecordingId: null });
+    useAutoEnhanceStore.setState({ requests: [], failedRecordingId: null });
   });
 
   it('publishes a failed recording so its Enhance chip can be offered again', () => {
@@ -18,13 +18,19 @@ describe('useAutoEnhanceStore', () => {
       noteId: 'nt_1',
       recordingId: 'rec_1',
       source: 'auto-enhance',
+      ownerSessionKey: 'session_1',
+      ownerOrgId: 'org_1',
     });
     expect(useAutoEnhanceStore.getState().failedRecordingId).toBeNull();
-    expect(useAutoEnhanceStore.getState().request).toEqual({
-      noteId: 'nt_1',
-      recordingId: 'rec_1',
-      source: 'auto-enhance',
-    });
+    expect(useAutoEnhanceStore.getState().requests).toEqual([
+      {
+        noteId: 'nt_1',
+        recordingId: 'rec_1',
+        source: 'auto-enhance',
+        ownerSessionKey: 'session_1',
+        ownerOrgId: 'org_1',
+      },
+    ]);
   });
 
   it('drops the marker when the same recording is retried', () => {

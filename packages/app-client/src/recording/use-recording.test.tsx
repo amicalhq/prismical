@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { renderHook, act, waitFor } from '@testing-library/react';
+import { renderHook, act, waitFor, cleanup } from '@testing-library/react';
 import * as React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type {
@@ -24,7 +24,16 @@ import { useRecording } from './use-recording';
 import { organizationsKey } from '../api/hooks/organizations';
 import { listPendingStagingRecoveries, savePendingStagingRecovery } from './staging-buffer';
 import { ApiError } from '../api/client';
+import { useAutoEnhanceStore } from '../notes/auto-enhance-store';
 import { setRecordingPreferences } from './recording-preferences';
+
+const stopAfterTest: Array<() => Promise<unknown>> = [];
+afterEach(async () => {
+  await act(async () => {
+    for (const stop of stopAfterTest.splice(0)) await stop();
+  });
+  cleanup();
+});
 
 const STABLE_SESSION = {
   state: 'signed-in',
@@ -83,6 +92,7 @@ function makeFakeControl() {
   const resumeCalls: string[] = [];
   let startResult: NativeStartResult = { ok: true, recordingId: 'rec_1' };
   const control: NativeRecordingControl = {
+    claimCompletion: vi.fn(async () => true),
     start: async input => {
       startCalls.push(input);
       return startResult;
@@ -225,7 +235,8 @@ function renderWithPorts(
     graceSeconds: number;
     autoStopAfterPausedMinutes?: number;
   },
-  auth?: AuthPort
+  auth?: AuthPort,
+  handleCompletion = true
 ) {
   const qc = new QueryClient();
   if (autoPause) {
@@ -252,7 +263,9 @@ function renderWithPorts(
       <PortsProvider ports={makePorts(recording, auth)}>{children}</PortsProvider>
     </QueryClientProvider>
   );
-  return renderHook(() => useRecording(), { wrapper });
+  const rendered = renderHook(() => useRecording({ handleCompletion }), { wrapper });
+  stopAfterTest.push(() => rendered.result.current.stop());
+  return rendered;
 }
 
 function mutableAuth(initialView: ReturnType<AuthPort['getSession']>) {
@@ -330,6 +343,7 @@ const segment = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  useAutoEnhanceStore.getState().clear();
 });
 
 describe('useRecording — native (desktop) branch', () => {
@@ -361,6 +375,90 @@ describe('useRecording — native (desktop) branch', () => {
     expect(result.current.liveSegments).toEqual([segment]);
     expect(result.current.error).toBeNull();
     expect(result.current.startedAt).toBe('2026-07-18T00:00:00.000Z');
+  });
+
+  it('claims externally stopped native completion with its immutable note owner', async () => {
+    const fake = makeFakeControl();
+    const { result } = renderRecording(fake.control);
+    fake.push({
+      ...idle,
+      status: 'idle',
+      recordingId: 'rec_native',
+      noteId: 'note_owner',
+      segments: [],
+    });
+    await waitFor(() =>
+      expect(result.current.completedRecording).toEqual({
+        recordingId: 'rec_native',
+        noteId: 'note_owner',
+        segments: 0,
+        ownerSessionKey: 'user_1',
+        ownerOrgId: 'org_1',
+      })
+    );
+    expect(result.current.noteId).toBe('note_owner');
+    expect(fake.control.claimCompletion).toHaveBeenCalledWith('rec_native');
+  });
+
+  it('allows passive native observers without taking the completion claim', async () => {
+    const fake = makeFakeControl();
+    const { result } = renderWithPorts(
+      { control: fake.control, uploadTranscriptionChunk: vi.fn() },
+      undefined,
+      undefined,
+      false
+    );
+    fake.push({ ...idle, status: 'idle', recordingId: 'rec_native', noteId: 'note_owner' });
+    await act(async () => {});
+    expect(fake.control.claimCompletion).not.toHaveBeenCalled();
+    expect(result.current.completedRecording).toBeNull();
+  });
+
+  it('does not publish completion when another native window owns it', async () => {
+    const fake = makeFakeControl();
+    vi.mocked(fake.control.claimCompletion).mockResolvedValue(false);
+    const { result } = renderRecording(fake.control);
+    fake.push({ ...idle, status: 'error', recordingId: 'rec_native', noteId: 'note_owner' });
+    await act(async () => {});
+    expect(fake.control.claimCompletion).toHaveBeenCalledWith('rec_native');
+    expect(result.current.completedRecording).toBeNull();
+    expect(result.current.error).toBe('recording.errors.endedUnexpectedly');
+  });
+
+  it('retains completion work when the native claim resolves after unmount', async () => {
+    const fake = makeFakeControl();
+    let grant!: (claimed: boolean) => void;
+    vi.mocked(fake.control.claimCompletion).mockImplementation(
+      () =>
+        new Promise(resolve => {
+          grant = resolve;
+        })
+    );
+    const { unmount } = renderRecording(fake.control);
+    fake.push({ ...idle, recordingId: 'rec_native', noteId: 'note_owner' });
+    unmount();
+    await act(async () => {
+      grant(true);
+    });
+    expect(useAutoEnhanceStore.getState().requests).toEqual([
+      {
+        recordingId: 'rec_native',
+        noteId: 'note_owner',
+        ownerSessionKey: 'user_1',
+        ownerOrgId: 'org_1',
+        source: 'auto-enhance',
+      },
+    ]);
+  });
+
+  it('routes stop while the native session is starting', async () => {
+    const fake = makeFakeControl();
+    const { result } = renderRecording(fake.control);
+    fake.push({ ...idle, status: 'starting', recordingId: 'rec_native', noteId: 'note_owner' });
+    await act(async () => {
+      await result.current.stop();
+    });
+    expect(fake.stopCalls).toEqual(['rec_native']);
   });
 
   it('surfaces the mic-only notice when the gate degrades dual → mic', async () => {
@@ -544,6 +642,27 @@ describe('useRecording — native (desktop) branch', () => {
 
 // --- Web branch: pause/resume -----------------------------------------------
 
+function makeFakeWebLocks() {
+  const held = new Set<string>();
+  const request = vi.fn(
+    (
+      name: string,
+      optionsOrCallback: unknown,
+      suppliedCallback?: (lock: unknown) => Promise<unknown>
+    ) => {
+      const callback = (suppliedCallback ?? optionsOrCallback) as (
+        lock: unknown
+      ) => Promise<unknown>;
+      if (held.has(name)) return Promise.resolve(callback(null));
+      held.add(name);
+      return Promise.resolve()
+        .then(() => callback({ name }))
+        .finally(() => held.delete(name));
+    }
+  );
+  return { held, request };
+}
+
 class FakeWorkletPort {
   onmessage: ((ev: MessageEvent) => void) | null = null;
   posted: Array<{ type?: string }> = [];
@@ -611,12 +730,16 @@ function pushFrame(samples: number) {
 }
 
 describe('useRecording — web branch pause/resume', () => {
+  const originalLocks = Object.getOwnPropertyDescriptor(navigator, 'locks');
+  let locks: ReturnType<typeof makeFakeWebLocks>;
   let upload: ReturnType<typeof vi.fn>;
 
   let originalMediaDevices: PropertyDescriptor | undefined;
   let originalStorage: PropertyDescriptor | undefined;
 
   beforeEach(() => {
+    locks = makeFakeWebLocks();
+    Object.defineProperty(navigator, 'locks', { configurable: true, value: locks });
     vi.stubGlobal('AudioContext', FakeAudioContext);
     vi.stubGlobal('AudioWorkletNode', FakeWorkletNode);
     vi.stubGlobal(
@@ -640,6 +763,8 @@ describe('useRecording — web branch pause/resume', () => {
   });
 
   afterEach(() => {
+    if (originalLocks) Object.defineProperty(navigator, 'locks', originalLocks);
+    else delete (navigator as { locks?: unknown }).locks;
     vi.unstubAllGlobals();
     // unstubAllGlobals doesn't undo defineProperty — restore navigator ourselves.
     if (originalMediaDevices) {
@@ -692,6 +817,322 @@ describe('useRecording — web branch pause/resume', () => {
     });
     return { removeEntry, write, close };
   }
+
+  it('ignores a resume that resolves after the recording stopped', async () => {
+    const { result } = renderWeb();
+    await act(async () => {
+      await result.current.start('note_1', 'Standup');
+    });
+    await act(async () => {
+      await result.current.pause();
+    });
+    let release!: () => void;
+    FakeAudioContext.last!.resume.mockImplementation(
+      () =>
+        new Promise<void>(resolve => {
+          release = resolve;
+        })
+    );
+    let resuming!: Promise<boolean>;
+    act(() => {
+      resuming = result.current.resume();
+    });
+    await act(async () => {
+      await result.current.stop();
+    });
+    expect(result.current.state).toBe('idle');
+    await act(async () => {
+      release();
+      await resuming;
+    });
+    expect(result.current.state).toBe('idle');
+  });
+
+  it('ended microphone during opening must not leave recording active', async () => {
+    vi.mocked(navigator.mediaDevices.getUserMedia).mockResolvedValue({
+      getTracks: () => [{ stop: vi.fn(), readyState: 'ended', addEventListener: vi.fn() }],
+    } as unknown as MediaStream);
+    const { result } = renderWeb();
+    await act(async () => {
+      await result.current.start('note_1', 'Standup');
+    });
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 200));
+    });
+    expect(result.current.error).toBe('recording.errors.microphoneDisconnected');
+    expect(result.current.state).toBe('idle');
+    expect(finalizeRecording).toHaveBeenCalledTimes(1);
+    expect(result.current.completedRecording?.noteId).toBe('note_1');
+  });
+
+  it('an unmounted pending start must release its late microphone', async () => {
+    let release!: (stream: MediaStream) => void;
+    const stopTrack = vi.fn();
+    vi.mocked(navigator.mediaDevices.getUserMedia).mockImplementation(
+      () =>
+        new Promise(resolve => {
+          release = resolve;
+        })
+    );
+    const { result, unmount } = renderWeb();
+    let starting!: Promise<void>;
+    act(() => {
+      starting = result.current.start('note_1', 'Standup');
+    });
+    await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(1));
+    unmount();
+    await act(async () => {
+      release({ getTracks: () => [{ stop: stopTrack }] } as unknown as MediaStream);
+      await starting;
+    });
+    expect(stopTrack).toHaveBeenCalledTimes(1);
+  });
+
+  it('failed context suspension must resume the staging recorder', async () => {
+    class InspectRecorder extends FakeMediaRecorder {
+      static last: InspectRecorder;
+      constructor() {
+        super();
+        InspectRecorder.last = this;
+      }
+    }
+    vi.stubGlobal('MediaRecorder', InspectRecorder);
+    const { result } = renderWeb();
+    await act(async () => {
+      await result.current.start('note_1', 'Standup');
+    });
+    FakeAudioContext.last!.suspend.mockRejectedValue(new Error('suspend failed'));
+    await act(async () => {
+      expect(await result.current.pause()).toBe(false);
+    });
+    expect(result.current.state).toBe('recording');
+    expect(InspectRecorder.last.state).toBe('recording');
+  });
+
+  it('two starts in the same render must allocate only one recording', async () => {
+    const { result } = renderWeb();
+    await act(async () => {
+      await Promise.all([
+        result.current.start('note_1', 'Standup'),
+        result.current.start('note_1', 'Standup'),
+      ]);
+    });
+    expect(createRecording).toHaveBeenCalledTimes(1);
+    expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries live finalization without staging and reports completion for its owner note', async () => {
+    vi.stubGlobal('MediaRecorder', undefined);
+    vi.mocked(finalizeRecording).mockRejectedValueOnce(new Error('offline'));
+    const { result } = renderWeb();
+    await act(async () => {
+      await result.current.start('note_owner', 'Standup');
+    });
+    pushFrame(16000);
+    await act(async () => {
+      await result.current.stop();
+    });
+    await waitFor(() => expect(finalizeRecording).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(listPendingStagingRecoveries()).toEqual([]));
+    expect(finalizeRecording).toHaveBeenLastCalledWith(
+      'rec_web',
+      1000,
+      false,
+      false,
+      expect.objectContaining({ activeOrgId: 'org_1' })
+    );
+    expect(result.current.completedRecording).toEqual({
+      recordingId: 'rec_web',
+      noteId: 'note_owner',
+      segments: 0,
+      ownerSessionKey: 'user_1',
+      ownerOrgId: 'org_1',
+    });
+  });
+
+  it('retains live audio across failed finalization and retries staging', async () => {
+    installDurableStagingFile();
+    vi.stubGlobal('MediaRecorder', FakeMediaRecorder);
+    vi.mocked(finalizeRecording).mockRejectedValueOnce(new Error('offline'));
+    vi.mocked(mintStagingUrls).mockResolvedValueOnce({
+      uploads: [
+        {
+          lane: 'mic',
+          objectName: 'audio',
+          url: 'https://upload.test',
+          headers: {},
+        },
+      ],
+      expiresAt: new Date().toISOString(),
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: true, status: 200 }))
+    );
+    const { result } = renderWeb();
+    await act(async () => {
+      await result.current.start('note_owner', 'Standup');
+    });
+    pushFrame(16000);
+    await act(async () => {
+      await result.current.stop();
+    });
+    await waitFor(() => expect(completeStaging).toHaveBeenCalledTimes(1));
+    expect(listPendingStagingRecoveries()).toEqual([]);
+    expect(finalizeRecording).toHaveBeenCalledTimes(2);
+  });
+
+  it('joins duplicate stop calls and publishes completion once', async () => {
+    const { result } = renderWeb();
+    await act(async () => {
+      await result.current.start('note_owner', 'Standup');
+    });
+    await act(async () => {
+      await Promise.all([result.current.stop(), result.current.stop()]);
+    });
+    expect(finalizeRecording).toHaveBeenCalledTimes(1);
+    expect(result.current.completedRecording).toEqual({
+      recordingId: 'rec_web',
+      noteId: 'note_owner',
+      segments: 0,
+      ownerSessionKey: 'user_1',
+      ownerOrgId: 'org_1',
+    });
+  });
+
+  it('holds the recovery lock until local audio closes after finalization fails', async () => {
+    const file = installDurableStagingFile();
+    let closeAudio!: () => void;
+    file.close.mockImplementationOnce(
+      () =>
+        new Promise<void>(resolve => {
+          closeAudio = resolve;
+        })
+    );
+    vi.stubGlobal('MediaRecorder', FakeMediaRecorder);
+    vi.mocked(finalizeRecording).mockRejectedValueOnce(new Error('offline'));
+    const { result } = renderWeb();
+    await act(async () => {
+      await result.current.start('note_owner', 'Standup');
+    });
+    let stopped!: Promise<{ segments: number }>;
+    act(() => {
+      stopped = result.current.stop();
+    });
+    await waitFor(() => expect(finalizeRecording).toHaveBeenCalledOnce());
+    await waitFor(() => expect(file.close).toHaveBeenCalledOnce());
+    const lockName = 'prismical-recording-recovery:rec_web';
+    expect(locks.held.has(lockName)).toBe(true);
+    expect(result.current.state).toBe('stopping');
+    await act(async () => {
+      closeAudio();
+      await stopped;
+    });
+    await waitFor(() => expect(finalizeRecording).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(locks.held.has(lockName)).toBe(false));
+    expect(listPendingStagingRecoveries()[0]?.needsFinalize).toBe(false);
+    expect(result.current.state).toBe('idle');
+  });
+
+  it('persists the stop intent before waiting for active uploads', async () => {
+    let completeUpload!: () => void;
+    upload.mockImplementationOnce(() =>
+      new Promise<void>(resolve => {
+        completeUpload = resolve;
+      }).then(() => [])
+    );
+    const { result } = renderWeb();
+    await act(async () => {
+      await result.current.start('note_owner', 'Standup');
+    });
+    pushFrame(16000);
+    await act(async () => {});
+    let stopped!: Promise<{ segments: number }>;
+    act(() => {
+      stopped = result.current.stop();
+    });
+    await waitFor(() =>
+      expect(listPendingStagingRecoveries()).toEqual([
+        expect.objectContaining({
+          recordingId: 'rec_web',
+          noteId: 'note_owner',
+          needsFinalize: true,
+          durationMs: 1000,
+        }),
+      ])
+    );
+    expect(finalizeRecording).not.toHaveBeenCalled();
+    await act(async () => {
+      completeUpload();
+      await stopped;
+    });
+    expect(finalizeRecording).toHaveBeenCalledOnce();
+  });
+
+  it('waits for another tab to release its recording recovery lock', async () => {
+    const lockName = 'prismical-recording-recovery:rec_locked';
+    locks.held.add(lockName);
+    savePendingStagingRecovery({
+      version: 2,
+      recordingId: 'rec_locked',
+      noteId: 'note_owner',
+      contentType: 'audio/webm',
+      durationMs: 1000,
+      endedAt: Date.now() - 120000,
+      createdAt: Date.now() - 120000,
+      ownerSub: 'user_1',
+      ownerOrgId: 'org_1',
+      ownerSessionKey: 'user_1',
+      transcriptionDeferred: false,
+      expectsStaging: false,
+      needsFinalize: true,
+      action: 'upload',
+    });
+    renderWeb();
+    await act(async () => {});
+    expect(finalizeRecording).not.toHaveBeenCalled();
+    expect(locks.request).toHaveBeenCalledWith(
+      lockName,
+      { ifAvailable: true },
+      expect.any(Function)
+    );
+    locks.held.delete(lockName);
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    await waitFor(() => expect(finalizeRecording).toHaveBeenCalledOnce());
+    await waitFor(() => expect(listPendingStagingRecoveries()).toEqual([]));
+  });
+
+  it('publishes a stop intent only after draining when Web Locks are unavailable', async () => {
+    Object.defineProperty(navigator, 'locks', { configurable: true, value: undefined });
+    let completeUpload!: () => void;
+    upload.mockImplementationOnce(() =>
+      new Promise<void>(resolve => {
+        completeUpload = resolve;
+      }).then(() => [])
+    );
+    const { result } = renderWeb();
+    await act(async () => {
+      await result.current.start('note_owner', 'Standup');
+    });
+    pushFrame(16000);
+    await act(async () => {});
+    let stopped!: Promise<{ segments: number }>;
+    act(() => {
+      stopped = result.current.stop();
+    });
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 180));
+    });
+    expect(listPendingStagingRecoveries()).toEqual([]);
+    expect(finalizeRecording).not.toHaveBeenCalled();
+    await act(async () => {
+      completeUpload();
+      await stopped;
+    });
+    expect(finalizeRecording).toHaveBeenCalledOnce();
+  });
 
   it('uses the selected language and microphone for the next recording', async () => {
     setRecordingPreferences({

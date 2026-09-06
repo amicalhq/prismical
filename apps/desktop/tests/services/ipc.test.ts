@@ -303,6 +303,7 @@ const ALL_HANDLER_CHANNELS = [
   CHANNELS.authGetCollabToken,
   CHANNELS.recordingStart,
   CHANNELS.recordingStop,
+  CHANNELS.recordingClaimCompletion,
   CHANNELS.recordingPause,
   CHANNELS.recordingResume,
   CHANNELS.settingsGet,
@@ -353,9 +354,16 @@ const makeFakeRecordingService = () =>
     const stopCalls: string[] = [];
     const pauseCalls: string[] = [];
     const resumeCalls: string[] = [];
+    const claimCalls: string[] = [];
+    let claimResult = false;
     let startResult: Effect.Effect<string, RecordingBusyError | PermissionError> =
       Effect.succeed('rec_fake');
     const api: RecordingServiceApi = {
+      resolveCompletion: () => Effect.void,
+      claimCompletion: id => Effect.sync(() => {
+        claimCalls.push(id);
+        return claimResult;
+      }),
       keepRecording: () => Effect.succeed(true),
       pauseFromPrompt: () => Effect.succeed(true),
       start: input =>
@@ -387,6 +395,8 @@ const makeFakeRecordingService = () =>
       stopCalls,
       pauseCalls,
       resumeCalls,
+      claimCalls,
+      setClaim: (accepted: boolean) => { claimResult = accepted; },
       setStart: (effect: Effect.Effect<string, RecordingBusyError | PermissionError>) => {
         startResult = effect;
       },
@@ -1443,6 +1453,36 @@ describe('registerMainWindowHandlers', () => {
       })
   );
 
+  it.effect('recording:claimCompletion preserves acceptance and rejects malformed or foreign requests', () =>
+    Effect.gen(function* () {
+      const { layer } = build();
+      const scope = yield* Scope.make();
+      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+      yield* Context.get(ctx, WindowRegistry).openMainWindow.pipe(Scope.extend(scope));
+      const wc = fake.__windowInstances().at(-1)?.webContents;
+      const claim = (recordingId: string) => Effect.promise(() => fake.ipcMain.invoke(
+        CHANNELS.recordingClaimCompletion, { sender: wc }, { recordingId }
+      ));
+      assert.isFalse(yield* claim('rec_1'), 'no workspace owns a completion');
+      const rec = yield* makeFakeRecordingService();
+      yield* Context.get(ctx, RecordingBridge).register(rec.api).pipe(Scope.extend(scope));
+      assert.isFalse(yield* claim('rec_stale'));
+      rec.setClaim(true);
+      assert.isTrue(yield* claim('rec_1'));
+      rec.setClaim(false);
+      assert.isFalse(yield* claim('rec_1'));
+      for (const [sender, payload] of [[wc, {}], [{ id: 9999 }, { recordingId: 'rec_1' }]]) {
+        const rejected = yield* Effect.exit(Effect.tryPromise(() => fake.ipcMain.invoke(
+          CHANNELS.recordingClaimCompletion, { sender }, payload
+        )));
+        assert.isTrue(Exit.isFailure(rejected));
+      }
+      assert.deepStrictEqual(rec.claimCalls, ['rec_stale', 'rec_1', 'rec_1']);
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+
   it.effect(
     'recording:stateChanged pushes the sanitized state (segments + mic-only) and dies with the scope',
     () =>
@@ -2117,6 +2157,10 @@ describe('registerMainWindowHandlers', () => {
         const store = Context.get(ctx, SecureStore);
         const KEY = 'transcription.byok.apiKey';
         const SENTINEL = 'sk-byok-sentinel-7f3a';
+        const ENDPOINT = 'https://transcription.test/v1';
+        const settings = Context.get(ctx, SettingsService);
+        const transcription = (yield* settings.get).transcription;
+        yield* settings.set({ transcription: { ...transcription, byokBaseUrl: ENDPOINT } });
         const has = () =>
           Effect.promise(() =>
             fake.ipcMain.invoke(CHANNELS.capabilityHasTranscriptionByokKey, { sender: wc })
@@ -2128,14 +2172,21 @@ describe('registerMainWindowHandlers', () => {
           fake.ipcMain.invoke(
             CHANNELS.capabilitySetTranscriptionByokKey,
             { sender: wc },
-            { key: SENTINEL }
+            { key: SENTINEL, baseUrl: ENDPOINT }
           )
         );
         assert.strictEqual(yield* has(), true);
-        assert.strictEqual(yield* store.getSecret(KEY), SENTINEL);
+        assert.deepStrictEqual(JSON.parse((yield* store.getSecret(KEY))!), {
+          key: SENTINEL, baseUrl: ENDPOINT,
+        });
+
+        yield* settings.set({ transcription: { ...transcription, byokBaseUrl: 'https://other.test/v1' } });
+        assert.strictEqual(yield* has(), false, 'a different endpoint must request its own key');
+        yield* settings.set({ transcription: { ...transcription, byokBaseUrl: ENDPOINT } });
+        assert.strictEqual(yield* has(), true);
 
         // Malformed payloads reject (typed) without touching the stored key.
-        for (const payload of [{ key: '' }, { key: SENTINEL, extra: 1 }, {}, 'sk-raw']) {
+        for (const payload of [{ key: '', baseUrl: ENDPOINT }, { key: SENTINEL, baseUrl: ENDPOINT, extra: 1 }, { key: SENTINEL }, { key: SENTINEL, baseUrl: '  ' }, {}, 'sk-raw']) {
           const bad = yield* Effect.exit(
             Effect.tryPromise(() =>
               fake.ipcMain.invoke(
@@ -2147,7 +2198,9 @@ describe('registerMainWindowHandlers', () => {
           );
           assert.isTrue(Exit.isFailure(bad));
         }
-        assert.strictEqual(yield* store.getSecret(KEY), SENTINEL);
+        assert.deepStrictEqual(JSON.parse((yield* store.getSecret(KEY))!), {
+          key: SENTINEL, baseUrl: ENDPOINT,
+        });
 
         yield* Effect.promise(() =>
           fake.ipcMain.invoke(CHANNELS.capabilityClearTranscriptionByokKey, { sender: wc })

@@ -280,7 +280,8 @@ test.describe('native settings UI', () => {
     );
     expect(dbBytes.length).toBeGreaterThan(0);
     expect(dbBytes.includes(BYOK_KEY, 0, 'utf8')).toBe(false);
-    const custody = Buffer.from(`e2e:${BYOK_KEY}`, 'utf8').toString('base64');
+    const credential = JSON.stringify({ baseUrl: 'https://byok.example/v1', key: BYOK_KEY });
+    const custody = Buffer.from(`e2e:${credential}`, 'utf8').toString('base64');
     expect(dbBytes.includes(custody, 0, 'utf8')).toBe(true);
     const mainLog = await readFile(path.join(profileDir, 'logs', 'main.log'), 'utf8');
     expect(mainLog.length).toBeGreaterThan(0);

@@ -12,7 +12,11 @@ const KEY = "prismical:auto-enhance";
 /** Imperative read (used by the dock's Stop handler). SSR-safe; defaults ON. */
 export function getAutoEnhanceEnabled(): boolean {
   if (typeof window === "undefined") return true;
-  return window.localStorage.getItem(KEY) !== "0";
+  try {
+    return window.localStorage.getItem(KEY) !== "0";
+  } catch {
+    return true;
+  }
 }
 
 /** Persist + notify same-tab listeners (the native `storage` event only fires cross-tab). */

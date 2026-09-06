@@ -15,6 +15,7 @@
 import { assert, describe, it } from '@effect/vitest';
 import {
   Context,
+  Deferred,
   Effect,
   Exit,
   Fiber,
@@ -205,6 +206,16 @@ describe('makeWorkspaceBackendRequest (envelope mapping)', () => {
     })
   );
 
+  it.effect('a malformed successful body cannot acknowledge a REST write', () =>
+    Effect.gen(function* () {
+      const result = yield* runRequest({
+        fetchFn: () => Promise.resolve(new Response('{"result":')),
+        req: { method: 'POST', path: '/apps/v1/me/transcript-segments', body: {} },
+      });
+      assert.deepStrictEqual(result, { error: { code: 'INTERNAL' } });
+    })
+  );
+
   it.effect('a hung fetch trips the 15s budget → INTERNAL', () =>
     Effect.gen(function* () {
       const { fetchFn } = recordingFetch(() => new Promise<Response>(() => {}));
@@ -214,6 +225,30 @@ describe('makeWorkspaceBackendRequest (envelope mapping)', () => {
       yield* TestClock.adjust(REQUEST_TIMEOUT);
       const res = yield* Fiber.join(fiber);
       assert.deepStrictEqual(res, { error: { code: 'INTERNAL' } });
+    })
+  );
+
+  it.effect('a stalled response body shares the request deadline and abort signal', () =>
+    Effect.gen(function* () {
+      const readingBody = yield* Deferred.make<void>();
+      let signal: AbortSignal | undefined;
+      const response = new Response();
+      response.json = () => {
+        Deferred.unsafeDone(readingBody, Effect.void);
+        return new Promise(() => {});
+      };
+      const fiber = yield* Effect.fork(runRequest({
+        fetchFn: (_url, init) => {
+          signal = init.signal;
+          return Promise.resolve(response);
+        },
+        req: { method: 'GET', path: '/apps/v1/me' },
+      }));
+      yield* Deferred.await(readingBody);
+      yield* TestClock.adjust(REQUEST_TIMEOUT);
+      assert.isTrue(Option.isSome(yield* Fiber.poll(fiber)), 'the body shares the request deadline');
+      assert.deepStrictEqual(yield* Fiber.join(fiber), { error: { code: 'INTERNAL' } });
+      assert.isTrue(signal?.aborted);
     })
   );
 
@@ -714,7 +749,7 @@ describe('makeCloudWorkspaceLayer → WorkspaceBackend (boot↔session bridge)',
               body: init.body,
             });
             return Promise.resolve(
-              jsonResponse({ success: true, result: { id: 'rec_1' }, results: [] })
+              jsonResponse({ result: { id: 'rec_1' }, applied: true, results: [] })
             );
           }
         );

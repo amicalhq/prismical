@@ -413,7 +413,7 @@ describe('cloud-mode segment mirror (POST /apps/v1/me/transcript-segments)', () 
   });
 
   it.effect(
-    'POSTs one body per segment, in order; a non-2xx / INTERNAL answer is a warn, never a failure',
+    'POSTs segments in order and returns delivery failures for recovery',
     () =>
       Effect.gen(function* () {
         const logger = makeTestLogger();
@@ -439,7 +439,7 @@ describe('cloud-mode segment mirror (POST /apps/v1/me/transcript-segments)', () 
           now: 0,
         })!;
 
-        yield* mirrorSegmentsToCore(backend, log, 'rec_1', [a, b]);
+        assert.deepStrictEqual(yield* mirrorSegmentsToCore(backend, log, 'rec_1', [a, b]), { ok: true, value: undefined });
         assert.deepStrictEqual(fakeCloud.requestCalls, [
           { method: 'POST', path: TRANSCRIPT_SEGMENTS_PATH, body: transcriptSegmentCreateBody(a) },
           { method: 'POST', path: TRANSCRIPT_SEGMENTS_PATH, body: transcriptSegmentCreateBody(b) },
@@ -447,11 +447,11 @@ describe('cloud-mode segment mirror (POST /apps/v1/me/transcript-segments)', () 
         assert.strictEqual(logger.entries.filter(e => e.level === 'warn').length, 0);
 
         fakeCloud.setRequestResponder(() => ({ ok: true, status: 500, bodyJson: null }));
-        yield* mirrorSegmentsToCore(backend, log, 'rec_1', [a]);
+        assert.deepStrictEqual(yield* mirrorSegmentsToCore(backend, log, 'rec_1', [a]), { ok: false, retryable: true, failure: { kind: 'http', status: 500 } });
         fakeCloud.setRequestResponder(() => ({ error: { code: 'INTERNAL' } }));
-        yield* mirrorSegmentsToCore(backend, log, 'rec_1', [b]);
+        assert.deepStrictEqual(yield* mirrorSegmentsToCore(backend, log, 'rec_1', [b]), { ok: false, retryable: true, failure: { kind: 'network' } });
         const warns = logger.entries.filter(
-          e => e.level === 'warn' && e.message === 'segment mirror to core failed — kept locally'
+          e => e.level === 'warn' && e.message === 'segment mirror to core failed — retained for recovery'
         );
         assert.deepStrictEqual(
           warns.map(w => w.data),

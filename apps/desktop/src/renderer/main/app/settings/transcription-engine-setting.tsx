@@ -42,6 +42,14 @@ function ByokFields({
 }) {
   const { t } = useTranslation();
   const caps = useDesktopCapabilities();
+  const storedBaseUrl = transcription.byokBaseUrl ?? '';
+  const [baseUrl, setBaseUrl] = React.useState(storedBaseUrl);
+  const [seenBaseUrl, setSeenBaseUrl] = React.useState(storedBaseUrl);
+  if (seenBaseUrl !== storedBaseUrl) {
+    setSeenBaseUrl(storedBaseUrl);
+    // A delayed settings acknowledgement must not replace a newer visible edit.
+    if (baseUrl === seenBaseUrl) setBaseUrl(storedBaseUrl);
+  }
   const [key, setKey] = React.useState('');
   const [hasKey, setHasKey] = React.useState<boolean | null>(null);
   // Re-read the "key saved" boolean after every set/clear (the key itself
@@ -49,18 +57,24 @@ function ByokFields({
   const [keyVersion, setKeyVersion] = React.useState(0);
   React.useEffect(() => {
     let active = true;
+    setHasKey(null);
+    if (baseUrl.trim() !== storedBaseUrl.trim()) {
+      setHasKey(false);
+      return;
+    }
     void caps.transcriptionByok.hasKey().then(value => {
       if (active) setHasKey(value);
     });
     return () => {
       active = false;
     };
-  }, [caps, keyVersion]);
+  }, [caps, keyVersion, baseUrl, storedBaseUrl]);
 
   const saveKey = async (): Promise<void> => {
     const trimmed = key.trim();
-    if (trimmed.length === 0) return;
-    await caps.transcriptionByok.setKey(trimmed);
+    const endpoint = baseUrl.trim();
+    if (trimmed.length === 0 || !endpoint) return;
+    await caps.transcriptionByok.setKey(trimmed, endpoint);
     setKey('');
     setKeyVersion(version => version + 1);
   };
@@ -73,11 +87,19 @@ function ByokFields({
     <div className="space-y-4 rounded-md border border-border p-4" data-testid="byok-fields">
       <div className="space-y-1.5">
         <Label htmlFor="byok-base-url">{t('desktop.transcriptionEngine.byok.baseUrlLabel')}</Label>
-        <CommittedInput
+        <Input
           id="byok-base-url"
-          value={transcription.byokBaseUrl ?? ''}
+          value={baseUrl}
           placeholder={t('desktop.transcriptionEngine.byok.baseUrlPlaceholder')}
-          onCommit={next => onPatch({ byokBaseUrl: next.trim() || null })}
+          autoComplete="off"
+          spellCheck={false}
+          onChange={event => setBaseUrl(event.target.value)}
+          onBlur={() => {
+            if (baseUrl !== storedBaseUrl) onPatch({ byokBaseUrl: baseUrl.trim() || null });
+          }}
+          onKeyDown={event => {
+            if (event.key === 'Enter') event.currentTarget.blur();
+          }}
         />
       </div>
       <div className="space-y-1.5">
@@ -104,7 +126,11 @@ function ByokFields({
               if (event.key === 'Enter') void saveKey();
             }}
           />
-          <Button size="sm" disabled={key.trim().length === 0} onClick={() => void saveKey()}>
+          <Button
+            size="sm"
+            disabled={key.trim().length === 0 || !baseUrl.trim()}
+            onClick={() => void saveKey()}
+          >
             {t('desktop.transcriptionEngine.byok.saveKey')}
           </Button>
         </div>
@@ -143,8 +169,7 @@ export function TranscriptionEngineSetting() {
 
   const transcription = settings.transcription;
   const offered = localMode ? ENGINES.filter(engine => engine !== 'cloud') : ENGINES;
-  const selected =
-    localMode && transcription.engine === 'cloud' ? 'local' : transcription.engine;
+  const selected = localMode && transcription.engine === 'cloud' ? 'local' : transcription.engine;
   const patch = (fields: Partial<TranscriptionSetting>): void => {
     void set({ transcription: { ...transcription, ...fields } });
   };

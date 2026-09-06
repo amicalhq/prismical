@@ -2,7 +2,7 @@
  * ByokTranscriberLive tests — the OpenAI-compatible lane
  * over a FAKE fetch + the in-memory SecureStore:
  *
- *  - no key / no base URL / no model → not-configured (non-retryable), ONE warn
+ *  - unavailable endpoint-bound key → retryable; no base URL/model → not-configured, ONE warn
  *    per recording, nothing on the wire;
  *  - the near-silence guard acks [] without a request;
  *  - the multipart POST: {baseUrl}/audio/transcriptions, Bearer key, fields
@@ -23,10 +23,8 @@ import { makeFakeWorkspaceBackend } from '../helpers/fake-recording';
 import { fakeSecureStoreLayer } from '../helpers/fake-workspace-env';
 import { AppModeService, type AppMode } from '../../src/main/domains/app-mode/service';
 import { CAPTURE_SAMPLE_RATE } from '../../src/main/domains/recording/chunker';
-import {
-  BYOK_API_KEY_SECRET,
-  makeByokTranscriberLive,
-} from '../../src/main/domains/transcriber/byok';
+import { makeByokTranscriberLive } from '../../src/main/domains/transcriber/byok';
+import { BYOK_API_KEY_SECRET, encodeByokCredential } from '../../src/main/domains/transcriber/byok-credential';
 import type { RecordingEngine } from '../../src/main/domains/transcriber/engine';
 import { ByokTranscriberLane, type ChunkAudio } from '../../src/main/domains/transcriber/service';
 import type { FetchLike } from '../../src/main/domains/transport/live';
@@ -54,6 +52,7 @@ interface FetchCall {
   readonly method: string;
   readonly headers: Record<string, string>;
   readonly body: FormData;
+  readonly signal?: AbortSignal;
 }
 
 const jsonResponse = (body: unknown, status = 200): Response =>
@@ -66,7 +65,7 @@ const build = (options: { key?: string | null; mode?: AppMode } = {}) =>
     const calls: FetchCall[] = [];
     let respond: () => Promise<Response> = () => Promise.resolve(jsonResponse({ text: '' }));
     const fetchFn: FetchLike = (url, init) => {
-      calls.push({ url, method: init.method, headers: { ...init.headers }, body: init.body as FormData });
+      calls.push({ url, method: init.method, headers: { ...init.headers }, body: init.body as FormData, signal: init.signal });
       return respond();
     };
     const scope = yield* Scope.make();
@@ -90,7 +89,7 @@ const build = (options: { key?: string | null; mode?: AppMode } = {}) =>
     const store = Context.get(ctx, SecureStore);
     const product = Context.get(ctx, ProductDb);
     const key = options.key === undefined ? KEY : options.key;
-    if (key !== null) yield* store.setSecret(BYOK_API_KEY_SECRET, key);
+    if (key !== null) yield* store.setSecret(BYOK_API_KEY_SECRET, encodeByokCredential(BYOK.byokBaseUrl!, key));
     const seedVocabulary = (
       rows: ReadonlyArray<{ id: string; word: string; replacementWord?: string }>
     ) =>
@@ -117,6 +116,7 @@ const build = (options: { key?: string | null; mode?: AppMode } = {}) =>
       });
     return {
       lane: Context.get(ctx, ByokTranscriberLane),
+      store,
       calls,
       fakeCloud,
       logger,
@@ -130,21 +130,80 @@ const build = (options: { key?: string | null; mode?: AppMode } = {}) =>
   });
 
 describe('ByokTranscriberLive', () => {
-  it.effect('no key → not-configured (non-retryable), ONE warn per recording, nothing on the wire', () =>
+  it.effect('retains work without sending a replacement provider key to the original endpoint', () =>
+    Effect.gen(function* () {
+      const h = yield* build();
+      yield* h.store.setSecret(BYOK_API_KEY_SECRET, JSON.stringify({
+        baseUrl: 'https://replacement.test/v1', key: 'replacement-key',
+      }));
+      const result = yield* h.lane.transcribeChunk('rec_original', PARAMS, chunk(tone(240_000)), BYOK);
+      assert.deepStrictEqual(result, {
+        ok: false, retryable: true, failure: { kind: 'engine', reason: 'not-configured' },
+      });
+      assert.strictEqual(h.calls.length, 0);
+      const replacement = { ...BYOK, byokBaseUrl: 'https://replacement.test/v1/' };
+      yield* h.lane.transcribeChunk('rec_replacement', PARAMS, chunk(tone(240_000)), replacement);
+      assert.strictEqual(h.calls[0]?.url, 'https://replacement.test/v1/audio/transcriptions');
+      assert.deepStrictEqual(h.calls[0]?.headers, { Authorization: 'Bearer replacement-key' });
+      yield* Scope.close(h.scope, Exit.void);
+    })
+  );
+
+  it.effect('an unbound legacy key is retained but never sent to an inferred endpoint', () =>
+    Effect.gen(function* () {
+      const h = yield* build();
+      yield* h.store.setSecret(BYOK_API_KEY_SECRET, KEY);
+      assert.deepStrictEqual(yield* h.lane.transcribeChunk('rec_unbound', PARAMS, chunk(tone(240_000)), BYOK), {
+        ok: false, retryable: true, failure: { kind: 'engine', reason: 'not-configured' },
+      });
+      assert.strictEqual(h.calls.length, 0);
+      assert.strictEqual(yield* h.store.getSecret(BYOK_API_KEY_SECRET), KEY);
+      yield* Scope.close(h.scope, Exit.void);
+    })
+  );
+
+  it.effect('malformed successful transcription responses retain the chunk for retry', () =>
+    Effect.gen(function* () {
+      const h = yield* build();
+      for (const response of [new Response('{', { status: 200 }), jsonResponse({ unrelated: true })]) {
+        h.setResponder(() => Promise.resolve(response));
+        assert.deepStrictEqual(yield* h.lane.transcribeChunk('rec_json', PARAMS, chunk(tone(240_000)), BYOK), {
+          ok: false, retryable: true, failure: { kind: 'invalid-response' },
+        });
+      }
+      yield* Scope.close(h.scope, Exit.void);
+    })
+  );
+
+  it.effect('the request deadline includes response consumption and aborts the request', () =>
+    Effect.gen(function* () {
+      const h = yield* build();
+      h.setResponder(() => Promise.resolve({ ok: true, status: 200, json: () => new Promise(() => {}) } as Response));
+      const task = yield* Effect.fork(h.lane.transcribeChunk('rec_body', PARAMS, chunk(tone(240_000)), BYOK));
+      yield* TestClock.adjust(Duration.seconds(31));
+      assert.deepStrictEqual(yield* Fiber.join(task), {
+        ok: false, retryable: true, failure: { kind: 'timeout' },
+      });
+      assert.strictEqual(h.calls[0]?.signal?.aborted, true);
+      yield* Scope.close(h.scope, Exit.void);
+    })
+  );
+
+  it.effect('no key → retryable not-configured, ONE warn per recording, nothing on the wire', () =>
     Effect.gen(function* () {
       const h = yield* build({ key: null });
       for (const index of [0, 1]) {
         const res = yield* h.lane.transcribeChunk('rec_a', { ...PARAMS, chunkIndex: index }, chunk(tone(240_000)), BYOK);
         assert.deepStrictEqual(res, {
           ok: false,
-          retryable: false,
+          retryable: true,
           failure: { kind: 'engine', reason: 'not-configured' },
         });
       }
       yield* h.lane.transcribeChunk('rec_b', PARAMS, chunk(tone(240_000)), BYOK);
       assert.strictEqual(h.calls.length, 0);
       const warns = h.logger.entries.filter(
-        e => e.message === 'BYOK transcription not configured — chunks fail non-retryable'
+        e => e.message === 'BYOK transcription credentials unavailable'
       );
       assert.deepStrictEqual(
         warns.map(w => w.data),

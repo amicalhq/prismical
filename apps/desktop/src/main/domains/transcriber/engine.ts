@@ -5,11 +5,9 @@
  * transcriptionConfig frozen into the recording row for that engine.
  *
  * Resolved ONCE per recording at start (RecordingServiceLive) — a preference
- * change never re-routes a recording mid-flight. The recovery drain resolves
- * per row: the outbox row remembers the engine kind that produced it. On-device
- * audio must never follow a later switch to the cloud
- * engine), while model/BYOK details come from current settings (documented
- * in recovery-drain.ts).
+ * change never re-routes a recording mid-flight. Recovery uses the same
+ * configuration persisted in the private outbox, including its original
+ * model and BYOK endpoint. Credentials remain in SecureStore.
  */
 import type { TranscriptionEngine, TranscriptionSetting } from '@prismical/desktop-contracts';
 import type { AppMode } from '../app-mode/service';
@@ -29,9 +27,8 @@ export interface RecordingEngine {
  * Local mode has no cloud transcriber, so a stored 'cloud' preference (the
  * default) coerces to 'local' there; every other combination is the stored
  * choice verbatim (cloud mode may run local whisper or BYOK — axis B is
- * orthogonal to axis A). Model presence is NOT consulted here: the local lane
- * acks empty (once-warned) when its model is missing, so the recording row
- * still persists — never park a recording over a missing model.
+ * orthogonal to axis A). The caller checks model readiness before capture;
+ * the local lane retains recoverable work if its model later disappears.
  */
 export const resolveRecordingEngine = (
   mode: AppMode,

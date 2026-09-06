@@ -99,6 +99,8 @@ const setup = (): Effect.Effect<Harness> =>
     const logger = makeTestLogger();
     const recState = yield* SubscriptionRef.make<RecordingState>(idleRecordingState);
     const recApi: RecordingServiceApi = {
+      claimCompletion: () => Effect.succeed(false),
+        resolveCompletion: () => Effect.void,
       state: recState,
       level: yield* SubscriptionRef.make(0),
       start: () => Effect.succeed('rec_fake'),

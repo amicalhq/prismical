@@ -5,13 +5,13 @@
  * device mints the segment from the answer's `text`. The multipart request
  * carries `model`, `file` (audio.wav), `language`, and `response_format=json`.
  *
- * The key lives ONLY in the SecureStore (`transcription.byok.apiKey`); it is
+ * The endpoint-bound key lives ONLY in SecureStore (`transcription.byok.apiKey`); it is
  * stamped into Authorization and NEVER passed to a log call — the base URL is
  * not logged either (a self-hosted endpoint can carry a token in its path).
  * Logs carry booleans + status codes.
  *
- * Per chunk: key + base URL + model present (else `not-configured`, non-
- * retryable, ONE warn per recording) → the near-silence guard → 48 kHz →
+ * Per chunk: key + base URL + model present (else `not-configured`,
+ * retryable for missing credentials, ONE warn per recording) → the near-silence guard → 48 kHz →
  * 16 kHz → PCM16 WAV → the POST with a 30 s budget. A 429/5xx response or
  * network/timeout failure is retryable; other 4xx responses are
  * permanent (that chunk's text is lost, the recording continues). No `prompt`
@@ -37,9 +37,8 @@ import { WHISPER_SAMPLE_RATE, isNearSilence, resampleChunkForWhisper } from './a
 import { mintChunkSegment } from './segment';
 import { ByokTranscriberLane, type TranscriberLaneApi } from './service';
 import { makeVocabularySource } from './vocabulary';
+import { BYOK_API_KEY_SECRET, byokKeyForEndpoint } from './byok-credential';
 
-/** The SecureStore key the capability IPC writes; the value never reaches the renderer. */
-export const BYOK_API_KEY_SECRET = 'transcription.byok.apiKey';
 /** OpenAI-compatible transcription path, appended to the user's base URL (`…/v1`). */
 export const BYOK_TRANSCRIPTIONS_PATH = '/audio/transcriptions';
 /** Request deadline for one chunk and one provider call. */
@@ -92,7 +91,7 @@ export const makeByokTranscriberLive = (
           Effect.flatMap(seen =>
             seen
               ? Effect.void
-              : log.warn('BYOK transcription not configured — chunks fail non-retryable', {
+              : log.warn('BYOK transcription credentials unavailable', {
                   recordingId,
                   ...data,
                 })
@@ -101,8 +100,9 @@ export const makeByokTranscriberLive = (
 
       // A SecureStore failure (safeStorage unavailable / decrypt failed / DB)
       // reads as "no key" — the lane cannot transcribe without it either way.
-      const readKey = (recordingId: string): Effect.Effect<string | null> =>
+      const readKey = (recordingId: string, baseUrl: string | null): Effect.Effect<string | null> =>
         secrets.getSecret(BYOK_API_KEY_SECRET).pipe(
+          Effect.map(secret => byokKeyForEndpoint(secret, baseUrl)),
           Effect.catchAll(error =>
             log
               .warn('BYOK key unreadable', { recordingId, error: error._tag })
@@ -117,13 +117,13 @@ export const makeByokTranscriberLive = (
         engine
       ) =>
         Effect.gen(function* () {
-          const key = yield* readKey(recordingId);
+          const key = yield* readKey(recordingId, engine.byokBaseUrl);
           const hasKey = key !== null && key !== '';
           const hasBaseUrl = engine.byokBaseUrl !== null && engine.byokBaseUrl !== '';
           const hasModel = engine.byokModel !== null && engine.byokModel !== '';
           if (!hasKey || !hasBaseUrl || !hasModel) {
             yield* warnUnconfiguredOnce(recordingId, { hasKey, hasBaseUrl, hasModel });
-            return NOT_CONFIGURED;
+            return { ...NOT_CONFIGURED, retryable: hasBaseUrl && hasModel };
           }
           if (isNearSilence(audio.samples)) return EMPTY_OK;
 
@@ -133,47 +133,40 @@ export const makeByokTranscriberLive = (
           form.append('file', new Blob([wav], { type: 'audio/wav' }), 'audio.wav');
           form.append('language', BYOK_LANGUAGE);
           form.append('response_format', 'json');
-          const url = `${engine.byokBaseUrl.replace(/\/+$/, '')}${BYOK_TRANSCRIPTIONS_PATH}`;
+          const url = `${engine.byokBaseUrl.trim().replace(/\/+$/, '')}${BYOK_TRANSCRIPTIONS_PATH}`;
 
           const outcome = yield* Effect.tryPromise({
-            try: signal =>
-              fetchFn(url, {
+            try: async (signal): Promise<RecordingLaneResult<string>> => {
+              const response = await fetchFn(url, {
                 method: 'POST',
                 headers: { Authorization: `Bearer ${key}` },
                 body: form,
                 signal,
-              }),
+              });
+              const bodyJson: unknown = await response.json().catch(() => null);
+              if (response.ok) {
+                const text = (bodyJson as { text?: unknown } | null)?.text;
+                return typeof text === 'string'
+                  ? { ok: true, value: text }
+                  : { ok: false, retryable: true, failure: { kind: 'invalid-response' } };
+              }
+              const code = (bodyJson as { error?: { code?: unknown } } | null)?.error?.code;
+              return {
+                ok: false,
+                retryable: isTransientStatus(response.status),
+                failure: {
+                  kind: 'http',
+                  status: response.status,
+                  ...(typeof code === 'string' ? { code } : {}),
+                },
+              };
+            },
             catch: (): LaneAbort => ({ kind: 'network' }),
           }).pipe(
             Effect.timeoutFail({
               duration: BYOK_REQUEST_TIMEOUT,
               onTimeout: (): LaneAbort => ({ kind: 'timeout' }),
             }),
-            Effect.flatMap(response =>
-              Effect.promise(() =>
-                response.json().then(
-                  (json: unknown) => json,
-                  () => null
-                )
-              ).pipe(
-                Effect.map((bodyJson): RecordingLaneResult<string> => {
-                  if (response.ok) {
-                    const text = (bodyJson as { text?: unknown } | null)?.text;
-                    return { ok: true, value: typeof text === 'string' ? text : '' };
-                  }
-                  const code = (bodyJson as { error?: { code?: unknown } } | null)?.error?.code;
-                  return {
-                    ok: false,
-                    retryable: isTransientStatus(response.status),
-                    failure: {
-                      kind: 'http',
-                      status: response.status,
-                      ...(typeof code === 'string' ? { code } : {}),
-                    },
-                  };
-                })
-              )
-            ),
             Effect.catchAll((abort: LaneAbort) =>
               Effect.succeed<RecordingLaneResult<string>>({
                 ok: false,

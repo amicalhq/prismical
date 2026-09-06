@@ -24,6 +24,10 @@ export class RecordingBusyError extends Data.TaggedError('RecordingBusyError')<{
   readonly activeRecordingId: string;
 }> {}
 
+export class RecordingStartError extends Data.TaggedError('RecordingStartError')<{
+  readonly reason: 'model-missing' | 'storage-unavailable';
+}> {}
+
 export type RecordingStatus = 'idle' | 'starting' | 'recording' | 'paused' | 'stopping' | 'error';
 
 /**
@@ -119,18 +123,23 @@ export interface RecordingServiceApi {
    * first frame, create the cloud recording, acquire the CaptureSession, and run
    * the capture → WAV → chunk → upload pipeline in a supervised fiber. Returns
    * the minted id. Fails `RecordingBusyError` if a recording is already active,
-   * or `PermissionError` (no spawn) if the mic is required but denied.
+   * `PermissionError` if the mic is denied, or `RecordingStartError` if the
+   * selected local model or durable job storage is unavailable. None spawns capture.
    */
   readonly start: (
     input: StartRecordingInput
-  ) => Effect.Effect<string, RecordingBusyError | PermissionError>;
+  ) => Effect.Effect<string, RecordingBusyError | RecordingStartError | PermissionError>;
   /**
-   * Gracefully stop the given recording: flush the final partial chunk,
-   * finalize the cloud recording, then delete the outbox row + recovery WAV
-   * afterward. A no-op if `recordingId` is not the active recording. Resolves after
-   * finalize completes.
+   * Stop capture, drain in-flight uploads, and flush the final partial chunk.
+   * Resolves after the initial finalization attempt and durable handoff; the
+   * workspace worker owns retries, optional staging, and cleanup. A no-op when
+   * `recordingId` is not active.
    */
   readonly stop: (recordingId: string) => Effect.Effect<void>;
+  /** Wait for a stopped recording's required work, then claim completion once across windows. */
+  readonly claimCompletion: (recordingId: string) => Effect.Effect<boolean>;
+  /** Main-only recovery handoff; false refuses completion after a terminal processing failure. */
+  readonly resolveCompletion: (recordingId: string, ready: boolean) => Effect.Effect<void>;
   /** Pause the matching active recording without finalizing it. */
   readonly pause: (recordingId: string) => Effect.Effect<boolean>;
   /**

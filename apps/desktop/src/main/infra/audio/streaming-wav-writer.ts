@@ -1,4 +1,5 @@
 import * as fs from "node:fs";
+import { finished } from "node:stream/promises";
 import { logger } from "../../logger";
 
 /**
@@ -12,6 +13,7 @@ export class StreamingWavWriter {
   private channels: number;
   private bitDepth: number;
   private isFinalized = false;
+  private writeError: Error | undefined;
 
   constructor(
     filePath: string,
@@ -25,6 +27,8 @@ export class StreamingWavWriter {
 
     // Create write stream
     this.fileStream = fs.createWriteStream(filePath);
+    // Header/open failures can occur before a frame supplies a write callback.
+    this.fileStream.on("error", (error) => { this.writeError = error; });
 
     // Write initial WAV header with placeholder sizes
     this.writeHeader();
@@ -73,6 +77,7 @@ export class StreamingWavWriter {
     if (this.isFinalized) {
       throw new Error("Cannot append to finalized WAV file");
     }
+    if (this.writeError) throw this.writeError;
 
     // Convert Float32Array to Int16 buffer
     const buffer = Buffer.alloc(audioData.length * 2);
@@ -100,6 +105,7 @@ export class StreamingWavWriter {
     if (this.isFinalized) {
       throw new Error("Cannot append to finalized WAV file");
     }
+    if (this.writeError) throw this.writeError;
 
     const buffer = Buffer.alloc(sampleCount * 2);
     await new Promise<void>((resolve, reject) => {
@@ -121,9 +127,9 @@ export class StreamingWavWriter {
     this.isFinalized = true;
 
     // Close the stream
-    await new Promise<void>((resolve) => {
-      this.fileStream.end(() => resolve());
-    });
+    const closed = finished(this.fileStream, { cleanup: true });
+    this.fileStream.end();
+    await closed;
 
     // Reopen file to update header with correct sizes
     const fd = await fs.promises.open(this.fileStream.path as string, "r+");
@@ -159,9 +165,9 @@ export class StreamingWavWriter {
     this.isFinalized = true; // Prevent further writes
 
     // Close the stream
-    await new Promise<void>((resolve) => {
-      this.fileStream.end(() => resolve());
-    });
+    const closed = finished(this.fileStream, { cleanup: true });
+    this.fileStream.end();
+    await closed;
 
     logger.transcription.info("WAV writer aborted", {
       path: this.fileStream.path,

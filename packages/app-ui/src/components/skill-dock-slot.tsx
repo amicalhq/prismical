@@ -9,7 +9,7 @@ import { useCurrentNote } from '../shell/current-note-context';
 import { useCurrentNoteEditor } from '../shell/current-editor-context';
 import { useRunSkill } from '@prismical/app-client';
 import { useSkillDiffStore } from '@prismical/app-client';
-import { useAutoEnhanceStore } from '@prismical/app-client';
+import { useAutoEnhanceStore, useSessionView, activeOrgIdOf } from '@prismical/app-client';
 import { useInlineRunStore } from '@prismical/app-client';
 import { useAskSkillRunStore } from '@prismical/app-client';
 import { SkillDiffDockBar } from './skill-diff-dock-bar';
@@ -39,11 +39,12 @@ function safeMarkdown(editor: Editor): string | undefined {
  */
 export function SkillDockSlot({ compact = false }: { compact?: boolean } = {}) {
   const noteId = useCurrentNote().currentNote?.noteId ?? null;
+  const session = useSessionView();
   const { editor, editorNoteId } = useCurrentNoteEditor();
   const candidate = useSkillDiffStore(s => (noteId ? s.candidatesByNote.get(noteId) : undefined));
 
   // A staged candidate invalidates any parked inline request for this note: the bridge would
-  // otherwise run it right after accept/reject, staging a surprise diff (PRSMPRO-119).
+  // otherwise run it right after accept/reject, staging a surprise diff.
   const inlineRequest = useInlineRunStore(s => s.request);
   const clearInlineRequest = useInlineRunStore(s => s.clear);
   React.useEffect(() => {
@@ -59,7 +60,11 @@ export function SkillDockSlot({ compact = false }: { compact?: boolean } = {}) {
   if (!noteId) return null;
   return (
     <>
-      <SkillRunBridge noteId={noteId} editor={editorForNote} />
+      <SkillRunBridge
+        key={`${session.activeSessionKey ?? session.activeSub}:${activeOrgIdOf(session)}:${noteId}`}
+        noteId={noteId}
+        editor={editorForNote}
+      />
       {candidate && editorForNote ? (
         <SkillDiffDockBar editor={editorForNote} noteId={noteId} compact={compact} />
       ) : null}
@@ -84,19 +89,38 @@ function SkillRunBridge({
   const { data: allSkills = [] } = useSkillsList();
   const { run } = useRunSkill(noteId, editor);
 
-  // Auto-enhance-on-Stop + the transcript wand (PRSMPRO-96): run Enhance scoped to that recording.
+  // Auto-enhance-on-Stop + the transcript wand: run Enhance scoped to that recording.
   // We send the live editor markdown (the freshest body) to dodge the debounced-snapshot staleness.
-  const autoRequest = useAutoEnhanceStore(s => s.request);
-  const clearAutoRequest = useAutoEnhanceStore(s => s.clear);
+  const session = useSessionView();
+  const ownerSessionKey = session.activeSessionKey ?? session.activeSub;
+  const ownerOrgId = activeOrgIdOf(session);
+  const autoRequest = useAutoEnhanceStore(s =>
+    s.requests.find(
+      request =>
+        request.noteId === noteId &&
+        request.ownerSessionKey === ownerSessionKey &&
+        request.ownerOrgId === ownerOrgId
+    )
+  );
+  const consumeAutoRequest = useAutoEnhanceStore(s => s.consume);
+  const hasCandidate = useSkillDiffStore(s => s.candidatesByNote.has(noteId));
+  const runningRequestRef = React.useRef<string | null>(null);
+  const mountedRef = React.useRef(true);
+  React.useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
   React.useEffect(() => {
     if (!autoRequest || autoRequest.noteId !== noteId) return;
     // Wait until the editor is registered and the skills list has loaded before consuming — else a
     // brief mount/fetch gap would drop the request. Both settle in deps, so the effect re-fires.
-    if (!editor || allSkills.length === 0) return;
-    clearAutoRequest();
+    if (!editor || allSkills.length === 0 || hasCandidate || runningRequestRef.current) return;
     const enhance = allSkills.find(s => s.id === ENHANCE_SKILL_ID && s.enabled);
     if (!enhance) {
       toast.error(t('skills.dock.enhanceUnavailable'));
+      consumeAutoRequest(autoRequest.recordingId);
       return;
     }
     // Send the live body to dodge snapshot staleness, but omit it above the server cap (1MB) so a
@@ -104,14 +128,18 @@ function SkillRunBridge({
     // serialization failure (an unmapped future mark) degrades the same way instead of crashing
     // the auto-enhance effect (launch-readiness item 5, C2).
     const md = safeMarkdown(editor);
+    runningRequestRef.current = autoRequest.recordingId;
     void run({
       skillId: enhance.id,
       skillName: skillDisplayName(enhance, t),
       recordingId: autoRequest.recordingId,
       noteMarkdown: md !== undefined && md.length <= 1_000_000 ? md : undefined,
       source: autoRequest.source,
+    }).finally(() => {
+      runningRequestRef.current = null;
+      if (mountedRef.current) consumeAutoRequest(autoRequest.recordingId);
     });
-  }, [autoRequest, noteId, editor, allSkills, run, clearAutoRequest, t]);
+  }, [autoRequest, noteId, editor, allSkills, run, consumeAutoRequest, hasCandidate, t]);
 
   // Ask composer `/skill` send + the Ask pill's one-click chip (dock v3). Extra typed guidance
   // rides as the run's instruction.
@@ -139,7 +167,7 @@ function SkillRunBridge({
     });
   }, [askRequest, noteId, editor, allSkills, run, clearAskRequest, t]);
 
-  // Inline popover (PRSMPRO-119): the popover captures the selection and parks a request. No
+  // Inline popover: the popover captures the selection and parks a request. No
   // skills-list wait: the request already carries the skill identity (the popover listed it).
   const inlineRequest = useInlineRunStore(s => s.request);
   const clearInlineRequest = useInlineRunStore(s => s.clear);

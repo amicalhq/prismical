@@ -69,8 +69,8 @@ export interface RecordingLog {
   folded: boolean;
   /** Speaker registry rows, once the finalize pass has minted them. */
   speakers?: RecordingSpeakerInfo[];
-  /** Staged audio is being diarized — the "Identifying speakers…" window. */
-  identifyingSpeakers?: boolean;
+  /** Audio upload or transcript processing is still pending. */
+  processing?: boolean;
   /** The settled finalize outcome from recording.meta ('done' | 'failed' | 'skipped' | 'stalled'
    * for a pass that aged out unfinished), null while unknown. Drives the post-stop bar's final
    * line: a failed or stalled pass is not "Transcript ready". */
@@ -219,14 +219,14 @@ function TranscriptPanelContent({
 
   // Post-stop bar sequence: Saved → Transcribing… → Identifying speakers… →
   // Transcript ready + Enhance chip. Driven off the finished
-  // recording's REAL finalize state (identifyingSpeakers from recording.meta),
+  // recording's REAL finalize state (processing from recording.meta),
   // not timers; only the final "ready" hold auto-dismisses back to the idle bar. ----
   const finished = finishedRecordingId
     ? recordings.find(r => r.id === finishedRecordingId)
     : undefined;
   const [doneDismissed, setDoneDismissed] = React.useState(false);
   React.useEffect(() => setDoneDismissed(false), [finishedRecordingId]);
-  const doneReady = !!finished && !finished.identifyingSpeakers;
+  const doneReady = !!finished && !finished.processing;
   // What the settled bar says. A diarization pass that FAILED still leaves the live transcript
   // (labels are what's missing); a failed pass on a recording with no lines (deferred mode,
   // where that pass IS the transcript) means there is no transcript at all. 'skipped' is not a
@@ -371,11 +371,11 @@ function TranscriptPanelContent({
                     {!rec.folded && rec.lines.length > 0 && (
                       <MiniAction
                         label={
-                          rec.identifyingSpeakers
+                          rec.processing
                             ? t('recording.panel.waitingFinal')
                             : t('recording.actions.addToNote')
                         }
-                        disabled={rec.identifyingSpeakers}
+                        disabled={rec.processing}
                         onClick={() => {
                           setHistOpen(false);
                           onEnhanceRecording(rec.id);
@@ -454,15 +454,17 @@ function TranscriptPanelContent({
                     </span>
                     <span className="flex-1 border-t border-dock-line" />
                   </div>
-                  {rec.identifyingSpeakers ? (
+                  {rec.processing ? (
                     <Marker className="mb-3 w-auto" role="status">
                       <MarkerIcon>
                         <Loader2 className="animate-spin" />
                       </MarkerIcon>
                       <MarkerContent className="shimmer shimmer-duration-1400 text-dock-ink-3 text-2xs font-medium">
-                        {rec.lines.length === 0
-                          ? t('recording.panel.transcribing')
-                          : t('recording.panel.identifyingSpeakers')}
+                        {rec.finalizeStatus === 'awaiting_upload'
+                          ? t('recording.panel.uploadingAudio')
+                          : rec.lines.length === 0
+                            ? t('recording.panel.transcribing')
+                            : t('recording.panel.identifyingSpeakers')}
                       </MarkerContent>
                     </Marker>
                   ) : null}
@@ -607,9 +609,11 @@ function TranscriptPanelContent({
                   <PxOrbitLoader />
                 </span>
                 <span className="shimmer shimmer-duration-1400 text-dock-ink-3 text-[12.5px]">
-                  {finished.lines.length === 0
-                    ? t('recording.panel.transcribing')
-                    : t('recording.panel.identifyingSpeakers')}
+                  {finished.finalizeStatus === 'awaiting_upload'
+                    ? t('recording.panel.uploadingAudio')
+                    : finished.lines.length === 0
+                      ? t('recording.panel.transcribing')
+                      : t('recording.panel.identifyingSpeakers')}
                 </span>
               </>
             ) : (

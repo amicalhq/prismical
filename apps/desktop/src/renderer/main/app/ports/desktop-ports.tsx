@@ -272,6 +272,7 @@ const toNativeState = (view: RecordingStateView): NativeRecordingState => ({
   elapsedAt: view.elapsedAt ?? null,
   pausedAccumMs: view.pausedAccumMs ?? 0,
   startedAt: view.startedAt ?? null,
+  autoStopRequested: view.autoStopRequested ?? false,
 });
 
 // The record button routes to main's NATIVE capture + transcription pipeline
@@ -307,6 +308,11 @@ const recordingPort: RecordingPort = {
       }
     },
     stop: recordingId => window.desktop.recording.stop({ recordingId }),
+    claimCompletion: recordingId =>
+      window.desktop.recording.claimCompletion({ recordingId }).catch(error => {
+        log('recording.claimCompletion invoke failed', error);
+        return false;
+      }),
     pause: recordingId =>
       window.desktop.recording.pause({ recordingId }).catch(error => {
         log('recording.pause invoke failed', error);
@@ -482,9 +488,9 @@ const createDesktopCapabilityPort = (appMode: 'local' | 'cloud'): DesktopCapabil
   // The BYOK transcription key: set crosses the key once into main's
   // secure store; has answers a boolean (a failed invoke reads as "no key").
   transcriptionByok: {
-    setKey: key =>
+    setKey: (key, baseUrl) =>
       window.desktop.capabilities
-        .setTranscriptionByokKey({ key })
+        .setTranscriptionByokKey({ key, baseUrl })
         .catch(error => log('capabilities.setTranscriptionByokKey invoke failed', error)),
     clearKey: () =>
       window.desktop.capabilities
@@ -513,10 +519,12 @@ const createDesktopCapabilityPort = (appMode: 'local' | 'cloud'): DesktopCapabil
         return false;
       }),
     listModels: (provider, force) =>
-      window.desktop.capabilities.listAiModels({ provider, ...(force ? { force } : {}) }).catch(error => {
-        log('capabilities.listAiModels invoke failed', error);
-        return { models: [], error: 'network' as const };
-      }),
+      window.desktop.capabilities
+        .listAiModels({ provider, ...(force ? { force } : {}) })
+        .catch(error => {
+          log('capabilities.listAiModels invoke failed', error);
+          return { models: [], error: 'network' as const };
+        }),
   },
 });
 
@@ -609,12 +617,11 @@ function createAuthPort(): AuthPort {
       const ownsContext = (): boolean => {
         const activeSessionKey = current.activeSessionKey ?? current.activeSub ?? null;
         const active = current.accounts.find(
-          account => (account.sessionKey ?? account.sub) === activeSessionKey,
+          account => (account.sessionKey ?? account.sub) === activeSessionKey
         );
         return (
           activeSessionKey === expectedSessionKey &&
-          (expectedOrgId === undefined ||
-            (active?.activeOrgId ?? null) === expectedOrgId)
+          (expectedOrgId === undefined || (active?.activeOrgId ?? null) === expectedOrgId)
         );
       };
       if (!ownsContext()) return null;

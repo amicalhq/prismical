@@ -473,13 +473,16 @@ describe('local models', () => {
 });
 
 describe('transcription BYOK key request', () => {
-  it('is a strict non-empty key, nothing else', () => {
-    expect(parseTranscriptionByokKeyRequest({ key: 'sk-test' })).toEqual({
+  it('binds a non-empty key to its endpoint in one strict payload', () => {
+    const baseUrl = 'https://transcription.test/v1';
+    expect(parseTranscriptionByokKeyRequest({ key: 'sk-test', baseUrl })).toEqual({
       success: true,
-      data: { key: 'sk-test' },
+      data: { key: 'sk-test', baseUrl },
     });
-    expect(parseTranscriptionByokKeyRequest({ key: '' }).success).toBe(false);
-    expect(parseTranscriptionByokKeyRequest({ key: 'sk-test', extra: 1 }).success).toBe(false);
+    expect(parseTranscriptionByokKeyRequest({ key: '', baseUrl }).success).toBe(false);
+    expect(parseTranscriptionByokKeyRequest({ key: 'sk-test' }).success).toBe(false);
+    expect(parseTranscriptionByokKeyRequest({ key: 'sk-test', baseUrl: ' ' }).success).toBe(false);
+    expect(parseTranscriptionByokKeyRequest({ key: 'sk-test', baseUrl, extra: 1 }).success).toBe(false);
     expect(parseTranscriptionByokKeyRequest({}).success).toBe(false);
     expect(parseTranscriptionByokKeyRequest('sk-test').success).toBe(false);
   });
@@ -546,6 +549,7 @@ describe('channel names', () => {
       authSessionChanged: 'auth:sessionChanged',
       recordingStart: 'recording:start',
       recordingStop: 'recording:stop',
+      recordingClaimCompletion: 'recording:claimCompletion',
       recordingPause: 'recording:pause',
       recordingResume: 'recording:resume',
       recordingStateChanged: 'recording:stateChanged',

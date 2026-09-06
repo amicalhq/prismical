@@ -23,6 +23,13 @@ import {
   encodeAskStreamError,
   parseAiErrorDetails,
 } from '@prismical/api-contracts';
+import {
+  AbandonStagingResponseSchema,
+  CompleteStagingResponseSchema,
+  MintStagingUrlsResponseSchema,
+  SyncWriteResponseSchema,
+  TranscribeChunkResponseSchema,
+} from '@prismical/api-contracts/apps/v1';
 import { askErrorResponse } from './ask-error';
 import { DesktopI18n } from '../i18n/service';
 import { Duration, Effect, Layer, Option, SubscriptionRef } from 'effect';
@@ -188,39 +195,30 @@ export const makeWorkspaceBackendRequest =
       Effect.flatMap(identity => {
         const url = buildRequestUrl(deps.coreApiUrl, req.path, req.query);
         const headers = stampHeaders(identity, req);
-        const fetchResponse = Effect.tryPromise({
-          try: signal =>
-            deps.fetchFn(url, {
+        return Effect.tryPromise({
+          try: async signal => {
+            const response = await deps.fetchFn(url, {
               method: req.method,
               headers,
               ...(req.body !== undefined ? { body: JSON.stringify(req.body) } : {}),
               signal,
-            }),
+            });
+            // Body consumption shares the fetch's cancellation and deadline.
+            // Preserve non-JSON error statuses for the renderer's error mapping.
+            const bodyJson =
+              response.status === 204
+                ? undefined
+                : response.ok
+                  ? await response.json()
+                  : await response.json().catch(() => null);
+            return { ok: true, status: response.status, bodyJson } satisfies TransportResponse;
+          },
           catch: cause => ({ kind: 'network' as const, cause }),
         }).pipe(
           Effect.timeoutFail({
             duration: REQUEST_TIMEOUT,
             onTimeout: () => ({ kind: 'timeout' as const }),
           })
-        );
-        return fetchResponse.pipe(
-          // Any completed exchange (2xx/4xx/5xx) → {ok,status,bodyJson}. Body
-          // read is best-effort: a non-JSON/empty body settles as null but the
-          // status is still carried through (renderer's toApiError/onUnauthorized).
-          Effect.flatMap(response =>
-            Effect.promise(() =>
-              response.status === 204
-                ? Promise.resolve(undefined)
-                : response.json().then(
-                    (json: unknown) => json,
-                    () => null
-                  )
-            ).pipe(
-              Effect.map(
-                (bodyJson): TransportResponse => ({ ok: true, status: response.status, bodyJson })
-              )
-            )
-          )
         );
       }),
       Effect.catchAll(() => Effect.succeed(INTERNAL)),
@@ -274,19 +272,16 @@ const recordingHeaders = (
   return headers;
 };
 
-/** create/finalize echo `{ result:<row>, applied, created? }`; we only need the id back, falling back to
- * the client-minted id (authoritative) if the echoed row's id is absent. */
-const parseRecordingId = (bodyJson: unknown, fallback: string): { readonly recordingId: string } => {
-  const result = (bodyJson as { result?: { id?: unknown } } | null)?.result;
-  return { recordingId: typeof result?.id === 'string' ? result.id : fallback };
+/** A successful write must acknowledge the recording that the caller supplied. */
+const parseRecordingId = (bodyJson: unknown, recordingId: string): { readonly recordingId: string } => {
+  const { result } = SyncWriteResponseSchema.parse(bodyJson);
+  if (result.id !== recordingId) throw new Error('Invalid recording response');
+  return { recordingId };
 };
 
-/** transcribe echoes `{ success, results:<segments> }` — one segment per non-empty chunk,
- * none for silence. Cast (not zod-validated), matching web's `json.results ?? []`. */
-const parseSegments = (bodyJson: unknown): readonly RecordingSegment[] => {
-  const results = (bodyJson as { results?: unknown } | null)?.results;
-  return Array.isArray(results) ? (results as RecordingSegment[]) : [];
-};
+/** Only a valid empty result acknowledges silence; malformed replies remain retryable. */
+const parseSegments = (bodyJson: unknown): readonly RecordingSegment[] =>
+  TranscribeChunkResponseSchema.parse(bodyJson).results;
 
 /**
  * Shared guarded-fetch → RecordingLaneResult mapping for all three recording-lane
@@ -314,13 +309,36 @@ const runRecordingCall = <T>(
     Effect.flatMap(identity => {
       const spec = build(identity);
       return Effect.tryPromise({
-        try: signal =>
-          deps.fetchFn(spec.url, {
+        try: async signal => {
+          const response = await deps.fetchFn(spec.url, {
             method: spec.method,
             headers: spec.headers,
             body: spec.body,
             signal,
-          }),
+          });
+          if (response.ok) {
+            try {
+              return { ok: true, value: parse(await response.json()) } satisfies RecordingLaneResult<T>;
+            } catch {
+              return {
+                ok: false,
+                retryable: true,
+                failure: { kind: 'invalid-response' },
+              } satisfies RecordingLaneResult<T>;
+            }
+          }
+          const bodyJson: unknown = await response.json().catch(() => null);
+          const code = (bodyJson as { error?: { code?: unknown } } | null)?.error?.code;
+          return {
+            ok: false,
+            retryable: isTransientStatus(response.status),
+            failure: {
+              kind: 'http',
+              status: response.status,
+              ...(typeof code === 'string' ? { code } : {}),
+            },
+          } satisfies RecordingLaneResult<T>;
+        },
         catch: (): LaneAbort => ({ kind: 'network' }),
       }).pipe(
         Effect.timeoutFail({
@@ -329,34 +347,6 @@ const runRecordingCall = <T>(
         })
       );
     }),
-    Effect.flatMap(response =>
-      response.ok
-        ? Effect.promise(() =>
-            response.json().then(
-              (json: unknown) => json,
-              () => null
-            )
-          ).pipe(Effect.map((bodyJson): RecordingLaneResult<T> => ({ ok: true, value: parse(bodyJson) })))
-        : Effect.promise(() =>
-            response.json().then(
-              (json: unknown) => json,
-              () => null
-            )
-          ).pipe(
-            Effect.map((bodyJson): RecordingLaneResult<T> => {
-              const code = (bodyJson as { error?: { code?: unknown } } | null)?.error?.code;
-              return {
-                ok: false,
-                retryable: isTransientStatus(response.status),
-                failure: {
-                  kind: 'http',
-                  status: response.status,
-                  ...(typeof code === 'string' ? { code } : {}),
-                },
-              };
-            })
-          )
-    ),
     // stale-identity / network / timeout are all transient.
     Effect.catchAll((abort: LaneAbort) =>
       Effect.succeed<RecordingLaneResult<T>>({ ok: false, retryable: true, failure: abort })
@@ -434,17 +424,8 @@ interface MintedStagingUpload {
   readonly headers: Record<string, string>;
 }
 
-/** Tolerant parse of the staging/urls flat envelope — a shape mismatch yields []. */
-const parseStagingUploads = (bodyJson: unknown): readonly MintedStagingUpload[] => {
-  const uploads = (bodyJson as { uploads?: unknown } | null)?.uploads;
-  if (!Array.isArray(uploads)) return [];
-  return uploads.flatMap((u: unknown): MintedStagingUpload[] => {
-    const c = u as { lane?: unknown; url?: unknown; headers?: unknown };
-    return typeof c.lane === 'string' && typeof c.url === 'string'
-      ? [{ lane: c.lane, url: c.url, headers: (c.headers ?? {}) as Record<string, string> }]
-      : [];
-  });
-};
+const parseStagingUploads = (bodyJson: unknown): readonly MintedStagingUpload[] =>
+  MintStagingUrlsResponseSchema.parse(bodyJson).uploads;
 
 /** One signed-URL PUT → RecordingLaneResult. No identity: the V4 signature IS the auth. */
 const putToSignedUrl = (
@@ -507,11 +488,11 @@ export const makeStageRecordingAudio =
       for (const lane of lanes) {
         const upload = mint.value.find(u => u.lane === lane.lane);
         if (!upload) {
-          // Server answered without this lane — deterministic contract mismatch, not retryable.
+          // No acknowledgement for this lane: retain its audio for a retry.
           return {
             ok: false as const,
-            retryable: false,
-            failure: { kind: 'http' as const, status: 502 },
+            retryable: true,
+            failure: { kind: 'invalid-response' as const },
           };
         }
         const put = yield* putToSignedUrl(deps, upload, lane.data);
@@ -531,7 +512,11 @@ export const makeStageRecordingAudio =
             })),
           }),
         }),
-        (): { staged: boolean } => ({ staged: true })
+        bodyJson => {
+          const result = CompleteStagingResponseSchema.parse(bodyJson);
+          if (result.recordingId !== recordingId) throw new Error('Invalid staging response');
+          return { staged: true };
+        }
       );
     });
 
@@ -546,7 +531,10 @@ export const makeAbandonRecordingStaging =
         headers: recordingHeaders(identity, 'application/json'),
         body: JSON.stringify({ reason }),
       }),
-      () => undefined
+      bodyJson => {
+        const result = AbandonStagingResponseSchema.parse(bodyJson);
+        if (result.recordingId !== recordingId) throw new Error('Invalid staging response');
+      }
     );
 
 /** PUT /apps/v1/me/recordings/:id — the ONLY finalize signal (status→'completed'), JSON. */

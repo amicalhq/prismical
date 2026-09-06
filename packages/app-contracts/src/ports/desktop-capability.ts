@@ -416,7 +416,7 @@ export interface DesktopCapabilityPort {
    * boolean. Web: no-ops, `hasKey` → false.
    */
   readonly transcriptionByok: {
-    setKey(key: string): Promise<void>;
+    setKey(key: string, baseUrl: string): Promise<void>;
     clearKey(): Promise<void>;
     hasKey(): Promise<boolean>;
   };

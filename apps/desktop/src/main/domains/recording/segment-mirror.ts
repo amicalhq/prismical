@@ -9,15 +9,20 @@
  * field set — the client-minted tsg_ id and the SAME segmentOrder the store
  * keys on) as the chunk resolves, sequentially per recording.
  *
- * Best-effort by design: a non-2xx or the reserved INTERNAL envelope folds
- * to ONE warn per segment and the audio path continues — the segment still
- * lives in the product store, and a miss here only degrades the server copy.
+ * Delivery must succeed before a chunk is acknowledged. A failed mirror
+ * leaves the recovery cursor behind the chunk, so its stable segment id can
+ * be retried before cloud finalization.
  * Never called for the cloud engine (the server minted those rows itself) or
  * in local mode (there is no core).
  */
 import { Effect } from 'effect';
 import type { ScopedLog } from '../../infra/logging/service';
-import type { RecordingSegment, WorkspaceBackendApi } from '../transport/service';
+import type {
+  RecordingLaneResult,
+  RecordingSegment,
+  WorkspaceBackendApi,
+} from '../transport/service';
+import { isTransientStatus } from '../transport/live';
 
 export const TRANSCRIPT_SEGMENTS_PATH = '/apps/v1/me/transcript-segments';
 
@@ -42,34 +47,27 @@ export const mirrorSegmentsToCore = (
   log: ScopedLog,
   recordingId: string,
   segments: readonly RecordingSegment[]
-): Effect.Effect<void> =>
-  Effect.forEach(
-    segments,
-    segment =>
-      coreClient
-        .request({
-          method: 'POST',
-          path: TRANSCRIPT_SEGMENTS_PATH,
-          body: transcriptSegmentCreateBody(segment),
-        })
-        .pipe(
-          Effect.flatMap(res =>
-            'ok' in res && res.status >= 200 && res.status < 300
-              ? Effect.void
-              : log.warn('segment mirror to core failed — kept locally', {
-                  recordingId,
-                  segmentOrder: segment.segmentOrder,
-                  ...('ok' in res ? { status: res.status } : { error: res.error.code }),
-                })
-          ),
-          // A defect must not take the upload fiber down with it.
-          Effect.catchAllDefect(defect =>
-            log.warn('segment mirror to core defect — kept locally', {
-              recordingId,
-              segmentOrder: segment.segmentOrder,
-              defect: String(defect),
-            })
-          )
-        ),
-    { discard: true }
-  );
+): Effect.Effect<RecordingLaneResult<void>> =>
+  Effect.gen(function* () {
+    for (const segment of segments) {
+      const res = yield* coreClient.request({
+        method: 'POST',
+        path: TRANSCRIPT_SEGMENTS_PATH,
+        body: transcriptSegmentCreateBody(segment),
+      });
+      if ('ok' in res && res.status >= 200 && res.status < 300) continue;
+      yield* log.warn('segment mirror to core failed — retained for recovery', {
+        recordingId,
+        segmentOrder: segment.segmentOrder,
+        ...('ok' in res ? { status: res.status } : { error: res.error.code }),
+      });
+      return 'ok' in res
+        ? {
+            ok: false,
+            retryable: isTransientStatus(res.status),
+            failure: { kind: 'http', status: res.status },
+          }
+        : { ok: false, retryable: true, failure: { kind: 'network' } };
+    }
+    return { ok: true, value: undefined };
+  });

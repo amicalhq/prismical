@@ -20,6 +20,10 @@ export type RecoveryOutboxStatus = RecoveryOutboxRow['status'];
  */
 export interface NewRecoveryOutbox {
   readonly recordingId: string;
+  readonly owner: NonNullable<RecoveryOutboxRow['owner']>;
+  readonly createInput: NonNullable<RecoveryOutboxRow['createInput']>;
+  readonly engineConfig: NonNullable<RecoveryOutboxRow['engineConfig']>;
+  readonly phase?: NonNullable<RecoveryOutboxRow['phase']>;
   readonly noteId?: string | null;
   readonly captureMode: CaptureMode;
   readonly wavPath: string;
@@ -35,6 +39,9 @@ export interface NewRecoveryOutbox {
  * `null` explicitly to clear a nullable column. updatedAt is re-stamped each call.
  */
 export interface RecoveryOutboxPatch {
+  readonly phase?: NonNullable<RecoveryOutboxRow['phase']>;
+  readonly endedAt?: number;
+  readonly durationMs?: number;
   readonly status?: RecoveryOutboxStatus;
   readonly attemptCount?: number;
   readonly nextAttemptAt?: string | null;

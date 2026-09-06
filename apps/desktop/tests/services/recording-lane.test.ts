@@ -13,12 +13,13 @@
  * proven in cloud-backend.test.ts's makeCloudWorkspaceLayer integration test.
  */
 import { assert, describe, it } from '@effect/vitest';
-import { Effect, Fiber, TestClock } from 'effect';
+import { Deferred, Effect, Fiber, Option, TestClock } from 'effect';
 import {
   isTransientStatus,
   makeAbandonRecordingStaging,
   makeCreateRecording,
   makeFinalizeRecording,
+  makeStageRecordingAudio,
   makeUploadTranscriptionChunk,
   MANAGED_TRANSCRIPTION_CONFIG,
   REQUEST_TIMEOUT,
@@ -98,6 +99,11 @@ const SEGMENT = {
   startTimeMs: 45_000,
   endTimeMs: 60_000,
   segmentOrder: 1_003_000,
+  orgUserId: 'org_user_1',
+  isFinal: true,
+  createdAt: '2024-07-03T09:46:40.000Z',
+  updatedAt: '2024-07-03T09:46:40.000Z',
+  deletedAt: null,
 };
 
 // ---------------------------------------------------------------------------
@@ -108,7 +114,7 @@ describe('makeCreateRecording', () => {
   it.effect('POSTs the create body with the client-minted id + managed config; stamps Bearer + org', () =>
     Effect.gen(function* () {
       const { calls, fetchFn } = recordingFetch(() =>
-        Promise.resolve(jsonResponse({ success: true, result: { id: 'rec_1' } }, 201))
+        Promise.resolve(jsonResponse({ result: { id: 'rec_1' }, applied: true }, 201))
       );
       const res = yield* makeCreateRecording(makeDeps({ fetchFn }))(CREATE_INPUT);
 
@@ -135,7 +141,7 @@ describe('makeCreateRecording', () => {
   it.effect('sends an explicit transcriptionConfig verbatim as the frozen per-engine config', () =>
     Effect.gen(function* () {
       const { calls, fetchFn } = recordingFetch(() =>
-        Promise.resolve(jsonResponse({ success: true, result: { id: 'rec_1' } }, 201))
+        Promise.resolve(jsonResponse({ result: { id: 'rec_1' }, applied: true }, 201))
       );
       // What RecordingServiceLive freezes for a local-whisper recording — no instanceId.
       const local = { provider: 'local-whisper', model: 'whisper-base-en', language: 'en' };
@@ -150,7 +156,7 @@ describe('makeCreateRecording', () => {
   it.effect('omits noteId when undefined and sends null for a standalone recording', () =>
     Effect.gen(function* () {
       const { calls, fetchFn } = recordingFetch(() =>
-        Promise.resolve(jsonResponse({ success: true, result: { id: 'rec_1' } }))
+        Promise.resolve(jsonResponse({ result: { id: 'rec_1' }, applied: true }))
       );
       const deps = makeDeps({ fetchFn });
 
@@ -167,7 +173,7 @@ describe('makeCreateRecording', () => {
   it.effect('a BYOK transcriptionConfig overrides the managed default', () =>
     Effect.gen(function* () {
       const { calls, fetchFn } = recordingFetch(() =>
-        Promise.resolve(jsonResponse({ success: true, result: { id: 'rec_1' } }))
+        Promise.resolve(jsonResponse({ result: { id: 'rec_1' }, applied: true }))
       );
       const byok = { provider: 'byok', model: 'my-model', language: 'en', instanceId: 'inst_1', modelId: 'my-model' };
       yield* makeCreateRecording(makeDeps({ fetchFn }))({ ...CREATE_INPUT, transcriptionConfig: byok });
@@ -178,7 +184,7 @@ describe('makeCreateRecording', () => {
   it.effect('OMITS x-active-org-id when no active org (server resolves default)', () =>
     Effect.gen(function* () {
       const { calls, fetchFn } = recordingFetch(() =>
-        Promise.resolve(jsonResponse({ success: true, result: { id: 'rec_1' } }))
+        Promise.resolve(jsonResponse({ result: { id: 'rec_1' }, applied: true }))
       );
       yield* makeCreateRecording(makeDeps({ fetchFn, identity: { idToken: 'T', activeOrgId: undefined } }))(
         CREATE_INPUT
@@ -188,11 +194,15 @@ describe('makeCreateRecording', () => {
     })
   );
 
-  it.effect('falls back to the client-minted id when the echoed row omits it', () =>
+  it.effect('rejects a write that does not acknowledge the requested recording', () =>
     Effect.gen(function* () {
-      const { fetchFn } = recordingFetch(() => Promise.resolve(jsonResponse({ success: true })));
-      const res = yield* makeCreateRecording(makeDeps({ fetchFn }))(CREATE_INPUT);
-      assert.deepStrictEqual(res, { ok: true, value: { recordingId: 'rec_1' } });
+      for (const body of [{}, { result: {}, applied: true }, { result: { id: 'rec_other' }, applied: true }]) {
+        const { fetchFn } = recordingFetch(() => Promise.resolve(jsonResponse(body)));
+        const res = yield* makeCreateRecording(makeDeps({ fetchFn }))(CREATE_INPUT);
+        assert.deepStrictEqual(res, {
+          ok: false, retryable: true, failure: { kind: 'invalid-response' },
+        });
+      }
     })
   );
 
@@ -333,6 +343,71 @@ describe('makeUploadTranscriptionChunk', () => {
     })
   );
 
+  for (const status of [200, 503]) {
+    it.effect(`a stalled ${status} response body times out and aborts the connection`, () =>
+      Effect.gen(function* () {
+        const readingBody = yield* Deferred.make<void>();
+        let signal: AbortSignal | undefined;
+        const response = new Response(null, { status });
+        response.json = () => {
+          Deferred.unsafeDone(readingBody, Effect.void);
+          return new Promise(() => {});
+        };
+        const fiber = yield* Effect.fork(
+          makeUploadTranscriptionChunk(makeDeps({
+            fetchFn: (_url, init) => {
+              signal = init.signal;
+              return Promise.resolve(response);
+            },
+          }))('rec_1', CHUNK_PARAMS, new Uint8Array([1]))
+        );
+        yield* Deferred.await(readingBody);
+        yield* TestClock.adjust(REQUEST_TIMEOUT);
+        assert.isTrue(Option.isSome(yield* Fiber.poll(fiber)), 'the body shares the request deadline');
+        assert.deepStrictEqual(yield* Fiber.join(fiber), {
+          ok: false, retryable: true, failure: { kind: 'timeout' },
+        });
+        assert.isTrue(signal?.aborted);
+      })
+    );
+  }
+
+  it.effect('interrupting a response body aborts the connection', () =>
+    Effect.gen(function* () {
+      const readingBody = yield* Deferred.make<void>();
+      let signal: AbortSignal | undefined;
+      const response = new Response();
+      response.json = () => {
+        Deferred.unsafeDone(readingBody, Effect.void);
+        return new Promise(() => {});
+      };
+      const fiber = yield* Effect.fork(
+        makeUploadTranscriptionChunk(makeDeps({
+          fetchFn: (_url, init) => {
+            signal = init.signal;
+            return Promise.resolve(response);
+          },
+        }))('rec_1', CHUNK_PARAMS, new Uint8Array([1]))
+      );
+      yield* Deferred.await(readingBody);
+      yield* Fiber.interrupt(fiber);
+      assert.isTrue(signal?.aborted);
+    })
+  );
+
+  it.effect('rejects truncated JSON and invalid transcript envelopes without acknowledging silence', () =>
+    Effect.gen(function* () {
+      for (const body of ['{"results":[', '{}', '{"results":[{"text":"incomplete"}]}']) {
+        const result = yield* makeUploadTranscriptionChunk(makeDeps({
+          fetchFn: () => Promise.resolve(new Response(body)),
+        }))('rec_1', CHUNK_PARAMS, new Uint8Array([1]));
+        assert.deepStrictEqual(result, {
+          ok: false, retryable: true, failure: { kind: 'invalid-response' },
+        });
+      }
+    })
+  );
+
   it.effect('classifies transcribe error codes: 429/502 transient, 404/422 non-retryable', () =>
     Effect.gen(function* () {
       const call = (status: number) =>
@@ -377,7 +452,7 @@ describe('makeFinalizeRecording', () => {
   it.effect('PUTs status:completed + endedAt + durationMs; stamps Bearer + org; returns the id', () =>
     Effect.gen(function* () {
       const { calls, fetchFn } = recordingFetch(() =>
-        Promise.resolve(jsonResponse({ success: true, result: { id: 'rec_1' } }))
+        Promise.resolve(jsonResponse({ result: { id: 'rec_1' }, applied: true }))
       );
       const res = yield* makeFinalizeRecording(makeDeps({ fetchFn }))('rec_1', FINALIZE_INPUT);
 
@@ -427,7 +502,7 @@ describe('makeAbandonRecordingStaging', () => {
   it.effect('POSTs the terminal staging reason through the guarded recording lane', () =>
     Effect.gen(function* () {
       const { calls, fetchFn } = recordingFetch(() =>
-        Promise.resolve(jsonResponse({ status: 'skipped' }))
+        Promise.resolve(jsonResponse({ status: 'skipped', recordingId: 'rec_1' }))
       );
       const res = yield* makeAbandonRecordingStaging(makeDeps({ fetchFn }))(
         'rec_1',
@@ -443,6 +518,47 @@ describe('makeAbandonRecordingStaging', () => {
         reason: 'upload-gave-up',
       });
       assert.deepStrictEqual(res, { ok: true, value: undefined });
+    })
+  );
+});
+
+describe('makeStageRecordingAudio', () => {
+  const lanes = [{ lane: 'mic' as const, contentType: 'audio/wav', data: new Uint8Array([1]) }];
+  const minted = {
+    uploads: [{ lane: 'mic', objectName: 'recordings/rec_1/mic.wav', url: 'https://staging.test/mic', headers: {} }],
+    expiresAt: '2026-09-06T12:00:00.000Z',
+  };
+
+  it.effect('accepts staging only after a valid completion acknowledgement', () =>
+    Effect.gen(function* () {
+      const calls: string[] = [];
+      const result = yield* makeStageRecordingAudio(makeDeps({
+        fetchFn: (url, init) => {
+          calls.push(init.method);
+          return Promise.resolve(url.endsWith('/staging/urls')
+            ? jsonResponse(minted)
+            : init.method === 'PUT'
+              ? new Response(null, { status: 200 })
+              : jsonResponse({ status: 'staged', recordingId: 'rec_1' }));
+        },
+      }))('rec_1', lanes);
+      assert.deepStrictEqual(result, { ok: true, value: { staged: true } });
+      assert.deepStrictEqual(calls, ['POST', 'PUT', 'POST']);
+    })
+  );
+
+  it.effect('retains audio when a mint omits its lane or completion has no acknowledgement', () =>
+    Effect.gen(function* () {
+      for (const missingLane of [true, false]) {
+        const result = yield* makeStageRecordingAudio(makeDeps({
+          fetchFn: (url, init) => Promise.resolve(url.endsWith('/staging/urls')
+            ? jsonResponse(missingLane ? { ...minted, uploads: [] } : minted)
+            : init.method === 'PUT' ? new Response() : jsonResponse({})),
+        }))('rec_1', lanes);
+        assert.deepStrictEqual(result, {
+          ok: false, retryable: true, failure: { kind: 'invalid-response' },
+        });
+      }
     })
   );
 });

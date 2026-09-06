@@ -88,6 +88,11 @@ import {
 import { SettingsService } from '../../domains/settings/service';
 import { DEVICE_ID_KEY } from '../../domains/telemetry/service';
 import { StreamBroker } from '../../domains/streams/service';
+import {
+  BYOK_API_KEY_SECRET,
+  byokKeyForEndpoint,
+  encodeByokCredential,
+} from '../../domains/transcriber/byok-credential';
 import { WorkspaceTransport } from '../../domains/transport/service';
 import { UpdaterService } from '../../domains/updater/service';
 import { FloatBridge } from '../../domains/windows/float-bridge';
@@ -131,7 +136,6 @@ type HandlerEnv =
  * (not per-sub); the BYOK transcriber lane reads the same
  * key. Never in DeviceSettings, never logged, never returned over IPC.
  */
-const TRANSCRIPTION_BYOK_KEY = 'transcription.byok.apiKey';
 
 class SenderRejected extends Error {
   constructor(readonly code: 'UNKNOWN_SENDER') {
@@ -567,7 +571,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
 
     const registerRecordingControl = (
       channel: string,
-      operation: 'pause' | 'resume'
+      operation: 'pause' | 'resume' | 'claimCompletion'
     ): Effect.Effect<void, never, Scope.Scope> =>
       acquireHandle(channel, (event, payload) =>
         runPromise(
@@ -587,6 +591,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
         )
       );
 
+    yield* registerRecordingControl(CHANNELS.recordingClaimCompletion, 'claimCompletion');
     yield* registerRecordingControl(CHANNELS.recordingPause, 'pause');
     yield* registerRecordingControl(CHANNELS.recordingResume, 'resume');
 
@@ -840,7 +845,10 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
                       .pipe(Effect.as<ChooseAppModeResult>({ relaunch: false }))
                   : log
                       .warn('capability:chooseAppMode — mode chosen; relaunching', { mode })
-                      .pipe(Effect.zipRight(relaunch), Effect.as<ChooseAppModeResult>({ relaunch: true }))
+                      .pipe(
+                        Effect.zipRight(relaunch),
+                        Effect.as<ChooseAppModeResult>({ relaunch: true })
+                      )
               )
             );
           })
@@ -870,11 +878,13 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
     // below then clears posthog-js persistence, so a reset install is not
     // joinable to the prior identity.
     const clearKnownSecrets = Effect.forEach(
-      [TRANSCRIPTION_BYOK_KEY, ...AI_PROVIDER_KINDS.map(aiProviderSecretKey)],
+      [BYOK_API_KEY_SECRET, ...AI_PROVIDER_KINDS.map(aiProviderSecretKey)],
       key =>
         secureStore
           .deleteSecret(key)
-          .pipe(Effect.catchTag('DbError', () => log.error('capability:resetApp — secret clear failed'))),
+          .pipe(
+            Effect.catchTag('DbError', () => log.error('capability:resetApp — secret clear failed'))
+          ),
       { discard: true }
     );
     const purgeMarker = encodePendingPurge({
@@ -900,7 +910,9 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
         Effect.zipRight(clearKnownSecrets),
         Effect.zipRight(
           settings.reset.pipe(
-            Effect.catchTag('DbError', () => log.error('capability:resetApp — settings clear failed'))
+            Effect.catchTag('DbError', () =>
+              log.error('capability:resetApp — settings clear failed')
+            )
           )
         ),
         Effect.zipRight(
@@ -928,7 +940,9 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
                 discard: true,
               })
             ),
-            Effect.catchTag('DbError', () => log.error('capability:resetApp — recovery clear failed'))
+            Effect.catchTag('DbError', () =>
+              log.error('capability:resetApp — recovery clear failed')
+            )
           )
         ),
         Effect.zipRight(
@@ -938,7 +952,9 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
             // later renderer feature adds. All windows share defaultSession.
             try: () => session.defaultSession.clearStorageData(),
             catch: () => 'storage-clear-failed' as const,
-          }).pipe(Effect.catchAll(() => log.error('capability:resetApp — renderer storage clear failed')))
+          }).pipe(
+            Effect.catchAll(() => log.error('capability:resetApp — renderer storage clear failed'))
+          )
         ),
         Effect.zipRight(
           mode === undefined
@@ -1016,18 +1032,23 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
                 .warn('capability:setTranscriptionByokKey rejected: invalid payload')
                 .pipe(Effect.zipRight(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
             }
-            return secureStore.setSecret(TRANSCRIPTION_BYOK_KEY, parsed.data.key).pipe(
-              Effect.catchTags({
-                SecureStoreError: error =>
-                  log.error('capability:setTranscriptionByokKey — secure store failed', {
-                    reason: error.reason,
-                  }),
-                DbError: error =>
-                  log.error('capability:setTranscriptionByokKey — could not persist', {
-                    op: error.op,
-                  }),
-              })
-            );
+            return secureStore
+              .setSecret(
+                BYOK_API_KEY_SECRET,
+                encodeByokCredential(parsed.data.baseUrl, parsed.data.key)
+              )
+              .pipe(
+                Effect.catchTags({
+                  SecureStoreError: error =>
+                    log.error('capability:setTranscriptionByokKey — secure store failed', {
+                      reason: error.reason,
+                    }),
+                  DbError: error =>
+                    log.error('capability:setTranscriptionByokKey — could not persist', {
+                      op: error.op,
+                    }),
+                })
+              );
           })
         )
       )
@@ -1036,15 +1057,13 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
       runPromise(
         validateMainSender(event).pipe(
           Effect.zipRight(
-            secureStore
-              .deleteSecret(TRANSCRIPTION_BYOK_KEY)
-              .pipe(
-                Effect.catchTag('DbError', error =>
-                  log.error('capability:clearTranscriptionByokKey — could not persist', {
-                    op: error.op,
-                  })
-                )
+            secureStore.deleteSecret(BYOK_API_KEY_SECRET).pipe(
+              Effect.catchTag('DbError', error =>
+                log.error('capability:clearTranscriptionByokKey — could not persist', {
+                  op: error.op,
+                })
               )
+            )
           )
         )
       )
@@ -1053,8 +1072,15 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
       runPromise(
         validateMainSender(event).pipe(
           Effect.zipRight(
-            secureStore.getSecret(TRANSCRIPTION_BYOK_KEY).pipe(
-              Effect.map(secret => secret !== null),
+            secureStore.getSecret(BYOK_API_KEY_SECRET).pipe(
+              Effect.flatMap(secret =>
+                settings.get.pipe(
+                  Effect.map(
+                    current =>
+                      byokKeyForEndpoint(secret, current.transcription.byokBaseUrl) !== null
+                  )
+                )
+              ),
               Effect.catchTags({
                 SecureStoreError: error =>
                   log
@@ -1122,17 +1148,15 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
                 .warn('capability:clearAiProviderKey rejected: invalid payload')
                 .pipe(Effect.zipRight(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
             }
-            return secureStore
-              .deleteSecret(aiProviderSecretKey(parsed.data.provider))
-              .pipe(
-                Effect.zipRight(aiProvider.forget(parsed.data.provider)),
-                Effect.catchTag('DbError', error =>
-                  log.error('capability:clearAiProviderKey — could not persist', {
-                    provider: parsed.data.provider,
-                    op: error.op,
-                  })
-                )
-              );
+            return secureStore.deleteSecret(aiProviderSecretKey(parsed.data.provider)).pipe(
+              Effect.zipRight(aiProvider.forget(parsed.data.provider)),
+              Effect.catchTag('DbError', error =>
+                log.error('capability:clearAiProviderKey — could not persist', {
+                  provider: parsed.data.provider,
+                  op: error.op,
+                })
+              )
+            );
           })
         )
       )

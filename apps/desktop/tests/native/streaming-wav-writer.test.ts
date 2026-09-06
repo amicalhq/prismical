@@ -72,6 +72,18 @@ describe("StreamingWavWriter", () => {
     expect(bytes.readInt16LE(46)).toBe(-32_767);
   });
 
+  it("reports a stream open failure on append and close without an unhandled error", async () => {
+    const writer = new StreamingWavWriter(path.join(dir, "missing", "capture.wav"));
+    await expect(writer.appendAudio(new Float32Array([0.1]))).rejects.toMatchObject({ code: "ENOENT" });
+    expect(writer.getDataSize()).toBe(0);
+    await expect(writer.finalize()).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("reports stream failure when aborted before the first frame", async () => {
+    const writer = new StreamingWavWriter(path.join(dir, "missing", "aborted.wav"));
+    await expect(writer.abort()).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("refuses appends after finalize and supports abort", async () => {
     const file = path.join(dir, "final.wav");
     const writer = new StreamingWavWriter(file, 16_000, 1, 16);

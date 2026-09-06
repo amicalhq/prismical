@@ -5,7 +5,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { assert, describe, it } from '@effect/vitest';
 import { Context, Effect, Exit, Layer, Scope } from 'effect';
 import { makeTestLogger, testConfigLayer } from '../helpers/test-layers';
-import { OperationalDb } from '../../src/main/infra/operational-db/service';
+import { OperationalDb, type NewRecoveryOutbox } from '../../src/main/infra/operational-db/service';
+import { MIGRATIONS } from '../../src/main/infra/operational-db/migrations';
 import { OperationalDbLive } from '../../src/main/infra/operational-db/live';
 
 // The db layer never touches electron, but its transitive imports (logger
@@ -23,6 +24,20 @@ const buildDb = (dbPath: string) => {
     ),
   };
 };
+
+const recordingInput = (
+  row: Omit<NewRecoveryOutbox, 'owner' | 'createInput' | 'engineConfig'>
+): NewRecoveryOutbox => ({
+  ...row,
+  owner: { mode: 'local' },
+  engineConfig: { engine: 'local', modelId: 'whisper-base-en', byokBaseUrl: null, byokModel: null },
+  createInput: {
+    recordingId: row.recordingId,
+    captureMode: row.captureMode,
+    title: 'Recording',
+    startedAt: 0,
+  },
+});
 
 describe('OperationalDb', () => {
   it.effect('opens, migrates (settings + schema_meta) and round-trips settings', () =>
@@ -74,7 +89,7 @@ describe('OperationalDb', () => {
       const firstOpen = first.logger.find(entry => entry.message === 'operational db opened');
       assert.deepStrictEqual(
         (firstOpen?.data as { migrationsRun: number[] }).migrationsRun,
-        [0, 1, 2, 3, 4]
+        [0, 1, 2, 3, 4, 5]
       );
 
       const second = buildDb(dbPath);
@@ -115,16 +130,18 @@ describe('OperationalDb', () => {
       const opened = logger.find(entry => entry.message === 'operational db opened');
       assert.deepStrictEqual(
         (opened?.data as { migrationsRun: number[] }).migrationsRun,
-        [1, 2, 3, 4]
+        [1, 2, 3, 4, 5]
       );
       // Pre-existing setting survived the upgrade (no data loss).
       assert.strictEqual(yield* db.getSetting('widget.geometry'), '{"y":0.5}');
       // The freshly-migrated table is usable.
-      yield* db.insertRecoveryOutbox({
-        recordingId: 'rec_1',
-        captureMode: 'dual',
-        wavPath: '/tmp/rec_1.wav',
-      });
+      yield* db.insertRecoveryOutbox(
+        recordingInput({
+          recordingId: 'rec_1',
+          captureMode: 'dual',
+          wavPath: '/tmp/rec_1.wav',
+        })
+      );
       assert.strictEqual((yield* db.getRecoveryOutbox('rec_1'))?.status, 'capturing');
 
       yield* Scope.close(scope, Exit.void);
@@ -143,13 +160,15 @@ describe('OperationalDb', () => {
       assert.deepStrictEqual(yield* db.listRecoveryOutbox(), []);
 
       // Acquire: row opens 'capturing' with defaulted drain bookkeeping.
-      yield* db.insertRecoveryOutbox({
-        recordingId: 'rec_a',
-        noteId: 'note_a',
-        captureMode: 'dual',
-        wavPath: '/tmp/a.wav',
-        engine: 'local',
-      });
+      yield* db.insertRecoveryOutbox(
+        recordingInput({
+          recordingId: 'rec_a',
+          noteId: 'note_a',
+          captureMode: 'dual',
+          wavPath: '/tmp/a.wav',
+          engine: 'local',
+        })
+      );
       const acquired = yield* db.getRecoveryOutbox('rec_a');
       assert.strictEqual(acquired?.status, 'capturing');
       assert.strictEqual(acquired?.attemptCount, 0);
@@ -159,13 +178,20 @@ describe('OperationalDb', () => {
       assert.strictEqual(acquired?.captureMode, 'dual');
       assert.strictEqual(acquired?.engine, 'local', 'frozen engine kind round-trips');
       assert.deepStrictEqual(acquired?.pauseCutPoints, []);
+      assert.deepStrictEqual(acquired?.owner, { mode: 'local' });
+      assert.strictEqual(acquired?.phase, 'create');
+      assert.strictEqual(acquired?.createInput?.recordingId, 'rec_a');
+      assert.isNull(acquired?.endedAt);
+      assert.isNull(acquired?.durationMs);
 
       // Note-less recording → noteId null.
-      yield* db.insertRecoveryOutbox({
-        recordingId: 'rec_b',
-        captureMode: 'mic',
-        wavPath: '/tmp/b.wav',
-      });
+      yield* db.insertRecoveryOutbox(
+        recordingInput({
+          recordingId: 'rec_b',
+          captureMode: 'mic',
+          wavPath: '/tmp/b.wav',
+        })
+      );
       assert.isNull((yield* db.getRecoveryOutbox('rec_b'))?.noteId);
       // Engine omitted ⇒ NULL — the drain reads a NULL engine as legacy 'cloud'.
       assert.isNull((yield* db.getRecoveryOutbox('rec_b'))?.engine);
@@ -226,13 +252,15 @@ describe('OperationalDb', () => {
       const scopeA = yield* Scope.make();
       const ctxA = yield* Layer.build(first.layer).pipe(Scope.extend(scopeA));
       const dbA = Context.get(ctxA, OperationalDb);
-      yield* dbA.insertRecoveryOutbox({
-        recordingId: 'rec_kill',
-        noteId: 'note_x',
-        captureMode: 'system',
-        wavPath: '/tmp/kill.wav',
-        status: 'capturing',
-      });
+      yield* dbA.insertRecoveryOutbox(
+        recordingInput({
+          recordingId: 'rec_kill',
+          noteId: 'note_x',
+          captureMode: 'system',
+          wavPath: '/tmp/kill.wav',
+          status: 'capturing',
+        })
+      );
       // Close = the process dying mid-capture (kill -9 leaves the 'capturing' row).
       yield* Scope.close(scopeA, Exit.void);
 
@@ -310,6 +338,46 @@ describe('OperationalDb', () => {
         assert.include(JSON.stringify(exit.cause), 'BootError');
         assert.include(JSON.stringify(exit.cause), 'operational-db');
       }
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+});
+
+describe('Recovery ownership migration', () => {
+  it.effect('retains existing audio jobs without assigning an owner or processing phase', () =>
+    Effect.gen(function* () {
+      const dbPath = path.join(tempDir, 'ownerless-upgrade.db');
+      const seed = new DatabaseSync(dbPath);
+      for (const migration of MIGRATIONS.filter(migration => migration.version < 5)) {
+        seed.exec(migration.sql);
+        seed
+          .prepare('INSERT INTO schema_meta (version, name, applied_at) VALUES (?, ?, ?)')
+          .run(migration.version, migration.name, new Date(0).toISOString());
+      }
+      seed
+        .prepare(
+          'INSERT INTO recovery_outbox (recording_id, capture_mode, wav_path, status, last_error, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+        )
+        .run(
+          'rec_existing',
+          'mic',
+          '/retained/audio',
+          'finalizing',
+          'stop-incomplete',
+          new Date(0).toISOString(),
+          new Date(0).toISOString()
+        );
+      seed.close();
+      const { layer } = buildDb(dbPath);
+      const scope = yield* Scope.make();
+      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const row = yield* Context.get(ctx, OperationalDb).getRecoveryOutbox('rec_existing');
+      assert.strictEqual(row?.wavPath, '/retained/audio');
+      assert.strictEqual(row?.lastError, 'stop-incomplete');
+      assert.isNull(row?.owner);
+      assert.isNull(row?.createInput);
+      assert.isNull(row?.engineConfig);
+      assert.isNull(row?.phase);
       yield* Scope.close(scope, Exit.void);
     })
   );

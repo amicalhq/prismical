@@ -4,7 +4,7 @@
  * Always-on local session buffer for the web capture path — the web
  * equivalent of desktop's recovery WAVs. A parallel MediaRecorder encodes the SAME MediaStream
  * the AudioWorklet transcribes (Opus ~32kbps ≈ 14MB/hr), buffering into OPFS when available
- * (survives a mid-meeting tab crash and deferred upload retries) with an in-memory fallback
+ * (retained after the writer closes for upload retries) with an in-memory fallback
  * (incognito, denied quota).
  * At stop, the blob uploads to a staging signed URL; buffering failure or unavailability just
  * means the recording skips the finalize pass — degradation, never an error the user sees.
@@ -26,6 +26,9 @@ export type PendingStagingRecovery = {
   /** Exact browser login slot; support and ordinary sessions may share sub + org. */
   ownerSessionKey: string;
   transcriptionDeferred: boolean;
+  /** Absent in older upload recoveries, which always expect staging. */
+  expectsStaging?: boolean;
+  noteId?: string;
   needsFinalize: boolean;
   action: "upload" | "abandon";
   abandonReason?: "no-audio" | "staging-disabled" | "upload-failed";
@@ -80,6 +83,8 @@ function isPendingStagingRecovery(value: unknown): value is PendingStagingRecove
     row.ownerOrgId.length > 0 &&
     typeof row.ownerSessionKey === "string" &&
     row.ownerSessionKey.length > 0 &&
+    (row.expectsStaging === undefined || typeof row.expectsStaging === "boolean") &&
+    (row.noteId === undefined || typeof row.noteId === "string") &&
     typeof row.transcriptionDeferred === "boolean" &&
     typeof row.needsFinalize === "boolean" &&
     (row.action === "upload" ||
@@ -294,7 +299,7 @@ export async function discardStagingBuffer(recordingId: string): Promise<void> {
 export interface StagingBuffer {
   /** Content type for the mint/complete round-trip (audio/webm | audio/mp4). */
   contentType: string;
-  /** True only when the full session is being written to crash-persistent OPFS. */
+  /** True when stop can commit the full session to OPFS for recovery after reload. */
   durable: boolean;
   pause(): void;
   resume(): void;
@@ -395,14 +400,14 @@ export async function startStagingBuffer(
       try {
         if (recorder.state === "recording") recorder.pause();
       } catch {
-        /* a recorder that can't pause keeps recording — the overlap is harmless */
+        broken = true;
       }
     },
     resume() {
       try {
         if (recorder.state === "paused") recorder.resume();
       } catch {
-        /* resume failure surfaces as a truncated buffer at stop, handled there */
+        broken = true;
       }
     },
     async stop() {

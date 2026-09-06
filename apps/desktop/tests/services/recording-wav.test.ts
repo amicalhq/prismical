@@ -9,7 +9,8 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { assert, describe, it } from '@effect/vitest';
-import { Effect, Exit, Scope } from 'effect';
+import { Effect, Either, Exit, Scope } from 'effect';
+import { afterAll, afterEach, vi } from 'vitest';
 import type { ScopedLog } from '../../src/main/infra/logging/service';
 import { encodeWavPcm16 } from '../../src/main/domains/recording/wav';
 import {
@@ -27,6 +28,9 @@ import {
 } from '../../src/main/domains/recording/chunker';
 import { deriveDrainChunks } from '../../src/main/domains/recording/recovery-drain';
 import { makeRecoveryWavSet } from '../../src/main/domains/recording/recovery-writer';
+import { StreamingWavWriter } from '../../src/main/infra/audio/streaming-wav-writer';
+
+afterEach(() => vi.restoreAllMocks());
 
 // --- WAV parser (the "parse it back" gate) ---------------------------------
 interface ParsedWav {
@@ -340,6 +344,54 @@ describe('makeRecoveryWavSet (recovery-scoped on-disk WAV)', () => {
     error: () => Effect.void,
   };
   const tmpBase = fs.mkdtempSync(path.join(os.tmpdir(), 'prismical-recovery-'));
+  afterAll(() => fs.rmSync(tmpBase, { recursive: true, force: true }));
+
+  it.effect('a directory creation failure is a typed storage failure', () =>
+    Effect.scoped(Effect.gen(function* () {
+      const dir = path.join(tmpBase, 'blocked');
+      fs.writeFileSync(dir, 'not a directory');
+      const result = yield* Effect.either(makeRecoveryWavSet({ dir, mode: 'mic', log: noopLog }));
+      assert.isTrue(Either.isLeft(result));
+      if (Either.isLeft(result)) {
+        assert.strictEqual(result.left._tag, 'RecoveryWriteError');
+        assert.strictEqual(result.left.op, 'open');
+      }
+    }))
+  );
+
+  it.effect('an append failure reaches the recording instead of acknowledging unwritten samples', () =>
+    Effect.scoped(Effect.gen(function* () {
+      vi.spyOn(StreamingWavWriter.prototype, 'appendAudio').mockRejectedValueOnce(new Error('ENOSPC'));
+      const set = yield* makeRecoveryWavSet({ dir: path.join(tmpBase, 'append-failure'), mode: 'mic', log: noopLog });
+      const result = yield* Effect.either(set.append('mic', new Float32Array([0.5])));
+      assert.isTrue(Either.isLeft(result));
+      if (Either.isLeft(result)) {
+        assert.strictEqual(result.left._tag, 'RecoveryWriteError');
+        assert.strictEqual(result.left.op, 'append');
+        assert.strictEqual(result.left.source, 'mic');
+      }
+    }))
+  );
+
+  it.effect('finalize reports its failure, closes the other lane, and cannot later claim success', () =>
+    Effect.scoped(Effect.gen(function* () {
+      const original = StreamingWavWriter.prototype.finalize;
+      const finalized = vi.spyOn(StreamingWavWriter.prototype, 'finalize').mockImplementationOnce(async function (this: StreamingWavWriter) {
+        await original.call(this);
+        throw new Error('header update failed');
+      });
+      const dir = path.join(tmpBase, 'finalize-failure');
+      const set = yield* makeRecoveryWavSet({ dir, mode: 'dual', log: noopLog });
+      yield* set.append('mic', new Float32Array([0.5]));
+      yield* set.append('system', new Float32Array([0.25]));
+      const result = yield* Effect.either(set.finalizeAndClose);
+      assert.isTrue(Either.isLeft(result));
+      if (Either.isLeft(result)) assert.strictEqual(result.left.op, 'finalize');
+      assert.strictEqual(finalized.mock.calls.length, 2, 'both lanes were closed');
+      assert.strictEqual(parseWav(fs.readFileSync(path.join(dir, 'system.wav'))).dataSize, 2);
+      assert.isTrue(Either.isLeft(yield* Effect.either(set.finalizeAndClose)));
+    }))
+  );
 
   it.effect('lazily writes per-source WAVs and finalizes valid, parseable files', () =>
     Effect.gen(function* () {

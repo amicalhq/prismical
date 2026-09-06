@@ -4,7 +4,7 @@
  * provided to RecordingServiceLive + RecoveryDrainLive inside
  * sharedWorkspaceServices (workspace-layer.ts).
  */
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { Effect, Layer } from 'effect';
 import * as schema from '../../infra/product-db/schema';
 import { ProductDb, ProductDbError } from '../../infra/product-db/service';
@@ -77,6 +77,18 @@ export const RecordingStoreLive: Layer.Layer<RecordingStore, never, ProductDb> =
       Effect.tryPromise({ try: run, catch: cause => new ProductDbError({ op, cause }) });
 
     const api: RecordingStoreApi = {
+      segmentsForRecording: recordingId =>
+        tryDb('segments-for-recording', async () =>
+          db
+            .select()
+            .from(schema.transcriptSegment)
+            .where(
+              and(
+                eq(schema.transcriptSegment.recordingId, recordingId),
+                isNull(schema.transcriptSegment.deletedAt)
+              )
+            )
+        ),
       recordingStarted: fields =>
         tryDb('recording-started', async () => {
           const now = new Date().toISOString();

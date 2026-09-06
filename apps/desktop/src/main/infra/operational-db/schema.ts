@@ -1,12 +1,15 @@
 /**
  * Operational store schema.
  *
- * Local-only device state: settings key/value (including SecureStore payloads
- * under the `secure:` key prefix) and the migration ledger. Product data never
- * lands here — it is cloud-direct by design.
+ * Device configuration, migration bookkeeping, and durable recording work.
+ * Product entities live in their workspace's product store; recovery jobs retain
+ * the create intent needed to finish an interrupted recording.
  */
 import { sql } from 'drizzle-orm';
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import type { CreateRecordingInput } from '../../domains/transport/service';
+import type { RecordingEngine } from '../../domains/transcriber/engine';
+import type { RecoveryOwner } from '../../runtime/workspace-identity';
 
 export const settings = sqliteTable('settings', {
   key: text('key').primaryKey(),
@@ -33,7 +36,7 @@ export const CAPTURE_MODES = ['mic', 'system', 'dual'] as const;
  * first frame), so a `kill -9` always leaves a durable row. Graceful stop walks
  * capturing → finalizing → (row DELETED on success). A graceful interrupt
  * (sign-out / quit) parks the row `interrupted`. The drain treats any non-`failed`
- * row as recoverable; `failed` is the deterministic give-up terminal. "Resolved"
+ * row as recoverable; `failed` is reserved for deterministic processing rejection. "Resolved"
  * is not a stored state — a resolved recording's row is deleted (no residue).
  */
 export const RECOVERY_OUTBOX_STATUSES = [
@@ -55,38 +58,36 @@ export interface RecoveryPauseCutPoint {
 }
 
 /**
- * Recovery outbox — operational crash/interrupt-recovery state only,
- * keyed to the cloud recordingId. This is NOT a product-entity replica: it holds
- * cloud id *pointers* (recordingId, noteId) plus device-local recovery bookkeeping
- * (WAV path, drain cursor/backoff) — never note bodies, titles, transcript
- * segments, or transcriptionConfig. Those are cloud-direct. A row exists so that
- * after an interrupted recording the drain can resume chunk upload from the
- * retained WAV and finalize, then delete the WAV.
+ * Durable, workspace-owned recording work. The create intent and stop metadata
+ * let recovery replay unfinished operations without inventing a different
+ * recording. Audio lives in per-source WAV files until all required work is
+ * durable. Existing jobs without an owner remain untouched.
  */
 export const recoveryOutbox = sqliteTable('recovery_outbox', {
   /** Cloud recording id (client-minted `@prismical/id`); also the create/finalize idempotency key. */
   recordingId: text('recording_id').primaryKey(),
+  /** Null on pre-ownership jobs: keep them untouched until their owner is known. */
+  owner: text('owner', { mode: 'json' }).$type<RecoveryOwner>(),
+  /** Replayable create intent, written before capture can acquire a device. */
+  createInput: text('create_input', { mode: 'json' }).$type<CreateRecordingInput>(),
+  /** Private frozen engine choices; no credentials, and never sent as cloud metadata. */
+  engineConfig: text('engine_config', { mode: 'json' }).$type<RecordingEngine>(),
+  /** Next unfinished processing operation; independent of capture status and diagnostics. */
+  phase: text('phase', { enum: ['create', 'chunks', 'finalize', 'staging', 'cleanup'] }),
+  /** Fixed at stop, or inferred once from retained media after an abrupt interruption. */
+  endedAt: integer('ended_at'),
+  durationMs: integer('duration_ms'),
   /** Owning note's cloud id, or null for a note-less recording (pointer only, not a replica). */
   noteId: text('note_id'),
   /** Capture mode — tells the drain which per-source WAV(s) / `source` params apply. */
   captureMode: text('capture_mode', { enum: CAPTURE_MODES }).notNull(),
-  /**
-   * The transcription-engine kind the live session froze at start —
-   * mirrors desktop-contracts' transcriptionEngineSchema. The drain routes the
-   * row's remaining chunks / staging by THIS value, never the current
-   * preference: a device-transcribed recording must never have its audio
-   * uploaded because the user later switched to cloud, and a cloud recording
-   * keeps its promised staging even under a non-cloud current setting.
-   * NULL on a legacy row means 'cloud' (every such row was necessarily
-   * produced by the cloud upload lane). Kind only — model/BYOK details resolve
-   * from the current settings at drain time.
-   */
+  /** Historical engine kind retained for diagnostics; engineConfig owns processing choices. */
   engine: text('engine', { enum: ['cloud', 'local', 'byok'] }),
   /** Recovery-scoped WAV artifact path; re-chunked by the drain, deleted on resolve. */
   wavPath: text('wav_path').notNull(),
   /** Pipeline lifecycle state. */
   status: text('status', { enum: RECOVERY_OUTBOX_STATUSES }).notNull(),
-  /** Drain retry counter (backoff + deterministic give-up). */
+  /** Attempt count for the current processing phase. */
   attemptCount: integer('attempt_count').notNull().default(0),
   /** Earliest next drain attempt (ISO); null = eligible now. Clock/Schedule-driven. */
   nextAttemptAt: text('next_attempt_at'),

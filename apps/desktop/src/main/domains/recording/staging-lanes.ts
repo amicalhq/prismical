@@ -4,7 +4,7 @@ import { wavFileName } from './recovery-writer';
 import type { StageLaneInput } from '../transport/service';
 
 /**
- * Read the finalized per-lane recovery WAVs as staging uploads. Writers are
+ * Read per-lane recovery WAVs as staging uploads. Writers are
  * lazy (a mic-only recording never creates system.wav), so presence on disk IS the lane list.
  * Uploads use raw WAV (~345MB/hr per lane at 48kHz mono PCM16); compression (m4a via the capture
  * helper) is the planned follow-up — the server accepts either, keyed by contentType.
@@ -23,15 +23,19 @@ export function readStagingLanes(wavDir: string, durationMs: number): StageLaneI
     const filePath = path.join(wavDir, wavFileName[lane]);
     if (!fs.existsSync(filePath)) continue;
     const size = fs.statSync(filePath).size;
-    if (size <= WAV_HEADER_BYTES) continue;
+    if (size < WAV_HEADER_BYTES + 2) continue;
     total += size;
     files.push({ lane, filePath });
   }
   if (total > MAX_STAGE_BYTES) return [];
-  return files.map(({ lane, filePath }) => ({
-    lane,
-    contentType: 'audio/wav',
-    data: fs.readFileSync(filePath),
-    durationMs,
-  }));
+  return files.map(({ lane, filePath }) => {
+    const bytes = fs.readFileSync(filePath);
+    // A crash can leave placeholder header sizes or an incomplete final sample.
+    // Repair only the upload buffer, preserving every complete PCM sample.
+    const dataBytes = Math.floor((bytes.length - WAV_HEADER_BYTES) / 2) * 2;
+    const data = bytes.subarray(0, WAV_HEADER_BYTES + dataBytes);
+    data.writeUInt32LE(dataBytes + 36, 4);
+    data.writeUInt32LE(dataBytes, 40);
+    return { lane, contentType: 'audio/wav', data, durationMs };
+  });
 }

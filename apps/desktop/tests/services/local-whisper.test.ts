@@ -156,7 +156,7 @@ describe('LocalWhisperLive', () => {
     })
   );
 
-  it.effect('a missing model acks [] for every chunk with ONE warn per recording; the engine is never touched', () =>
+  it.effect('a missing model keeps every chunk retryable and does not call the engine', () =>
     Effect.gen(function* () {
       const h = yield* build({});
       for (const index of [0, 1]) {
@@ -166,11 +166,11 @@ describe('LocalWhisperLive', () => {
           chunk(tone(240_000)),
           LOCAL
         );
-        assert.deepStrictEqual(res, { ok: true, value: [] });
+        assert.deepStrictEqual(res, { ok: false, retryable: true, failure: { kind: 'engine', reason: 'model-missing' } });
       }
       yield* h.lane.transcribeChunk('rec_b', PARAMS, chunk(tone(240_000)), LOCAL);
       const warns = h.logger.entries.filter(
-        e => e.scope === 'transcriber' && e.message === 'local whisper model not installed — chunks ack empty'
+        e => e.scope === 'transcriber' && e.message === 'local whisper model not installed — audio retained for recovery'
       );
       assert.deepStrictEqual(
         warns.map(w => w.data),

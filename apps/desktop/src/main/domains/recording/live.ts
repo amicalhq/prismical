@@ -8,23 +8,18 @@
  * scope, so sign-out / org-switch / quit interrupts the native child, parks the
  * outbox `interrupted`, and retains the WAV for the next session's drain.
  *
- * Termination model (the load-bearing part):
- *  - graceful `stop`   → fulfils a stopSignal; the body flushes the tail, finalizes,
- *                        and (all chunks acked + finalize ok) deletes the WAV + row;
- *  - capture gives up  → the restart Schedule exhausts, the body FAILS → the scope's
- *                        park finalizer marks the row `failed` (WAV retained), state `error`;
- *  - interrupt         → the session scope closes → the body is interrupted → the park
- *                        finalizer marks the row `interrupted` (WAV retained). `kill -9`
- *                        skips the finalizer, but the row already exists (written before
- *                        the first frame), so the drain resolves it on the next signed-in session.
+ * Normal Stop drains in-flight chunks before closing the WAV and handing durable
+ * finalization/staging work to the workspace recovery worker. Exhausted capture
+ * restarts use the same path for audio already captured. Workspace interruption
+ * parks the job and closes the WAV; only its original workspace may recover it.
  */
-import * as fs from 'node:fs';
 import path from 'node:path';
 import {
   Clock,
   Deferred,
   Duration,
   Effect,
+  Either,
   Exit,
   Fiber,
   FiberMap,
@@ -51,7 +46,8 @@ import { OperationalDb } from '../../infra/operational-db/service';
 import type { RecoveryPauseCutPoint } from '../../infra/operational-db/schema';
 import type { ProductDbError } from '../../infra/product-db/service';
 import { RecordingBridge } from './bridge';
-import { readStagingLanes } from './staging-lanes';
+import { WorkspaceIdentity } from '../../runtime/workspace-identity';
+import { ModelManager } from '../models/service';
 import {
   Capture,
   type CaptureError,
@@ -59,12 +55,16 @@ import {
   type MicCaptureEvent,
 } from './capture/service';
 import { PermissionService } from './permission/service';
-import { WorkspaceBackend } from '../transport/service';
+import { WorkspaceBackend, type CreateRecordingInput } from '../transport/service';
 import { RecordingStore } from './store';
 import { AppModeService } from '../app-mode/service';
 import { DesktopI18n } from '../i18n/service';
 import { SettingsService } from '../settings/service';
-import { resolveRecordingEngine, transcriptionConfigFor } from '../transcriber/engine';
+import {
+  resolveRecordingEngine,
+  transcriptionConfigFor,
+  type RecordingEngine,
+} from '../transcriber/engine';
 import { detectedSpeakerCountFor } from '../transcriber/segment';
 import { Transcriber } from '../transcriber/service';
 import { mirrorSegmentsToCore } from './segment-mirror';
@@ -80,9 +80,10 @@ import {
   laneForFrame,
   type PendingChunk,
 } from './chunker';
-import { makeRecoveryWavSet } from './recovery-writer';
+import { makeRecoveryWavSet, type RecoveryWriteError } from './recovery-writer';
 import {
   RecordingBusyError,
+  RecordingStartError,
   RecordingService,
   idleRecordingState,
   type RecordingServiceApi,
@@ -176,11 +177,15 @@ export const RecordingServiceLive: Layer.Layer<
   | Transcriber
   | SettingsService
   | AppModeService
+  | WorkspaceIdentity
+  | ModelManager
 > = Layer.scoped(
   RecordingService,
   Effect.gen(function* () {
     const coreClient = yield* WorkspaceBackend;
     const store = yield* RecordingStore;
+    const owner = yield* WorkspaceIdentity;
+    const models = yield* ModelManager;
     // Every chunk transcribes through the seam (cloud / local / BYOK lane);
     // the engine is resolved from the preference + boot mode ONCE per recording.
     const transcriber = yield* Transcriber;
@@ -202,13 +207,40 @@ export const RecordingServiceLive: Layer.Layer<
     const fibers = yield* FiberMap.make<string>();
     const semaphore = yield* Effect.makeSemaphore(1);
     const activeRef = yield* Ref.make<Option.Option<ActiveRecording>>(Option.none());
+    // Claims survive newer recordings, but never their owning workspace. Map
+    // access is synchronous; readiness waits happen outside that atomic access.
+    const completions = new Map<string, { ready: Deferred.Deferred<boolean>; stopped: boolean }>();
+    const resolveCompletion: RecordingServiceApi['resolveCompletion'] = (recordingId, ready) =>
+      Effect.suspend(() => {
+        const completion = completions.get(recordingId);
+        if (!completion) return Effect.void;
+        if (!ready) completions.delete(recordingId);
+        return Deferred.succeed(completion.ready, ready).pipe(Effect.asVoid);
+      });
+    const captureStopped = (recordingId: string) =>
+      Effect.sync(() => {
+        const completion = completions.get(recordingId);
+        if (completion) completion.stopped = true;
+      });
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        const pending = [...completions.values()];
+        completions.clear();
+        return pending;
+      }).pipe(
+        Effect.flatMap(pending =>
+          Effect.forEach(pending, completion => Deferred.succeed(completion.ready, false), {
+            discard: true,
+          })
+        )
+      )
+    );
 
     const setState = (patch: Partial<RecordingState>): Effect.Effect<void> =>
       SubscriptionRef.update(state, current => ({ ...current, ...patch }));
 
-    // Product-store writes are best-effort at every call site: a
-    // DbError folds to a warn with the recording context and the audio path
-    // continues untouched — persistence never gates capture or upload.
+    // Cloud transcript rows are a cache. On-device transcripts are authoritative:
+    // their writes must succeed before acknowledging chunks or releasing audio.
     const persistBestEffort = (
       recordingId: string,
       effect: Effect.Effect<void, ProductDbError>
@@ -220,6 +252,23 @@ export const RecordingServiceLive: Layer.Layer<
             op: error.op,
             cause: String(error.cause),
           })
+        )
+      );
+
+    const persistRequired = (
+      recordingId: string,
+      effect: Effect.Effect<void, ProductDbError>
+    ): Effect.Effect<boolean> =>
+      effect.pipe(
+        Effect.as(true),
+        Effect.catchAll(error =>
+          log
+            .warn('recording save failed — audio retained for recovery', {
+              recordingId,
+              op: error.op,
+              cause: String(error.cause),
+            })
+            .pipe(Effect.as(false))
         )
       );
 
@@ -254,7 +303,10 @@ export const RecordingServiceLive: Layer.Layer<
       initialAlignment: MicAlignmentState,
       initialFallbackReason: InitialMicFallbackReason,
       stopSignal: Deferred.Deferred<void>,
-      controlsRef: Ref.Ref<Option.Option<RecordingControls>>
+      controlsRef: Ref.Ref<Option.Option<RecordingControls>>,
+      createInput: CreateRecordingInput,
+      engine: RecordingEngine,
+      synchronize: ActiveRecording['synchronize']
     ): Effect.Effect<void> => {
       const mode = input.captureMode;
       const noteId = input.noteId ?? null;
@@ -270,19 +322,23 @@ export const RecordingServiceLive: Layer.Layer<
       // resolved or parked the row). Runs as a scope finalizer with the exit.
       const parkOnExit = (exit: Exit.Exit<unknown, unknown>): Effect.Effect<void> => {
         if (Exit.isSuccess(exit)) return Effect.void;
-        // An interrupted Exit is ALSO an Exit.Failure (Cause.Interrupt) — a genuine
-        // capture give-up is `failed`, a sign-out/quit interruption is `interrupted`.
+        // Unexpected capture/storage failures and workspace interruptions retain
+        // a recoverable job; only the visible capture outcome differs.
         const failed = !Exit.isInterrupted(exit);
         return db.getRecoveryOutbox(recordingId).pipe(
           Effect.flatMap(row =>
             row === null
               ? Effect.void
               : db.updateRecoveryOutbox(recordingId, {
-                  status: failed ? 'failed' : 'interrupted',
-                  lastError: failed ? 'capture-gave-up' : 'interrupted',
+                  status: 'interrupted',
+                  lastError: failed ? 'recording-interrupted' : 'interrupted',
                 })
           ),
-          Effect.zipRight(failed ? setState({ status: 'error' }) : Effect.void),
+          Effect.zipRight(
+            failed
+              ? captureStopped(recordingId).pipe(Effect.zipRight(setState({ status: 'error' })))
+              : Effect.void
+          ),
           // A genuine give-up also fails the product-store row (an
           // interruption stays 'recording' — the drain resolves it later).
           Effect.zipRight(
@@ -301,38 +357,10 @@ export const RecordingServiceLive: Layer.Layer<
       };
 
       const body = Effect.gen(function* () {
-        const startedAt = yield* Clock.currentTimeMillis;
-
-        // The transcription engine is read from the preference once, before
-        // the outbox row opens, and FROZEN for this recording (a settings
-        // change mid-recording never re-routes chunks). Kept in the fiber's
-        // closure — RecordingState's view schema is .strict(), and the
-        // renderer does not need it. Local mode coerces the 'cloud' default to
-        // 'local' (no cloud transcriber there).
-        const engine = resolveRecordingEngine(appMode, (yield* settings.get).transcription);
-        const transcriptionConfig = transcriptionConfigFor(engine);
-        // Cloud mode + a non-cloud engine: core never sees the audio, so the
-        // device mirrors each segment it mints (segment-mirror.ts) BEFORE the
-        // finalize PUT, and never stages the WAVs for a server re-transcription.
+        const startedAt = createInput.startedAt;
+        const transcriptionConfig = createInput.transcriptionConfig;
         const mirrorToCore = appMode === 'cloud' && engine.engine !== 'cloud';
 
-        // 1) durable recovery row BEFORE the first frame (kill -9 ⇒ recoverable
-        // row) — carrying the frozen engine KIND so the drain re-drives this
-        // row under the engine that produced it, never the current preference.
-        yield* db
-          .insertRecoveryOutbox({
-            recordingId,
-            noteId,
-            captureMode: mode,
-            wavPath: wavDir,
-            engine: engine.engine,
-            status: 'capturing',
-          })
-          .pipe(
-            Effect.catchAll(cause =>
-              log.error('outbox insert failed', { recordingId, cause: String(cause) })
-            )
-          );
         yield* Effect.addFinalizer(parkOnExit);
         // Reset the level on EVERY exit path (graceful stop, capture give-up,
         // interruption) — the next recording must not inherit a dead one's EMA.
@@ -373,36 +401,38 @@ export const RecordingServiceLive: Layer.Layer<
           ...(engine.engine === 'local' ? { modelId: engine.modelId } : {}),
         });
 
-        // 2) create the cloud recording (best-effort; the pipeline runs either way).
-        const createRes = yield* coreClient.createRecording({
-          recordingId,
-          title: input.title ?? i18n.t('recording.untitledRecording'),
-          captureMode: mode,
-          noteId,
-          startedAt,
-          transcriptionConfig,
-        });
+        // Capture can proceed while creation is unavailable, but chunks and
+        // finalization must wait for both creation and the authoritative row.
+        const createRes = yield* coreClient.createRecording(createInput);
         if (!createRes.ok) {
           yield* log.warn('createRecording failed — capturing anyway', {
             recordingId,
             failure: createRes.failure,
           });
         }
-        // Mirror the recording row into the workspace product store
-        // (local.db / the cloud cache) with the SAME fields the cloud create
-        // body carries — best-effort, the pipeline runs either way.
-        yield* persistBestEffort(
-          recordingId,
-          store.recordingStarted({
-            id: recordingId,
-            title: input.title ?? i18n.t('recording.untitledRecording'),
-            captureMode: mode,
-            status: 'recording',
-            noteId,
-            startedAt,
-            transcriptionConfig,
-          })
-        );
+        const saveStarted = store.recordingStarted({
+          id: recordingId,
+          title: createInput.title,
+          captureMode: mode,
+          status: 'recording',
+          noteId,
+          startedAt,
+          transcriptionConfig,
+        });
+        const startedSaved =
+          engine.engine === 'cloud'
+            ? yield* persistBestEffort(recordingId, saveStarted).pipe(Effect.as(true))
+            : yield* persistRequired(recordingId, saveStarted);
+        const created = createRes.ok && startedSaved;
+        if (created) {
+          yield* db
+            .updateRecoveryOutbox(recordingId, { phase: 'chunks' })
+            .pipe(
+              Effect.catchAll(cause =>
+                log.warn('recovery progress save failed', { recordingId, cause: String(cause) })
+              )
+            );
+        }
 
         // 3) shared pipeline resources (survive capture restarts).
         const recovery = yield* makeRecoveryWavSet({ dir: wavDir, mode, log });
@@ -478,8 +508,8 @@ export const RecordingServiceLive: Layer.Layer<
         const observeSilence = (
           lane: 'mic' | 'system',
           samples: Float32Array
-        ): Effect.Effect<void> =>
-          Effect.suspend(() => {
+        ): Effect.Effect<readonly AutoPauseEffect[]> =>
+          Effect.sync(() => {
             silence[lane].push(samples, CAPTURE_SAMPLE_RATE);
             // Dual: both lanes must be quiet. Mic-only/system-only sessions pass a single watcher,
             // and combinedSilentSeconds skips lanes that have never produced audio — otherwise an
@@ -490,7 +520,7 @@ export const RecordingServiceLive: Layer.Layer<
               elapsedSeconds: silence[lane].elapsedSeconds,
               nowMs: Date.now(),
             });
-            return effects.length === 0 ? Effect.void : applyAutoPause(effects);
+            return effects;
           });
 
         const cutGate = yield* Effect.makeSemaphore(1);
@@ -516,43 +546,43 @@ export const RecordingServiceLive: Layer.Layer<
 
         const uploadChunk = (chunk: PendingChunk): Effect.Effect<void> =>
           Effect.gen(function* () {
-            // Through the Transcriber seam, the cloud lane WAV-encodes and
-            // uploads exactly as before; an on-device lane transcribes here.
+            // Creation is a prerequisite. The full WAV retains chunks until the
+            // recovery worker can replay the durable create intent.
+            if (!created) return;
             const res = yield* transcriber.transcribeChunk(
               recordingId,
               { chunkIndex: chunk.index, chunkStartMs: chunk.chunkStartMs, source: chunk.source },
               { samples: chunk.samples, sampleRate: CAPTURE_SAMPLE_RATE },
               engine
             );
-            if (res.ok) {
-              if (res.value.length > 0) {
-                yield* appendSegments(res.value);
-                // Cache the returned wire rows (best-effort).
-                yield* persistBestEffort(recordingId, store.segmentsReceived(res.value));
-                // In cloud mode with a non-cloud engine, the server never saw this chunk;
-                // mirror the minted rows (best-effort, sequential, before finalize).
-                if (mirrorToCore) {
-                  yield* mirrorSegmentsToCore(coreClient, log, recordingId, res.value);
-                }
-              }
-              yield* advanceCursor(chunk.index);
-            } else if (res.retryable) {
-              // Do NOT advance the cursor — the WAV holds this audio; the drain re-sends.
-              yield* log.warn('chunk upload retryable — deferred to drain', {
+            if (!res.ok) {
+              yield* log.warn('chunk processing failed — retained for recovery', {
                 recordingId,
                 index: chunk.index,
                 failure: res.failure,
               });
-            } else {
-              // Non-retryable (404/410/422/…): the segment is lost but the recording
-              // continues; let the cursor pass so the drain does not re-try a doomed chunk.
-              yield* log.warn('chunk upload permanently failed — segment lost', {
-                recordingId,
-                index: chunk.index,
-                failure: res.failure,
-              });
-              yield* advanceCursor(chunk.index);
+              return;
             }
+            if (res.value.length > 0) {
+              yield* appendSegments(res.value);
+              if (engine.engine === 'cloud') {
+                yield* persistBestEffort(recordingId, store.segmentsReceived(res.value));
+              } else if (
+                !(yield* persistRequired(recordingId, store.segmentsReceived(res.value)))
+              ) {
+                return;
+              }
+              if (mirrorToCore) {
+                const mirrored = yield* mirrorSegmentsToCore(
+                  coreClient,
+                  log,
+                  recordingId,
+                  res.value
+                );
+                if (!mirrored.ok) return;
+              }
+            }
+            yield* advanceCursor(chunk.index);
           });
 
         // Dual ticks publish only complete mic/system pairs so recovery cannot
@@ -643,7 +673,7 @@ export const RecordingServiceLive: Layer.Layer<
         const resumeRecording: Effect.Effect<boolean> = frameGate.withPermits(1)(
           Effect.gen(function* () {
             const current = yield* SubscriptionRef.get(state);
-            if (current.status !== 'paused') return false;
+            if (current.status !== 'paused' || current.autoStopRequested) return false;
             const now = yield* Clock.currentTimeMillis;
             const pausedAt = yield* Ref.get(pausedAtRef);
             const pausedMs = pausedAt === null ? 0 : Math.max(0, now - pausedAt);
@@ -685,12 +715,12 @@ export const RecordingServiceLive: Layer.Layer<
 
         yield* Ref.set(autoActions, {
           pause: pauseRecording,
-          // REQUEST the stop; do not perform it. The renderer owns the post-stop work (completed
-          // analytics, cache invalidation, auto-enhance), so stopping here would finalize the
-          // recording into a transcript that never becomes a note — the very thing auto-stop is
-          // for. The renderer answers by calling the ordinary stop verb, which lands right back
-          // in this fiber's graceful path.
-          stop: setState({ autoStopRequested: true }),
+          // Main owns capture termination even when no renderer is mounted.
+          // Completion is claimed independently by the owning UI when available.
+          stop: setState({ autoStopRequested: true }).pipe(
+            Effect.zipRight(Deferred.succeed(stopSignal, undefined)),
+            Effect.asVoid
+          ),
         });
 
         yield* Ref.set(
@@ -709,60 +739,71 @@ export const RecordingServiceLive: Layer.Layer<
         // paused session produces no frames, so the auto-stop deadline has nothing else to ride.
         // Scoped to the recording, so it dies with it.
         yield* Effect.forkScoped(
-          Clock.currentTimeMillis.pipe(
-            Effect.flatMap(now => applyAutoPause(autoPause.tick(now))),
-            Effect.delay(AUTO_STOP_POLL),
-            Effect.forever
-          )
+          synchronize(
+            Clock.currentTimeMillis.pipe(Effect.flatMap(now => applyAutoPause(autoPause.tick(now))))
+          ).pipe(Effect.delay(AUTO_STOP_POLL), Effect.forever)
         );
 
         // Periodic cut+upload (outer scope: survives capture restarts, drained sequentially).
         const uploadFiber = yield* Effect.forkScoped(
-          flush.pipe(Effect.delay(CHUNK_INTERVAL), Effect.forever)
+          Effect.gen(function* () {
+            while (
+              yield* Effect.raceFirst(
+                Effect.sleep(CHUNK_INTERVAL).pipe(Effect.as(true)),
+                Deferred.await(stopSignal).pipe(Effect.as(false))
+              )
+            ) {
+              yield* flush;
+            }
+          })
         );
 
         // Frame consumer: route each frame → recovery WAV + chunk buffer. Never uploads.
-        const onFrame = (frame: AudioFrame): Effect.Effect<void> => {
+        const onFrame = (frame: AudioFrame): Effect.Effect<void, RecoveryWriteError> => {
           const lane = laneForFrame(mode, frame.source);
           if (lane === null) return Effect.void;
-          return frameGate.withPermits(1)(
-            Effect.uninterruptible(
-              Ref.get(pausedRef).pipe(
-                Effect.flatMap(paused =>
-                  paused
-                    ? Effect.void
-                    : updateLevel(frame.samples).pipe(
-                        Effect.zipRight(observeSilence(lane, frame.samples)),
-                        Effect.zipRight(recovery.append(lane, frame.samples)),
-                        Effect.zipRight(
-                          Ref.modify(pipeline, s => {
-                            const next = bufferSamples(s, lane, frame.samples);
-                            return [next.dropped, next.state] as const;
-                          })
-                        ),
-                        Effect.tap(() =>
-                          Ref.update(acceptedSamplesRef, current => ({
-                            ...current,
-                            [lane === 'mic' ? 'micSamples' : 'systemSamples']:
-                              current[lane === 'mic' ? 'micSamples' : 'systemSamples'] +
-                              frame.samples.length,
-                          }))
-                        ),
-                        Effect.flatMap(dropped =>
-                          dropped > 0
-                            ? log.warn(
-                                'recording buffer overflow — dropped samples (recovery WAV retains them)',
-                                {
-                                  recordingId,
-                                  dropped,
-                                }
-                              )
-                            : Effect.void
-                        )
-                      )
+          return synchronize(
+            frameGate
+              .withPermits(1)(
+                Effect.uninterruptible(
+                  Ref.get(pausedRef).pipe(
+                    Effect.flatMap(paused =>
+                      paused
+                        ? Effect.succeed<readonly AutoPauseEffect[]>([])
+                        : updateLevel(frame.samples).pipe(
+                            Effect.zipRight(recovery.append(lane, frame.samples)),
+                            Effect.zipRight(
+                              Ref.modify(pipeline, s => {
+                                const next = bufferSamples(s, lane, frame.samples);
+                                return [next.dropped, next.state] as const;
+                              })
+                            ),
+                            Effect.tap(() =>
+                              Ref.update(acceptedSamplesRef, current => ({
+                                ...current,
+                                [lane === 'mic' ? 'micSamples' : 'systemSamples']:
+                                  current[lane === 'mic' ? 'micSamples' : 'systemSamples'] +
+                                  frame.samples.length,
+                              }))
+                            ),
+                            Effect.flatMap(dropped =>
+                              dropped > 0
+                                ? log.warn(
+                                    'recording buffer overflow — dropped samples (recovery WAV retains them)',
+                                    {
+                                      recordingId,
+                                      dropped,
+                                    }
+                                  )
+                                : Effect.void
+                            ),
+                            Effect.zipRight(observeSilence(lane, frame.samples))
+                          )
+                    )
+                  )
                 )
               )
-            )
+              .pipe(Effect.flatMap(applyAutoPause))
           );
         };
 
@@ -970,14 +1011,26 @@ export const RecordingServiceLive: Layer.Layer<
             );
           })
         ).pipe(
-          Effect.tapError((error: CaptureError) =>
-            log.warn('capture terminated — restart per policy', { recordingId, error: error._tag })
+          Effect.tapError((error: CaptureError | RecoveryWriteError) =>
+            log.warn('capture interrupted', { recordingId, error: error._tag })
           ),
-          Effect.retry(RESTART_SCHEDULE)
+          Effect.retry({
+            schedule: RESTART_SCHEDULE,
+            while: error => error._tag !== 'RecoveryWriteError',
+          })
         );
 
-        // Graceful stop wins → fall through to finalize; capture give-up FAILS past here.
-        yield* Effect.raceFirst(Deferred.await(stopSignal), captureLoop);
+        // Stop and exhausted capture restarts both complete the captured audio.
+        const captureExit = yield* Effect.raceFirst(Deferred.await(stopSignal), captureLoop).pipe(
+          Effect.either
+        );
+        if (Either.isLeft(captureExit)) {
+          yield* log.warn('capture ended — completing retained audio', {
+            recordingId,
+            error: captureExit.left._tag,
+          });
+          yield* Deferred.succeed(stopSignal, undefined);
+        }
 
         // ---- graceful stop path ----
         // `onFrame` is atomic once it owns this gate. Crossing it after capture
@@ -993,9 +1046,13 @@ export const RecordingServiceLive: Layer.Layer<
           elapsedAt: stoppingAt,
         });
         yield* db
-          .updateRecoveryOutbox(recordingId, { status: 'finalizing' })
+          .updateRecoveryOutbox(recordingId, {
+            status: 'finalizing',
+            endedAt: stoppingAt,
+            durationMs: mediaDurationMs(stoppingSamples),
+          })
           .pipe(Effect.catchAll(() => Effect.void));
-        yield* Fiber.interrupt(uploadFiber); // stop the periodic loop before the final cut
+        yield* Fiber.join(uploadFiber); // finish any already-cut upload before the final cut
         yield* cutGate.withPermits(1)(
           flushComplete.pipe(
             // any now-complete fixed chunk(s)
@@ -1003,173 +1060,90 @@ export const RecordingServiceLive: Layer.Layer<
           )
         );
 
-        const endedAt = yield* Clock.currentTimeMillis;
+        const endedAt = stoppingAt;
         const acceptedSamples = yield* Ref.get(acceptedSamplesRef);
         const durationMs = mediaDurationMs(acceptedSamples);
-        // A non-cloud engine derives the speaker count from the channels
-        // (the server derives it from diarization for the cloud engine) and
-        // writes it BEFORE finalize so it is durable even if finalize parks the
-        // row for the drain (whose max-merge can only raise it).
-        if (engine.engine !== 'cloud') {
-          const { segments } = yield* SubscriptionRef.get(state);
-          yield* persistBestEffort(
-            recordingId,
-            store.recordingMetaMerged(recordingId, {
-              detectedSpeakerCount: detectedSpeakerCountFor(mode, segments),
-            })
-          );
-        }
-        // `stagingExpected` means "the cloud engine transcribed and main
-        // will stage the WAVs for the finalize pass". A non-cloud engine sends
-        // false so core settles the finalize row as skipped at once — no
-        // awaiting-upload readiness gate and no server re-transcription.
-        const finalizeRes = yield* coreClient.finalizeRecording(recordingId, {
-          endedAt,
-          durationMs,
-          stagingExpected: engine.engine === 'cloud',
-          transcriptionDeferred: false,
-        });
-        if (!finalizeRes.ok) {
-          yield* log.warn('finalizeRecording failed', {
-            recordingId,
-            failure: finalizeRes.failure,
-          });
-        } else {
-          // Mark the product-store row completed (best-effort).
-          yield* persistBestEffort(
-            recordingId,
-            store.recordingCompleted(recordingId, { endedAt, durationMs })
-          );
-        }
-
-        // Delete the WAV + row only when nothing is left to recover —
-        // every cut chunk acked and the finalize landed (or the recording is gone).
         const cursor = yield* Ref.get(cursorRef);
         const finalPipeline = yield* Ref.get(pipeline);
         const totalAssigned = finalPipeline.nextIndex;
-        // An OOM-valve drop means the cut chunks silently skipped audio
-        // that only the recovery WAV still holds — however contiguous the
-        // cursor looks, the recording is NOT fully acked and the WAV must
-        // survive this stop for the drain.
         const droppedTotal = droppedSamples(finalPipeline);
         const allAcked =
+          created &&
           droppedTotal === 0 &&
           (cursor === null ? totalAssigned === 0 : cursor + 1 === totalAssigned);
-        const recordingGone = !finalizeRes.ok && !finalizeRes.retryable;
-        if ((finalizeRes.ok && allAcked) || recordingGone) {
-          yield* recovery.finalizeAndClose;
-          if (recordingGone) {
-            yield* Effect.sync(() => fs.rmSync(wavDir, { recursive: true, force: true }));
-            yield* db.deleteRecoveryOutbox(recordingId).pipe(Effect.catchAll(() => Effect.void));
-            yield* log.info('recording gone — recovery artifact deleted', {
+
+        // Close audio and persist the exact stop metadata before another owner
+        // can process this job. A failed bookkeeping write retains the WAV.
+        yield* recovery.finalizeAndClose;
+        const savedStop = yield* db
+          .updateRecoveryOutbox(recordingId, {
+            status: 'finalizing',
+            phase: !created ? 'create' : allAcked ? 'finalize' : 'chunks',
+            endedAt,
+            durationMs,
+            ...(droppedTotal > 0 ? { lastChunkIndex: null } : {}),
+            lastError: allAcked ? null : droppedTotal > 0 ? 'buffer-overflow' : 'stop-incomplete',
+          })
+          .pipe(
+            Effect.as(true),
+            Effect.catchAll(cause =>
+              log
+                .warn('recording stop save failed — audio retained', {
+                  recordingId,
+                  cause: String(cause),
+                })
+                .pipe(Effect.as(false))
+            )
+          );
+
+        if (savedStop && allAcked) {
+          let metaSaved = true;
+          if (engine.engine !== 'cloud') {
+            const { segments } = yield* SubscriptionRef.get(state);
+            metaSaved = yield* persistRequired(
               recordingId,
-              durationMs,
-            });
-          } else {
-            // Stage the full-session WAVs for the finalize (diarization) pass
-            // before deleting recovery data, in a daemon fiber so stop() resolves now (a full-session
-            // upload can take minutes; the renderer must not sit in "stopping"). Staged, staging
-            // disabled, or deterministically rejected → delete exactly as before; a transient
-            // failure (network, sign-out mid-upload) parks the row + WAVs for the next-session
-            // drain, which re-stages and then deletes.
-            yield* Effect.forkDaemon(
-              Effect.gen(function* () {
-                // Only the cloud engine stages — a device-transcribed recording
-                // must never be re-transcribed server-side, so its WAVs are not even
-                // read; it takes the 'staging-disabled' abandon path (core answers
-                // `unchanged` for the already-skipped finalize row) and deletes.
-                const lanes =
-                  engine.engine === 'cloud'
-                    ? yield* Effect.sync(() => readStagingLanes(wavDir, durationMs))
-                    : null;
-                const res =
-                  lanes === null || lanes.length === 0
-                    ? ({ ok: true, value: { staged: false } } as const)
-                    : yield* coreClient.stageRecordingAudio(recordingId, lanes);
-                if (res.ok || !res.retryable) {
-                  const abandon =
-                    lanes !== null && lanes.length === 0
-                      ? yield* coreClient.abandonRecordingStaging(recordingId, 'no-audio')
-                      : res.ok && !res.value.staged
-                        ? yield* coreClient.abandonRecordingStaging(recordingId, 'staging-disabled')
-                        : !res.ok
-                          ? yield* coreClient.abandonRecordingStaging(recordingId, 'upload-failed')
-                          : null;
-                  const abandonRecordingGone =
-                    abandon !== null &&
-                    !abandon.ok &&
-                    abandon.failure.kind === 'http' &&
-                    (abandon.failure.status === 404 || abandon.failure.status === 410);
-                  if (abandon && !abandon.ok && !abandonRecordingGone) {
-                    yield* db
-                      .updateRecoveryOutbox(recordingId, {
-                        status: 'finalizing',
-                        lastError: 'staging-abandon-incomplete',
-                      })
-                      .pipe(Effect.catchAll(() => Effect.void));
-                    yield* log.warn('staging abandon incomplete — WAVs parked for drain', {
-                      recordingId,
-                      failure: abandon.failure,
-                    });
-                    return;
-                  }
-                  yield* Effect.sync(() => fs.rmSync(wavDir, { recursive: true, force: true }));
-                  yield* db
-                    .deleteRecoveryOutbox(recordingId)
-                    .pipe(Effect.catchAll(() => Effect.void));
-                  yield* log.info('recording finalized — recovery artifact deleted', {
-                    recordingId,
-                    durationMs,
-                    staged: res.ok && res.value.staged,
-                  });
-                } else {
-                  yield* db
-                    .updateRecoveryOutbox(recordingId, {
-                      status: 'finalizing',
-                      lastError: 'staging-incomplete',
-                    })
-                    .pipe(Effect.catchAll(() => Effect.void));
-                  yield* log.warn('staging incomplete — WAVs parked for drain', {
-                    recordingId,
-                    failure: res.failure,
-                  });
-                }
-              }).pipe(
-                // A defect anywhere above (fs blowup, etc.) must not strand the daemon silently
-                // mid-resolve — park for the drain, same as a transient staging failure.
-                Effect.catchAllDefect(defect =>
-                  db
-                    .updateRecoveryOutbox(recordingId, {
-                      status: 'finalizing',
-                      lastError: 'staging-incomplete',
-                    })
-                    .pipe(
-                      Effect.catchAll(() => Effect.void),
-                      Effect.zipRight(
-                        log.warn('staging daemon defect — parked for drain', {
-                          recordingId,
-                          defect,
-                        })
-                      )
-                    )
-                )
-              )
+              store.recordingMetaMerged(recordingId, {
+                detectedSpeakerCount: detectedSpeakerCountFor(mode, segments),
+              })
             );
           }
+          if (metaSaved) {
+            const finalized = yield* coreClient.finalizeRecording(recordingId, {
+              endedAt,
+              durationMs,
+              stagingExpected: engine.engine === 'cloud',
+              transcriptionDeferred: false,
+            });
+            if (finalized.ok) {
+              const completed =
+                engine.engine === 'cloud'
+                  ? yield* persistBestEffort(
+                      recordingId,
+                      store.recordingCompleted(recordingId, { endedAt, durationMs })
+                    ).pipe(Effect.as(true))
+                  : yield* persistRequired(
+                      recordingId,
+                      store.recordingCompleted(recordingId, { endedAt, durationMs })
+                    );
+              if (completed) {
+                yield* db.updateRecoveryOutbox(recordingId, { phase: 'staging' }).pipe(
+                  Effect.zipRight(resolveCompletion(recordingId, true)),
+                  Effect.catchAll(cause =>
+                    log.warn('recording progress save failed — retained for recovery', {
+                      recordingId,
+                      cause: String(cause),
+                    })
+                  )
+                );
+              }
+            } else {
+              yield* log.warn('finalizeRecording failed — retained for recovery', {
+                recordingId,
+                failure: finalized.failure,
+              });
+            }
+          }
         } else {
-          // finalize retryable, unacked chunks, or overflow-dropped audio →
-          // leave the row + WAV for the drain. A drop diverges the live
-          // chunk boundaries from the WAV past the first dropped frame, so the
-          // cursor is RESET: the drain re-transcribes the FULL recording from
-          // the retained WAV (chunk re-sends are idempotent per index).
-          const overflowed = droppedTotal > 0;
-          yield* db
-            .updateRecoveryOutbox(recordingId, {
-              status: 'finalizing',
-              ...(overflowed ? { lastChunkIndex: null } : {}),
-              lastError: overflowed ? 'buffer-overflow' : 'stop-incomplete',
-            })
-            .pipe(Effect.catchAll(() => Effect.void));
           yield* log.warn('recording stopped with unresolved chunks — parked for drain', {
             recordingId,
             cursor,
@@ -1178,21 +1152,29 @@ export const RecordingServiceLive: Layer.Layer<
           });
         }
 
+        // The workspace recovery worker owns staging and cleanup. No daemon may
+        // outlive this workspace or compete with that worker for the WAV files.
+        yield* captureStopped(recordingId);
         // Observable: idle, retaining the finished id + segments as the last snapshot.
         // (The level reset rides the body finalizer above — every exit path.)
         yield* setState({
-          status: 'idle',
+          status: Either.isLeft(captureExit) ? 'error' : 'idle',
           elapsedMs: durationMs,
           elapsedAt: null,
           startedAt: null,
           pausedAccumMs: 0,
           micSource: 'system-default',
+          autoPausePrompt: null,
+          autoStopRequested: false,
         });
       });
 
       return Effect.scoped(body).pipe(
-        Effect.catchAll((error: CaptureError) =>
-          log.warn('recording ended after capture gave up', { recordingId, error: error._tag })
+        Effect.catchAll((error: CaptureError | RecoveryWriteError) =>
+          log.warn('recording stopped with unresolved recovery work', {
+            recordingId,
+            error: error._tag,
+          })
         )
       );
     };
@@ -1234,12 +1216,31 @@ export const RecordingServiceLive: Layer.Layer<
                 : 'unidentified';
           }
 
+          const engine = resolveRecordingEngine(appMode, (yield* settings.get).transcription);
+          if (
+            engine.engine === 'local' &&
+            Option.isNone(yield* models.installedPath(engine.modelId))
+          ) {
+            return yield* Effect.fail(new RecordingStartError({ reason: 'model-missing' }));
+          }
           const recordingId = createId('recording');
+          const completionReady = yield* Deferred.make<boolean>();
+          completions.set(recordingId, { ready: completionReady, stopped: false });
+          const createInput: CreateRecordingInput = {
+            recordingId,
+            title: input.title ?? i18n.t('recording.untitledRecording'),
+            captureMode: resolved.mode,
+            noteId: input.noteId ?? null,
+            startedAt: nowMs,
+            transcriptionConfig: transcriptionConfigFor(engine),
+          };
           const stopSignal = yield* Deferred.make<void>();
           const done = yield* Deferred.make<void>();
           const controls = yield* Ref.make<Option.Option<RecordingControls>>(Option.none());
           const stopping = yield* Ref.make(false);
           const commandSemaphore = yield* Effect.makeSemaphore(1);
+          const synchronize: ActiveRecording['synchronize'] = effect =>
+            commandSemaphore.withPermits(1)(effect);
           yield* Ref.set(
             activeRef,
             Option.some({
@@ -1248,9 +1249,47 @@ export const RecordingServiceLive: Layer.Layer<
               done,
               controls,
               stopping,
-              synchronize: effect => commandSemaphore.withPermits(1)(effect),
+              synchronize,
             })
           );
+
+          // Reserve control ownership and publish a complete snapshot before the
+          // durable row becomes visible to recovery or another window can Stop.
+          const previousState = yield* SubscriptionRef.get(state);
+          yield* SubscriptionRef.set(state, {
+            ...idleRecordingState,
+            status: 'starting',
+            recordingId,
+            captureMode: resolved.mode,
+            requestedCaptureMode: resolved.requested,
+            noteId: createInput.noteId ?? null,
+            startedAt: nowMs,
+            elapsedAt: nowMs,
+            micSource: initialAlignment.micSource,
+          });
+          yield* db
+            .insertRecoveryOutbox({
+              recordingId,
+              noteId: createInput.noteId ?? null,
+              captureMode: resolved.mode,
+              wavPath: path.join(recoveryRoot, recordingId),
+              engine: engine.engine,
+              status: 'capturing',
+              owner,
+              createInput,
+              engineConfig: engine,
+              phase: 'create',
+            })
+            .pipe(
+              Effect.onError(() =>
+                Ref.set(activeRef, Option.none()).pipe(
+                  Effect.zipRight(resolveCompletion(recordingId, false)),
+                  Effect.zipRight(SubscriptionRef.set(state, previousState)),
+                  Effect.zipRight(Deferred.succeed(done, undefined))
+                )
+              ),
+              Effect.mapError(() => new RecordingStartError({ reason: 'storage-unavailable' }))
+            );
 
           const program = run(
             recordingId,
@@ -1259,7 +1298,10 @@ export const RecordingServiceLive: Layer.Layer<
             initialAlignment,
             initialFallbackReason,
             stopSignal,
-            controls
+            controls,
+            createInput,
+            engine,
+            synchronize
           ).pipe(
             Effect.ensuring(
               Ref.update(activeRef, cur =>
@@ -1332,6 +1374,19 @@ export const RecordingServiceLive: Layer.Layer<
     const api: RecordingServiceApi = {
       start,
       stop,
+      resolveCompletion,
+      claimCompletion: recordingId =>
+        Effect.gen(function* () {
+          const completion = completions.get(recordingId);
+          if (!completion?.stopped) return false;
+          if (!(yield* Deferred.await(completion.ready))) return false;
+          // Several windows can wait on the same readiness signal; one wins.
+          return yield* Effect.sync(() => {
+            if (completions.get(recordingId) !== completion) return false;
+            completions.delete(recordingId);
+            return true;
+          });
+        }),
       pause,
       resume,
       keepRecording,
