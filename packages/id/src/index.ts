@@ -43,6 +43,7 @@ export const ENTITY_PREFIXES = {
   feedback: 'fed',
   request: 'req',
   noteMember: 'ntm',
+  noteEvent: 'nev',
   connection: 'cn',
   calendar: 'cal',
   event: 'cev',

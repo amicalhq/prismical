@@ -17,6 +17,7 @@ import {
   type OrganizationInvitation,
   type OrganizationMember,
   type OrganizationRole,
+  type PlanEntitlements,
 } from "@prismical/api-contracts/apps/v1";
 import { apiClient, ME_PREFIX } from "../client";
 import { useActiveOrgId, usePorts } from "../../ports-context";
@@ -25,7 +26,12 @@ import { AUTO_PAUSE_DEFAULTS } from "@prismical/silence";
 
 // OrganizationRole is re-exported so UI can type role pickers against the contract instead of
 // widening to `string` — app-ui doesn't depend on @prismical/api-contracts directly.
-export type { InvitationDetail, Organization, OrganizationRole } from "@prismical/api-contracts/apps/v1";
+export type {
+  InvitationDetail,
+  Organization,
+  OrganizationRole,
+  PlanEntitlements,
+} from "@prismical/api-contracts/apps/v1";
 export type OrgMember = OrganizationMember;
 export type OrgInvitation = OrganizationInvitation;
 
@@ -156,6 +162,51 @@ export function useFeatureFlags(): { isEnabled: (key: string) => boolean; isReso
   const org = data?.find((o) => o.orgId === activeOrgId) ?? data?.[0] ?? null;
   return {
     isEnabled: (key) => org?.features?.[key] ?? CLOUD_FEATURE_DEFAULTS[key] ?? false,
+    isResolved: isSuccess || isError,
+  };
+}
+
+/**
+ * What a client resolves to when the org payload carries NO entitlements: a core that predates
+ * them, or the desktop local workspace (no org). Everything on and unlimited — absent means "no
+ * plan gate", never "off", so an older core can never lock a surface the server still allows.
+ */
+export const ENTITLEMENTS_UNGATED: PlanEntitlements = Object.freeze({
+  planExternalId: null,
+  features: Object.freeze({
+    askAi: true,
+    floatingMode: true,
+    byok: true,
+    automations: true,
+    extendedRecording: true,
+  }),
+  aiModelTier: "pro",
+  limits: Object.freeze({
+    seats: null,
+    cloudTranscriptionSeconds: null,
+    aiCredits: null,
+    maxRecordingSeconds: null,
+  }),
+  pooled: false,
+});
+
+/**
+ * The active org's plan entitlements (Ask AI, BYOK, automations, floating mode, recording length,
+ * seats, credits) — the client half of the server's plan gates. Rides the same organizations
+ * query `useFeatureFlags()` reads, so a gate costs no request of its own. `isResolved` is false
+ * only while that query is still loading; render permissively until then (a flash of an upgrade
+ * hint on a paid org is worse than a late one on a free org).
+ */
+export function useEntitlements(): { entitlements: PlanEntitlements; isResolved: boolean } {
+  const activeOrgId = useActiveOrgId();
+  const platformFlags = useDesktopCapabilities().featureFlags;
+  const { data, isSuccess, isError } = useOrganizations({ enabled: platformFlags === null });
+  if (platformFlags !== null) return { entitlements: ENTITLEMENTS_UNGATED, isResolved: true };
+  // No first-org fallback (unlike `useFeatureFlags`): an active org the stale list does not know
+  // yet must resolve ungated, not to some OTHER org's plan — the server gates either way.
+  const org = data?.find((o) => o.orgId === activeOrgId) ?? null;
+  return {
+    entitlements: org?.entitlements ?? ENTITLEMENTS_UNGATED,
     isResolved: isSuccess || isError,
   };
 }

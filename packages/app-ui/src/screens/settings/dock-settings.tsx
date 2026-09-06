@@ -1,7 +1,7 @@
 'use client';
 
 import type { WidgetVisibility } from '@prismical/app-contracts';
-import { useDeviceSettings } from '@prismical/app-client';
+import { useDeviceSettings, useEntitlements } from '@prismical/app-client';
 import { toast } from 'sonner';
 import { Button } from '../../ui/button';
 import { Label } from '../../ui/label';
@@ -27,8 +27,10 @@ import { useTranslation } from 'react-i18next';
 export function DockSettings() {
   const { t } = useTranslation();
   const { settings, set, has } = useDeviceSettings();
+  const { entitlements } = useEntitlements();
   if (!has('meeting-widget')) return null;
-  const hasFloat = has('floating-note');
+  // Floating mode is a plan feature as well as a desktop capability.
+  const hasFloat = has('floating-note') && entitlements.features.floatingMode;
 
   return (
     <>

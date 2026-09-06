@@ -216,8 +216,50 @@ export function BillingScreen() {
     );
   }
 
-  const { plan, plans, subscription } = planQuery.data;
+  const { plan, plans, subscription, usage, entitlements } = planQuery.data;
   const localizedPlans = plans.map(item => localizeBillingPlan(item, t));
+  // The metered dimensions of the plan, when this core reports them. Under an hour the usage reads
+  // in whole minutes (a 2-minute recording must visibly move the meter; 0.0 h would not), from an
+  // hour up in hours to one decimal. Limits are always hours. A null limit is "unlimited".
+  const hours = (seconds: number) => (Math.round(seconds / 360) / 10).toString();
+  const minutes = (seconds: number) => Math.round(seconds / 60).toString();
+  const meters: Array<{ key: string; label: string; value: string }> = [];
+  if (usage.cloudTranscriptionSeconds) {
+    const m = usage.cloudTranscriptionSeconds;
+    const subHour = m.used < 3600;
+    meters.push({
+      key: 'transcription',
+      label: t('settings.billing.screen.usageCloudTranscription'),
+      value:
+        m.limit === null
+          ? subHour
+            ? t('settings.billing.screen.usageMinutesUnlimited', { used: minutes(m.used) })
+            : t('settings.billing.screen.usageHoursUnlimited', { used: hours(m.used) })
+          : subHour
+            ? t('settings.billing.screen.usageMinutes', { used: minutes(m.used), limit: hours(m.limit) })
+            : t('settings.billing.screen.usageHours', { used: hours(m.used), limit: hours(m.limit) }),
+    });
+  }
+  if (usage.aiCredits) {
+    const m = usage.aiCredits;
+    meters.push({
+      key: 'credits',
+      label: t('settings.billing.screen.usageAiCredits'),
+      value:
+        m.limit === null
+          ? t('settings.billing.screen.usageCountUnlimited', { used: m.used })
+          : t('settings.billing.screen.usageCount', { used: m.used, limit: m.limit }),
+    });
+  }
+  meters.push({
+    key: 'seats',
+    label: t('settings.billing.screen.usageSeats'),
+    value:
+      usage.seatsLimit === null
+        ? t('settings.billing.screen.usageCountUnlimited', { used: usage.seatsUsed })
+        : t('settings.billing.screen.usageCount', { used: usage.seatsUsed, limit: usage.seatsLimit }),
+  });
+  const meterResetsAt = usage.meterResetsAt ? new Date(usage.meterResetsAt) : null;
   const sortedPlans = [...localizedPlans].sort((a, b) => a.sortOrder - b.sortOrder);
   const currentCatalogPlan = localizedPlans.find(item => item.externalId === plan.externalId);
   const hasBillingOptions = sortedPlans.some(item => (item.checkoutOptions?.length ?? 0) > 1);
@@ -271,6 +313,33 @@ export function BillingScreen() {
               </Button>
             ) : null}
           </CardHeader>
+          <CardContent className="border-t pt-4">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              {t('settings.billing.screen.usageTitle')}
+            </p>
+            <dl className="mt-2 grid gap-3 sm:grid-cols-3">
+              {meters.map(meter => (
+                <div key={meter.key}>
+                  <dt className="text-sm text-muted-foreground">{meter.label}</dt>
+                  <dd className="text-base font-semibold tabular-nums">{meter.value}</dd>
+                </div>
+              ))}
+            </dl>
+            {entitlements?.pooled || meterResetsAt ? (
+              <p className="mt-2 text-xs text-muted-foreground">
+                {[
+                  entitlements?.pooled ? t('settings.billing.screen.usagePooled') : null,
+                  meterResetsAt
+                    ? t('settings.billing.screen.usageResets', {
+                        date: meterResetsAt.toLocaleDateString(),
+                      })
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </p>
+            ) : null}
+          </CardContent>
         </Card>
 
         {PLANS_WITHOUT_UPSELL.has(plan.externalId) ? null : (

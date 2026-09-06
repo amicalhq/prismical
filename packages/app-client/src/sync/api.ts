@@ -26,6 +26,7 @@ import {
   SyncDeleteResponseSchema,
   SyncListResponseSchema,
   SyncWriteResponseSchema,
+  type NoteEventLink,
   type SyncWriteEnvelope,
 } from "@prismical/api-contracts/apps/v1";
 import { ME_PREFIX, apiClient } from "../api/client";
@@ -151,6 +152,56 @@ export async function restNoteTagRemove(
   SyncDeleteResponseSchema.parse(
     await apiClient.delRaw<unknown>(
       `${base("note-tags")}/${encodeURIComponent(noteId)}/${encodeURIComponent(tagId)}`,
+      opts,
+    ),
+  );
+}
+
+// ── note-events (a note's links to calendar events) ──────────────────────────
+//
+// Links are keyed server-side on the event's cross-user key, and `eventId` on the wire is always
+// the CALLER's own event row for it (or null). Locally a link is keyed `noteId:eventKey` — the
+// same key whichever device or reader holds it — and the server row id travels as `linkId`.
+
+export type NoteEventWire = NoteEventLink;
+/** The wire row as the store keys it: `id` = `noteId:eventKey`, the server id under `linkId`. */
+export type NoteEventLocalRow = Omit<NoteEventWire, "id" | "seriesKey"> & {
+  id: string;
+  linkId: string;
+  seriesKey?: string;
+};
+
+/** Delta list of links, keyed `noteId:eventKey`; the server id becomes `linkId`. */
+export async function restNoteEventList(
+  lastSyncMs?: number,
+  opts?: SyncRequestOptions,
+): Promise<NoteEventLocalRow[]> {
+  const rows = await restList<NoteEventWire>("note-events", lastSyncMs, undefined, opts);
+  return rows.map(({ id, ...row }) => ({ ...row, linkId: id, id: `${row.noteId}:${row.eventKey}` }));
+}
+
+/** Link (upsert on the pair; re-linking a removed link revives it). Echo carries the full row. */
+export async function restNoteEventCreate(
+  body: { noteId: string; eventId: string; isPrimary?: boolean },
+  opts?: SyncRequestOptions,
+): Promise<NoteEventLocalRow> {
+  const { id, ...row } = (await apiClient.postRaw<NoteEventWire>(
+    base("note-events"),
+    body,
+    opts,
+  )) as NoteEventWire;
+  return { ...row, linkId: id, id: `${row.noteId}:${row.eventKey}` };
+}
+
+/** Unlink — HTTP 204; 404 = already unlinked (ack). `decline` = undo of an automatic link. */
+export async function restNoteEventRemove(
+  linkId: string,
+  decline: boolean,
+  opts?: SyncRequestOptions,
+): Promise<void> {
+  SyncDeleteResponseSchema.parse(
+    await apiClient.delRaw<unknown>(
+      `${base("note-events")}/${encodeURIComponent(linkId)}${decline ? "?decline=1" : ""}`,
       opts,
     ),
   );

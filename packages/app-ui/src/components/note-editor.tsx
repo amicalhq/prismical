@@ -1,10 +1,14 @@
 'use client';
 
 import { useState } from 'react';
-import { useDesktopCapabilities, useFeatureFlag, useNavigation } from '@prismical/app-client';
+import {
+  useDesktopCapabilities,
+  useEntitlements,
+  useFeatureFlag,
+  useNavigation,
+} from '@prismical/app-client';
 import {
   Star,
-  Calendar,
   FileText,
   MoreHorizontal,
   ClipboardCopy,
@@ -32,14 +36,9 @@ import {
 } from '../ui/alert-dialog';
 import { NoteFolderChip } from './note-folder-chip';
 import { NoteTagEditor } from './note-tag-editor';
+import { NoteEventChips } from './note-event-chips';
 import { useRegisterCurrentNote } from '../shell/current-note-context';
 import type { Note } from '@prismical/app-contracts';
-import { useEvent } from '@prismical/app-client';
-import {
-  formatApplicationEventDateLabel,
-  formatApplicationEventTimeRange,
-  useApplicationLocale,
-} from '@prismical/app-i18n';
 import { copyToClipboard } from '../lib/clipboard';
 import { useUpdateNote, useDeleteNote } from '@prismical/app-client';
 import { NoteTitleField } from './note-title-field';
@@ -84,9 +83,11 @@ interface NoteEditorProps {
 
 export function NoteEditor({ note }: NoteEditorProps) {
   const { t } = useTranslation();
-  const { resolvedLocale } = useApplicationLocale();
   const router = useNavigation();
   const caps = useDesktopCapabilities();
+  // Floating mode is a plan feature as well as a desktop capability (see the pop-out button).
+  const { entitlements } = useEntitlements();
+  const canFloat = caps.has('floating-note') && entitlements.features.floatingMode;
   const [title, setTitle] = useState(note.title);
   const [emoji, setEmoji] = useState<string | undefined>(note.emoji);
   const [starred, setStarred] = useState(note.starred);
@@ -97,8 +98,6 @@ export function NoteEditor({ note }: NoteEditorProps) {
   const { enabled: sharingEnabled } = useFeatureFlag('sharing');
   const update = useUpdateNote(note.id);
   const del = useDeleteNote();
-
-  const event = useEvent(note.eventId);
 
   // Publish this note to the layout-level recording cluster, which renders the
   // dock + transcription panel for it (the transcript lives there, not inline).
@@ -174,7 +173,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
 
         {/* Pop out to the floating note (desktop only).
                 Icon semantics (locked): the PiP glyph lives ONLY here. */}
-        {caps.has('floating-note') && (
+        {canFloat && (
           <Button
             variant="ghost"
             size="sm"
@@ -248,7 +247,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
         </DropdownMenu>
       </div>
 
-      {/* ── Metadata row: folder + tags ──────────────────────────────── */}
+      {/* ── Metadata row: folder + tags + meetings ──────────────────── */}
       <div className="mb-3 flex flex-wrap items-center gap-1.5 pl-11">
         <NoteFolderChip
           value={folderId}
@@ -258,73 +257,8 @@ export function NoteEditor({ note }: NoteEditorProps) {
           }}
         />
         <NoteTagEditor noteId={note.id} selected={note.tagIds ?? []} />
+        <NoteEventChips noteId={note.id} writable={note.writable ?? true} />
       </div>
-
-      {/* ── Meeting row ───────────────────────────────────────────────── */}
-      {event && (
-        <div className="mb-4 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 pl-11 text-sm text-muted-foreground">
-          {/* No color dot here: the calendar icon beside it is already tinted with the source
-                  calendar's color, so a dot would say the same thing twice (note-card does the same). */}
-          <Calendar className="h-3.5 w-3.5 shrink-0" style={{ color: event.calendarColor }} />
-          <Popover>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                title={event.title}
-                className="max-w-full truncate rounded px-1 py-0.5 font-medium text-foreground transition-colors hover:bg-accent"
-              >
-                {event.title}
-              </button>
-            </PopoverTrigger>
-            <PopoverContent side="bottom" align="start" sideOffset={6} className="w-80 p-0">
-              <div className="flex items-start gap-3 p-3">
-                <span
-                  aria-hidden="true"
-                  className="mt-0.5 h-8 w-1.5 shrink-0 rounded-sm"
-                  style={{ backgroundColor: event.calendarColor }}
-                />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-foreground">{event.title}</p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    {formatApplicationEventDateLabel(
-                      new Date(event.start),
-                      event.isAllDay ?? false,
-                      new Date(),
-                      resolvedLocale,
-                      t
-                    )}{' '}
-                    <span aria-hidden="true">•</span>{' '}
-                    {formatApplicationEventTimeRange(
-                      new Date(event.start),
-                      new Date(event.end),
-                      event.isAllDay ?? false,
-                      resolvedLocale,
-                      t
-                    )}
-                  </p>
-                  {event.joinUrl ? (
-                    <a
-                      href={event.joinUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="mt-2 inline-flex items-center rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-                    >
-                      {t('notes.joinMeeting')}
-                    </a>
-                  ) : null}
-                  {event.attendees && event.attendees.length > 0 ? (
-                    <p className="mt-2 text-xs text-muted-foreground">
-                      {t('notes.attendeeCount', {
-                        count: event.attendees.length,
-                      })}
-                    </p>
-                  ) : null}
-                </div>
-              </div>
-            </PopoverContent>
-          </Popover>
-        </div>
-      )}
 
       {/* ── Body (collaborative editor) ───────────────────────────────── */}
       {/* ph-mask-content: masks the note body text in PostHog session

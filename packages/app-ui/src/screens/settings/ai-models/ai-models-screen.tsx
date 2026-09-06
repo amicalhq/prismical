@@ -2,7 +2,8 @@
 
 import { useState, type ReactNode } from 'react';
 import { AudioLines, FileText } from 'lucide-react';
-import { useFeatureFlag } from '@prismical/app-client';
+import { useEntitlements, useFeatureFlag } from '@prismical/app-client';
+import { AppLink as Link } from '../../../shell/app-link';
 
 import { type ProviderType } from '../../../lib/providers';
 
@@ -31,6 +32,10 @@ function AIModelsSettingsContent({ providerSettings }: { providerSettings?: Reac
   // feature — off in the desktop local workspace, whose providers live
   // in the `providerSettings` slot above instead.
   const { enabled: byokInstances } = useFeatureFlag('byokInstances');
+  // Plan gate (client half): a plan without BYOK sees one upgrade card instead of the instance
+  // CRUD. The server refuses instance creation with BYOK_NOT_IN_PLAN regardless.
+  const { entitlements } = useEntitlements();
+  const byokInPlan = entitlements.features.byok;
 
   return (
     <div>
@@ -38,7 +43,22 @@ function AIModelsSettingsContent({ providerSettings }: { providerSettings?: Reac
 
       {providerSettings ? <section className="mb-6">{providerSettings}</section> : null}
 
-      {byokInstances && (
+      {byokInstances && !byokInPlan && (
+        <section className="mb-6 rounded-lg border border-dashed p-4">
+          <h2 className="text-sm font-semibold">{t('settings.billing.screen.gateByokTitle')}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {t('settings.billing.screen.gateByokDescription')}
+          </p>
+          <Link
+            href="/settings/billing"
+            className="mt-3 inline-flex items-center text-sm font-medium text-primary hover:underline"
+          >
+            {t('settings.billing.screen.gateSeePlans')}
+          </Link>
+        </section>
+      )}
+
+      {byokInstances && byokInPlan && (
         <>
           <section className="mb-6">
             <h2 className="text-sm font-semibold text-muted-foreground mb-2">

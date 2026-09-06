@@ -40,8 +40,9 @@ export function partitionDatabaseName(partition: SyncPartition): string {
 }
 
 /** Sync collection tables — the IndexedDB plugin pre-declares its object stores. */
-export const SYNC_TABLE_NAMES = ["notes", "folders", "tags", "noteTags"] as const;
+export const SYNC_TABLE_NAMES = ["notes", "folders", "tags", "noteTags", "noteEvents"] as const;
 export type SyncTableName = (typeof SYNC_TABLE_NAMES)[number];
 
 /** Bump to drop-and-rebuild every partition (schema/format change). Rebuild-only — never scheduled. */
-export const SYNC_DB_VERSION = 1;
+// 2: noteEvents object store (note↔calendar-event links).
+export const SYNC_DB_VERSION = 2;

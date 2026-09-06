@@ -306,3 +306,40 @@ export const NoteTagRequestSchema = z
 export const NoteTagParamsSchema = NoteTagRequestSchema;
 export const NoteTagSchema = NoteTagRequestSchema.strip();
 export const NoteTagResponseSchema = NoteTagSchema;
+
+// note_event: a note's link to a calendar event. Links are keyed on the event's cross-user key
+// (the same for every attendee's copy of the invite), so `eventId` on the wire is always the
+// CALLER's own event row: what they send when linking, and what a link resolves to when read.
+export const NoteEventLinkRequestSchema = z
+  .object({
+    noteId: z.string().min(1),
+    /** The caller's own event row; the server derives the cross-user key from it. */
+    eventId: z.string().min(1),
+    /** Make this the note's primary event (default: only when the note has no primary yet). */
+    isPrimary: z.boolean().optional(),
+  })
+  .strict();
+export const NoteEventLinkIdParamsSchema = z.object({ id: z.string().min(1) }).strict();
+/** `decline=1`: the undo of an automatic link — remember the event as rejected for this note. */
+export const NoteEventUnlinkQuerySchema = z.object({ decline: z.enum(['0', '1']).optional() }).strict();
+export const NOTE_EVENT_LINK_SOURCES = ['user', 'auto', 'api'] as const;
+export type NoteEventLinkSource = (typeof NOTE_EVENT_LINK_SOURCES)[number];
+/** Shape of a note_event row as the sync lane serves it (dates as ISO strings). */
+export type NoteEventLink = {
+  id: string;
+  noteId: string;
+  eventKey: string;
+  seriesKey: string;
+  /** The reader's own event row for this event, or null when they hold no copy of it. */
+  eventId: string | null;
+  isPrimary: boolean;
+  source: NoteEventLinkSource;
+  title: string;
+  startsAt: string | null;
+  endsAt: string | null;
+  meetingUrl: string | null;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+};
+export type NoteEventLinkRequest = z.input<typeof NoteEventLinkRequestSchema>;

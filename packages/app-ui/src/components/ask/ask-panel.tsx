@@ -51,6 +51,7 @@ import { Info, TriangleAlert } from 'lucide-react';
 import { toast } from 'sonner';
 import { STATUS_LINK } from './ask-skill-run-turn-styles';
 import { useTranslation } from 'react-i18next';
+import { AppLink as Link } from '../../shell/app-link';
 
 /**
  * The Ask AI chat panel. Loads the caller's latest persisted conversation and resumes
@@ -152,11 +153,18 @@ export function AskPanel({
   onRunSkill,
   noteId = null,
   compact = false,
+  askAllowed = true,
 }: {
   open: boolean;
   isMaximized: boolean;
   onToggleMaximized: () => void;
   onClose: () => void;
+  /**
+   * Plan gate (client half): false replaces the composer with an upgrade hint. The thread itself
+   * stays — skill runs render there and are gated by credits, not by Ask. The server refuses an
+   * Ask turn with ASK_NOT_IN_PLAN regardless.
+   */
+  askAllowed?: boolean;
   /** A live session is running while Ask is open — the action cluster pins a
    * recording-continues chip (dot + timer) so the session never loses signal
    * behind the collapsed Record unit. */
@@ -289,6 +297,7 @@ export function AskPanel({
           noteId={noteId}
           onReviewInNote={onClose}
           compact={compact}
+          askAllowed={askAllowed}
         />
       ) : (
         <div className="flex flex-1 items-center justify-center text-muted-foreground">
@@ -325,11 +334,14 @@ function AskChat({
   noteId = null,
   onReviewInNote,
   compact = false,
+  askAllowed = true,
 }: {
   conversationId: string;
   initialMessages: AskStoredMessage[];
   ownerSessionKey: string;
   ownerOrgId: string | null;
+  /** See `AskPanel.askAllowed`. */
+  askAllowed?: boolean;
   onRunSkill?: (skill: ComposerSkill, instruction: string) => void;
   /** The note in focus — its skill runs render as turns in the thread. */
   noteId?: string | null;
@@ -509,6 +521,7 @@ function AskChat({
       },
       'choose-model': () => navigation.push('/settings/ai-models'),
       'open-ai-models': () => navigation.push('/settings/ai-models'),
+      'open-billing': () => navigation.push('/settings/billing'),
     }),
     [regenerate, sendMessage, t, navigation]
   );
@@ -758,18 +771,33 @@ function AskChat({
         </MessageScroller>
       </MessageScrollerProvider>
 
-      <AskComposer
-        ref={composerRef}
-        compact={compact}
-        busy={busy || activeRun !== null}
-        onSend={onComposerSend}
-        onRunSkill={onRunSkill}
-        // A chat stream and a composer-started run can overlap; Stop settles the stream first.
-        onStop={() => (busy ? void stop() : activeRun?.cancel?.())}
-        modelGroups={groups}
-        modelValue={activeModel}
-        onModelChange={chooseModel}
-      />
+      {askAllowed ? (
+        <AskComposer
+          ref={composerRef}
+          compact={compact}
+          busy={busy || activeRun !== null}
+          onSend={onComposerSend}
+          onRunSkill={onRunSkill}
+          // A chat stream and a composer-started run can overlap; Stop settles the stream first.
+          onStop={() => (busy ? void stop() : activeRun?.cancel?.())}
+          modelGroups={groups}
+          modelValue={activeModel}
+          onModelChange={chooseModel}
+        />
+      ) : (
+        <div className="border-t border-border/60 px-4 py-3 text-sm">
+          <p className="font-medium">{t('settings.billing.screen.gateAskAiTitle')}</p>
+          <p className="text-muted-foreground">
+            {t('settings.billing.screen.gateAskAiDescription')}
+          </p>
+          <Link
+            href="/settings/billing"
+            className="mt-1 inline-block font-medium text-primary hover:underline"
+          >
+            {t('settings.billing.screen.gateSeePlans')}
+          </Link>
+        </div>
+      )}
     </>
   );
 }

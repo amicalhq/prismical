@@ -5,6 +5,7 @@ import { useApplicationLocale, type ApplicationTFunction } from '@prismical/app-
 import { useTranslation } from 'react-i18next';
 import { Copy, Loader2, Mail, Plus, UserMinus, Users } from 'lucide-react';
 import { toast } from 'sonner';
+import { AppLink as Link } from '../../shell/app-link';
 import { Avatar, AvatarFallback, AvatarImage } from '../../ui/avatar';
 import { Badge } from '../../ui/badge';
 import { Button } from '../../ui/button';
@@ -571,7 +572,17 @@ function InviteForm({ orgId }: { orgId: string }) {
         </Button>
       </div>
       {invite.error ? (
-        <p className="text-sm text-destructive">{t('settings.members.invite.error')}</p>
+        (invite.error as { code?: string }).code === 'SEAT_LIMIT_REACHED' ? (
+          // The plan's seat gate: the server's own sentence names the limit; the fix is a plan.
+          <p className="text-sm text-destructive">
+            {invite.error.message}{' '}
+            <Link href="/settings/billing" className="font-medium text-primary hover:underline">
+              {t('settings.billing.screen.gateSeePlans')}
+            </Link>
+          </p>
+        ) : (
+          <p className="text-sm text-destructive">{t('settings.members.invite.error')}</p>
+        )
       ) : (
         <p className="text-xs text-muted-foreground">{t('settings.members.invite.description')}</p>
       )}

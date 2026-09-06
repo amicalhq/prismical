@@ -43,6 +43,9 @@ import { ApiError } from "../api/client";
 import {
   restCreate,
   restList,
+  restNoteEventCreate,
+  restNoteEventList,
+  restNoteEventRemove,
   restNoteTagCreate,
   restNoteTagList,
   restNoteTagRemove,
@@ -118,6 +121,27 @@ export interface TagRow {
 }
 
 /** Composite-key junction row; `id = noteId:tagId` (synthesized at the wire). */
+/** A note↔calendar-event link as the store holds it (Legend key `noteId:eventKey`). */
+export interface NoteEventRow {
+  id: string;
+  /** Server row id; absent on an optimistic link until its create is acked. */
+  linkId?: string;
+  noteId: string;
+  eventKey: string;
+  seriesKey?: string;
+  /** MY own event row for this event (server-resolved per reader), or null when I hold none. */
+  eventId: string | null;
+  isPrimary: boolean;
+  source: "user" | "auto" | "api";
+  title: string;
+  startsAt: string | null;
+  endsAt: string | null;
+  meetingUrl: string | null;
+  createdAt?: SyncTimestamp;
+  updatedAt: SyncTimestamp;
+  deletedAt?: string | null;
+}
+
 export interface NoteTagRow {
   id: string;
   noteId: string;
@@ -202,6 +226,7 @@ export interface SyncStore {
   readonly folders$: Observable<Record<string, FolderRow>>;
   readonly tags$: Observable<Record<string, TagRow>>;
   readonly noteTags$: Observable<Record<string, NoteTagRow>>;
+  readonly noteEvents$: Observable<Record<string, NoteEventRow>>;
   /** Resolves once the note's collab room may open (metadata create acknowledged or not local). */
   whenNoteCreateAcked(id: string, timeoutMs?: number): Promise<void>;
   /** Delta re-pull of every collection (manual re-sync / poller tick). */
@@ -241,6 +266,20 @@ export interface SyncStore {
   findTagByName(name: string): TagRow | undefined;
   addNoteTag(noteId: string, tagId: string): void;
   removeNoteTag(noteId: string, tagId: string): void;
+  /**
+   * Link a note to one of MY calendar events (optimistic; the server keys it on the event's
+   * cross-user key). `event.key` is required to key the local row — events from a server that
+   * predates it cannot be linked optimistically.
+   */
+  linkNoteEvent(input: {
+    noteId: string;
+    event: { id: string; key: string; title: string; start: string; end: string; joinUrl?: string };
+    isPrimary?: boolean;
+  }): void;
+  /** Re-link as primary (the server upsert demotes the current one). Needs my own row for the event. */
+  setPrimaryNoteEvent(noteId: string, eventKey: string): void;
+  /** Tombstone a link. `decline` = the undo of an automatic link: never suggest this event again. */
+  unlinkNoteEvent(noteId: string, eventKey: string, opts?: { decline?: boolean }): void;
 }
 
 export function createSyncStore(options: SyncStoreOptions): SyncStore {
@@ -278,6 +317,22 @@ export function createSyncStore(options: SyncStoreOptions): SyncStore {
     options.getRequestOptions
       ? restNoteTagRemove(noteId, tagId, await options.getRequestOptions())
       : restNoteTagRemove(noteId, tagId);
+  const listNoteEvents = async (lastSync?: number): Promise<NoteEventRow[]> =>
+    options.getRequestOptions
+      ? restNoteEventList(lastSync, await options.getRequestOptions())
+      : restNoteEventList(lastSync);
+  const createNoteEvent = async (body: {
+    noteId: string;
+    eventId: string;
+    isPrimary?: boolean;
+  }): Promise<NoteEventRow> =>
+    options.getRequestOptions
+      ? restNoteEventCreate(body, await options.getRequestOptions())
+      : restNoteEventCreate(body);
+  const removeNoteEvent = async (linkId: string, decline: boolean): Promise<void> =>
+    options.getRequestOptions
+      ? restNoteEventRemove(linkId, decline, await options.getRequestOptions())
+      : restNoteEventRemove(linkId, decline);
 
   const dropped =
     (collection: string, op: "create" | "update" | "delete", extra?: () => void) => () => {
@@ -375,7 +430,14 @@ export function createSyncStore(options: SyncStoreOptions): SyncStore {
     crud<NoteRow>(
       "notes",
       "notes",
-      (saved) => resolveNoteCreateAck(saved.id),
+      (saved) => {
+        resolveNoteCreateAck(saved.id);
+        // A create that named an event was linked server-side in the same transaction (the
+        // transitional `eventId` path); pull the link now rather than on the next poll tick so the
+        // editor's meeting chip is there when the note opens. (`noteEvents$` is initialised below;
+        // this only ever runs after the create round-trips.)
+        if (saved.eventId) void syncState(noteEvents$ as never).sync().catch(() => undefined);
+      },
       // A terminally-dropped create also releases the gate: the optimistic row was
       // reverted away; letting the collab lane connect (and lazy-create server-side)
       // beats losing the user's typed body behind the 20s valve on every open.
@@ -425,7 +487,60 @@ export function createSyncStore(options: SyncStoreOptions): SyncStore {
     }),
   );
 
-  const collections = [notes$, folders$, tags$, noteTags$] as const;
+  // Declines are decided at unlink time but only known to the delete callback through the row
+  // it receives, so remember them here (the row itself must not change before its delete).
+  const pendingDeclines = new Set<string>();
+
+  const noteEvents$ = observable(
+    syncedCrud<NoteEventRow>({
+      list: ({ lastSync }: SyncedGetParams<NoteEventRow>) => listNoteEvents(lastSync || undefined),
+      create: (input: NoteEventRow, params: SyncedSetParams<NoteEventRow>) =>
+        input.eventId
+          ? createNoteEvent({ noteId: input.noteId, eventId: input.eventId, isPrimary: input.isPrimary })
+              .then((saved): NoteEventRow => saved)
+              .catch(terminal4xx("noteEvents", "create", params, dropped("noteEvents", "create")))
+          : Promise.resolve(input),
+      // The only update pushed is "make primary": the server upsert on (note, event) demotes the
+      // rest itself, so the local demotion of the previous primary must NOT be pushed — it would
+      // read as "make THAT one primary" and undo the promotion.
+      update: (input: Partial<NoteEventRow>, params: SyncedSetParams<NoteEventRow>) =>
+        input.noteId && input.eventId && input.isPrimary
+          ? createNoteEvent({ noteId: input.noteId, eventId: input.eventId, isPrimary: true })
+              .then((saved): NoteEventRow => saved)
+              .catch(terminal4xx("noteEvents", "update", params, dropped("noteEvents", "update")))
+          : Promise.resolve(input as NoteEventRow),
+      delete: (input: NoteEventRow, params: SyncedSetParams<NoteEventRow>) => {
+        const decline = pendingDeclines.delete(input.id);
+        // Never acked: there is no server row to remove (a still-queued create is superseded by
+        // the next pull either way).
+        if (!input.linkId) return Promise.resolve(null);
+        return removeNoteEvent(input.linkId, decline).then(
+          () => null,
+          terminal4xx("noteEvents", "delete", params, dropped("noteEvents", "delete")),
+        );
+      },
+      // Same parent gating as note-tags: the link POST must not reach core before the note's
+      // own create (a transient 404 terminal4xx would wrongly drop).
+      waitForSet: (p: WaitForSetFnParams<NoteEventRow>) => {
+        const type = (p as unknown as { type?: string }).type;
+        if (type !== "create") return undefined;
+        const { noteId } = p.value;
+        return () => {
+          const noteRow = notes$[noteId]!.get() as NoteRow | undefined;
+          return !noteRow || !!noteRow.createdAt;
+        };
+      },
+      ...persistFor("noteEvents"),
+      changesSince: "last-sync",
+      fieldUpdatedAt: "updatedAt",
+      fieldCreatedAt: "createdAt",
+      fieldDeleted: "deletedAt",
+      retry: { infinite: true },
+      as: "object",
+    }),
+  );
+
+  const collections = [notes$, folders$, tags$, noteTags$, noteEvents$] as const;
 
   const refreshAll = (): Promise<unknown> =>
     Promise.all(collections.map((collection$) => syncState(collection$ as never).sync()));
@@ -463,6 +578,7 @@ export function createSyncStore(options: SyncStoreOptions): SyncStore {
     folders$,
     tags$,
     noteTags$,
+    noteEvents$,
     whenNoteCreateAcked,
     refreshAll,
     reset,
@@ -489,7 +605,10 @@ export function createSyncStore(options: SyncStoreOptions): SyncStore {
             : "manual",
         titleRevision: 0,
         folderId: input.folderId ?? null,
-        eventId: input.eventId ?? null,
+        // Only when the caller said so: an explicit null means "no event", an ABSENT field lets the
+        // server associate a note created during one of the user's meetings (undoable) - so a
+        // plain "New note" must not send null.
+        ...(input.eventId !== undefined ? { eventId: input.eventId } : {}),
         iconUrl: input.iconUrl ?? null,
         starred: false,
         excerpt: null,
@@ -583,6 +702,48 @@ export function createSyncStore(options: SyncStoreOptions): SyncStore {
       const id = `${noteId}:${tagId}`;
       const existing = noteTags$[id]!.peek() as NoteTagRow | undefined;
       if (existing && !existing.deletedAt) noteTags$[id]!.delete();
+    },
+
+    linkNoteEvent: ({ noteId, event, isPrimary }) => {
+      const id = `${noteId}:${event.key}`;
+      const rows = noteEvents$.peek() as Record<string, NoteEventRow> | undefined;
+      const hasPrimary = Object.values(rows ?? {}).some(
+        (r) => r && r.noteId === noteId && r.isPrimary && !r.deletedAt && r.id !== id,
+      );
+      // No createdAt (create → POST; the link POST is an upsert keyed on the pair).
+      noteEvents$[id]!.set({
+        id,
+        noteId,
+        eventKey: event.key,
+        eventId: event.id,
+        isPrimary: isPrimary ?? !hasPrimary,
+        source: "user",
+        title: event.title,
+        startsAt: event.start,
+        endsAt: event.end,
+        meetingUrl: event.joinUrl ?? null,
+        updatedAt: nowIso(),
+      });
+    },
+    setPrimaryNoteEvent: (noteId, eventKey) => {
+      const id = `${noteId}:${eventKey}`;
+      const target = noteEvents$[id]!.peek() as NoteEventRow | undefined;
+      if (!target || target.deletedAt || !target.eventId || target.isPrimary) return;
+      const rows = noteEvents$.peek() as Record<string, NoteEventRow> | undefined;
+      for (const r of Object.values(rows ?? {})) {
+        if (r && r.noteId === noteId && r.isPrimary && !r.deletedAt && r.id !== id) {
+          // Local demotion only — the server does it as part of the promote upsert.
+          noteEvents$[r.id]!.assign({ isPrimary: false });
+        }
+      }
+      noteEvents$[id]!.assign({ isPrimary: true, updatedAt: nowIso() });
+    },
+    unlinkNoteEvent: (noteId, eventKey, opts) => {
+      const id = `${noteId}:${eventKey}`;
+      const existing = noteEvents$[id]!.peek() as NoteEventRow | undefined;
+      if (!existing || existing.deletedAt) return;
+      if (opts?.decline) pendingDeclines.add(id);
+      noteEvents$[id]!.delete();
     },
   };
 }

@@ -212,6 +212,7 @@ export interface CoreCalendar {
 }
 export interface CoreEvent {
   id: string;
+  key?: string;
   calendarId: string;
   title: string;
   startsAt?: string | null;
@@ -263,6 +264,7 @@ export function toCalendarEvent(c: CoreEvent, calendarColor?: string | null): Ca
   if (!c.startsAt) return null;
   return {
     id: c.id,
+    key: c.key ?? undefined,
     title: c.title || '(untitled)',
     start: c.startsAt,
     end: c.endsAt ?? c.startsAt,

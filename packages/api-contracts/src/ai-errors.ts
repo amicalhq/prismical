@@ -51,6 +51,17 @@ export const AI_ERROR_CODES = {
   // ── Transcription (the wire code predates this vocabulary and is kept for older clients) ───
   /** The member has used this month's included Cloud transcription (402, enforce mode only). */
   TRANSCRIPTION_QUOTA_EXCEEDED: 'TRANSCRIPTION_QUOTA_EXCEEDED',
+
+  // ── Plan entitlements (decided before any provider call; see core `usage/entitlements.ts`) ──
+  /** Ask AI is not included in the organization's plan. */
+  ASK_NOT_IN_PLAN: 'ASK_NOT_IN_PLAN',
+  /** This period's AI credits (managed Ask turns + managed skill runs) are used up. */
+  AI_CREDITS_EXHAUSTED: 'AI_CREDITS_EXHAUSTED',
+  /**
+   * A BYOK instance was chosen but the plan does not include BYOK. On a run this is a NOTICE (the
+   * run went to Prismical Cloud instead); on instance creation it is the 402 code.
+   */
+  BYOK_NOT_IN_PLAN: 'BYOK_NOT_IN_PLAN',
 } as const;
 export type AiErrorCode = (typeof AI_ERROR_CODES)[keyof typeof AI_ERROR_CODES];
 
@@ -90,6 +101,8 @@ export const AI_ERROR_ACTION_KINDS = [
   'append-instead',
   /** Ask: send a "continue" turn after a truncated answer. */
   'continue',
+  /** Plan gates: open Settings → Billing (upgrade, or see what the plan includes). */
+  'open-billing',
 ] as const;
 export type AiErrorActionKind = (typeof AI_ERROR_ACTION_KINDS)[number];
 

@@ -64,6 +64,10 @@ interface Copy {
   quotaExceededTranscription: Entry;
   instanceNotFoundTranscription: Entry;
   byokNotAllowedTranscription: Entry;
+  /** Plan gates (Settings → Billing is the fix, so every one offers `open-billing`). */
+  askNotInPlan: Entry;
+  aiCreditsExhausted: Entry;
+  byokNotInPlan: Entry;
   generic: Entry;
   /** Fallback subject names when the caller has no skill name. */
   subject: { skill: string; ask: string; transcription: string };
@@ -213,6 +217,18 @@ const en: Copy = {
     body: 'Switch to Prismical Cloud in Settings. The rest of this recording won’t be transcribed.',
   },
 
+  askNotInPlan: {
+    title: 'Ask AI isn’t included in your plan.',
+    body: 'Upgrade to ask questions across your notes.',
+  },
+  aiCreditsExhausted: {
+    title: 'You’ve used this month’s AI credits.',
+    body: 'Credits reset at the start of next month. Upgrade for more.',
+  },
+  byokNotInPlan: {
+    title: 'Your own API key isn’t included in your plan.',
+    body: 'This ran on Prismical Cloud instead. Upgrade to use your own keys.',
+  },
   subject: { skill: 'This skill', ask: 'Ask AI', transcription: 'Transcription' },
   actions: {
     retry: 'Try again',
@@ -221,6 +237,7 @@ const en: Copy = {
     'choose-model': 'Choose model',
     'append-instead': 'Append instead',
     continue: 'Continue',
+    'open-billing': 'See plans',
   },
 };
 
@@ -374,6 +391,18 @@ const de: Copy = {
     body: 'Wechsle in den Einstellungen zu Prismical Cloud. Der Rest dieser Aufnahme wird nicht transkribiert.',
   },
 
+  askNotInPlan: {
+    title: 'Ask AI ist in deinem Plan nicht enthalten.',
+    body: 'Führe ein Upgrade durch, um Fragen zu deinen Notizen zu stellen.',
+  },
+  aiCreditsExhausted: {
+    title: 'Du hast die KI-Credits dieses Monats aufgebraucht.',
+    body: 'Die Credits werden zu Beginn des nächsten Monats zurückgesetzt. Führe ein Upgrade durch, um mehr zu erhalten.',
+  },
+  byokNotInPlan: {
+    title: 'Dein eigener API-Schlüssel ist in deinem Plan nicht enthalten.',
+    body: 'Stattdessen lief dies über Prismical Cloud. Führe ein Upgrade durch, um eigene Schlüssel zu verwenden.',
+  },
   subject: { skill: 'Diese Fähigkeit', ask: 'Ask AI', transcription: 'Die Transkription' },
   actions: {
     retry: 'Erneut versuchen',
@@ -382,6 +411,7 @@ const de: Copy = {
     'choose-model': 'Modell wählen',
     'append-instead': 'Stattdessen anhängen',
     continue: 'Fortsetzen',
+    'open-billing': 'Pläne ansehen',
   },
 };
 
@@ -531,6 +561,18 @@ const es: Copy = {
     body: 'Cambia a Prismical Cloud en Ajustes. El resto de esta grabación no se transcribirá.',
   },
 
+  askNotInPlan: {
+    title: 'Ask AI no está incluido en tu plan.',
+    body: 'Mejora tu plan para hacer preguntas sobre tus notas.',
+  },
+  aiCreditsExhausted: {
+    title: 'Has usado los créditos de IA de este mes.',
+    body: 'Los créditos se reinician al comienzo del próximo mes. Mejora tu plan para tener más.',
+  },
+  byokNotInPlan: {
+    title: 'Tu propia clave de API no está incluida en tu plan.',
+    body: 'Esto se ejecutó en Prismical Cloud en su lugar. Mejora tu plan para usar tus propias claves.',
+  },
   subject: { skill: 'Esta habilidad', ask: 'Ask AI', transcription: 'La transcripción' },
   actions: {
     retry: 'Intentar de nuevo',
@@ -539,6 +581,7 @@ const es: Copy = {
     'choose-model': 'Elegir modelo',
     'append-instead': 'Añadir en su lugar',
     continue: 'Continuar',
+    'open-billing': 'Ver planes',
   },
 };
 
@@ -700,6 +743,18 @@ const ja: Copy = {
     body: '設定でPrismical Cloudに切り替えてください。この録音の残りは文字起こしされません。',
   },
 
+  askNotInPlan: {
+    title: 'Ask AI は現在のプランに含まれていません。',
+    body: 'ノート全体に質問するにはアップグレードしてください。',
+  },
+  aiCreditsExhausted: {
+    title: '今月の AI クレジットを使い切りました。',
+    body: 'クレジットは来月初めにリセットされます。さらに使うにはアップグレードしてください。',
+  },
+  byokNotInPlan: {
+    title: '自分の API キーは現在のプランに含まれていません。',
+    body: '代わりに Prismical Cloud で実行しました。自分のキーを使うにはアップグレードしてください。',
+  },
   subject: { skill: 'このスキル', ask: 'Ask AI', transcription: '文字起こし' },
   actions: {
     retry: 'もう一度試す',
@@ -708,6 +763,7 @@ const ja: Copy = {
     'choose-model': 'モデルを選ぶ',
     'append-instead': '代わりに追記する',
     continue: '続ける',
+    'open-billing': 'プランを見る',
   },
 };
 
@@ -842,6 +898,18 @@ const zhTW: Copy = {
     body: '請到設定切換為 Prismical Cloud。這段錄音的其餘部分不會轉錄。',
   },
 
+  askNotInPlan: {
+    title: 'Ask AI 不包含在你的方案中。',
+    body: '升級後即可針對你的筆記提問。',
+  },
+  aiCreditsExhausted: {
+    title: '本月的 AI 點數已用完。',
+    body: '點數會在下個月初重置。升級可取得更多點數。',
+  },
+  byokNotInPlan: {
+    title: '你的方案不包含使用自己的 API 金鑰。',
+    body: '這次改以 Prismical Cloud 執行。升級後即可使用自己的金鑰。',
+  },
   subject: { skill: '這個技能', ask: 'Ask AI', transcription: '轉錄' },
   actions: {
     retry: '再試一次',
@@ -850,6 +918,7 @@ const zhTW: Copy = {
     'choose-model': '選擇模型',
     'append-instead': '改為附加',
     continue: '繼續',
+    'open-billing': '查看方案',
   },
 };
 
@@ -996,6 +1065,13 @@ export function describeAiError(input: DescribeAiErrorInput): AiUserError {
       return pick(copy.askFailed, 'error', act('retry'));
     case AI_ERROR_CODES.TRANSCRIPTION_QUOTA_EXCEEDED:
       return pick(copy.transcriptionQuota, 'warning', act('open-ai-models'));
+    case AI_ERROR_CODES.ASK_NOT_IN_PLAN:
+      return pick(copy.askNotInPlan, 'warning', act('open-billing'));
+    case AI_ERROR_CODES.AI_CREDITS_EXHAUSTED:
+      return pick(copy.aiCreditsExhausted, 'warning', act('open-billing'));
+    case AI_ERROR_CODES.BYOK_NOT_IN_PLAN:
+      // A notice on a run that already went to Prismical Cloud: informative, never blocking.
+      return pick(copy.byokNotInPlan, 'info', act('open-billing'));
     case AI_ERROR_CODES.MODEL_FALLBACK_TO_CLOUD:
       // The instance that was chosen is GONE (deleted), so its provider is unknown by the time
       // this fires — the copy names "the model you chose" rather than a provider.

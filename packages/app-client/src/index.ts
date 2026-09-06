@@ -33,6 +33,7 @@ export * from "./api/hooks/folders";
 export * from "./api/hooks/instances";
 export * from "./api/hooks/mcp-servers";
 export * from "./api/hooks/model-defaults";
+export * from "./api/hooks/note-events";
 export * from "./api/hooks/note-tags";
 export * from "./api/hooks/notes";
 export * from "./api/hooks/organizations";

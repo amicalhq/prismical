@@ -16,6 +16,9 @@ vi.mock("./api", () => ({
   restNoteTagList: vi.fn(async () => []),
   restNoteTagCreate: vi.fn(async () => undefined),
   restNoteTagRemove: vi.fn(async () => undefined),
+  restNoteEventList: vi.fn(async () => []),
+  restNoteEventCreate: vi.fn(),
+  restNoteEventRemove: vi.fn(async () => undefined),
 }));
 
 import * as api from "./api";

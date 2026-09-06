@@ -34,6 +34,9 @@ export const EventKitPartySchema = z.object({
   email: z.email().max(320).nullable().optional(),
   isCurrentUser: z.boolean().optional(),
   status: z.string().max(32).nullable().optional(),
+  // EKParticipantType: rooms and resources are not people (a solo focus block with a room booked
+  // must not read as a two-person meeting). Absent means person.
+  type: z.enum(['person', 'room', 'resource', 'group', 'unknown']).optional(),
 });
 
 export const EventKitEventInputSchema = z

@@ -298,6 +298,7 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
           const [primary] = bindAiErrorActions(result.notice.actions, {
             "choose-model": () => navigation.push("/settings/ai-models"),
             "open-ai-models": () => navigation.push("/settings/ai-models"),
+            "open-billing": () => navigation.push("/settings/billing"),
           });
           toast.info(result.notice.title, {
             description: result.notice.body,
@@ -333,6 +334,7 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
             "append-instead": () => void runRef.current({ ...args, mode: "append-section" }),
             "open-ai-models": () => navigation.push("/settings/ai-models"),
             "choose-model": () => navigation.push("/settings/ai-models"),
+            "open-billing": () => navigation.push("/settings/billing"),
           });
           // The first action is the toast's button; any further action is a link in the body.
           // (sonner's `cancel` slot renders BEFORE `action` and styled as a dismiss, which would

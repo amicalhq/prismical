@@ -1,6 +1,6 @@
 'use client';
 
-import { useDeviceSettings } from '@prismical/app-client';
+import { useDeviceSettings, useEntitlements } from '@prismical/app-client';
 import { Card, CardContent } from '../../ui/card';
 import { Label } from '../../ui/label';
 import { Separator } from '../../ui/separator';
@@ -55,13 +55,15 @@ export function ShortcutsScreen() {
   const { t } = useTranslation();
   const isApple = useIsApplePlatform();
   const { settings, set, has } = useDeviceSettings();
+  const { entitlements } = useEntitlements();
 
   // The floating-note hotkey is an OS-level global registered by Electron main,
   // not one of the in-app bindings — shown only where it actually exists. Note
   // the gate does NOT test for a non-empty accelerator: this is now the only
   // place to set it, so a disabled hotkey must still render (as "Disabled") or
   // it could never be turned back on.
-  const showDockHotkey = has('floating-note') && has('global-shortcuts');
+  const showDockHotkey =
+    has('floating-note') && has('global-shortcuts') && entitlements.features.floatingMode;
   const actionLabels: Record<ShortcutId, string> = {
     'command-palette': t('settings.shortcuts.actions.commandPalette'),
     'toggle-sidebar': t('settings.shortcuts.actions.toggleSidebar'),

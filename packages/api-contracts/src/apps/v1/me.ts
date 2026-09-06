@@ -1,6 +1,15 @@
 import { z } from 'zod';
 import { AppsV1IsoDateTimeSchema } from './common.js';
-import { PlanSummarySchema } from './plan.js';
+import { PlanEntitlementsSchema, PlanSummarySchema } from './plan.js';
+
+const MeMeterSchema = z
+  .object({
+    used: z.number().int().nonnegative(),
+    limit: z.number().int().nonnegative().nullable(),
+    resetsAt: AppsV1IsoDateTimeSchema.nullable(),
+    scope: z.enum(['org', 'member']),
+  })
+  .strip();
 
 /** Session bootstrap response for the caller's explicitly selected organization. */
 export const MeResponseSchema = z
@@ -11,16 +20,14 @@ export const MeResponseSchema = z
     role: z.string().min(1),
     revenuecatAppUserId: z.string().min(1),
     plan: PlanSummarySchema,
+    /** What the plan grants, resolved. Optional only so older cores still parse. */
+    entitlements: PlanEntitlementsSchema.optional(),
     usage: z
       .object({
-        dictation: z
-          .object({
-            used: z.number().int().nonnegative(),
-            limit: z.number().int().nonnegative().nullable(),
-            resetsAt: AppsV1IsoDateTimeSchema.nullable(),
-            scope: z.enum(['org', 'member']),
-          })
-          .strip(),
+        /** Cloud transcription seconds this period (legacy name, kept for older clients). */
+        dictation: MeMeterSchema,
+        /** AI credits this period; absent on a core that predates credits. */
+        aiCredits: MeMeterSchema.optional(),
       })
       .strip()
       .nullable(),

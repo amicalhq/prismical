@@ -10,6 +10,7 @@ import { X } from 'lucide-react';
 import { RecordingPillFace, recordingPillWidth } from './note-recording-dock';
 import { DockUnit, DockRowmate } from './dock-unit';
 import { SkillDockSlot } from './skill-dock-slot';
+import { useEntitlements } from '@prismical/app-client';
 import {
   consumePendingAutoTranscribe,
   getRecordingPreferences,
@@ -801,6 +802,49 @@ export function RecordingBottomCluster({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rec.autoStopRequested]);
 
+  // Plan gate: the longest continuous recording the plan allows (30 min on the entry plans, 2 h on
+  // paid ones). A heads-up toast five minutes out, then the same stop the dock's button performs —
+  // analytics, cache invalidations, auto-enhance — so the note is finished, not abandoned. Paused
+  // time does not count: the session timer banks only running seconds (a float-window remount
+  // that rehydrates from wall clock is the known exception). The stop fires ONCE per session:
+  // `elapsedSeconds` keeps ticking while the async stop settles, so the guard is what stops a
+  // second toast and a second stop. The client is the whole gate today; the server backstop is a
+  // follow-up.
+  const { entitlements } = useEntitlements();
+  const maxRecordingSeconds = entitlements.limits.maxRecordingSeconds;
+  const limitWarnedRef = React.useRef(false);
+  const limitStoppedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (rec.state === 'starting') {
+      limitWarnedRef.current = false;
+      limitStoppedRef.current = false;
+    }
+  }, [rec.state]);
+  React.useEffect(() => {
+    if (rec.state !== 'recording' || maxRecordingSeconds === null) return;
+    const limitMinutes = Math.round(maxRecordingSeconds / 60);
+    const remaining = maxRecordingSeconds - elapsedSeconds;
+    if (remaining <= 0) {
+      if (limitStoppedRef.current) return;
+      limitStoppedRef.current = true;
+      toast.warning(t('recording.errors.limitStopped', { minutes: limitMinutes }), {
+        description: t('recording.errors.limitStoppedDescription'),
+      });
+      analyticsRef.current.capture(EVENTS.RECORDING_AUTO_STOPPED, {
+        recording_id: rec.recordingId,
+      });
+      onStopRef.current({ returnToNote: false });
+      return;
+    }
+    if (remaining <= 300 && !limitWarnedRef.current) {
+      limitWarnedRef.current = true;
+      toast.info(t('recording.errors.limitSoon', { minutes: Math.ceil(remaining / 60) }), {
+        description: t('recording.errors.limitSoonDescription', { limit: limitMinutes }),
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rec.state, elapsedSeconds, maxRecordingSeconds]);
+
   // Panel footprints: the unit morphs to these when expanded. The inner max()
   // keeps a usable panel on desktop; below 820px the `--dock-panel-w` custom
   // property (set by tokens.css on `.dock-narrow-panels`) overrides every
@@ -852,6 +896,7 @@ export function RecordingBottomCluster({
     const [first] = bindAiErrorActions(rec.errorUser.actions, {
       'open-ai-models': () => router.push('/settings/ai-models'),
       'choose-model': () => router.push('/settings/ai-models'),
+      'open-billing': () => router.push('/settings/billing'),
     });
     return first ?? null;
   }, [rec.errorUser, router]);
@@ -1116,6 +1161,8 @@ export function RecordingBottomCluster({
                 onRunSkill={onAskRunSkill}
                 noteId={noteId}
                 compact={compact}
+                // Plan gate: the thread stays (skill runs render there); only asking is gated.
+                askAllowed={entitlements.features.askAi}
               />
             }
           />

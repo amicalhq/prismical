@@ -19,4 +19,9 @@ export interface RunnableSkill {
   config: SkillRunConfig;
   /** MCP tool grants: `mcp:{serverId}:{tool}` / `mcp:{serverId}:*`; null = none. */
   allowedTools: unknown;
+  /**
+   * Server-owned: true for the built-in skills (the naming skill among them), never settable by a
+   * client. Callers that exempt a run from metering key on this, not on `config`.
+   */
+  system?: boolean;
 }

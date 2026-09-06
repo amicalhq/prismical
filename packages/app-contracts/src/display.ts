@@ -43,6 +43,11 @@ export type Folder = {
 
 export type CalendarEvent = {
   id: string;
+  /**
+   * Opaque cross-user identity of the invite (the same for every attendee's copy). Note↔event
+   * links are keyed on it; absent on rows from a server that predates it.
+   */
+  key?: string;
   title: string;
   start: string;
   end: string;
@@ -50,6 +55,25 @@ export type CalendarEvent = {
   isAllDay?: boolean;
   joinUrl?: string;
   attendees?: string[];
+};
+
+/**
+ * One of a note's calendar events, as THIS user sees it. Events are per-user rows, so `eventId`
+ * is the user's own copy of the invite (undefined when they hold none — a collaborator's link);
+ * title/times/joinUrl always render, from the user's row or from the invite as it was linked.
+ */
+export type NoteEventLink = {
+  noteId: string;
+  eventKey: string;
+  eventId?: string;
+  /** The event the note is principally about; at most one per note. */
+  isPrimary: boolean;
+  /** 'auto' = matched from the calendar when the note was created (undoable). */
+  source: 'user' | 'auto' | 'api';
+  title: string;
+  start?: string;
+  end?: string;
+  joinUrl?: string;
 };
 
 export type CalendarConnection = {
@@ -89,6 +113,7 @@ export type Note = {
   updatedAt: string;
   preview: string;
   body: string; // plain text or simple markdown for static render
+  /** The user's own event row for the note's primary link (see NoteEventLink); never another user's. */
   eventId?: string;
   writable?: boolean; // false ⇒ caller has read-only access (disable the editor)
   isOwner?: boolean; // false ⇒ this note was shared with the caller ("Shared with me")

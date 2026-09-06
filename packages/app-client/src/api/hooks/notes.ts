@@ -20,8 +20,9 @@ import { useTranslation } from "react-i18next";
 import { useApplicationLocale } from "@prismical/app-i18n";
 import { toNote, noteUpdateBody, type CoreNote, type NotePatch } from "../adapters";
 import { useSyncStore } from "../../sync/provider";
-import type { NoteRow, SyncStore } from "../../sync/store";
+import type { NoteEventRow, NoteRow, SyncStore } from "../../sync/store";
 import { useAllNoteTags } from "./note-tags";
+import { primaryEventIdByNote } from "./note-events";
 import { EVENTS } from "../../analytics-events";
 import { usePorts } from "../../ports-context";
 import type { Note } from "@prismical/app-contracts";
@@ -96,10 +97,15 @@ export function listResult<TRow extends { id: string; updatedAt: string | Date }
   };
 }
 
-function noteFromRow(row: NoteRow): Note {
+function noteFromRow(row: NoteRow, primaryEvents?: Map<string, string | null>): Note {
   // NoteRow is the CoreNote wire shape (+ resident contentText); timestamps may
   // be Date post-echo (SyncTimestamp) — normalize for the contract type.
-  return toNote({ ...row, updatedAt: String(row.updatedAt) } as CoreNote);
+  const note = toNote({ ...row, updatedAt: String(row.updatedAt) } as CoreNote);
+  // `eventId` is MY event row for the note's primary link. The row's own column is the LINKER's
+  // row (transitional dual-write): right for the creator's first paint before the link row
+  // arrives, meaningless to a collaborator — so the link wins whenever one exists.
+  if (primaryEvents?.has(row.id)) note.eventId = primaryEvents.get(row.id) ?? undefined;
+  return note;
 }
 
 // The notes list with bodies; includeBody rides the sync pull.
@@ -117,11 +123,14 @@ export function useNotes(): SyncListResult<Note[]> {
       };
     }
     const state = syncState(store.notes$);
+    const primaryEvents = primaryEventIdByNote(
+      store.noteEvents$.get() as Record<string, NoteEventRow> | undefined,
+    );
     return listResult(
       store,
       store.notes$.get() as Record<string, NoteRow> | undefined,
       { isLoaded: state.isLoaded.get(), error: state.error.get() },
-      noteFromRow,
+      (row) => noteFromRow(row, primaryEvents),
     );
   });
 }
@@ -164,7 +173,9 @@ export function useCreateNote(): SyncMutationResult<
       title,
       titleIntent: "default",
       folderId: vars?.folderId ?? null,
-      eventId: vars?.eventId ?? null,
+      // Absent (not null) when no event was named: the server may then link a note created
+      // during a meeting automatically - see store.createNote.
+      eventId: vars?.eventId,
     });
     analytics.capture(EVENTS.NOTE_CREATED, {
       note_id: id,

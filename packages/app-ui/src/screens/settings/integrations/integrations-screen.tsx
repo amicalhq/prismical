@@ -25,6 +25,7 @@ import {
   useAuthorizeMcpServer,
   useAutomations,
   useCreateMcpServer,
+  useEntitlements,
   useFeatureFlag,
   useMcpServers,
   useNavigation,
@@ -823,6 +824,7 @@ export function IntegrationsScreen() {
   // off for customers while the curated connections above stay available. The server enforces
   // this too — it omits custom rows from the list and 403s every custom-row operation.
   const { enabled: customMcpEnabled } = useFeatureFlag('customMcpServers');
+  const { entitlements } = useEntitlements();
   const customServersEnabled = integrationsEnabled && customMcpEnabled;
   const mcpQuery = useMcpServers(integrationsResolved && integrationsEnabled);
   const refetchMcpServers = mcpQuery.refetch;
@@ -1061,14 +1063,25 @@ export function IntegrationsScreen() {
             tone="bg-success/10 text-success"
             href="/settings/api-keys"
           />
-          <ConnectionMethodCard
-            icon={Webhook}
-            name={t('settings.integrations.methods.webhookName')}
-            description={t('settings.integrations.methods.webhookDescription')}
-            destination={t('settings.integrations.actions.newAutomation')}
-            tone="bg-blue-500/10 text-blue-700 dark:text-blue-300"
-            onClick={() => openAutomation('webhook')}
-          />
+          {entitlements.features.automations ? (
+            <ConnectionMethodCard
+              icon={Webhook}
+              name={t('settings.integrations.methods.webhookName')}
+              description={t('settings.integrations.methods.webhookDescription')}
+              destination={t('settings.integrations.actions.newAutomation')}
+              tone="bg-blue-500/10 text-blue-700 dark:text-blue-300"
+              onClick={() => openAutomation('webhook')}
+            />
+          ) : (
+            // Plan gate (client half): the server refuses creation with AUTOMATIONS_NOT_IN_PLAN
+            // and stops fanning out to existing automations regardless.
+            <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+              {t('settings.billing.screen.gateAutomations')}{' '}
+              <Link href="/settings/billing" className="font-medium text-primary hover:underline">
+                {t('settings.billing.screen.gateSeePlans')}
+              </Link>
+            </p>
+          )}
           {customServersEnabled ? (
             <ConnectionMethodCard
               icon={Server}

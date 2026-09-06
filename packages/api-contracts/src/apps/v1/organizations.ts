@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { AppsV1DateTimeResponseSchema, appsV1ListResponseSchema } from './common.js';
+import { PlanEntitlementsSchema } from './plan.js';
 
 export const OrganizationRoleSchema = z.enum(['owner', 'admin', 'member']);
 export const OrganizationInviteRoleSchema = z.enum(['admin', 'member']);
@@ -47,6 +48,12 @@ export const OrganizationSchema = z
     features: z.record(z.string(), z.boolean()),
     transcription: OrganizationTranscriptionPolicySchema.optional(),
     memberCount: z.number().int().nonnegative(),
+    /**
+     * What the org's plan grants (Ask AI, BYOK, automations, floating mode, recording length,
+     * seats, credits). Read through `useEntitlements()` on the client; optional only so a client
+     * can parse a core that predates entitlements — absent means "no plan gate", never "off".
+     */
+    entitlements: PlanEntitlementsSchema.optional(),
   })
   .strip();
 export type Organization = z.output<typeof OrganizationSchema>;

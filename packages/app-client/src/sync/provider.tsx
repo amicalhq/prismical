@@ -48,6 +48,11 @@ const REJECTION_MESSAGE_KEYS: Record<string, Record<string, ApplicationTranslati
     update: 'common.mutationErrors.folderUpdate',
     delete: 'common.mutationErrors.folderDelete',
   },
+  noteEvents: {
+    create: 'common.mutationErrors.noteEventLink',
+    update: 'common.mutationErrors.noteEventLink',
+    delete: 'common.mutationErrors.noteEventUnlink',
+  },
   tags: {
     create: 'common.mutationErrors.tagCreate',
     update: 'common.mutationErrors.tagUpdate',
@@ -163,6 +168,7 @@ export function SyncStoreProvider({ children }: { children: React.ReactNode }) {
       created.folders$.get();
       created.tags$.get();
       created.noteTags$.get();
+      created.noteEvents$.get();
       created.startPolling();
       // Do NOT publish the store until that first pull has settled. A write applied while it is
       // still in flight is destroyed by it: the initial list carries no `lastSync`, so it returns
