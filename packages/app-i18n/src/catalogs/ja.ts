@@ -161,6 +161,18 @@ const ja = {
       transcription: { description: '録音入力と文字起こしの設定', title: '文字起こし' },
       vocabulary: { description: '認識精度を高めるカスタム単語', title: '単語登録' },
     },
+    quota: {
+      action: {
+        upgrade: 'アップグレード',
+        upgradeUnlimited: '無制限にアップグレード',
+      },
+      detail: '{{limit}}中{{used}}を使用 - {{date}}にリセット',
+      label: {
+        cloudTranscription: 'クラウド文字起こし',
+      },
+      left: '残り{{duration}}',
+      noTimeLeft: '残り時間なし',
+    },
     secondary: {
       community: 'コミュニティ',
       docs: 'ドキュメント',
@@ -582,8 +594,7 @@ const ja = {
       limitSoonDescription: '現在のプランでは {{limit}} 分までの録音が可能です。上限に達すると自動的に停止します。',
       limitStopped: 'プランの上限（{{minutes}} 分）に達したため録音を停止しました。',
       limitStoppedDescription: 'ノートと文字起こしは保存されています。続けるには新しい録音を開始するか、アップグレードして長い録音を有効にしてください。',
-      deferredRecovery:
-        '録音はまだ文字起こしできていません。再接続後に音声のアップロードを再試行します。',
+      completionRecovery: '録音の保存を完了できませんでした。再接続すると再試行します。',
       endedUnexpectedly: '録音が予期せず終了しました。',
       microphoneDenied: 'マイクへのアクセスが拒否されました。',
       microphoneDeniedHintDesktop:
@@ -608,7 +619,6 @@ const ja = {
       count_other: '{{count}} 件の録音',
       empty: '文字起こしはまだありません。録音を開始して会議やボイスノートを記録しましょう。',
       finishing: '仕上げています…',
-      uploadingAudio: '音声をアップロード中…',
       identifyingSpeakers: '話者を識別しています…',
       input: '入力',
       allAudioSettings: 'すべてのオーディオ設定…',
@@ -651,6 +661,14 @@ const ja = {
     },
     composerPlaceholder: '何でも聞いてください — / でスキル、@ でノート',
     composerPlaceholderShort: '/ でスキル、@ でノート',
+    composerPlaceholderSkillsOnly: '/ でスキルを実行',
+    composerPlaceholderUnavailable: 'Ask AI はプランに含まれていません',
+    gate: {
+      pill: 'スキルを実行…',
+      skillsOnly: 'Ask AI は現在のプランに含まれていません。スキルはここで引き続き実行できます。',
+      unavailable: 'Ask AI は現在のプランに含まれていません。',
+      refused: 'Ask AI は現在のプランに含まれていません。代わりに / でスキルを実行してください。',
+    },
     dockDescription: 'ノートについて AI に質問',
     dockHide: 'AI に質問を隠す',
     dockLabel: '質問',
@@ -2091,6 +2109,8 @@ const ja = {
       welcome: 'Prismical へようこそ',
     },
     flow: {
+      sessionUnavailable: 'セッションを一時的に利用できません。もう一度お試しください。',
+      retryIn: '{{count}}秒後に再試行',
       callbackFailed: 'サインインを完了できませんでした。もう一度お試しください。',
       couldNotSignIn: 'サインインできませんでした',
       handoffInvalid:

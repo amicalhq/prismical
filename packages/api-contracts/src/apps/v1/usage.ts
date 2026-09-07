@@ -15,6 +15,55 @@ export const AiTokensBreakdownSchema = z
   })
   .strip();
 
+/**
+ * A piece of display copy the server resolved. `kind` is the stable identifier a client maps to
+ * its own locale catalog; `text` is an optional server override that WINS when present, so copy
+ * can be changed (or a brand-new variant shipped) without a client release. An override is in
+ * whatever language the server sent it in, so default responses carry `kind` alone.
+ */
+export const UsageCopySchema = z
+  .object({
+    kind: z.string().min(1),
+    text: z.string().min(1).optional(),
+  })
+  .strip();
+export type UsageCopy = z.output<typeof UsageCopySchema>;
+
+export const UsageActionSchema = UsageCopySchema.extend({
+  /** Where the call to action goes. Opaque to the client - never re-derived from the plan. */
+  href: z.string().min(1),
+  /** True for an off-app destination the client should open in the system browser. */
+  external: z.boolean(),
+}).strip();
+export type UsageAction = z.output<typeof UsageActionSchema>;
+
+/**
+ * Everything the Cloud-transcription meter renders. Which plans get a call to action, and where
+ * it points, is decided HERE and never in the client: the desktop app is open source and must
+ * carry no plan, tier, or vendor knowledge.
+ */
+export const CloudTranscriptionQuotaSchema = z
+  .object({
+    usedSeconds: z.number().int().nonnegative(),
+    /** null = unlimited; the client renders nothing at all. */
+    limitSeconds: z.number().int().nonnegative().nullable(),
+    resetsAt: AppsV1IsoDateTimeSchema,
+    label: UsageCopySchema,
+    /** Whole-row target, or null when this member cannot open billing. */
+    href: z.string().min(1).nullable(),
+    /** null = nothing to upgrade to, or this member cannot act on billing. */
+    action: UsageActionSchema.nullable(),
+  })
+  .strip();
+export type CloudTranscriptionQuota = z.output<typeof CloudTranscriptionQuotaSchema>;
+
+export const UsageQuotaSchema = z
+  .object({
+    cloudTranscription: CloudTranscriptionQuotaSchema,
+  })
+  .strip();
+export type UsageQuota = z.output<typeof UsageQuotaSchema>;
+
 export const UsageSchema = z
   .object({
     period: z
@@ -41,6 +90,12 @@ export const UsageSchema = z
         cloudTranscriptionSeconds: z.number().int().nonnegative().nullable(),
       })
       .strip(),
+    /**
+     * The Cloud-transcription meter, fully resolved server-side. Optional so a client
+     * newer than its core still parses: absent means "this core does not report the meter", and
+     * the surface hides rather than guessing.
+     */
+    quota: UsageQuotaSchema.optional(),
   })
   .strip();
 

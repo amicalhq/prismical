@@ -24,9 +24,6 @@ import {
   parseAiErrorDetails,
 } from '@prismical/api-contracts';
 import {
-  AbandonStagingResponseSchema,
-  CompleteStagingResponseSchema,
-  MintStagingUrlsResponseSchema,
   SyncWriteResponseSchema,
   TranscribeChunkResponseSchema,
 } from '@prismical/api-contracts/apps/v1';
@@ -51,8 +48,6 @@ import {
   type RecordingLaneFailure,
   type RecordingLaneResult,
   type RecordingSegment,
-  type StageLaneInput,
-  type StagingAbandonReason,
   type TranscribeChunkParams,
 } from './service';
 
@@ -277,7 +272,10 @@ const recordingHeaders = (
 };
 
 /** A successful write must acknowledge the recording that the caller supplied. */
-const parseRecordingId = (bodyJson: unknown, recordingId: string): { readonly recordingId: string } => {
+const parseRecordingId = (
+  bodyJson: unknown,
+  recordingId: string
+): { readonly recordingId: string } => {
   const { result } = SyncWriteResponseSchema.parse(bodyJson);
   if (result.id !== recordingId) throw new Error('Invalid recording response');
   return { recordingId };
@@ -322,7 +320,10 @@ const runRecordingCall = <T>(
           });
           if (response.ok) {
             try {
-              return { ok: true, value: parse(await response.json()) } satisfies RecordingLaneResult<T>;
+              return {
+                ok: true,
+                value: parse(await response.json()),
+              } satisfies RecordingLaneResult<T>;
             } catch {
               return {
                 ok: false,
@@ -357,7 +358,11 @@ const runRecordingCall = <T>(
     ),
     // A defect (e.g. an unexpected body-read blowup) folds transient too — never throws.
     Effect.catchAllDefect(() =>
-      Effect.succeed<RecordingLaneResult<T>>({ ok: false, retryable: true, failure: { kind: 'network' } })
+      Effect.succeed<RecordingLaneResult<T>>({
+        ok: false,
+        retryable: true,
+        failure: { kind: 'network' },
+      })
     )
   );
 
@@ -401,144 +406,16 @@ export const makeUploadTranscriptionChunk =
     runRecordingCall(
       deps,
       identity => ({
-        url: `${deps.coreApiUrl}${RECORDINGS_PATH}/${recordingId}/transcribe?${new URLSearchParams(
-          {
-            chunkIndex: String(params.chunkIndex),
-            chunkStartMs: String(Math.round(params.chunkStartMs)),
-            source: params.source,
-          }
-        ).toString()}`,
+        url: `${deps.coreApiUrl}${RECORDINGS_PATH}/${recordingId}/transcribe?${new URLSearchParams({
+          chunkIndex: String(params.chunkIndex),
+          chunkStartMs: String(Math.round(params.chunkStartMs)),
+          source: params.source,
+        }).toString()}`,
         method: 'POST',
         headers: recordingHeaders(identity, 'audio/wav'),
         body: wav,
       }),
       parseSegments
-    );
-
-/**
- * Full-session staged uploads use a timeout scaled to the payload size, bounded
- * between 2 and 60 minutes so slow uplinks have sufficient headroom.
- */
-const stagingUploadTimeout = (bytes: number): Duration.Duration =>
-  Duration.minutes(Math.min(60, Math.max(2, Math.ceil(bytes / (25 * 1024 * 1024)))));
-
-interface MintedStagingUpload {
-  readonly lane: string;
-  readonly url: string;
-  readonly headers: Record<string, string>;
-}
-
-const parseStagingUploads = (bodyJson: unknown): readonly MintedStagingUpload[] =>
-  MintStagingUrlsResponseSchema.parse(bodyJson).uploads;
-
-/** One signed-URL PUT → RecordingLaneResult. No identity: the V4 signature IS the auth. */
-const putToSignedUrl = (
-  deps: CloudBackendDeps,
-  upload: MintedStagingUpload,
-  data: Uint8Array
-): Effect.Effect<RecordingLaneResult<void>> =>
-  Effect.tryPromise({
-    try: signal =>
-      deps.fetchFn(upload.url, { method: 'PUT', headers: upload.headers, body: data, signal }),
-    catch: (): LaneAbort => ({ kind: 'network' }),
-  }).pipe(
-    Effect.timeoutFail({ duration: stagingUploadTimeout(data.length), onTimeout: (): LaneAbort => ({ kind: 'timeout' }) }),
-    Effect.map(
-      (response): RecordingLaneResult<void> =>
-        response.ok
-          ? { ok: true, value: undefined }
-          : {
-              ok: false,
-              retryable: isTransientStatus(response.status),
-              failure: { kind: 'http', status: response.status },
-            }
-    ),
-    Effect.catchAll((abort: LaneAbort) =>
-      Effect.succeed<RecordingLaneResult<void>>({ ok: false, retryable: true, failure: abort })
-    ),
-    Effect.catchAllDefect(() =>
-      Effect.succeed<RecordingLaneResult<void>>({ ok: false, retryable: true, failure: { kind: 'network' } })
-    )
-  );
-
-/**
- * The staging composite: mint → per-lane signed PUT → complete. Server hops go
- * through runRecordingCall (guarded identity); the bucket PUT does not. A 409 on mint means
- * staging is disabled for this org — mapped to `{staged:false}` success so callers delete the
- * local artifact exactly as before the feature existed.
- */
-export const makeStageRecordingAudio =
-  (deps: CloudBackendDeps) =>
-  (
-    recordingId: string,
-    lanes: readonly StageLaneInput[]
-  ): Effect.Effect<RecordingLaneResult<{ readonly staged: boolean }>> =>
-    Effect.gen(function* () {
-      const mint = yield* runRecordingCall(
-        deps,
-        identity => ({
-          url: `${deps.coreApiUrl}${RECORDINGS_PATH}/${recordingId}/staging/urls`,
-          method: 'POST',
-          headers: recordingHeaders(identity, 'application/json'),
-          body: JSON.stringify({ lanes: lanes.map(l => ({ lane: l.lane, contentType: l.contentType })) }),
-        }),
-        parseStagingUploads
-      );
-      if (!mint.ok) {
-        return mint.failure.kind === 'http' && mint.failure.status === 409
-          ? { ok: true as const, value: { staged: false } }
-          : mint;
-      }
-      for (const lane of lanes) {
-        const upload = mint.value.find(u => u.lane === lane.lane);
-        if (!upload) {
-          // No acknowledgement for this lane: retain its audio for a retry.
-          return {
-            ok: false as const,
-            retryable: true,
-            failure: { kind: 'invalid-response' as const },
-          };
-        }
-        const put = yield* putToSignedUrl(deps, upload, lane.data);
-        if (!put.ok) return put;
-      }
-      return yield* runRecordingCall(
-        deps,
-        identity => ({
-          url: `${deps.coreApiUrl}${RECORDINGS_PATH}/${recordingId}/staging/complete`,
-          method: 'POST',
-          headers: recordingHeaders(identity, 'application/json'),
-          body: JSON.stringify({
-            lanes: lanes.map(l => ({
-              lane: l.lane,
-              contentType: l.contentType,
-              ...(l.durationMs !== undefined ? { durationMs: Math.round(l.durationMs) } : {}),
-            })),
-          }),
-        }),
-        bodyJson => {
-          const result = CompleteStagingResponseSchema.parse(bodyJson);
-          if (result.recordingId !== recordingId) throw new Error('Invalid staging response');
-          return { staged: true };
-        }
-      );
-    });
-
-export const makeAbandonRecordingStaging =
-  (deps: CloudBackendDeps) =>
-  (recordingId: string, reason: StagingAbandonReason): Effect.Effect<RecordingLaneResult<void>> =>
-    runRecordingCall(
-      deps,
-      identity => ({
-        url: `${deps.coreApiUrl}${RECORDINGS_PATH}/${recordingId}/staging/abandon`,
-        method: 'POST',
-        headers: recordingHeaders(identity, 'application/json'),
-        body: JSON.stringify({ reason }),
-      }),
-      bodyJson => {
-        const result = AbandonStagingResponseSchema.parse(bodyJson);
-        if (result.recordingId !== recordingId) throw new Error('Invalid staging response');
-      }
     );
 
 /** PUT /apps/v1/me/recordings/:id — the ONLY finalize signal (status→'completed'), JSON. */
@@ -558,8 +435,6 @@ export const makeFinalizeRecording =
           status: 'completed',
           endedAt: input.endedAt,
           durationMs: input.durationMs,
-          stagingExpected: input.stagingExpected,
-          transcriptionDeferred: input.transcriptionDeferred,
         }),
       }),
       bodyJson => parseRecordingId(bodyJson, recordingId)
@@ -622,8 +497,6 @@ export const makeCloudBackendLive = (
         createRecording: makeCreateRecording(deps),
         uploadTranscriptionChunk: makeUploadTranscriptionChunk(deps),
         finalizeRecording: makeFinalizeRecording(deps),
-        stageRecordingAudio: makeStageRecordingAudio(deps),
-        abandonRecordingStaging: makeAbandonRecordingStaging(deps),
       };
 
       yield* coreTransport.register(api);
@@ -646,7 +519,9 @@ export const CloudBackendLive: Layer.Layer<
 export const WorkspaceTransportLive: Layer.Layer<WorkspaceTransport> = Layer.effect(
   WorkspaceTransport,
   Effect.gen(function* () {
-    const currentRef = yield* SubscriptionRef.make<Option.Option<WorkspaceBackendApi>>(Option.none());
+    const currentRef = yield* SubscriptionRef.make<Option.Option<WorkspaceBackendApi>>(
+      Option.none()
+    );
     const api: WorkspaceTransportApi = {
       register: client =>
         Effect.acquireRelease(SubscriptionRef.set(currentRef, Option.some(client)), () =>

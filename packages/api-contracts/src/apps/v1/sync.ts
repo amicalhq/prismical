@@ -89,8 +89,6 @@ export const SyncRecordingCreateRequestSchema = SyncCreateBaseSchema.extend({
   endedAt: SyncWriteTimestampSchema.nullable().optional(),
   durationMs: z.number().int().nullable().optional(),
   meta: SyncJsonObjectSchema.nullable().optional(),
-  stagingExpected: z.boolean().optional(),
-  transcriptionDeferred: z.boolean().optional(),
 });
 export const SyncRecordingUpdateRequestSchema = SyncUpdateBaseSchema.extend({
   title: z.string().min(1).optional(),
@@ -104,8 +102,6 @@ export const SyncRecordingUpdateRequestSchema = SyncUpdateBaseSchema.extend({
   endedAt: SyncWriteTimestampSchema.nullable().optional(),
   durationMs: z.number().int().nullable().optional(),
   meta: SyncJsonObjectSchema.nullable().optional(),
-  stagingExpected: z.boolean().optional(),
-  transcriptionDeferred: z.boolean().optional(),
 });
 
 export const SyncTranscriptSegmentCreateRequestSchema = SyncCreateBaseSchema.extend({
@@ -321,7 +317,9 @@ export const NoteEventLinkRequestSchema = z
   .strict();
 export const NoteEventLinkIdParamsSchema = z.object({ id: z.string().min(1) }).strict();
 /** `decline=1`: the undo of an automatic link — remember the event as rejected for this note. */
-export const NoteEventUnlinkQuerySchema = z.object({ decline: z.enum(['0', '1']).optional() }).strict();
+export const NoteEventUnlinkQuerySchema = z
+  .object({ decline: z.enum(['0', '1']).optional() })
+  .strict();
 export const NOTE_EVENT_LINK_SOURCES = ['user', 'auto', 'api'] as const;
 export type NoteEventLinkSource = (typeof NOTE_EVENT_LINK_SOURCES)[number];
 /** Shape of a note_event row as the sync lane serves it (dates as ISO strings). */

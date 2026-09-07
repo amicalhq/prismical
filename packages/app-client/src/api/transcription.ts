@@ -1,21 +1,6 @@
 import type { SyncWriteEnvelope } from '@prismical/api-contracts/apps/v1';
-import {
-  AbandonStagingResponseSchema,
-  CompleteStagingResponseSchema,
-  MintStagingUrlsResponseSchema,
-  RecordingSpeakerResponseSchema,
-  TranscriptionSettingsResponseSchema,
-  type StagingAbandonReason,
-  type StagingLane,
-  type StagingLaneUpload,
-} from '@prismical/api-contracts/apps/v1';
+import { RecordingSpeakerResponseSchema } from '@prismical/api-contracts/apps/v1';
 import { apiClient, ME_PREFIX } from './client';
-
-export type {
-  StagingAbandonReason,
-  StagingLane,
-  StagingLaneUpload,
-} from '@prismical/api-contracts/apps/v1';
 
 // Wire shapes from core (sync engine rows / transcribe endpoint).
 export type CoreRecording = {
@@ -101,8 +86,6 @@ export function createRecording(
 export function finalizeRecording(
   recordingId: string,
   durationMs: number,
-  stagingExpected: boolean,
-  transcriptionDeferred: boolean,
   opts?: { endedAt?: number; activeOrgId?: string; authToken?: string }
 ): Promise<CoreRecording> {
   return apiClient
@@ -112,8 +95,6 @@ export function finalizeRecording(
         status: 'completed',
         endedAt: opts?.endedAt ?? Date.now(),
         durationMs: Math.round(durationMs),
-        stagingExpected,
-        transcriptionDeferred,
       },
       { activeOrgId: opts?.activeOrgId, authToken: opts?.authToken }
     )
@@ -126,15 +107,6 @@ export function listNoteRecordings(noteId: string): Promise<CoreRecording[]> {
 
 export function listTranscriptSegments(recordingId: string): Promise<CoreTranscriptSegment[]> {
   return apiClient.list<CoreTranscriptSegment>(`${ME_PREFIX}/transcript-segments`, { recordingId });
-}
-
-/** The org's client-facing transcription settings. Flat envelope. */
-export function getTranscriptionSettings(
-  opts?: BoundAuthOptions
-): Promise<{ liveTranscription: boolean }> {
-  return apiClient
-    .getRaw<unknown>(`${ME_PREFIX}/transcription-settings`, undefined, opts)
-    .then(response => TranscriptionSettingsResponseSchema.parse(response));
 }
 
 export function listRecordingSpeakers(recordingId: string): Promise<CoreRecordingSpeaker[]> {
@@ -158,52 +130,3 @@ export function renameRecordingSpeaker(
 // browser-host core URL and stamps auth headers directly. lib/recording's
 // useRecording calls the injected RecordingPort instead. Desktop's record
 // button routes to main's native capture pipeline (no renderer upload).
-
-// ---- Audio staging --------------------------------------------------------------------------
-
-/** Flat envelopes (postRaw): these endpoints return their body directly, not { result }. */
-export function mintStagingUrls(
-  recordingId: string,
-  lanes: { lane: StagingLane; contentType: string }[],
-  activeOrgId?: string,
-  authToken?: string
-): Promise<{ uploads: StagingLaneUpload[]; expiresAt: string }> {
-  return apiClient
-    .postRaw<unknown>(
-      `${ME_PREFIX}/recordings/${recordingId}/staging/urls`,
-      { lanes },
-      { activeOrgId, authToken }
-    )
-    .then(response => MintStagingUrlsResponseSchema.parse(response));
-}
-
-export function completeStaging(
-  recordingId: string,
-  lanes: { lane: StagingLane; contentType: string; durationMs?: number }[],
-  activeOrgId?: string,
-  authToken?: string
-): Promise<{ status: 'staged' | 'unchanged'; recordingId: string }> {
-  return apiClient
-    .postRaw<unknown>(
-      `${ME_PREFIX}/recordings/${recordingId}/staging/complete`,
-      { lanes },
-      { activeOrgId, authToken }
-    )
-    .then(response => CompleteStagingResponseSchema.parse(response));
-}
-
-/** Release the pre-upload transcript blocker when this client cannot finish staging. */
-export function abandonStaging(
-  recordingId: string,
-  reason: StagingAbandonReason,
-  activeOrgId?: string,
-  authToken?: string
-): Promise<{ status: 'skipped' | 'unchanged'; recordingId: string }> {
-  return apiClient
-    .postRaw<unknown>(
-      `${ME_PREFIX}/recordings/${recordingId}/staging/abandon`,
-      { reason },
-      { activeOrgId, authToken }
-    )
-    .then(response => AbandonStagingResponseSchema.parse(response));
-}

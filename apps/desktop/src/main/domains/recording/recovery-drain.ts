@@ -12,11 +12,7 @@ import type { RecoveryPauseCutPoint } from '../../infra/operational-db/schema';
 import type { ProductDbError } from '../../infra/product-db/service';
 import { detectedSpeakerCountFor } from '../transcriber/segment';
 import { Transcriber } from '../transcriber/service';
-import {
-  WorkspaceBackend,
-  type RecordingLaneFailure,
-  type StagingAbandonReason,
-} from '../transport/service';
+import { WorkspaceBackend, type RecordingLaneFailure } from '../transport/service';
 import { mirrorSegmentsToCore } from './segment-mirror';
 import {
   CAPTURE_SAMPLE_RATE,
@@ -29,13 +25,9 @@ import {
   type PendingChunk,
 } from './chunker';
 import { wavFileName } from './recovery-writer';
-import { readStagingLanes } from './staging-lanes';
 import { RecordingService, type RecordingServiceApi, type RecordingState } from './service';
 import { WorkspaceIdentity, sameWorkspace } from '../../runtime/workspace-identity';
 import { RecordingStore } from './store';
-
-/** Optional staging may be abandoned after this many attempts. Required work keeps retrying. */
-export const MAX_DRAIN_ATTEMPTS = 5;
 
 /** Exponential backoff between drain attempts (per row), capped. Clock-driven —
  * a row's `nextAttemptAt` gates it until the delay for its attempt has elapsed. */
@@ -246,9 +238,7 @@ export const drainRecoveries = (
           })
         ),
         Effect.zipRight(
-          row.phase === 'staging' || row.phase === 'cleanup'
-            ? Effect.void
-            : resolveCompletion(row.recordingId, false)
+          row.phase === 'cleanup' ? Effect.void : resolveCompletion(row.recordingId, false)
         ),
         Effect.zipRight(
           log.warn('recovery rejected — audio retained', {
@@ -273,10 +263,7 @@ export const drainRecoveries = (
         update({ phase, attemptCount: 0, nextAttemptAt: null, lastError: null });
       const process = Effect.gen(function* () {
         if (row.status === 'failed') {
-          yield* resolveCompletion(
-            row.recordingId,
-            row.phase === 'staging' || row.phase === 'cleanup'
-          );
+          yield* resolveCompletion(row.recordingId, row.phase === 'cleanup');
           return 'skipped' as const;
         }
         if (
@@ -298,13 +285,8 @@ export const drainRecoveries = (
         const mirrorToCore = appMode === 'cloud' && engine.engine !== 'cloud';
         const sources = sourcesForMode(row.captureMode);
         const { mic, system, mediaDuration, lastWriteAt } = yield* fileOperation(() => {
-          // Completed transcription uses its durable stop metadata. Optional
-          // staging reads raw WAVs with a size cap below; do not decode them here.
-          if (
-            (row.phase === 'finalize' || row.phase === 'staging') &&
-            row.endedAt !== null &&
-            row.durationMs !== null
-          ) {
+          // Completed transcription uses its durable stop metadata; no audio decode is needed.
+          if (row.phase === 'finalize' && row.endedAt !== null && row.durationMs !== null) {
             return {
               mic: null,
               system: null,
@@ -413,8 +395,6 @@ export const drainRecoveries = (
           const finalized = yield* backend.finalizeRecording(row.recordingId, {
             endedAt: row.endedAt!,
             durationMs: row.durationMs!,
-            stagingExpected: engine.engine === 'cloud' && row.stagingMode !== 'server',
-            transcriptionDeferred: false,
           });
           if (!finalized.ok)
             return yield* finalized.retryable
@@ -426,53 +406,10 @@ export const drainRecoveries = (
               durationMs: row.durationMs!,
             })
           );
-          yield* transition('staging');
         }
-        // Required transcript work is durable. Optional staging can keep retrying
-        // while the owning renderer waits on the server's diarization gate.
-        yield* resolveCompletion(row.recordingId, true);
-        // The server spool owns finalization; no client upload or abandon is needed.
-        if (row.stagingMode !== 'server') {
-          const lanes =
-            engine.engine === 'cloud'
-              ? yield* fileOperation(() => readStagingLanes(row.wavPath, row.durationMs!))
-              : [];
-          const staged =
-            lanes.length === 0
-              ? ({ ok: true, value: { staged: false } } as const)
-              : yield* backend.stageRecordingAudio(row.recordingId, lanes);
-          if (
-            !staged.ok &&
-            staged.failure.kind === 'http' &&
-            staged.failure.code === 'STAGING_FINALIZATION_INTENT_MISSING'
-          ) {
-            return yield* fail(row, 'staging-finalization-intent-missing');
-          }
-          let abandon: StagingAbandonReason | null = null;
-          if (!staged.ok && staged.retryable) {
-            if (row.attemptCount + 1 < MAX_DRAIN_ATTEMPTS) return yield* park(row, 'staging');
-            abandon = 'upload-gave-up';
-          } else if (lanes.length === 0) {
-            abandon = engine.engine === 'cloud' ? 'no-audio' : 'staging-disabled';
-          } else if (staged.ok && !staged.value.staged) {
-            abandon = 'staging-disabled';
-          } else if (!staged.ok) {
-            abandon = 'upload-failed';
-          }
-          if (abandon) {
-            const result = yield* backend.abandonRecordingStaging(row.recordingId, abandon);
-            if (!result.ok) {
-              const gone =
-                result.failure.kind === 'http' &&
-                (result.failure.status === 404 || result.failure.status === 410);
-              if (!gone)
-                return yield* result.retryable
-                  ? park(row, `staging-abandon:${failureLabel(result.failure)}`)
-                  : fail(row, `staging-abandon:${failureLabel(result.failure)}`);
-            }
-          }
-        }
+        // All chunks and completion are durable; the server owns audio stitching.
         yield* transition('cleanup');
+        yield* resolveCompletion(row.recordingId, true);
         yield* fileOperation(() => fs.rmSync(row.wavPath, { recursive: true, force: true }));
         yield* db.deleteRecoveryOutbox(row.recordingId);
         yield* log.info('recovery resolved — WAV + outbox row deleted', {

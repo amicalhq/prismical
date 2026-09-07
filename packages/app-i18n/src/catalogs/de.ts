@@ -189,6 +189,18 @@ const de = {
       },
       vocabulary: { description: 'Eigenes Wörterbuch für bessere Erkennung', title: 'Wörterbuch' },
     },
+    quota: {
+      action: {
+        upgrade: 'Upgrade',
+        upgradeUnlimited: 'Auf unbegrenzt upgraden',
+      },
+      detail: '{{used}} von {{limit}} genutzt - Reset am {{date}}',
+      label: {
+        cloudTranscription: 'Cloud-Transkription',
+      },
+      left: '{{duration}} übrig',
+      noTimeLeft: 'Keine Zeit übrig',
+    },
     secondary: {
       community: 'Community',
       docs: 'Dokumentation',
@@ -618,8 +630,7 @@ const de = {
       limitSoonDescription: 'Dein Plan erlaubt Aufnahmen von {{limit}} Minuten. Die Aufnahme stoppt am Limit automatisch.',
       limitStopped: 'Aufnahme am {{minutes}}-Minuten-Limit deines Plans gestoppt.',
       limitStoppedDescription: 'Notiz und Transkript sind gespeichert. Starte eine neue Aufnahme, um weiterzumachen, oder führe ein Upgrade für längere Aufnahmen durch.',
-      deferredRecovery:
-        'Die Aufnahme konnte noch nicht transkribiert werden - der Audio-Upload wird erneut versucht, sobald du wieder online bist.',
+      completionRecovery: 'Die Aufnahme konnte noch nicht fertig gespeichert werden. Sobald du wieder online bist, wird es erneut versucht.',
       endedUnexpectedly: 'Die Aufnahme wurde unerwartet beendet.',
       microphoneDenied: 'Der Mikrofonzugriff wurde verweigert.',
       microphoneDeniedHintDesktop:
@@ -647,7 +658,6 @@ const de = {
       empty:
         'Noch kein Transkript. Starte eine Aufnahme, um deine Besprechung oder Sprachnotiz zu erfassen.',
       finishing: 'Wird abgeschlossen…',
-      uploadingAudio: 'Audio wird hochgeladen…',
       identifyingSpeakers: 'Sprecher werden erkannt…',
       input: 'Eingang',
       allAudioSettings: 'Alle Audioeinstellungen…',
@@ -690,6 +700,14 @@ const de = {
     },
     composerPlaceholder: 'Frag irgendwas — / für Skills, @ für Notizen',
     composerPlaceholderShort: '/ für Skills, @ für Notizen',
+    composerPlaceholderSkillsOnly: '/ für einen Skill',
+    composerPlaceholderUnavailable: 'Ask AI ist nicht in deinem Plan',
+    gate: {
+      pill: 'Skill ausführen…',
+      skillsOnly: 'Ask AI ist in deinem Plan nicht enthalten. Skills laufen hier weiterhin.',
+      unavailable: 'Ask AI ist in deinem Plan nicht enthalten.',
+      refused: 'Ask AI ist in deinem Plan nicht enthalten. Tippe stattdessen / für einen Skill.',
+    },
     dockDescription: 'KI zu deinen Notizen befragen',
     dockHide: '„KI fragen“ ausblenden',
     dockLabel: 'Fragen',
@@ -2183,6 +2201,8 @@ const de = {
       welcome: 'Willkommen bei Prismical',
     },
     flow: {
+      sessionUnavailable: 'Deine Sitzung ist vorübergehend nicht verfügbar. Bitte versuche es erneut.',
+      retryIn: 'In {{count}}s erneut versuchen',
       callbackFailed: 'Die Anmeldung konnte nicht abgeschlossen werden. Bitte versuche es erneut.',
       couldNotSignIn: 'Anmeldung nicht möglich',
       handoffInvalid:

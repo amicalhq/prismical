@@ -132,7 +132,7 @@ export interface RecordingServiceApi {
   /**
    * Stop capture, drain in-flight uploads, and flush the final partial chunk.
    * Resolves after the initial finalization attempt and durable handoff; the
-   * workspace worker owns retries, optional staging, and cleanup. A no-op when
+   * workspace worker owns retries and cleanup. A no-op when
    * `recordingId` is not active.
    */
   readonly stop: (recordingId: string) => Effect.Effect<void>;

@@ -9,7 +9,7 @@
  * outbox `interrupted`, and retains the WAV for the next session's drain.
  *
  * Normal Stop drains in-flight chunks before closing the WAV and handing durable
- * finalization/staging work to the workspace recovery worker. Exhausted capture
+ * finalization work to the workspace recovery worker. Exhausted capture
  * restarts use the same path for audio already captured. Workspace interruption
  * parks the job and closes the WAV; only its original workspace may recover it.
  */
@@ -30,10 +30,6 @@ import {
   Stream,
   SubscriptionRef,
 } from 'effect';
-import {
-  TranscriptionSettingsResponseSchema,
-  type TranscriptionStagingMode,
-} from '@prismical/api-contracts';
 import { createId } from '@prismical/id';
 import {
   AUTO_PAUSE_DEFAULTS,
@@ -407,42 +403,7 @@ export const RecordingServiceLive: Layer.Layer<
 
         // Capture can proceed while creation is unavailable, but chunks and
         // finalization must wait for both creation and the authoritative row.
-        // Resolve optional staging alongside creation inside the workspace-owned
-        // fiber. Start remains observable and cancellable while the network waits.
-        const resolveStagingMode = Effect.gen(function* () {
-          if (engine.engine !== 'cloud') return null;
-          const response = yield* coreClient.request({
-            method: 'GET',
-            path: '/apps/v1/me/transcription-settings',
-          });
-          if ('ok' in response && response.status >= 200 && response.status < 300) {
-            const parsed = TranscriptionSettingsResponseSchema.safeParse(response.bodyJson);
-            if (parsed.success) return parsed.data.staging;
-          }
-          // Missing settings (offline or older core) retain client staging.
-          return null;
-        }).pipe(Effect.raceFirst(Deferred.await(stopSignal).pipe(Effect.as(null))));
-        const [createRes, resolvedStagingMode] = yield* Effect.all(
-          [coreClient.createRecording(createInput), resolveStagingMode],
-          { concurrency: 'unbounded' }
-        );
-        // Never skip the upload unless recovery has the same durable decision.
-        const stagingMode: TranscriptionStagingMode | null =
-          resolvedStagingMode === null
-            ? null
-            : yield* db
-                .updateRecoveryOutbox(recordingId, { stagingMode: resolvedStagingMode })
-                .pipe(
-                  Effect.as(resolvedStagingMode),
-                  Effect.catchAll(cause =>
-                    log
-                      .warn('recording staging mode save failed — retaining client staging', {
-                        recordingId,
-                        cause: String(cause),
-                      })
-                      .pipe(Effect.as(null))
-                  )
-                );
+        const createRes = yield* coreClient.createRecording(createInput);
         if (!createRes.ok) {
           yield* log.warn('createRecording failed — capturing anyway', {
             recordingId,
@@ -1060,11 +1021,11 @@ export const RecordingServiceLive: Layer.Layer<
         );
 
         // Stop and exhausted capture restarts both complete the captured audio.
-        const captureExit = yield* ((yield* Deferred.isDone(stopSignal))
-          ? Effect.void
-          : Effect.raceFirst(Deferred.await(stopSignal), captureLoop)).pipe(
-          Effect.either
-        );
+        const captureExit = yield* (
+          (yield* Deferred.isDone(stopSignal))
+            ? Effect.void
+            : Effect.raceFirst(Deferred.await(stopSignal), captureLoop)
+        ).pipe(Effect.either);
         if (Either.isLeft(captureExit)) {
           yield* log.warn('capture ended — completing retained audio', {
             recordingId,
@@ -1152,8 +1113,6 @@ export const RecordingServiceLive: Layer.Layer<
             const finalized = yield* coreClient.finalizeRecording(recordingId, {
               endedAt,
               durationMs,
-              stagingExpected: engine.engine === 'cloud' && stagingMode !== 'server',
-              transcriptionDeferred: false,
             });
             if (finalized.ok) {
               const completed =
@@ -1167,7 +1126,7 @@ export const RecordingServiceLive: Layer.Layer<
                       store.recordingCompleted(recordingId, { endedAt, durationMs })
                     );
               if (completed) {
-                yield* db.updateRecoveryOutbox(recordingId, { phase: 'staging' }).pipe(
+                yield* db.updateRecoveryOutbox(recordingId, { phase: 'cleanup' }).pipe(
                   Effect.zipRight(resolveCompletion(recordingId, true)),
                   Effect.catchAll(cause =>
                     log.warn('recording progress save failed — retained for recovery', {
@@ -1193,7 +1152,7 @@ export const RecordingServiceLive: Layer.Layer<
           });
         }
 
-        // The workspace recovery worker owns staging and cleanup. No daemon may
+        // The workspace recovery worker owns cleanup. No daemon may
         // outlive this workspace or compete with that worker for the WAV files.
         yield* captureStopped(recordingId);
         // Observable: idle, retaining the finished id + segments as the last snapshot.

@@ -53,7 +53,7 @@ export interface RecordingSegment {
  *                      whisper worker or the BYOK lane); `reason` names the cause. The lane
  *                      decides `retryable` per reason (a crashed/timed-out worker re-sends via
  *                      the drain; a decode failure loses only that chunk's text). Chunk-lane
- *                      only — the staging paths keep matching `kind === 'http'`.
+ *                      only.
  */
 export type RecordingLaneFailure =
   | { readonly kind: 'stale-identity' }
@@ -116,27 +116,6 @@ export interface TranscribeChunkParams {
 export interface FinalizeRecordingInput {
   readonly endedAt: number;
   readonly durationMs: number;
-  /** True when main retained full-session audio and will stage it after this call returns. */
-  readonly stagingExpected: boolean;
-  /** Desktop always streams live chunks; false protects its awaiting intent with the live timeout. */
-  readonly transcriptionDeferred: boolean;
-}
-
-export type StagingAbandonReason =
-  | 'no-audio'
-  | 'staging-disabled'
-  | 'upload-failed'
-  | 'upload-gave-up';
-
-/**
- * One staged-audio lane: the full-session artifact for `lane`, bound for the
- * staging storage used by the server-side finalize pass.
- */
-export interface StageLaneInput {
-  readonly lane: 'mic' | 'system';
-  readonly contentType: string;
-  readonly data: Uint8Array;
-  readonly durationMs?: number;
 }
 
 /** The account and organization that own a cloud workspace. */
@@ -215,25 +194,12 @@ export interface WorkspaceBackendApi {
     recordingId: string,
     input: FinalizeRecordingInput
   ) => Effect.Effect<RecordingLaneResult<{ readonly recordingId: string }>>;
-  /**
-   * Stage full-session audio for the finalize pass: mint signed staging URLs
-   * from core, PUT each lane DIRECTLY to the bucket (the V4 signature is the auth — no bearer
-   * on that hop), then report staging/complete, which advances the stop-created finalize row
-   * server-side. `staged:false` = core answered 409 (staging disabled for this org) — a
-   * success, never a retry candidate. Core hops ride the same guarded identity; never fails.
-   */
-  readonly stageRecordingAudio: (
-    recordingId: string,
-    lanes: readonly StageLaneInput[]
-  ) => Effect.Effect<RecordingLaneResult<{ readonly staged: boolean }>>;
-  /** Release an awaiting-upload transcript gate after a deterministic staging give-up. */
-  readonly abandonRecordingStaging: (
-    recordingId: string,
-    reason: StagingAbandonReason
-  ) => Effect.Effect<RecordingLaneResult<void>>;
 }
 
-export class WorkspaceBackend extends Context.Tag('desktop/WorkspaceBackend')<WorkspaceBackend, WorkspaceBackendApi>() {}
+export class WorkspaceBackend extends Context.Tag('desktop/WorkspaceBackend')<
+  WorkspaceBackend,
+  WorkspaceBackendApi
+>() {}
 
 export type WorkspaceRequestContext =
   | { readonly mode: 'local' }

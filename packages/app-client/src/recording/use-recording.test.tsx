@@ -12,17 +12,13 @@ import type {
 import { DEFAULT_DEVICE_SETTINGS, INERT_UPDATE_STATE } from '@prismical/app-contracts';
 import type { AppPorts, NavigationAdapter } from '../ports-context';
 import { PortsProvider } from '../ports-context';
-import {
-  abandonStaging,
-  completeStaging,
-  createRecording,
-  finalizeRecording,
-  getTranscriptionSettings,
-  mintStagingUrls,
-} from '../api/transcription';
+import { createRecording, finalizeRecording } from '../api/transcription';
 import { useRecording } from './use-recording';
 import { organizationsKey } from '../api/hooks/organizations';
-import { listPendingStagingRecoveries, savePendingStagingRecovery } from './staging-buffer';
+import {
+  listPendingRecordingCompletions,
+  savePendingRecordingCompletion,
+} from './recording-completion';
 import { ApiError } from '../api/client';
 import { useAutoEnhanceStore } from '../notes/auto-enhance-store';
 import { setRecordingPreferences } from './recording-preferences';
@@ -56,10 +52,6 @@ const STABLE_SESSION = {
 vi.mock('../api/transcription', () => ({
   createRecording: vi.fn(async () => ({ id: 'rec_web', startedAt: '2026-07-18T00:00:00.000Z' })),
   finalizeRecording: vi.fn(async () => {}),
-  getTranscriptionSettings: vi.fn(async () => ({ liveTranscription: true })),
-  mintStagingUrls: vi.fn(async () => ({ uploads: [] })),
-  completeStaging: vi.fn(async () => {}),
-  abandonStaging: vi.fn(async () => {}),
 }));
 vi.mock('../api/hooks/model-defaults', () => ({
   ensureModelDefault: vi.fn(async () => ({})),
@@ -683,12 +675,13 @@ class FakeWorkletNode {
 
 class FakeAudioContext {
   static last: FakeAudioContext | null = null;
+  source = { connect: vi.fn(), disconnect: vi.fn() };
   audioWorklet = { addModule: vi.fn(async () => {}) };
   suspend = vi.fn(async () => {});
   resume = vi.fn(async () => {});
   close = vi.fn(async () => {});
   createMediaStreamSource() {
-    return { connect: () => {} };
+    return this.source;
   }
   constructor() {
     FakeAudioContext.last = this;
@@ -783,41 +776,6 @@ describe('useRecording — web branch pause/resume', () => {
 
   const renderWeb = () => renderWithPorts({ uploadTranscriptionChunk: upload });
 
-  function installRecoveryFile() {
-    const removeEntry = vi.fn(async () => {});
-    Object.defineProperty(navigator, 'storage', {
-      configurable: true,
-      value: {
-        getDirectory: vi.fn(async () => ({
-          getFileHandle: vi.fn(async () => ({
-            getFile: vi.fn(async () => new File(['deferred audio'], 'staging-rec_recovery')),
-          })),
-          removeEntry,
-        })),
-      },
-    });
-    return removeEntry;
-  }
-
-  function installDurableStagingFile() {
-    const removeEntry = vi.fn(async () => {});
-    const write = vi.fn(async () => {});
-    const close = vi.fn(async () => {});
-    Object.defineProperty(navigator, 'storage', {
-      configurable: true,
-      value: {
-        getDirectory: vi.fn(async () => ({
-          getFileHandle: vi.fn(async () => ({
-            createWritable: vi.fn(async () => ({ write, close })),
-            getFile: vi.fn(async () => new File(['deferred audio'], 'staging-rec_web')),
-          })),
-          removeEntry,
-        })),
-      },
-    });
-    return { removeEntry, write, close };
-  }
-
   it('ignores a resume that resolves after the recording stopped', async () => {
     const { result } = renderWeb();
     await act(async () => {
@@ -888,27 +846,6 @@ describe('useRecording — web branch pause/resume', () => {
     expect(stopTrack).toHaveBeenCalledTimes(1);
   });
 
-  it('failed context suspension must resume the staging recorder', async () => {
-    class InspectRecorder extends FakeMediaRecorder {
-      static last: InspectRecorder;
-      constructor() {
-        super();
-        InspectRecorder.last = this;
-      }
-    }
-    vi.stubGlobal('MediaRecorder', InspectRecorder);
-    const { result } = renderWeb();
-    await act(async () => {
-      await result.current.start('note_1', 'Standup');
-    });
-    FakeAudioContext.last!.suspend.mockRejectedValue(new Error('suspend failed'));
-    await act(async () => {
-      expect(await result.current.pause()).toBe(false);
-    });
-    expect(result.current.state).toBe('recording');
-    expect(InspectRecorder.last.state).toBe('recording');
-  });
-
   it('two starts in the same render must allocate only one recording', async () => {
     const { result } = renderWeb();
     await act(async () => {
@@ -933,12 +870,10 @@ describe('useRecording — web branch pause/resume', () => {
       await result.current.stop();
     });
     await waitFor(() => expect(finalizeRecording).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(listPendingStagingRecoveries()).toEqual([]));
+    await waitFor(() => expect(listPendingRecordingCompletions()).toEqual([]));
     expect(finalizeRecording).toHaveBeenLastCalledWith(
       'rec_web',
       1000,
-      false,
-      false,
       expect.objectContaining({ activeOrgId: 'org_1' })
     );
     expect(result.current.completedRecording).toEqual({
@@ -950,26 +885,17 @@ describe('useRecording — web branch pause/resume', () => {
     });
   });
 
-  it('retains live audio across failed finalization and retries staging', async () => {
-    installDurableStagingFile();
-    vi.stubGlobal('MediaRecorder', FakeMediaRecorder);
-    vi.mocked(finalizeRecording).mockRejectedValueOnce(new Error('offline'));
-    vi.mocked(mintStagingUrls).mockResolvedValueOnce({
-      uploads: [
-        {
-          lane: 'mic',
-          objectName: 'audio',
-          url: 'https://upload.test',
-          headers: {},
-        },
-      ],
-      expiresAt: new Date().toISOString(),
-    });
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => ({ ok: true, status: 200 }))
-    );
-    const { result } = renderWeb();
+  it('skips the local session buffer and the at-stop upload when the server spools the live chunks', async () => {
+    class InspectRecorder extends FakeMediaRecorder {
+      static constructed = 0;
+      constructor() {
+        super();
+        InspectRecorder.constructed += 1;
+      }
+    }
+    vi.stubGlobal('MediaRecorder', InspectRecorder);
+    const upload = vi.fn(async () => []);
+    const { result } = renderWithPorts({ uploadTranscriptionChunk: upload });
     await act(async () => {
       await result.current.start('note_owner', 'Standup');
     });
@@ -977,9 +903,24 @@ describe('useRecording — web branch pause/resume', () => {
     await act(async () => {
       await result.current.stop();
     });
-    await waitFor(() => expect(completeStaging).toHaveBeenCalledTimes(1));
-    expect(listPendingStagingRecoveries()).toEqual([]);
-    expect(finalizeRecording).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(finalizeRecording).toHaveBeenCalledTimes(1));
+    // Chunks carry the audio; stopping sends only the completion event.
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(InspectRecorder.constructed).toBe(0);
+    expect(finalizeRecording).toHaveBeenLastCalledWith(
+      'rec_web',
+      1000,
+      expect.objectContaining({ activeOrgId: 'org_1' })
+    );
+
+    expect(listPendingRecordingCompletions()).toEqual([]);
+    expect(result.current.completedRecording).toEqual({
+      recordingId: 'rec_web',
+      noteId: 'note_owner',
+      segments: 0,
+      ownerSessionKey: 'user_1',
+      ownerOrgId: 'org_1',
+    });
   });
 
   it('joins duplicate stop calls and publishes completion once', async () => {
@@ -1000,40 +941,6 @@ describe('useRecording — web branch pause/resume', () => {
     });
   });
 
-  it('holds the recovery lock until local audio closes after finalization fails', async () => {
-    const file = installDurableStagingFile();
-    let closeAudio!: () => void;
-    file.close.mockImplementationOnce(
-      () =>
-        new Promise<void>(resolve => {
-          closeAudio = resolve;
-        })
-    );
-    vi.stubGlobal('MediaRecorder', FakeMediaRecorder);
-    vi.mocked(finalizeRecording).mockRejectedValueOnce(new Error('offline'));
-    const { result } = renderWeb();
-    await act(async () => {
-      await result.current.start('note_owner', 'Standup');
-    });
-    let stopped!: Promise<{ segments: number }>;
-    act(() => {
-      stopped = result.current.stop();
-    });
-    await waitFor(() => expect(finalizeRecording).toHaveBeenCalledOnce());
-    await waitFor(() => expect(file.close).toHaveBeenCalledOnce());
-    const lockName = 'prismical-recording-recovery:rec_web';
-    expect(locks.held.has(lockName)).toBe(true);
-    expect(result.current.state).toBe('stopping');
-    await act(async () => {
-      closeAudio();
-      await stopped;
-    });
-    await waitFor(() => expect(finalizeRecording).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(locks.held.has(lockName)).toBe(false));
-    expect(listPendingStagingRecoveries()[0]?.needsFinalize).toBe(false);
-    expect(result.current.state).toBe('idle');
-  });
-
   it('persists the stop intent before waiting for active uploads', async () => {
     let completeUpload!: () => void;
     upload.mockImplementationOnce(() =>
@@ -1052,11 +959,11 @@ describe('useRecording — web branch pause/resume', () => {
       stopped = result.current.stop();
     });
     await waitFor(() =>
-      expect(listPendingStagingRecoveries()).toEqual([
+      expect(listPendingRecordingCompletions()).toEqual([
         expect.objectContaining({
           recordingId: 'rec_web',
           noteId: 'note_owner',
-          needsFinalize: true,
+
           durationMs: 1000,
         }),
       ])
@@ -1072,21 +979,17 @@ describe('useRecording — web branch pause/resume', () => {
   it('waits for another tab to release its recording recovery lock', async () => {
     const lockName = 'prismical-recording-recovery:rec_locked';
     locks.held.add(lockName);
-    savePendingStagingRecovery({
-      version: 2,
+    savePendingRecordingCompletion({
+      version: 1,
       recordingId: 'rec_locked',
       noteId: 'note_owner',
-      contentType: 'audio/webm',
+
       durationMs: 1000,
       endedAt: Date.now() - 120000,
       createdAt: Date.now() - 120000,
       ownerSub: 'user_1',
       ownerOrgId: 'org_1',
       ownerSessionKey: 'user_1',
-      transcriptionDeferred: false,
-      expectsStaging: false,
-      needsFinalize: true,
-      action: 'upload',
     });
     renderWeb();
     await act(async () => {});
@@ -1101,7 +1004,7 @@ describe('useRecording — web branch pause/resume', () => {
       window.dispatchEvent(new Event('focus'));
     });
     await waitFor(() => expect(finalizeRecording).toHaveBeenCalledOnce());
-    await waitFor(() => expect(listPendingStagingRecoveries()).toEqual([]));
+    await waitFor(() => expect(listPendingRecordingCompletions()).toEqual([]));
   });
 
   it('publishes a stop intent only after draining when Web Locks are unavailable', async () => {
@@ -1125,7 +1028,7 @@ describe('useRecording — web branch pause/resume', () => {
     await act(async () => {
       await new Promise(resolve => setTimeout(resolve, 180));
     });
-    expect(listPendingStagingRecoveries()).toEqual([]);
+    expect(listPendingRecordingCompletions()).toEqual([]);
     expect(finalizeRecording).not.toHaveBeenCalled();
     await act(async () => {
       completeUpload();
@@ -1184,148 +1087,36 @@ describe('useRecording — web branch pause/resume', () => {
     );
   });
 
-  it('retries a persisted deferred upload on launch and clears its OPFS recovery artifact', async () => {
-    const removeEntry = installRecoveryFile();
-    savePendingStagingRecovery({
-      version: 2,
-      recordingId: 'rec_recovery',
-      contentType: 'audio/webm',
-      durationMs: 30_000,
-      endedAt: Date.now() - 120_000,
-      createdAt: Date.now() - 120_000,
-      ownerSub: 'user_1',
-      ownerOrgId: 'org_1',
-      ownerSessionKey: 'user_1',
-      transcriptionDeferred: true,
-      needsFinalize: false,
-      action: 'upload',
-    });
-    vi.mocked(mintStagingUrls).mockResolvedValueOnce({
-      uploads: [
-        {
-          lane: 'mic',
-          objectName: 'recordings/rec_recovery/mic.webm',
-          url: 'https://upload.test',
-          headers: { 'Content-Type': 'audio/webm' },
-        },
-      ],
-      expiresAt: new Date(Date.now() + 60_000).toISOString(),
-    });
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async input =>
-        input === '/audio-recorder-processor.js'
-          ? ({} as Response)
-          : ({ ok: true, status: 200 } as Response)
-      )
-    );
-
-    renderWeb();
-
-    await waitFor(() =>
-      expect(completeStaging).toHaveBeenCalledWith(
-        'rec_recovery',
-        [{ lane: 'mic', contentType: 'audio/webm', durationMs: 30_000 }],
-        'org_1',
-        'tok'
-      )
-    );
-    expect(listPendingStagingRecoveries()).toEqual([]);
-    expect(removeEntry).toHaveBeenCalledWith('staging-rec_recovery');
-    expect(abandonStaging).not.toHaveBeenCalled();
-  });
-
-  it('keeps deferred recovery pending while offline, then resumes it on the online event', async () => {
-    installRecoveryFile();
-    savePendingStagingRecovery({
-      version: 2,
-      recordingId: 'rec_offline',
-      contentType: 'audio/webm',
-      durationMs: 30_000,
-      endedAt: Date.now() - 120_000,
-      createdAt: Date.now() - 120_000,
-      ownerSub: 'user_1',
-      ownerOrgId: 'org_1',
-      ownerSessionKey: 'user_1',
-      transcriptionDeferred: true,
-      needsFinalize: false,
-      action: 'upload',
-    });
-    vi.mocked(mintStagingUrls)
-      .mockRejectedValueOnce(new Error('offline'))
-      .mockResolvedValueOnce({
-        uploads: [
-          {
-            lane: 'mic',
-            objectName: 'recordings/rec_offline/mic.webm',
-            url: 'https://upload.test',
-            headers: { 'Content-Type': 'audio/webm' },
-          },
-        ],
-        expiresAt: new Date(Date.now() + 60_000).toISOString(),
-      });
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async input =>
-        input === '/audio-recorder-processor.js'
-          ? ({} as Response)
-          : ({ ok: true, status: 200 } as Response)
-      )
-    );
-    renderWeb();
-
-    await waitFor(() => expect(mintStagingUrls).toHaveBeenCalledTimes(1));
-    expect(listPendingStagingRecoveries()).toHaveLength(1);
-    expect(abandonStaging).not.toHaveBeenCalled();
-
-    window.dispatchEvent(new Event('online'));
-
-    await waitFor(() => expect(completeStaging).toHaveBeenCalledTimes(1));
-    expect(listPendingStagingRecoveries()).toEqual([]);
-  });
-
-  it("does not touch another account's persisted recovery audio", async () => {
-    const removeEntry = installRecoveryFile();
-    savePendingStagingRecovery({
-      version: 2,
+  it("does not finalize another account's persisted recording", async () => {
+    savePendingRecordingCompletion({
+      version: 1,
       recordingId: 'rec_other_account',
-      contentType: 'audio/webm',
+
       durationMs: 30_000,
       endedAt: Date.now() - 120_000,
       createdAt: Date.now() - 120_000,
       ownerSub: 'user_2',
       ownerOrgId: 'org_2',
       ownerSessionKey: 'user_2',
-      transcriptionDeferred: true,
-      needsFinalize: false,
-      action: 'upload',
     });
 
     renderWeb();
     await act(async () => {});
 
-    expect(mintStagingUrls).not.toHaveBeenCalled();
-    expect(completeStaging).not.toHaveBeenCalled();
-    expect(abandonStaging).not.toHaveBeenCalled();
-    expect(removeEntry).not.toHaveBeenCalled();
-    expect(listPendingStagingRecoveries()).toHaveLength(1);
+    expect(listPendingRecordingCompletions()).toHaveLength(1);
   });
 
-  it('does not recover support audio under an ordinary login for the same user and org', async () => {
-    const removeEntry = installRecoveryFile();
-    savePendingStagingRecovery({
-      version: 2,
+  it('does not recover a support recording under an ordinary login for the same user and org', async () => {
+    savePendingRecordingCompletion({
+      version: 1,
       recordingId: 'rec_support_recovery',
-      contentType: 'audio/webm',
+
       durationMs: 30_000,
       endedAt: Date.now() - 120_000,
       createdAt: Date.now() - 120_000,
       ownerSub: 'user_1',
       ownerOrgId: 'org_1',
       ownerSessionKey: 'support_session_1',
-      transcriptionDeferred: true,
-      needsFinalize: false,
-      action: 'upload',
     });
     const session = mutableAuth({
       state: 'signed-in',
@@ -1344,12 +1135,9 @@ describe('useRecording — web branch pause/resume', () => {
     renderWithPorts({ uploadTranscriptionChunk: upload }, undefined, session.auth);
     await act(async () => {});
 
-    expect(mintStagingUrls).not.toHaveBeenCalled();
     expect(finalizeRecording).not.toHaveBeenCalled();
-    expect(completeStaging).not.toHaveBeenCalled();
-    expect(abandonStaging).not.toHaveBeenCalled();
-    expect(removeEntry).not.toHaveBeenCalled();
-    expect(listPendingStagingRecoveries()).toHaveLength(1);
+
+    expect(listPendingRecordingCompletions()).toHaveLength(1);
   });
 
   it('aborts an active support recording instead of continuing under the ordinary same-user login', async () => {
@@ -1486,32 +1274,113 @@ describe('useRecording — web branch pause/resume', () => {
     expect(upload).not.toHaveBeenCalled();
   });
 
-  it('cleans retained audio when the original recording was deleted', async () => {
-    const removeEntry = installRecoveryFile();
-    savePendingStagingRecovery({
-      version: 2,
+  it('clears completion recovery when the original recording was deleted', async () => {
+    savePendingRecordingCompletion({
+      version: 1,
       recordingId: 'rec_deleted',
-      contentType: 'audio/webm',
-      durationMs: 30_000,
-      endedAt: Date.now() - 120_000,
-      createdAt: Date.now() - 120_000,
+      durationMs: 1000,
+      endedAt: Date.now(),
+      createdAt: Date.now(),
       ownerSub: 'user_1',
       ownerOrgId: 'org_1',
       ownerSessionKey: 'user_1',
-      transcriptionDeferred: true,
-      needsFinalize: false,
-      action: 'abandon',
-      abandonReason: 'upload-failed',
     });
-    vi.mocked(abandonStaging).mockRejectedValueOnce(
-      new ApiError('NOT_FOUND', 'Recording not found', 404)
-    );
-
+    vi.mocked(finalizeRecording).mockRejectedValueOnce(new ApiError('NOT_FOUND', 'Not found', 404));
     renderWeb();
+    await waitFor(() => expect(listPendingRecordingCompletions()).toEqual([]));
+  });
 
-    await waitFor(() => expect(listPendingStagingRecoveries()).toEqual([]));
-    expect(abandonStaging).toHaveBeenCalledWith('rec_deleted', 'upload-failed', 'org_1', 'tok');
-    expect(removeEntry).toHaveBeenCalledWith('staging-rec_deleted');
+  it('retries a persisted completion after the hook remounts', async () => {
+    vi.mocked(finalizeRecording).mockRejectedValue(new Error('offline'));
+    const first = renderWeb();
+    await act(async () => {
+      await first.result.current.start('note_owner', 'Standup');
+    });
+    pushFrame(16000);
+    await act(async () => {
+      await first.result.current.stop();
+    });
+    expect(listPendingRecordingCompletions()).toHaveLength(1);
+    first.unmount();
+    vi.mocked(finalizeRecording).mockResolvedValue({
+      id: 'rec_web',
+      noteId: 'note_owner',
+      title: 'Standup',
+      status: 'completed',
+      startedAt: null,
+      endedAt: null,
+      durationMs: 1000,
+    });
+    const second = renderWeb();
+    await waitFor(() => expect(listPendingRecordingCompletions()).toEqual([]));
+    expect(upload).toHaveBeenCalledOnce();
+    expect(second.result.current.completedRecording).toEqual(
+      expect.objectContaining({ recordingId: 'rec_web', noteId: 'note_owner' })
+    );
+  });
+
+  it('retries completion in memory when browser storage is unavailable', async () => {
+    const blockedStorage = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('Storage unavailable', 'SecurityError');
+    });
+    try {
+      vi.mocked(finalizeRecording).mockRejectedValue(new Error('offline'));
+      const { result } = renderWeb();
+      await act(async () => {
+        await result.current.start('note_owner', 'Standup');
+      });
+      pushFrame(16000);
+      await act(async () => {
+        await result.current.stop();
+      });
+      expect(listPendingRecordingCompletions()).toEqual([]);
+      expect(result.current.completedRecording).toBeNull();
+      vi.mocked(finalizeRecording).mockResolvedValue({
+        id: 'rec_web',
+        noteId: 'note_owner',
+        title: 'Standup',
+        status: 'completed',
+        startedAt: null,
+        endedAt: null,
+        durationMs: 1000,
+      });
+      act(() => window.dispatchEvent(new Event('online')));
+      await waitFor(() =>
+        expect(result.current.completedRecording).toEqual(
+          expect.objectContaining({ recordingId: 'rec_web', noteId: 'note_owner' })
+        )
+      );
+      expect(upload).toHaveBeenCalledOnce();
+    } finally {
+      blockedStorage.mockRestore();
+    }
+  });
+
+  it('keeps the microphone source attached through pause/resume and releases it on stop', async () => {
+    const { result } = renderWeb();
+    await act(async () => {
+      await result.current.start('note_1', 'Standup');
+    });
+    expect(result.current.state).toBe('recording');
+    const source = FakeAudioContext.last!.source;
+    expect(source.connect).toHaveBeenCalledTimes(1);
+    expect(source.connect).toHaveBeenCalledWith(FakeWorkletNode.last);
+    await act(async () => {
+      await result.current.pause();
+    });
+    expect(result.current.state).toBe('paused');
+    expect(source.disconnect).not.toHaveBeenCalled();
+    await act(async () => {
+      await result.current.resume();
+    });
+    expect(result.current.state).toBe('recording');
+    expect(source.connect).toHaveBeenCalledTimes(1);
+    expect(source.disconnect).not.toHaveBeenCalled();
+    await act(async () => {
+      await result.current.stop();
+    });
+    expect(source.disconnect).toHaveBeenCalledTimes(1);
+    expect(FakeAudioContext.last!.close).toHaveBeenCalledTimes(1);
   });
 
   it('flushes the partial chunk at pause, suspends, and resume continues the counter + timeline', async () => {
@@ -1680,124 +1549,6 @@ describe('useRecording — web branch pause/resume', () => {
     expect(result.current.micSilent).toBe(false);
   });
 
-  it('falls back to live chunks when deferred mode cannot create a session buffer', async () => {
-    vi.stubGlobal('MediaRecorder', undefined);
-    vi.mocked(getTranscriptionSettings).mockResolvedValueOnce({ liveTranscription: false });
-    const { result } = renderWeb();
-    await act(async () => {
-      await result.current.start('note_1', 'Standup');
-    });
-
-    pushFrame(16000);
-    await act(async () => {});
-    expect(upload).toHaveBeenCalledTimes(1);
-
-    await act(async () => {
-      await result.current.stop();
-    });
-    expect(finalizeRecording).toHaveBeenCalledWith(
-      'rec_web',
-      1000,
-      false,
-      false,
-      expect.objectContaining({ activeOrgId: 'org_1', endedAt: expect.any(Number) })
-    );
-  });
-
-  it('marks finalization deferred only after durable OPFS and recovery-ledger setup', async () => {
-    installDurableStagingFile();
-    vi.stubGlobal('MediaRecorder', FakeMediaRecorder);
-    vi.mocked(getTranscriptionSettings).mockResolvedValueOnce({ liveTranscription: false });
-    vi.mocked(mintStagingUrls).mockResolvedValueOnce({
-      uploads: [
-        {
-          lane: 'mic',
-          objectName: 'recordings/rec_web/mic.webm',
-          url: 'https://upload.test',
-          headers: { 'Content-Type': 'audio/webm' },
-        },
-      ],
-      expiresAt: new Date(Date.now() + 60_000).toISOString(),
-    });
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async input =>
-        input === '/audio-recorder-processor.js'
-          ? ({} as Response)
-          : ({ ok: true, status: 200 } as Response)
-      )
-    );
-    const { result } = renderWeb();
-    await act(async () => {
-      await result.current.start('note_1', 'Standup');
-    });
-    pushFrame(16000);
-
-    await act(async () => {
-      await result.current.stop();
-    });
-
-    expect(upload).not.toHaveBeenCalled();
-    expect(finalizeRecording).toHaveBeenCalledWith(
-      'rec_web',
-      1000,
-      true,
-      true,
-      expect.objectContaining({ activeOrgId: 'org_1', endedAt: expect.any(Number) })
-    );
-    await waitFor(() => expect(completeStaging).toHaveBeenCalledTimes(1));
-    expect(listPendingStagingRecoveries()).toEqual([]);
-  });
-
-  it('keeps live staging pinned to the recording owner org', async () => {
-    installDurableStagingFile();
-    vi.stubGlobal('MediaRecorder', FakeMediaRecorder);
-    vi.mocked(mintStagingUrls).mockResolvedValueOnce({
-      uploads: [
-        {
-          lane: 'mic',
-          objectName: 'recordings/rec_web/mic.webm',
-          url: 'https://upload.test',
-          headers: { 'Content-Type': 'audio/webm' },
-        },
-      ],
-      expiresAt: new Date(Date.now() + 60_000).toISOString(),
-    });
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async input =>
-        input === '/audio-recorder-processor.js'
-          ? ({} as Response)
-          : ({ ok: true, status: 200 } as Response)
-      )
-    );
-    const { result } = renderWeb();
-    await act(async () => {
-      await result.current.start('note_1', 'Standup');
-    });
-    pushFrame(16000);
-
-    await act(async () => {
-      await result.current.stop();
-    });
-
-    await waitFor(() =>
-      expect(mintStagingUrls).toHaveBeenCalledWith(
-        'rec_web',
-        [{ lane: 'mic', contentType: 'audio/webm' }],
-        'org_1',
-        'tok'
-      )
-    );
-    expect(finalizeRecording).toHaveBeenCalledWith(
-      'rec_web',
-      1000,
-      true,
-      false,
-      expect.objectContaining({ activeOrgId: 'org_1', endedAt: expect.any(Number) })
-    );
-  });
-
   it('stop from paused finalizes with the sample-based duration', async () => {
     const { result } = renderWeb();
     await act(async () => {
@@ -1817,8 +1568,6 @@ describe('useRecording — web branch pause/resume', () => {
     expect(finalizeRecording).toHaveBeenCalledWith(
       'rec_web',
       1000,
-      false,
-      false,
       expect.objectContaining({ activeOrgId: 'org_1', endedAt: expect.any(Number) })
     );
     expect(FakeAudioContext.last?.close).toHaveBeenCalled();
@@ -2027,32 +1776,5 @@ describe('useRecording — auto-pause on silence', () => {
     } finally {
       vi.useRealTimers();
     }
-  });
-
-  it('does not arm auto-pause in deferred mode, where the ASR signal does not exist', async () => {
-    // Deferred uploads no chunks, so noteTranscribedSpeech() is never called and the two-signal
-    // rule collapses to the bare energy gate — and it meters nothing, so there is no quota being
-    // burned to justify running on one signal.
-    vi.stubGlobal('MediaRecorder', FakeMediaRecorder);
-    Object.defineProperty(navigator, 'storage', {
-      configurable: true,
-      value: {
-        getDirectory: vi.fn(async () => ({
-          getFileHandle: vi.fn(async () => ({
-            createWritable: vi.fn(async () => ({
-              write: vi.fn(async () => {}),
-              close: vi.fn(async () => {}),
-            })),
-            getFile: vi.fn(async () => new File(['audio'], 'staging-rec_web')),
-          })),
-          removeEntry: vi.fn(async () => {}),
-        })),
-      },
-    });
-    vi.mocked(getTranscriptionSettings).mockResolvedValueOnce({ liveTranscription: false });
-    const { result } = renderAuto();
-    await startAndFeedSilence(result, 120);
-    expect(result.current.gracePrompt).toBeNull();
-    expect(result.current.state).toBe('recording');
   });
 });

@@ -31,10 +31,7 @@ import { AuthStateError } from '../../src/main/domains/auth/service';
 import { LocalBackendLive } from '../../src/main/domains/local-backend/live';
 import { describeDbError, isUniqueViolation } from '../../src/main/domains/local-backend/wire';
 import { WorkspaceTransportLive } from '../../src/main/domains/transport/live';
-import {
-  WorkspaceBackend,
-  WorkspaceTransport,
-} from '../../src/main/domains/transport/service';
+import { WorkspaceBackend, WorkspaceTransport } from '../../src/main/domains/transport/service';
 import { makeProductDbLayer } from '../../src/main/infra/product-db/live';
 import * as schema from '../../src/main/infra/product-db/schema';
 import { ProductDb } from '../../src/main/infra/product-db/service';
@@ -209,28 +206,30 @@ describe('LocalBackendLive', () => {
     })
   );
 
-  it.effect('a duplicate vocabulary word answers 409 CONFLICT through the route (cloud parity)', () =>
-    Effect.gen(function* () {
-      const { api, scope } = yield* buildBackend;
-      expectOk(
-        yield* api.request({
-          method: 'POST',
-          path: '/apps/v1/me/vocabulary',
-          body: { id: 'voc_route_1', word: 'Prismical' },
-        }),
-        201
-      );
-      const dup = expectOk(
-        yield* api.request({
-          method: 'POST',
-          path: '/apps/v1/me/vocabulary',
-          body: { id: 'voc_route_2', word: 'Prismical' },
-        }),
-        409
-      );
-      assert.deepStrictEqual(dup.bodyJson, { error: { code: 'CONFLICT', message: 'Conflict' } });
-      yield* Scope.close(scope, Exit.void);
-    })
+  it.effect(
+    'a duplicate vocabulary word answers 409 CONFLICT through the route (cloud parity)',
+    () =>
+      Effect.gen(function* () {
+        const { api, scope } = yield* buildBackend;
+        expectOk(
+          yield* api.request({
+            method: 'POST',
+            path: '/apps/v1/me/vocabulary',
+            body: { id: 'voc_route_1', word: 'Prismical' },
+          }),
+          201
+        );
+        const dup = expectOk(
+          yield* api.request({
+            method: 'POST',
+            path: '/apps/v1/me/vocabulary',
+            body: { id: 'voc_route_2', word: 'Prismical' },
+          }),
+          409
+        );
+        assert.deepStrictEqual(dup.bodyJson, { error: { code: 'CONFLICT', message: 'Conflict' } });
+        yield* Scope.close(scope, Exit.void);
+      })
   );
 
   it.effect('recording lane answers thin local acks because rows are the store’s job', () =>
@@ -258,37 +257,30 @@ describe('LocalBackendLive', () => {
         yield* api.finalizeRecording(recordingId, {
           endedAt: Date.now(),
           durationMs: 1000,
-          stagingExpected: false,
-          transcriptionDeferred: false,
         }),
         { ok: true, value: { recordingId } }
       );
-      assert.deepStrictEqual(yield* api.stageRecordingAudio(recordingId, []), {
-        ok: true,
-        value: { staged: false },
-      });
-      assert.deepStrictEqual(yield* api.abandonRecordingStaging(recordingId, 'no-audio'), {
-        ok: true,
-        value: undefined,
-      });
+
       yield* Scope.close(scope, Exit.void);
     })
   );
 
-  it.effect('the collab lane fails typed; Ask streams a provider error part when unconfigured', () =>
-    Effect.gen(function* () {
-      const { api, scope } = yield* buildBackend;
-      // The fake AiProvider is unconfigured: the stream opens and carries the
-      // not-configured message as an AI-SDK error part (the renderer shows it).
-      const response = yield* api.openAskStream({ messages: [{ role: 'user', content: 'hi' }] });
-      const text = yield* Effect.promise(() => response.text());
-      assert.include(text, '"type":"error"');
-      assert.include(text, 'MODEL_NOT_CONFIGURED');
-      // WorkspaceTransport folds this to None → the renderer sees null.
-      const collab = failureOf(yield* Effect.exit(api.collabToken));
-      assert.instanceOf(collab, AuthStateError);
-      yield* Scope.close(scope, Exit.void);
-    })
+  it.effect(
+    'the collab lane fails typed; Ask streams a provider error part when unconfigured',
+    () =>
+      Effect.gen(function* () {
+        const { api, scope } = yield* buildBackend;
+        // The fake AiProvider is unconfigured: the stream opens and carries the
+        // not-configured message as an AI-SDK error part (the renderer shows it).
+        const response = yield* api.openAskStream({ messages: [{ role: 'user', content: 'hi' }] });
+        const text = yield* Effect.promise(() => response.text());
+        assert.include(text, '"type":"error"');
+        assert.include(text, 'MODEL_NOT_CONFIGURED');
+        // WorkspaceTransport folds this to None → the renderer sees null.
+        const collab = failureOf(yield* Effect.exit(api.collabToken));
+        assert.instanceOf(collab, AuthStateError);
+        yield* Scope.close(scope, Exit.void);
+      })
   );
 
   it.effect('GET /skills lists the three seeded system skills with the server `system` flag', () =>
@@ -309,11 +301,17 @@ describe('LocalBackendLive', () => {
         assert.notProperty(row, 'isSystem');
       }
       // A second acquire re-seeds idempotently: still three rows, bodies intact.
-      const again = expectOk(yield* api.request({ method: 'GET', path: '/apps/v1/me/skills' }), 200);
+      const again = expectOk(
+        yield* api.request({ method: 'GET', path: '/apps/v1/me/skills' }),
+        200
+      );
       assert.lengthOf((again.bodyJson as { results: unknown[] }).results, 3);
       // System rows cannot be deleted (403), user rows can be created over the dialect.
       const del = expectOk(
-        yield* api.request({ method: 'DELETE', path: `/apps/v1/me/skills/${SYSTEM_SKILLS[0]!.id}` }),
+        yield* api.request({
+          method: 'DELETE',
+          path: `/apps/v1/me/skills/${SYSTEM_SKILLS[0]!.id}`,
+        }),
         403
       );
       assert.deepStrictEqual(del.bodyJson, { error: { code: 'FORBIDDEN', message: 'Forbidden' } });
@@ -336,9 +334,12 @@ describe('LocalBackendLive', () => {
 
       yield* Scope.close(scope, Exit.void);
       assert.isTrue(Option.isNone(yield* transport.current), 'cleared on scope close');
-      assert.deepStrictEqual(yield* transport.request({ method: 'GET', path: '/apps/v1/me/folders' }, { mode: 'local' }), {
-        error: { code: 'INTERNAL' },
-      });
+      assert.deepStrictEqual(
+        yield* transport.request({ method: 'GET', path: '/apps/v1/me/folders' }, { mode: 'local' }),
+        {
+          error: { code: 'INTERNAL' },
+        }
+      );
     })
   );
 
@@ -373,10 +374,17 @@ describe('LocalBackendLive', () => {
     Effect.gen(function* () {
       const { api, product, scope } = yield* buildBackend;
       const id = createId('note');
-      yield* api.request({ method: 'POST', path: '/apps/v1/me/notes', body: { id, title: 'Mine' } });
+      yield* api.request({
+        method: 'POST',
+        path: '/apps/v1/me/notes',
+        body: { id, title: 'Mine' },
+      });
       // Plant a body read model behind the note, as the collaboration pipeline does.
       yield* Effect.promise(() =>
-        product.db.update(schema.note).set({ firstLine: 'Standup notes' }).where(eq(schema.note.id, id))
+        product.db
+          .update(schema.note)
+          .set({ firstLine: 'Standup notes' })
+          .where(eq(schema.note.id, id))
       );
       const reset = expectOk(
         yield* api.request({ method: 'PUT', path: `/apps/v1/me/notes/${id}`, body: { title: '' } }),
@@ -406,7 +414,11 @@ describe('LocalBackendLive', () => {
     Effect.gen(function* () {
       const { api, scope } = yield* buildBackend;
       const id = createId('note');
-      yield* api.request({ method: 'POST', path: '/apps/v1/me/notes', body: { id, title: 'Mine' } });
+      yield* api.request({
+        method: 'POST',
+        path: '/apps/v1/me/notes',
+        body: { id, title: 'Mine' },
+      });
       const retried = expectOk(
         yield* api.request({
           method: 'POST',
@@ -423,67 +435,69 @@ describe('LocalBackendLive', () => {
     })
   );
 
-  it.effect('notes: metadataUpdatedAt carries the client stamp; updatedAt never moves backwards', () =>
-    Effect.gen(function* () {
-      const { api, scope } = yield* buildBackend;
-      const id = createId('note');
-      const t1 = '2030-01-01T00:00:00.000Z';
-      const t2 = '2030-01-02T00:00:00.000Z';
+  it.effect(
+    'notes: metadataUpdatedAt carries the client stamp; updatedAt never moves backwards',
+    () =>
+      Effect.gen(function* () {
+        const { api, scope } = yield* buildBackend;
+        const id = createId('note');
+        const t1 = '2030-01-01T00:00:00.000Z';
+        const t2 = '2030-01-02T00:00:00.000Z';
 
-      // Create stores the client stamp verbatim on BOTH clocks (engine parity).
-      const created = expectOk(
-        yield* api.request({
-          method: 'POST',
-          path: '/apps/v1/me/notes',
-          body: { id, title: 'Clock', updatedAt: t1 },
-        }),
-        201
-      );
-      assert.strictEqual(created.bodyJson.result.updatedAt, t1);
-      assert.strictEqual(created.bodyJson.result.metadataUpdatedAt, t1);
+        // Create stores the client stamp verbatim on BOTH clocks (engine parity).
+        const created = expectOk(
+          yield* api.request({
+            method: 'POST',
+            path: '/apps/v1/me/notes',
+            body: { id, title: 'Clock', updatedAt: t1 },
+          }),
+          201
+        );
+        assert.strictEqual(created.bodyJson.result.updatedAt, t1);
+        assert.strictEqual(created.bodyJson.result.metadataUpdatedAt, t1);
 
-      // A newer client stamp advances metadataUpdatedAt verbatim; the row
-      // clock lands on max(now, incoming, current + 1ms) = the future stamp.
-      const advanced = expectOk(
-        yield* api.request({
-          method: 'PUT',
-          path: `/apps/v1/me/notes/${id}`,
-          body: { starred: true, updatedAt: t2 },
-        }),
-        200
-      );
-      assert.strictEqual(advanced.bodyJson.result.metadataUpdatedAt, t2);
-      assert.strictEqual(advanced.bodyJson.result.updatedAt, t2);
+        // A newer client stamp advances metadataUpdatedAt verbatim; the row
+        // clock lands on max(now, incoming, current + 1ms) = the future stamp.
+        const advanced = expectOk(
+          yield* api.request({
+            method: 'PUT',
+            path: `/apps/v1/me/notes/${id}`,
+            body: { starred: true, updatedAt: t2 },
+          }),
+          200
+        );
+        assert.strictEqual(advanced.bodyJson.result.metadataUpdatedAt, t2);
+        assert.strictEqual(advanced.bodyJson.result.updatedAt, t2);
 
-      // An EQUAL stamp still applies (LWW is strict-less-than) and the row
-      // clock strictly advances (+1ms floor) so the delta cursor moves.
-      const equalStamp = expectOk(
-        yield* api.request({
-          method: 'PUT',
-          path: `/apps/v1/me/notes/${id}`,
-          body: { starred: false, updatedAt: t2 },
-        }),
-        200
-      );
-      assert.strictEqual(equalStamp.bodyJson.applied, true);
-      assert.isAbove(
-        Date.parse(equalStamp.bodyJson.result.updatedAt),
-        Date.parse(t2),
-        'row clock strictly advances'
-      );
+        // An EQUAL stamp still applies (LWW is strict-less-than) and the row
+        // clock strictly advances (+1ms floor) so the delta cursor moves.
+        const equalStamp = expectOk(
+          yield* api.request({
+            method: 'PUT',
+            path: `/apps/v1/me/notes/${id}`,
+            body: { starred: false, updatedAt: t2 },
+          }),
+          200
+        );
+        assert.strictEqual(equalStamp.bodyJson.applied, true);
+        assert.isAbove(
+          Date.parse(equalStamp.bodyJson.result.updatedAt),
+          Date.parse(t2),
+          'row clock strictly advances'
+        );
 
-      // A stale stamp is ignored: 200 {applied:false} with the winner echoed.
-      const stale = expectOk(
-        yield* api.request({
-          method: 'PUT',
-          path: `/apps/v1/me/notes/${id}`,
-          body: { starred: true, updatedAt: t1 },
-        }),
-        200
-      );
-      assert.strictEqual(stale.bodyJson.applied, false);
-      assert.strictEqual(stale.bodyJson.result.starred, false);
-      yield* Scope.close(scope, Exit.void);
-    })
+        // A stale stamp is ignored: 200 {applied:false} with the winner echoed.
+        const stale = expectOk(
+          yield* api.request({
+            method: 'PUT',
+            path: `/apps/v1/me/notes/${id}`,
+            body: { starred: true, updatedAt: t1 },
+          }),
+          200
+        );
+        assert.strictEqual(stale.bodyJson.applied, false);
+        assert.strictEqual(stale.bodyJson.result.starred, false);
+        yield* Scope.close(scope, Exit.void);
+      })
   );
 });

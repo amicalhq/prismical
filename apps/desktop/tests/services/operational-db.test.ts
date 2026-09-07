@@ -89,7 +89,7 @@ describe('OperationalDb', () => {
       const firstOpen = first.logger.find(entry => entry.message === 'operational db opened');
       assert.deepStrictEqual(
         (firstOpen?.data as { migrationsRun: number[] }).migrationsRun,
-        [0, 1, 2, 3, 4, 5, 6]
+        [0, 1, 2, 3, 4, 5, 6, 7]
       );
 
       const second = buildDb(dbPath);
@@ -130,7 +130,7 @@ describe('OperationalDb', () => {
       const opened = logger.find(entry => entry.message === 'operational db opened');
       assert.deepStrictEqual(
         (opened?.data as { migrationsRun: number[] }).migrationsRun,
-        [1, 2, 3, 4, 5, 6]
+        [1, 2, 3, 4, 5, 6, 7]
       );
       // Pre-existing setting survived the upgrade (no data loss).
       assert.strictEqual(yield* db.getSetting('widget.geometry'), '{"y":0.5}');
@@ -255,7 +255,6 @@ describe('OperationalDb', () => {
       yield* dbA.insertRecoveryOutbox(
         recordingInput({
           recordingId: 'rec_kill',
-          stagingMode: 'server',
           noteId: 'note_x',
           captureMode: 'system',
           wavPath: '/tmp/kill.wav',
@@ -273,7 +272,7 @@ describe('OperationalDb', () => {
       assert.deepStrictEqual((reopened?.data as { migrationsRun: number[] }).migrationsRun, []);
       const survivor = yield* dbB.getRecoveryOutbox('rec_kill');
       assert.strictEqual(survivor?.status, 'capturing');
-      assert.strictEqual(survivor?.stagingMode, 'server');
+
       assert.strictEqual(survivor?.wavPath, '/tmp/kill.wav');
       assert.strictEqual((yield* dbB.listRecoveryOutbox()).length, 1);
 
@@ -379,7 +378,7 @@ describe('Recovery ownership migration', () => {
       assert.isNull(row?.owner);
       assert.isNull(row?.createInput);
       assert.isNull(row?.engineConfig);
-      assert.isNull(row?.stagingMode);
+
       assert.isNull(row?.phase);
       yield* Scope.close(scope, Exit.void);
     })

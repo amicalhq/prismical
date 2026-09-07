@@ -31,8 +31,6 @@ import {
   type FinalizeRecordingInput,
   type RecordingLaneResult,
   type RecordingSegment,
-  type StageLaneInput,
-  type StagingAbandonReason,
   type TranscribeChunkParams,
 } from '../../src/main/domains/transport/service';
 
@@ -88,10 +86,7 @@ export const makeFakeCapture = (): FakeCapture => {
       yield* Effect.addFinalizer(() =>
         Effect.sync(() => {
           record.released = true;
-        }).pipe(
-          Effect.zipRight(Queue.shutdown(frames)),
-          Effect.zipRight(Queue.shutdown(micEvents)),
-        )
+        }).pipe(Effect.zipRight(Queue.shutdown(frames)), Effect.zipRight(Queue.shutdown(micEvents)))
       );
       sessions.push(record);
       const session: CaptureSession = {
@@ -124,7 +119,9 @@ export const makeFakeCapture = (): FakeCapture => {
 export const fakeFrame = (
   source: CapturedAudioSource,
   samples: Float32Array,
-  extra: Partial<Pick<AudioFrame, 'sequenceNum' | 'timestampMs' | 'sampleStartIndex' | 'durationMs'>> = {}
+  extra: Partial<
+    Pick<AudioFrame, 'sequenceNum' | 'timestampMs' | 'sampleStartIndex' | 'durationMs'>
+  > = {}
 ): AudioFrame => ({
   source,
   samples,
@@ -156,21 +153,15 @@ export interface FakeWorkspaceBackend {
   readonly layer: Layer.Layer<WorkspaceBackend>;
   readonly createCalls: CreateRecordingInput[];
   readonly uploadCalls: UploadCall[];
-  readonly finalizeCalls: Array<{ readonly recordingId: string; readonly input: FinalizeRecordingInput }>;
-  readonly abandonCalls: Array<{
+  readonly finalizeCalls: Array<{
     readonly recordingId: string;
-    readonly reason: StagingAbandonReason;
-  }>;
-  /** Every stageRecordingAudio call; only a cloud-engine recording or row stages. */
-  readonly stageCalls: Array<{
-    readonly recordingId: string;
-    readonly lanes: readonly StageLaneInput[];
+    readonly input: FinalizeRecordingInput;
   }>;
   /** Unary `request` calls; the cloud-mode segment mirror POSTs land here. */
   readonly requestCalls: TransportRequest[];
   /**
    * Every lane call in arrival order (`request:<METHOD> <path>` / `upload:<index>` /
-   * `finalize` / `abandon:<reason>`) — for ordering assertions (mirror BEFORE finalize).
+   * `finalize`) — for ordering assertions (mirror BEFORE finalize).
    */
   readonly timeline: string[];
   readonly setRequestResponder: (fn: (req: TransportRequest) => TransportResponse) => void;
@@ -181,35 +172,21 @@ export interface FakeWorkspaceBackend {
     fn: (call: UploadCall) => RecordingLaneResult<readonly RecordingSegment[]>
   ) => void;
   readonly setFinalizeResponder: (
-    fn: (recordingId: string, input: FinalizeRecordingInput) => RecordingLaneResult<{ readonly recordingId: string }>
-  ) => void;
-  readonly setAbandonResponder: (
     fn: (
       recordingId: string,
-      reason: StagingAbandonReason
-    ) => RecordingLaneResult<void>
-  ) => void;
-  readonly setStageResponder: (
-    fn: (
-      recordingId: string,
-      lanes: readonly StageLaneInput[]
-    ) => RecordingLaneResult<{ readonly staged: boolean }>
+      input: FinalizeRecordingInput
+    ) => RecordingLaneResult<{ readonly recordingId: string }>
   ) => void;
 }
 
 export const makeFakeWorkspaceBackend = (): FakeWorkspaceBackend => {
   const createCalls: CreateRecordingInput[] = [];
   const uploadCalls: UploadCall[] = [];
-  const finalizeCalls: Array<{ readonly recordingId: string; readonly input: FinalizeRecordingInput }> = [];
-  const abandonCalls: Array<{
+  const finalizeCalls: Array<{
     readonly recordingId: string;
-    readonly reason: StagingAbandonReason;
+    readonly input: FinalizeRecordingInput;
   }> = [];
   const requestCalls: TransportRequest[] = [];
-  const stageCalls: Array<{
-    readonly recordingId: string;
-    readonly lanes: readonly StageLaneInput[];
-  }> = [];
   const timeline: string[] = [];
 
   // The sync create dialect's happy answer (201 + echoed row) — tests that
@@ -219,24 +196,18 @@ export const makeFakeWorkspaceBackend = (): FakeWorkspaceBackend => {
     status: 201,
     bodyJson: { success: true, result: req.body },
   });
-  let createResponder: (input: CreateRecordingInput) => RecordingLaneResult<{ readonly recordingId: string }> =
-    input => laneOk({ recordingId: input.recordingId });
-  let uploadResponder: (call: UploadCall) => RecordingLaneResult<readonly RecordingSegment[]> = () => laneOk([]);
+  let createResponder: (
+    input: CreateRecordingInput
+  ) => RecordingLaneResult<{ readonly recordingId: string }> = input =>
+    laneOk({ recordingId: input.recordingId });
+  let uploadResponder: (
+    call: UploadCall
+  ) => RecordingLaneResult<readonly RecordingSegment[]> = () => laneOk([]);
   let finalizeResponder: (
     recordingId: string,
     input: FinalizeRecordingInput
-  ) => RecordingLaneResult<{ readonly recordingId: string }> = recordingId => laneOk({ recordingId });
-  let abandonResponder: (
-    recordingId: string,
-    reason: StagingAbandonReason
-  ) => RecordingLaneResult<void> = () => laneOk(undefined);
-  // Staging disabled (the org-flag-off answer) by default — keeps every
-  // existing expectation intact; staging tests override via setStageResponder.
-  let stageResponder: (
-    recordingId: string,
-    lanes: readonly StageLaneInput[]
-  ) => RecordingLaneResult<{ readonly staged: boolean }> = () => laneOk({ staged: false });
-
+  ) => RecordingLaneResult<{ readonly recordingId: string }> = recordingId =>
+    laneOk({ recordingId });
   const api: WorkspaceBackendApi = {
     // Only the segment mirror reaches `request`; the Ask/collab lanes stay inert stubs.
     request: req =>
@@ -265,18 +236,6 @@ export const makeFakeWorkspaceBackend = (): FakeWorkspaceBackend => {
         timeline.push('finalize');
         return finalizeResponder(recordingId, input);
       }),
-    stageRecordingAudio: (recordingId, lanes) =>
-      Effect.sync(() => {
-        stageCalls.push({ recordingId, lanes });
-        timeline.push('stage');
-        return stageResponder(recordingId, lanes);
-      }),
-    abandonRecordingStaging: (recordingId, reason) =>
-      Effect.sync(() => {
-        abandonCalls.push({ recordingId, reason });
-        timeline.push(`abandon:${reason}`);
-        return abandonResponder(recordingId, reason);
-      }),
   };
 
   return {
@@ -284,8 +243,6 @@ export const makeFakeWorkspaceBackend = (): FakeWorkspaceBackend => {
     createCalls,
     uploadCalls,
     finalizeCalls,
-    abandonCalls,
-    stageCalls,
     requestCalls,
     timeline,
     setRequestResponder: fn => {
@@ -299,12 +256,6 @@ export const makeFakeWorkspaceBackend = (): FakeWorkspaceBackend => {
     },
     setFinalizeResponder: fn => {
       finalizeResponder = fn;
-    },
-    setAbandonResponder: fn => {
-      abandonResponder = fn;
-    },
-    setStageResponder: fn => {
-      stageResponder = fn;
     },
   };
 };

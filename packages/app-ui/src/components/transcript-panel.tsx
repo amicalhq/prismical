@@ -228,9 +228,8 @@ function TranscriptPanelContent({
   React.useEffect(() => setDoneDismissed(false), [finishedRecordingId]);
   const doneReady = !!finished && !finished.processing;
   // What the settled bar says. A diarization pass that FAILED still leaves the live transcript
-  // (labels are what's missing); a failed pass on a recording with no lines (deferred mode,
-  // where that pass IS the transcript) means there is no transcript at all. 'skipped' is not a
-  // failure (a live recording never stages audio), and an empty `lines` only counts once the
+  // (labels are what's missing); a failed pass on a recording with no lines means there is
+  // no transcript at all. 'skipped' is not a failure, and an empty `lines` only counts once the
   // transcript query has actually answered - right after stop it is still pending.
   const doneOutcome: 'ready' | 'noSpeakers' | 'noTranscript' = !finished
     ? 'ready'
@@ -460,11 +459,9 @@ function TranscriptPanelContent({
                         <Loader2 className="animate-spin" />
                       </MarkerIcon>
                       <MarkerContent className="shimmer shimmer-duration-1400 text-dock-ink-3 text-2xs font-medium">
-                        {rec.finalizeStatus === 'awaiting_upload'
-                          ? t('recording.panel.uploadingAudio')
-                          : rec.lines.length === 0
-                            ? t('recording.panel.transcribing')
-                            : t('recording.panel.identifyingSpeakers')}
+                        {rec.lines.length === 0
+                          ? t('recording.panel.transcribing')
+                          : t('recording.panel.identifyingSpeakers')}
                       </MarkerContent>
                     </Marker>
                   ) : null}
@@ -609,11 +606,9 @@ function TranscriptPanelContent({
                   <PxOrbitLoader />
                 </span>
                 <span className="shimmer shimmer-duration-1400 text-dock-ink-3 text-[12.5px]">
-                  {finished.finalizeStatus === 'awaiting_upload'
-                    ? t('recording.panel.uploadingAudio')
-                    : finished.lines.length === 0
-                      ? t('recording.panel.transcribing')
-                      : t('recording.panel.identifyingSpeakers')}
+                  {finished.lines.length === 0
+                    ? t('recording.panel.transcribing')
+                    : t('recording.panel.identifyingSpeakers')}
                 </span>
               </>
             ) : (

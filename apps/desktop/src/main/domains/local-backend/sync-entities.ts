@@ -173,7 +173,7 @@ const writableKeys = (entity: LocalEntityConfig): ReadonlySet<string> => {
 /**
  * Keep only real table columns: the zod strip already dropped unknown keys,
  * but a request schema may carry fields the local schema does not model
- * (recording.stagingExpected, artifact.generator) — those must not reach the
+ * (artifact.generator) — those must not reach the
  * INSERT. Dropping them silently keeps payload sanitization consistent.
  */
 const pickColumns = (
@@ -264,8 +264,7 @@ const parseWrite = (
   return { id: providedId, incomingMs: parseTimestampMs(updatedAt) ?? Date.now(), fields };
 };
 
-const isRouteResult = (value: ParsedWrite | RouteResult): value is RouteResult =>
-  'status' in value;
+const isRouteResult = (value: ParsedWrite | RouteResult): value is RouteResult => 'status' in value;
 
 const echo = (entity: LocalEntityConfig, row: Record<string, any> | undefined): unknown =>
   row !== undefined && entity.present ? entity.present(row) : row;

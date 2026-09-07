@@ -202,6 +202,18 @@ const en = {
         title: 'Vocabulary',
       },
     },
+    quota: {
+      action: {
+        upgrade: 'Upgrade',
+        upgradeUnlimited: 'Upgrade to unlimited',
+      },
+      detail: '{{used}} of {{limit}} used - resets {{date}}',
+      label: {
+        cloudTranscription: 'Cloud transcription',
+      },
+      left: '{{duration}} left',
+      noTimeLeft: 'No time left',
+    },
     secondary: {
       community: 'Community',
       docs: 'Docs',
@@ -630,8 +642,7 @@ const en = {
       limitSoonDescription: 'Your plan allows {{limit}}-minute recordings. It will stop automatically at the limit.',
       limitStopped: 'Recording stopped at your plan’s {{minutes}}-minute limit.',
       limitStoppedDescription: 'The note and transcript are saved. Start a new recording to keep going, or upgrade for longer recordings.',
-      deferredRecovery:
-        'The recording could not be transcribed yet - its audio upload will retry when you reconnect.',
+      completionRecovery: 'The recording could not finish saving. It will retry when you reconnect.',
       endedUnexpectedly: 'Recording ended unexpectedly.',
       microphoneDenied: 'Microphone access was denied.',
       microphoneDeniedHintDesktop:
@@ -656,7 +667,6 @@ const en = {
       count_other: '{{count}} recordings',
       empty: 'No transcript yet. Start recording to capture your meeting or voice note.',
       finishing: 'Finishing up…',
-      uploadingAudio: 'Uploading audio…',
       identifyingSpeakers: 'Identifying speakers…',
       input: 'Input',
       allAudioSettings: 'All audio settings…',
@@ -698,6 +708,14 @@ const en = {
     },
     composerPlaceholder: 'Ask anything — / for skills, @ to tag notes',
     composerPlaceholderShort: '/ for skills, @ to tag',
+    composerPlaceholderSkillsOnly: 'Type / to run a skill',
+    composerPlaceholderUnavailable: 'Ask AI isn’t in your plan',
+    gate: {
+      pill: 'Run a skill…',
+      skillsOnly: 'Ask AI isn’t included in your plan. Skills still run here.',
+      unavailable: 'Ask AI isn’t included in your plan.',
+      refused: 'Ask AI isn’t included in your plan. Type / to run a skill instead.',
+    },
     dockDescription: 'Ask AI about your notes',
     dockHide: 'Hide Ask AI',
     dockLabel: 'Ask',
@@ -2148,6 +2166,8 @@ const en = {
       welcome: 'Welcome to Prismical',
     },
     flow: {
+      sessionUnavailable: 'Your session is temporarily unavailable. Please try again.',
+      retryIn: 'Try again in {{count}}s',
       callbackFailed: 'We couldn’t complete sign-in. Please try again.',
       couldNotSignIn: 'Couldn’t sign you in',
       handoffInvalid:

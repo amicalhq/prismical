@@ -1,7 +1,7 @@
 import type { CoreRecording } from '@prismical/app-client';
 
 export function recordingIsProcessing(phase: string | null): boolean {
-  return phase === 'awaiting_upload' || phase === 'pending' || phase === 'running';
+  return phase === 'pending' || phase === 'running';
 }
 
 /** Read the processing phase independently of the recording's capture duration. */

@@ -4,28 +4,19 @@ import * as React from 'react';
 import { ChunkBoundaryPicker } from './chunker';
 import { encodeWavPcm16 } from './wav-encode';
 import {
-  abandonStaging,
-  completeStaging,
   createRecording,
   finalizeRecording,
-  getTranscriptionSettings,
-  mintStagingUrls,
   type CoreTranscriptSegment,
 } from '../api/transcription';
 import {
-  canPersistStagingRecovery,
-  discardStagingBuffer,
-  listPendingStagingRecoveries,
-  readStagingBuffer,
-  removePendingStagingRecovery,
-  savePendingStagingRecovery,
-  startStagingBuffer,
-  sweepStagingBuffers,
-  type PendingStagingRecovery,
-  type StagingBuffer,
-} from './staging-buffer';
+  listPendingRecordingCompletions,
+  removePendingRecordingCompletion,
+  savePendingRecordingCompletion,
+  type PendingRecordingCompletion,
+} from './recording-completion';
 import { AutoPauseMachine, SilenceWatcher, type AutoPauseEffect } from '@prismical/silence';
 import { ensureAutoPausePolicy } from '../api/hooks/organizations';
+import { usageKeyPrefix } from '../api/hooks/usage';
 import { useQueryClient } from '@tanstack/react-query';
 import type { AuthPort, NativeRecordingState, SessionView } from '@prismical/app-contracts';
 import type { ApplicationTranslationKey } from '@prismical/app-i18n';
@@ -52,7 +43,6 @@ import {
 
 const SAMPLE_RATE = 16000; // mirrors desktop useAudioCapture
 const MAX_UPLOAD_ATTEMPTS = 3;
-const MAX_ABANDON_ATTEMPTS = 3;
 // Dead-mic detection: a capture stream whose samples are exactly
 // zero is broken — most commonly macOS revoking the browser's mic permission (a Chrome
 // update can wedge it), where getUserMedia still "succeeds" and the tab shows recording
@@ -73,8 +63,7 @@ const MIN_SESSION_SECONDS_BEFORE_AUTO_PAUSE = 30;
 const AUTO_STOP_POLL_MS = 5_000;
 type RecordingErrorKey = ApplicationTranslationKey;
 
-const DEFERRED_RECOVERY_ERROR: RecordingErrorKey = 'recording.errors.deferredRecovery';
-const STAGING_BUFFER_CLOSE_GRACE_MS = 60_000;
+const COMPLETION_RECOVERY_ERROR: RecordingErrorKey = 'recording.errors.completionRecovery';
 
 class RecordingSessionChangedError extends Error {}
 
@@ -178,37 +167,6 @@ function uploadRetryDelayMs(err: unknown, attempt: number): number | null {
   return 500 * attempt; // network hiccup / unknown: worth retrying
 }
 
-async function abandonStagingWithRetry(
-  recordingId: string,
-  reason: 'no-audio' | 'staging-disabled' | 'upload-failed',
-  activeOrgId: string,
-  auth: AuthPort,
-  ownerSessionKey: string
-): Promise<boolean> {
-  for (let attempt = 1; attempt <= MAX_ABANDON_ATTEMPTS; attempt++) {
-    try {
-      const authToken = await boundAuthToken(auth, ownerSessionKey);
-      await abandonStaging(recordingId, reason, activeOrgId, authToken);
-      return true;
-    } catch (err) {
-      if (err instanceof RecordingSessionChangedError) return false;
-      const retryable =
-        !(err instanceof ApiError) ||
-        err.status === 401 ||
-        err.status === 408 ||
-        err.status === 429 ||
-        err.status >= 500;
-      if (!retryable || attempt === MAX_ABANDON_ATTEMPTS) {
-        if (err instanceof ApiError && (err.status === 404 || err.status === 410)) return true;
-        console.warn('audio staging abandon failed; server readiness gate remains closed', err);
-        return false;
-      }
-      await new Promise(resolve => setTimeout(resolve, 500 * attempt));
-    }
-  }
-  return false;
-}
-
 export type RecState = 'idle' | 'starting' | 'recording' | 'paused' | 'stopping';
 
 // --- Native (desktop) recording bridge helpers ------------------------------
@@ -264,280 +222,91 @@ interface RecordingSession {
   ctx: AudioContext | null;
   stream: MediaStream | null;
   node: AudioWorkletNode | null;
+  /** Keep the microphone source alive while the session can resume after suspension. */
+  source: MediaStreamAudioSourceNode | null;
   picker: ChunkBoundaryPicker | null;
   recordingId: string | null;
   chunkIndex: number;
   sentSamples: number;
   /** Round-robin upload lanes: each lane serializes, so ≤UPLOAD_CONCURRENCY in flight. */
   uploadLanes: Promise<void>[];
-  /** Always-on session buffer for the finalize pass; null = can't buffer here. */
-  staging: StagingBuffer | null;
-  /** False = deferred mode: capture and buffer only, with zero chunk uploads — the
-   * staged batch pass at stop produces the whole transcript. */
-  liveLane: boolean;
   /** Identity frozen with the session so a later account/org switch cannot claim its recovery. */
   ownerSub: string;
   ownerOrgId: string;
   ownerSessionKey: string;
   /** Set before local teardown so queued async work cannot cross into a new login. */
   cancelled: boolean;
-  stagingStopped: boolean;
   /** A user-fixable transcription failure (rejected key, quota) stopped the session's uploads:
    * every later chunk would fail the same way, so they are skipped instead of retried. The
-   * recording itself continues (and is buffered for the finalize pass). */
+   * recording itself continues. */
   uploadsHalted: boolean;
 }
 
-/** Stop intents retain full-session audio until finalization and staging settle. */
-type StagingAttempt =
-  | { status: 'complete' }
-  | { status: 'closed' }
-  | { status: 'session-ended' }
-  | { status: 'retry' }
-  | {
-      status: 'abandon';
-      reason: 'staging-disabled' | 'upload-failed';
-    };
+const pendingEphemeralRecoveries = new Map<string, PendingRecordingCompletion>();
+const activeRecordingCompletions = new Set<string>();
 
-const pendingMemoryBlobs = new Map<string, Blob>();
-const pendingEphemeralRecoveries = new Map<string, PendingStagingRecovery>();
-const activeStagingRecoveries = new Set<string>();
-
-function rememberStagingRecovery(item: PendingStagingRecovery): void {
-  if (savePendingStagingRecovery(item)) {
+function rememberRecordingCompletion(item: PendingRecordingCompletion): void {
+  if (savePendingRecordingCompletion(item)) {
     pendingEphemeralRecoveries.delete(item.recordingId);
   } else {
     pendingEphemeralRecoveries.set(item.recordingId, item);
   }
 }
 
-function isRetryableStagingError(err: unknown): boolean {
-  return (
-    !(err instanceof ApiError) ||
-    err.status === 0 ||
-    err.status === 401 ||
-    err.status === 408 ||
-    err.status === 429 ||
-    err.status >= 500
-  );
-}
-
-async function attemptStagedUpload(
-  recordingId: string,
-  contentType: string,
-  blob: Blob,
-  durationMs: number,
-  activeOrgId: string,
-  auth: AuthPort,
-  ownerSessionKey: string
-): Promise<StagingAttempt> {
-  const lane = { lane: 'mic' as const, contentType };
-  let minted: Awaited<ReturnType<typeof mintStagingUrls>>;
-  try {
-    const authToken = await boundAuthToken(auth, ownerSessionKey);
-    minted = await mintStagingUrls(recordingId, [lane], activeOrgId, authToken);
-  } catch (err) {
-    if (err instanceof RecordingSessionChangedError) return { status: 'session-ended' };
-    if (err instanceof ApiError && err.status === 409) {
-      return { status: 'abandon', reason: 'staging-disabled' };
-    }
-    console.warn('audio staging mint failed', err);
-    return isRetryableStagingError(err)
-      ? { status: 'retry' }
-      : { status: 'abandon', reason: 'upload-failed' };
-  }
-
-  const upload = minted.uploads[0];
-  if (!upload) return { status: 'retry' };
-  try {
-    await boundAuthToken(auth, ownerSessionKey);
-    const put = await fetch(upload.url, {
-      method: 'PUT',
-      headers: upload.headers,
-      body: blob,
-    });
-    if (!put.ok) {
-      const failure = new ApiError(
-        'STAGING_UPLOAD_FAILED',
-        `Staging upload failed with status ${put.status}`,
-        put.status
-      );
-      return isRetryableStagingError(failure)
-        ? { status: 'retry' }
-        : { status: 'abandon', reason: 'upload-failed' };
-    }
-    const authToken = await boundAuthToken(auth, ownerSessionKey);
-    await completeStaging(
-      recordingId,
-      [{ ...lane, durationMs: Math.max(1, Math.round(durationMs)) }],
-      activeOrgId,
-      authToken
-    );
-    return { status: 'complete' };
-  } catch (err) {
-    if (err instanceof RecordingSessionChangedError) return { status: 'session-ended' };
-    if (err instanceof ApiError && err.code === 'STAGING_FINALIZATION_CLOSED') {
-      return { status: 'closed' };
-    }
-    console.warn('audio staging upload/complete failed', err);
-    return isRetryableStagingError(err)
-      ? { status: 'retry' }
-      : { status: 'abandon', reason: 'upload-failed' };
-  }
-}
-
-async function finishStagingRecovery(recordingId: string): Promise<void> {
-  removePendingStagingRecovery(recordingId);
-  pendingMemoryBlobs.delete(recordingId);
+async function finishRecordingCompletion(recordingId: string): Promise<void> {
+  removePendingRecordingCompletion(recordingId);
   pendingEphemeralRecoveries.delete(recordingId);
-  await discardStagingBuffer(recordingId).catch(() => {});
 }
 
 function recordingRecoveryLock(recordingId: string): string {
   return `prismical-recording-recovery:${recordingId}`;
 }
 
-async function recoverPendingStaging(
-  item: PendingStagingRecovery,
+async function recoverPendingCompletion(
+  item: PendingRecordingCompletion,
   auth: AuthPort,
-  suppliedBlob?: Blob | null,
   onFinalized?: () => void
 ): Promise<boolean> {
   if (navigator.locks) {
     return navigator.locks.request(
       recordingRecoveryLock(item.recordingId),
       { ifAvailable: true },
-      lock => (lock ? recoverPendingStagingLocked(item, auth, suppliedBlob, onFinalized) : false)
+      lock => (lock ? recoverPendingCompletionLocked(item, auth, onFinalized) : false)
     );
   }
-  return recoverPendingStagingLocked(item, auth, suppliedBlob, onFinalized);
+  return recoverPendingCompletionLocked(item, auth, onFinalized);
 }
 
-async function recoverPendingStagingLocked(
-  item: PendingStagingRecovery,
+async function recoverPendingCompletionLocked(
+  item: PendingRecordingCompletion,
   auth: AuthPort,
-  suppliedBlob?: Blob | null,
   onFinalized?: () => void
 ): Promise<boolean> {
-  if (activeStagingRecoveries.has(item.recordingId)) return false;
-  activeStagingRecoveries.add(item.recordingId);
+  if (activeRecordingCompletions.has(item.recordingId)) return false;
+  activeRecordingCompletions.add(item.recordingId);
   try {
-    let current = item;
-    if (current.needsFinalize) {
-      try {
-        const authToken = await boundAuthToken(auth, current.ownerSessionKey);
-        await finalizeRecording(
-          current.recordingId,
-          current.durationMs,
-          current.expectsStaging ?? true,
-          current.transcriptionDeferred,
-          {
-            endedAt: current.endedAt,
-            activeOrgId: current.ownerOrgId,
-            authToken,
-          }
-        );
-      } catch (err) {
-        if (err instanceof RecordingSessionChangedError) return false;
-        if (err instanceof ApiError && (err.status === 404 || err.status === 410)) {
-          await finishStagingRecovery(current.recordingId);
-          return true;
-        }
-        console.warn('recording finalize recovery failed', err);
-        return false;
+    try {
+      const authToken = await boundAuthToken(auth, item.ownerSessionKey);
+      await finalizeRecording(item.recordingId, item.durationMs, {
+        endedAt: item.endedAt,
+        activeOrgId: item.ownerOrgId,
+        authToken,
+      });
+    } catch (err) {
+      if (err instanceof RecordingSessionChangedError) return false;
+      if (err instanceof ApiError && (err.status === 404 || err.status === 410)) {
+        await finishRecordingCompletion(item.recordingId);
+        return true;
       }
-      if (!ownsActiveContext(auth, current.ownerSessionKey)) return false;
-      current = { ...current, needsFinalize: false };
-      rememberStagingRecovery(current);
-      onFinalized?.();
-    }
-
-    if (current.expectsStaging === false) {
-      await finishStagingRecovery(current.recordingId);
-      return true;
-    }
-
-    if (current.action === 'abandon') {
-      const settled = await abandonStagingWithRetry(
-        current.recordingId,
-        current.abandonReason ?? 'upload-failed',
-        current.ownerOrgId,
-        auth,
-        current.ownerSessionKey
-      );
-      if (settled) await finishStagingRecovery(current.recordingId);
-      return settled;
-    }
-
-    // Explicit null comes from the originating MediaRecorder and means the buffer is known bad.
-    // Undefined means a later recovery needs to reopen a previously finalized OPFS artifact.
-    const suppliedBufferFailed = suppliedBlob === null;
-    const memoryBlob =
-      suppliedBlob === undefined ? pendingMemoryBlobs.get(current.recordingId) : suppliedBlob;
-    // A ledger entry is written just before MediaRecorder closes. A new tab can observe it while
-    // OPFS still exposes a partial snapshot; do not upload or abandon that snapshot during the
-    // close grace. The originating tab supplies the completed Blob and bypasses this guard.
-    if (
-      !suppliedBufferFailed &&
-      !memoryBlob &&
-      Date.now() - current.createdAt < STAGING_BUFFER_CLOSE_GRACE_MS
-    )
+      console.warn('recording completion recovery failed', err);
       return false;
-    const blob = suppliedBufferFailed
-      ? null
-      : (memoryBlob ?? (await readStagingBuffer(current.recordingId, current.contentType)));
-    if (!blob) {
-      const abandonItem: PendingStagingRecovery = {
-        ...current,
-        action: 'abandon',
-        abandonReason: 'no-audio',
-      };
-      rememberStagingRecovery(abandonItem);
-      const settled = await abandonStagingWithRetry(
-        current.recordingId,
-        'no-audio',
-        current.ownerOrgId,
-        auth,
-        current.ownerSessionKey
-      );
-      if (settled) await finishStagingRecovery(current.recordingId);
-      return settled;
     }
-    pendingMemoryBlobs.set(current.recordingId, blob);
-
-    const outcome = await attemptStagedUpload(
-      current.recordingId,
-      current.contentType,
-      blob,
-      current.durationMs,
-      current.ownerOrgId,
-      auth,
-      current.ownerSessionKey
-    );
-    if (outcome.status === 'complete' || outcome.status === 'closed') {
-      await finishStagingRecovery(current.recordingId);
-      return true;
-    }
-    if (outcome.status === 'retry') return false;
-    if (outcome.status === 'session-ended') return false;
-
-    const abandonItem: PendingStagingRecovery = {
-      ...current,
-      action: 'abandon',
-      abandonReason: outcome.reason,
-    };
-    rememberStagingRecovery(abandonItem);
-    const settled = await abandonStagingWithRetry(
-      current.recordingId,
-      outcome.reason,
-      current.ownerOrgId,
-      auth,
-      current.ownerSessionKey
-    );
-    if (settled) await finishStagingRecovery(current.recordingId);
-    return settled;
+    if (!ownsActiveContext(auth, item.ownerSessionKey)) return false;
+    await finishRecordingCompletion(item.recordingId);
+    onFinalized?.();
+    return true;
   } finally {
-    activeStagingRecoveries.delete(item.recordingId);
+    activeRecordingCompletions.delete(item.recordingId);
   }
 }
 
@@ -653,7 +422,7 @@ export function useRecording({
   const machineRef = React.useRef<AutoPauseMachine | null>(null);
   /** Desktop only: the last prompt main pushed, for attributing the pause that follows it. */
   const nativePromptRef = React.useRef<GracePrompt | null>(null);
-  /** Whether THIS session has auto-pause running at all (gate × deferred mode). */
+  /** Whether this session has auto-pause enabled. */
   const autoPauseArmedRef = React.useRef(false);
   // The machine emits `pause`/`stop`; those callbacks are defined further down, so the frame
   // handler reaches them through a ref an effect keeps current (stale-closure safe, and render
@@ -675,6 +444,9 @@ export function useRecording({
       void qc.invalidateQueries({ queryKey: recordingsKey(finished.noteId) });
       void qc.invalidateQueries({ queryKey: noteRecordingsKey(finished.noteId) });
       void qc.invalidateQueries({ queryKey: enhancedRecordingsKey(finished.noteId) });
+      // The seconds just metered move the sidebar quota meter. Keyed by the shared prefix so the
+      // active org's entry is refetched without this lane having to resolve which org that is.
+      void qc.invalidateQueries({ queryKey: usageKeyPrefix });
       analytics.capture(EVENTS.RECORDING_COMPLETED, {
         note_id: finished.noteId,
         recording_id: finished.recordingId,
@@ -816,7 +588,7 @@ export function useRecording({
   // Warm the web start path once: the AudioWorklet module fetch and
   // the transcription model-default query both sit between the mic click and "recording" —
   // prefetching them at mount trims the "starting" window. What remains is one round trip
-  // (createRecording, overlapped with the transcription-settings lookup) plus getUserMedia.
+  // (createRecording) plus getUserMedia.
   // Desktop's native pipeline has neither, and failures here are fine (start() re-does both).
   React.useEffect(() => {
     if (control) return;
@@ -829,20 +601,19 @@ export function useRecording({
   React.useEffect(() => {
     if (control) return;
     let cancelled = false;
-    let closeGraceTimer: number | null = null;
+    let retryTimer: number | null = null;
     const drain = async () => {
-      if (closeGraceTimer !== null) {
-        window.clearTimeout(closeGraceTimer);
-        closeGraceTimer = null;
+      if (retryTimer !== null) {
+        window.clearTimeout(retryTimer);
+        retryTimer = null;
       }
       let unresolved = false;
-      let nextCloseGraceMs: number | null = null;
       const view = auth.getSession();
       const activeSub = view.activeSub ?? null;
       const activeSessionKey = view.activeSessionKey ?? view.activeSub ?? null;
       const activeOrgId = activeOrgIdOf(view);
       const recoveries = new Map(
-        listPendingStagingRecoveries().map(item => [item.recordingId, item])
+        listPendingRecordingCompletions().map(item => [item.recordingId, item])
       );
       for (const item of pendingEphemeralRecoveries.values()) {
         recoveries.set(item.recordingId, item);
@@ -857,15 +628,8 @@ export function useRecording({
           item.ownerSessionKey !== activeSessionKey
         )
           continue;
-        const closeGraceRemaining = item.createdAt + STAGING_BUFFER_CLOSE_GRACE_MS - Date.now();
-        if (item.action === 'upload' && closeGraceRemaining > 0) {
-          nextCloseGraceMs =
-            nextCloseGraceMs === null
-              ? closeGraceRemaining
-              : Math.min(nextCloseGraceMs, closeGraceRemaining);
-        }
         if (
-          !(await recoverPendingStaging(item, auth, undefined, () => {
+          !(await recoverPendingCompletion(item, auth, () => {
             if (item.noteId)
               finishRecording({
                 recordingId: item.recordingId,
@@ -881,16 +645,13 @@ export function useRecording({
       if (cancelled) return;
       setError(previous =>
         unresolved
-          ? DEFERRED_RECOVERY_ERROR
-          : previous === DEFERRED_RECOVERY_ERROR
+          ? COMPLETION_RECOVERY_ERROR
+          : previous === COMPLETION_RECOVERY_ERROR
             ? null
             : previous
       );
       if (unresolved) {
-        closeGraceTimer = window.setTimeout(
-          () => void drain(),
-          Math.max(1, nextCloseGraceMs === null ? 5000 : nextCloseGraceMs + 50)
-        );
+        retryTimer = window.setTimeout(() => void drain(), 5000);
       }
     };
     const resume = () => void drain();
@@ -905,7 +666,7 @@ export function useRecording({
       window.removeEventListener('focus', resume);
       window.removeEventListener('recording-recovery-pending', resume);
       unsubscribeSession();
-      if (closeGraceTimer !== null) window.clearTimeout(closeGraceTimer);
+      if (retryTimer !== null) window.clearTimeout(retryTimer);
     };
   }, [auth, control, finishRecording]);
 
@@ -936,16 +697,18 @@ export function useRecording({
     if (!s) return;
     s.node?.port.close();
     s.node?.disconnect();
+    s.source?.disconnect();
     s.stream?.getTracks().forEach(t => t.stop());
     void s.ctx?.close().catch(() => {});
     s.ctx = null;
     s.stream = null;
     s.node = null;
+    s.source = null;
   }, []);
 
   // A recording belongs to an exact login slot, not merely a user + org. Stop
   // all local work when that slot changes so a same-sub ordinary session can
-  // never inherit support-origin capture, retries, or staged recovery.
+  // never inherit support-origin capture, retries, or completion recovery.
   React.useEffect(() => {
     if (control) return;
     return auth.onSessionChanged(view => {
@@ -953,19 +716,9 @@ export function useRecording({
       if (!s || ownsSessionContext(view, s.ownerSessionKey)) return;
       s.cancelled = true;
       pauseEpochRef.current += 1;
-      let stagedBlob: Promise<Blob | null> | null = null;
-      if (s.staging && !s.stagingStopped) {
-        s.stagingStopped = true;
-        stagedBlob = s.staging.stop();
-      }
       teardownAudio();
       session.current = null;
-      if (s.recordingId) void finishStagingRecovery(s.recordingId);
-      if (stagedBlob && s.staging) {
-        void stagedBlob.finally(() => s.staging?.discard()).catch(() => {});
-      } else {
-        void s.staging?.discard().catch(() => {});
-      }
+      if (s.recordingId) void finishRecordingCompletion(s.recordingId);
       setState('idle');
       setRecordingId(null);
       setNoteId(null);
@@ -1117,7 +870,6 @@ export function useRecording({
       let openingStream: MediaStream | null = null;
       let openingContext: AudioContext | null = null;
       let openingNode: AudioWorkletNode | null = null;
-      let openingStaging: StagingBuffer | null = null;
       try {
         const ownerView = auth.getSession();
         const ownerSub = ownerView.activeSub;
@@ -1133,35 +885,12 @@ export function useRecording({
           activeOrgId: ownerOrgId,
           authToken,
         });
-        // Deferred mode: when the org has live transcription off, capture and
-        // buffer only — zero chunk uploads; the staged batch pass at stop is the transcript.
-        // Unreachable settings default to live (today's behavior). BYOK recordings FORCE the
-        // live lane: the deferred drain only runs managed engines, and the user's pinned
-        // provider must transcribe their audio — deferred would leave the recording empty.
-        const byokChosen = Boolean((modelParams as { instanceId?: string }).instanceId);
         const preferences = getRecordingPreferences();
         authToken = await boundAuthToken(auth, ownerSessionKey);
-        // Two INDEPENDENT round trips: the settings lookup does not feed createRecording (its
-        // result is only read later, as effectiveLiveLane). Awaiting them one after the other put
-        // two full server latencies between the click and the microphone opening, so overlap them.
-        // Neither holds an OS resource, so a rejection here needs no teardown beyond the existing
-        // catch — unlike the microphone, which is deliberately still opened afterwards.
-        const [liveLane, rec] = await Promise.all([
-          byokChosen
-            ? Promise.resolve(true)
-            : getTranscriptionSettings({ activeOrgId: ownerOrgId, authToken })
-                .then(s => s.liveTranscription)
-                .catch(() => true),
-          createRecording(
-            {
-              noteId,
-              title,
-              ...modelParams,
-              language: transcriptionLanguageFor(preferences),
-            },
-            { activeOrgId: ownerOrgId, authToken }
-          ),
-        ]);
+        const rec = await createRecording(
+          { noteId, title, ...modelParams, language: transcriptionLanguageFor(preferences) },
+          { activeOrgId: ownerOrgId, authToken }
+        );
         assertOpening();
         openingStream = await openWebMicrophone(
           await resolveWebMicrophone(preferences.microphonePriority)
@@ -1195,16 +924,6 @@ export function useRecording({
         const source = openingContext.createMediaStreamSource(openingStream);
         openingNode = new AudioWorkletNode(openingContext, 'audio-recorder-processor');
         source.connect(openingNode);
-        openingStaging = await startStagingBuffer(openingStream, rec.id);
-        assertOpening();
-        // Deferred mode is only safe when BOTH artifacts survive a reload: full audio in OPFS and
-        // its recovery intent in localStorage. Memory fallback remains useful for live-mode
-        // diarization, but it must never be the sole transcript source.
-        const deferredDurable =
-          openingStaging?.durable === true &&
-          canPersistStagingRecovery(ownerSessionKey !== ownerSub);
-        const effectiveLiveLane = liveLane || !deferredDurable;
-
         // Auto-pause is per-session: a fresh watcher (so the previous room's noise floor doesn't
         // carry over) and a fresh machine (so last session's suppression doesn't either). The
         // policy is read HERE, at start, rather than per frame — a flag flipped mid-recording must
@@ -1218,41 +937,33 @@ export function useRecording({
         assertOpening();
         watcherRef.current = new SilenceWatcher();
         machineRef.current = new AutoPauseMachine({
-          // Deferred mode is excluded deliberately: it uploads no chunks,
-          // so the ASR never returns text and the two-signal rule collapses to the bare energy
-          // gate — and it also meters nothing, so there is no quota being burned to justify
-          // running on one signal. Both halves of the rationale point the same way.
-          enabled: policy.enabled && effectiveLiveLane,
+          enabled: policy.enabled,
           silenceSeconds: policy.silenceSeconds,
           graceSeconds: policy.graceSeconds,
           autoStopAfterPausedMinutes: policy.autoStopAfterPausedMinutes,
           minSessionSeconds: MIN_SESSION_SECONDS_BEFORE_AUTO_PAUSE,
         });
-        autoPauseArmedRef.current = policy.enabled && effectiveLiveLane;
+        autoPauseArmedRef.current = policy.enabled;
         setGracePrompt(null);
         setPauseReason(null);
         setAutoStopRequested(false);
 
-        // Hygiene first (crashed sessions leave OPFS artifacts), then buffer this session.
-        void sweepStagingBuffers(rec.id);
         session.current = {
           noteId,
           phase: 'recording',
           ctx: openingContext,
           stream: openingStream,
           node: openingNode,
+          source,
           picker: new ChunkBoundaryPicker(SAMPLE_RATE),
           recordingId: rec.id,
           chunkIndex: 0,
           sentSamples: 0,
           uploadLanes: Array.from({ length: UPLOAD_CONCURRENCY }, () => Promise.resolve()),
-          staging: openingStaging,
-          liveLane: effectiveLiveLane,
           ownerSub,
           ownerOrgId,
           ownerSessionKey,
           cancelled: false,
-          stagingStopped: false,
           uploadsHalted: false,
         };
         const activeSession = session.current;
@@ -1267,8 +978,7 @@ export function useRecording({
           detectSilentMic(frame);
           const s = session.current;
           if (!s) return;
-          // Auto-pause. Inert in deferred mode — the machine is constructed disabled
-          // there, see start().
+          // Update auto-pause from the captured audio.
           const watcher = watcherRef.current;
           const machine = machineRef.current;
           if (watcher && machine) {
@@ -1280,12 +990,6 @@ export function useRecording({
                 nowMs: Date.now(),
               })
             );
-          }
-          if (!s.liveLane) {
-            // Deferred: the worklet still runs for dead-mic detection + the sample count that
-            // durationMs derives from — but nothing is chunked or uploaded.
-            s.sentSamples += frame.length;
-            return;
           }
           const chunk = s.picker?.push(frame);
           if (chunk) enqueueChunk(chunk);
@@ -1309,12 +1013,6 @@ export function useRecording({
         openingNode?.disconnect();
         openingStream?.getTracks().forEach(track => track.stop());
         void openingContext?.close().catch(() => {});
-        if (openingStaging) {
-          void openingStaging
-            .stop()
-            .finally(() => openingStaging?.discard())
-            .catch(() => {});
-        }
         if (openingRef.current !== opening || !mountedRef.current) return;
         setState('idle');
         setError(
@@ -1366,16 +1064,14 @@ export function useRecording({
         // sitting in a paused session — resume()/stop() have already told it where we actually are.
         return true;
       }
-      const rest = s.liveLane ? s.picker?.flush() : undefined;
+      const rest = s.picker?.flush();
       if (rest) enqueueChunk(rest);
-      s.staging?.pause(); // keep the staged timeline pause-compressed like the live one
       try {
         await s.ctx?.suspend();
       } catch {
         if (pauseEpochRef.current === epoch) {
           // The context refused to suspend ⇒ frames are still flowing. Never leave capture
           // running under a "Paused" UI — revert and say so.
-          s.staging?.resume();
           s.phase = 'recording';
           setState('recording');
           setPauseReason(null);
@@ -1416,7 +1112,6 @@ export function useRecording({
     try {
       await s.ctx?.resume();
       if (session.current !== s || s.cancelled || pauseEpochRef.current !== epoch) return false;
-      s.staging?.resume();
       s.phase = 'recording';
       setError(null); // don't let a stale "could not resume" outlive a successful retry
       setPauseReason(null);
@@ -1461,77 +1156,53 @@ export function useRecording({
     pauseEpochRef.current++;
     s.phase = 'stopping';
     setState('stopping');
-    let pendingUpload: { item: PendingStagingRecovery; blob: Blob | null } | null = null;
     let retryAfterStop = false;
     const stopOwnedSession = async () => {
-      let recoveryItem: PendingStagingRecovery | null = null;
-      let stagedBlob: Promise<Blob | null> = Promise.resolve(null);
+      let recoveryItem: PendingRecordingCompletion | null = null;
       try {
         s.node?.port.postMessage({ type: 'flush' });
         await new Promise(resolve => setTimeout(resolve, 150));
         if (s.cancelled || !ownsActiveContext(auth, s.ownerSessionKey))
           throw new RecordingSessionChangedError();
-        const rest = s.liveLane ? s.picker?.flush() : undefined;
+        const rest = s.picker?.flush();
         if (rest) enqueueChunk(rest);
         const durationMs = (s.sentSamples / SAMPLE_RATE) * 1000;
         const endedAt = Date.now();
-        s.stagingStopped = true;
-        stagedBlob = s.staging?.stop() ?? Promise.resolve(null);
         teardownAudio();
         if (!s.recordingId) return { segments: segmentCountRef.current };
 
-        const intent: PendingStagingRecovery = {
-          version: 2,
+        const intent: PendingRecordingCompletion = {
+          version: 1,
           recordingId: s.recordingId,
           noteId: s.noteId,
-          contentType: s.staging?.contentType ?? 'audio/webm',
           durationMs,
           endedAt,
           createdAt: Date.now(),
           ownerSub: s.ownerSub,
           ownerOrgId: s.ownerOrgId,
           ownerSessionKey: s.ownerSessionKey,
-          transcriptionDeferred: !s.liveLane,
-          expectsStaging: s.staging !== null,
-          needsFinalize: true,
-          action: 'upload',
         };
-        const persistIntent = (): PendingStagingRecovery => {
-          const persisted = savePendingStagingRecovery(intent);
-          const item = persisted ? intent : { ...intent, transcriptionDeferred: false };
-          if (!persisted) rememberStagingRecovery(item);
-          return item;
+        const persistIntent = (): PendingRecordingCompletion => {
+          rememberRecordingCompletion(intent);
+          return intent;
         };
-        activeStagingRecoveries.add(intent.recordingId);
+        activeRecordingCompletions.add(intent.recordingId);
         // The lock prevents another tab from finalizing while our chunk uploads drain.
         // Without Web Locks, publish only after draining; mid-drain reload recovery is unavailable.
         if (navigator.locks) recoveryItem = persistIntent();
-        // Keep the close result even if finalize fails: memory fallback can retry in this page.
-        void stagedBlob
-          .then(blob => {
-            if (blob && !s.cancelled) pendingMemoryBlobs.set(intent.recordingId, blob);
-          })
-          .catch(() => {});
         await Promise.all(s.uploadLanes);
         recoveryItem ??= persistIntent();
         if (s.cancelled || !ownsActiveContext(auth, s.ownerSessionKey))
           throw new RecordingSessionChangedError();
         const authToken = await boundAuthToken(auth, s.ownerSessionKey);
-        await finalizeRecording(
-          intent.recordingId,
-          durationMs,
-          intent.expectsStaging ?? true,
-          recoveryItem.transcriptionDeferred,
-          {
-            endedAt,
-            activeOrgId: s.ownerOrgId,
-            authToken,
-          }
-        );
+        await finalizeRecording(intent.recordingId, durationMs, {
+          endedAt,
+          activeOrgId: s.ownerOrgId,
+          authToken,
+        });
         if (s.cancelled || !ownsActiveContext(auth, s.ownerSessionKey))
           throw new RecordingSessionChangedError();
-        recoveryItem = { ...recoveryItem, needsFinalize: false };
-        rememberStagingRecovery(recoveryItem);
+        await finishRecordingCompletion(intent.recordingId);
         finishRecording({
           recordingId: intent.recordingId,
           noteId: s.noteId,
@@ -1539,21 +1210,17 @@ export function useRecording({
           ownerSessionKey: s.ownerSessionKey,
           ownerOrgId: s.ownerOrgId,
         });
-        // Commit the local audio before releasing the cross-tab lock. The large network upload
-        // remains separate from the stop result.
-        pendingUpload = { item: recoveryItem, blob: await stagedBlob.catch(() => null) };
       } catch (err) {
-        await stagedBlob.catch(() => null);
-        if (s.recordingId) activeStagingRecoveries.delete(s.recordingId);
+        if (s.recordingId) activeRecordingCompletions.delete(s.recordingId);
         if (err instanceof RecordingSessionChangedError || s.cancelled) {
-          if (s.recordingId) await finishStagingRecovery(s.recordingId);
-          void s.staging?.discard().catch(() => {});
+          if (s.recordingId) await finishRecordingCompletion(s.recordingId);
         } else {
           console.warn('finalize recording failed', err);
-          setError(recoveryItem ? DEFERRED_RECOVERY_ERROR : 'recording.errors.savedWithErrors');
+          setError(recoveryItem ? COMPLETION_RECOVERY_ERROR : 'recording.errors.savedWithErrors');
           retryAfterStop = recoveryItem !== null;
         }
       } finally {
+        if (s.recordingId) activeRecordingCompletions.delete(s.recordingId);
         if (session.current === s) {
           teardownAudio();
           session.current = null;
@@ -1572,16 +1239,6 @@ export function useRecording({
         : stopOwnedSession();
     s.stopPromise = stopping.then(result => {
       if (retryAfterStop) window.dispatchEvent(new Event('recording-recovery-pending'));
-      const pending = pendingUpload;
-      if (pending) {
-        activeStagingRecoveries.delete(pending.item.recordingId);
-        void recoverPendingStaging(pending.item, auth, pending.blob).then(settled => {
-          if (!settled && ownsActiveContext(auth, s.ownerSessionKey)) {
-            if (mountedRef.current) setError(DEFERRED_RECOVERY_ERROR);
-            window.dispatchEvent(new Event('recording-recovery-pending'));
-          }
-        });
-      }
       return result;
     });
     return s.stopPromise;

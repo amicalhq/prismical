@@ -14,16 +14,16 @@ const recording: CoreRecording = {
 };
 
 describe('recording processing phase', () => {
-  it('keeps a newly stopped hour-long recording waiting for upload', () => {
+  it('keeps a newly stopped hour-long recording waiting for server stitching', () => {
     const phase = recordingFinalizePhase(
-      { ...recording, meta: { finalize: { status: 'awaiting_upload' } } },
+      { ...recording, meta: { finalize: { status: 'pending' } } },
       now
     );
-    expect(phase).toBe('awaiting_upload');
+    expect(phase).toBe('pending');
     expect(recordingIsProcessing(phase)).toBe(true);
   });
 
-  it('uses the staged timestamp after audio upload', () => {
+  it('uses the staged timestamp after server stitching', () => {
     expect(
       recordingFinalizePhase(
         {
@@ -39,13 +39,13 @@ describe('recording processing phase', () => {
     ).toBe('running');
   });
 
-  it('bounds a stopped upload without replacing settled outcomes', () => {
+  it('bounds a stalled server pass without replacing settled outcomes', () => {
     expect(
       recordingFinalizePhase(
         {
           ...recording,
           endedAt: recording.startedAt,
-          meta: { finalize: { status: 'awaiting_upload' } },
+          meta: { finalize: { status: 'pending' } },
         },
         now
       )

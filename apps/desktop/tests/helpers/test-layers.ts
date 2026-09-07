@@ -93,18 +93,6 @@ export const recordingLaneStub = {
       retryable: false,
       failure: { kind: 'stale-identity' },
     }),
-  stageRecordingAudio: () =>
-    Effect.succeed<RecordingLaneResult<never>>({
-      ok: false,
-      retryable: false,
-      failure: { kind: 'stale-identity' },
-    }),
-  abandonRecordingStaging: () =>
-    Effect.succeed<RecordingLaneResult<never>>({
-      ok: false,
-      retryable: false,
-      failure: { kind: 'stale-identity' },
-    }),
 };
 
 export interface LogEntry {

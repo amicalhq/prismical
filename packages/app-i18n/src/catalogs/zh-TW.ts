@@ -153,6 +153,18 @@ const zhTW = {
       transcription: { description: '錄音輸入與轉錄設定', title: '轉錄' },
       vocabulary: { description: '提升辨識效果的自訂詞彙', title: '詞彙' },
     },
+    quota: {
+      action: {
+        upgrade: '升級',
+        upgradeUnlimited: '升級為無限用量',
+      },
+      detail: '已使用 {{used}} / {{limit}} - {{date}} 重設',
+      label: {
+        cloudTranscription: '雲端轉錄',
+      },
+      left: '剩餘 {{duration}}',
+      noTimeLeft: '沒有剩餘時間',
+    },
     secondary: {
       community: '社群',
       docs: '文件',
@@ -559,7 +571,7 @@ const zhTW = {
       limitSoonDescription: '你的方案允許 {{limit}} 分鐘的錄音，達到上限時會自動停止。',
       limitStopped: '錄音已在你方案的 {{minutes}} 分鐘上限停止。',
       limitStoppedDescription: '筆記與逐字稿已儲存。開始新的錄音以繼續，或升級以取得更長的錄音時間。',
-      deferredRecovery: '錄音尚無法轉錄；重新連線後會再次嘗試上傳音訊。',
+      completionRecovery: '錄音尚未完成儲存，重新連線後會再次嘗試。',
       endedUnexpectedly: '錄音意外結束。',
       microphoneDenied: '麥克風存取遭拒。',
       microphoneDeniedHintDesktop:
@@ -583,7 +595,6 @@ const zhTW = {
       count_other: '{{count}} 段錄音',
       empty: '尚無轉錄。開始錄音以擷取會議或語音筆記。',
       finishing: '正在完成…',
-      uploadingAudio: '正在上傳音訊…',
       identifyingSpeakers: '正在識別講者…',
       input: '輸入',
       allAudioSettings: '所有音訊設定…',
@@ -625,6 +636,14 @@ const zhTW = {
     },
     composerPlaceholder: '想問什麼都可以 — / 使用技能、@ 標記筆記',
     composerPlaceholderShort: '/ 技能、@ 筆記',
+    composerPlaceholderSkillsOnly: '輸入 / 執行技能',
+    composerPlaceholderUnavailable: 'Ask AI 不在你的方案中',
+    gate: {
+      pill: '執行技能…',
+      skillsOnly: 'Ask AI 不包含在你的方案中，但技能仍可在此執行。',
+      unavailable: 'Ask AI 不包含在你的方案中。',
+      refused: 'Ask AI 不包含在你的方案中。請改用 / 執行技能。',
+    },
     dockDescription: '向 AI 詢問你的筆記',
     dockHide: '隱藏詢問 AI',
     dockLabel: '詢問',
@@ -2024,6 +2043,8 @@ const zhTW = {
       welcome: '歡迎使用 Prismical',
     },
     flow: {
+      sessionUnavailable: '工作階段暫時無法使用，請再試一次。',
+      retryIn: '{{count}} 秒後重試',
       callbackFailed: '無法完成登入，請再試一次。',
       couldNotSignIn: '無法登入',
       handoffInvalid: '此登入連結已過期或已使用。請返回 Prismical，然後重新開啟網頁版應用程式。',

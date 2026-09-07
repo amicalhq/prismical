@@ -123,7 +123,11 @@ export const LocalBackendLive: Layer.Layer<
             : Effect.void
         ),
         Effect.map(
-          (result): TransportResponse => ({ ok: true, status: result.status, bodyJson: result.body })
+          (result): TransportResponse => ({
+            ok: true,
+            status: result.status,
+            bodyJson: result.body,
+          })
         ),
         // Token-free logging: only method/path + a stringified cause.
         Effect.catchAll(error =>
@@ -179,13 +183,6 @@ export const LocalBackendLive: Layer.Layer<
           ok: true,
           value: { recordingId },
         }),
-      stageRecordingAudio: () =>
-        Effect.succeed<RecordingLaneResult<{ readonly staged: boolean }>>({
-          ok: true,
-          value: { staged: false },
-        }),
-      abandonRecordingStaging: () =>
-        Effect.succeed<RecordingLaneResult<void>>({ ok: true, value: undefined }),
     };
 
     yield* coreTransport.register(api);
