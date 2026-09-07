@@ -73,8 +73,24 @@ export const SKILL_RUN_ERROR_CODES = {
   TRANSCRIPT_FINALIZING: 'TRANSCRIPT_FINALIZING',
   OUTPUT_TOO_LONG: 'OUTPUT_TOO_LONG',
   OUTPUT_MALFORMED: 'OUTPUT_MALFORMED',
-  /** `submit_output` ran but the markdown was empty. */
+  /** `submit_output` ran but the markdown was empty, and the model gave no reason. */
   OUTPUT_EMPTY: 'OUTPUT_EMPTY',
+  /**
+   * The model withheld output that its own prompt lets it withhold. Distinct from
+   * {@link OUTPUT_EMPTY} because it is a CORRECT answer, not a fault: described at severity `info`
+   * with no retry action, since re-running reproduces the same answer and bills for it again.
+   *
+   * Emitted for ONE case today: the naming lane answering `title: null`, which its tool
+   * description explicitly asks for when a note holds too little to name. That is the only place a
+   * skill prompt currently sanctions returning nothing.
+   *
+   * A body skill returning empty markdown is NOT this, even when it writes an explanation into
+   * `reasoning`. `reasoning` is a required field the model fills on every run and no prompt ties it
+   * to declining, so reading intent from it would reclassify ordinary generation failures as
+   * correct answers and strip their retry. Widening this code means giving the body prompt a real
+   * decline channel first.
+   */
+  OUTPUT_DECLINED: 'OUTPUT_DECLINED',
   TOOL_BUDGET_EXHAUSTED: 'TOOL_BUDGET_EXHAUSTED',
   OUTPUT_NOT_SUBMITTED: 'OUTPUT_NOT_SUBMITTED',
   TITLE_INVALID: 'TITLE_INVALID',

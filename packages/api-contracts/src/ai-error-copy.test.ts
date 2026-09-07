@@ -163,6 +163,31 @@ describe('describeAiError', () => {
     expect(fb.actions.map(a => a.kind)).toEqual(['choose-model']);
   });
 
+  it('describes a decline as a nudge, never as a retryable failure', () => {
+    const declined = describeAiError({
+      code: 'OUTPUT_DECLINED',
+      surface: 'skill',
+      skillName: 'Name note',
+      outputTarget: 'note-title',
+    });
+    expect(declined.title).toBe('Not enough content to name this note yet.');
+    expect(declined.severity).toBe('info');
+    // Withholding is reproducible, so a retry only bills for the same answer twice.
+    expect(declined.actions).toEqual([]);
+    // No model prose here: the one lane that emits this code has no reason to carry, and its copy
+    // is fixed and localized rather than assembled from whatever the model happened to write.
+    expect(declined.body).toBeUndefined();
+    // Localized like every other string — a decline is not an English-only path.
+    expect(
+      describeAiError({
+        code: 'OUTPUT_DECLINED',
+        surface: 'skill',
+        outputTarget: 'note-title',
+        locale: 'ja',
+      }).title
+    ).toBe('このノートに名前を付けるには内容がまだ足りません。');
+  });
+
   it('uses the surface subject when no skill name is given', () => {
     expect(describeAiError({ code: 'NOTE_EMPTY', surface: 'skill' }).title).toBe(
       'Add some content to this note before running This skill.'

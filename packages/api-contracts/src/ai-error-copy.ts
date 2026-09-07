@@ -44,6 +44,8 @@ interface Copy {
   outputTooLongByok: Entry;
   noResult: Entry;
   noResultAsk: Entry;
+  /** OUTPUT_DECLINED — today only the naming lane, answering `title: null` as its prompt allows. */
+  declinedTitle: Entry;
   toolBudget: Entry;
   noteEmpty: Entry;
   noteAndTranscriptEmpty: Entry;
@@ -147,6 +149,7 @@ const en: Copy = {
   },
   noResult: { title: '{{name}} didn’t produce a result this time.', body: 'Try again.' },
   noResultAsk: { title: 'The model didn’t answer this time.', body: 'Try again.' },
+  declinedTitle: { title: 'Not enough content to name this note yet.' },
   toolBudget: {
     title: '{{name}} ran out of steps before finishing.',
     body: 'Try again, or simplify what the skill uses.',
@@ -318,6 +321,7 @@ const de: Copy = {
   },
   noResult: { title: '{{name}} hat diesmal kein Ergebnis geliefert.', body: 'Versuche es erneut.' },
   noResultAsk: { title: 'Das Modell hat diesmal nicht geantwortet.', body: 'Versuche es erneut.' },
+  declinedTitle: { title: 'Noch nicht genug Inhalt, um diese Notiz zu benennen.' },
   toolBudget: {
     title: 'Die Schritte für {{name}} sind vor dem Abschluss aufgebraucht.',
     body: 'Versuche es erneut oder vereinfache, was die Fähigkeit verwendet.',
@@ -491,6 +495,7 @@ const es: Copy = {
     body: 'Inténtalo de nuevo.',
   },
   noResultAsk: { title: 'El modelo no respondió esta vez.', body: 'Inténtalo de nuevo.' },
+  declinedTitle: { title: 'Aún no hay suficiente contenido para nombrar esta nota.' },
   toolBudget: {
     title: '{{name}} se quedó sin pasos antes de terminar.',
     body: 'Inténtalo de nuevo o simplifica lo que usa la habilidad.',
@@ -661,6 +666,7 @@ const ja: Copy = {
     body: 'もう一度お試しください。',
   },
   noResultAsk: { title: 'モデルが今回は応答しませんでした。', body: 'もう一度お試しください。' },
+  declinedTitle: { title: 'このノートに名前を付けるには内容がまだ足りません。' },
   toolBudget: {
     title: '{{name}}は完了前にステップを使い切りました。',
     body: 'もう一度試すか、スキルが使うものを簡素化してください。',
@@ -834,6 +840,7 @@ const zhTW: Copy = {
   },
   noResult: { title: '{{name}} 這次沒有產生結果。', body: '請再試一次。' },
   noResultAsk: { title: '模型這次沒有回應。', body: '請再試一次。' },
+  declinedTitle: { title: '內容還不足以為這則筆記命名。' },
   toolBudget: {
     title: '{{name}} 在完成前用盡了步驟。',
     body: '請再試一次，或簡化技能使用的工具。',
@@ -1089,6 +1096,15 @@ export function describeAiError(input: DescribeAiErrorInput): AiUserError {
     case SKILL_RUN_ERROR_CODES.OUTPUT_NOT_SUBMITTED:
     case SKILL_RUN_ERROR_CODES.OUTPUT_EMPTY:
       return pick(isAsk ? copy.noResultAsk : copy.noResult, 'error', act('retry'));
+    case SKILL_RUN_ERROR_CODES.OUTPUT_DECLINED:
+      // The model withheld output its prompt lets it withhold — a correct answer, so `info` like
+      // NOTE_EMPTY rather than an alarm, and deliberately NO retry: re-running reproduces the same
+      // answer and bills for it again (the argument the OUTPUT_TOO_LONG comment makes).
+      //
+      // One copy string, because the naming lane is the only emitter. It is also the only lane
+      // whose prompt says when to withhold, so there is no model-authored reason to show and
+      // nothing to phrase per surface.
+      return pick(copy.declinedTitle, 'info');
     case SKILL_RUN_ERROR_CODES.TOOL_BUDGET_EXHAUSTED:
       return pick(copy.toolBudget, 'error', act('retry'));
     case SKILL_RUN_ERROR_CODES.NOTE_EMPTY:

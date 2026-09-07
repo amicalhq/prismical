@@ -50,7 +50,10 @@ const USAGE = {
 type Any = any;
 
 /** A model that CALLS the terminal tool (markdown, or a title when the schema has one). */
-const toolCallingModel = (title = 'Product launch planning'): MockLanguageModelV4 =>
+const toolCallingModel = (
+  title: string | null = 'Product launch planning',
+  output: { markdown: string; reasoning: string | null } = { markdown: MARKDOWN, reasoning: null }
+): MockLanguageModelV4 =>
   new MockLanguageModelV4({
     modelId: 'fake',
     doGenerate: async options =>
@@ -67,7 +70,7 @@ const toolCallingModel = (title = 'Product launch planning'): MockLanguageModelV
                   Object.hasOwn((t.inputSchema as { properties?: object }).properties ?? {}, 'title')
               )
                 ? { title }
-                : { markdown: MARKDOWN, reasoning: null }
+                : output
             ),
           },
         ],
@@ -561,6 +564,53 @@ describe('skill runs', () => {
     })
   );
 
+  for (const markdown of ['', ' \n\t ']) {
+    for (const reasoning of [null, 'There is nothing to change.']) {
+      it.effect(`empty body output ${JSON.stringify({ markdown, reasoning })} remains retryable`, () =>
+        Effect.gen(function* () {
+          const model = toolCallingModel(undefined, { markdown, reasoning });
+          const { api, product, scope } = yield* build(model);
+          const noteId = yield* insertNote(product, { title: 'Draft', markdown: 'some body' });
+          const res = expectOk(
+            yield* post(api, `/apps/v1/me/skills/${CLEANUP_SKILL_ID}/run`, { noteId }),
+            422
+          );
+          assert.strictEqual(res.bodyJson.error.code, 'OUTPUT_EMPTY');
+          assert.strictEqual(res.bodyJson.error.message, 'The model returned no usable content');
+          assert.strictEqual(res.bodyJson.error.details.retryable, true);
+          assert.strictEqual(res.bodyJson.error.details.user.severity, 'error');
+          assert.deepStrictEqual(res.bodyJson.error.details.user.actions, [
+            { kind: 'retry', label: 'Try again' },
+          ]);
+          assert.notProperty(res.bodyJson.error.details, 'reasoning');
+          assert.lengthOf(model.doGenerateCalls, 1);
+          assert.isEmpty(yield* Effect.promise(() => product.db.select().from(schema.artifact)));
+          yield* Scope.close(scope, Exit.void);
+        })
+      );
+    }
+  }
+
+  it.effect('JSON fallback: empty body output with reasoning remains retryable', () =>
+    Effect.gen(function* () {
+      const { api, product, scope } = yield* build(
+        textOnlyModel('{"markdown":"","reasoning":"There is nothing to change."}')
+      );
+      const noteId = yield* insertNote(product, { title: 'Draft', markdown: 'some body' });
+      const res = expectOk(
+        yield* post(api, `/apps/v1/me/skills/${CLEANUP_SKILL_ID}/run`, { noteId }),
+        422
+      );
+      assert.strictEqual(res.bodyJson.error.code, 'OUTPUT_EMPTY');
+      assert.strictEqual(res.bodyJson.error.details.retryable, true);
+      assert.strictEqual(res.bodyJson.error.details.user.severity, 'error');
+      assert.deepStrictEqual(res.bodyJson.error.details.user.actions, [
+        { kind: 'retry', label: 'Try again' },
+      ]);
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+
   it.effect('fallback ladder: a forced-choice 400 steps down to auto and is remembered', () =>
     Effect.gen(function* () {
       const model = forcedRejectingModel();
@@ -712,6 +762,77 @@ describe('skill runs', () => {
 });
 
 describe('Name-note: run and apply/undo revision CAS', () => {
+  for (const rung of ['tool', 'JSON'] as const) {
+    it.effect(`a null title on the ${rung} rung is an informational decline without retry`, () =>
+      Effect.gen(function* () {
+        const model = rung === 'tool' ? toolCallingModel(null) : textOnlyModel('{"title":null}');
+        const { api, product, scope } = yield* build(model);
+        const noteId = yield* insertNote(product, { title: 'Draft', markdown: 'some body' });
+        const res = expectOk(
+          yield* post(api, `/apps/v1/me/skills/${NAME_NOTE_SKILL_ID}/run`, { noteId }),
+          422
+        );
+        assert.strictEqual(res.bodyJson.error.code, 'OUTPUT_DECLINED');
+        assert.strictEqual(
+          res.bodyJson.error.message,
+          'There is not enough content to name this note yet.'
+        );
+        assert.strictEqual(res.bodyJson.error.details.retryable, false);
+        assert.deepStrictEqual(res.bodyJson.error.details.user, {
+          title: 'Not enough content to name this note yet.',
+          severity: 'info',
+          actions: [],
+        });
+        assert.isEmpty(yield* Effect.promise(() => product.db.select().from(schema.noteTitleRun)));
+        const [note] = yield* Effect.promise(() =>
+          product.db.select().from(schema.note).where(eq(schema.note.id, noteId))
+        );
+        assert.strictEqual(note!.title, 'Draft');
+        assert.strictEqual(note!.titleRevision, 0);
+        yield* Scope.close(scope, Exit.void);
+      })
+    );
+  }
+
+  it.effect('a declined title uses the desktop locale for its informational message', () =>
+    Effect.gen(function* () {
+      const { api, product, scope } = yield* buildWith(toolCallingModel(null), undefined, 'de');
+      const noteId = yield* insertNote(product, { title: 'Draft', markdown: 'some body' });
+      const res = expectOk(
+        yield* post(api, `/apps/v1/me/skills/${NAME_NOTE_SKILL_ID}/run`, { noteId }),
+        422
+      );
+      assert.strictEqual(res.bodyJson.error.code, 'OUTPUT_DECLINED');
+      assert.deepStrictEqual(res.bodyJson.error.details.user, {
+        title: 'Noch nicht genug Inhalt, um diese Notiz zu benennen.',
+        severity: 'info',
+        actions: [],
+      });
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+
+  for (const title of ['', ' \n\t ']) {
+    it.effect(`a blank string title ${JSON.stringify(title)} is an error with retry`, () =>
+      Effect.gen(function* () {
+        const { api, product, scope } = yield* build(toolCallingModel(title));
+        const noteId = yield* insertNote(product, { title: 'Draft', markdown: 'some body' });
+        const res = expectOk(
+          yield* post(api, `/apps/v1/me/skills/${NAME_NOTE_SKILL_ID}/run`, { noteId }),
+          422
+        );
+        assert.strictEqual(res.bodyJson.error.code, 'OUTPUT_EMPTY');
+        assert.strictEqual(res.bodyJson.error.details.retryable, true);
+        assert.strictEqual(res.bodyJson.error.details.user.severity, 'error');
+        assert.deepStrictEqual(res.bodyJson.error.details.user.actions, [
+          { kind: 'retry', label: 'Try again' },
+        ]);
+        assert.isEmpty(yield* Effect.promise(() => product.db.select().from(schema.noteTitleRun)));
+        yield* Scope.close(scope, Exit.void);
+      })
+    );
+  }
+
   it.effect('names the note, applies once, undoes once, and refuses a changed revision', () =>
     Effect.gen(function* () {
       const model = toolCallingModel('Product launch planning');

@@ -92,6 +92,7 @@ export const LocalBackendLive: Layer.Layer<
       db,
       client,
       ai: makeLocalAiPort(aiProvider, runtime),
+      locale,
       log: (message, data) => unsafeLog.info(message, data),
       titleLock: makeSerialLock(),
     };

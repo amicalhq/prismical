@@ -9,6 +9,7 @@
  * `err.code` on them.
  */
 import { and, desc, eq, isNotNull, isNull, max, sql } from 'drizzle-orm';
+import { describeAiError, SKILL_RUN_ERROR_CODES, type AiErrorDetails } from '@prismical/api-contracts';
 import {
   AcceptSkillRunRequestSchema,
   ApplyTitleRunRequestSchema,
@@ -128,6 +129,7 @@ export async function seedSystemSkills(db: LocalDb): Promise<void> {
 export interface SkillRunDeps {
   readonly db: LocalDb;
   readonly ai: LocalAiPort;
+  readonly locale: string;
   readonly log: (message: string, data?: unknown) => void;
 }
 
@@ -330,6 +332,7 @@ export async function runSkill(
   const remember = (support: Parameters<LocalAiPort['rememberToolSupport']>[2]) =>
     ai.rememberToolSupport(resolved.provider, resolved.modelId, support);
   const startedAt = Date.now();
+  let titleDeclined = false;
 
   try {
     const outcome = titleTarget
@@ -342,14 +345,15 @@ export async function runSkill(
           maxOutputTokens: TITLE_MAX_OUTPUT_TOKENS,
           remember,
           log: deps.log,
-        }).then(result =>
-          result.kind === 'submitted'
-            ? {
-                ...result,
-                output: { markdown: result.output.title ?? '', reasoning: null } as SkillOutput,
-              }
-            : result
-        )
+        }).then(result => {
+          if (result.kind !== 'submitted') return result;
+          // Only null is a permitted decline; blank titles remain invalid output.
+          titleDeclined = result.output.title === null;
+          return {
+            ...result,
+            output: { markdown: result.output.title ?? '', reasoning: null } as SkillOutput,
+          };
+        })
       : await runTerminalTool<SkillOutput>({
           resolved,
           system,
@@ -378,7 +382,35 @@ export async function runSkill(
     }
     const output = outcome.output;
     if (!output.markdown.trim()) {
-      return apiError(422, 'UNPROCESSABLE_ENTITY', 'The model returned no usable content');
+      const code = titleDeclined
+        ? SKILL_RUN_ERROR_CODES.OUTPUT_DECLINED
+        : SKILL_RUN_ERROR_CODES.OUTPUT_EMPTY;
+      const details: AiErrorDetails = {
+        lane: 'your-key',
+        provider: resolved.provider,
+        model: resolved.modelId,
+        retryable: !titleDeclined,
+      };
+      return apiError(
+        422,
+        code,
+        titleDeclined
+          ? 'There is not enough content to name this note yet.'
+          : 'The model returned no usable content',
+        {
+          ...details,
+          user: describeAiError({
+            code,
+            details,
+            locale: deps.locale,
+            surface: 'skill',
+            cloudAvailable: false,
+            skillName: skill.name,
+            mode,
+            outputTarget: titleTarget ? 'note-title' : 'note-body',
+          }),
+        }
+      );
     }
 
     const runResult: Record<string, unknown> = {

@@ -60,6 +60,7 @@ export interface LocalRouteContext {
   /** The raw better-sqlite3 handle — FTS5 MATCH queries are outside drizzle's schema. */
   readonly client: Database.Database;
   readonly ai: LocalAiPort;
+  readonly locale: string;
   readonly log: (message: string, data?: unknown) => void;
   /**
    * The workspace's single title-run writer: apply/undo read-compare-write a
@@ -159,7 +160,9 @@ export const handleLocalRequest = async (
     return method === 'GET' && rest.length === 0 ? handleSearch(client, query) : notFound();
   }
   if (route === 'skills' && rest.length === 2 && rest[1] === 'run') {
-    return method === 'POST' ? runSkill({ db, ai, log: ctx.log }, rest[0]!, req.body) : notFound();
+    return method === 'POST'
+      ? runSkill({ db, ai, locale: ctx.locale, log: ctx.log }, rest[0]!, req.body)
+      : notFound();
   }
   if (route === 'skill-runs' && rest.length === 1 && method === 'POST') {
     if (rest[0] === 'accept') return acceptSkillRun(db, req.body);
