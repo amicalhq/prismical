@@ -72,6 +72,8 @@ export const recoveryOutbox = sqliteTable('recovery_outbox', {
   createInput: text('create_input', { mode: 'json' }).$type<CreateRecordingInput>(),
   /** Private frozen engine choices; no credentials, and never sent as cloud metadata. */
   engineConfig: text('engine_config', { mode: 'json' }).$type<RecordingEngine>(),
+  /** Staging mode frozen at start; null preserves the legacy client upload path. */
+  stagingMode: text('staging_mode', { enum: ['off', 'client', 'server'] }),
   /** Next unfinished processing operation; independent of capture status and diagnostics. */
   phase: text('phase', { enum: ['create', 'chunks', 'finalize', 'staging', 'cleanup'] }),
   /** Fixed at stop, or inferred once from retained media after an abrupt interruption. */

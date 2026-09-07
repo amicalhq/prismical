@@ -1,0 +1,1 @@
+ALTER TABLE `recovery_outbox` ADD `staging_mode` text;

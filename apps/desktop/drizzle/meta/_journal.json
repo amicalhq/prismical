@@ -43,6 +43,13 @@
       "when": 1788677020262,
       "tag": "0005_recovery_lifecycle",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1788756811384,
+      "tag": "0006_recovery_staging_mode",
+      "breakpoints": true
     }
   ]
 }

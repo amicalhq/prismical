@@ -196,7 +196,7 @@ const cutFixed = (state: PipelineState, lane: ChunkSource, index: number): CutRe
 /**
  * Flush ALL of a source's remaining buffer as one final (sub-`CHUNK_SAMPLES`)
  * chunk — the partial tail, used ONCE at the end (graceful stop / drain end).
- * Returns `null` when the buffer is empty (silence never uploads).
+ * Returns `null` when the buffer is empty; buffered silence still uploads.
  */
 const flushLane = (state: PipelineState, lane: ChunkSource, index: number): CutResult => {
   const accum = state[lane];

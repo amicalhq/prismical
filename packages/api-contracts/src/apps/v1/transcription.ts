@@ -46,8 +46,13 @@ export const TranscriptSegmentSchema = z
 export type TranscriptSegment = z.output<typeof TranscriptSegmentSchema>;
 export const TranscribeChunkResponseSchema = appsV1ListResponseSchema(TranscriptSegmentSchema);
 
+export const TranscriptionStagingModeSchema = z.enum(['off', 'client', 'server']);
+export type TranscriptionStagingMode = z.output<typeof TranscriptionStagingModeSchema>;
 export const TranscriptionSettingsResponseSchema = z
-  .object({ liveTranscription: z.boolean() })
+  .object({
+    liveTranscription: z.boolean(),
+    staging: TranscriptionStagingModeSchema.default('client'),
+  })
   .strip();
 export type TranscriptionSettingsResponse = z.output<typeof TranscriptionSettingsResponseSchema>;
 

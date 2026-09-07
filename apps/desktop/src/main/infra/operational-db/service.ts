@@ -23,6 +23,7 @@ export interface NewRecoveryOutbox {
   readonly owner: NonNullable<RecoveryOutboxRow['owner']>;
   readonly createInput: NonNullable<RecoveryOutboxRow['createInput']>;
   readonly engineConfig: NonNullable<RecoveryOutboxRow['engineConfig']>;
+  readonly stagingMode?: RecoveryOutboxRow['stagingMode'];
   readonly phase?: NonNullable<RecoveryOutboxRow['phase']>;
   readonly noteId?: string | null;
   readonly captureMode: CaptureMode;
@@ -39,6 +40,7 @@ export interface NewRecoveryOutbox {
  * `null` explicitly to clear a nullable column. updatedAt is re-stamped each call.
  */
 export interface RecoveryOutboxPatch {
+  readonly stagingMode?: RecoveryOutboxRow['stagingMode'];
   readonly phase?: NonNullable<RecoveryOutboxRow['phase']>;
   readonly endedAt?: number;
   readonly durationMs?: number;

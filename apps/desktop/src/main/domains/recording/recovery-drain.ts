@@ -413,7 +413,7 @@ export const drainRecoveries = (
           const finalized = yield* backend.finalizeRecording(row.recordingId, {
             endedAt: row.endedAt!,
             durationMs: row.durationMs!,
-            stagingExpected: engine.engine === 'cloud',
+            stagingExpected: engine.engine === 'cloud' && row.stagingMode !== 'server',
             transcriptionDeferred: false,
           });
           if (!finalized.ok)
@@ -431,42 +431,45 @@ export const drainRecoveries = (
         // Required transcript work is durable. Optional staging can keep retrying
         // while the owning renderer waits on the server's diarization gate.
         yield* resolveCompletion(row.recordingId, true);
-        const lanes =
-          engine.engine === 'cloud'
-            ? yield* fileOperation(() => readStagingLanes(row.wavPath, row.durationMs!))
-            : [];
-        const staged =
-          lanes.length === 0
-            ? ({ ok: true, value: { staged: false } } as const)
-            : yield* backend.stageRecordingAudio(row.recordingId, lanes);
-        if (
-          !staged.ok &&
-          staged.failure.kind === 'http' &&
-          staged.failure.code === 'STAGING_FINALIZATION_INTENT_MISSING'
-        ) {
-          return yield* fail(row, 'staging-finalization-intent-missing');
-        }
-        let abandon: StagingAbandonReason | null = null;
-        if (!staged.ok && staged.retryable) {
-          if (row.attemptCount + 1 < MAX_DRAIN_ATTEMPTS) return yield* park(row, 'staging');
-          abandon = 'upload-gave-up';
-        } else if (lanes.length === 0) {
-          abandon = engine.engine === 'cloud' ? 'no-audio' : 'staging-disabled';
-        } else if (staged.ok && !staged.value.staged) {
-          abandon = 'staging-disabled';
-        } else if (!staged.ok) {
-          abandon = 'upload-failed';
-        }
-        if (abandon) {
-          const result = yield* backend.abandonRecordingStaging(row.recordingId, abandon);
-          if (!result.ok) {
-            const gone =
-              result.failure.kind === 'http' &&
-              (result.failure.status === 404 || result.failure.status === 410);
-            if (!gone)
-              return yield* result.retryable
-                ? park(row, `staging-abandon:${failureLabel(result.failure)}`)
-                : fail(row, `staging-abandon:${failureLabel(result.failure)}`);
+        // The server spool owns finalization; no client upload or abandon is needed.
+        if (row.stagingMode !== 'server') {
+          const lanes =
+            engine.engine === 'cloud'
+              ? yield* fileOperation(() => readStagingLanes(row.wavPath, row.durationMs!))
+              : [];
+          const staged =
+            lanes.length === 0
+              ? ({ ok: true, value: { staged: false } } as const)
+              : yield* backend.stageRecordingAudio(row.recordingId, lanes);
+          if (
+            !staged.ok &&
+            staged.failure.kind === 'http' &&
+            staged.failure.code === 'STAGING_FINALIZATION_INTENT_MISSING'
+          ) {
+            return yield* fail(row, 'staging-finalization-intent-missing');
+          }
+          let abandon: StagingAbandonReason | null = null;
+          if (!staged.ok && staged.retryable) {
+            if (row.attemptCount + 1 < MAX_DRAIN_ATTEMPTS) return yield* park(row, 'staging');
+            abandon = 'upload-gave-up';
+          } else if (lanes.length === 0) {
+            abandon = engine.engine === 'cloud' ? 'no-audio' : 'staging-disabled';
+          } else if (staged.ok && !staged.value.staged) {
+            abandon = 'staging-disabled';
+          } else if (!staged.ok) {
+            abandon = 'upload-failed';
+          }
+          if (abandon) {
+            const result = yield* backend.abandonRecordingStaging(row.recordingId, abandon);
+            if (!result.ok) {
+              const gone =
+                result.failure.kind === 'http' &&
+                (result.failure.status === 404 || result.failure.status === 410);
+              if (!gone)
+                return yield* result.retryable
+                  ? park(row, `staging-abandon:${failureLabel(result.failure)}`)
+                  : fail(row, `staging-abandon:${failureLabel(result.failure)}`);
+            }
           }
         }
         yield* transition('cleanup');

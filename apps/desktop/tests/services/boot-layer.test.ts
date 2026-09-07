@@ -152,7 +152,7 @@ describe('Boot layer (leak gate)', () => {
       const { DatabaseSync } = yield* Effect.promise(() => import('node:sqlite'));
       const probe = new DatabaseSync(dbPath);
       const rows = probe.prepare('SELECT version FROM schema_meta').all();
-      assert.strictEqual(rows.length, 6, 'migrations ran before rollback');
+      assert.strictEqual(rows.length, 7, 'migrations ran before rollback');
       probe.exec('BEGIN EXCLUSIVE');
       probe.exec('COMMIT');
       probe.close();

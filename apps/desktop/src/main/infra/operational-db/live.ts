@@ -120,6 +120,7 @@ export const OperationalDbLive: Layer.Layer<OperationalDb, BootError, AppConfig 
                 owner: row.owner,
                 createInput: row.createInput,
                 engineConfig: row.engineConfig,
+                stagingMode: row.stagingMode ?? null,
                 phase: row.phase ?? 'create',
                 noteId: row.noteId ?? null,
                 captureMode: row.captureMode,
@@ -138,6 +139,7 @@ export const OperationalDbLive: Layer.Layer<OperationalDb, BootError, AppConfig 
               updatedAt: new Date().toISOString(),
             };
             if (patch.status !== undefined) set.status = patch.status;
+            if (patch.stagingMode !== undefined) set.stagingMode = patch.stagingMode;
             if (patch.phase !== undefined) set.phase = patch.phase;
             if (patch.endedAt !== undefined) set.endedAt = patch.endedAt;
             if (patch.durationMs !== undefined) set.durationMs = patch.durationMs;
