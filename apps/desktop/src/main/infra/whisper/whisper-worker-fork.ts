@@ -4,7 +4,7 @@
 // require time, so a missing/incompatible whisper.node kills the worker on
 // spawn (the host reports that as 'spawn-failed').
 import { Whisper, getLoadedBindingInfo } from "@prismical/whisper-wrapper";
-import { shouldDropSegment } from "../audio/segment-filter";
+import { shouldDropSegment } from "@prismical/ai-prompts/transcription";
 import {
   isSerializedFloat32Array,
   type WhisperDecodeOptions,

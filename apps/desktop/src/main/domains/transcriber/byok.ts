@@ -3,7 +3,8 @@
  * chunk goes to an OpenAI-compatible `POST {baseUrl}/audio/transcriptions`
  * (OpenAI, Groq, a self-hosted whisper server…) with the user's key, and the
  * device mints the segment from the answer's `text`. The multipart request
- * carries `model`, `file` (audio.wav), `language`, and `response_format=json`.
+ * carries `model`, `file` (audio.wav), `language`, and `response_format=verbose_json`
+ * for Whisper models.
  *
  * The endpoint-bound key lives ONLY in SecureStore (`transcription.byok.apiKey`); it is
  * stamped into Authorization and NEVER passed to a log call — the base URL is
@@ -20,7 +21,7 @@
  * vocabulary source.
  */
 import { Clock, Duration, Effect, HashSet, Layer, Ref } from 'effect';
-import { applyReplacements } from '@prismical/ai-prompts/transcription';
+import { applyReplacements, filterWhisperTranscript } from '@prismical/ai-prompts/transcription';
 import { MainLogger } from '../../infra/logging/service';
 import { ProductDb } from '../../infra/product-db/service';
 import { SecureStore } from '../../infra/secure-store/service';
@@ -132,7 +133,10 @@ export const makeByokTranscriberLive = (
           form.append('model', engine.byokModel);
           form.append('file', new Blob([wav], { type: 'audio/wav' }), 'audio.wav');
           form.append('language', BYOK_LANGUAGE);
-          form.append('response_format', 'json');
+          // Newer non-Whisper models may only support json responses.
+          const isWhisper = engine.byokModel.toLowerCase().includes('whisper');
+          form.append('response_format', isWhisper ? 'verbose_json' : 'json');
+          if (isWhisper) form.append('temperature', '0');
           const url = `${engine.byokBaseUrl.trim().replace(/\/+$/, '')}${BYOK_TRANSCRIPTIONS_PATH}`;
 
           const outcome = yield* Effect.tryPromise({
@@ -147,7 +151,7 @@ export const makeByokTranscriberLive = (
               if (response.ok) {
                 const text = (bodyJson as { text?: unknown } | null)?.text;
                 return typeof text === 'string'
-                  ? { ok: true, value: text }
+                  ? { ok: true, value: isWhisper ? filterWhisperTranscript(text, bodyJson) : text }
                   : { ok: false, retryable: true, failure: { kind: 'invalid-response' } };
               }
               const code = (bodyJson as { error?: { code?: unknown } } | null)?.error?.code;

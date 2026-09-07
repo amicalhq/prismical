@@ -11,3 +11,4 @@ export * from './wav.js';
 export * from './whisper-hints.js';
 export * from './replace.js';
 export * from './vocabulary-term.js';
+export * from './segment-filter.js';

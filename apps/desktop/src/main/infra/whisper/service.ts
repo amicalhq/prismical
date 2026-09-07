@@ -38,7 +38,7 @@ export interface WhisperEngineApi {
   /**
    * Decode ONE buffer of 16 kHz mono Float32 audio (resample BEFORE calling —
    * the samples cross IPC as a JSON number array). The worker pads to ≥1.25 s,
-   * runs the hallucination filter (segment-filter.ts) and clamps timestamps;
+   * runs the shared hallucination filter and clamps timestamps;
    * `text` is the kept segments joined.
    */
   readonly transcribe: (

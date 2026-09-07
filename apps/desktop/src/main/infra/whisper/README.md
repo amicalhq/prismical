@@ -12,7 +12,7 @@ pinned upstream version, patches, build inputs, and distributed model files.
   `vite.main.config.mts`) and forked under the bundled Node SIDECAR.
   `initializeModel` runs the GPU policy; `transcribeAudio` pads to ≥1.25 s,
   passes the options VERBATIM to the addon, then applies the hallucination
-  filter (`../audio/segment-filter.ts`) and clamps timestamps.
+  filter (`@prismical/ai-prompts/transcription`) and clamps timestamps.
 - `whisper-gpu-policy.ts` — `decideWhisperGpuUse` /
   `resolveWhisperGpuDecision` (GPU everywhere except Intel-only darwin-x64).
 - `service.ts` / `engine.ts` — `WhisperEngine`, the boot-scoped host: lazy

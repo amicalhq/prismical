@@ -252,7 +252,8 @@ describe('ByokTranscriberLive', () => {
       assert.instanceOf(call.body, FormData);
       assert.strictEqual(call.body.get('model'), 'whisper-1');
       assert.strictEqual(call.body.get('language'), 'en');
-      assert.strictEqual(call.body.get('response_format'), 'json');
+      assert.strictEqual(call.body.get('response_format'), 'verbose_json');
+      assert.strictEqual(call.body.get('temperature'), '0');
       assert.isNull(call.body.get('prompt'), 'no vocabulary source for this lane — omitted, not empty');
       const file = call.body.get('file');
       assert.instanceOf(file, File);
@@ -283,6 +284,37 @@ describe('ByokTranscriberLive', () => {
       // An empty answer is a silent chunk.
       h.setResponder(() => Promise.resolve(jsonResponse({ text: '' })));
       assert.deepStrictEqual(yield* h.lane.transcribeChunk('rec_1', PARAMS, chunk(tone(240_000)), BYOK), { ok: true, value: [] });
+      yield* Scope.close(h.scope, Exit.void);
+    })
+  );
+
+  it.effect('filters hallucinations before replacements and keeps genuine speech', () =>
+    Effect.gen(function* () {
+      const h = yield* build();
+      yield* h.seedVocabulary([{ id: 'voc_noise', word: 'Thank you', replacementWord: 'Replaced noise' }]);
+      const noise = { text: ' Thank you.', no_speech_prob: 0.7 };
+      h.setResponder(() => Promise.resolve(jsonResponse({ text: 'Meet at noon. Thank you.', segments: [
+        { text: ' Meet at noon.', no_speech_prob: 0.1 }, noise,
+      ] })));
+      const result = yield* h.lane.transcribeChunk('rec_filter', PARAMS, chunk(tone(240_000)), BYOK);
+      assert.isTrue(result.ok);
+      if (result.ok) assert.strictEqual(result.value[0]?.text, 'Meet at noon.');
+      assert.strictEqual(yield* h.usageCount('voc_noise'), 0);
+      h.setResponder(() => Promise.resolve(jsonResponse({ text: 'Thank you.', segments: [noise] })));
+      assert.deepStrictEqual(yield* h.lane.transcribeChunk('rec_filter', PARAMS, chunk(tone(240_000)), BYOK), { ok: true, value: [] });
+      assert.strictEqual(yield* h.usageCount('voc_noise'), 0);
+      yield* Scope.close(h.scope, Exit.void);
+    })
+  );
+
+  it.effect('retains json format for models without Whisper verbose output', () =>
+    Effect.gen(function* () {
+      const h = yield* build();
+      h.setResponder(() => Promise.resolve(jsonResponse({ text: 'Thank you.' })));
+      const result = yield* h.lane.transcribeChunk('rec_json', PARAMS, chunk(tone(240_000)), { ...BYOK, byokModel: 'gpt-4o-transcribe' });
+      assert.isTrue(result.ok);
+      assert.strictEqual(h.calls[0]?.body.get('response_format'), 'json');
+      assert.isNull(h.calls[0]?.body.get('temperature'));
       yield* Scope.close(h.scope, Exit.void);
     })
   );
