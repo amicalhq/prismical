@@ -516,6 +516,9 @@ test.describe('local mode (seeded app:mode profile, no servers)', () => {
       '#/settings/integrations',
       '#/settings/api-keys',
       '#/people',
+      '#/people/person-local',
+      '#/companies',
+      '#/companies/company-local',
       '#/shared',
       '#/events',
     ]) {

@@ -399,6 +399,10 @@ const ja = {
     },
   },
   directory: {
+    loadMore: 'さらに読み込む',
+    loadingMore: '読み込み中…',
+    truncated_one: '最新の{{count}}件を表示しています',
+    truncated_other: '最新の{{count}}件を表示しています',
     companies: {
       empty: '会社はまだありません',
       emptyHint: '会った人をもとに会社が自動でまとめられます。',

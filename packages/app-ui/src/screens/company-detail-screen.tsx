@@ -8,6 +8,8 @@ import {
   DirectoryListSkeleton,
   DirectoryError,
   DirectoryEmpty,
+  DirectoryTruncated,
+  directoryRowClass,
 } from '../components/directory-states';
 import { Badge } from '../ui/badge';
 import { personDisplayName } from '../lib/people-display';
@@ -50,12 +52,12 @@ export function CompanyDetailScreen({ id }: { id: string }) {
           {data.people.length === 0 ? (
             <DirectoryEmpty icon={Users} title={t('directory.people.noCompanyPeople')} />
           ) : (
-            <div className="overflow-hidden rounded-xl bg-muted">
+            <div>
               {data.people.map(p => (
                 <Link
                   key={p.id}
                   href={`/people/${p.id}`}
-                  className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-accent"
+                  className={directoryRowClass}
                 >
                   <PersonAvatar person={p} />
                   <div className="min-w-0 flex-1">
@@ -79,6 +81,7 @@ export function CompanyDetailScreen({ id }: { id: string }) {
                   </div>
                 </Link>
               ))}
+              {data.hasMore ? <DirectoryTruncated count={data.people.length} /> : null}
             </div>
           )}
         </>

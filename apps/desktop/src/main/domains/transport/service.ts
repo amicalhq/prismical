@@ -1,6 +1,7 @@
 import type { TransportRequest, TransportResponse } from '@prismical/desktop-contracts';
-import { Context, Data, type Effect, type Option, type Scope } from 'effect';
+import { Context, Data, type Effect, type Option, type Scope, type SubscriptionRef } from 'effect';
 import type { AuthStateError, RefreshError } from '../auth/service';
+import type { AuthState } from '../auth/policy';
 import type { StaleSessionError } from '../../runtime/workspace-layer';
 
 /**
@@ -138,6 +139,12 @@ export interface StageLaneInput {
   readonly durationMs?: number;
 }
 
+/** The account and organization that own a cloud workspace. */
+export interface WorkspaceIdentity {
+  readonly sub: string;
+  readonly activeOrgId?: string;
+}
+
 /**
  * The main-owned CloudTransport client. Built per signed-in
  * session (session-scoped: `Layer.provide(session)` at workspace-layer.ts) so
@@ -151,6 +158,8 @@ export interface StageLaneInput {
  * reserved `{error:{code:'INTERNAL'}}` arm.
  */
 export interface WorkspaceBackendApi {
+  /** Cloud backend ownership; absent for the accountless local backend. */
+  readonly identity?: WorkspaceIdentity;
   readonly request: (req: TransportRequest) => Effect.Effect<TransportResponse>;
   /**
    * Open the real Ask stream: resolve a guarded id_token + the
@@ -226,6 +235,10 @@ export interface WorkspaceBackendApi {
 
 export class WorkspaceBackend extends Context.Tag('desktop/WorkspaceBackend')<WorkspaceBackend, WorkspaceBackendApi>() {}
 
+export type WorkspaceRequestContext =
+  | { readonly mode: 'local' }
+  | { readonly mode: 'cloud'; readonly sessionState: SubscriptionRef.SubscriptionRef<AuthState> };
+
 /**
  * The boot-scoped workspace-current backend accessor — the load-bearing
  * boot↔workspace bridge: "which backend is mounted", not "is there a session".
@@ -235,8 +248,8 @@ export class WorkspaceBackend extends Context.Tag('desktop/WorkspaceBackend')<Wo
  * the StreamBroker) reach the current workspace's backend without owning
  * the workspace scope. In cloud mode the StaleSessionError guard is preserved
  * because the published backend resolves identity through SignedInSession per
- * request; a request that arrives with no mounted backend (no workspace, or
- * mid-swap) reads `None` and settles gracefully instead of throwing.
+ * request. Unary cloud requests wait for the selected workspace during a swap;
+ * signed-out requests settle gracefully instead of throwing.
  */
 export interface WorkspaceTransportApi {
   /**
@@ -250,12 +263,14 @@ export interface WorkspaceTransportApi {
   /** The current workspace's backend, or None when unmounted / mid-swap. */
   readonly current: Effect.Effect<Option.Option<WorkspaceBackendApi>>;
   /**
-   * Unary dispatch used by transport:request: route through the current
-   * backend; with no mounted backend return the reserved INTERNAL envelope (a
-   * renderer with no workspace shouldn't be issuing /apps/v1/me calls —
-   * handled, never thrown).
+   * Unary dispatch used by every renderer API hook. In cloud mode, wait for
+   * the backend matching the request's starting identity. A further switch or
+   * sign-out cancels the request; HTTP exchanges are never replayed.
    */
-  readonly request: (req: TransportRequest) => Effect.Effect<TransportResponse>;
+  readonly request: (
+    req: TransportRequest,
+    context: WorkspaceRequestContext
+  ) => Effect.Effect<TransportResponse>;
   /**
    * The collab WSS bearer for auth:getCollabToken: resolve the
    * current cloud workspace's guarded id_token, or None when no backend is

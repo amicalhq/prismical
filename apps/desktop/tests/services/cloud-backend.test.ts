@@ -43,6 +43,7 @@ import {
   makeOpenAskStream,
   WorkspaceTransportLive,
   REQUEST_TIMEOUT,
+  WORKSPACE_READY_TIMEOUT,
   type FetchLike,
   type RequestIdentity,
 } from '../../src/main/domains/transport/live';
@@ -512,13 +513,186 @@ const stubClient = (
 });
 
 describe('WorkspaceTransport (session-current accessor)', () => {
+  it.effect('waits for the selected org backend and never dispatches through the old one', () =>
+    Effect.gen(function* () {
+      const ct = yield* WorkspaceTransport;
+      const stub = yield* makeAuthStub;
+      yield* SubscriptionRef.set(
+        stub.sessionState,
+        authState('signed-in', [account('user_1', 'org_b')], 'user_1')
+      );
+      const oldRequest = vi.fn(() =>
+        Effect.succeed({ ok: true, status: 200, bodyJson: undefined } as const)
+      );
+      const nextRequest = vi.fn(() =>
+        Effect.succeed({ ok: true, status: 200, bodyJson: 'B' } as const)
+      );
+      const oldScope = yield* Scope.make();
+      const nextScope = yield* Scope.make();
+      yield* ct
+        .register({
+          ...stubClient({ ok: true, status: 200, bodyJson: undefined }),
+          identity: account('user_1', 'org_a'),
+          request: oldRequest,
+        })
+        .pipe(Scope.extend(oldScope));
+      const pending = yield* ct
+        .request(
+          { method: 'GET', path: '/apps/v1/me/notes' },
+          { mode: 'cloud', sessionState: stub.sessionState }
+        )
+        .pipe(Effect.fork);
+      yield* TestClock.adjust('1 second');
+      assert.isTrue(Option.isNone(yield* Fiber.poll(pending)));
+      assert.strictEqual(oldRequest.mock.calls.length, 0);
+      yield* Scope.close(oldScope, Exit.void);
+      yield* ct
+        .register({
+          ...stubClient({ ok: true, status: 200, bodyJson: undefined }),
+          identity: account('user_1', 'org_b'),
+          request: nextRequest,
+        })
+        .pipe(Scope.extend(nextScope));
+      assert.deepStrictEqual(yield* Fiber.join(pending), { ok: true, status: 200, bodyJson: 'B' });
+      assert.strictEqual(nextRequest.mock.calls.length, 1);
+      yield* Scope.close(nextScope, Exit.void);
+    }).pipe(Effect.provide(WorkspaceTransportLive))
+  );
+
+  it.effect('cancels a waiting request on a further account switch instead of retargeting it', () =>
+    Effect.gen(function* () {
+      const ct = yield* WorkspaceTransport;
+      const stub = yield* makeAuthStub;
+      yield* SubscriptionRef.set(
+        stub.sessionState,
+        authState('signed-in', [account('user_1', 'org_a')], 'user_1')
+      );
+      const pending = yield* ct
+        .request(
+          { method: 'POST', path: '/apps/v1/me/notes', body: { title: 'A' } },
+          { mode: 'cloud', sessionState: stub.sessionState }
+        )
+        .pipe(Effect.fork);
+      yield* TestClock.adjust('1 second');
+      yield* SubscriptionRef.set(
+        stub.sessionState,
+        authState('signed-in', [account('user_2', 'org_b')], 'user_2')
+      );
+      assert.deepStrictEqual(yield* Fiber.join(pending), { error: { code: 'INTERNAL' } });
+      const request = vi.fn(() =>
+        Effect.succeed({ ok: true, status: 200, bodyJson: undefined } as const)
+      );
+      const scope = yield* Scope.make();
+      yield* ct
+        .register({
+          ...stubClient({ ok: true, status: 200, bodyJson: undefined }),
+          identity: account('user_2', 'org_b'),
+          request,
+        })
+        .pipe(Scope.extend(scope));
+      assert.strictEqual(request.mock.calls.length, 0);
+      yield* Scope.close(scope, Exit.void);
+    }).pipe(Effect.provide(WorkspaceTransportLive))
+  );
+
+  it.effect('bounds readiness waits and immediately refuses signed-out requests', () =>
+    Effect.gen(function* () {
+      const ct = yield* WorkspaceTransport;
+      const stub = yield* makeAuthStub;
+      const context = { mode: 'cloud' as const, sessionState: stub.sessionState };
+      const req = { method: 'GET' as const, path: '/apps/v1/me/companies' };
+      assert.deepStrictEqual(yield* ct.request(req, context), { error: { code: 'INTERNAL' } });
+      yield* SubscriptionRef.set(
+        stub.sessionState,
+        authState('signed-in', [account('user_1', 'org_a')], 'user_1')
+      );
+      const pending = yield* ct.request(req, context).pipe(Effect.fork);
+      yield* TestClock.adjust(WORKSPACE_READY_TIMEOUT);
+      assert.deepStrictEqual(yield* Fiber.join(pending), { error: { code: 'INTERNAL' } });
+    }).pipe(Effect.provide(WorkspaceTransportLive))
+  );
+
+  it.effect('interrupts an in-flight write on sign-out and never replays it', () =>
+    Effect.gen(function* () {
+      const ct = yield* WorkspaceTransport;
+      const stub = yield* makeAuthStub;
+      const identity = account('user_1', 'org_a');
+      yield* SubscriptionRef.set(
+        stub.sessionState,
+        authState('signed-in', [identity], identity.sub)
+      );
+      const started = yield* Deferred.make<void>();
+      const aborted = yield* Deferred.make<void>();
+      const request = vi.fn(() =>
+        Deferred.succeed(started, undefined).pipe(
+          Effect.zipRight(Effect.never),
+          Effect.onInterrupt(() => Deferred.succeed(aborted, undefined))
+        )
+      );
+      const scope = yield* Scope.make();
+      yield* ct
+        .register({
+          ...stubClient({ ok: true, status: 200, bodyJson: undefined }),
+          identity,
+          request,
+        })
+        .pipe(Scope.extend(scope));
+      const pending = yield* ct
+        .request(
+          { method: 'POST', path: '/apps/v1/me/notes', body: { title: 'A' } },
+          { mode: 'cloud', sessionState: stub.sessionState }
+        )
+        .pipe(Effect.fork);
+      yield* Deferred.await(started);
+      yield* SubscriptionRef.set(stub.sessionState, initialAuthState);
+      assert.deepStrictEqual(yield* Fiber.join(pending), { error: { code: 'INTERNAL' } });
+      assert.isTrue(yield* Deferred.isDone(aborted));
+      assert.strictEqual(request.mock.calls.length, 1);
+      yield* Scope.close(scope, Exit.void);
+    }).pipe(Effect.provide(WorkspaceTransportLive))
+  );
+
+  it.effect('returns network and server failures without retrying a ready backend', () =>
+    Effect.gen(function* () {
+      const ct = yield* WorkspaceTransport;
+      const stub = yield* makeAuthStub;
+      const identity = account('user_1', 'org_a');
+      yield* SubscriptionRef.set(
+        stub.sessionState,
+        authState('signed-in', [identity], identity.sub)
+      );
+      for (const response of [
+        { error: { code: 'INTERNAL' } },
+        { ok: true, status: 503, bodyJson: 'unavailable' },
+      ] satisfies TransportResponse[]) {
+        const request = vi.fn(() => Effect.succeed(response));
+        const scope = yield* Scope.make();
+        yield* ct
+          .register({ ...stubClient(response), identity, request })
+          .pipe(Scope.extend(scope));
+        assert.deepStrictEqual(
+          yield* ct.request(
+            { method: 'GET', path: '/apps/v1/me/people' },
+            { mode: 'cloud', sessionState: stub.sessionState }
+          ),
+          response
+        );
+        assert.strictEqual(request.mock.calls.length, 1);
+        yield* Scope.close(scope, Exit.void);
+      }
+    }).pipe(Effect.provide(WorkspaceTransportLive))
+  );
+
   it.effect('with no live session: current is None and request settles INTERNAL', () =>
     Effect.gen(function* () {
       const ct = yield* WorkspaceTransport;
       assert.isTrue(Option.isNone(yield* ct.current));
-      assert.deepStrictEqual(yield* ct.request({ method: 'GET', path: '/apps/v1/me' }), {
-        error: { code: 'INTERNAL' },
-      });
+      assert.deepStrictEqual(
+        yield* ct.request({ method: 'GET', path: '/apps/v1/me' }, { mode: 'local' }),
+        {
+          error: { code: 'INTERNAL' },
+        }
+      );
     }).pipe(Effect.provide(WorkspaceTransportLive))
   );
 
@@ -530,17 +704,23 @@ describe('WorkspaceTransport (session-current accessor)', () => {
       yield* ct.register(client).pipe(Scope.extend(scope));
 
       assert.isTrue(Option.isSome(yield* ct.current));
-      assert.deepStrictEqual(yield* ct.request({ method: 'GET', path: '/apps/v1/me' }), {
-        ok: true,
-        status: 200,
-        bodyJson: 'X',
-      });
+      assert.deepStrictEqual(
+        yield* ct.request({ method: 'GET', path: '/apps/v1/me' }, { mode: 'local' }),
+        {
+          ok: true,
+          status: 200,
+          bodyJson: 'X',
+        }
+      );
 
       yield* Scope.close(scope, Exit.void);
       assert.isTrue(Option.isNone(yield* ct.current));
-      assert.deepStrictEqual(yield* ct.request({ method: 'GET', path: '/apps/v1/me' }), {
-        error: { code: 'INTERNAL' },
-      });
+      assert.deepStrictEqual(
+        yield* ct.request({ method: 'GET', path: '/apps/v1/me' }, { mode: 'local' }),
+        {
+          error: { code: 'INTERNAL' },
+        }
+      );
     }).pipe(Effect.provide(WorkspaceTransportLive))
   );
 
@@ -557,21 +737,27 @@ describe('WorkspaceTransport (session-current accessor)', () => {
         // A registers, then B registers on top (the swap: the successor is current).
         yield* ct.register(clientA).pipe(Scope.extend(scopeA));
         yield* ct.register(clientB).pipe(Scope.extend(scopeB));
-        assert.deepStrictEqual(yield* ct.request({ method: 'GET', path: '/apps/v1/me' }), {
-          ok: true,
-          status: 200,
-          bodyJson: 'B',
-        });
+        assert.deepStrictEqual(
+          yield* ct.request({ method: 'GET', path: '/apps/v1/me' }, { mode: 'local' }),
+          {
+            ok: true,
+            status: 200,
+            bodyJson: 'B',
+          }
+        );
 
         // A's scope closes LATE (the slow-old-close race): its release must NOT
         // clear B — compare-and-clear leaves the live successor intact.
         yield* Scope.close(scopeA, Exit.void);
         assert.isTrue(Option.isSome(yield* ct.current));
-        assert.deepStrictEqual(yield* ct.request({ method: 'GET', path: '/apps/v1/me' }), {
-          ok: true,
-          status: 200,
-          bodyJson: 'B',
-        });
+        assert.deepStrictEqual(
+          yield* ct.request({ method: 'GET', path: '/apps/v1/me' }, { mode: 'local' }),
+          {
+            ok: true,
+            status: 200,
+            bodyJson: 'B',
+          }
+        );
 
         // B's own close still clears — it IS the current client.
         yield* Scope.close(scopeB, Exit.void);
@@ -689,7 +875,10 @@ describe('makeCloudWorkspaceLayer → WorkspaceBackend (boot↔session bridge)',
         // A valid session: the accessor holds the client and a request fetches
         // the server with the guarded id_token and active-org header stamped in main.
         assert.isTrue(Option.isSome(yield* ct.current));
-        const ok = yield* ct.request({ method: 'GET', path: '/apps/v1/me/notes' });
+        const ok = yield* ct.request(
+          { method: 'GET', path: '/apps/v1/me/notes' },
+          { mode: 'cloud', sessionState: stub.sessionState }
+        );
         assert.deepStrictEqual(ok, { ok: true, status: 200, bodyJson: { results: [] } });
         assert.strictEqual(stamped.length, 1);
         assert.deepStrictEqual(stamped[0], { auth: 'Bearer idtoken-user_1', org: 'org_a' });
@@ -698,13 +887,20 @@ describe('makeCloudWorkspaceLayer → WorkspaceBackend (boot↔session bridge)',
         // sanctioned full-token crossing. No fetch is involved.
         assert.deepStrictEqual(yield* ct.collabToken, Option.some('idtoken-user_1'));
 
-        // Org switched away ⇒ the SignedInSession guard fails StaleSessionError
-        // and the request settles INTERNAL WITHOUT reaching the wire.
+        // Org switched away: wait for its backend, then time out without
+        // dispatching through the stale workspace when no replacement mounts.
         yield* SubscriptionRef.set(
           stub.sessionState,
           authState('signed-in', [account('user_1', 'org_b')], 'user_1')
         );
-        const stale = yield* ct.request({ method: 'GET', path: '/apps/v1/me/notes' });
+        const pending = yield* ct
+          .request(
+            { method: 'GET', path: '/apps/v1/me/notes' },
+            { mode: 'cloud', sessionState: stub.sessionState }
+          )
+          .pipe(Effect.fork);
+        yield* TestClock.adjust(WORKSPACE_READY_TIMEOUT);
+        const stale = yield* Fiber.join(pending);
         assert.deepStrictEqual(stale, { error: { code: 'INTERNAL' } });
         assert.strictEqual(stamped.length, 1, 'no fetch under a stale session');
 
@@ -712,12 +908,19 @@ describe('makeCloudWorkspaceLayer → WorkspaceBackend (boot↔session bridge)',
         assert.isTrue(Option.isNone(yield* ct.collabToken));
 
         // Teardown clears the accessor (a signed-out request is graceful again).
+        yield* SubscriptionRef.set(stub.sessionState, initialAuthState);
         yield* Scope.close(scope, Exit.void);
         assert.isTrue(Option.isNone(yield* ct.current));
         assert.isTrue(Option.isNone(yield* ct.collabToken));
-        assert.deepStrictEqual(yield* ct.request({ method: 'GET', path: '/apps/v1/me/notes' }), {
-          error: { code: 'INTERNAL' },
-        });
+        assert.deepStrictEqual(
+          yield* ct.request(
+            { method: 'GET', path: '/apps/v1/me/notes' },
+            { mode: 'cloud', sessionState: stub.sessionState }
+          ),
+          {
+            error: { code: 'INTERNAL' },
+          }
+        );
       })
   );
 

@@ -431,6 +431,10 @@ const de = {
     },
   },
   directory: {
+    loadMore: 'Mehr laden',
+    loadingMore: 'Wird geladen …',
+    truncated_one: 'Die neuesten {{count}} werden angezeigt',
+    truncated_other: 'Die neuesten {{count}} werden angezeigt',
     companies: {
       empty: 'Noch keine Unternehmen',
       emptyHint: 'Unternehmen werden automatisch aus den Personen gruppiert, die du triffst.',

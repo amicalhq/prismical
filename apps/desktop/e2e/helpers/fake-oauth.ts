@@ -85,6 +85,11 @@ export interface FakeOAuthOptions {
   readonly integrationsEnabled?: boolean;
   /** Role returned by the organization endpoint when it is enabled. Default: owner. */
   readonly organizationRole?: 'owner' | 'admin' | 'member';
+  /** Optional app API fixtures, served through the real desktop transport. */
+  readonly appResponse?: (
+    url: URL,
+    request: IncomingMessage
+  ) => { status: number; body: unknown } | undefined;
 }
 
 export interface FakeOAuthServer {
@@ -410,6 +415,11 @@ export async function startFakeOAuthServer(
       // desktop transport lane can be exercised end-to-end after a fake sign-in.
       // A generic list envelope — no sentinel material ever enters this body.
       if (url.pathname === ME_PATH || url.pathname.startsWith(`${ME_PATH}/`)) {
+        const fixture = options.appResponse?.(url, request);
+        if (fixture) {
+          sendJson(response, fixture.status, fixture.body);
+          return;
+        }
         sendJson(response, 200, { results: [] });
         return;
       }

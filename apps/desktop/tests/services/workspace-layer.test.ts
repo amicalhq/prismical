@@ -809,7 +809,7 @@ describe('SignedInRuntime lifecycle', () => {
       assert.isTrue(Option.isSome(yield* transport.current), 'local backend registered');
       // NoteBodyStore registered into the boot-scoped CollabBridge.
       assert.isTrue(Option.isSome(yield* collabBridge.current), 'note-body store registered');
-      const served = yield* transport.request({ method: 'GET', path: '/apps/v1/me/tags' });
+      const served = yield* transport.request({ method: 'GET', path: '/apps/v1/me/tags' }, { mode: 'local' });
       assert.deepStrictEqual(served, { ok: true, status: 200, bodyJson: { results: [] } });
 
       // Auth traffic never swaps or tears the local workspace down.
@@ -830,7 +830,7 @@ describe('SignedInRuntime lifecycle', () => {
       assert.isTrue(Exit.isInterrupted(fiberExit), 'local workspace fiber interrupted on quit');
       assert.isTrue(Option.isNone(yield* transport.current), 'local backend deregistered');
       assert.isTrue(Option.isNone(yield* collabBridge.current), 'note-body store deregistered');
-      assert.deepStrictEqual(yield* transport.request({ method: 'GET', path: '/apps/v1/me/tags' }), {
+      assert.deepStrictEqual(yield* transport.request({ method: 'GET', path: '/apps/v1/me/tags' }, { mode: 'local' }), {
         error: { code: 'INTERNAL' },
       });
     })

@@ -172,8 +172,9 @@ export function AppSidebar({
             ))}
 
             {/* People & Companies directory — one entry, the page has a
-                [People | Companies] toggle. */}
-            {features.isEnabled('directory') && (
+                [People | Companies] toggle. Available to every cloud org;
+                an accountless platform can omit it from its feature table. */}
+            {(caps.featureFlags === null || caps.featureFlags.directory === true) && (
               <SidebarMenuItem>
                 <SidebarMenuButton
                   asChild

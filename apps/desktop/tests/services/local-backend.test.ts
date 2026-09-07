@@ -327,7 +327,7 @@ describe('LocalBackendLive', () => {
       const current = yield* transport.current;
       assert.isTrue(Option.isSome(current) && Option.getOrThrow(current) === api);
       const served = expectOk(
-        yield* transport.request({ method: 'GET', path: '/apps/v1/me/folders' }),
+        yield* transport.request({ method: 'GET', path: '/apps/v1/me/folders' }, { mode: 'local' }),
         200
       );
       assert.deepStrictEqual(served.bodyJson, { results: [] });
@@ -336,7 +336,7 @@ describe('LocalBackendLive', () => {
 
       yield* Scope.close(scope, Exit.void);
       assert.isTrue(Option.isNone(yield* transport.current), 'cleared on scope close');
-      assert.deepStrictEqual(yield* transport.request({ method: 'GET', path: '/apps/v1/me/folders' }), {
+      assert.deepStrictEqual(yield* transport.request({ method: 'GET', path: '/apps/v1/me/folders' }, { mode: 'local' }), {
         error: { code: 'INTERNAL' },
       });
     })

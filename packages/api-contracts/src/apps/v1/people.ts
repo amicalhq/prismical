@@ -55,11 +55,19 @@ export const DirectoryMeetingSchema = z
   .strip();
 export type DirectoryMeeting = z.output<typeof DirectoryMeetingSchema>;
 
+// `hasMore` lets an infinite-scroll client decide whether to request the next offset without a
+// separate count query.
+//
+// It is OPTIONAL with a `false` default, and that is load-bearing: apps/web auto-deploys on push to
+// main while apps/core is deployed by hand, so a new client WILL talk to an older core for a while.
+// A required field would make that window a hard ZodError -- the whole directory failing rather
+// than simply not paginating -- and a shipped desktop build would be stuck on it far longer.
 export const PeopleListResultSchema = z
   .object({
     results: z.array(DirectoryPersonSchema),
     limit: z.number().int().positive(),
     offset: z.number().int().nonnegative(),
+    hasMore: z.boolean().optional().default(false),
   })
   .strip();
 export type PeopleListResult = z.output<typeof PeopleListResultSchema>;
@@ -69,6 +77,8 @@ export const PersonDetailSchema = z
   .object({
     person: DirectoryPersonSchema.omit({ meetingCount: true, lastMetAt: true }),
     meetings: z.array(DirectoryMeetingSchema),
+    /** True when the meeting history was capped, so the UI can say it is showing only the newest. */
+    hasMore: z.boolean().optional().default(false),
   })
   .strip();
 export type PersonDetail = z.output<typeof PersonDetailSchema>;
@@ -79,6 +89,7 @@ export const CompaniesListResultSchema = z
     results: z.array(DirectoryCompanySchema),
     limit: z.number().int().positive(),
     offset: z.number().int().nonnegative(),
+    hasMore: z.boolean().optional().default(false),
   })
   .strip();
 export type CompaniesListResult = z.output<typeof CompaniesListResultSchema>;
@@ -93,6 +104,7 @@ export const CompanyDetailSchema = z
       avatarUrl: true,
     }),
     people: z.array(DirectoryPersonSchema),
+    hasMore: z.boolean().optional().default(false),
   })
   .strip();
 export type CompanyDetail = z.output<typeof CompanyDetailSchema>;

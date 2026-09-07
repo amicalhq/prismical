@@ -116,10 +116,10 @@ const child = (path: string, component: () => React.ReactNode) =>
  * A cloud-only route: in local mode it redirects home from
  * `beforeLoad` — hiding the nav entry is not enough on desktop, where main
  * pushes paths onto this router (deep links, tray, menu) and a hash is typeable.
- * The shared FeatureGate wraps the screen as defense in depth: the same org
- * feature flag the sidebar entry keys on, resolved by the local flag table.
+ * A named feature adds the org gate used by the sidebar. A null feature
+ * makes the surface available to every cloud org while retaining the local redirect.
  */
-const cloudOnly = (path: string, feature: string, component: () => React.ReactNode) =>
+const cloudOnly = (path: string, feature: string | null, component: () => React.ReactNode) =>
   createRoute({
     getParentRoute: () => rootRoute,
     path,
@@ -127,7 +127,8 @@ const cloudOnly = (path: string, feature: string, component: () => React.ReactNo
       if (context.appMode === "local") throw redirect({ to: "/home" });
     },
     component: function CloudOnlyRoute() {
-      return <FeatureGate feature={feature}>{React.createElement(component)}</FeatureGate>;
+      const screen = React.createElement(component);
+      return feature ? <FeatureGate feature={feature}>{screen}</FeatureGate> : screen;
     },
   });
 
@@ -310,13 +311,13 @@ const routeTree = rootRoute.addChildren([
   }),
   // Cloud-only surfaces: sharing, the people directory,
   // calendars, organizations/invitations, the account, billing, the public
-  // API and automations — each keyed on the org feature flag its nav entry
-  // uses, and redirected home in local mode.
+  // API and automations — redirected home in local mode. The directory is
+  // available to every cloud org; other surfaces retain their org feature gates.
   cloudOnly("shared", "sharing", SharedScreen),
-  cloudOnly("people", "directory", PeopleScreen),
-  cloudOnly("people/$id", "directory", PersonDetailRoute),
-  cloudOnly("companies", "directory", CompaniesScreen),
-  cloudOnly("companies/$id", "directory", CompanyDetailRoute),
+  cloudOnly("people", null, PeopleScreen),
+  cloudOnly("people/$id", null, PersonDetailRoute),
+  cloudOnly("companies", null, CompaniesScreen),
+  cloudOnly("companies/$id", null, CompanyDetailRoute),
   cloudOnly("events", "calendar", EventsScreen),
   cloudOnly("accept-invitation/$id", "organization", AcceptInvitationRoute),
   cloudOnly("share/accept/$id", "sharing", ShareAcceptRoute),

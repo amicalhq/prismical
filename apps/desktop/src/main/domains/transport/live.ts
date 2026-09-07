@@ -32,17 +32,19 @@ import {
 } from '@prismical/api-contracts/apps/v1';
 import { askErrorResponse } from './ask-error';
 import { DesktopI18n } from '../i18n/service';
-import { Duration, Effect, Layer, Option, SubscriptionRef } from 'effect';
+import { Duration, Effect, Layer, Option, Stream, SubscriptionRef } from 'effect';
 import type { TransportRequest, TransportResponse } from '@prismical/desktop-contracts';
 import { AppConfig } from '../../infra/config/service';
 import { MainLogger } from '../../infra/logging/service';
 import type { AuthStateError, RefreshError } from '../auth/service';
+import type { AuthState } from '../auth/policy';
 import { SignedInSession, type StaleSessionError } from '../../runtime/workspace-layer';
 import {
   AskStreamError,
   WorkspaceBackend,
   WorkspaceTransport,
   type WorkspaceBackendApi,
+  type WorkspaceIdentity,
   type WorkspaceTransportApi,
   type CreateRecordingInput,
   type FinalizeRecordingInput,
@@ -56,6 +58,8 @@ import {
 
 /** Unary request budget — mirrors auth's TOKEN_REQUEST_TIMEOUT. */
 export const REQUEST_TIMEOUT = Duration.seconds(15);
+/** Wait for a workspace swap, separately from the HTTP request budget. */
+export const WORKSPACE_READY_TIMEOUT = Duration.seconds(10);
 
 /** The single Ask streaming endpoint. */
 export const ASK_PATH = '/apps/v1/me/ask';
@@ -603,6 +607,7 @@ export const makeCloudBackendLive = (
       };
 
       const api: WorkspaceBackendApi = {
+        identity: session.pinned,
         request: makeWorkspaceBackendRequest(deps),
         openAskStream: makeOpenAskStream(deps),
         // The collab WSS bearer: exactly the guarded token — the same
@@ -659,15 +664,60 @@ export const WorkspaceTransportLive: Layer.Layer<WorkspaceTransport> = Layer.eff
           )
         ).pipe(Effect.asVoid),
       current: SubscriptionRef.get(currentRef),
-      request: req =>
-        SubscriptionRef.get(currentRef).pipe(
-          Effect.flatMap(
-            Option.match({
+      request: (req, context) =>
+        Effect.gen(function* () {
+          if (context.mode === 'local') {
+            const backend = yield* SubscriptionRef.get(currentRef);
+            return yield* Option.match(backend, {
               onNone: () => Effect.succeed(INTERNAL),
               onSome: client => client.request(req),
-            })
-          )
-        ),
+            });
+          }
+          const { sessionState } = context;
+          const identityOf = (state: AuthState): WorkspaceIdentity | undefined =>
+            state.gate === 'signed-out' || state.activeSub === undefined
+              ? undefined
+              : state.accounts[state.activeSub];
+          const expected = identityOf(yield* SubscriptionRef.get(sessionState));
+          if (expected === undefined) return INTERNAL;
+          const matches = (identity: WorkspaceIdentity | undefined): boolean =>
+            identity?.sub === expected.sub && identity.activeOrgId === expected.activeOrgId;
+
+          // Read both live values after either stream wakes us. Buffered auth or
+          // registration events must never dispatch through a stale backend.
+          const ready = yield* Stream.merge(
+            currentRef.changes.pipe(Stream.map(() => undefined)),
+            sessionState.changes.pipe(Stream.map(() => undefined))
+          ).pipe(
+            Stream.mapEffect(() =>
+              Effect.gen(function* () {
+                const active = identityOf(yield* SubscriptionRef.get(sessionState));
+                const backend = yield* SubscriptionRef.get(currentRef);
+                return {
+                  active: matches(active),
+                  backend: Option.filter(backend, client => matches(client.identity)),
+                };
+              })
+            ),
+            Stream.filter(state => !state.active || Option.isSome(state.backend)),
+            Stream.runHead,
+            Effect.timeoutOption(WORKSPACE_READY_TIMEOUT),
+            Effect.map(Option.flatten),
+            Effect.map(Option.flatMap(state => (state.active ? state.backend : Option.none())))
+          );
+          if (Option.isNone(ready)) return INTERNAL;
+
+          // Dispatch once. A context change interrupts an in-flight exchange and
+          // discards its result; a write can never be replayed in another org.
+          return yield* Effect.raceFirst(
+            ready.value.request(req),
+            sessionState.changes.pipe(
+              Stream.filter(state => !matches(identityOf(state))),
+              Stream.runHead,
+              Effect.as(INTERNAL)
+            )
+          );
+        }),
       // The collab bearer: with no live session → None; otherwise the
       // guarded id_token, folding a stale/refresh failure to None too so the
       // handler answers null instead of throwing.

@@ -121,7 +121,7 @@ export function useActiveOrg(): Organization | null {
  * Core only emits the operational flags in FEATURE_REGISTRY (integrations,
  * eventkitCalendar, autoPauseOnSilence, groqByok); these keys describe what a
  * cloud organization has by construction — members, billing, calendars, sharing,
- * the people directory, automations, the public API, the account itself and the
+ * automations, the public API, the account itself and the
  * BYOK instance CRUD — so an org that does not mention them resolves TRUE. A
  * platform that resolves its own flags (the desktop local workspace, see
  * DesktopCapabilityPort.featureFlags) answers them itself, mostly false. Should
@@ -133,7 +133,6 @@ export const CLOUD_FEATURE_DEFAULTS: Readonly<Record<string, boolean>> = {
   billing: true,
   byokInstances: true,
   calendar: true,
-  directory: true,
   organization: true,
   publicApi: true,
   sharing: true,

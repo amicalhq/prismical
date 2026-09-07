@@ -8,6 +8,7 @@ import {
   DirectoryListSkeleton,
   DirectoryError,
   DirectoryEmpty,
+  DirectoryTruncated,
 } from '../components/directory-states';
 import { Badge } from '../ui/badge';
 import { personDisplayName } from '../lib/people-display';
@@ -65,9 +66,9 @@ export function PersonDetailScreen({ id }: { id: string }) {
           {data.meetings.length === 0 ? (
             <DirectoryEmpty icon={CalendarDays} title={t('directory.people.noMeetings')} />
           ) : (
-            <div className="overflow-hidden rounded-xl bg-muted">
+            <div>
               {data.meetings.map(m => (
-                <div key={m.eventId} className="flex items-center gap-3 px-4 py-3">
+                <div key={m.eventId} className="flex items-center gap-3 rounded-lg px-3 py-2">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <p className="truncate text-sm font-medium">{m.title}</p>
@@ -106,6 +107,7 @@ export function PersonDetailScreen({ id }: { id: string }) {
                   </div>
                 </div>
               ))}
+              {data.hasMore ? <DirectoryTruncated count={data.meetings.length} /> : null}
             </div>
           )}
         </>

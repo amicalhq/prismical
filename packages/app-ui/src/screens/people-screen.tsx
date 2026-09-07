@@ -13,6 +13,8 @@ import {
   DirectoryListSkeleton,
   DirectoryError,
   DirectoryEmpty,
+  DirectoryLoadMore,
+  directoryRowClass,
 } from '../components/directory-states';
 import { personDisplayName } from '../lib/people-display';
 import { cn } from '../lib/utils';
@@ -28,8 +30,11 @@ export function PeopleScreen() {
   const { resolvedLocale } = useApplicationLocale();
   const [search, setSearch] = React.useState('');
   const [filter, setFilter] = React.useState<PeopleFilter>('all');
-  const { data, isLoading, error } = usePeople({ search: useDebouncedValue(search), filter });
-  const people = data?.results ?? [];
+  const { data, isLoading, error, hasNextPage, fetchNextPage, isFetchingNextPage, isFetching } = usePeople({
+    search: useDebouncedValue(search),
+    filter,
+  });
+  const people = data ?? [];
 
   return (
     <div className="mx-auto w-full max-w-4xl">
@@ -73,7 +78,7 @@ export function PeopleScreen() {
 
       {isLoading ? (
         <DirectoryListSkeleton />
-      ) : error ? (
+      ) : error && people.length === 0 ? (
         <DirectoryError />
       ) : people.length === 0 ? (
         <DirectoryEmpty
@@ -82,12 +87,12 @@ export function PeopleScreen() {
           hint={search ? undefined : t('directory.people.emptyHint')}
         />
       ) : (
-        <div className="overflow-hidden rounded-xl bg-muted">
+        <div>
           {people.map(p => (
             <Link
               key={p.id}
               href={`/people/${p.id}`}
-              className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-accent"
+              className={directoryRowClass}
             >
               <PersonAvatar person={p} />
               <div className="min-w-0 flex-1">
@@ -115,6 +120,18 @@ export function PeopleScreen() {
           ))}
         </div>
       )}
+      {error && people.length > 0 ? <DirectoryError /> : null}
+      {people.length > 0 ? (
+        <DirectoryLoadMore
+          // `hasNextPage` reads false while `keepPreviousData` is showing the previous search's rows
+          // (the new key has no data yet), which would yank the footer away mid-scroll. Keep it while
+          // a fetch is in flight so the control does not flicker out and back.
+          hasMore={Boolean(hasNextPage) || isFetching}
+          isLoading={isFetchingNextPage || isFetching}
+          hasError={Boolean(error)}
+          onLoadMore={() => void fetchNextPage()}
+        />
+      ) : null}
     </div>
   );
 }

@@ -448,6 +448,10 @@ const en = {
     },
   },
   directory: {
+    loadMore: 'Load more',
+    loadingMore: 'Loading…',
+    truncated_one: 'Showing the most recent {{count}}',
+    truncated_other: 'Showing the most recent {{count}}',
     companies: {
       empty: 'No companies yet',
       emptyHint: 'Companies are grouped automatically from the people you meet.',

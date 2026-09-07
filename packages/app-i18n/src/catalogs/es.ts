@@ -424,6 +424,10 @@ const es = {
     },
   },
   directory: {
+    loadMore: 'Cargar más',
+    loadingMore: 'Cargando…',
+    truncated_one: 'Mostrando los {{count}} más recientes',
+    truncated_other: 'Mostrando los {{count}} más recientes',
     companies: {
       empty: 'Aún no hay empresas',
       emptyHint:

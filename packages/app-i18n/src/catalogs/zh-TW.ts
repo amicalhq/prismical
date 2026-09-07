@@ -377,6 +377,10 @@ const zhTW = {
     noteNotFound: { body: '你要找的筆記不存在或已刪除。', title: '找不到筆記' },
   },
   directory: {
+    loadMore: '載入更多',
+    loadingMore: '載入中…',
+    truncated_one: '顯示最新的 {{count}} 筆',
+    truncated_other: '顯示最新的 {{count}} 筆',
     companies: {
       empty: '尚無公司',
       emptyHint: '系統會依據你見過的人自動整理公司。',

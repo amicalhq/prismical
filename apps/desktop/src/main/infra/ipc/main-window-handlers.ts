@@ -261,10 +261,13 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
                 .warn('transport:request rejected: path not allowed', { path: parsed.data.path })
                 .pipe(Effect.as<TransportResponse>({ error: { code: 'PATH_NOT_ALLOWED' } }));
             }
-            // Dispatch into the current session's WorkspaceBackend. It
-            // stamps Bearer + x-active-org-id in MAIN and maps the exchange onto
-            // the envelope; with no live session it settles INTERNAL (never throws).
-            return coreTransport.request(parsed.data);
+            // Wait for the selected cloud workspace during a swap. The backend
+            // stamps Bearer + x-active-org-id in MAIN; no live session settles
+            // INTERNAL through the transport envelope (never throws).
+            return coreTransport.request(parsed.data, {
+              mode: appMode.mode,
+              sessionState: auth.sessionState,
+            });
           }),
           Effect.catchAll(rejected =>
             Effect.succeed<TransportResponse>({ error: { code: rejected.code } })

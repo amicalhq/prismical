@@ -12,6 +12,8 @@ import {
   DirectoryListSkeleton,
   DirectoryError,
   DirectoryEmpty,
+  DirectoryLoadMore,
+  directoryRowClass,
 } from '../components/directory-states';
 import { formatApplicationLastMet, useApplicationLocale } from '@prismical/app-i18n';
 import { useTranslation } from 'react-i18next';
@@ -21,8 +23,10 @@ export function CompaniesScreen() {
   const { t } = useTranslation();
   const { resolvedLocale } = useApplicationLocale();
   const [search, setSearch] = React.useState('');
-  const { data, isLoading, error } = useCompanies({ search: useDebouncedValue(search) });
-  const companies = data?.results ?? [];
+  const { data, isLoading, error, hasNextPage, fetchNextPage, isFetchingNextPage, isFetching } = useCompanies({
+    search: useDebouncedValue(search),
+  });
+  const companies = data ?? [];
 
   return (
     <div className="mx-auto w-full max-w-4xl">
@@ -43,7 +47,7 @@ export function CompaniesScreen() {
 
       {isLoading ? (
         <DirectoryListSkeleton />
-      ) : error ? (
+      ) : error && companies.length === 0 ? (
         <DirectoryError />
       ) : companies.length === 0 ? (
         <DirectoryEmpty
@@ -52,12 +56,12 @@ export function CompaniesScreen() {
           hint={search ? undefined : t('directory.companies.emptyHint')}
         />
       ) : (
-        <div className="overflow-hidden rounded-xl bg-muted">
+        <div>
           {companies.map(c => (
             <Link
               key={c.id}
               href={`/companies/${c.id}`}
-              className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-accent"
+              className={directoryRowClass}
             >
               <CompanyAvatar company={c} />
               <div className="min-w-0 flex-1">
@@ -77,6 +81,18 @@ export function CompaniesScreen() {
           ))}
         </div>
       )}
+      {error && companies.length > 0 ? <DirectoryError /> : null}
+      {companies.length > 0 ? (
+        <DirectoryLoadMore
+          // `hasNextPage` reads false while `keepPreviousData` is showing the previous search's rows
+          // (the new key has no data yet), which would yank the footer away mid-scroll. Keep it while
+          // a fetch is in flight so the control does not flicker out and back.
+          hasMore={Boolean(hasNextPage) || isFetching}
+          isLoading={isFetchingNextPage || isFetching}
+          hasError={Boolean(error)}
+          onLoadMore={() => void fetchNextPage()}
+        />
+      ) : null}
     </div>
   );
 }
