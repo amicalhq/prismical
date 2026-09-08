@@ -50,7 +50,7 @@ export interface AuthorizeUrlOptions {
   readonly promptLogin: boolean;
 }
 
-/** Same construction as the web client (auth-context.tsx signIn) — core accepts it verbatim. */
+/** Request account selection for sign-in, or force login for an add-account flow. */
 export const buildAuthorizeUrl = (options: AuthorizeUrlOptions): string => {
   const url = new URL(options.authorizeUrl);
   url.searchParams.set('client_id', options.clientId);
@@ -60,7 +60,7 @@ export const buildAuthorizeUrl = (options: AuthorizeUrlOptions): string => {
   url.searchParams.set('code_challenge', options.challenge);
   url.searchParams.set('code_challenge_method', 'S256');
   url.searchParams.set('state', options.state);
-  if (options.promptLogin) url.searchParams.set('prompt', 'login');
+  url.searchParams.set('prompt', options.promptLogin ? 'login' : 'select_account');
   return url.toString();
 };
 

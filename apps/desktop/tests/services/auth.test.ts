@@ -404,6 +404,7 @@ describe('AuthService', () => {
       expected.searchParams.set('code_challenge', expectedChallenge);
       expected.searchParams.set('code_challenge_method', 'S256');
       expected.searchParams.set('state', expectedState);
+      expected.searchParams.set('prompt', 'select_account');
       assert.deepStrictEqual(fake.shell.openExternalCalls.slice(shellBase), [expected.toString()]);
       assert.strictEqual((yield* SubscriptionRef.get(auth.sessionState)).gate, 'signing-in');
       yield* Scope.close(scope, Exit.void);

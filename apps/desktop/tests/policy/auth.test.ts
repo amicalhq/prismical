@@ -82,7 +82,7 @@ describe('auth policy — authorize URL', () => {
     state: 'ST',
   };
 
-  it('builds the exact parameter set (web-client parity)', () => {
+  it('requests account selection with the complete authorization parameter set', () => {
     const url = new URL(buildAuthorizeUrl({ ...base, promptLogin: false }));
     expect(url.origin + url.pathname).toBe('https://core.test/api/auth/oauth2/authorize');
     expect(Object.fromEntries(url.searchParams)).toEqual({
@@ -93,15 +93,16 @@ describe('auth policy — authorize URL', () => {
       code_challenge: 'CH',
       code_challenge_method: 'S256',
       state: 'ST',
+      prompt: 'select_account',
     });
   });
 
-  it('adds prompt=login only when requested (add-account flow)', () => {
+  it('uses forced login instead of account selection for the add-account flow', () => {
     const url = new URL(buildAuthorizeUrl({ ...base, promptLogin: true }));
     expect(url.searchParams.get('prompt')).toBe('login');
     expect(
-      new URL(buildAuthorizeUrl({ ...base, promptLogin: false })).searchParams.has('prompt')
-    ).toBe(false);
+      new URL(buildAuthorizeUrl({ ...base, promptLogin: false })).searchParams.get('prompt')
+    ).toBe('select_account');
   });
 });
 
