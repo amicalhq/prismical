@@ -80,18 +80,17 @@ export const runDeepLinkConsumer: Effect.Effect<
             } });
           }
           const payload: NavPush = { path: parsed.path };
-          return windows
-            .sendToMainWindow(CHANNELS.navPush, payload)
-            .pipe(
-              Effect.flatMap(sent =>
-                sent
-                  ? // 'dispatched', not 'delivered': webContents.send is fire-and-forget
-                    // (the renderer may not have subscribed yet — the preload nav
-                    // buffer replays it). Nothing here acknowledges receipt.
-                    log.info('nav push dispatched', { context: { path: parsed.path } })
-                  : log.warn('nav push dropped — no live main window', { context: { path: parsed.path } })
-              )
-            );
+          return windows.focusMainWindow.pipe(
+            Effect.zipRight(windows.sendToMainWindow(CHANNELS.navPush, payload)),
+            Effect.flatMap(sent =>
+              sent
+                ? // 'dispatched', not 'delivered': webContents.send is fire-and-forget
+                  // (the renderer may not have subscribed yet — the preload nav
+                  // buffer replays it). Nothing here acknowledges receipt.
+                  log.info('nav push dispatched', { context: { path: parsed.path } })
+                : log.warn('nav push dropped — no live main window', { context: { path: parsed.path } })
+            )
+          );
         }
         case 'Unknown':
           // NEVER the raw URL: several Unknown reasons carry real code/state

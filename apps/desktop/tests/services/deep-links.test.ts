@@ -23,7 +23,7 @@ vi.mock('electron', async () => (await import('../helpers/fake-electron')).creat
 const fake = (await import('electron')) as unknown as FakeElectron;
 
 interface WindowsStubState {
-  sent: Array<{ channel: string; payload: unknown }>;
+  sent: Array<{ channel: string; payload: unknown; focusCount: number }>;
   focusCount: number;
 }
 
@@ -42,7 +42,7 @@ const windowsStub = (state: WindowsStubState) =>
         }),
         sendToMainWindow: (channel, payload) =>
           Effect.sync(() => {
-            state.sent.push({ channel, payload });
+            state.sent.push({ channel, payload, focusCount: state.focusCount });
             return true;
           }),
         windowEvents: events,
@@ -142,12 +142,38 @@ describe('DeepLinks', () => {
       assert.strictEqual(oauthError?.state, 's-err');
 
       assert.deepStrictEqual(state.sent, [
-        { channel: CHANNELS.navPush, payload: { path: '/notes/n_9?filter=all' } },
+        { channel: CHANNELS.navPush, payload: { path: '/notes/n_9?filter=all' }, focusCount: 1 },
       ]);
       assert.isDefined(logger.find(e => e.level === 'warn' && e.message === 'deep link rejected'));
       // Secrets never hit the log payloads.
       assert.isUndefined(logger.entries.find(e => JSON.stringify(e.data ?? '').includes('c-1')));
 
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+
+  it.effect('macOS open-url focuses the main window before navigation and ignores rejected links', () =>
+    Effect.gen(function* () {
+      const { layer, logger, state } = build({ platform: 'darwin' });
+      const scope = yield* Scope.make();
+      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      yield* Effect.forkScoped(runDeepLinkConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+
+      fake.app.emit('open-url', new FakeEvent(), 'prismical://app/settings/calendar');
+      fake.app.emit('open-url', new FakeEvent(), 'prismical://app/float/n_1');
+      fake.app.emit('open-url', new FakeEvent(), 'prismical://garbage/x');
+
+      yield* Effect.iterate(0, {
+        while: n =>
+          n < 200 && logger.find(e => e.message === 'deep link rejected') === undefined,
+        body: n => Effect.yieldNow().pipe(Effect.as(n + 1)),
+      });
+
+      assert.isDefined(logger.find(e => e.message === 'deep link rejected'));
+      assert.strictEqual(state.focusCount, 1);
+      assert.deepStrictEqual(state.sent, [
+        { channel: CHANNELS.navPush, payload: { path: '/settings/calendar' }, focusCount: 1 },
+      ]);
       yield* Scope.close(scope, Exit.void);
     })
   );
