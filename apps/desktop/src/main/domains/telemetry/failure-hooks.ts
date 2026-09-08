@@ -1,3 +1,4 @@
+import { makeSuppressionCounter } from './suppression-counter';
 import type { Details, RenderProcessGoneDetails } from 'electron';
 import { Effect, Option, Queue, SubscriptionRef } from 'effect';
 import { projectTelemetryException } from '../../../shared/telemetry-exception';
@@ -29,6 +30,10 @@ export const registerFailureHooks = (sources: FailureHookSources) =>
     const windows = yield* WindowRegistry;
     const log = (yield* MainLogger).scopedSync('failures');
     const reports = yield* Queue.sliding<FailureReport>(32);
+    const recordDrop = yield* makeSuppressionCounter(
+      log,
+      'Queued process failure reports suppressed'
+    );
 
     yield* Effect.forkScoped(
       Effect.forever(
@@ -72,18 +77,30 @@ export const registerFailureHooks = (sources: FailureHookSources) =>
           // Immediate local evidence also works in uncaughtExceptionMonitor. Remote
           // work is queued separately and may not run before Node terminates.
           try {
-            log.error(message, { context: { ...properties }, error: safeError });
+            log.error(message, {
+              context: {
+                source: properties.source,
+                reason: properties.reason,
+                exitCode: properties.exit_code,
+                processType: properties.process_type,
+                errorContext: properties.error_context,
+                frames: safeError.frames,
+              },
+              error: safeError,
+            });
           } catch {
             /* Logging cannot replace the original failure. */
           }
           const policy = Effect.runSync(SubscriptionRef.get(telemetry.state));
-          if (policy.enabled)
+          if (policy.enabled) {
+            if (Option.getOrElse(reports.unsafeSize(), () => 0) >= 32) recordDrop();
             Queue.unsafeOffer(reports, {
               error: safeError,
               properties,
               webContentsId,
               revision: policy.revision,
             });
+          }
         };
         const attach = (contents: FailureWebContents) => {
           if (!active || attached.has(contents)) return;

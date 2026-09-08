@@ -16,6 +16,13 @@ It returns false for invalid input or a failed writer. Source timestamps are UTC
 ISO strings, not a cross-process ordering guarantee. Native stdout RPC remains
 separate; `makeLineDecoder` handles diagnostic stderr/worker pipe framing.
 
+`@desktop/logging/renderer` installs the shared browser console and uncaught-error
+adapter. Like `/wire`, it has no Effect runtime dependency. DevTools receives
+sanitized records immediately; the asynchronous relay retains at most one active
+IPC invocation, counted inside the queue budget until it settles. A stalled relay
+pauses delivery and accounts for overflow without creating more pending calls.
+Failed deliveries emit one nonrecursive suppression notice after recovery.
+
 ## Shared limits
 
 Records and stream lines: 16 KiB UTF-8; nesting: 5; traversed values: 256;

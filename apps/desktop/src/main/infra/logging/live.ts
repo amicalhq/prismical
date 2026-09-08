@@ -33,12 +33,12 @@ export const resolveLogPaths = (
 /** Both snapshots are read synchronously on the main thread, so rotation cannot
  * run between them. Legacy text logs are explicitly excluded. */
 export function snapshotLogs(paths: ReturnType<typeof resolveLogPaths>) {
-  const notices: string[] = [];
+  const notices = new Set<string>();
   const runs = new Set<string>();
   const files: { name: string; content: string }[] = [];
   for (const file of [paths.current, paths.backup]) {
     if (!existsSync(file)) {
-      notices.push(`${path.basename(file)} is missing`);
+      notices.add(`${path.basename(file)} is missing`);
       continue;
     }
     const fd = openSync(file, 'r');
@@ -50,7 +50,7 @@ export function snapshotLogs(paths: ReturnType<typeof resolveLogPaths>) {
       const read = readSync(fd, buffer, 0, buffer.length, 0);
       content = buffer.subarray(0, read).toString('utf8');
       if (size > limit)
-        notices.push(`${path.basename(file)}: snapshot truncated at retained-size budget`);
+        notices.add(`${path.basename(file)}: snapshot truncated at retained-size budget`);
     } finally {
       closeSync(fd);
     }
@@ -58,18 +58,19 @@ export function snapshotLogs(paths: ReturnType<typeof resolveLogPaths>) {
     if (lines.at(-1) === '') lines.pop();
     else {
       lines.pop();
-      notices.push(`${path.basename(file)}: incomplete final line excluded`);
+      notices.add(`${path.basename(file)}: incomplete final line excluded`);
     }
     const accepted: string[] = [];
     for (const line of lines) {
       try {
+        if (Buffer.byteLength(line) > LIMITS.recordBytes) throw new Error();
         const record = parseRecord(JSON.parse(line), 'prismical');
         if (!record) throw new Error();
         if (runs.size < 128) runs.add(record.appRunId);
-        else if (!runs.has(record.appRunId)) notices.push('Run ID list truncated');
+        else if (!runs.has(record.appRunId)) notices.add('Run ID list truncated');
         accepted.push(formatJsonLine(record).trimEnd());
       } catch {
-        notices.push(`${path.basename(file)}: invalid record excluded`);
+        notices.add(`${path.basename(file)}: invalid record excluded`);
       }
     }
     files.push({
@@ -78,8 +79,8 @@ export function snapshotLogs(paths: ReturnType<typeof resolveLogPaths>) {
     });
   }
   if (existsSync(paths.legacy))
-    notices.push('Legacy text logs excluded because they predate the diagnostic privacy contract');
-  return { files, appRunIds: [...runs], notices: [...new Set(notices)] };
+    notices.add('Legacy text logs excluded because they predate the diagnostic privacy contract');
+  return { files, appRunIds: [...runs], notices: [...notices] };
 }
 
 /** Acquired before the larger application graph; it has no DB/auth/window dependencies. */

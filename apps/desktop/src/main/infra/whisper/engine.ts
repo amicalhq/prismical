@@ -141,7 +141,10 @@ export const makeWhisperEngineLive = (
       const config = yield* AppConfig;
       const logger = yield* MainLogger;
       const transport = yield* LoggingTransport;
-      const reportFailure = yield* makeProcessFailureReporter(yield* TelemetryService);
+      const reportFailure = yield* makeProcessFailureReporter(
+        yield* TelemetryService,
+        logger.scopedSync('whisper-engine')
+      );
       const log = logger.scoped('whisper-engine');
       const unsafeLog = logger.scopedSync('whisper-engine');
       const paths = options.paths ?? resolveWhisperWorkerPaths(config);

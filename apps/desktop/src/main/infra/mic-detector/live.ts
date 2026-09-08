@@ -57,7 +57,10 @@ export const MicActivityLive: Layer.Layer<
   Effect.gen(function* () {
     const logger = yield* MainLogger;
     const transport = yield* LoggingTransport;
-    const reportFailure = yield* makeProcessFailureReporter(yield* TelemetryService);
+    const reportFailure = yield* makeProcessFailureReporter(
+      yield* TelemetryService,
+      logger.scopedSync('mic-activity')
+    );
     const log = logger.scoped('mic-activity');
     const unsafeLog = logger.scopedSync('mic-activity');
     const latest = yield* SubscriptionRef.make<Option.Option<LatestMicActivity>>(Option.none());

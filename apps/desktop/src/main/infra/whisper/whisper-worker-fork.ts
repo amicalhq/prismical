@@ -87,16 +87,11 @@ const methods = {
     // Intel-only darwin-x64, where ggml Metal returns invalid transcripts.
     const gpuDecision = await resolveWhisperGpuDecision();
     logger.transcription.info('Whisper GPU policy resolved', {
-      context: { useGpu: gpuDecision.useGpu, reason: gpuDecision.reason },
+      context: { useGpu: gpuDecision.useGpu, platform: process.platform, arch: process.arch },
     });
 
     whisperInstance = new Whisper(modelPath, { gpu: gpuDecision.useGpu });
-    try {
-      await whisperInstance.load();
-    } catch (e) {
-      logger.transcription.error('Failed to load Whisper model:', { error: e });
-      throw e;
-    }
+    await whisperInstance.load();
     currentModelPath = modelPath;
     logger.transcription.info('Whisper model initialized');
   },

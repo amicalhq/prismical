@@ -1087,7 +1087,12 @@ export const RecordingServiceLive: Layer.Layer<
             outcome: Either.isLeft(captureExit) ? 'failure' : 'success',
             durationMs: Number((yield* Clock.currentTimeNanos) - attemptStarted) / 1_000_000,
             audioDurationMs: mediaDurationMs(stoppingSamples),
-            ...(Either.isLeft(captureExit) ? { failedStage: 'capture' } : {}),
+            ...(Either.isLeft(captureExit)
+              ? {
+                  failedStage:
+                    captureExit.left._tag === 'RecoveryWriteError' ? 'storage' : 'capture',
+                }
+              : {}),
           },
           ...(Either.isLeft(captureExit) ? { error: captureExit.left } : {}),
         });

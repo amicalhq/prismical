@@ -1,3 +1,4 @@
+import { makeSuppressionCounter } from './suppression-counter';
 import os from 'node:os';
 import { Deferred, Effect, Layer, Stream, SubscriptionRef } from 'effect';
 import { AppModeService } from '../app-mode/service';
@@ -95,6 +96,15 @@ export const makeTelemetryServiceLive = (
         | undefined;
       let closed = false;
       const exceptions = makeExceptionLimiter();
+      const captured = new WeakSet<object>();
+      const recordExceptionDrop = yield* makeSuppressionCounter(
+        logger.scopedSync('telemetry'),
+        'Telemetry exception reports suppressed'
+      );
+      const recordQueueDrop = yield* makeSuppressionCounter(
+        logger.scopedSync('telemetry'),
+        'Telemetry events dropped at queue capacity'
+      );
       const bestEffort = <A>(operation: Effect.Effect<A>) =>
         operation.pipe(
           Effect.catchAllCause(() => log.warn('telemetry operation failed').pipe(Effect.asVoid))
@@ -113,7 +123,8 @@ export const makeTelemetryServiceLive = (
           // Choosing the default cloud mode does not restart the app. Resolve
           // identity only when its live choice/consent first enables telemetry.
           deviceId = yield* resolveDeviceId(machineId).pipe(
-            Effect.provideService(OperationalDb, db)
+            Effect.provideService(OperationalDb, db),
+            Effect.provideService(MainLogger, logger)
           );
           next = yield* snapshot;
         }
@@ -136,7 +147,8 @@ export const makeTelemetryServiceLive = (
                 const sink = makeSink(
                   key,
                   host,
-                  () => !closed && Effect.runSync(snapshot).key === next.key
+                  () => !closed && Effect.runSync(snapshot).key === next.key,
+                  recordQueueDrop
                 );
                 active = {
                   key: next.key,
@@ -208,6 +220,10 @@ export const makeTelemetryServiceLive = (
         expectedRevision
       ) =>
         send(source, expectedRevision, (sink, current, context) => {
+          if (error !== null && typeof error === 'object') {
+            if (captured.has(error)) return;
+            captured.add(error);
+          }
           const safeError = projectTelemetryException(error, source);
           const safeProperties = sanitizeTelemetryProperties(properties);
           if (
@@ -215,8 +231,10 @@ export const makeTelemetryServiceLive = (
               safeError,
               `${source}:${safeProperties.source ?? ''}:${safeProperties.error_context ?? ''}`
             )
-          )
+          ) {
+            recordExceptionDrop();
             return;
+          }
           sink.captureException(safeError, current.distinctId, {
             ...safeProperties,
             ...sanitizeTelemetryProperties({

@@ -1,4 +1,4 @@
-import { PostHog } from 'posthog-node';
+import { QueuedPostHog, TELEMETRY_QUEUE_CAPACITY } from './posthog-queue';
 import type { ProjectedTelemetryError } from '../../../shared/telemetry-exception';
 
 export interface SinkCapture {
@@ -26,33 +26,41 @@ export interface PostHogSink {
 export type MakePostHogSink = (
   apiKey: string,
   host: string,
-  isAllowed: () => boolean
+  isAllowed: () => boolean,
+  onQueueDrop: (count: number) => void
 ) => PostHogSink;
 
 /** A session owns its client. A discarded client can never send on re-enable. */
-export const makePostHogNodeSink: MakePostHogSink = (apiKey, host, isAllowed) => {
+export const makePostHogNodeSink: MakePostHogSink = (apiKey, host, isAllowed, onQueueDrop) => {
   let discarded = false;
   const abort = new AbortController();
   const allowed = () => !discarded && isAllowed();
-  const posthog = new PostHog(apiKey, {
-    host,
-    flushAt: 20,
-    flushInterval: 10_000,
-    maxQueueSize: 1_000,
-    requestTimeout: 3_000,
-    fetchRetryCount: 1,
-    disableGeoip: true,
-    enableExceptionAutocapture: false,
-    before_send: event => (allowed() ? event : null),
-    fetch: async (url, options) => {
-      // A successful local acknowledgement discards stale batches without retries.
-      if (!allowed()) return new Response('{}', { status: 200 });
-      const signal = options.signal
-        ? AbortSignal.any([abort.signal, options.signal])
-        : abort.signal;
-      return fetch(url, { ...options, signal });
+  const posthog = new QueuedPostHog(
+    apiKey,
+    {
+      host,
+      flushAt: 20,
+      flushInterval: 10_000,
+      maxQueueSize: TELEMETRY_QUEUE_CAPACITY,
+      requestTimeout: 3_000,
+      fetchRetryCount: 1,
+      disableGeoip: true,
+      enableExceptionAutocapture: false,
+      before_send: event => {
+        if (!allowed()) return null;
+        return event;
+      },
+      fetch: async (url, options) => {
+        // A successful local acknowledgement discards stale batches without retries.
+        if (!allowed()) return new Response('{}', { status: 200 });
+        const signal = options.signal
+          ? AbortSignal.any([abort.signal, options.signal])
+          : abort.signal;
+        return fetch(url, { ...options, signal });
+      },
     },
-  });
+    () => onQueueDrop(1)
+  );
   return {
     capture: args => {
       if (allowed()) posthog.capture(args);

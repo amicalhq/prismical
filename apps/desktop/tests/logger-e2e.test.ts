@@ -115,4 +115,21 @@ describe('real diagnostic persistence', () => {
     expect(snapshot.notices.join(' ')).toContain('invalid record excluded');
     expect(JSON.parse(snapshot.files[0]!.content).context.transcript).toBe('[redacted]');
   });
+  it('rejects oversized retained lines before parsing and consolidates notices', () => {
+    const paths = profile();
+    makeMainLogging('export-run').service.scopedSync('test').info('seed');
+    const seed = readFileSync(paths.current, 'utf8');
+    writeFileSync(paths.current, ('x'.repeat(17 * 1024) + '\n').repeat(20) + seed);
+    const parse = vi.spyOn(JSON, 'parse');
+    try {
+      const snapshot = snapshotLogs(paths);
+      expect(snapshot.files[0]!.content).toBe(seed);
+      expect(
+        snapshot.notices.filter(notice => notice.includes('invalid record excluded'))
+      ).toHaveLength(1);
+      expect(parse.mock.calls.every(([input]) => Buffer.byteLength(input) <= 16 * 1024)).toBe(true);
+    } finally {
+      parse.mockRestore();
+    }
+  });
 });

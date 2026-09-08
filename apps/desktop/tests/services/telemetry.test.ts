@@ -366,6 +366,30 @@ describe('TelemetryService policy and identity', () => {
       })
     )
   );
+  it.effect(
+    'deduplicates incident identity separately from repeat suppression and reports dropped counts',
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const { telemetry, sinks, logger } = yield* setup({ initial: signedIn() });
+          const sameIncident = new Error('incident');
+          yield* telemetry.captureException(sameIncident);
+          yield* telemetry.captureException(sameIncident);
+          assert.lengthOf(sinks[0]!.exceptions, 1);
+          for (let i = 0; i < 4; i++) {
+            const nextIncident = new Error('incident');
+            nextIncident.stack = sameIncident.stack;
+            yield* telemetry.captureException(nextIncident);
+          }
+          assert.lengthOf(sinks[0]!.exceptions, 3);
+          yield* TestClock.adjust('1 second');
+          assert.include(
+            logger.find(entry => entry.message === 'Telemetry exception reports suppressed')?.data,
+            { count: 2 }
+          );
+        })
+      )
+  );
   it.effect('product outcomes are not rate limited', () =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -568,6 +592,13 @@ describe('device fallback and lifecycle', () => {
         const ephemeral = yield* setup({ preference: true, machineId: unavailable, failDb: true });
         yield* ephemeral.telemetry.capture('app_launch');
         assert.match(ephemeral.sinks[0]!.captures[0]!.distinctId, /^[0-9a-f-]{36}$/);
+        assert.lengthOf(
+          ephemeral.logger.entries.filter(
+            entry =>
+              entry.message === 'Persistent device identity unavailable; using temporary identity'
+          ),
+          1
+        );
       })
     )
   );

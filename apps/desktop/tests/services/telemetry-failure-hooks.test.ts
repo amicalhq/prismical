@@ -35,6 +35,7 @@ const fixture = () => ({
     [4, 'float-note'],
   ]),
   failTelemetry: false,
+  stallTelemetry: false,
   captureAttempts: 0,
 });
 
@@ -77,8 +78,8 @@ const withHooks = (
               Effect.sync(() => {
                 f.captureAttempts++;
                 if (f.failTelemetry) throw new Error('SDK failed');
-                f.reports.push({ error, properties, source, revision });
-              }),
+                if (!f.stallTelemetry) f.reports.push({ error, properties, source, revision });
+              }).pipe(Effect.zipRight(f.stallTelemetry ? Effect.never : Effect.void)),
           }),
           Effect.provideService(WindowRegistry, {
             identityForWebContents: id =>
@@ -229,5 +230,19 @@ describe('scoped desktop failure hooks', () => {
       expect(f.logger.entries).toHaveLength(2);
       expect(f.reports[0]?.properties?.reason).toBe('oom');
     });
+  });
+  it('counts sliding-queue overflow even when no later failure arrives', async () => {
+    const f = fixture();
+    f.stallTelemetry = true;
+    await withHooks(f, async () => {
+      const fail = () =>
+        f.app.emit('child-process-gone', {}, { reason: 'crashed', exitCode: 1, type: 'GPU' });
+      fail();
+      await vi.waitFor(() => expect(f.captureAttempts).toBe(1));
+      for (let i = 0; i < 40; i++) fail();
+    });
+    expect(
+      f.logger.find(entry => entry.message === 'Queued process failure reports suppressed')?.data
+    ).toEqual({ count: 8 });
   });
 });

@@ -126,6 +126,7 @@ export function normalizeError(input: unknown): LogError {
     return {
       name,
       message,
+      ...(field(value, 'truncated') === true ? { truncated: true as const } : {}),
       ...(tag ? { tag } : {}),
       ...(typeof rawStack === 'string' ? { stack: sanitizeText(rawStack, LIMITS.stackChars) } : {}),
       ...(label(code)
@@ -228,7 +229,7 @@ export function parseWire(input: unknown): LogWire | undefined {
     (context === null || typeof context !== 'object' || Array.isArray(context))
   )
     return undefined;
-  return makeWire(
+  const wire = makeWire(
     level,
     scope,
     message,
@@ -238,6 +239,7 @@ export function parseWire(input: unknown): LogWire | undefined {
     },
     timestamp
   );
+  return field(input, 'truncated') === true ? { ...wire, truncated: true } : wire;
 }
 
 export function makeRecord(wire: LogWire, origin: LogOrigin, source: LogSource): LogRecord {

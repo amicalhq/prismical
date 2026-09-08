@@ -392,3 +392,20 @@ test('oversized fragments and flood batches drain with accurate drop accounting'
   assert.ok(bytes.lines.length < LIMITS.queueRecords);
   assert.equal(bytes.lines.length + bytes.dropped, 128);
 });
+
+test('truncation evidence survives wire and retained-record reprojection', () => {
+  const wire = makeWire('error', 'fixture', 'Operation failed', {
+    context: { values: Array(32).fill('x'.repeat(2048)) },
+    error: new AggregateError(
+      Array.from({ length: 4 }, () => new Error('failure')),
+      'aggregate'
+    ),
+  });
+  assert.equal(wire.truncated, true);
+  assert.equal(wire.error?.truncated, true);
+  const relayed = parseWire(JSON.parse(JSON.stringify(wire)))!;
+  const exported = parseRecord(makeRecord(relayed, origin, source), origin.app)!;
+  assert.equal(exported.truncated, true);
+  assert.equal(exported.error?.truncated, true);
+  assert.equal(exported.error?.causes?.length, 3);
+});

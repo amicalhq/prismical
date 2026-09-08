@@ -84,7 +84,7 @@ export const CaptureLive: Layer.Layer<
 
     const capture: CaptureApi['capture'] = (mode, options) =>
       Effect.gen(function* () {
-        const reportFailure = yield* makeProcessFailureReporter(telemetry);
+        const reportFailure = yield* makeProcessFailureReporter(telemetry, unsafeLog);
         const binaryPath = yield* Effect.try({
           try: () => assertAudioCaptureBinaryExists(),
           catch: cause => new CaptureSpawnError({ mode, reason: errorMessage(cause) }),

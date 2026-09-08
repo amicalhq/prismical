@@ -9,7 +9,12 @@ describe('PostHog SDK transport boundary', () => {
   it('sends safe exception frames with their originating renderer chunk IDs', async () => {
     const transport = vi.fn(async () => new Response('{}', { status: 200 }));
     vi.stubGlobal('fetch', transport);
-    const sink = makePostHogNodeSink('phc_test', 'https://telemetry.test', () => true);
+    const sink = makePostHogNodeSink(
+      'phc_test',
+      'https://telemetry.test',
+      () => true,
+      () => {}
+    );
     const chunk = 'ba4fcfa8-0c96-462c-819a-19877cdbd7cc';
     const error = projectTelemetryException(
       {
@@ -54,7 +59,12 @@ describe('PostHog SDK transport boundary', () => {
   it('flushes main and renderer events with explicit identities through the real SDK', async () => {
     const transport = vi.fn(async () => new Response('{}', { status: 200 }));
     vi.stubGlobal('fetch', transport);
-    const sink = makePostHogNodeSink('phc_test', 'https://telemetry.test', () => true);
+    const sink = makePostHogNodeSink(
+      'phc_test',
+      'https://telemetry.test',
+      () => true,
+      () => {}
+    );
     sink.capture({
       distinctId: 'account-a',
       event: 'recording_completed',
@@ -79,7 +89,12 @@ describe('PostHog SDK transport boundary', () => {
     const transport = vi.fn(async () => new Response('{}', { status: 200 }));
     vi.stubGlobal('fetch', transport);
     let enabled = true;
-    const sink = makePostHogNodeSink('phc_test', 'https://telemetry.test', () => enabled);
+    const sink = makePostHogNodeSink(
+      'phc_test',
+      'https://telemetry.test',
+      () => enabled,
+      () => {}
+    );
     sink.capture({ distinctId: 'account-a', event: 'note_created' });
     await new Promise<void>(resolve => setImmediate(resolve));
     enabled = false;
@@ -89,11 +104,41 @@ describe('PostHog SDK transport boundary', () => {
   it('discard permanently invalidates an old client even if telemetry is re-enabled', async () => {
     const transport = vi.fn(async () => new Response('{}', { status: 200 }));
     vi.stubGlobal('fetch', transport);
-    const sink = makePostHogNodeSink('phc_test', 'https://telemetry.test', () => true);
+    const sink = makePostHogNodeSink(
+      'phc_test',
+      'https://telemetry.test',
+      () => true,
+      () => {}
+    );
     sink.capture({ distinctId: 'account-a', event: 'note_created' });
     sink.discard();
     sink.capture({ distinctId: 'account-a', event: 'late_event' });
     await new Promise<void>(resolve => setImmediate(resolve));
     expect(transport).not.toHaveBeenCalled();
+  });
+  it('counts SDK evictions after asynchronous preparation of a burst', async () => {
+    let firstIndex!: number;
+    const transport = vi.fn(async (_url: unknown, options: RequestInit) => {
+      const body = JSON.parse(
+        gunzipSync(Buffer.from(await new Response(options.body).arrayBuffer())).toString()
+      );
+      firstIndex = body.batch[0].properties.index;
+      return new Promise<Response>((_resolve, reject) => {
+        const abort = () => reject(new DOMException('Aborted', 'AbortError'));
+        if (options.signal?.aborted) abort();
+        else options.signal?.addEventListener('abort', abort, { once: true });
+      });
+    });
+    vi.stubGlobal('fetch', transport);
+    const dropped = vi.fn();
+    const sink = makePostHogNodeSink('phc_test', 'https://telemetry.test', () => true, dropped);
+    try {
+      for (let index = 0; index < 1100; index++)
+        sink.capture({ distinctId: 'account-a', event: 'burst', properties: { index } });
+      await vi.waitFor(() => expect(firstIndex).toBe(100));
+    } finally {
+      sink.discard();
+    }
+    expect(dropped.mock.calls.reduce((total, [count]) => total + count, 0)).toBe(100);
   });
 });

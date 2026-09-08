@@ -8,6 +8,7 @@ afterEach(() => {
   cleanup?.();
   cleanup = undefined;
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 const config: RendererLoggingConfig = {
   appVersion: 'test',
@@ -65,5 +66,23 @@ describe('renderer diagnostic boundary', () => {
     console.error('Renderer failed', error);
     window.dispatchEvent(new ErrorEvent('error', { error }));
     await vi.waitFor(() => expect(write).toHaveBeenCalledOnce());
+  });
+  it('keeps stalled calls in the queue bound while DevTools stays live', async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    let resolve!: () => void;
+    const pending = new Promise<void>(done => {
+      resolve = done;
+    });
+    const write = vi.fn(async (_frame: unknown) => {}).mockImplementationOnce(() => pending);
+    cleanup = installRendererLogging({ getConfig: async () => config, write });
+    await Promise.resolve();
+    for (let i = 0; i < 300; i++) console.warn('Queued diagnostic');
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(write).toHaveBeenCalledOnce();
+    expect(warn).toHaveBeenCalledTimes(300);
+    resolve();
+    await vi.waitFor(() => expect(write).toHaveBeenCalledTimes(129));
+    expect(write.mock.calls.at(-1)?.[0]).toMatchObject({ context: { count: 172 } });
   });
 });

@@ -9,7 +9,8 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./wire": "./src/wire.ts"
+    "./wire": "./src/wire.ts",
+    "./renderer": "./src/renderer.ts"
   },
   "scripts": {
     "test": "tsx --test tests/*.test.ts",
