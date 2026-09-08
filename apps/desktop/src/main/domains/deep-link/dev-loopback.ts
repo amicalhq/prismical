@@ -67,14 +67,14 @@ export const runDevLoopbackOAuthServer: Effect.Effect<
     });
     server.once('error', (error: NodeJS.ErrnoException) => {
       forkHere(
-        log.warn('dev loopback oauth server failed to listen', {
+        log.warn('dev loopback oauth server failed to listen', { context: {
           code: error.code,
           port,
-        })
+        } })
       );
     });
     server.listen(port, '127.0.0.1', () => {
-      forkHere(log.info('dev loopback oauth server listening', { port }));
+      forkHere(log.info('dev loopback oauth server listening', { context: { port } }));
     });
     return Effect.sync(() => {
       server.close();

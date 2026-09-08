@@ -52,7 +52,7 @@ export const bootProgram: Effect.Effect<void, WindowError, BootServices | Scope.
     if (pendingReset.applied !== null) {
       yield* electronApp.clearRendererStorage.pipe(
         Effect.catchAllDefect(defect =>
-          log.error('renderer storage clear after reset failed', { defect: String(defect) })
+          log.error('renderer storage clear after reset failed', { error: defect })
         ),
         Effect.zipRight(log.warn('renderer storage cleared after reset'))
       );

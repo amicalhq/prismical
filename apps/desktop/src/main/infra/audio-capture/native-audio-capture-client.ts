@@ -1,38 +1,54 @@
-import { EventEmitter } from "node:events";
-import { spawn, type ChildProcessByStdio } from "node:child_process";
-import type { Readable, Writable } from "node:stream";
-import { logger } from "../../logger";
-import type { AudioFrame, MeetingCaptureMode } from "@/types/meeting";
-import { assertAudioCaptureBinaryExists } from "./audio-capture-binary";
-import {
-  createPacketReader,
-  parseAecMode,
-  type PacketReader,
-} from "./packet-protocol";
+import { EventEmitter } from 'node:events';
+import { spawn, type ChildProcessByStdio } from 'node:child_process';
+import type { Readable, Writable } from 'node:stream';
+import type { SyncScopedLog, LoggingTransportService } from '../logging/service';
+import { makeProcessDiagnostics } from '../logging/process-diagnostics';
+import type { AudioFrame, MeetingCaptureMode } from '@/types/meeting';
+import { assertAudioCaptureBinaryExists } from './audio-capture-binary';
+import { createPacketReader, parseAecMode, type PacketReader } from './packet-protocol';
 
 interface NativeAudioCaptureEvents {
   frame: (frame: AudioFrame) => void;
-  "aec-mode": (mode: string) => void;
+  'aec-mode': (mode: string) => void;
   error: (error: Error) => void;
   exit: (code: number | null, signal: NodeJS.Signals | null) => void;
 }
 
 export class NativeAudioCaptureClient extends EventEmitter {
-  private process: ChildProcessByStdio<Writable, Readable, Readable> | null =
-    null;
+  private process: ChildProcessByStdio<Writable, Readable, Readable> | null = null;
   private reader: PacketReader = createPacketReader();
-  private stderrPending = "";
+  private stopping = false;
+  private diagnostics: ReturnType<typeof makeProcessDiagnostics>;
+  constructor(
+    private readonly log: SyncScopedLog,
+    private readonly transport: LoggingTransportService
+  ) {
+    super();
+    this.diagnostics = this.makeDiagnostics();
+  }
+  private makeDiagnostics() {
+    return makeProcessDiagnostics(
+      this.transport,
+      () => ({ runtime: 'native', pid: this.process?.pid ?? process.pid }),
+      'audio-capture',
+      line => {
+        const mode = parseAecMode(line);
+        if (mode) this.emit('aec-mode', mode);
+        return mode !== null && !line.startsWith('{');
+      }
+    );
+  }
 
   on<U extends keyof NativeAudioCaptureEvents>(
     event: U,
-    listener: NativeAudioCaptureEvents[U],
+    listener: NativeAudioCaptureEvents[U]
   ): this {
     return super.on(event, listener);
   }
 
   off<U extends keyof NativeAudioCaptureEvents>(
     event: U,
-    listener: NativeAudioCaptureEvents[U],
+    listener: NativeAudioCaptureEvents[U]
   ): this {
     return super.off(event, listener);
   }
@@ -50,68 +66,60 @@ export class NativeAudioCaptureClient extends EventEmitter {
       debugArtifactsDir?: string;
       aecRenderHoldbackMs?: number;
       aecRenderWaitTimeoutMs?: number;
-    },
+    }
   ): Promise<void> {
     if (this.process) {
-      throw new Error("Native audio capture is already running.");
+      throw new Error('Native audio capture is already running.');
     }
 
     const binaryPath = assertAudioCaptureBinaryExists();
 
-    logger.audio.info("Starting native audio capture", {
-      binaryPath,
-      mode,
-      debugArtifactsDir: options?.debugArtifactsDir,
-      aecRenderHoldbackMs: options?.aecRenderHoldbackMs,
-      aecRenderWaitTimeoutMs: options?.aecRenderWaitTimeoutMs,
-    });
-
+    this.log.info('Starting native audio capture', { context: { mode } });
     this.reader = createPacketReader();
-    this.stderrPending = "";
-    const args = ["--mode", mode];
+    this.stopping = false;
+    this.diagnostics = this.makeDiagnostics();
+    const args = ['--mode', mode];
     if (options?.debugArtifactsDir) {
-      args.push("--debug-artifacts-dir", options.debugArtifactsDir);
+      args.push('--debug-artifacts-dir', options.debugArtifactsDir);
     }
     if (options?.aecRenderHoldbackMs != null) {
-      args.push(
-        "--aec-render-holdback-ms",
-        String(options.aecRenderHoldbackMs),
-      );
+      args.push('--aec-render-holdback-ms', String(options.aecRenderHoldbackMs));
     }
     if (options?.aecRenderWaitTimeoutMs != null) {
-      args.push(
-        "--aec-render-wait-timeout-ms",
-        String(options.aecRenderWaitTimeoutMs),
-      );
+      args.push('--aec-render-wait-timeout-ms', String(options.aecRenderWaitTimeoutMs));
     }
 
     const captureProcess = spawn(binaryPath, args, {
-      stdio: ["pipe", "pipe", "pipe"],
+      stdio: ['pipe', 'pipe', 'pipe'],
     });
     this.process = captureProcess;
 
-    captureProcess.stdin.on("error", (error) => {
-      logger.audio.warn("Native audio capture stdin error", {
-        error: error.message,
+    captureProcess.stdin.on('error', error => {
+      this.log.warn('Native audio capture stdin error', {
+        error,
       });
     });
 
-    captureProcess.stdout.on("data", (data: Buffer) => {
+    captureProcess.stdout.on('data', (data: Buffer) => {
       this.handleStdoutData(data);
     });
 
-    captureProcess.stderr.on("data", (data: Buffer) => {
+    captureProcess.stderr.on('data', (data: Buffer) => {
       this.handleStderrData(data);
     });
 
-    captureProcess.on("error", (error) => {
-      this.emit("error", error);
+    captureProcess.on('error', error => {
+      this.log.error('Native audio capture failed', { error });
+      this.emit('error', error);
     });
 
-    captureProcess.on("exit", (code, signal) => {
-      logger.audio.info("Native audio capture exited", { code, signal });
+    captureProcess.on('exit', (code, signal) => {
+      this.diagnostics.end();
+      this.log[this.stopping ? 'info' : 'error']('Native audio capture exited', {
+        context: { code, signal, expected: this.stopping },
+      });
       this.process = null;
-      this.emit("exit", code, signal);
+      this.emit('exit', code, signal);
     });
   }
 
@@ -121,50 +129,32 @@ export class NativeAudioCaptureClient extends EventEmitter {
     }
 
     const captureProcess = this.process;
-    await new Promise<void>((resolve) => {
+    this.stopping = true;
+    await new Promise<void>(resolve => {
       const timeout = setTimeout(() => {
-        captureProcess.kill("SIGKILL");
+        captureProcess.kill('SIGKILL');
       }, 1500);
 
-      captureProcess.once("exit", () => {
+      captureProcess.once('exit', () => {
         clearTimeout(timeout);
         resolve();
       });
 
-      if (process.platform === "win32") {
-        captureProcess.stdin.end("stop\n");
+      if (process.platform === 'win32') {
+        captureProcess.stdin.end('stop\n');
       } else {
-        captureProcess.kill("SIGTERM");
+        captureProcess.kill('SIGTERM');
       }
     });
   }
 
   private handleStdoutData(chunk: Buffer): void {
     for (const frame of this.reader.push(chunk)) {
-      this.emit("frame", frame);
+      this.emit('frame', frame);
     }
   }
 
   private handleStderrData(chunk: Buffer): void {
-    this.stderrPending += chunk.toString("utf8");
-    const lines = this.stderrPending.split(/\r?\n/);
-    this.stderrPending = lines.pop() ?? "";
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) {
-        continue;
-      }
-
-      logger.audio.info(trimmed);
-      this.maybeEmitAecMode(trimmed);
-    }
-  }
-
-  private maybeEmitAecMode(line: string): void {
-    const mode = parseAecMode(line);
-    if (mode) {
-      this.emit("aec-mode", mode);
-    }
+    this.diagnostics.push(chunk);
   }
 }

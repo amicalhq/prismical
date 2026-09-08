@@ -218,7 +218,7 @@ test.describe('local mode (seeded app:mode profile, no servers)', () => {
     // — nothing tripped the transport path validator, so it needed NO
     // relaxation for local mode. Rejections are warn-logged with the path.
     const mainLog = await readFile(
-      path.join(profileDir, 'logs', 'main.log'),
+      path.join(profileDir, 'logs', 'main.jsonl'),
       'utf8'
     ).catch(() => '');
     expect(mainLog.length).toBeGreaterThan(0);
@@ -388,7 +388,7 @@ test.describe('local mode (seeded app:mode profile, no servers)', () => {
     expect(dbBytes.includes(AI_KEY, 0, 'utf8')).toBe(false);
     const custody = Buffer.from(`e2e:${AI_KEY}`, 'utf8').toString('base64');
     expect(dbBytes.includes(custody, 0, 'utf8')).toBe(true);
-    const mainLog = await readFile(path.join(kept, 'logs', 'main.log'), 'utf8');
+    const mainLog = await readFile(path.join(kept, 'logs', 'main.jsonl'), 'utf8');
     expect(mainLog.length).toBeGreaterThan(0);
     expect(mainLog).not.toContain(AI_KEY);
   });
@@ -459,7 +459,7 @@ test.describe('local mode (seeded app:mode profile, no servers)', () => {
     await page.getByRole('button', { name: 'Name with AI' }).click();
     await expect(page.getByLabel('Note title')).toHaveValue('Product launch planning').catch(
       async error => {
-        const log = await readFile(path.join(launched!.userDataDir, 'logs', 'main.log'), 'utf8');
+        const log = await readFile(path.join(launched!.userDataDir, 'logs', 'main.jsonl'), 'utf8');
         const lines = log.split('\n');
         const picked = new Set<number>();
         lines.forEach((line, index) => {

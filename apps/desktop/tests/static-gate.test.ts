@@ -16,7 +16,6 @@ const EXCLUDED = [
   path.join(MAIN_ROOT, 'infra/mic-detector'),
   path.join(MAIN_ROOT, 'infra/whisper'),
   path.join(MAIN_ROOT, 'infra/audio'),
-  path.join(MAIN_ROOT, 'logger.ts'),
 ];
 
 const PATTERNS: Array<{ name: string; regex: RegExp }> = [
@@ -35,6 +34,14 @@ function listFiles(dir: string): string[] {
 }
 
 describe('static gate (main-process architecture rules)', () => {
+  it('keeps raw logging imports inside the persistence boundary', () => {
+    const rawImports = listFiles(MAIN_ROOT).filter(file =>
+      /from\s+['"]electron-log(?:\/[^'"]*)?['"]/.test(readFileSync(file, 'utf8'))
+    ).map(file => path.relative(MAIN_ROOT, file));
+    expect(rawImports).toEqual(['infra/logging/live.ts']);
+    expect(listFiles(MAIN_ROOT).some(file => /scopedUnsafe/.test(readFileSync(file, 'utf8')))).toBe(false);
+  });
+
   it('src/main has no singletons, raw timers, or ad-hoc emitters', () => {
     const files = listFiles(MAIN_ROOT).filter(
       file => !EXCLUDED.some(excluded => file === excluded || file.startsWith(excluded + path.sep))

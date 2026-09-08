@@ -7,6 +7,7 @@
  * (search.ts); `get_note` serves the markdown projection; ACL reduces to
  * "not trashed, not deleted". A conversation id persists the turn like core.
  */
+import type { LogMetadata } from '../../infra/logging/service';
 import {
   AI_ERROR_CODES,
   describeAiError,
@@ -54,7 +55,7 @@ export interface AskDeps {
   readonly db: LocalDb;
   readonly client: Database.Database;
   readonly ai: LocalAiPort;
-  readonly log: (message: string, data?: unknown) => void;
+  readonly log: (message: string, data?: LogMetadata['context']) => void;
 }
 
 // ── GET /me/ask/conversations ──────────────────────────────────────────────

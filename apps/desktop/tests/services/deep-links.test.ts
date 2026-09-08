@@ -153,8 +153,8 @@ describe('DeepLinks', () => {
   );
 
   // Log custody: malformed OAuth callbacks route to the Unknown
-  // arm CARRYING real code/state values — the rejection log must hold param
-  // names only, never the values (extends the secret-safe log discipline).
+  // arm CARRYING real code/state values — the shared diagnostic sanitizer
+  // removes the query; rejection reasons remain available for diagnosis.
   it.effect('consumer: a malformed callback with duplicated code/state logs NO secret values', () =>
     Effect.gen(function* () {
       const { layer, logger } = build();
@@ -182,15 +182,15 @@ describe('DeepLinks', () => {
 
       const rejections = logger.entries.filter(e => e.message === 'deep link rejected');
       assert.strictEqual(rejections.length, 2, 'both malformed callbacks rejected+logged');
-      // Param NAMES survive (diagnosable)…
+      // The route and rejection reason survive; the query is removed.
       assert.strictEqual(
         (rejections[0].data as { url?: string }).url,
-        'prismical://oauth/callback?code,state'
+        'prismical://oauth/callback[redacted]'
       );
       assert.strictEqual((rejections[0].data as { reason?: string }).reason, 'param-count');
       assert.strictEqual(
         (rejections[1].data as { url?: string }).url,
-        'prismical://oauth/callback?error,code,state'
+        'prismical://oauth/callback[redacted]'
       );
       // …the values never do — across EVERYTHING the logger captured.
       const dump = JSON.stringify(logger.entries);

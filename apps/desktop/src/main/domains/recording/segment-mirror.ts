@@ -57,9 +57,11 @@ export const mirrorSegmentsToCore = (
       });
       if ('ok' in res && res.status >= 200 && res.status < 300) continue;
       yield* log.warn('segment mirror to core failed — retained for recovery', {
-        recordingId,
-        segmentOrder: segment.segmentOrder,
-        ...('ok' in res ? { status: res.status } : { error: res.error.code }),
+        context: {
+          recordingId,
+          segmentOrder: segment.segmentOrder,
+          ...('ok' in res ? { status: res.status } : { error: res.error.code }),
+        },
       });
       return 'ok' in res
         ? {

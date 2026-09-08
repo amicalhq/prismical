@@ -1,15 +1,18 @@
-import { spawn, type ChildProcessByStdio } from "node:child_process";
-import type { Readable, Writable } from "node:stream";
-import { Deferred, Duration, Effect, Layer, Option, Queue } from "effect";
-import type { AudioFrame, MeetingCaptureMode } from "@/types/meeting";
-import { assertAudioCaptureBinaryExists } from "../../../infra/audio-capture/audio-capture-binary";
+import { spawn, type ChildProcessByStdio } from 'node:child_process';
+import type { Readable, Writable } from 'node:stream';
+import { Deferred, Duration, Effect, Layer, Option, Queue } from 'effect';
+import { makeProcessDiagnostics } from '../../../infra/logging/process-diagnostics';
+import type { AudioFrame, MeetingCaptureMode } from '@/types/meeting';
+import { assertAudioCaptureBinaryExists } from '../../../infra/audio-capture/audio-capture-binary';
 import {
   createPacketReader,
   parseAecMode,
   parseMicEvent,
-} from "../../../infra/audio-capture/packet-protocol";
-import { AppConfig } from "../../../infra/config/service";
-import { MainLogger } from "../../../infra/logging/service";
+} from '../../../infra/audio-capture/packet-protocol';
+import { TelemetryService } from '../../telemetry/service';
+import { makeProcessFailureReporter } from '../../telemetry/process-failure-reporter';
+import { AppConfig } from '../../../infra/config/service';
+import { MainLogger, LoggingTransport } from '../../../infra/logging/service';
 import {
   Capture,
   CaptureCrashError,
@@ -21,7 +24,7 @@ import {
   type CaptureOptions,
   type CaptureRuntimeError,
   type CaptureSession,
-} from "./service";
+} from './service';
 
 /**
  * Bounded frame buffer (drop-oldest). ~1.7 s of headroom at the dual-mode worst
@@ -41,47 +44,50 @@ const errorMessage = (cause: unknown): string =>
 const buildArgs = (
   mode: MeetingCaptureMode,
   platform: NodeJS.Platform,
-  options?: CaptureOptions,
+  options?: CaptureOptions
 ): string[] => {
-  const args = ["--mode", mode];
+  const args = ['--mode', mode];
   if (options?.debugArtifactsDir) {
-    args.push("--debug-artifacts-dir", options.debugArtifactsDir);
+    args.push('--debug-artifacts-dir', options.debugArtifactsDir);
   }
   if (options?.aecRenderHoldbackMs != null) {
-    args.push("--aec-render-holdback-ms", String(options.aecRenderHoldbackMs));
+    args.push('--aec-render-holdback-ms', String(options.aecRenderHoldbackMs));
   }
   if (options?.aecRenderWaitTimeoutMs != null) {
-    args.push(
-      "--aec-render-wait-timeout-ms",
-      String(options.aecRenderWaitTimeoutMs),
-    );
+    args.push('--aec-render-wait-timeout-ms', String(options.aecRenderWaitTimeoutMs));
   }
   if (
-    (platform === "darwin" || platform === "win32") &&
-    mode !== "system" &&
+    (platform === 'darwin' || platform === 'win32') &&
+    mode !== 'system' &&
     options?.micDeviceUid
   ) {
-    args.push("--mic-device", options.micDeviceUid);
+    args.push('--mic-device', options.micDeviceUid);
   }
   return args;
 };
 
 type CaptureChild = ChildProcessByStdio<Writable, Readable, Readable>;
 
-export const CaptureLive: Layer.Layer<Capture, never, MainLogger | AppConfig> = Layer.effect(
+export const CaptureLive: Layer.Layer<
+  Capture,
+  never,
+  MainLogger | LoggingTransport | AppConfig | TelemetryService
+> = Layer.effect(
   Capture,
   Effect.gen(function* () {
     const logger = yield* MainLogger;
     const config = yield* AppConfig;
-    const log = logger.scoped("capture");
-    const unsafeLog = logger.scopedUnsafe("capture");
+    const transport = yield* LoggingTransport;
+    const telemetry = yield* TelemetryService;
+    const log = logger.scoped('capture');
+    const unsafeLog = logger.scopedSync('capture');
 
-    const capture: CaptureApi["capture"] = (mode, options) =>
+    const capture: CaptureApi['capture'] = (mode, options) =>
       Effect.gen(function* () {
+        const reportFailure = yield* makeProcessFailureReporter(telemetry);
         const binaryPath = yield* Effect.try({
           try: () => assertAudioCaptureBinaryExists(),
-          catch: (cause) =>
-            new CaptureSpawnError({ mode, reason: errorMessage(cause) }),
+          catch: cause => new CaptureSpawnError({ mode, reason: errorMessage(cause) }),
         });
 
         const frames = yield* Queue.sliding<AudioFrame>(FRAME_QUEUE_CAPACITY);
@@ -97,7 +103,7 @@ export const CaptureLive: Layer.Layer<Capture, never, MainLogger | AppConfig> = 
         const reader = createPacketReader();
         let aecMode = Option.none<string>();
         let dropped = 0;
-        let stderrPending = "";
+        let childPid = process.pid;
         let stopping = false;
         let dead = false;
 
@@ -109,14 +115,13 @@ export const CaptureLive: Layer.Layer<Capture, never, MainLogger | AppConfig> = 
           } catch (cause) {
             dead = true;
             const reason = errorMessage(cause);
-            unsafeLog.warn("malformed capture packet — tearing down", {
-              mode,
-              reason,
+            const error = new CaptureProtocolError({ reason });
+            reportFailure(error);
+            unsafeLog.error('malformed capture packet — tearing down', {
+              context: { mode },
+              error,
             });
-            Deferred.unsafeDone(
-              terminated,
-              Effect.fail(new CaptureProtocolError({ reason })),
-            );
+            Deferred.unsafeDone(terminated, Effect.fail(error));
             return;
           }
           for (const frame of decoded) {
@@ -129,62 +134,58 @@ export const CaptureLive: Layer.Layer<Capture, never, MainLogger | AppConfig> = 
           }
         };
 
-        const onStderr = (chunk: Buffer): void => {
-          stderrPending += chunk.toString("utf8");
-          const lines = stderrPending.split(/\r?\n/);
-          stderrPending = lines.pop() ?? "";
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed) continue;
-            const observed = parseAecMode(trimmed);
+        const diagnostics = makeProcessDiagnostics(
+          transport,
+          () => ({ runtime: 'native', pid: childPid }),
+          'audio-capture',
+          line => {
+            const observed = parseAecMode(line);
             if (observed) {
               aecMode = Option.some(observed);
+              return !line.startsWith('{');
             }
-            const micEvent = parseMicEvent(trimmed);
+            const micEvent = parseMicEvent(line);
             if (micEvent) {
               Queue.unsafeOffer(micEvents, micEvent);
-            } else if (trimmed.startsWith("mic-event=")) {
-              unsafeLog.warn("ignoring invalid mic event", { line: trimmed });
+              return true;
             }
+            if (line.startsWith('mic-event=')) {
+              unsafeLog.warn('Ignoring invalid microphone control event');
+              return true;
+            }
+            return false;
           }
-        };
+        );
+        const onStderr = diagnostics.push;
 
         const onStdinError = (error: Error): void => {
-          unsafeLog.warn("capture child stdin error", { reason: error.message });
+          unsafeLog.warn('capture child stdin error', { error });
         };
 
         const onError = (error: Error): void => {
-          if (dead) return;
+          if (dead || stopping) return;
           dead = true;
-          unsafeLog.warn("capture child errored", {
-            mode,
-            reason: error.message,
-          });
+          reportFailure(error);
+          unsafeLog.error('capture child errored', { context: { mode }, error });
           Deferred.unsafeDone(
             terminated,
-            Effect.fail(new CaptureCrashError({ reason: error.message })),
+            Effect.fail(new CaptureCrashError({ reason: error.message }))
           );
         };
 
-        const onExit = (
-          code: number | null,
-          signal: NodeJS.Signals | null,
-        ): void => {
+        const onExit = (code: number | null, signal: NodeJS.Signals | null): void => {
+          diagnostics.end();
           Deferred.unsafeDone(exited, Effect.void);
           if (dead || stopping) {
             Deferred.unsafeDone(terminated, Effect.void);
             return;
           }
           dead = true;
-          unsafeLog.warn("capture child exited unexpectedly", {
-            mode,
-            code,
-            signal,
+          reportFailure(new CaptureExitError({ code, signal }), { exit_code: code });
+          unsafeLog.error('capture child exited unexpectedly', {
+            context: { mode, code, signal },
           });
-          Deferred.unsafeDone(
-            terminated,
-            Effect.fail(new CaptureExitError({ code, signal })),
-          );
+          Deferred.unsafeDone(terminated, Effect.fail(new CaptureExitError({ code, signal })));
         };
 
         const release = (proc: CaptureChild): Effect.Effect<void> =>
@@ -192,19 +193,19 @@ export const CaptureLive: Layer.Layer<Capture, never, MainLogger | AppConfig> = 
             // Detach the data edges first so nothing enqueues mid-teardown; keep
             // `exit` until the child is reaped.
             yield* Effect.sync(() => {
-              proc.stdout.removeListener("data", onStdout);
-              proc.stderr.removeListener("data", onStderr);
-              proc.removeListener("error", onError);
+              proc.stdout.removeListener('data', onStdout);
+              proc.stderr.removeListener('data', onStderr);
+              proc.removeListener('error', onError);
             });
             stopping = true;
 
             const alreadyExited = yield* Deferred.isDone(exited);
             if (!alreadyExited) {
               yield* Effect.sync(() => {
-                if (config.platform === "win32") {
-                  proc.stdin.end("stop\n");
+                if (config.platform === 'win32') {
+                  proc.stdin.end('stop\n');
                 } else {
-                  proc.kill("SIGTERM");
+                  proc.kill('SIGTERM');
                 }
               });
               // Wait up to the grace for a clean exit, then escalate to SIGKILL.
@@ -213,11 +214,11 @@ export const CaptureLive: Layer.Layer<Capture, never, MainLogger | AppConfig> = 
               // pending await and teardown would hang.
               const graceful = yield* Deferred.await(exited).pipe(
                 Effect.timeoutOption(TERMINATION_GRACE),
-                Effect.interruptible,
+                Effect.interruptible
               );
               if (Option.isNone(graceful)) {
                 yield* Effect.sync(() => {
-                  proc.kill("SIGKILL");
+                  proc.kill('SIGKILL');
                 });
                 // A SIGKILL'd process is normally reaped in milliseconds, but one
                 // wedged in an uninterruptible kernel wait (D-state — e.g. a stuck
@@ -227,40 +228,43 @@ export const CaptureLive: Layer.Layer<Capture, never, MainLogger | AppConfig> = 
                 // give up and detach regardless once the grace elapses.
                 yield* Deferred.await(exited).pipe(
                   Effect.timeoutOption(TERMINATION_GRACE),
-                  Effect.interruptible,
+                  Effect.interruptible
                 );
               }
             }
 
             yield* Effect.sync(() => {
-              proc.stdin.removeListener("error", onStdinError);
-              proc.removeListener("exit", onExit);
+              proc.stdin.removeListener('error', onStdinError);
+              proc.removeListener('exit', onExit);
             });
             yield* Queue.shutdown(frames);
             yield* Queue.shutdown(micEvents);
-            yield* log.info("capture child reaped", { mode });
+            yield* log.info('capture child reaped', {
+              context: { mode, droppedFrames: dropped },
+            });
           });
 
         const proc = yield* Effect.acquireRelease(
           Effect.try({
             try: (): CaptureChild => {
               const proc = spawn(binaryPath, buildArgs(mode, config.platform, options), {
-                stdio: ["pipe", "pipe", "pipe"],
+                stdio: ['pipe', 'pipe', 'pipe'],
+                env: { ...process.env, DESKTOP_APP_RUN_ID: logger.appRunId },
               }) as CaptureChild;
-              proc.stdin.on("error", onStdinError);
-              proc.stdout.on("data", onStdout);
-              proc.stderr.on("data", onStderr);
-              proc.on("error", onError);
-              proc.on("exit", onExit);
+              childPid = proc.pid ?? process.pid;
+              proc.stdin.on('error', onStdinError);
+              proc.stdout.on('data', onStdout);
+              proc.stderr.on('data', onStderr);
+              proc.on('error', onError);
+              proc.on('exit', onExit);
               return proc;
             },
-            catch: (cause) =>
-              new CaptureSpawnError({ mode, reason: errorMessage(cause) }),
+            catch: cause => new CaptureSpawnError({ mode, reason: errorMessage(cause) }),
           }),
-          (proc) => release(proc),
+          proc => release(proc)
         );
 
-        yield* log.info("capture child spawned", { mode });
+        yield* log.info('capture child spawned', { context: { mode } });
 
         const session: CaptureSession = {
           mode,
@@ -270,11 +274,12 @@ export const CaptureLive: Layer.Layer<Capture, never, MainLogger | AppConfig> = 
           sendMicCommand: command =>
             Effect.sync(() => {
               if (
-                (config.platform !== "darwin" && config.platform !== "win32") ||
-                mode === "system" ||
+                (config.platform !== 'darwin' && config.platform !== 'win32') ||
+                mode === 'system' ||
                 stopping ||
                 dead
-              ) return;
+              )
+                return;
               proc.stdin.write(`${JSON.stringify(command)}\n`);
             }),
           droppedFrames: Effect.sync(() => dropped),
@@ -284,5 +289,5 @@ export const CaptureLive: Layer.Layer<Capture, never, MainLogger | AppConfig> = 
       });
 
     return { capture };
-  }),
+  })
 );

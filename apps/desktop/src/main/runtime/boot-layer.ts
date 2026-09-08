@@ -74,7 +74,7 @@ import type { AppConfig } from '../infra/config/service';
 import { ElectronAppLive } from '../infra/electron/live';
 import type { ElectronApp } from '../infra/electron/service';
 import { MainLoggerLive } from '../infra/logging/live';
-import type { MainLogger } from '../infra/logging/service';
+import type { MainLogger, LoggingTransport } from '../infra/logging/service';
 import { NativeOsLive } from '../infra/native-os/live';
 import type { NativeOs } from '../infra/native-os/service';
 import { OperationalDbLive } from '../infra/operational-db/live';
@@ -93,6 +93,7 @@ import { SessionLifecycleProbeLive, type SessionLifecycleProbe } from './workspa
 export type BootServices =
   | AppConfig
   | MainLogger
+  | LoggingTransport
   | ElectronApp
   | OperationalDb
   | SecureStore
@@ -123,9 +124,9 @@ export type BootServices =
   | SessionLifecycleProbe;
 
 export const makeBootLayer = (
-  appConfigLayer: Layer.Layer<AppConfig>
+  appConfigLayer: Layer.Layer<AppConfig>,
+  logging: Layer.Layer<MainLogger | LoggingTransport> = MainLoggerLive
 ): Layer.Layer<BootServices, BootError | WindowError> => {
-  const logging = MainLoggerLive;
   const electronApp = ElectronAppLive.pipe(Layer.provide(logging));
   const operationalDb = OperationalDbLive.pipe(
     Layer.provide(appConfigLayer),
@@ -226,6 +227,7 @@ export const makeBootLayer = (
   // model survives a workspace rebuild and both modes share the one worker.
   // Nothing is forked at build — the sidecar starts on the first local chunk.
   const whisperEngine = WhisperEngineLive.pipe(
+    Layer.provide(telemetry),
     Layer.provide(appConfigLayer),
     Layer.provide(logging)
   );
@@ -276,7 +278,7 @@ export const makeBootLayer = (
     // for the recording permission gate; both instances are stateless so a second
     // boot-scoped one is harmless. NativeOs wraps login-item/dock/shell/relaunch.
     SystemPermissionsLive,
-    NativeOsLive,
+    NativeOsLive.pipe(Layer.provide(logging)),
     // Leaf: the boot-scoped workspace-current backend accessor. The
     // workspace-scoped WorkspaceBackend self-publishes here on acquire; the unary
     // IPC handler and the StreamBroker Ask lane reach the live workspace

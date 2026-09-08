@@ -82,7 +82,7 @@ export const LocalBackendLive: Layer.Layer<
     const { db, client } = yield* ProductDb;
     const logger = yield* MainLogger;
     const log = logger.scoped('local-backend');
-    const unsafeLog = logger.scopedUnsafe('local-backend');
+    const unsafeLog = logger.scopedSync('local-backend');
     const coreTransport = yield* WorkspaceTransport;
     const aiProvider = yield* AiProvider;
     const { locale } = yield* DesktopI18n;
@@ -93,14 +93,14 @@ export const LocalBackendLive: Layer.Layer<
       client,
       ai: makeLocalAiPort(aiProvider, runtime),
       locale,
-      log: (message, data) => unsafeLog.info(message, data),
+      log: (message, data) => unsafeLog.info(message, { context: data }),
       titleLock: makeSerialLock(),
     };
 
     // System skills: idempotent, never fatal — see the header.
     yield* Effect.tryPromise(() => seedSystemSkills(db)).pipe(
       Effect.catchAll(error =>
-        log.error('system skill seed failed', { cause: describeDbError(error) })
+        log.error('system skill seed failed', { error: describeDbError(error) })
       )
     );
 
@@ -114,12 +114,7 @@ export const LocalBackendLive: Layer.Layer<
         // request body — titles and note text are user content).
         Effect.tap(result =>
           result.status >= 400 && req.method !== 'GET'
-            ? log.debug('local backend rejected a write', {
-                method: req.method,
-                path: req.path,
-                status: result.status,
-                error: describeError(result.body),
-              })
+            ? log.debug('local backend rejected a write', { context: { method: req.method, path: req.path, status: result.status }, error: describeError(result.body) })
             : Effect.void
         ),
         Effect.map(
@@ -132,20 +127,12 @@ export const LocalBackendLive: Layer.Layer<
         // Token-free logging: only method/path + a stringified cause.
         Effect.catchAll(error =>
           log
-            .error('local backend request failed', {
-              method: req.method,
-              path: req.path,
-              cause: describeDbError(error.cause),
-            })
+            .error('local backend request failed', { context: { method: req.method, path: req.path }, error: describeDbError(error.cause) })
             .pipe(Effect.as(INTERNAL))
         ),
         Effect.catchAllDefect(defect =>
           log
-            .error('local backend request defect', {
-              method: req.method,
-              path: req.path,
-              cause: describeDbError(defect),
-            })
+            .error('local backend request defect', { context: { method: req.method, path: req.path }, error: describeDbError(defect) })
             .pipe(Effect.as(INTERNAL))
         )
       );

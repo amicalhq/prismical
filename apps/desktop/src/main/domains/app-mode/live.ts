@@ -45,12 +45,12 @@ export const AppModeLive: Layer.Layer<AppModeService, never, OperationalDb | Mai
       const stored = yield* db.getSetting(APP_MODE_KEY).pipe(
         Effect.catchTag('DbError', error =>
           log
-            .warn('app-mode read failed at boot — defaulting to cloud', { op: error.op })
+            .warn('app-mode read failed at boot — defaulting to cloud', { context: { op: error.op } })
             .pipe(Effect.as(null))
         )
       );
       if (isAppMode(stored)) {
-        yield* log.info('app mode resolved', { mode: stored, chosen: true });
+        yield* log.info('app mode resolved', { context: { mode: stored, chosen: true } });
         return yield* makeAppMode(stored, true);
       }
 
@@ -63,15 +63,15 @@ export const AppModeLive: Layer.Layer<AppModeService, never, OperationalDb | Mai
       if (hasAccounts) {
         yield* db.setSetting(APP_MODE_KEY, 'cloud').pipe(
           Effect.catchTag('DbError', error =>
-            log.warn('app mode self-heal write failed', { op: error.op })
+            log.warn('app mode self-heal write failed', { context: { op: error.op } })
           )
         );
-        yield* log.info('app mode resolved', { mode: 'cloud', chosen: true, inferred: 'accounts' });
+        yield* log.info('app mode resolved', { context: { mode: 'cloud', chosen: true, inferred: 'accounts' } });
         return yield* makeAppMode('cloud', true);
       }
 
       const mode: AppMode = 'cloud';
-      yield* log.info('app mode resolved', { mode, chosen: false });
+      yield* log.info('app mode resolved', { context: { mode, chosen: false } });
       return yield* makeAppMode(mode, false);
     })
   );

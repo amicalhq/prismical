@@ -18,62 +18,70 @@
  */
 import path from 'node:path';
 import { app, protocol } from 'electron';
-import { Effect } from 'effect';
+import { Cause, Effect, Runtime } from 'effect';
 import { disposeAndExit } from '../domains/shutdown/shutdown';
 import { APP_SCHEME } from '../domains/windows/policy';
 import { bootProgram } from './boot-program';
 import { makeDesktopRuntime } from './runtime';
+import type { makeMainLogging } from '../infra/logging/live';
 
 if (process.env.PRISMICAL_E2E_BREAK_BOOT === '1') {
   // e2e/broken-boot.spec.ts: a deliberately broken boot must FAIL the launch.
   throw new Error('Deliberately broken boot (PRISMICAL_E2E_BREAK_BOOT=1)');
 }
 
-const gotTheLock = app.requestSingleInstanceLock();
-if (!gotTheLock) {
-  // Another instance owns this profile. Nothing below may run.
-  app.quit();
-} else {
-  // The renderer's rooted scheme is standard+secure so root-absolute
-  // asset paths and fetch() work; served by WindowRegistry's protocol.handle.
-  protocol.registerSchemesAsPrivileged([
-    {
-      scheme: APP_SCHEME,
-      privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
-    },
-  ]);
+export function startDesktop(logging: ReturnType<typeof makeMainLogging>): void {
+  const log = logging.service.scopedSync('main');
+  const gotTheLock = app.requestSingleInstanceLock();
+  if (!gotTheLock) {
+    // Another instance owns this profile. Nothing below may run.
+    app.quit();
+  } else {
+    // The renderer's rooted scheme is standard+secure so root-absolute
+    // asset paths and fetch() work; served by WindowRegistry's protocol.handle.
+    protocol.registerSchemesAsPrivileged([
+      {
+        scheme: APP_SCHEME,
+        privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
+      },
+    ]);
 
-  if (process.env.PRISMICAL_E2E !== '1') {
-    // Protocol registration mutates OS state (LaunchServices / registry);
-    // tests never touch machine state.
-    registerProtocolHandlers();
-  }
+    if (process.env.PRISMICAL_E2E !== '1') {
+      // Protocol registration mutates OS state (LaunchServices / registry);
+      // tests never touch machine state.
+      registerProtocolHandlers();
+    }
 
-  const runtime = makeDesktopRuntime();
-  runtime
-    .runPromise(Effect.scoped(bootProgram))
-    .then(() =>
-      // Quit path: program scope is closed; dispose the runtime (layer
-      // finalizers: DB close, listener removal, tray detach) with a bounded
-      // deadline, then exit. disposeAndExit always exits 0.
-      Effect.runPromise(
-        disposeAndExit({
-          dispose: () => runtime.dispose(),
-          exit: code => {
-            app.exit(code);
-          },
-          onTimeout: () => {
-            console.error('Prismical shutdown: runtime.dispose() exceeded deadline; exiting anyway');
-          },
-        })
+    const runtime = makeDesktopRuntime(logging);
+    runtime
+      .runPromise(Effect.scoped(bootProgram))
+      .then(() =>
+        // Quit path: program scope is closed; dispose the runtime (layer
+        // finalizers: DB close, listener removal, tray detach) with a bounded
+        // deadline, then exit. disposeAndExit always exits 0.
+        Effect.runPromise(
+          disposeAndExit({
+            dispose: () => runtime.dispose(),
+            exit: code => {
+              app.exit(code);
+            },
+            onTimeout: () => {
+              log.error('Runtime shutdown exceeded deadline; exiting');
+            },
+          })
+        )
       )
-    )
-    .catch((error: unknown) => {
-      // Boot/program failure. No dispose here — the quit path is the only
-      // dispose caller; a non-zero exit tears the process down regardless.
-      console.error('Prismical boot failed', error);
-      app.exit(1);
-    });
+      .catch((error: unknown) => {
+        // Boot/program failure. No dispose here — the quit path is the only
+        // dispose caller; a non-zero exit tears the process down regardless.
+        log.error('Application boot failed', {
+          error: Runtime.isFiberFailure(error)
+            ? Cause.squash(error[Runtime.FiberFailureCauseId])
+            : error,
+        });
+        app.exit(1);
+      });
+  }
 }
 
 function registerProtocolHandlers(): void {

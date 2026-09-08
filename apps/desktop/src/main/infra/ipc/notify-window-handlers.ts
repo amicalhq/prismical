@@ -109,7 +109,7 @@ export const registerNotifyWindowHandlers: Effect.Effect<
           Option.isSome(identity) && identity.value.kind === 'notify'
             ? Effect.void
             : log
-                .warn('notify ipc rejected: unknown sender', { webContentsId: event.sender.id })
+                .warn('notify ipc rejected: unknown sender', { context: { webContentsId: event.sender.id } })
                 .pipe(Effect.zipRight(Effect.fail(new SenderRejected('UNKNOWN_SENDER'))))
         )
       );
@@ -158,7 +158,7 @@ export const registerNotifyWindowHandlers: Effect.Effect<
           const parsed = parseNotifySetInteractive(payload);
           if (!parsed.success) {
             return log
-              .warn('notify:setInteractive rejected: invalid payload', { issues: parsed.issues })
+              .warn('notify:setInteractive rejected: invalid payload', { context: { issues: parsed.issues } })
               .pipe(Effect.zipRight(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
           }
           if (!parsed.data.interactive) return windows.setNotifyIgnoreMouse(true);
@@ -180,7 +180,7 @@ export const registerNotifyWindowHandlers: Effect.Effect<
           const parsed = parseNotifyAction(payload);
           if (!parsed.success) {
             return log
-              .warn('notify:action rejected: invalid payload', { issues: parsed.issues })
+              .warn('notify:action rejected: invalid payload', { context: { issues: parsed.issues } })
               .pipe(Effect.zipRight(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
           }
           const { cardId, actionId } = parsed.data;
@@ -226,11 +226,11 @@ export const registerNotifyWindowHandlers: Effect.Effect<
                     )
                   );
               }
-              return log.warn('notify:action ignored: unknown action for card', {
+              return log.warn('notify:action ignored: unknown action for card', { context: {
                 cardId,
                 actionId,
                 kind: card.kind,
-              });
+              } });
             })
           );
         })
@@ -321,12 +321,12 @@ export const registerNotifyWindowHandlers: Effect.Effect<
         const parsed = parseNotifyState({ locale: i18n.locale, cards: stack });
         const push = parsed.success
           ? windows.sendToNotifyWindow(NOTIFY_CHANNELS.stateStream, parsed.data).pipe(Effect.asVoid)
-          : log.error('notify:state push dropped: stack failed the schema', {
+          : log.error('notify:state push dropped: stack failed the schema', { context: {
               issues: parsed.issues,
-            });
+            } });
         return push.pipe(
           Effect.catchAllDefect(defect =>
-            log.error('notify:state push failed — fiber continues', { defect: String(defect) })
+            log.error('notify:state push failed — fiber continues', { error: defect })
           )
         );
       })

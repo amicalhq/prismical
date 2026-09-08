@@ -7,10 +7,12 @@ import { I18nextProvider } from 'react-i18next';
 import { NotifyApp } from './app';
 import { bootstrapPanelI18n } from '../panel-i18n';
 import { captureRendererException, installRendererTelemetry } from '../telemetry';
+import { installRendererLogging } from '../logging';
 import { mountRendererBootstrapFailure } from '../main/bootstrap-failure';
 import './types';
 import './notify.css';
 
+installRendererLogging(window.notify.logging);
 installRendererTelemetry(window.notify.telemetry);
 
 const container = document.getElementById('root');

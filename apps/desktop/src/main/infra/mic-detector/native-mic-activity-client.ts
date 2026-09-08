@@ -1,16 +1,15 @@
-import { EventEmitter } from "node:events";
-import { spawn, type ChildProcessByStdio } from "node:child_process";
-import type { Readable, Writable } from "node:stream";
-import split2 from "split2";
-import { z } from "zod";
-import { createScopedLogger } from "../../logger";
-import { assertMicDetectorBinaryExists } from "./mic-detector-binary";
-import type { MicActivitySnapshotEvent } from "@/types/meeting-start-notifications";
-
-const logger = createScopedLogger("notifications");
+import { EventEmitter } from 'node:events';
+import { spawn, type ChildProcessByStdio } from 'node:child_process';
+import type { Readable, Writable } from 'node:stream';
+import { makeLineDecoder } from '@desktop/logging';
+import { makeProcessDiagnostics } from '../logging/process-diagnostics';
+import type { SyncScopedLog, LoggingTransportService } from '../logging/service';
+import { z } from 'zod';
+import { assertMicDetectorBinaryExists } from './mic-detector-binary';
+import type { MicActivitySnapshotEvent } from '@/types/meeting-start-notifications';
 
 export const SnapshotMessageSchema = z.object({
-  type: z.literal("snapshot"),
+  type: z.literal('snapshot'),
   timestampMs: z.number(),
   apps: z.array(
     z.object({
@@ -23,10 +22,10 @@ export const SnapshotMessageSchema = z.object({
           z.object({
             uid: z.string(),
             name: z.string(),
-          }),
+          })
         )
         .optional(),
-    }),
+    })
   ),
 });
 
@@ -37,19 +36,25 @@ interface NativeMicActivityClientEvents {
 }
 
 export class NativeMicActivityClient extends EventEmitter {
-  private process: ChildProcessByStdio<Writable, Readable, Readable> | null =
-    null;
+  private stopping = false;
+  constructor(
+    private readonly log: SyncScopedLog,
+    private readonly transport: LoggingTransportService
+  ) {
+    super();
+  }
+  private process: ChildProcessByStdio<Writable, Readable, Readable> | null = null;
 
   on<U extends keyof NativeMicActivityClientEvents>(
     event: U,
-    listener: NativeMicActivityClientEvents[U],
+    listener: NativeMicActivityClientEvents[U]
   ): this {
     return super.on(event, listener);
   }
 
   off<U extends keyof NativeMicActivityClientEvents>(
     event: U,
-    listener: NativeMicActivityClientEvents[U],
+    listener: NativeMicActivityClientEvents[U]
   ): this {
     return super.off(event, listener);
   }
@@ -63,63 +68,60 @@ export class NativeMicActivityClient extends EventEmitter {
 
   async start(): Promise<void> {
     if (this.process) {
-      throw new Error("Native mic activity detector is already running.");
+      throw new Error('Native mic activity detector is already running.');
     }
 
     const binaryPath = assertMicDetectorBinaryExists();
 
-    logger.info("Starting native mic detector", { binaryPath });
+    this.log.info('Starting native mic detector');
+    this.stopping = false;
     const child = spawn(binaryPath, [], {
-      stdio: ["pipe", "pipe", "pipe"],
+      stdio: ['pipe', 'pipe', 'pipe'],
     });
     this.process = child;
 
-    child.stdin.on("error", (error) => {
-      logger.warn("Native mic detector stdin error", {
-        error: error.message,
+    child.stdin.on('error', error => {
+      this.log.warn('Native mic detector stdin error', {
+        error,
       });
     });
 
-    child.stdout.pipe(split2()).on("data", (line: string) => {
-      if (!line.trim()) {
-        return;
-      }
-
-      try {
-        const message = JSON.parse(line) as unknown;
-        const parsed = SnapshotMessageSchema.safeParse(message);
-        if (!parsed.success) {
-          logger.warn("Ignoring invalid mic detector message", {
-            line,
-            issues: parsed.error.issues,
-          });
-          return;
-        }
-
-        this.emit("snapshot", parsed.data);
-      } catch (error) {
-        logger.warn("Failed to parse mic detector output", {
-          line,
-          error,
+    const stdout = makeLineDecoder();
+    child.stdout.on('data', (chunk: Buffer) => {
+      const { lines, dropped } = stdout.push(chunk);
+      if (dropped)
+        this.log.warn('Oversized microphone snapshots discarded', {
+          context: { droppedLines: dropped },
         });
+      for (const line of lines) {
+        try {
+          const parsed = SnapshotMessageSchema.safeParse(JSON.parse(line));
+          if (parsed.success) this.emit('snapshot', parsed.data);
+          else this.log.warn('Ignoring invalid microphone snapshot');
+        } catch {
+          this.log.warn('Ignoring malformed microphone snapshot');
+        }
       }
     });
+    const diagnostics = makeProcessDiagnostics(
+      this.transport,
+      () => ({ runtime: 'native', pid: child.pid ?? process.pid }),
+      'mic-detector'
+    );
+    child.stderr.on('data', diagnostics.push);
+    child.stderr.on('end', diagnostics.end);
 
-    child.stderr.pipe(split2()).on("data", (line: string) => {
-      if (!line.trim()) {
-        return;
-      }
-      logger.info(line);
+    child.on('error', error => {
+      this.log.error('Native microphone detector failed', { error });
+      this.emit('error', error);
     });
 
-    child.on("error", (error) => {
-      this.emit("error", error);
-    });
-
-    child.on("exit", (code, signal) => {
-      logger.info("Native mic detector exited", { code, signal });
+    child.on('exit', (code, signal) => {
+      this.log[this.stopping ? 'info' : 'error']('Native mic detector exited', {
+        context: { code, signal, expected: this.stopping },
+      });
       this.process = null;
-      this.emit("exit", code, signal);
+      this.emit('exit', code, signal);
     });
   }
 
@@ -129,20 +131,21 @@ export class NativeMicActivityClient extends EventEmitter {
     }
 
     const child = this.process;
-    await new Promise<void>((resolve) => {
+    this.stopping = true;
+    await new Promise<void>(resolve => {
       const timeout = setTimeout(() => {
-        child.kill("SIGKILL");
+        child.kill('SIGKILL');
       }, 1500);
 
-      child.once("exit", () => {
+      child.once('exit', () => {
         clearTimeout(timeout);
         resolve();
       });
 
-      if (process.platform === "win32") {
-        child.stdin.end("stop\n");
+      if (process.platform === 'win32') {
+        child.stdin.end('stop\n');
       } else {
-        child.kill("SIGTERM");
+        child.kill('SIGTERM');
       }
     });
   }

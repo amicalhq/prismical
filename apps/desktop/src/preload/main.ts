@@ -101,10 +101,11 @@ const settingsBuffer = makeSettingsBuffer({
 
 // Keep the latest main-owned telemetry policy available before renderer boot.
 const telemetryBuffer = makeReplayBuffer<TelemetryState>({
-  on: listener => ipcRenderer.on(
-    CHANNELS.telemetryStateChanged,
-    (_event: Electron.IpcRendererEvent, state: TelemetryState) => listener(state),
-  ),
+  on: listener =>
+    ipcRenderer.on(
+      CHANNELS.telemetryStateChanged,
+      (_event: Electron.IpcRendererEvent, state: TelemetryState) => listener(state)
+    ),
 });
 
 // Same eval-time attachment for updater:stateChanged: the initial replay
@@ -237,7 +238,8 @@ const api: MainWindowDesktopApi = {
   recording: {
     start: (request: StartRecordingRequest) => ipcRenderer.invoke(CHANNELS.recordingStart, request),
     stop: (request: StopRecordingRequest) => ipcRenderer.invoke(CHANNELS.recordingStop, request),
-    claimCompletion: (request: RecordingControlRequest) => ipcRenderer.invoke(CHANNELS.recordingClaimCompletion, request),
+    claimCompletion: (request: RecordingControlRequest) =>
+      ipcRenderer.invoke(CHANNELS.recordingClaimCompletion, request),
     pause: (request: RecordingControlRequest) =>
       ipcRenderer.invoke(CHANNELS.recordingPause, request),
     resume: (request: RecordingControlRequest) =>
@@ -247,6 +249,10 @@ const api: MainWindowDesktopApi = {
 
   // Device-local preferences: get/set invoke main; onChanged replays
   // main's pushed DeviceSettings (the latest snapshot to a late subscriber).
+  logging: {
+    getConfig: () => ipcRenderer.invoke(CHANNELS.loggingGetConfig),
+    write: record => ipcRenderer.invoke(CHANNELS.loggingWrite, record),
+  },
   telemetry: {
     getState: () => ipcRenderer.invoke(CHANNELS.telemetryGetState),
     onChanged: telemetryBuffer.onState,

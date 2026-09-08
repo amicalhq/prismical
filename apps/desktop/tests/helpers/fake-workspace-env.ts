@@ -9,6 +9,8 @@
  * WhisperEngine for the local lane's own tests.
  */
 import { Effect, Layer, Option, SubscriptionRef } from 'effect';
+import { testTelemetryLayer } from './telemetry';
+import type { TelemetryService } from '../../src/main/domains/telemetry/service';
 import {
   DEFAULT_DEVICE_SETTINGS,
   type DeviceSettings,
@@ -39,7 +41,10 @@ import {
   type AiProviderApi,
   type ToolSupport,
 } from '../../src/main/domains/ai-provider/service';
-import type { WhisperDecodeOptions, WorkerTranscription } from '../../src/main/infra/whisper/protocol';
+import type {
+  WhisperDecodeOptions,
+  WorkerTranscription,
+} from '../../src/main/infra/whisper/protocol';
 import {
   WhisperEngine,
   WhisperEngineError,
@@ -197,8 +202,9 @@ export const makeFakeWhisperEngine = (): FakeWhisperEngine => {
   const ensureCalls: string[] = [];
   const transcribeCalls: FakeWhisperCall[] = [];
   let disposes = 0;
-  let transcribeResponder: (call: FakeWhisperCall) => WorkerTranscription | WhisperEngineError =
-    () => ({ text: '', segments: [] });
+  let transcribeResponder: (
+    call: FakeWhisperCall
+  ) => WorkerTranscription | WhisperEngineError = () => ({ text: '', segments: [] });
   let ensureResponder: (modelPath: string) => WhisperEngineError | null = () => null;
   const api: WhisperEngineApi = {
     ensureModel: modelPath =>
@@ -240,9 +246,16 @@ export const workspaceEnvStubs = (
   mode: AppMode = 'cloud',
   settings: Partial<DeviceSettings> = {}
 ): Layer.Layer<
-  SettingsService | SecureStore | AppModeService | ModelManager | WhisperEngine | AiProvider
+  | SettingsService
+  | SecureStore
+  | AppModeService
+  | ModelManager
+  | WhisperEngine
+  | AiProvider
+  | TelemetryService
 > =>
   Layer.mergeAll(
+    testTelemetryLayer,
     makeFakeSettings(settings).layer,
     fakeSecureStoreLayer(),
     fakeModelManagerLayer(),

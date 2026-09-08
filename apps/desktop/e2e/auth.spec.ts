@@ -147,7 +147,7 @@ const completeSignIn = async (
 
 /** The per-run main log (the test seam pins electron-log under the profile). */
 const readMainLog = (profileDir: string): Promise<string> =>
-  readFile(path.join(profileDir, 'logs', 'main.log'), 'utf8').then(
+  readFile(path.join(profileDir, 'logs', 'main.jsonl'), 'utf8').then(
     text => text,
     () => ''
   );

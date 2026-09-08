@@ -24,7 +24,7 @@ import path from 'node:path';
 import { Data, Effect, Either, type Scope } from 'effect';
 import type { MeetingCaptureMode } from '@/types/meeting';
 import { StreamingWavWriter } from '../../infra/audio/streaming-wav-writer';
-import type { ScopedLog } from '../../infra/logging/service';
+import type { ScopedLog, SyncScopedLog } from '../../infra/logging/service';
 import { CAPTURE_SAMPLE_RATE, type ChunkSource } from './chunker';
 
 export class RecoveryWriteError extends Data.TaggedError('RecoveryWriteError')<{
@@ -37,7 +37,10 @@ export interface RecoveryWavSet {
   /** Directory holding the per-source WAV(s) — the outbox row's `wavPath`. */
   readonly dir: string;
   /** Append a source's samples before the pipeline accepts the frame. */
-  readonly append: (source: ChunkSource, samples: Float32Array) => Effect.Effect<void, RecoveryWriteError>;
+  readonly append: (
+    source: ChunkSource,
+    samples: Float32Array
+  ) => Effect.Effect<void, RecoveryWriteError>;
   /** Fix headers + close every open writer. Idempotent; safe to call before delete. */
   readonly finalizeAndClose: Effect.Effect<void, RecoveryWriteError>;
 }
@@ -54,6 +57,7 @@ export const makeRecoveryWavSet = (params: {
   readonly dir: string;
   readonly mode: MeetingCaptureMode;
   readonly log: ScopedLog;
+  readonly callbackLog: SyncScopedLog;
   readonly sampleRate?: number;
 }): Effect.Effect<RecoveryWavSet, RecoveryWriteError, Scope.Scope> =>
   Effect.acquireRelease(
@@ -74,6 +78,7 @@ export const makeRecoveryWavSet = (params: {
         const existing = writers.get(source);
         if (existing) return existing;
         const created = new StreamingWavWriter(
+          params.callbackLog,
           path.join(params.dir, wavFileName[source]),
           sampleRate,
           1,
@@ -87,10 +92,12 @@ export const makeRecoveryWavSet = (params: {
         if (!closed) {
           closed = true;
           for (const [source, writer] of writers) {
-            const result = yield* Effect.either(Effect.tryPromise({
-              try: () => writer.finalize(),
-              catch: cause => new RecoveryWriteError({ op: 'finalize', source, cause }),
-            }));
+            const result = yield* Effect.either(
+              Effect.tryPromise({
+                try: () => writer.finalize(),
+                catch: cause => new RecoveryWriteError({ op: 'finalize', source, cause }),
+              })
+            );
             // Close every source, including when its sibling failed to close.
             if (Either.isLeft(result)) closeFailure ??= result.left;
           }
@@ -98,22 +105,28 @@ export const makeRecoveryWavSet = (params: {
         if (closeFailure) yield* Effect.fail(closeFailure);
       }).pipe(Effect.uninterruptible);
 
-      const append = (source: ChunkSource, samples: Float32Array) => Effect.suspend(() => {
-        if (closed || samples.length === 0) return Effect.void;
-        return Effect.tryPromise({
-          try: () => writerFor(source).appendAudio(samples),
-          catch: cause => new RecoveryWriteError({ op: 'append', source, cause }),
+      const append = (source: ChunkSource, samples: Float32Array) =>
+        Effect.suspend(() => {
+          if (closed || samples.length === 0) return Effect.void;
+          return Effect.tryPromise({
+            try: () => writerFor(source).appendAudio(samples),
+            catch: cause => new RecoveryWriteError({ op: 'append', source, cause }),
+          });
         });
-      });
 
       const set: RecoveryWavSet = { dir: params.dir, append, finalizeAndClose };
       return set;
     }),
     // On ANY scope close, fix headers + close so an interrupt retains valid WAVs.
-    set => set.finalizeAndClose.pipe(Effect.catchAll(error =>
-      params.log.warn('recovery WAV finalize failed', {
-        source: error.source,
-        reason: error.cause instanceof Error ? error.cause.message : String(error.cause),
-      })
-    ))
+    set =>
+      set.finalizeAndClose.pipe(
+        Effect.catchAll(error =>
+          params.log.warn('recovery WAV finalize failed', {
+            context: {
+              source: error.source,
+              reason: error.cause instanceof Error ? error.cause.message : String(error.cause),
+            },
+          })
+        )
+      )
   );

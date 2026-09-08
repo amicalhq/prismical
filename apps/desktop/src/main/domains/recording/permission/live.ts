@@ -13,11 +13,7 @@ import {
   SystemPermissions,
   type MediaAccessStatus,
 } from '../../../infra/system-permissions/service';
-import {
-  SYSTEM_AUDIO_MIN_MAJOR,
-  SYSTEM_AUDIO_MIN_MINOR,
-  meetsMinimumVersion,
-} from './policy';
+import { SYSTEM_AUDIO_MIN_MAJOR, SYSTEM_AUDIO_MIN_MINOR, meetsMinimumVersion } from './policy';
 import {
   PermissionError,
   PermissionService,
@@ -28,8 +24,7 @@ import {
 const needsSystemAudio = (mode: MeetingCaptureMode): boolean =>
   mode === 'system' || mode === 'dual';
 
-const needsMicrophone = (mode: MeetingCaptureMode): boolean =>
-  mode === 'mic' || mode === 'dual';
+const needsMicrophone = (mode: MeetingCaptureMode): boolean => mode === 'mic' || mode === 'dual';
 
 export const PermissionServiceLive: Layer.Layer<
   PermissionService,
@@ -77,8 +72,7 @@ export const PermissionServiceLive: Layer.Layer<
         const mode: MeetingCaptureMode = degraded ? 'mic' : requested;
         if (degraded) {
           yield* log.info('system audio unavailable — degrading to mic-only', {
-            requested,
-            platform: config.platform,
+            context: { requested, platform: config.platform },
           });
         }
 
@@ -86,12 +80,15 @@ export const PermissionServiceLive: Layer.Layer<
           const status = yield* requestMic;
           if (status !== 'granted') {
             yield* log.warn('microphone permission not granted — recording blocked', {
-              requested,
-              mode,
-              status,
+              context: { requested, mode, status },
             });
             return yield* Effect.fail(
-              new PermissionError({ requested, effective: mode, reason: 'mic-denied', micStatus: status })
+              new PermissionError({
+                requested,
+                effective: mode,
+                reason: 'mic-denied',
+                micStatus: status,
+              })
             );
           }
         }

@@ -7,10 +7,12 @@ import { I18nextProvider } from 'react-i18next';
 import { WidgetApp } from './app';
 import { bootstrapPanelI18n } from '../panel-i18n';
 import { captureRendererException, installRendererTelemetry } from '../telemetry';
+import { installRendererLogging } from '../logging';
 import { mountRendererBootstrapFailure } from '../main/bootstrap-failure';
 import './types';
 import './widget.css';
 
+installRendererLogging(window.widget.logging);
 installRendererTelemetry(window.widget.telemetry);
 
 const container = document.getElementById('root');

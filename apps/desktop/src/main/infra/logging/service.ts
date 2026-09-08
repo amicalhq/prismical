@@ -1,24 +1,17 @@
 import { Context, type Effect } from 'effect';
+import type { LogSource } from '@desktop/logging';
+import type { RendererLoggingConfig } from '@prismical/desktop-contracts';
 
-export interface ScopedLog {
-  readonly debug: (message: string, data?: unknown) => Effect.Effect<void>;
-  readonly info: (message: string, data?: unknown) => Effect.Effect<void>;
-  readonly warn: (message: string, data?: unknown) => Effect.Effect<void>;
-  readonly error: (message: string, data?: unknown) => Effect.Effect<void>;
+export type { MainLoggerService, ScopedLog, SyncScopedLog, LogMetadata } from '@desktop/logging';
+export { MainLogger } from '@desktop/logging';
+
+/** Main-process transport boundary. Application logging uses MainLogger. */
+export interface LoggingTransportService {
+  readonly ingest: (input: unknown, source: LogSource) => boolean;
+  readonly rendererConfig: Omit<RendererLoggingConfig, 'pid' | 'surface'>;
+  readonly exportBundle: Effect.Effect<void, unknown>;
 }
-
-/** Plain-function variant for Electron callback edges (event handlers, IPC
- * bridges) where no fiber is running. Same scopes, same redaction. */
-export interface UnsafeScopedLog {
-  readonly debug: (message: string, data?: unknown) => void;
-  readonly info: (message: string, data?: unknown) => void;
-  readonly warn: (message: string, data?: unknown) => void;
-  readonly error: (message: string, data?: unknown) => void;
-}
-
-export interface MainLoggerService {
-  readonly scoped: (scope: string) => ScopedLog;
-  readonly scopedUnsafe: (scope: string) => UnsafeScopedLog;
-}
-
-export class MainLogger extends Context.Tag('desktop/MainLogger')<MainLogger, MainLoggerService>() {}
+export class LoggingTransport extends Context.Tag('desktop/LoggingTransport')<
+  LoggingTransport,
+  LoggingTransportService
+>() {}

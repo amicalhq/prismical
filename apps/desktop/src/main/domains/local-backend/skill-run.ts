@@ -19,6 +19,7 @@
  * Truncation and malformed tool input are NOT tool-support problems and fail
  * the run with core's codes.
  */
+import type { LogMetadata } from '../../infra/logging/service';
 import { APICallError, generateText, hasToolCall, stepCountIs, tool, type LanguageModelUsage } from 'ai';
 import type { z } from 'zod';
 import type { ResolvedAiModel, ToolSupport } from '../ai-provider/service';
@@ -70,7 +71,7 @@ export interface TerminalRunArgs<T> {
   readonly maxOutputTokens?: number;
   /** Persist what the ladder learned (AiProvider.rememberToolSupport). */
   readonly remember: (support: ToolSupport) => Promise<void>;
-  readonly log: (message: string, data?: unknown) => void;
+  readonly log: (message: string, data?: LogMetadata['context']) => void;
 }
 
 const toUsage = (usage: LanguageModelUsage | undefined): RunUsage => ({

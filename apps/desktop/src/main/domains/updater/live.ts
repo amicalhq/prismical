@@ -56,7 +56,7 @@ export const UpdaterServiceLive: Layer.Layer<
     const config = yield* AppConfig;
     const logger = yield* MainLogger;
     const log = logger.scoped('updater');
-    const logUnsafe = logger.scopedUnsafe('updater');
+    const logUnsafe = logger.scopedSync('updater');
     const settings = yield* SettingsService;
     const count = yield* Ref.make(0);
     const state = yield* SubscriptionRef.make(
@@ -64,10 +64,10 @@ export const UpdaterServiceLive: Layer.Layer<
     );
 
     if (!config.updaterEnabled) {
-      yield* log.info('updater disabled', {
+      yield* log.info('updater disabled', { context: {
         isPackaged: config.isPackaged,
         isE2E: config.isE2E,
-      });
+      } });
       const disabled: UpdaterServiceApi = {
         enabled: false,
         state,
@@ -114,7 +114,7 @@ export const UpdaterServiceLive: Layer.Layer<
         channel => Effect.sync(() => machine.onChannelChanged(channel))
       ).pipe(
         Effect.catchAllDefect(defect =>
-          log.error('updater channel subscription died', { defect: String(defect) })
+          log.error('updater channel subscription died', { error: defect })
         )
       )
     );
@@ -142,14 +142,14 @@ export const UpdaterServiceLive: Layer.Layer<
     yield* Effect.forkScoped(
       periodic.pipe(
         Effect.catchAllDefect(defect =>
-          log.error('updater check loop died', { defect: String(defect) })
+          log.error('updater check loop died', { error: defect })
         )
       )
     );
-    yield* log.info('updater initialized', {
+    yield* log.info('updater initialized', { context: {
       channel: initialSettings.updateChannel,
       feed: config.endpoints.coreApiUrl,
-    });
+    } });
 
     // The one-shot IPC check: trigger, then wait for the cycle to settle out of
     // 'checking' (an in-flight download reports 'available'; a bounded timeout

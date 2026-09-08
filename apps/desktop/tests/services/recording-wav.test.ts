@@ -343,6 +343,7 @@ describe('makeRecoveryWavSet (recovery-scoped on-disk WAV)', () => {
     warn: () => Effect.void,
     error: () => Effect.void,
   };
+  const callbackLog = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} };
   const tmpBase = fs.mkdtempSync(path.join(os.tmpdir(), 'prismical-recovery-'));
   afterAll(() => fs.rmSync(tmpBase, { recursive: true, force: true }));
 
@@ -350,7 +351,7 @@ describe('makeRecoveryWavSet (recovery-scoped on-disk WAV)', () => {
     Effect.scoped(Effect.gen(function* () {
       const dir = path.join(tmpBase, 'blocked');
       fs.writeFileSync(dir, 'not a directory');
-      const result = yield* Effect.either(makeRecoveryWavSet({ dir, mode: 'mic', log: noopLog }));
+      const result = yield* Effect.either(makeRecoveryWavSet({ dir, mode: 'mic', log: noopLog, callbackLog }));
       assert.isTrue(Either.isLeft(result));
       if (Either.isLeft(result)) {
         assert.strictEqual(result.left._tag, 'RecoveryWriteError');
@@ -362,7 +363,7 @@ describe('makeRecoveryWavSet (recovery-scoped on-disk WAV)', () => {
   it.effect('an append failure reaches the recording instead of acknowledging unwritten samples', () =>
     Effect.scoped(Effect.gen(function* () {
       vi.spyOn(StreamingWavWriter.prototype, 'appendAudio').mockRejectedValueOnce(new Error('ENOSPC'));
-      const set = yield* makeRecoveryWavSet({ dir: path.join(tmpBase, 'append-failure'), mode: 'mic', log: noopLog });
+      const set = yield* makeRecoveryWavSet({ dir: path.join(tmpBase, 'append-failure'), mode: 'mic', log: noopLog, callbackLog });
       const result = yield* Effect.either(set.append('mic', new Float32Array([0.5])));
       assert.isTrue(Either.isLeft(result));
       if (Either.isLeft(result)) {
@@ -381,7 +382,7 @@ describe('makeRecoveryWavSet (recovery-scoped on-disk WAV)', () => {
         throw new Error('header update failed');
       });
       const dir = path.join(tmpBase, 'finalize-failure');
-      const set = yield* makeRecoveryWavSet({ dir, mode: 'dual', log: noopLog });
+      const set = yield* makeRecoveryWavSet({ dir, mode: 'dual', log: noopLog, callbackLog });
       yield* set.append('mic', new Float32Array([0.5]));
       yield* set.append('system', new Float32Array([0.25]));
       const result = yield* Effect.either(set.finalizeAndClose);
@@ -397,7 +398,7 @@ describe('makeRecoveryWavSet (recovery-scoped on-disk WAV)', () => {
     Effect.gen(function* () {
       const dir = path.join(tmpBase, 'lazy');
       const scope = yield* Scope.make();
-      const set = yield* makeRecoveryWavSet({ dir, mode: 'dual', log: noopLog, sampleRate: CAPTURE_SAMPLE_RATE }).pipe(
+      const set = yield* makeRecoveryWavSet({ dir, mode: 'dual', log: noopLog, callbackLog, sampleRate: CAPTURE_SAMPLE_RATE }).pipe(
         Scope.extend(scope)
       );
 
@@ -424,7 +425,7 @@ describe('makeRecoveryWavSet (recovery-scoped on-disk WAV)', () => {
     Effect.gen(function* () {
       const dir = path.join(tmpBase, 'closed');
       const scope = yield* Scope.make();
-      const set = yield* makeRecoveryWavSet({ dir, mode: 'mic', log: noopLog }).pipe(Scope.extend(scope));
+      const set = yield* makeRecoveryWavSet({ dir, mode: 'mic', log: noopLog, callbackLog }).pipe(Scope.extend(scope));
 
       yield* set.append('mic', new Float32Array([0.5]));
       yield* set.finalizeAndClose;

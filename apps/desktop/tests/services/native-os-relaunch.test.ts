@@ -1,14 +1,14 @@
+import { makeTestLogger } from '../helpers/test-layers';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { Effect } from 'effect';
+import { Effect, Layer } from 'effect';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NativeOsLive } from '../../src/main/infra/native-os/live';
 import { NativeOs } from '../../src/main/infra/native-os/service';
 
 const app = vi.hoisted(() => ({ isPackaged: false, relaunch: vi.fn(), quit: vi.fn() }));
 vi.mock('electron', () => ({ app, shell: {} }));
-vi.mock('../../src/main/logger', () => ({ log: {} }));
 
 let directory: string;
 let restartFile: string;
@@ -25,7 +25,7 @@ afterEach(() => {
 });
 const relaunch = () =>
   Effect.runPromise(
-    Effect.flatMap(NativeOs, nativeOs => nativeOs.relaunch).pipe(Effect.provide(NativeOsLive))
+    Effect.flatMap(NativeOs, nativeOs => nativeOs.relaunch).pipe(Effect.provide(NativeOsLive.pipe(Layer.provide(makeTestLogger().layer))))
   );
 
 describe('native relaunch', () => {

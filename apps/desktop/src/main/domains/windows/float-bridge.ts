@@ -158,7 +158,7 @@ export const FloatBridgeLive: Layer.Layer<
               .pipe(
                 Effect.as(true),
                 Effect.catchTag('WindowError', error =>
-                  log.error('float open failed', { stage: error.stage }).pipe(Effect.as(false))
+                  log.error('float open failed', { context: { stage: error.stage } }).pipe(Effect.as(false))
                 )
               );
             // `fresh` transiently clears the slot; the float view reports the

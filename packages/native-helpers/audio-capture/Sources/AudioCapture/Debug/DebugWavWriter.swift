@@ -24,9 +24,9 @@ final class DebugWavWriter {
             let handle = try FileHandle(forWritingTo: url)
             self.handle = handle
             try writeHeader()
-            Logger.info("Debug audio file initialized: \(url.path)")
+            Logger.info("Debug audio file initialized")
         } catch {
-            Logger.error("Failed to initialize debug WAV writer at \(url.path): \(error.localizedDescription)")
+            Logger.error("Failed to initialize debug WAV writer")
             self.handle = nil
             return nil
         }

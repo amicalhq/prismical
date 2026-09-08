@@ -31,7 +31,7 @@ export const CollabBrokerLive: Layer.Layer<CollabBroker, never, MainLogger | Col
     Effect.gen(function* () {
       const logger = yield* MainLogger;
       const log = logger.scoped('collab');
-      const unsafeLog = logger.scopedUnsafe('collab');
+      const unsafeLog = logger.scopedSync('collab');
       const bridge = yield* CollabBridge;
 
       // Every pump fiber lands here; layer-scope close interrupts them all
@@ -68,10 +68,10 @@ export const CollabBrokerLive: Layer.Layer<CollabBroker, never, MainLogger | Col
           const onMessage = (event: Electron.MessageEvent) => {
             const parsed = parseInboundCollabMessage(event.data);
             if (!parsed.success) {
-              unsafeLog.warn('invalid collab port message ignored', {
+              unsafeLog.warn('invalid collab port message ignored', { context: {
                 openId,
                 issues: parsed.issues,
-              });
+              } });
               return;
             }
             Queue.unsafeOffer(inbox, parsed.data);
@@ -106,14 +106,14 @@ export const CollabBrokerLive: Layer.Layer<CollabBroker, never, MainLogger | Col
                   // Workspace swapped under a live port: drop + warn, never crash.
                   onNone: () =>
                     log
-                      .warn(`collab ${what} dropped — no workspace`, { openId })
+                      .warn(`collab ${what} dropped — no workspace`, { context: { openId } })
                       .pipe(Effect.as('no-workspace' as const)),
                   onSome: store =>
                     run(store).pipe(
                       Effect.as('stored' as const),
                       Effect.catchAll(error =>
                         log
-                          .warn(`collab ${what} failed`, { openId, cause: String(error.cause) })
+                          .warn(`collab ${what} failed`, { context: { openId }, error: error.cause })
                           .pipe(Effect.as('failed' as const))
                       )
                     ),
@@ -178,10 +178,7 @@ export const CollabBrokerLive: Layer.Layer<CollabBroker, never, MainLogger | Col
               )
             ),
             Effect.catchAll(error =>
-              log.error('collab log replay failed — closing', {
-                openId,
-                cause: String(error.cause),
-              })
+              log.error('collab log replay failed — closing', { context: { openId }, error: error.cause })
             )
           );
 
@@ -207,7 +204,7 @@ export const CollabBrokerLive: Layer.Layer<CollabBroker, never, MainLogger | Col
           yield* Effect.sync(() => {
             sender.postMessage(collabPortChannel(openId), null, [port2]);
           });
-          yield* log.info('collab log opened', { openId, noteId });
+          yield* log.info('collab log opened', { context: { openId, noteId } });
         });
 
       const service: CollabBrokerApi = { open };

@@ -61,7 +61,7 @@ export const PendingResetLive: Layer.Layer<PendingReset, never, OperationalDb | 
 
       const raw = yield* db.getSetting(PENDING_PURGE_KEY).pipe(
         Effect.catchTag('DbError', error =>
-          log.error('pending purge marker unreadable — skipping', { op: error.op }).pipe(
+          log.error('pending purge marker unreadable — skipping', { context: { op: error.op } }).pipe(
             Effect.as(null)
           )
         )
@@ -85,7 +85,7 @@ export const PendingResetLive: Layer.Layer<PendingReset, never, OperationalDb | 
         ? yield* db.deleteAllLocalModels().pipe(
             Effect.as(true),
             Effect.catchTag('DbError', error =>
-              log.error('pending purge — local_model clear failed', { op: error.op }).pipe(
+              log.error('pending purge — local_model clear failed', { context: { op: error.op } }).pipe(
                 Effect.as(false)
               )
             )
@@ -96,24 +96,24 @@ export const PendingResetLive: Layer.Layer<PendingReset, never, OperationalDb | 
       if (complete) {
         yield* db.deleteSetting(PENDING_PURGE_KEY).pipe(
           Effect.catchTag('DbError', error =>
-            log.error('pending purge — marker clear failed (will re-apply next boot)', {
+            log.error('pending purge — marker clear failed (will re-apply next boot)', { context: {
               op: error.op,
-            })
+            } })
           )
         );
-        yield* log.warn('pending purge applied', {
+        yield* log.warn('pending purge applied', { context: {
           removed: outcome.removed.length,
           localModels: parsed.localModels,
-        });
+        } });
       } else if (parsed.attempts + 1 >= MAX_PURGE_ATTEMPTS) {
         yield* db
           .deleteSetting(PENDING_PURGE_KEY)
           .pipe(Effect.catchTag('DbError', () => Effect.void));
-        yield* log.error('pending purge abandoned — still incomplete after the retry budget', {
+        yield* log.error('pending purge abandoned — still incomplete after the retry budget', { context: {
           attempts: parsed.attempts + 1,
           failed: outcome.failed,
           localModelsCleared,
-        });
+        } });
       } else {
         // Re-arm ONLY the outstanding work: paths that survived, and the rows
         // if they could not be cleared. Removed paths must never be re-listed.
@@ -125,14 +125,14 @@ export const PendingResetLive: Layer.Layer<PendingReset, never, OperationalDb | 
         });
         yield* db.setSetting(PENDING_PURGE_KEY, remaining).pipe(
           Effect.catchTag('DbError', error =>
-            log.error('pending purge — marker narrow failed', { op: error.op })
+            log.error('pending purge — marker narrow failed', { context: { op: error.op } })
           )
         );
-        yield* log.error('pending purge incomplete — outstanding work re-armed for the next boot', {
+        yield* log.error('pending purge incomplete — outstanding work re-armed for the next boot', { context: {
           attempts: parsed.attempts + 1,
           failed: outcome.failed,
           localModelsCleared,
-        });
+        } });
       }
 
       const api: PendingResetApi = { applied: { ...outcome, localModelsCleared } };

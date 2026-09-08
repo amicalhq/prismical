@@ -134,6 +134,8 @@ export const CHANNELS = {
   settingsSet: 'settings:set',
   /** push main→renderer: DeviceSettings fan-out on any settings change. */
   settingsChanged: 'settings:changed',
+  loggingGetConfig: 'logging:getConfig',
+  loggingWrite: 'logging:write',
   telemetryGetState: 'telemetry:getState',
   telemetryStateChanged: 'telemetry:stateChanged',
   telemetryCapture: 'telemetry:capture',
@@ -964,50 +966,79 @@ export const DEFAULT_DEVICE_SETTINGS: DeviceSettings = {
   ai: DEFAULT_AI_PROVIDER_SETTING,
 };
 
+/** Non-secret logging configuration shared with the renderer adapter. */
+export interface RendererLoggingConfig {
+  readonly appVersion: string;
+  readonly appRunId: string;
+  readonly buildId?: string;
+  readonly isDev: boolean;
+  readonly logLevel?: string;
+  readonly debugScopes?: string;
+  readonly pid: number;
+  readonly surface: string;
+}
+export interface DesktopLoggingApi {
+  readonly getConfig: () => Promise<RendererLoggingConfig>;
+  /** Bounded versioned wire records, validated and source-bound by main. */
+  readonly write: (record: unknown) => Promise<void>;
+}
+
 // Effective telemetry policy is owned by main, including identity and availability.
-export const telemetryStateSchema = z.object({
-  revision: z.number().int().nonnegative(),
-  available: z.boolean(),
-  enabled: z.boolean(),
-  signedIn: z.boolean(),
-  preference: z.boolean(),
-  canChangePreference: z.boolean(),
-}).strict();
+export const telemetryStateSchema = z
+  .object({
+    revision: z.number().int().nonnegative(),
+    available: z.boolean(),
+    enabled: z.boolean(),
+    signedIn: z.boolean(),
+    preference: z.boolean(),
+    canChangePreference: z.boolean(),
+  })
+  .strict();
 export type TelemetryState = z.infer<typeof telemetryStateSchema>;
 
-const telemetryPropertiesSchema = z.record(
-  z.string().max(128),
-  z.union([z.string().max(2048), z.number().finite(), z.boolean(), z.null(), z.undefined()]),
-).refine(value => Object.keys(value).length <= 32, 'Too many telemetry properties');
+const telemetryPropertiesSchema = z
+  .record(
+    z.string().max(128),
+    z.union([z.string().max(2048), z.number().finite(), z.boolean(), z.null(), z.undefined()])
+  )
+  .refine(value => Object.keys(value).length <= 32, 'Too many telemetry properties');
 
-export const telemetryCaptureRequestSchema = z.object({
-  revision: z.number().int().nonnegative(),
-  event: z.string().min(1).max(128),
-  properties: telemetryPropertiesSchema.optional(),
-}).strict();
+export const telemetryCaptureRequestSchema = z
+  .object({
+    revision: z.number().int().nonnegative(),
+    event: z.string().min(1).max(128),
+    properties: telemetryPropertiesSchema.optional(),
+  })
+  .strict();
 export type TelemetryCaptureRequest = z.infer<typeof telemetryCaptureRequestSchema>;
 
-export const telemetryStackFrameSchema = z.object({
-  filename: z.string().max(300),
-  lineno: z.number().int().positive(),
-  colno: z.number().int().nonnegative(),
-  chunk_id: z.string().uuid().optional(),
-  platform: z.enum(['web:javascript', 'node:javascript']).optional(),
-}).strict();
+export const telemetryStackFrameSchema = z
+  .object({
+    filename: z.string().max(300),
+    lineno: z.number().int().positive(),
+    colno: z.number().int().nonnegative(),
+    chunk_id: z.string().uuid().optional(),
+    platform: z.enum(['web:javascript', 'node:javascript']).optional(),
+  })
+  .strict();
 export type TelemetryStackFrame = z.infer<typeof telemetryStackFrameSchema>;
 
-export const telemetryErrorSchema = z.object({
-  name: z.string().max(128),
-  message: z.string().max(2048),
-  stack: z.string().max(8192).optional(),
-  frames: z.array(telemetryStackFrameSchema).max(20).optional(),
-}).strict();
+export const telemetryErrorSchema = z
+  .object({
+    name: z.string().max(128),
+    message: z.string().max(2048),
+    stack: z.string().max(8192).optional(),
+    frames: z.array(telemetryStackFrameSchema).max(20).optional(),
+  })
+  .strict();
 export type TelemetryError = z.infer<typeof telemetryErrorSchema>;
-export const telemetryExceptionRequestSchema = z.object({
-  revision: z.number().int().nonnegative(),
-  error: telemetryErrorSchema,
-  properties: telemetryPropertiesSchema.optional(),
-}).strict();
+export const telemetryExceptionRequestSchema = z
+  .object({
+    revision: z.number().int().nonnegative(),
+    error: telemetryErrorSchema,
+    properties: telemetryPropertiesSchema.optional(),
+  })
+  .strict();
 export type TelemetryExceptionRequest = z.infer<typeof telemetryExceptionRequestSchema>;
 
 // ---------------------------------------------------------------------------
@@ -1561,6 +1592,7 @@ export interface MainWindowDesktopApi {
   readonly recording: MainWindowRecordingApi;
   /** Device-local preferences read/write/observe. */
   readonly settings: MainWindowSettingsApi;
+  readonly logging: DesktopLoggingApi;
   readonly telemetry: MainWindowTelemetryApi;
   /** Local whisper model manager: download/cancel/delete + state. */
   readonly models: MainWindowModelsApi;

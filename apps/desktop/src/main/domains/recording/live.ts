@@ -248,9 +248,8 @@ export const RecordingServiceLive: Layer.Layer<
       effect.pipe(
         Effect.catchAll(error =>
           log.warn('recording persistence failed', {
-            recordingId,
-            op: error.op,
-            cause: String(error.cause),
+            context: { recordingId, op: error.op },
+            error: error.cause,
           })
         )
       );
@@ -264,9 +263,8 @@ export const RecordingServiceLive: Layer.Layer<
         Effect.catchAll(error =>
           log
             .warn('recording save failed — audio retained for recovery', {
-              recordingId,
-              op: error.op,
-              cause: String(error.cause),
+              context: { recordingId, op: error.op },
+              error: error.cause,
             })
             .pipe(Effect.as(false))
         )
@@ -348,8 +346,7 @@ export const RecordingServiceLive: Layer.Layer<
           ),
           Effect.zipRight(
             log.info('recording parked for recovery', {
-              recordingId,
-              outcome: failed ? 'failed' : 'interrupted',
+              context: { recordingId, outcome: failed ? 'failed' : 'interrupted' },
             })
           ),
           Effect.catchAll(() => Effect.void)
@@ -357,6 +354,38 @@ export const RecordingServiceLive: Layer.Layer<
       };
 
       const body = Effect.gen(function* () {
+        const attemptStarted = yield* Clock.currentTimeNanos;
+        let captureSummarized = false;
+        let completed = false;
+        let failedStage: string | undefined;
+        yield* Effect.addFinalizer(exit =>
+          Effect.gen(function* () {
+            const durationMs = Number((yield* Clock.currentTimeNanos) - attemptStarted) / 1_000_000;
+            const interrupted = Exit.isInterrupted(exit);
+            const outcome = interrupted ? 'interrupted' : completed ? 'success' : 'failure';
+            if (!captureSummarized) {
+              yield* log.info('Recording capture ended', {
+                context: {
+                  recordingId,
+                  operation: 'capture',
+                  outcome: interrupted ? 'interrupted' : 'failure',
+                  durationMs,
+                },
+              });
+            }
+            yield* log.info('Recording processing attempt ended', {
+              context: {
+                recordingId,
+                operation: 'processing',
+                outcome,
+                durationMs,
+                ...(!completed && !interrupted
+                  ? { failedStage: failedStage ?? 'capture', reason: 'recovery-pending' }
+                  : {}),
+              },
+            });
+          })
+        );
         const startedAt = createInput.startedAt;
         const transcriptionConfig = createInput.transcriptionConfig;
         const mirrorToCore = appMode === 'cloud' && engine.engine !== 'cloud';
@@ -381,24 +410,27 @@ export const RecordingServiceLive: Layer.Layer<
           autoStopRequested: false,
         });
         yield* micLog.info('session_start', {
-          recordingId,
-          mode: initialAlignment.micSource,
-          app:
-            initialAlignment.desired.kind === 'device'
-              ? initialAlignment.desired.appName
-              : undefined,
+          context: {
+            recordingId,
+            mode: initialAlignment.micSource,
+            app:
+              initialAlignment.desired.kind === 'device'
+                ? initialAlignment.desired.appName
+                : undefined,
+          },
         });
         if (initialFallbackReason !== null) {
           yield* micLog.info('fallback', {
-            recordingId,
-            reason: initialFallbackReason,
+            context: { recordingId, reason: initialFallbackReason },
           });
         }
 
         yield* log.info('recording engine resolved', {
-          recordingId,
-          engine: engine.engine,
-          ...(engine.engine === 'local' ? { modelId: engine.modelId } : {}),
+          context: {
+            recordingId,
+            engine: engine.engine,
+            ...(engine.engine === 'local' ? { modelId: engine.modelId } : {}),
+          },
         });
 
         // Capture can proceed while creation is unavailable, but chunks and
@@ -406,8 +438,7 @@ export const RecordingServiceLive: Layer.Layer<
         const createRes = yield* coreClient.createRecording(createInput);
         if (!createRes.ok) {
           yield* log.warn('createRecording failed — capturing anyway', {
-            recordingId,
-            failure: createRes.failure,
+            context: { recordingId, failure: createRes.failure },
           });
         }
         const saveStarted = store.recordingStarted({
@@ -424,18 +455,25 @@ export const RecordingServiceLive: Layer.Layer<
             ? yield* persistBestEffort(recordingId, saveStarted).pipe(Effect.as(true))
             : yield* persistRequired(recordingId, saveStarted);
         const created = createRes.ok && startedSaved;
+        if (!created) failedStage = createRes.ok ? 'storage' : 'create';
         if (created) {
-          yield* db
-            .updateRecoveryOutbox(recordingId, { phase: 'chunks' })
-            .pipe(
-              Effect.catchAll(cause =>
-                log.warn('recovery progress save failed', { recordingId, cause: String(cause) })
-              )
-            );
+          yield* db.updateRecoveryOutbox(recordingId, { phase: 'chunks' }).pipe(
+            Effect.catchAll(cause =>
+              log.warn('recovery progress save failed', {
+                context: { recordingId },
+                error: cause,
+              })
+            )
+          );
         }
 
         // 3) shared pipeline resources (survive capture restarts).
-        const recovery = yield* makeRecoveryWavSet({ dir: wavDir, mode, log });
+        const recovery = yield* makeRecoveryWavSet({
+          dir: wavDir,
+          mode,
+          log,
+          callbackLog: logger.scopedSync('wav-writer'),
+        });
         const pipeline = yield* Ref.make(initialPipeline);
         const alignment = yield* SubscriptionRef.make(initialAlignment);
         const pendingMicTransition = yield* Ref.make<PendingMicTransition | null>(null);
@@ -556,10 +594,9 @@ export const RecordingServiceLive: Layer.Layer<
               engine
             );
             if (!res.ok) {
+              failedStage ??= 'transcription';
               yield* log.warn('chunk processing failed — retained for recovery', {
-                recordingId,
-                index: chunk.index,
-                failure: res.failure,
+                context: { recordingId, index: chunk.index, failure: res.failure },
               });
               return;
             }
@@ -635,8 +672,8 @@ export const RecordingServiceLive: Layer.Layer<
                   Effect.catchAll(cause =>
                     log
                       .error('pause cut point persist failed — recording remains live', {
-                        recordingId,
-                        cause: String(cause),
+                        context: { recordingId },
+                        error: cause,
                       })
                       .pipe(Effect.as(false))
                   )
@@ -790,10 +827,7 @@ export const RecordingServiceLive: Layer.Layer<
                               dropped > 0
                                 ? log.warn(
                                     'recording buffer overflow — dropped samples (recovery WAV retains them)',
-                                    {
-                                      recordingId,
-                                      dropped,
-                                    }
+                                    { context: { recordingId, dropped } }
                                   )
                                 : Effect.void
                             ),
@@ -910,35 +944,36 @@ export const RecordingServiceLive: Layer.Layer<
 
                 if (event.kind === 'lost') {
                   yield* micLog.warn('fallback', {
-                    recordingId,
-                    reason: 'disconnected',
-                    uid: event.uid,
+                    context: { recordingId, reason: 'disconnected', uid: event.uid },
                   });
                 } else if (event.kind === 'bind-failed') {
                   yield* micLog.warn('activation_failure', {
-                    recordingId,
-                    uid: event.uid,
-                    os_status: event.osStatus,
-                    reason: event.reason,
-                    operation: event.operation,
-                    fallback: next.desired.kind === 'default' ? 'default' : 'unbound',
+                    context: {
+                      recordingId,
+                      uid: event.uid,
+                      os_status: event.osStatus,
+                      reason: event.reason,
+                      operation: event.operation,
+                      fallback: next.desired.kind === 'default' ? 'default' : 'unbound',
+                    },
                   });
                 } else if (event.kind === 'unavailable') {
                   const unavailableAt = yield* Ref.get(unavailableSinceMs);
                   if (unavailableAt === null) yield* Ref.set(unavailableSinceMs, nowMs);
-                  yield* micLog.warn('unavailable', { recordingId });
+                  yield* micLog.warn('unavailable', { context: { recordingId } });
                 } else if (event.kind === 'recovered') {
                   const unavailableAt = yield* Ref.get(unavailableSinceMs);
                   yield* Ref.set(unavailableSinceMs, null);
                   yield* micLog.info('recovered', {
-                    recordingId,
-                    uid: event.uid,
-                    duration_ms: unavailableAt === null ? 0 : Math.max(0, nowMs - unavailableAt),
+                    context: {
+                      recordingId,
+                      uid: event.uid,
+                      duration_ms: unavailableAt === null ? 0 : Math.max(0, nowMs - unavailableAt),
+                    },
                   });
                 } else if (event.kind === 'timeline-jump') {
                   yield* micLog.warn('timeline_jump', {
-                    recordingId,
-                    gap_ms: event.gapMs,
+                    context: { recordingId, gap_ms: event.gapMs },
                   });
                 } else if (event.kind === 'bound') {
                   const pending = yield* Ref.get(pendingMicTransition);
@@ -952,16 +987,18 @@ export const RecordingServiceLive: Layer.Layer<
                     previous.actualUid !== null && previous.actualUid !== event.uid;
                   if (pending !== null || changedActual || event.reason !== 'command') {
                     yield* micLog.info('transition', {
-                      recordingId,
-                      from: pending?.from ?? previous.micSource,
-                      to: next.micSource,
-                      trigger,
-                      detect_ms: pending?.detectMs ?? 0,
-                      blackout_ms: event.blackoutMs ?? 0,
-                      trimmed_ms: event.trimmedMs ?? 0,
-                      ok: true,
-                      uid: event.uid,
-                      app: next.desired.kind === 'device' ? next.desired.appName : undefined,
+                      context: {
+                        recordingId,
+                        from: pending?.from ?? previous.micSource,
+                        to: next.micSource,
+                        trigger,
+                        detect_ms: pending?.detectMs ?? 0,
+                        blackout_ms: event.blackoutMs ?? 0,
+                        trimmed_ms: event.trimmedMs ?? 0,
+                        ok: true,
+                        uid: event.uid,
+                        app: next.desired.kind === 'device' ? next.desired.appName : undefined,
+                      },
                     });
                   }
                   yield* Ref.set(pendingMicTransition, null);
@@ -1011,9 +1048,10 @@ export const RecordingServiceLive: Layer.Layer<
             );
           })
         ).pipe(
-          Effect.tapError((error: CaptureError | RecoveryWriteError) =>
-            log.warn('capture interrupted', { recordingId, error: error._tag })
-          ),
+          Effect.tapError((error: CaptureError | RecoveryWriteError) => {
+            if (error._tag === 'RecoveryWriteError') failedStage ??= 'storage';
+            return log.warn('capture interrupted', { context: { recordingId }, error });
+          }),
           Effect.retry({
             schedule: RESTART_SCHEDULE,
             while: error => error._tag !== 'RecoveryWriteError',
@@ -1028,8 +1066,8 @@ export const RecordingServiceLive: Layer.Layer<
         ).pipe(Effect.either);
         if (Either.isLeft(captureExit)) {
           yield* log.warn('capture ended — completing retained audio', {
-            recordingId,
-            error: captureExit.left._tag,
+            context: { recordingId },
+            error: captureExit.left,
           });
           yield* Deferred.succeed(stopSignal, undefined);
         }
@@ -1041,6 +1079,18 @@ export const RecordingServiceLive: Layer.Layer<
         yield* frameGate.withPermits(1)(Effect.void);
         const stoppingSamples = yield* Ref.get(acceptedSamplesRef);
         const stoppingAt = yield* Clock.currentTimeMillis;
+        captureSummarized = true;
+        yield* log.info('Recording capture ended', {
+          context: {
+            recordingId,
+            operation: 'capture',
+            outcome: Either.isLeft(captureExit) ? 'failure' : 'success',
+            durationMs: Number((yield* Clock.currentTimeNanos) - attemptStarted) / 1_000_000,
+            audioDurationMs: mediaDurationMs(stoppingSamples),
+            ...(Either.isLeft(captureExit) ? { failedStage: 'capture' } : {}),
+          },
+          ...(Either.isLeft(captureExit) ? { error: captureExit.left } : {}),
+        });
         yield* SubscriptionRef.set(level, 0);
         yield* setState({
           status: 'stopping',
@@ -1091,13 +1141,15 @@ export const RecordingServiceLive: Layer.Layer<
             Effect.catchAll(cause =>
               log
                 .warn('recording stop save failed — audio retained', {
-                  recordingId,
-                  cause: String(cause),
+                  context: { recordingId },
+                  error: cause,
                 })
                 .pipe(Effect.as(false))
             )
           );
 
+        if (!savedStop) failedStage ??= 'storage';
+        if (!allAcked) failedStage ??= 'transcription';
         if (savedStop && allAcked) {
           let metaSaved = true;
           if (engine.engine !== 'cloud') {
@@ -1109,13 +1161,14 @@ export const RecordingServiceLive: Layer.Layer<
               })
             );
           }
+          if (!metaSaved) failedStage ??= 'storage';
           if (metaSaved) {
             const finalized = yield* coreClient.finalizeRecording(recordingId, {
               endedAt,
               durationMs,
             });
             if (finalized.ok) {
-              const completed =
+              const completionSaved =
                 engine.engine === 'cloud'
                   ? yield* persistBestEffort(
                       recordingId,
@@ -1125,30 +1178,40 @@ export const RecordingServiceLive: Layer.Layer<
                       recordingId,
                       store.recordingCompleted(recordingId, { endedAt, durationMs })
                     );
-              if (completed) {
+              if (!completionSaved) failedStage ??= 'storage';
+              if (completionSaved) {
                 yield* db.updateRecoveryOutbox(recordingId, { phase: 'cleanup' }).pipe(
+                  Effect.tap(() => {
+                    completed = true;
+                    return log.info('Recording completed', {
+                      context: {
+                        recordingId,
+                        operation: 'recording',
+                        outcome: 'success',
+                        audioDurationMs: durationMs,
+                      },
+                    });
+                  }),
                   Effect.zipRight(resolveCompletion(recordingId, true)),
-                  Effect.catchAll(cause =>
-                    log.warn('recording progress save failed — retained for recovery', {
-                      recordingId,
-                      cause: String(cause),
-                    })
-                  )
+                  Effect.catchAll(cause => {
+                    failedStage ??= 'storage';
+                    return log.warn('recording progress save failed — retained for recovery', {
+                      context: { recordingId },
+                      error: cause,
+                    });
+                  })
                 );
               }
             } else {
+              failedStage ??= 'finalize';
               yield* log.warn('finalizeRecording failed — retained for recovery', {
-                recordingId,
-                failure: finalized.failure,
+                context: { recordingId, failure: finalized.failure },
               });
             }
           }
         } else {
           yield* log.warn('recording stopped with unresolved chunks — parked for drain', {
-            recordingId,
-            cursor,
-            totalAssigned,
-            droppedSamples: droppedTotal,
+            context: { recordingId, cursor, totalAssigned, droppedSamples: droppedTotal },
           });
         }
 
@@ -1172,8 +1235,8 @@ export const RecordingServiceLive: Layer.Layer<
       return Effect.scoped(body).pipe(
         Effect.catchAll((error: CaptureError | RecoveryWriteError) =>
           log.warn('recording stopped with unresolved recovery work', {
-            recordingId,
-            error: error._tag,
+            context: { recordingId },
+            error: error,
           })
         )
       );
@@ -1311,10 +1374,12 @@ export const RecordingServiceLive: Layer.Layer<
           );
           yield* FiberMap.run(fibers, recordingId, program);
           yield* log.info('recording started', {
-            recordingId,
-            requested: resolved.requested,
-            mode: resolved.mode,
-            degraded: resolved.degraded,
+            context: {
+              recordingId,
+              requested: resolved.requested,
+              mode: resolved.mode,
+              degraded: resolved.degraded,
+            },
           });
           return recordingId;
         })
@@ -1324,7 +1389,7 @@ export const RecordingServiceLive: Layer.Layer<
       Ref.get(activeRef).pipe(
         Effect.flatMap(current =>
           Option.isNone(current) || current.value.recordingId !== recordingId
-            ? log.warn('stop: no matching active recording', { recordingId })
+            ? log.warn('stop: no matching active recording', { context: { recordingId } })
             : current.value
                 .synchronize(
                   Ref.set(current.value.stopping, true).pipe(

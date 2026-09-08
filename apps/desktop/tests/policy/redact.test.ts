@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { redactValue } from '../../src/main/infra/logging/redact';
+import { makeWire, type JsonValue } from '@desktop/logging';
+const redactValue = (value: unknown): unknown =>
+  makeWire('info', 'fixture', 'Privacy fixture', { context: { value: value as JsonValue } }).context?.value;
 
 describe('redactValue', () => {
   it('strips fields matching /token|secret|authorization/i at any depth', () => {
@@ -12,11 +14,11 @@ describe('redactValue', () => {
       plain: 42,
     };
     expect(redactValue(input)).toEqual({
-      idToken: '[REDACTED]',
-      refresh_token: '[REDACTED]',
-      clientSecret: '[REDACTED]',
-      Authorization: '[REDACTED]',
-      nested: { accessTOKEN: '[REDACTED]', keep: 'ok', deeper: [{ apiSecret: '[REDACTED]' }] },
+      idToken: '[redacted]',
+      refresh_token: '[redacted]',
+      clientSecret: '[redacted]',
+      Authorization: '[redacted]',
+      nested: { accessTOKEN: '[redacted]', keep: 'ok', deeper: [{ apiSecret: '[redacted]' }] },
       plain: 42,
     });
   });
@@ -33,10 +35,10 @@ describe('redactValue', () => {
     const circular: Record<string, unknown> = { name: 'a', token: 't' };
     circular.self = circular;
     const result = redactValue(circular) as Record<string, unknown>;
-    expect(result.token).toBe('[REDACTED]');
-    expect(result.self).toBe('[CIRCULAR]');
+    expect(result.token).toBe('[redacted]');
+    expect(result.self).toBe('[circular]');
     expect(redactValue([{ sessionToken: 'x' }, 'ok'])).toEqual([
-      { sessionToken: '[REDACTED]' },
+      { sessionToken: '[redacted]' },
       'ok',
     ]);
   });

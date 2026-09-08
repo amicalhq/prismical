@@ -170,7 +170,7 @@ export const makeModelManagerLive = (
       const bootRows = yield* db.listLocalModels().pipe(
         Effect.catchTag('DbError', error =>
           log
-            .warn('local models read failed at boot — starting empty', { op: error.op })
+            .warn('local models read failed at boot — starting empty', { context: { op: error.op } })
             .pipe(Effect.as<ReadonlyArray<LocalModelRow>>([]))
         )
       );
@@ -326,11 +326,11 @@ export const makeModelManagerLive = (
           if (agrees) {
             const length = declaredLength(response);
             const declared = range.total ?? (length === null ? null : partSize + length);
-            yield* log.info('model download resuming', {
+            yield* log.info('model download resuming', { context: {
               modelId: entry.id,
               from: partSize,
               totalBytes: declared,
-            });
+            } });
             return {
               response,
               from: partSize,
@@ -355,11 +355,11 @@ export const makeModelManagerLive = (
               })
             );
           }
-          yield* log.info('model download restarting from 0', {
+          yield* log.info('model download restarting from 0', { context: {
             modelId: entry.id,
             status: response.status,
             partSize,
-          });
+          } });
           yield* Effect.tryPromise({
             try: () => fs.promises.truncate(part, 0),
             catch: io(entry.id, 'truncate .part'),
@@ -535,7 +535,7 @@ export const makeModelManagerLive = (
             return next;
           });
           yield* setDownload(entry.id, null);
-          yield* log.info('model installed', { modelId: entry.id, sizeBytes, path: target });
+          yield* log.info('model installed', { context: { modelId: entry.id, sizeBytes, path: target } });
         }).pipe(
           // Cancel / scope close: the interrupt can land in ANY phase of the
           // fiber — awaiting the 302/CDN response headers, hashing a resumed
@@ -564,7 +564,7 @@ export const makeModelManagerLive = (
                 })
               ),
               Effect.zipRight(setDownload(entry.id, null)),
-              Effect.zipRight(log.info('model download cancelled', { modelId: entry.id }))
+              Effect.zipRight(log.info('model download cancelled', { context: { modelId: entry.id } }))
             )
           )
         );
@@ -586,19 +586,19 @@ export const makeModelManagerLive = (
           if ((yield* Ref.get(rowsRef)).has(vad.id)) return;
           yield* download(vad.id).pipe(
             Effect.tap(() =>
-              log.info('vad model auto-download started', {
+              log.info('vad model auto-download started', { context: {
                 modelId: vad.id,
                 after: installedEntry.id,
-              })
+              } })
             ),
             Effect.catchTag('ModelError', error =>
               error.reason === 'already-installed' || error.reason === 'download-in-progress'
                 ? Effect.void
-                : log.warn('vad model auto-download refused', {
+                : log.warn('vad model auto-download refused', { context: {
                     modelId: vad.id,
                     reason: error.reason,
                     detail: error.detail,
-                  })
+                  } })
             )
           );
         });
@@ -610,11 +610,11 @@ export const makeModelManagerLive = (
           Effect.catchAll(error =>
             Effect.gen(function* () {
               const current = (yield* Ref.get(downloadsRef)).get(entry.id);
-              yield* log.warn('model download failed', {
+              yield* log.warn('model download failed', { context: {
                 modelId: entry.id,
                 reason: error.reason,
                 detail: error.detail,
-              });
+              } });
               yield* setDownload(entry.id, {
                 status: 'error',
                 bytesDownloaded: current?.bytesDownloaded ?? 0,
@@ -630,7 +630,7 @@ export const makeModelManagerLive = (
           ),
           Effect.catchAllDefect(defect =>
             log
-              .error('model download defect', { modelId: entry.id, defect: String(defect) })
+              .error('model download defect', { context: { modelId: entry.id }, error: defect })
               .pipe(
                 Effect.zipRight(
                   setDownload(entry.id, {
@@ -662,7 +662,7 @@ export const makeModelManagerLive = (
               return yield* Effect.fail(new ModelError({ reason: 'already-installed', modelId }));
             }
             // The file vanished out of band: forget the row and re-download.
-            yield* log.warn('installed model file missing — re-downloading', { modelId });
+            yield* log.warn('installed model file missing — re-downloading', { context: { modelId } });
             yield* db
               .deleteLocalModel(modelId)
               .pipe(Effect.catchTag('DbError', () => Effect.void));
@@ -699,11 +699,11 @@ export const makeModelManagerLive = (
           );
           const required = Math.ceil(Math.max(entry.sizeBytes - partSize, 0) * FREE_SPACE_HEADROOM);
           if (free !== null && free < required) {
-            yield* log.warn('model download refused: insufficient space', {
+            yield* log.warn('model download refused: insufficient space', { context: {
               modelId,
               required,
               free,
-            });
+            } });
             yield* setDownload(modelId, {
               status: 'error',
               bytesDownloaded: partSize,
@@ -725,7 +725,7 @@ export const makeModelManagerLive = (
             error: null,
           });
           yield* FiberMap.run(fibers, modelId, supervised(entry));
-          yield* log.info('model download started', { modelId, resumeFrom: partSize });
+          yield* log.info('model download started', { context: { modelId, resumeFrom: partSize } });
         });
 
       const cancel: ModelManagerApi['cancel'] = modelId =>
@@ -765,7 +765,7 @@ export const makeModelManagerLive = (
           yield* db.deleteLocalModel(modelId);
           yield* setRow(modelId, null);
           yield* publish;
-          yield* log.info('model deleted', { modelId });
+          yield* log.info('model deleted', { context: { modelId } });
         });
 
       const reconcile: ModelManagerApi['reconcile'] = Effect.gen(function* () {
@@ -796,10 +796,10 @@ export const makeModelManagerLive = (
           const entry = findEntry(row.modelId);
           const size = yield* Effect.promise(() => fileSize(row.path).catch(() => null));
           if (entry === undefined || size === null || size !== row.sizeBytes) {
-            yield* log.warn('local model row dropped at reconcile', {
+            yield* log.warn('local model row dropped at reconcile', { context: {
               modelId: row.modelId,
               reason: entry === undefined ? 'not-in-catalogue' : size === null ? 'missing' : 'size',
-            });
+            } });
             yield* db.deleteLocalModel(row.modelId);
             removed.set(row.modelId, row.updatedAt);
             report.removed += 1;
@@ -818,10 +818,10 @@ export const makeModelManagerLive = (
             )
           );
           if (!verified) {
-            yield* log.warn('catalogue file present but unverified — not adopted', {
+            yield* log.warn('catalogue file present but unverified — not adopted', { context: {
               modelId: entry.id,
               path: target,
-            });
+            } });
             continue;
           }
           const sizeBytes = yield* Effect.promise(() => fileSize(target));
@@ -838,7 +838,7 @@ export const makeModelManagerLive = (
           yield* db.upsertLocalModel(row);
           adopted.set(entry.id, { ...row, createdAt: now, updatedAt: now });
           report.adopted += 1;
-          yield* log.info('local model adopted at reconcile', { modelId: entry.id });
+          yield* log.info('local model adopted at reconcile', { context: { modelId: entry.id } });
         }
         for (const file of files) {
           if (!file.endsWith(PART_SUFFIX)) continue;
@@ -865,7 +865,7 @@ export const makeModelManagerLive = (
           return next;
         });
         yield* publish;
-        yield* log.info('local models reconciled', report);
+        yield* log.info('local models reconciled', { context: report });
         return report;
       });
 
@@ -882,14 +882,14 @@ export const makeModelManagerLive = (
       yield* Effect.forkScoped(
         reconcile.pipe(
           Effect.catchTag('DbError', error =>
-            log.warn('local model reconcile failed — keeping boot rows', { op: error.op })
+            log.warn('local model reconcile failed — keeping boot rows', { context: { op: error.op } })
           ),
           Effect.catchAllDefect(defect =>
-            log.error('local model reconcile defect', { defect: String(defect) })
+            log.error('local model reconcile defect', { error: defect })
           )
         )
       );
-      yield* log.info('model manager ready', { modelsDir, installed: bootRows.length });
+      yield* log.info('model manager ready', { context: { modelsDir, installed: bootRows.length } });
 
       const api: ModelManagerApi = {
         state,

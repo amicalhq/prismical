@@ -1,3 +1,8 @@
+import { makeLogger, makeFilter } from '@desktop/logging';
+const wavLog = makeLogger(() => {}, {
+  origin: { app: 'prismical', appVersion: 'test', appRunId: 'test-run' },
+  source: { runtime: 'main', pid: 1 }, filter: makeFilter({ isDev: true }),
+}).service.scopedSync('wav-writer');
 /**
  * Recovery-drain tests.
  *
@@ -95,7 +100,7 @@ const writeWav = (
 ): Effect.Effect<void> =>
   Effect.promise(async () => {
     fs.mkdirSync(dir, { recursive: true });
-    const writer = new StreamingWavWriter(path.join(dir, `${source}.wav`), RATE, 1, 16);
+    const writer = new StreamingWavWriter(wavLog, path.join(dir, `${source}.wav`), RATE, 1, 16);
     await writer.appendAudio(samples);
     if (finalize) await writer.finalize();
     else await writer.abort();
@@ -618,6 +623,10 @@ describe('RecoveryDrain (re-chunk retained WAV → resend tail → finalize → 
         assert.strictEqual(h.fakeCloud.finalizeCalls.length, 1);
         assert.isNull(yield* h.db.getRecoveryOutbox(recordingId));
         assert.isFalse(fs.existsSync(dir), 'WAV deleted once resolved');
+        const attemptsLogged = h.logger.entries.filter(entry => entry.message === 'Recording recovery attempt ended').map(entry => entry.data as { recordingId: string; outcome: string; attempt: number });
+        assert.deepStrictEqual(attemptsLogged.map(entry => [entry.recordingId, entry.outcome, entry.attempt]), [[recordingId, 'failure', 1], [recordingId, 'success', 2]]);
+        assert.lengthOf(h.logger.entries.filter(entry => entry.message === 'Recording completed'), 1);
+
 
         yield* Scope.close(h.scope, Exit.void);
       })

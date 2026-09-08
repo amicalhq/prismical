@@ -69,15 +69,15 @@ final class SystemAudioCapture {
         Logger.info("System audio capture setup: process tap created id=\(tapID)")
 
         let outputDeviceUID = try getDefaultOutputDeviceUID()
-        Logger.info("System audio capture setup: default output device uid=\(outputDeviceUID)")
+        Logger.info("System audio output device resolved")
         var inputDeviceUID: String?
         if captureAggregateInput {
             do {
                 let resolvedInputDeviceUID = try getDefaultInputDeviceUID()
                 inputDeviceUID = resolvedInputDeviceUID
-                Logger.info("System audio capture setup: default input device uid=\(resolvedInputDeviceUID)")
+                Logger.info("System audio input device resolved")
             } catch {
-                Logger.error("Failed to resolve default input device uid: \(error.localizedDescription)")
+                Logger.error("Failed to resolve system audio input device")
             }
         }
         let aggregateDeviceDescription = makeAggregateDeviceDescription(
@@ -291,7 +291,7 @@ final class SystemAudioCapture {
             try preResampleDebugWriter?.finalize()
             try postResampleDebugWriter?.finalize()
         } catch {
-            Logger.error("Failed to finalize debug audio files: \(error.localizedDescription)")
+            Logger.error("Failed to finalize debug audio files")
         }
 
         debugCaptureStartHostTime = nil

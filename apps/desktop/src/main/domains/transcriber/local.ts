@@ -166,10 +166,10 @@ export const LocalWhisperLive: Layer.Layer<
         Effect.flatMap(seen =>
           seen
             ? Effect.void
-            : log.warn('local whisper model not installed — audio retained for recovery', {
+            : log.warn('local whisper model not installed — audio retained for recovery', { context: {
                 recordingId,
                 modelId,
-              })
+              } })
         )
       );
 
@@ -239,13 +239,13 @@ export const LocalWhisperLive: Layer.Layer<
             Effect.either
           );
         if (Either.isLeft(decoded)) {
-          yield* log.warn('local whisper chunk failed', {
+          yield* log.warn('local whisper chunk failed', { context: {
             recordingId,
             chunkIndex: params.chunkIndex,
             source: params.source,
             reason: decoded.left.reason,
             detail: decoded.left.detail,
-          });
+          } });
           const result = engineFailureResult(decoded.left);
           if (!result.ok && result.retryable) {
             breaker.consecutive += 1;
@@ -253,11 +253,11 @@ export const LocalWhisperLive: Layer.Layer<
               breaker.open = result;
               yield* log.warn(
                 'local whisper circuit opened — engine bypassed for the rest of this recording (audio parks for the drain)',
-                {
+                { context: {
                   recordingId,
                   consecutiveFailures: breaker.consecutive,
                   reason: decoded.left.reason,
-                }
+                } }
               );
             }
           } else {

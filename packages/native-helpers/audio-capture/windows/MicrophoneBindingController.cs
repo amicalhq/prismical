@@ -799,7 +799,7 @@ internal sealed class EndpointNotificationClient : IMMNotificationClient
                 }
                 catch (Exception ex)
                 {
-                    Logger.Error($"Audio endpoint notification failed: {ex.Message}");
+                    Logger.Error("Audio endpoint notification failed");
                 }
             }
         );

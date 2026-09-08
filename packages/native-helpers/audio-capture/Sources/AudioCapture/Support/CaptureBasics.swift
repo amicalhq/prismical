@@ -51,11 +51,11 @@ enum CaptureError: Error, LocalizedError {
 
 final class Logger {
     static func info(_ message: String) {
-        write("[audio-capture] \(message)\n")
+        record("info", message)
     }
 
     static func error(_ message: String) {
-        write("[audio-capture] ERROR: \(message)\n")
+        record("error", message)
     }
 
     static func micEvent(_ fields: [String: Any]) {
@@ -66,6 +66,16 @@ final class Logger {
             return
         }
         write("mic-event=\(json)\n")
+    }
+
+    private static func record(_ level: String, _ message: String) {
+        let timestamp = ISO8601DateFormatter()
+        timestamp.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let frame: [String: Any] = ["schemaVersion": 1, "timestamp": timestamp.string(from: Date()),
+            "level": level, "scope": "audio-capture", "message": String(message.prefix(2048))]
+        guard let data = try? JSONSerialization.data(withJSONObject: frame, options: [.sortedKeys]),
+              let line = String(data: data, encoding: .utf8) else { return }
+        write(line + "\n")
     }
 
     private static func write(_ value: String) {

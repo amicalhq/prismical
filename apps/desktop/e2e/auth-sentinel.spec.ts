@@ -245,7 +245,7 @@ test.describe('auth sentinel-token scans', () => {
 
     // (a) the per-run main log. 'sign-in complete' proves this file is THIS
     // run's auth log (the scan is not vacuous).
-    const logText = await readFile(path.join(profileDir, 'logs', 'main.log'), 'utf8');
+    const logText = await readFile(path.join(profileDir, 'logs', 'main.jsonl'), 'utf8');
     expect(logText).toContain('sign-in complete');
     for (const sentinel of sentinels) {
       expect(logText).not.toContain(sentinel);
@@ -315,7 +315,7 @@ test.describe('auth sentinel-token scans', () => {
 
     // (a) the log now covers both runs (electron-log appends): 'refresh
     // complete' proves the rotation path logged into THIS file.
-    const logText2 = await readFile(path.join(profileDir, 'logs', 'main.log'), 'utf8');
+    const logText2 = await readFile(path.join(profileDir, 'logs', 'main.jsonl'), 'utf8');
     expect(logText2).toContain('refresh complete');
     for (const sentinel of bothGenerations) {
       expect(logText2).not.toContain(sentinel);

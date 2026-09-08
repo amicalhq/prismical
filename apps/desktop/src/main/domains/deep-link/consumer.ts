@@ -35,7 +35,7 @@ export const runDeepLinkConsumer: Effect.Effect<
         case 'OAuthCallback':
           // Values are secrets — log arrival only; redaction guards the rest.
           return log
-            .info('oauth callback parked', { state: parsed.state.slice(0, 4) + '…' })
+            .info('oauth callback parked', { context: { state: parsed.state.slice(0, 4) + '…' } })
             .pipe(
               Effect.zipRight(
                 SubscriptionRef.update(deepLinks.pendingOAuth, pending => [
@@ -53,10 +53,7 @@ export const runDeepLinkConsumer: Effect.Effect<
           // The error name is a registry value (RFC 6749), not a secret; the
           // state stays prefix-only like the callback arm.
           return log
-            .info('oauth error parked', {
-              error: parsed.error,
-              state: parsed.state === undefined ? undefined : parsed.state.slice(0, 4) + '…',
-            })
+            .info('oauth error parked', { context: { state: parsed.state === undefined ? undefined : parsed.state.slice(0, 4) + '…' }, error: parsed.error })
             .pipe(
               Effect.zipRight(
                 SubscriptionRef.update(deepLinks.pendingOAuth, pending => [
@@ -78,9 +75,9 @@ export const runDeepLinkConsumer: Effect.Effect<
           // link must never hijack the main window into the bare float view
           // and any webpage can mint prismical:// links.
           if (parsed.path.startsWith('/float')) {
-            return log.warn('nav push rejected — float routes are not deep-linkable', {
+            return log.warn('nav push rejected — float routes are not deep-linkable', { context: {
               path: parsed.path,
-            });
+            } });
           }
           const payload: NavPush = { path: parsed.path };
           return windows
@@ -91,8 +88,8 @@ export const runDeepLinkConsumer: Effect.Effect<
                   ? // 'dispatched', not 'delivered': webContents.send is fire-and-forget
                     // (the renderer may not have subscribed yet — the preload nav
                     // buffer replays it). Nothing here acknowledges receipt.
-                    log.info('nav push dispatched', { path: parsed.path })
-                  : log.warn('nav push dropped — no live main window', { path: parsed.path })
+                    log.info('nav push dispatched', { context: { path: parsed.path } })
+                  : log.warn('nav push dropped — no live main window', { context: { path: parsed.path } })
               )
             );
         }
@@ -100,10 +97,10 @@ export const runDeepLinkConsumer: Effect.Effect<
           // NEVER the raw URL: several Unknown reasons carry real code/state
           // values (error-and-code, param-count, param-empty) — log param
           // Names only (describeRejectedDeepLink).
-          return log.warn('deep link rejected', {
+          return log.warn('deep link rejected', { context: {
             url: describeRejectedDeepLink(parsed.url),
             reason: parsed.reason,
-          });
+          } });
       }
     }),
     Effect.forever
@@ -132,7 +129,7 @@ export const offerLaunchDeepLinks = (
     const links = deepLinksFromArgv(argv, { allowDevScheme: !config.isPackaged });
     yield* Effect.forEach(links, url => deepLinks.offerUrl(url), { discard: true });
     if (links.length > 0) {
-      yield* log.info('cold-start deep links offered', { count: links.length });
+      yield* log.info('cold-start deep links offered', { context: { count: links.length } });
     }
   });
 
@@ -154,7 +151,7 @@ export const runSecondInstanceConsumer: Effect.Effect<
         Effect.zipRight(
           Effect.forEach(deepLinksFromArgv(argv, options), url => deepLinks.offerUrl(url))
         ),
-        Effect.zipRight(log.info('second instance handled', { argvLength: argv.length }))
+        Effect.zipRight(log.info('second instance handled', { context: { argvLength: argv.length } }))
       )
     ),
     Effect.forever

@@ -61,10 +61,10 @@ export const OperationalDbLive: Layer.Layer<OperationalDb, BootError, AppConfig 
           catch: cause => new BootError({ stage: 'operational-db', cause }),
         }).pipe(
           Effect.tap(({ ran }) =>
-            log.info('operational db opened', {
+            log.info('operational db opened', { context: {
               path: config.operationalDbPath,
               migrationsRun: ran,
-            })
+            } })
           )
         ),
         ({ client }) =>

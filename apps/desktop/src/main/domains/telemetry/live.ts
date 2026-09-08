@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import os from 'node:os';
 import { Deferred, Effect, Layer, Stream, SubscriptionRef } from 'effect';
 import { AppModeService } from '../app-mode/service';
@@ -27,7 +26,8 @@ export const makeTelemetryServiceLive = (
       const auth = yield* AuthService;
       const settings = yield* SettingsService;
       const { mode, chosenState } = yield* AppModeService;
-      const log = (yield* MainLogger).scoped('telemetry');
+      const logger = yield* MainLogger;
+      const log = logger.scoped('telemetry');
       const { analyticsKey: key, analyticsHost: host } = config.endpoints;
       const configured = !config.isE2E && Boolean(key && host);
       let deviceId: string | undefined;
@@ -37,7 +37,7 @@ export const makeTelemetryServiceLive = (
           ? { build_id: __PRISMICAL_BUILD_ID__ }
           : {}),
         schema_version: 1,
-        app_run_id: randomUUID(),
+        app_run_id: logger.appRunId,
         app_version: config.appVersion,
         app_is_packaged: config.isPackaged,
         platform:

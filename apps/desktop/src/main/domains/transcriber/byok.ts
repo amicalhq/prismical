@@ -92,10 +92,10 @@ export const makeByokTranscriberLive = (
           Effect.flatMap(seen =>
             seen
               ? Effect.void
-              : log.warn('BYOK transcription credentials unavailable', {
+              : log.warn('BYOK transcription credentials unavailable', { context: {
                   recordingId,
                   ...data,
-                })
+                } })
           )
         );
 
@@ -106,7 +106,7 @@ export const makeByokTranscriberLive = (
           Effect.map(secret => byokKeyForEndpoint(secret, baseUrl)),
           Effect.catchAll(error =>
             log
-              .warn('BYOK key unreadable', { recordingId, error: error._tag })
+              .warn('BYOK key unreadable', { context: { recordingId }, error: error._tag })
               .pipe(Effect.as(null))
           )
         );
@@ -188,13 +188,13 @@ export const makeByokTranscriberLive = (
           );
 
           if (!outcome.ok) {
-            yield* log.warn('BYOK transcription chunk failed', {
+            yield* log.warn('BYOK transcription chunk failed', { context: {
               recordingId,
               chunkIndex: params.chunkIndex,
               source: params.source,
               failure: outcome.failure,
               retryable: outcome.retryable,
-            });
+            } });
             return outcome;
           }
           // Run the deterministic replacement pass over the workspace's terms.

@@ -373,6 +373,32 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
           h.fakeCloud.timeline.indexOf('finalize')
         );
         assert.strictEqual(h.fakeCloud.finalizeCalls[0].input.durationMs, 6000);
+        const terminal = h.logger.entries.filter(entry =>
+          [
+            'Recording capture ended',
+            'Recording processing attempt ended',
+            'Recording completed',
+          ].includes(entry.message)
+        );
+        assert.lengthOf(terminal, 3);
+        assert.isTrue(
+          terminal.every(
+            entry =>
+              entry.level === 'info' &&
+              (entry.data as { recordingId: string; outcome: string }).recordingId ===
+                recordingId &&
+              (entry.data as { outcome: string }).outcome === 'success'
+          )
+        );
+        assert.strictEqual(
+          (
+            terminal.find(entry => entry.message === 'Recording capture ended')?.data as {
+              audioDurationMs: number;
+            }
+          ).audioDurationMs,
+          6000
+        );
+
         assert.deepStrictEqual(Object.keys(h.fakeCloud.finalizeCalls[0].input).sort(), [
           'durationMs',
           'endedAt',
@@ -2390,6 +2416,42 @@ describe('RecordingService — lifecycle ownership and durability', () => {
       yield* Scope.close(h.sessionScope, Exit.void);
     })
   );
+
+  for (const [operation, trigger] of [
+    ['metadata', 'BEFORE UPDATE OF meta ON recording'],
+    ['completion', "BEFORE UPDATE OF status ON recording WHEN NEW.status = 'completed'"],
+  ]) {
+    it.effect(`failed ${operation} persistence reports storage and retains recovery work`, () =>
+      Effect.gen(function* () {
+        const h = yield* setup({}, undefined, {
+          mode: 'local',
+          localLane: mintingLocalLane(() => 'local words'),
+        });
+        const id = yield* h.service.start({ captureMode: 'mic' });
+        yield* poll(
+          SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')),
+          'recording'
+        );
+        yield* Effect.sync(() =>
+          h.product.client.exec(
+            `CREATE TRIGGER fail_persistence ${trigger} BEGIN SELECT RAISE(ABORT, 'storage unavailable'); END`
+          )
+        );
+        yield* Queue.offer(h.fakeCapture.current().frames, fakeFrame('mic_raw', oneSecond()));
+        yield* settle;
+        yield* h.service.stop(id);
+        const summary = h.logger.find(e => e.message === 'Recording processing attempt ended');
+        assert.include(summary?.data, {
+          recordingId: id,
+          outcome: 'failure',
+          failedStage: 'storage',
+        });
+        assert.isUndefined(h.logger.find(e => e.message === 'Recording completed'));
+        assert.strictEqual((yield* h.db.getRecoveryOutbox(id))?.phase, 'finalize');
+        yield* Scope.close(h.sessionScope, Exit.void);
+      })
+    );
+  }
 
   it.effect('failed authoritative recording creation stays in create phase', () =>
     Effect.gen(function* () {

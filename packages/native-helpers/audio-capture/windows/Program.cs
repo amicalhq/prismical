@@ -23,7 +23,7 @@ internal static class Program
         }
         catch (Exception ex)
         {
-            Logger.Error(ex.Message);
+            Logger.Error("Audio capture initialization failed");
             return 1;
         }
 
@@ -66,7 +66,7 @@ internal static class Program
         }
         catch (Exception ex)
         {
-            Logger.Error(ex.ToString());
+            Logger.Error("Audio capture failed");
             return 1;
         }
     }
@@ -152,7 +152,7 @@ internal static class Program
                 Logger.Error("Ignoring set-mic command without a device UID");
                 break;
             default:
-                Logger.Error($"Ignoring unknown microphone command: {command.Cmd}");
+                Logger.Error("Ignoring unknown microphone command");
                 break;
         }
     }

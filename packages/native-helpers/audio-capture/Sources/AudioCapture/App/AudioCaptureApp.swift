@@ -22,7 +22,7 @@ struct AudioCaptureApp {
             checkSystemAudioPermission = parsedArguments.checkSystemAudioPermission
             readsMicrophoneCommands = parsedArguments.mode != .system
         } catch {
-            Logger.error(error.localizedDescription)
+            Logger.error("Audio capture initialization failed")
             exit(1)
         }
 
@@ -61,7 +61,7 @@ struct AudioCaptureApp {
                 }
                 Logger.info("Capture binary ready")
             } catch {
-                Logger.error(error.localizedDescription)
+                Logger.error("Audio capture initialization failed")
                 await coordinator.stop()
                 exit(1)
             }

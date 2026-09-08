@@ -103,7 +103,7 @@ internal sealed class WasapiSource : IDisposable
         }
         catch (Exception ex)
         {
-            Logger.Error($"Failed to stop {sourceName} capture: {ex.Message}");
+            Logger.Error("Failed to stop audio capture");
         }
 
         captureToStop.Dispose();
@@ -169,7 +169,7 @@ internal sealed class WasapiSource : IDisposable
         }
         catch (Exception ex)
         {
-            Logger.Error($"{Capitalize(sourceName)} capture callback failed: {ex}");
+            Logger.Error("Audio capture callback failed");
         }
     }
 
@@ -328,7 +328,7 @@ internal sealed class WasapiSource : IDisposable
         }
         catch (Exception ex)
         {
-            Logger.Error($"Failed to write debug audio files: {ex.Message}");
+            Logger.Error("Failed to write debug audio files");
         }
     }
 
@@ -391,7 +391,7 @@ internal sealed class WasapiSource : IDisposable
     {
         if (eventArgs.Exception != null)
         {
-            Logger.Error($"{Capitalize(sourceName)} capture stopped unexpectedly: {eventArgs.Exception}");
+            Logger.Error("Audio capture stopped unexpectedly");
             var exception = eventArgs.Exception;
             if (onUnexpectedStop != null)
             {

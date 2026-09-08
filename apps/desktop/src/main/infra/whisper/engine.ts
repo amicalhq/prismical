@@ -29,14 +29,16 @@
  */
 import { fork, type ChildProcess, type ForkOptions } from 'node:child_process';
 import path from 'node:path';
-import type { Readable } from 'node:stream';
 import { Duration, Effect, Layer } from 'effect';
+import { TelemetryService } from '../../domains/telemetry/service';
+import { makeProcessFailureReporter } from '../../domains/telemetry/process-failure-reporter';
 import { AppConfig } from '../config/service';
-import { MainLogger, type UnsafeScopedLog } from '../logging/service';
+import { MainLogger, LoggingTransport } from '../logging/service';
+import { makeProcessDiagnostics } from '../logging/process-diagnostics';
+import { parseWire } from '@desktop/logging';
 import {
   isWorkerLogFrame,
   serializeArg,
-  type WorkerLogLevel,
   type WorkerRequest,
   type WorkerResponse,
   type WorkerTranscription,
@@ -126,38 +128,22 @@ interface WorkerHandle {
 const errorMessage = (cause: unknown): string =>
   cause instanceof Error ? cause.message : String(cause);
 
-/** Line-buffer a piped stream into the log (never let the worker block on a full pipe). */
-const drainLines = (stream: Readable | null, emit: (line: string) => void): void => {
-  if (stream === null) return;
-  let pending = '';
-  stream.on('data', (chunk: Buffer) => {
-    pending += chunk.toString('utf8');
-    const lines = pending.split(/\r?\n/);
-    pending = lines.pop() ?? '';
-    for (const line of lines) {
-      if (line.trim() !== '') emit(line);
-    }
-  });
-};
-
-const WORKER_LOG_LEVELS: ReadonlySet<string> = new Set<WorkerLogLevel>([
-  'debug',
-  'info',
-  'warn',
-  'error',
-]);
-
 export const makeWhisperEngineLive = (
   options: WhisperEngineLiveOptions = {}
-): Layer.Layer<WhisperEngine, never, AppConfig | MainLogger> =>
+): Layer.Layer<
+  WhisperEngine,
+  never,
+  AppConfig | MainLogger | LoggingTransport | TelemetryService
+> =>
   Layer.scoped(
     WhisperEngine,
     Effect.gen(function* () {
       const config = yield* AppConfig;
       const logger = yield* MainLogger;
+      const transport = yield* LoggingTransport;
+      const reportFailure = yield* makeProcessFailureReporter(yield* TelemetryService);
       const log = logger.scoped('whisper-engine');
-      const unsafeLog = logger.scopedUnsafe('whisper-engine');
-      const workerLog: UnsafeScopedLog = logger.scopedUnsafe('whisper-worker');
+      const unsafeLog = logger.scopedSync('whisper-engine');
       const paths = options.paths ?? resolveWhisperWorkerPaths(config);
       const forkFn: ForkLike = options.forkFn ?? fork;
       const transcribeTimeout = options.transcribeTimeout ?? TRANSCRIBE_TIMEOUT;
@@ -194,13 +180,12 @@ export const makeWhisperEngineLive = (
       const onMessage = (handle: WorkerHandle, msg: unknown): void => {
         handle.ready = true;
         if (isWorkerLogFrame(msg)) {
-          const level: WorkerLogLevel = WORKER_LOG_LEVELS.has(msg.level) ? msg.level : 'info';
-          workerLog[level](
-            msg.message,
-            msg.args !== undefined && msg.args.length > 0 ? { args: msg.args } : undefined
-          );
+          const frame = parseWire(msg);
+          if (frame)
+            transport.ingest(frame, { runtime: 'worker', pid: handle.child.pid ?? process.pid });
           return;
         }
+        if (typeof msg !== 'object' || msg === null) return;
         const response = msg as WorkerResponse;
         if (typeof response.id !== 'number') return;
         const resume = handle.pending.get(response.id);
@@ -208,7 +193,9 @@ export const makeWhisperEngineLive = (
         handle.pending.delete(response.id);
         resume(
           response.error !== undefined
-            ? Effect.fail(new WhisperEngineError({ reason: 'inference-failed', detail: response.error }))
+            ? Effect.fail(
+                new WhisperEngineError({ reason: 'inference-failed', detail: response.error })
+              )
             : Effect.succeed(response.result)
         );
       };
@@ -224,12 +211,16 @@ export const makeWhisperEngineLive = (
               env: {
                 ...process.env,
                 ELECTRON_RUN_AS_NODE: '1',
+                NODE_ENV: config.isPackaged ? 'production' : 'development',
+                DESKTOP_APP_RUN_ID: logger.appRunId,
                 NODE_OPTIONS: '--max-old-space-size=8192',
                 ...(paths.asarPath === undefined ? {} : { APP_ASAR_PATH: paths.asarPath }),
               },
             }),
-          catch: cause =>
-            new WhisperEngineError({ reason: 'spawn-failed', detail: errorMessage(cause) }),
+          catch: cause => {
+            reportFailure(cause);
+            return new WhisperEngineError({ reason: 'spawn-failed', detail: errorMessage(cause) });
+          },
         });
         const handle: WorkerHandle = {
           child,
@@ -241,15 +232,35 @@ export const makeWhisperEngineLive = (
         };
         child.on('message', msg => onMessage(handle, msg));
         child.on('error', error => {
-          unsafeLog.warn('whisper worker error', { reason: error.message });
+          if (!handle.dead) reportFailure(error);
+          if (!handle.dead)
+            unsafeLog.error('Whisper worker failed', { context: { workerPid: child.pid }, error });
           markDead(handle, error.message);
         });
         child.on('exit', (code, signal) => {
-          unsafeLog.info('whisper worker exited', { code, signal });
+          if (!handle.dead)
+            reportFailure(
+              new WhisperEngineError({
+                reason: handle.ready ? 'worker-crashed' : 'spawn-failed',
+                detail: 'Worker exited unexpectedly',
+              }),
+              { exit_code: code }
+            );
+          if (!handle.dead)
+            unsafeLog.error('Whisper worker exited unexpectedly', {
+              context: { code, signal, workerPid: child.pid, pendingRequests: handle.pending.size },
+            });
           markDead(handle, `exit code=${code} signal=${signal}`);
         });
-        drainLines(child.stdout, line => workerLog.debug(line));
-        drainLines(child.stderr, line => workerLog.debug(line));
+        for (const stream of [child.stdout, child.stderr]) {
+          const diagnostics = makeProcessDiagnostics(
+            transport,
+            () => ({ runtime: 'worker', pid: child.pid ?? process.pid }),
+            'whisper-worker'
+          );
+          stream?.on('data', diagnostics.push);
+          stream?.on('end', diagnostics.end);
+        }
         worker = handle;
         yield* log.info('whisper worker forked');
         return handle;
@@ -263,8 +274,11 @@ export const makeWhisperEngineLive = (
         Effect.sync(() => {
           const handle = worker;
           if (handle === null) return;
-          handle.child.kill();
           markDead(handle, why);
+          handle.child.kill();
+          unsafeLog.info('Whisper worker stopped', {
+            context: { reason: why, workerPid: handle.child.pid },
+          });
         });
 
       /** One request/response exchange; interruption (timeout) forgets the call. */
@@ -276,7 +290,9 @@ export const makeWhisperEngineLive = (
         Effect.async<T, WhisperEngineError>(resume => {
           if (handle.dead) {
             resume(
-              Effect.fail(new WhisperEngineError({ reason: 'worker-crashed', detail: 'worker is gone' }))
+              Effect.fail(
+                new WhisperEngineError({ reason: 'worker-crashed', detail: 'worker is gone' })
+              )
             );
             return;
           }
@@ -312,7 +328,9 @@ export const makeWhisperEngineLive = (
           Effect.tapError(error =>
             error.reason === 'timeout'
               ? log
-                  .warn('whisper worker call timed out — replacing the worker', { what })
+                  .warn('whisper worker call timed out — replacing the worker', {
+                    context: { what },
+                  })
                   .pipe(Effect.zipRight(killWorker(`timeout: ${what}`)))
               : Effect.void
           )
@@ -335,7 +353,7 @@ export const makeWhisperEngineLive = (
             'initializeModel'
           );
           handle.loadedModelPath = modelPath;
-          yield* log.info('whisper model loaded', { model: path.basename(modelPath) });
+          yield* log.info('whisper model loaded', { context: { model: path.basename(modelPath) } });
           return handle;
         });
 
@@ -380,5 +398,8 @@ export const makeWhisperEngineLive = (
   );
 
 /** The boot-scoped host with the runtime path resolution (BootLayer). */
-export const WhisperEngineLive: Layer.Layer<WhisperEngine, never, AppConfig | MainLogger> =
-  makeWhisperEngineLive();
+export const WhisperEngineLive: Layer.Layer<
+  WhisperEngine,
+  never,
+  AppConfig | MainLogger | LoggingTransport | TelemetryService
+> = makeWhisperEngineLive();

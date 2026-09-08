@@ -9,13 +9,8 @@ import { createApplicationI18nSync, type SupportedLocale } from '@prismical/app-
 import { DesktopI18n } from '../../src/main/domains/i18n/service';
 import type { RecordingLaneResult } from '../../src/main/domains/transport/service';
 import { AppConfig, type AppConfigService } from '../../src/main/infra/config/service';
-import {
-  MainLogger,
-  type MainLoggerService,
-  type ScopedLog,
-  type UnsafeScopedLog,
-} from '../../src/main/infra/logging/service';
-import { redactValue } from '../../src/main/infra/logging/redact';
+import { MainLogger, LoggingTransport } from '../../src/main/infra/logging/service';
+import { makeLogger, makeFilter, type LogRecord } from '@desktop/logging';
 
 export const testConfig = (overrides: Partial<AppConfigService> = {}): AppConfigService => ({
   // Recovery WAVs follow the (possibly overridden) profile dir, as in the real config.
@@ -100,37 +95,55 @@ export interface LogEntry {
   readonly level: 'debug' | 'info' | 'warn' | 'error';
   readonly message: string;
   readonly data: unknown;
+  readonly runtime?: string;
+  readonly pid?: number;
+  readonly error?: LogRecord['error'];
 }
 
 export interface TestLogger {
   readonly entries: LogEntry[];
-  readonly layer: Layer.Layer<MainLogger>;
+  readonly layer: Layer.Layer<MainLogger | LoggingTransport>;
   readonly find: (predicate: (entry: LogEntry) => boolean) => LogEntry | undefined;
 }
 
 export const makeTestLogger = (): TestLogger => {
   const entries: LogEntry[] = [];
-  const unsafe = (scope: string): UnsafeScopedLog => {
-    const emit =
-      (level: LogEntry['level']) =>
-      (message: string, data?: unknown): void => {
-        entries.push({ scope, level, message, data: redactValue(data) });
-      };
-    return { debug: emit('debug'), info: emit('info'), warn: emit('warn'), error: emit('error') };
+  const logger = makeLogger(
+    (record: LogRecord) => {
+      entries.push({
+        scope: record.scope,
+        level: record.level,
+        message: record.message,
+        data:
+          record.context === undefined && record.error === undefined
+            ? undefined
+            : {
+                ...record.context,
+                ...(record.error ? { error: record.error } : {}),
+              },
+        runtime: record.runtime,
+        pid: record.pid,
+        error: record.error,
+      });
+    },
+    {
+      origin: { app: 'prismical', appVersion: 'test', appRunId: 'test-run' },
+      source: { runtime: 'main', pid: 1 },
+      filter: makeFilter({ isDev: true }),
+    }
+  );
+  const service = logger.service;
+  const transport = {
+    ingest: logger.ingest,
+    rendererConfig: { appVersion: 'test', appRunId: 'test-run', isDev: true },
+    exportBundle: Effect.void,
   };
-  const scoped = (scope: string): ScopedLog => {
-    const raw = unsafe(scope);
-    return {
-      debug: (message, data) => Effect.sync(() => raw.debug(message, data)),
-      info: (message, data) => Effect.sync(() => raw.info(message, data)),
-      warn: (message, data) => Effect.sync(() => raw.warn(message, data)),
-      error: (message, data) => Effect.sync(() => raw.error(message, data)),
-    };
-  };
-  const service: MainLoggerService = { scoped, scopedUnsafe: unsafe };
   return {
     entries,
-    layer: Layer.succeed(MainLogger, service),
+    layer: Layer.merge(
+      Layer.succeed(MainLogger, service),
+      Layer.succeed(LoggingTransport, transport)
+    ),
     find: predicate => entries.find(predicate),
   };
 };

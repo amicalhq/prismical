@@ -556,6 +556,8 @@ describe('channel names', () => {
       settingsGet: 'settings:get',
       settingsSet: 'settings:set',
       settingsChanged: 'settings:changed',
+      loggingGetConfig: 'logging:getConfig',
+      loggingWrite: 'logging:write',
       telemetryGetState: 'telemetry:getState',
       telemetryStateChanged: 'telemetry:stateChanged',
       telemetryCapture: 'telemetry:capture',

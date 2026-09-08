@@ -46,9 +46,7 @@ export const runOsSync: Effect.Effect<
       openAtLogin =>
         nativeOs.setLoginItem(openAtLogin).pipe(
           Effect.catchAllDefect(defect =>
-            log.error('os-sync setLoginItem failed — consumer continues', {
-              defect: String(defect),
-            })
+            log.error('os-sync setLoginItem failed — consumer continues', { error: defect })
           )
         )
     )
@@ -65,9 +63,7 @@ export const runOsSync: Effect.Effect<
       visible =>
         nativeOs.setDockVisible(visible).pipe(
           Effect.catchAllDefect(defect =>
-            log.error('os-sync setDockVisible failed — consumer continues', {
-              defect: String(defect),
-            })
+            log.error('os-sync setDockVisible failed — consumer continues', { error: defect })
           )
         )
     )

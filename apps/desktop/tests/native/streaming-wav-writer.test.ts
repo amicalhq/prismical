@@ -1,3 +1,8 @@
+import { makeLogger, makeFilter } from '@desktop/logging';
+const wavLog = makeLogger(() => {}, {
+  origin: { app: 'prismical', appVersion: 'test', appRunId: 'test-run' },
+  source: { runtime: 'main', pid: 1 }, filter: makeFilter({ isDev: true }),
+}).service.scopedSync('wav-writer');
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -22,7 +27,7 @@ describe("StreamingWavWriter", () => {
 
   it("round-trips frames through a finalized RIFF/WAVE file", async () => {
     const file = path.join(dir, "capture.wav");
-    const writer = new StreamingWavWriter(file, 16_000, 1, 16);
+    const writer = new StreamingWavWriter(wavLog, file, 16_000, 1, 16);
 
     await writer.appendAudio(new Float32Array([0, 0.5, -0.5, 1, -1]));
     await writer.appendSilence(3);
@@ -63,7 +68,7 @@ describe("StreamingWavWriter", () => {
 
   it("clamps out-of-range samples instead of wrapping", async () => {
     const file = path.join(dir, "clamp.wav");
-    const writer = new StreamingWavWriter(file, 16_000, 1, 16);
+    const writer = new StreamingWavWriter(wavLog, file, 16_000, 1, 16);
     await writer.appendAudio(new Float32Array([2, -2]));
     await writer.finalize();
 
@@ -73,27 +78,27 @@ describe("StreamingWavWriter", () => {
   });
 
   it("reports a stream open failure on append and close without an unhandled error", async () => {
-    const writer = new StreamingWavWriter(path.join(dir, "missing", "capture.wav"));
+    const writer = new StreamingWavWriter(wavLog, path.join(dir, "missing", "capture.wav"));
     await expect(writer.appendAudio(new Float32Array([0.1]))).rejects.toMatchObject({ code: "ENOENT" });
     expect(writer.getDataSize()).toBe(0);
     await expect(writer.finalize()).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("reports stream failure when aborted before the first frame", async () => {
-    const writer = new StreamingWavWriter(path.join(dir, "missing", "aborted.wav"));
+    const writer = new StreamingWavWriter(wavLog, path.join(dir, "missing", "aborted.wav"));
     await expect(writer.abort()).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("refuses appends after finalize and supports abort", async () => {
     const file = path.join(dir, "final.wav");
-    const writer = new StreamingWavWriter(file, 16_000, 1, 16);
+    const writer = new StreamingWavWriter(wavLog, file, 16_000, 1, 16);
     await writer.appendAudio(new Float32Array([0.1]));
     await writer.finalize();
     await expect(writer.appendAudio(new Float32Array([0.1]))).rejects.toThrow(
       /finalized/,
     );
 
-    const aborted = new StreamingWavWriter(path.join(dir, "aborted.wav"));
+    const aborted = new StreamingWavWriter(wavLog, path.join(dir, "aborted.wav"));
     await aborted.appendAudio(new Float32Array([0.1]));
     await aborted.abort();
     await expect(aborted.appendSilence(4)).rejects.toThrow(/finalized/);

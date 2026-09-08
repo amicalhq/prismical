@@ -47,7 +47,7 @@ export const runAuthConsumer: Effect.Effect<void, never, AuthService | DeepLinks
                         Effect.flatMap(total =>
                           // Rejected and counted. Values already logged
                           // (prefix-only) inside consumePendingEntry.
-                          log.warn('oauth entry rejected', { totalRejected: total })
+                          log.warn('oauth entry rejected', { context: { totalRejected: total } })
                         )
                       )
                     : Effect.void

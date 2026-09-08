@@ -81,7 +81,7 @@ export const makeAiProviderLive = (
         secrets.getSecret(aiProviderSecretKey(provider)).pipe(
           Effect.map(value => (value === null || value === '' ? null : value)),
           Effect.catchAll(error =>
-            log.warn('provider key unreadable', { provider, error: error._tag }).pipe(Effect.as(null))
+            log.warn('provider key unreadable', { context: { provider }, error: error._tag }).pipe(Effect.as(null))
           )
         );
 
@@ -121,7 +121,7 @@ export const makeAiProviderLive = (
             yield* Ref.update(catalogues, map => new Map(map).set(provider, { at: now, listing }));
           }
           if (listing.error !== null) {
-            yield* log.info('model catalogue unavailable', { provider, error: listing.error });
+            yield* log.info('model catalogue unavailable', { context: { provider }, error: listing.error });
           }
           return listing;
         });
@@ -275,7 +275,7 @@ export const makeAiProviderLive = (
           yield* Ref.update(toolSupport, map =>
             new Map(map).set(memoKey(provider, baseUrl, modelId), { support, at })
           );
-          yield* log.info('tool support recorded', { provider, model: modelId, support });
+          yield* log.info('tool support recorded', { context: { provider, model: modelId, support } });
         });
 
       const forget: AiProviderApi['forget'] = provider =>

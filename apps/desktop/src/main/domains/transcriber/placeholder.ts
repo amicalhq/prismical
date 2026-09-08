@@ -32,10 +32,10 @@ export const makePlaceholderLane = (
           Effect.flatMap(seen =>
             seen
               ? Effect.void
-              : log.warn('transcription engine not available in this build — chunks ack empty', {
+              : log.warn('transcription engine not available in this build — chunks ack empty', { context: {
                   recordingId,
                   engine,
-                })
+                } })
           ),
           Effect.as(EMPTY_OK)
         ),

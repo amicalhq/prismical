@@ -283,7 +283,7 @@ test.describe('native settings UI', () => {
     const credential = JSON.stringify({ baseUrl: 'https://byok.example/v1', key: BYOK_KEY });
     const custody = Buffer.from(`e2e:${credential}`, 'utf8').toString('base64');
     expect(dbBytes.includes(custody, 0, 'utf8')).toBe(true);
-    const mainLog = await readFile(path.join(profileDir, 'logs', 'main.log'), 'utf8');
+    const mainLog = await readFile(path.join(profileDir, 'logs', 'main.jsonl'), 'utf8');
     expect(mainLog.length).toBeGreaterThan(0);
     expect(mainLog).not.toContain(BYOK_KEY);
 

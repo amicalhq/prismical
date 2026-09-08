@@ -5,7 +5,7 @@
  */
 import * as fs from 'node:fs';
 import path from 'node:path';
-import { Clock, Data, Effect, Layer, Queue, Stream, SubscriptionRef } from 'effect';
+import { Exit, Clock, Data, Effect, Layer, Queue, Stream, SubscriptionRef } from 'effect';
 import { MainLogger } from '../../infra/logging/service';
 import { OperationalDb, type RecoveryOutboxRow } from '../../infra/operational-db/service';
 import type { RecoveryPauseCutPoint } from '../../infra/operational-db/schema';
@@ -177,9 +177,7 @@ export const drainRecoveries = (
       .listRecoveryOutbox()
       .pipe(
         Effect.catchAll(error =>
-          log
-            .warn('recovery work could not be listed', { cause: String(error.cause) })
-            .pipe(Effect.as([]))
+          log.warn('recovery work could not be listed', { error: error.cause }).pipe(Effect.as([]))
         )
       )).filter(row => sameWorkspace(row.owner, owner));
     const summary: DrainSummary = {
@@ -193,10 +191,7 @@ export const drainRecoveries = (
     const bestEffort = (effect: Effect.Effect<void, ProductDbError>): Effect.Effect<void> =>
       effect.pipe(
         Effect.catchAll(error =>
-          log.warn('recovery cache write failed', {
-            op: error.op,
-            cause: String(error.cause),
-          })
+          log.warn('recovery cache write failed', { context: { op: error.op }, error: error.cause })
         )
       );
     // Local storage is authoritative. A cloud recording already has another durable copy.
@@ -216,16 +211,13 @@ export const drainRecoveries = (
           .pipe(
             Effect.catchAll(error =>
               log.warn('recovery retry state could not be saved', {
-                recordingId: row.recordingId,
-                cause: String(error.cause),
+                context: { recordingId: row.recordingId },
+                error: error.cause,
               })
             )
           );
         yield* log.warn('recovery work retained for retry', {
-          recordingId: row.recordingId,
-          attempt,
-          nextAttemptAt,
-          reason,
+          context: { recordingId: row.recordingId, attempt, nextAttemptAt, reason },
         });
         return 'parked' as const;
       });
@@ -233,8 +225,8 @@ export const drainRecoveries = (
       db.updateRecoveryOutbox(row.recordingId, { status: 'failed', lastError: reason }).pipe(
         Effect.catchAll(error =>
           log.warn('recovery failure state could not be saved', {
-            recordingId: row.recordingId,
-            cause: String(error.cause),
+            context: { recordingId: row.recordingId },
+            error: error.cause,
           })
         ),
         Effect.zipRight(
@@ -242,190 +234,221 @@ export const drainRecoveries = (
         ),
         Effect.zipRight(
           log.warn('recovery rejected — audio retained', {
-            recordingId: row.recordingId,
-            reason,
+            context: { recordingId: row.recordingId, reason },
           })
         ),
         Effect.as('failed')
       );
 
-    const drainRow = (original: RecoveryOutboxRow): Effect.Effect<DrainOutcome> => {
-      let row = original;
-      const update = (patch: Parameters<typeof db.updateRecoveryOutbox>[1]) =>
-        db.updateRecoveryOutbox(row.recordingId, patch).pipe(
-          Effect.tap(() =>
-            Effect.sync(() => {
-              row = { ...row, ...patch };
-            })
-          )
-        );
-      const transition = (phase: NonNullable<RecoveryOutboxRow['phase']>) =>
-        update({ phase, attemptCount: 0, nextAttemptAt: null, lastError: null });
-      const process = Effect.gen(function* () {
-        if (row.status === 'failed') {
-          yield* resolveCompletion(row.recordingId, row.phase === 'cleanup');
+    const drainRow = (original: RecoveryOutboxRow): Effect.Effect<DrainOutcome> =>
+      Effect.gen(function* () {
+        if (original.status === 'failed') {
+          yield* resolveCompletion(original.recordingId, original.phase === 'cleanup');
           return 'skipped' as const;
         }
         if (
-          row.nextAttemptAt !== null &&
-          Date.parse(row.nextAttemptAt) > (yield* Clock.currentTimeMillis)
-        ) {
+          original.nextAttemptAt !== null &&
+          Date.parse(original.nextAttemptAt) > (yield* Clock.currentTimeMillis)
+        )
           return 'deferred' as const;
-        }
-        if (row.phase === null || row.createInput === null || row.engineConfig === null) {
-          return yield* fail(row, 'recovery-metadata-missing');
-        }
-        if (row.phase === 'cleanup') {
+        const started = yield* Clock.currentTimeNanos;
+        let row = original;
+        const update = (patch: Parameters<typeof db.updateRecoveryOutbox>[1]) =>
+          db.updateRecoveryOutbox(row.recordingId, patch).pipe(
+            Effect.tap(() =>
+              Effect.sync(() => {
+                row = { ...row, ...patch };
+              })
+            )
+          );
+        const transition = (phase: NonNullable<RecoveryOutboxRow['phase']>) =>
+          update({ phase, attemptCount: 0, nextAttemptAt: null, lastError: null });
+        const process = Effect.gen(function* () {
+          if (row.phase === null || row.createInput === null || row.engineConfig === null) {
+            return yield* fail(row, 'recovery-metadata-missing');
+          }
+          if (row.phase === 'cleanup') {
+            yield* resolveCompletion(row.recordingId, true);
+            yield* fileOperation(() => fs.rmSync(row.wavPath, { recursive: true, force: true }));
+            yield* db.deleteRecoveryOutbox(row.recordingId);
+            return 'resolved' as const;
+          }
+          const engine = row.engineConfig;
+          const mirrorToCore = appMode === 'cloud' && engine.engine !== 'cloud';
+          const sources = sourcesForMode(row.captureMode);
+          const { mic, system, mediaDuration, lastWriteAt } = yield* fileOperation(() => {
+            // Completed transcription uses its durable stop metadata; no audio decode is needed.
+            if (row.phase === 'finalize' && row.endedAt !== null && row.durationMs !== null) {
+              return {
+                mic: null,
+                system: null,
+                mediaDuration: row.durationMs,
+                lastWriteAt: row.endedAt,
+              };
+            }
+            const samples = (source: ChunkSource) =>
+              sources.includes(source)
+                ? readRecoveryWav(path.join(row.wavPath, wavFileName[source]))
+                : null;
+            const mic = samples('mic');
+            const system = samples('system');
+            const mediaDuration = Math.round(
+              (Math.max(mic?.length ?? 0, system?.length ?? 0) / CAPTURE_SAMPLE_RATE) * 1000
+            );
+            const lastWriteAt = Math.max(
+              row.createInput!.startedAt,
+              ...sources.map(source => {
+                const file = path.join(row.wavPath, wavFileName[source]);
+                return fs.existsSync(file) ? Math.round(fs.statSync(file).mtimeMs) : 0;
+              })
+            );
+            return { mic, system, mediaDuration, lastWriteAt };
+          });
+          // Graceful stop writes exact metadata. For a crash, freeze the last media
+          // write time once, so retries never move endedAt to a later session.
+          if (row.endedAt === null || row.durationMs === null) {
+            yield* update({
+              endedAt: row.endedAt ?? lastWriteAt,
+              durationMs: row.durationMs ?? mediaDuration,
+            });
+          }
+          if (row.durationMs !== mediaDuration) {
+            return yield* fail(row, 'recovery-audio-incomplete');
+          }
+          if (row.phase === 'create') {
+            const startWrite = store.recordingStarted({
+              ...row.createInput,
+              id: row.recordingId,
+              noteId: row.createInput.noteId ?? null,
+              status: 'recording',
+            });
+            yield* engine.engine === 'cloud' ? bestEffort(startWrite) : startWrite;
+            const created = yield* backend.createRecording(row.createInput);
+            if (!created.ok)
+              return yield* created.retryable
+                ? park(row, `create:${failureLabel(created.failure)}`)
+                : fail(row, `create:${failureLabel(created.failure)}`);
+            yield* transition('chunks');
+          }
+          if (row.phase === 'chunks') {
+            const chunks = yield* Effect.try({
+              try: () => deriveDrainChunks(mic, system, row.pauseCutPoints),
+              catch: () => null,
+            }).pipe(Effect.catchAll(() => Effect.succeed(null)));
+            if (chunks === null) return yield* fail(row, 'pause-cut-points-invalid');
+            const remaining = chunks.filter(chunk => chunk.index > (row.lastChunkIndex ?? -1));
+            if (engine.engine === 'local' && remaining.length > 0) {
+              const models = yield* db.listLocalModels();
+              const installed = models.find(model => model.modelId === engine.modelId);
+              if (installed === undefined || !fs.existsSync(installed.path))
+                return yield* park(row, 'model-missing');
+            }
+            for (const chunk of remaining) {
+              if ((yield* activeRecordingId) !== null) return 'deferred' as const;
+              const res = yield* transcriber.transcribeChunk(
+                row.recordingId,
+                { chunkIndex: chunk.index, chunkStartMs: chunk.chunkStartMs, source: chunk.source },
+                { samples: chunk.samples, sampleRate: CAPTURE_SAMPLE_RATE },
+                engine
+              );
+              if (!res.ok)
+                return yield* res.retryable
+                  ? park(row, `chunk-upload:${failureLabel(res.failure)}`)
+                  : fail(row, `chunk-upload:${failureLabel(res.failure)}`);
+              if (res.value.length > 0) {
+                // Locally produced text has no durable server copy yet, even in cloud mode.
+                yield* engine.engine === 'cloud'
+                  ? bestEffort(store.segmentsReceived(res.value))
+                  : store.segmentsReceived(res.value);
+                if (mirrorToCore) {
+                  const mirrored = yield* mirrorSegmentsToCore(
+                    backend,
+                    log,
+                    row.recordingId,
+                    res.value
+                  );
+                  if (!mirrored.ok)
+                    return yield* mirrored.retryable
+                      ? park(row, `segment-mirror:${failureLabel(mirrored.failure)}`)
+                      : fail(row, `segment-mirror:${failureLabel(mirrored.failure)}`);
+                }
+              }
+              yield* update({ lastChunkIndex: chunk.index });
+            }
+            yield* transition('finalize');
+          }
+          if (row.phase === 'finalize') {
+            if (engine.engine !== 'cloud') {
+              const segments = yield* store.segmentsForRecording(row.recordingId);
+              yield* store.recordingMetaMerged(row.recordingId, {
+                detectedSpeakerCount: detectedSpeakerCountFor(row.captureMode, segments),
+              });
+            }
+            const finalized = yield* backend.finalizeRecording(row.recordingId, {
+              endedAt: row.endedAt!,
+              durationMs: row.durationMs!,
+            });
+            if (!finalized.ok)
+              return yield* finalized.retryable
+                ? park(row, `finalize:${failureLabel(finalized.failure)}`)
+                : fail(row, `finalize:${failureLabel(finalized.failure)}`);
+            yield* persist(
+              store.recordingCompleted(row.recordingId, {
+                endedAt: row.endedAt!,
+                durationMs: row.durationMs!,
+              })
+            );
+          }
+          // All chunks and completion are durable; the server owns audio stitching.
+          yield* transition('cleanup');
+          yield* log.info('Recording completed', {
+            context: {
+              recordingId: row.recordingId,
+              operation: 'recording',
+              outcome: 'success',
+              audioDurationMs: row.durationMs,
+            },
+          });
           yield* resolveCompletion(row.recordingId, true);
           yield* fileOperation(() => fs.rmSync(row.wavPath, { recursive: true, force: true }));
           yield* db.deleteRecoveryOutbox(row.recordingId);
+          yield* log.info('recovery resolved — WAV + outbox row deleted', {
+            context: { recordingId: row.recordingId },
+          });
           return 'resolved' as const;
-        }
-        const engine = row.engineConfig;
-        const mirrorToCore = appMode === 'cloud' && engine.engine !== 'cloud';
-        const sources = sourcesForMode(row.captureMode);
-        const { mic, system, mediaDuration, lastWriteAt } = yield* fileOperation(() => {
-          // Completed transcription uses its durable stop metadata; no audio decode is needed.
-          if (row.phase === 'finalize' && row.endedAt !== null && row.durationMs !== null) {
-            return {
-              mic: null,
-              system: null,
-              mediaDuration: row.durationMs,
-              lastWriteAt: row.endedAt,
-            };
-          }
-          const samples = (source: ChunkSource) =>
-            sources.includes(source)
-              ? readRecoveryWav(path.join(row.wavPath, wavFileName[source]))
-              : null;
-          const mic = samples('mic');
-          const system = samples('system');
-          const mediaDuration = Math.round(
-            (Math.max(mic?.length ?? 0, system?.length ?? 0) / CAPTURE_SAMPLE_RATE) * 1000
-          );
-          const lastWriteAt = Math.max(
-            row.createInput!.startedAt,
-            ...sources.map(source => {
-              const file = path.join(row.wavPath, wavFileName[source]);
-              return fs.existsSync(file) ? Math.round(fs.statSync(file).mtimeMs) : 0;
-            })
-          );
-          return { mic, system, mediaDuration, lastWriteAt };
         });
-        // Graceful stop writes exact metadata. For a crash, freeze the last media
-        // write time once, so retries never move endedAt to a later session.
-        if (row.endedAt === null || row.durationMs === null) {
-          yield* update({
-            endedAt: row.endedAt ?? lastWriteAt,
-            durationMs: row.durationMs ?? mediaDuration,
-          });
-        }
-        if (row.durationMs !== mediaDuration) {
-          return yield* fail(row, 'recovery-audio-incomplete');
-        }
-        if (row.phase === 'create') {
-          const startWrite = store.recordingStarted({
-            ...row.createInput,
-            id: row.recordingId,
-            noteId: row.createInput.noteId ?? null,
-            status: 'recording',
-          });
-          yield* engine.engine === 'cloud' ? bestEffort(startWrite) : startWrite;
-          const created = yield* backend.createRecording(row.createInput);
-          if (!created.ok)
-            return yield* created.retryable
-              ? park(row, `create:${failureLabel(created.failure)}`)
-              : fail(row, `create:${failureLabel(created.failure)}`);
-          yield* transition('chunks');
-        }
-        if (row.phase === 'chunks') {
-          const chunks = yield* Effect.try({
-            try: () => deriveDrainChunks(mic, system, row.pauseCutPoints),
-            catch: () => null,
-          }).pipe(Effect.catchAll(() => Effect.succeed(null)));
-          if (chunks === null) return yield* fail(row, 'pause-cut-points-invalid');
-          const remaining = chunks.filter(chunk => chunk.index > (row.lastChunkIndex ?? -1));
-          if (engine.engine === 'local' && remaining.length > 0) {
-            const models = yield* db.listLocalModels();
-            const installed = models.find(model => model.modelId === engine.modelId);
-            if (installed === undefined || !fs.existsSync(installed.path))
-              return yield* park(row, 'model-missing');
-          }
-          for (const chunk of remaining) {
-            if ((yield* activeRecordingId) !== null) return 'deferred' as const;
-            const res = yield* transcriber.transcribeChunk(
-              row.recordingId,
-              { chunkIndex: chunk.index, chunkStartMs: chunk.chunkStartMs, source: chunk.source },
-              { samples: chunk.samples, sampleRate: CAPTURE_SAMPLE_RATE },
-              engine
-            );
-            if (!res.ok)
-              return yield* res.retryable
-                ? park(row, `chunk-upload:${failureLabel(res.failure)}`)
-                : fail(row, `chunk-upload:${failureLabel(res.failure)}`);
-            if (res.value.length > 0) {
-              // Locally produced text has no durable server copy yet, even in cloud mode.
-              yield* engine.engine === 'cloud'
-                ? bestEffort(store.segmentsReceived(res.value))
-                : store.segmentsReceived(res.value);
-              if (mirrorToCore) {
-                const mirrored = yield* mirrorSegmentsToCore(
-                  backend,
-                  log,
-                  row.recordingId,
-                  res.value
-                );
-                if (!mirrored.ok)
-                  return yield* mirrored.retryable
-                    ? park(row, `segment-mirror:${failureLabel(mirrored.failure)}`)
-                    : fail(row, `segment-mirror:${failureLabel(mirrored.failure)}`);
-              }
-            }
-            yield* update({ lastChunkIndex: chunk.index });
-          }
-          yield* transition('finalize');
-        }
-        if (row.phase === 'finalize') {
-          if (engine.engine !== 'cloud') {
-            const segments = yield* store.segmentsForRecording(row.recordingId);
-            yield* store.recordingMetaMerged(row.recordingId, {
-              detectedSpeakerCount: detectedSpeakerCountFor(row.captureMode, segments),
-            });
-          }
-          const finalized = yield* backend.finalizeRecording(row.recordingId, {
-            endedAt: row.endedAt!,
-            durationMs: row.durationMs!,
-          });
-          if (!finalized.ok)
-            return yield* finalized.retryable
-              ? park(row, `finalize:${failureLabel(finalized.failure)}`)
-              : fail(row, `finalize:${failureLabel(finalized.failure)}`);
-          yield* persist(
-            store.recordingCompleted(row.recordingId, {
-              endedAt: row.endedAt!,
-              durationMs: row.durationMs!,
+        return yield* process.pipe(
+          Effect.catchAll(error =>
+            park(
+              row,
+              error._tag === 'RecoveryFileError' ? 'recovery-file' : `persistence:${error.op}`
+            )
+          ),
+          Effect.onExit(exit =>
+            Effect.gen(function* () {
+              const result = Exit.isSuccess(exit) ? exit.value : undefined;
+              const outcome =
+                Exit.isInterrupted(exit) || result === 'deferred'
+                  ? 'interrupted'
+                  : result === 'resolved'
+                    ? 'success'
+                    : 'failure';
+              yield* log.info('Recording recovery attempt ended', {
+                context: {
+                  recordingId: original.recordingId,
+                  operation: 'recovery',
+                  phase: original.phase,
+                  attempt: original.attemptCount + 1,
+                  lastChunkIndex: row.lastChunkIndex,
+                  outcome,
+                  durationMs: Number((yield* Clock.currentTimeNanos) - started) / 1_000_000,
+                  ...(outcome === 'failure' ? { failedStage: row.phase ?? 'metadata' } : {}),
+                },
+              });
             })
-          );
-        }
-        // All chunks and completion are durable; the server owns audio stitching.
-        yield* transition('cleanup');
-        yield* resolveCompletion(row.recordingId, true);
-        yield* fileOperation(() => fs.rmSync(row.wavPath, { recursive: true, force: true }));
-        yield* db.deleteRecoveryOutbox(row.recordingId);
-        yield* log.info('recovery resolved — WAV + outbox row deleted', {
-          recordingId: row.recordingId,
-        });
-        return 'resolved' as const;
-      });
-      return process.pipe(
-        Effect.catchAll(error =>
-          park(
-            row,
-            error._tag === 'RecoveryFileError' ? 'recovery-file' : `persistence:${error.op}`
           )
-        )
-      );
-    };
+        );
+      });
 
     for (const row of rows) {
       if ((yield* activeRecordingId) !== null) {

@@ -184,22 +184,14 @@ export const makeVocabularySource = ({
         loadVocabularyTerms(product).pipe(
           Effect.catchAll(error =>
             log
-              .warn('vocabulary load failed — transcribing without hints', {
-                recordingId,
-                op: error.op,
-                cause: String(error.cause),
-              })
+              .warn('vocabulary load failed — transcribing without hints', { context: { recordingId, op: error.op }, error: error.cause })
               .pipe(Effect.as([] as VocabularyTerm[]))
           )
         ),
       bumpUsage: (recordingId, hits) =>
         bumpVocabularyUsage(product, hits).pipe(
           Effect.catchAll(error =>
-            log.warn('vocabulary usage bump failed', {
-              recordingId,
-              op: error.op,
-              cause: String(error.cause),
-            })
+            log.warn('vocabulary usage bump failed', { context: { recordingId, op: error.op }, error: error.cause })
           )
         ),
     };
@@ -220,20 +212,16 @@ export const makeVocabularySource = ({
           'ok' in res && res.status >= 200 && res.status < 300
             ? Effect.succeed(wireRows(res.bodyJson))
             : log
-                .warn('vocabulary fetch from core failed — scope empty', {
+                .warn('vocabulary fetch from core failed — scope empty', { context: {
                   recordingId,
                   path,
                   ...('ok' in res ? { status: res.status } : { error: res.error.code }),
-                })
+                } })
                 .pipe(Effect.as([] as Omit<VocabularyTerm, 'scope'>[]))
         ),
         Effect.catchAllDefect(defect =>
           log
-            .warn('vocabulary fetch from core defect — scope empty', {
-              recordingId,
-              path,
-              defect: String(defect),
-            })
+            .warn('vocabulary fetch from core defect — scope empty', { context: { recordingId, path }, error: defect })
             .pipe(Effect.as([] as Omit<VocabularyTerm, 'scope'>[]))
         )
       );

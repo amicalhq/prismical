@@ -8,6 +8,7 @@
  * revision CAS. Error envelopes are core's byte-for-byte: the client matches
  * `err.code` on them.
  */
+import type { LogMetadata } from '../../infra/logging/service';
 import { and, desc, eq, isNotNull, isNull, max, sql } from 'drizzle-orm';
 import { describeAiError, SKILL_RUN_ERROR_CODES, type AiErrorDetails } from '@prismical/api-contracts';
 import {
@@ -130,7 +131,7 @@ export interface SkillRunDeps {
   readonly db: LocalDb;
   readonly ai: LocalAiPort;
   readonly locale: string;
-  readonly log: (message: string, data?: unknown) => void;
+  readonly log: (message: string, data?: LogMetadata['context']) => void;
 }
 
 /** Stable messages for skill-run failure codes. */

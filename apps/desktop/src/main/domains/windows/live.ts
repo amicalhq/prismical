@@ -89,7 +89,7 @@ export const WindowRegistryLive: Layer.Layer<
     // from the persisted `widgetNormalizedY` at open.
     const settings = yield* SettingsService;
     const log = logger.scoped('windows');
-    const unsafeLog = logger.scopedUnsafe('windows');
+    const unsafeLog = logger.scopedSync('windows');
 
     // Session APIs are only available once the app is ready.
     yield* electronApp.whenReady;
@@ -129,13 +129,13 @@ export const WindowRegistryLive: Layer.Layer<
         ses.setPermissionRequestHandler((webContents, permission, callback) => {
           const kind = webContents ? identityKindFor(webContents.id) : 'unknown';
           const allowed = isPermissionAllowed(permission, kind);
-          if (!allowed) unsafeLog.warn('permission denied', { permission, kind });
+          if (!allowed) unsafeLog.warn('permission denied', { context: { permission, kind } });
           callback(allowed);
         });
         ses.setPermissionCheckHandler((webContents, permission) => {
           const kind = webContents ? identityKindFor(webContents.id) : 'unknown';
           const allowed = isPermissionAllowed(permission, kind);
-          if (!allowed) unsafeLog.warn('permission check denied', { permission, kind });
+          if (!allowed) unsafeLog.warn('permission check denied', { context: { permission, kind } });
           return allowed;
         });
       }).pipe(Effect.tap(() => log.info('permission allowlist installed'))),
@@ -195,7 +195,7 @@ export const WindowRegistryLive: Layer.Layer<
               headers,
             });
           });
-        }).pipe(Effect.tap(() => log.info('renderer scheme handler installed', { dir }))),
+        }).pipe(Effect.tap(() => log.info('renderer scheme handler installed', { context: { dir } }))),
         () =>
           Effect.sync(() => {
             ses.protocol.unhandle(APP_SCHEME);
@@ -280,7 +280,7 @@ export const WindowRegistryLive: Layer.Layer<
           window.webContents.setWindowOpenHandler(({ url }) => {
             if (isAllowedExternalUrl(url)) {
               shell.openExternal(url).catch((error: unknown) => {
-                unsafeLog.warn('shell.openExternal failed', { url, error: String(error) });
+                unsafeLog.warn('shell.openExternal failed', { context: { url }, error: String(error) });
               });
             }
             return { action: 'deny' };
@@ -290,7 +290,7 @@ export const WindowRegistryLive: Layer.Layer<
           const onWillNavigate = (event: Electron.Event, url: string) => {
             if (!isAppNavigationUrl(url, config.rendererDevServerUrl)) {
               event.preventDefault();
-              unsafeLog.warn('blocked navigation', { url });
+              unsafeLog.warn('blocked navigation', { context: { url } });
             }
           };
           window.webContents.on('will-navigate', onWillNavigate);
@@ -354,7 +354,7 @@ export const WindowRegistryLive: Layer.Layer<
             window.destroy();
           }
         }).pipe(
-          Effect.zipRight(log.info('main window released', { windowId: acquired.identity.windowId }))
+          Effect.zipRight(log.info('main window released', { context: { windowId: acquired.identity.windowId } }))
         )
     ).pipe(
       Effect.tap(({ window }) =>
@@ -366,7 +366,7 @@ export const WindowRegistryLive: Layer.Layer<
           catch: cause => new WindowError({ stage: 'load-main-window', cause }),
         })
       ),
-      Effect.tap(({ identity }) => log.info('main window opened', { windowId: identity.windowId })),
+      Effect.tap(({ identity }) => log.info('main window opened', { context: { windowId: identity.windowId } })),
       Effect.map(({ window }) => window)
     );
 
@@ -460,7 +460,7 @@ export const WindowRegistryLive: Layer.Layer<
             window.webContents.setWindowOpenHandler(({ url }) => {
               if (isAllowedExternalUrl(url)) {
                 shell.openExternal(url).catch((error: unknown) => {
-                  unsafeLog.warn('shell.openExternal failed', { url, error: String(error) });
+                  unsafeLog.warn('shell.openExternal failed', { context: { url }, error: String(error) });
                 });
               }
               return { action: 'deny' };
@@ -470,7 +470,7 @@ export const WindowRegistryLive: Layer.Layer<
             const onWillNavigate = (event: Electron.Event, url: string) => {
               if (!isAppNavigationUrl(url, config.rendererDevServerUrl)) {
                 event.preventDefault();
-                unsafeLog.warn(`blocked ${options.kind} navigation`, { url });
+                unsafeLog.warn(`blocked ${options.kind} navigation`, { context: { url } });
               }
             };
             window.webContents.on('will-navigate', onWillNavigate);
@@ -512,7 +512,7 @@ export const WindowRegistryLive: Layer.Layer<
             }
           }).pipe(
             Effect.zipRight(
-              log.info(`${options.kind} window released`, { windowId: acquired.identity.windowId })
+              log.info(`${options.kind} window released`, { context: { windowId: acquired.identity.windowId } })
             )
           )
       ).pipe(
@@ -526,7 +526,7 @@ export const WindowRegistryLive: Layer.Layer<
           })
         ),
         Effect.tap(({ identity }) =>
-          log.info(`${options.kind} window opened`, { windowId: identity.windowId })
+          log.info(`${options.kind} window opened`, { context: { windowId: identity.windowId } })
         ),
         Effect.map(({ window }) => window)
       );
@@ -698,7 +698,7 @@ export const WindowRegistryLive: Layer.Layer<
                   window.webContents.setWindowOpenHandler(({ url }) => {
                     if (isAllowedExternalUrl(url)) {
                       shell.openExternal(url).catch((error: unknown) => {
-                        unsafeLog.warn('shell.openExternal failed', { url, error: String(error) });
+                        unsafeLog.warn('shell.openExternal failed', { context: { url }, error: String(error) });
                       });
                     }
                     return { action: 'deny' };
@@ -706,7 +706,7 @@ export const WindowRegistryLive: Layer.Layer<
                   const onWillNavigate = (event: Electron.Event, url: string) => {
                     if (!isAppNavigationUrl(url, config.rendererDevServerUrl)) {
                       event.preventDefault();
-                      unsafeLog.warn('blocked float-note navigation', { url });
+                      unsafeLog.warn('blocked float-note navigation', { context: { url } });
                     }
                   };
                   window.webContents.on('will-navigate', onWillNavigate);
@@ -784,7 +784,7 @@ export const WindowRegistryLive: Layer.Layer<
                 },
                 catch: cause => new WindowError({ stage: 'create-float-note-window', cause }),
               }).pipe(
-                Effect.flatMap(windowId => log.info('float-note window opened', { windowId }))
+                Effect.flatMap(windowId => log.info('float-note window opened', { context: { windowId } }))
               ),
             // Already live: bring it forward (the coordinator navs separately).
             onSome: window =>

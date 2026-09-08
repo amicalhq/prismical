@@ -95,7 +95,7 @@ extension SystemAudioCapture {
                 endSampleIndex: &postResampleDebugEndSampleIndex
             )
         } catch {
-            Logger.error("Failed to write debug audio files: \(error.localizedDescription)")
+            Logger.error("Failed to write debug audio files")
         }
 
         let resolvedHostTime = (hostTime ?? 0) > 0 ? hostTime : nil

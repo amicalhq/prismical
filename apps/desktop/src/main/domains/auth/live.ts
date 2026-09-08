@@ -206,7 +206,7 @@ export const makeAuthLive = (
         Effect.map(restoreAuthState),
         Effect.catchAll(cause =>
           log
-            .error('account index unreadable — starting signed-out', { cause })
+            .error('account index unreadable — starting signed-out', { error: cause })
             .pipe(Effect.as(initialAuthState))
         )
       );
@@ -255,7 +255,7 @@ export const makeAuthLive = (
         Effect.flatMap(state => db.setSetting(ACCOUNT_INDEX_KEY, encodeAccountIndex(state)))
       );
       const persistIndexLogged = persistIndex.pipe(
-        Effect.catchAll(cause => log.error('account index write failed', { cause }))
+        Effect.catchAll(cause => log.error('account index write failed', { error: cause }))
       );
 
       const postJson = (
@@ -415,9 +415,9 @@ export const makeAuthLive = (
               Effect.tapError(() => revokeToken(refreshToken).pipe(Effect.ignore))
             );
           } else {
-            yield* log.warn('exchange response had no refresh_token — session will not survive restart', {
+            yield* log.warn('exchange response had no refresh_token — session will not survive restart', { context: {
               sub: subPrefix(identity.sub),
-            });
+            } });
           }
           yield* Ref.update(tokensRef, map =>
             new Map(map).set(identity.sub, {
@@ -432,7 +432,7 @@ export const makeAuthLive = (
           // a logged error and self-heals on the next persist (refresh,
           // account/org switch, sign-out).
           yield* persistIndexLogged;
-          yield* log.info('sign-in complete', { sub: subPrefix(identity.sub) });
+          yield* log.info('sign-in complete', { context: { sub: subPrefix(identity.sub) } });
         });
 
       // ----- refresh (single-flight; rotation has ZERO grace) -----------------
@@ -441,7 +441,7 @@ export const makeAuthLive = (
         Effect.gen(function* () {
           yield* secureStore
             .deleteSecret(refreshTokenKey(sub))
-            .pipe(Effect.catchAll(cause => log.error('secret wipe failed', { cause })));
+            .pipe(Effect.catchAll(cause => log.error('secret wipe failed', { error: cause })));
           yield* Ref.update(tokensRef, map => {
             const next = new Map(map);
             next.delete(sub);
@@ -454,7 +454,7 @@ export const makeAuthLive = (
           });
           yield* SubscriptionRef.update(sessionState, state => dropAccount(state, sub));
           yield* persistIndexLogged;
-          yield* log.warn('account dropped', { sub: subPrefix(sub), reason });
+          yield* log.warn('account dropped', { context: { sub: subPrefix(sub), reason } });
         });
 
       const settleRefreshFailure = (sub: string, error: RefreshError): Effect.Effect<void> =>
@@ -483,12 +483,12 @@ export const makeAuthLive = (
               yield* SubscriptionRef.update(sessionState, state =>
                 applyTransientRefreshFailure(state, sub, hasValidToken)
               );
-              yield* log.warn('refresh failed transiently — account kept', {
+              yield* log.warn('refresh failed transiently — account kept', { context: {
                 sub: subPrefix(sub),
                 reason: error.reason,
                 status: error.status,
                 retryInMs: backoff,
-              });
+              } });
             });
 
       const runRefresh = (sub: string): Effect.Effect<string, RefreshError> =>
@@ -589,7 +589,7 @@ export const makeAuthLive = (
               if (presentAtPersist) {
                 yield* secureStore
                   .deleteSecret(refreshTokenKey(sub))
-                  .pipe(Effect.catchAll(cause => log.error('secret wipe failed', { cause })));
+                  .pipe(Effect.catchAll(cause => log.error('secret wipe failed', { error: cause })));
               }
             }
             return yield* Effect.fail(
@@ -612,7 +612,7 @@ export const makeAuthLive = (
             applyRefreshedIdentity(state, identity)
           );
           yield* persistIndexLogged;
-          yield* log.info('refresh complete', { sub: subPrefix(sub) });
+          yield* log.info('refresh complete', { context: { sub: subPrefix(sub) } });
           return parsed.value.idToken;
         });
 
@@ -709,10 +709,10 @@ export const makeAuthLive = (
               markRefreshingIfActive(sub).pipe(
                 Effect.zipRight(refreshAccount(sub)),
                 Effect.catchAll(error =>
-                  log.warn('scheduled refresh failed', {
+                  log.warn('scheduled refresh failed', { context: {
                     sub: subPrefix(sub),
                     reason: error.reason,
-                  })
+                  } })
                 )
               ),
             { discard: true }
@@ -751,7 +751,7 @@ export const makeAuthLive = (
             Effect.catchAllCause(cause =>
               Cause.isInterruptedOnly(cause)
                 ? Effect.failCause(cause)
-                : log.error(`${label} step failed — loop continues`, { cause: String(cause) })
+                : log.error(`${label} step failed — loop continues`, { error: Cause.squash(cause) })
             )
           )
         );
@@ -786,7 +786,7 @@ export const makeAuthLive = (
         yield* Effect.forkScoped(
           refreshAccount(activeSub).pipe(
             Effect.catchAll(error =>
-              log.warn('restore refresh failed', { sub: subPrefix(activeSub), reason: error.reason })
+              log.warn('restore refresh failed', { context: { sub: subPrefix(activeSub), reason: error.reason } })
             )
           )
         );
@@ -828,7 +828,7 @@ export const makeAuthLive = (
           if (config.isE2E) {
             // E2E guard: tests never open a real browser — the fake IdP path
             // delivers the callback via emitted open-url events.
-            yield* log.info('browser launch skipped (E2E)', { state: statePrefix(pkce.state) });
+            yield* log.info('browser launch skipped (E2E)', { context: { state: statePrefix(pkce.state) } });
           } else {
             yield* Effect.tryPromise({
               try: () => shell.openExternal(url),
@@ -840,7 +840,7 @@ export const makeAuthLive = (
               ? { ...state, gate: 'signing-in' as const }
               : state
           );
-          yield* log.info('sign-in flow launched', { state: statePrefix(pkce.state) });
+          yield* log.info('sign-in flow launched', { context: { state: statePrefix(pkce.state) } });
         });
 
       const signIn: AuthApi['signIn'] = opts =>
@@ -908,17 +908,10 @@ export const makeAuthLive = (
             );
             if (matched === 'Consume') {
               yield* revertSigningInGate;
-              yield* log.warn('sign-in attempt failed — provider error', {
-                error: entry.error,
-                description: entry.errorDescription,
-                state: statePrefix(errorState),
-              });
+              yield* log.warn('sign-in attempt failed — provider error', { context: { description: entry.errorDescription, state: statePrefix(errorState) }, error: entry.error });
               return 'attempt-failed' as const;
             }
-            yield* log.warn('oauth error rejected — no matching attempt', {
-              error: entry.error,
-              state: statePrefix(errorState),
-            });
+            yield* log.warn('oauth error rejected — no matching attempt', { context: { state: statePrefix(errorState) }, error: entry.error });
             return 'rejected' as const;
           }
 
@@ -943,31 +936,25 @@ export const makeAuthLive = (
                       // failed (the minted refresh token was revoked
                       // best-effort inside completeExchange). Never misreport
                       // an upstream success as an exchange failure.
-                      yield* log.error('sign-in could not be committed locally — flow must restart', {
-                        error: error._tag,
-                        reason: 'reason' in error ? error.reason : undefined,
-                      });
+                      yield* log.error('sign-in could not be committed locally — flow must restart', { context: { reason: 'reason' in error ? error.reason : undefined }, error: error._tag });
                       return 'persist-failed' as const;
                     }
                     // Codes are single-use (600 s TTL): a failed exchange
                     // restarts the whole flow, never retries the code.
-                    yield* log.error('oauth exchange failed — flow must restart', {
-                      error: error._tag,
-                      reason: 'reason' in error ? error.reason : undefined,
-                    });
+                    yield* log.error('oauth exchange failed — flow must restart', { context: { reason: 'reason' in error ? error.reason : undefined }, error: error._tag });
                     return 'exchange-failed' as const;
                   })
                 )
               );
             case 'Expired':
-              yield* log.warn('oauth callback rejected — attempt expired', {
+              yield* log.warn('oauth callback rejected — attempt expired', { context: {
                 state: statePrefix(entry.state),
-              });
+              } });
               return 'rejected' as const;
             case 'Reject':
-              yield* log.warn('oauth callback rejected — no matching attempt', {
+              yield* log.warn('oauth callback rejected — no matching attempt', { context: {
                 state: statePrefix(entry.state),
-              });
+              } });
               return 'rejected' as const;
           }
         });
@@ -1053,7 +1040,7 @@ export const makeAuthLive = (
           }
 
           if (config.isE2E) {
-            yield* log.info('web handoff browser launch skipped (E2E)', { returnPath });
+            yield* log.info('web handoff browser launch skipped (E2E)', { context: { returnPath } });
           } else {
             yield* Effect.tryPromise({
               try: () => shell.openExternal(url.toString()),
@@ -1088,9 +1075,7 @@ export const makeAuthLive = (
           yield* persistIndex.pipe(
             Effect.retry({ times: 2 }),
             Effect.catchAll(cause =>
-              log.error('sign-out could not rewrite the account index — may resurrect once', {
-                cause,
-              })
+              log.error('sign-out could not rewrite the account index — may resurrect once', { error: cause })
             )
           );
           // Server-side revocation kills the refresh token and its
@@ -1102,10 +1087,10 @@ export const makeAuthLive = (
           if (secret !== null) {
             yield* revokeToken(secret).pipe(
               Effect.catchAll(error =>
-                log.warn('revoke failed (best-effort)', {
+                log.warn('revoke failed (best-effort)', { context: {
                   reason: error.reason,
                   status: error.status,
-                })
+                } })
               )
             );
           }
@@ -1120,13 +1105,10 @@ export const makeAuthLive = (
               // greppable; the invoke still resolves (state is already gone,
               // and a rejected invoke would offer a retry that must no-op
               // against the idempotency guard).
-              log.error('sign-out left an orphaned refresh-token secret on disk', {
-                key: refreshTokenKey(target),
-                cause,
-              })
+              log.error('sign-out left an orphaned refresh-token secret on disk', { context: { key: refreshTokenKey(target) }, error: cause })
             )
           );
-          yield* log.info('signed out', { sub: subPrefix(target) });
+          yield* log.info('signed out', { context: { sub: subPrefix(target) } });
         });
 
       const setActiveAccount: AuthApi['setActiveAccount'] = sub =>
@@ -1172,17 +1154,17 @@ export const makeAuthLive = (
           const isMember = (accounts: AuthState['accounts']): boolean =>
             accounts[active.sub]?.orgs.some(org => org.orgId === orgId) === true;
           if (orgId !== null && !isMember(state.accounts)) {
-            yield* log.info('setActiveOrg: org absent from claim, refreshing once', {
+            yield* log.info('setActiveOrg: org absent from claim, refreshing once', { context: {
               sub: subPrefix(active.sub),
-            });
+            } });
             const refreshed = yield* refreshAccount(active.sub).pipe(
               Effect.as(true),
               // A refresh failure leaves membership unproven, which is the same answer as
               // a miss — but log the real cause so it isn't misread as "not a member".
               Effect.catchAll(cause =>
-                log.warn('setActiveOrg: refresh failed, cannot confirm membership', {
+                log.warn('setActiveOrg: refresh failed, cannot confirm membership', { context: {
                   reason: cause.reason,
-                }).pipe(Effect.as(false))
+                } }).pipe(Effect.as(false))
               )
             );
             const after = yield* SubscriptionRef.get(sessionState);
@@ -1196,10 +1178,10 @@ export const makeAuthLive = (
           yield* persistIndex;
         });
 
-      yield* log.info('auth service ready', {
+      yield* log.info('auth service ready', { context: {
         configured: config.auth.oauthClientId !== '',
         restoredAccounts: Object.keys(restored.accounts).length,
-      });
+      } });
 
       // e2e:authPendingState seam: state param only — the verifier never leaves
       // attemptRef (the specs assert the exchange body carries it instead).

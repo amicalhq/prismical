@@ -38,11 +38,21 @@ enum DetectorError: Error, LocalizedError {
 
 enum Logger {
     static func info(_ message: String) {
-        write("[prismical-mic-detector] \(message)\n")
+        record("info", message)
     }
 
     static func error(_ message: String) {
-        write("[prismical-mic-detector] ERROR: \(message)\n")
+        record("error", message)
+    }
+
+    private static func record(_ level: String, _ message: String) {
+        let timestamp = ISO8601DateFormatter()
+        timestamp.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let frame: [String: Any] = ["schemaVersion": 1, "timestamp": timestamp.string(from: Date()),
+            "level": level, "scope": "mic-detector", "message": String(message.prefix(2048))]
+        guard let data = try? JSONSerialization.data(withJSONObject: frame, options: [.sortedKeys]),
+              let line = String(data: data, encoding: .utf8) else { return }
+        write(line + "\n")
     }
 
     private static func write(_ message: String) {
@@ -62,7 +72,7 @@ final class SnapshotWriter {
             FileHandle.standardOutput.write(data)
             FileHandle.standardOutput.write(Data([0x0A]))
         } catch {
-            Logger.error("Failed to encode snapshot: \(error.localizedDescription)")
+            Logger.error("Failed to encode microphone snapshot")
         }
     }
 
@@ -97,7 +107,7 @@ final class MicDetector {
             let apps = try loadActiveInputApps()
             writer.write(apps: apps)
         } catch {
-            Logger.error("Failed to load active input apps: \(error.localizedDescription)")
+            Logger.error("Failed to load active input applications")
         }
     }
 

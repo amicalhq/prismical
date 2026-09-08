@@ -61,7 +61,7 @@ final class MicrophoneCommandReader {
         case "follow-default":
             coordinator?.followDefaultMicrophone(revision: command.rev)
         default:
-            Logger.error("Ignoring unknown microphone command: \(command.cmd)")
+            Logger.error("Ignoring unknown microphone command")
         }
     }
 }

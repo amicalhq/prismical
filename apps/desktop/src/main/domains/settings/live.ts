@@ -202,11 +202,11 @@ export const SettingsServiceLive: Layer.Layer<SettingsService, never, Operationa
       const initial = yield* readSettings.pipe(
         Effect.catchTag('DbError', error =>
           log
-            .warn('settings read failed at boot — using defaults', { op: error.op })
+            .warn('settings read failed at boot — using defaults', { context: { op: error.op } })
             .pipe(Effect.as(DEFAULT_DEVICE_SETTINGS))
         )
       );
-      yield* log.info('device settings loaded', { language: initial.language });
+      yield* log.info('device settings loaded', { context: { language: initial.language } });
 
       const ref = yield* SubscriptionRef.make(initial);
 

@@ -67,7 +67,7 @@ export const SecureStoreLive: Layer.Layer<
           ),
           Effect.as(safeStorageCodec)
         );
-    yield* log.info('secure store ready', { codec: codec.name });
+    yield* log.info('secure store ready', { context: { codec: codec.name } });
 
     const settingKey = (key: string) => `${SECURE_KEY_PREFIX}${key}`;
 

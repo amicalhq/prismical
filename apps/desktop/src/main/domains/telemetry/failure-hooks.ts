@@ -27,7 +27,7 @@ export const registerFailureHooks = (sources: FailureHookSources) =>
   Effect.gen(function* () {
     const telemetry = yield* TelemetryService;
     const windows = yield* WindowRegistry;
-    const log = (yield* MainLogger).scopedUnsafe('failures');
+    const log = (yield* MainLogger).scopedSync('failures');
     const reports = yield* Queue.sliding<FailureReport>(32);
 
     yield* Effect.forkScoped(
@@ -72,7 +72,7 @@ export const registerFailureHooks = (sources: FailureHookSources) =>
           // Immediate local evidence also works in uncaughtExceptionMonitor. Remote
           // work is queued separately and may not run before Node terminates.
           try {
-            log.error(message, { ...properties, error: safeError });
+            log.error(message, { context: { ...properties }, error: safeError });
           } catch {
             /* Logging cannot replace the original failure. */
           }

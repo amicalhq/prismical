@@ -1,6 +1,9 @@
-import { describe, expect, it } from "vitest";
-import { NativeAudioCaptureClient } from "../../src/main/infra/audio-capture/native-audio-capture-client";
-import type { AudioFrame } from "../../src/types/meeting";
+import { Effect } from 'effect';
+import { makeTestLogger } from '../helpers/test-layers';
+import { MainLogger, LoggingTransport } from '../../src/main/infra/logging/service';
+import { describe, expect, it } from 'vitest';
+import { NativeAudioCaptureClient } from '../../src/main/infra/audio-capture/native-audio-capture-client';
+import type { AudioFrame } from '../../src/types/meeting';
 
 /**
  * Golden packet fixtures for the imported native capture wire protocol
@@ -35,8 +38,7 @@ interface PacketFields {
 }
 
 function buildPacket(fields: PacketFields = {}): Buffer {
-  const samples =
-    fields.samples ?? new Float32Array([0, 0.25, -0.25, 1, -1, 0.5]);
+  const samples = fields.samples ?? new Float32Array([0, 0.25, -0.25, 1, -1, 0.5]);
   const payload = Buffer.from(samples.buffer.slice(0), 0, samples.byteLength);
 
   const header = Buffer.alloc(32);
@@ -60,15 +62,22 @@ function harness(): {
   feed: (chunk: Buffer) => void;
   frames: AudioFrame[];
 } {
-  const client = new NativeAudioCaptureClient();
+  const client = Effect.runSync(
+    Effect.gen(function* () {
+      return new NativeAudioCaptureClient(
+        (yield* MainLogger).scopedSync('audio'),
+        yield* LoggingTransport
+      );
+    }).pipe(Effect.provide(makeTestLogger().layer))
+  );
   const frames: AudioFrame[] = [];
-  client.on("frame", (frame) => frames.push(frame));
+  client.on('frame', frame => frames.push(frame));
   const parser = client as unknown as ParserHarness;
-  return { feed: (chunk) => parser.handleStdoutData(chunk), frames };
+  return { feed: chunk => parser.handleStdoutData(chunk), frames };
 }
 
-describe("NativeAudioCaptureClient packet decode", () => {
-  it("decodes a mic_raw frame with all header fields", () => {
+describe('NativeAudioCaptureClient packet decode', () => {
+  it('decodes a mic_raw frame with all header fields', () => {
     const { feed, frames } = harness();
     const samples = new Float32Array([0.5, -0.5, 0.125, -0.125]);
     feed(
@@ -79,12 +88,12 @@ describe("NativeAudioCaptureClient packet decode", () => {
         timestampMs: 1_730_000_000_123n,
         sampleStartIndex: 2016,
         samples,
-      }),
+      })
     );
 
     expect(frames).toHaveLength(1);
     const frame = frames[0];
-    expect(frame.source).toBe("mic_raw");
+    expect(frame.source).toBe('mic_raw');
     expect(frame.sampleRate).toBe(48_000);
     expect(frame.channels).toBe(1);
     expect(frame.sequenceNum).toBe(42);
@@ -94,19 +103,15 @@ describe("NativeAudioCaptureClient packet decode", () => {
     expect(Array.from(frame.samples)).toEqual(Array.from(samples));
   });
 
-  it("maps source ids 1/2/3 to mic_raw/system/mic_processed", () => {
+  it('maps source ids 1/2/3 to mic_raw/system/mic_processed', () => {
     const { feed, frames } = harness();
     feed(buildPacket({ source: 1 }));
     feed(buildPacket({ source: 2 }));
     feed(buildPacket({ source: 3 }));
-    expect(frames.map((f) => f.source)).toEqual([
-      "mic_raw",
-      "system",
-      "mic_processed",
-    ]);
+    expect(frames.map(f => f.source)).toEqual(['mic_raw', 'system', 'mic_processed']);
   });
 
-  it("reassembles a frame delivered in arbitrary chunk splits", () => {
+  it('reassembles a frame delivered in arbitrary chunk splits', () => {
     const { feed, frames } = harness();
     const packet = buildPacket({ source: 2, sequenceNum: 7 });
 
@@ -117,63 +122,62 @@ describe("NativeAudioCaptureClient packet decode", () => {
     expect(frames).toHaveLength(0);
     feed(packet.subarray(40));
     expect(frames).toHaveLength(1);
-    expect(frames[0].source).toBe("system");
+    expect(frames[0].source).toBe('system');
     expect(frames[0].sequenceNum).toBe(7);
   });
 
-  it("drains multiple packets from a single chunk in order", () => {
+  it('drains multiple packets from a single chunk in order', () => {
     const { feed, frames } = harness();
     feed(
       Buffer.concat([
         buildPacket({ source: 1, sequenceNum: 1 }),
         buildPacket({ source: 3, sequenceNum: 2 }),
-      ]),
+      ])
     );
-    expect(frames.map((f) => [f.source, f.sequenceNum])).toEqual([
-      ["mic_raw", 1],
-      ["mic_processed", 2],
+    expect(frames.map(f => [f.source, f.sequenceNum])).toEqual([
+      ['mic_raw', 1],
+      ['mic_processed', 2],
     ]);
   });
 
-  it("rejects an unsupported packet version", () => {
+  it('rejects an unsupported packet version', () => {
     const { feed } = harness();
-    expect(() => feed(buildPacket({ version: 2 }))).toThrow(
-      /Unsupported audio packet version: 2/,
-    );
+    expect(() => feed(buildPacket({ version: 2 }))).toThrow(/Unsupported audio packet version: 2/);
   });
 
-  it("rejects an unsupported sample format", () => {
+  it('rejects an unsupported sample format', () => {
     const { feed } = harness();
-    expect(() => feed(buildPacket({ format: 0 }))).toThrow(
-      /Unsupported audio packet format: 0/,
-    );
+    expect(() => feed(buildPacket({ format: 0 }))).toThrow(/Unsupported audio packet format: 0/);
   });
 
-  it("rejects a non-48k or non-mono frame", () => {
+  it('rejects a non-48k or non-mono frame', () => {
     const { feed } = harness();
-    expect(() => feed(buildPacket({ sampleRate: 44_100 }))).toThrow(
-      /sampleRate=44100/,
-    );
+    expect(() => feed(buildPacket({ sampleRate: 44_100 }))).toThrow(/sampleRate=44100/);
     expect(() => feed(buildPacket({ channels: 2 }))).toThrow(/channels=2/);
   });
 
-  it("rejects an unknown source id", () => {
+  it('rejects an unknown source id', () => {
     const { feed } = harness();
-    expect(() => feed(buildPacket({ source: 9 }))).toThrow(
-      /Unsupported audio packet source: 9/,
-    );
+    expect(() => feed(buildPacket({ source: 9 }))).toThrow(/Unsupported audio packet source: 9/);
   });
 
-  it("emits aec-mode from the stderr contract line (fragile regex — do not clean up)", () => {
-    const client = new NativeAudioCaptureClient();
+  it('emits aec-mode from the stderr contract line (fragile regex — do not clean up)', () => {
+    const client = Effect.runSync(
+      Effect.gen(function* () {
+        return new NativeAudioCaptureClient(
+          (yield* MainLogger).scopedSync('audio'),
+          yield* LoggingTransport
+        );
+      }).pipe(Effect.provide(makeTestLogger().layer))
+    );
     const modes: string[] = [];
-    client.on("aec-mode", (mode) => modes.push(mode));
+    client.on('aec-mode', mode => modes.push(mode));
     const parser = client as unknown as {
       handleStderrData(chunk: Buffer): void;
     };
     parser.handleStderrData(
-      Buffer.from("Dual mode capture started: aec=webrtc-aec3\nother line\n"),
+      Buffer.from('Dual mode capture started: aec=webrtc-aec3\nother line\n')
     );
-    expect(modes).toEqual(["webrtc-aec3"]);
+    expect(modes).toEqual(['webrtc-aec3']);
   });
 });

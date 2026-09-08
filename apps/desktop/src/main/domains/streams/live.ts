@@ -27,7 +27,7 @@ export const StreamBrokerLive: Layer.Layer<StreamBroker, never, MainLogger | Wor
     Effect.gen(function* () {
       const logger = yield* MainLogger;
       const log = logger.scoped('streams');
-      const unsafeLog = logger.scopedUnsafe('streams');
+      const unsafeLog = logger.scopedSync('streams');
       const coreTransport = yield* WorkspaceTransport;
 
       // Every producer fiber lands here; layer-scope close interrupts them all
@@ -92,7 +92,7 @@ export const StreamBrokerLive: Layer.Layer<StreamBroker, never, MainLogger | Wor
           Effect.flatMap(
             Option.match({
               onNone: () =>
-                log.warn('ask stream opened with no live session — closing', { streamId }),
+                log.warn('ask stream opened with no live session — closing', { context: { streamId } }),
               onSome: client =>
                 client.openAskStream(body).pipe(
                   Effect.flatMap(response =>
@@ -105,10 +105,10 @@ export const StreamBrokerLive: Layer.Layer<StreamBroker, never, MainLogger | Wor
                     )
                   ),
                   Effect.catchAll(error =>
-                    log.warn('ask stream open failed — closing', {
+                    log.warn('ask stream open failed — closing', { context: {
                       streamId,
                       reason: error.reason,
-                    })
+                    } })
                   )
                 ),
             })
@@ -133,10 +133,10 @@ export const StreamBrokerLive: Layer.Layer<StreamBroker, never, MainLogger | Wor
           const onMessage = (event: Electron.MessageEvent) => {
             const parsed = parseInboundStreamMessage(event.data);
             if (!parsed.success) {
-              unsafeLog.warn('invalid stream port message ignored', {
+              unsafeLog.warn('invalid stream port message ignored', { context: {
                 streamId,
                 issues: parsed.issues,
-              });
+              } });
               return;
             }
             if (parsed.data.type === 'abort') {
@@ -169,7 +169,7 @@ export const StreamBrokerLive: Layer.Layer<StreamBroker, never, MainLogger | Wor
               outcome === 'completed'
                 ? Ref.update(completed, n => n + 1)
                 : Ref.update(aborted, n => n + 1).pipe(
-                    Effect.zipRight(log.info('stream aborted', { streamId }))
+                    Effect.zipRight(log.info('stream aborted', { context: { streamId } }))
                   )
             ),
             Effect.ensuring(cleanup)
@@ -180,7 +180,7 @@ export const StreamBrokerLive: Layer.Layer<StreamBroker, never, MainLogger | Wor
           yield* Effect.sync(() => {
             sender.postMessage(streamPortChannel(streamId), null, [port2]);
           });
-          yield* log.info('stream opened', { streamId });
+          yield* log.info('stream opened', { context: { streamId } });
         });
 
       const service: StreamBrokerApi = {

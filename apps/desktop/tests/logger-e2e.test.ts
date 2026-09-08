@@ -1,78 +1,118 @@
-/**
- * Log-hermeticity seam (src/main/logger.ts): under the e2e harness env the
- * electron-log file transport must resolve into the per-run profile dir — the
- * sentinel scans read <profile>/logs/main.log — because electron-log's default
- * resolvePathFn uses the SHARED OS log dir (~/Library/Logs/<appName> on macOS)
- * regardless of app.setPath('userData'). Without the env, the default
- * resolution must stay untouched.
- *
- * electron-log is an externalized CJS singleton: vi.resetModules() re-runs
- * logger.ts (so it re-reads the env) but the `log` instance is shared across
- * tests — snapshot the pristine resolvePathFn here and restore it after each
- * test, or a mutation from one test leaks into the next.
- */
 import path from 'node:path';
+import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { log as sharedLog } from '../src/main/logger';
 
-const defaultResolvePathFn = sharedLog.transports.file.resolvePathFn;
-
-type ResolveVars = Parameters<typeof defaultResolvePathFn>[0];
-const vars = (fileName: string, libraryDefaultDir: string): ResolveVars =>
-  ({ fileName, libraryDefaultDir }) as unknown as ResolveVars;
-
-const ORIGINAL_E2E = process.env.PRISMICAL_E2E;
-const ORIGINAL_DIR = process.env.PRISMICAL_E2E_USER_DATA_DIR;
-
-const restore = (key: string, value: string | undefined): void => {
-  if (value === undefined) delete process.env[key];
-  else process.env[key] = value;
-};
-
-/** Fresh logger.ts evaluation so it re-reads the env at import time. */
-const importLogger = async () => {
-  vi.resetModules();
-  return import('../src/main/logger');
-};
+const state = vi.hoisted(() => ({ profile: '', packaged: false, savePath: '' }));
+vi.mock('electron', () => ({
+  app: {
+    getPath: () => state.profile,
+    getVersion: () => '1.2.3',
+    get isPackaged() {
+      return state.packaged;
+    },
+  },
+  dialog: {
+    showSaveDialog: async () => ({ canceled: !state.savePath, filePath: state.savePath }),
+    showErrorBox: vi.fn(),
+  },
+}));
+import {
+  makeMainLogging,
+  resolveLogPaths,
+  snapshotLogs,
+  LOG_MAX_BYTES,
+} from '../src/main/infra/logging/live';
+import { Effect } from 'effect';
 
 afterEach(() => {
-  restore('PRISMICAL_E2E', ORIGINAL_E2E);
-  restore('PRISMICAL_E2E_USER_DATA_DIR', ORIGINAL_DIR);
-  sharedLog.transports.file.resolvePathFn = defaultResolvePathFn;
-  vi.resetModules();
+  vi.unstubAllEnvs();
+  state.packaged = false;
+  state.savePath = '';
 });
+const profile = (packaged = false) => {
+  state.packaged = packaged;
+  state.profile = mkdtempSync(path.join(tmpdir(), 'prismical-jsonl-'));
+  return resolveLogPaths(state.profile, { isDev: !packaged });
+};
 
-describe('logger e2e file-path seam', () => {
-  it('pins the file transport under the e2e profile dir when the harness env is set', async () => {
-    process.env.PRISMICAL_E2E = '1';
-    process.env.PRISMICAL_E2E_USER_DATA_DIR = path.join(path.sep, 'tmp', 'prismical-e2e-profile');
-    const { log } = await importLogger();
-
-    const resolved = log.transports.file.resolvePathFn(
-      vars('main.log', path.join(path.sep, 'shared', 'Logs', 'Prismical'))
+describe('real diagnostic persistence', () => {
+  it('separates development and packaged logs while preserving isolated E2E filenames', () => {
+    expect(resolveLogPaths('/profile', { isDev: true }).current).toBe(
+      '/profile/logs/main-dev.jsonl'
     );
-    expect(resolved).toBe(
-      path.join(path.sep, 'tmp', 'prismical-e2e-profile', 'logs', 'main.log')
+    expect(resolveLogPaths('/profile').current).toBe('/profile/logs/main.jsonl');
+    expect(resolveLogPaths('/e2e-run', { isDev: true, isE2E: true }).current).toBe(
+      '/e2e-run/logs/main.jsonl'
     );
   });
 
-  it('keeps electron-log default resolution when PRISMICAL_E2E is not set', async () => {
-    delete process.env.PRISMICAL_E2E;
-    delete process.env.PRISMICAL_E2E_USER_DATA_DIR;
-    const { log } = await importLogger();
-
-    const shared = path.join(path.sep, 'shared', 'Logs', 'Prismical');
-    const resolved = log.transports.file.resolvePathFn(vars('main.log', shared));
-    expect(resolved).toBe(path.join(shared, 'main.log'));
+  it('uses the supplied profile, writes one JSON line, and preserves safe error classification', () => {
+    const paths = profile();
+    const logging = makeMainLogging('run-a');
+    logging.service.scopedSync('auth').error('OAuth failed\nretry unavailable', {
+      context: { apiKey: 'private-key', transcript: 'private transcript' },
+      error: Object.assign(new Error('https://auth.example/callback?code=private-code'), {
+        _tag: 'AuthError',
+        code: 'UNAUTHORIZED',
+      }),
+    });
+    const content = readFileSync(paths.current, 'utf8');
+    expect(content.trim().split('\n')).toHaveLength(1);
+    expect(content).not.toMatch(/private-key|private transcript|private-code/);
+    expect(JSON.parse(content)).toMatchObject({
+      appRunId: 'run-a',
+      runtime: 'main',
+      scope: 'auth',
+      error: { tag: 'AuthError', code: 'UNAUTHORIZED' },
+    });
   });
 
-  it('a profile dir without the E2E flag does NOT hijack production logs', async () => {
-    delete process.env.PRISMICAL_E2E;
-    process.env.PRISMICAL_E2E_USER_DATA_DIR = path.join(path.sep, 'tmp', 'stray-profile');
-    const { log } = await importLogger();
+  it('enforces production file admission and rotates to one JSONL backup', () => {
+    const paths = profile(true);
+    const first = makeMainLogging('old-run');
+    first.service.scopedSync('test').debug('not admitted');
+    expect(existsSync(paths.current)).toBe(false);
+    first.service.scopedSync('test').info('seed');
+    const log = first.service.scopedSync('test');
+    for (let index = 0; index < Math.ceil(LOG_MAX_BYTES / 1800) + 1; index++)
+      log.info('x'.repeat(1800));
+    makeMainLogging('new-run').service.scopedSync('test').info('after rotation');
+    expect(existsSync(paths.backup)).toBe(true);
+    const last = readFileSync(paths.current, 'utf8').trim().split('\n').at(-1)!;
+    expect(JSON.parse(last).appRunId).toBe('new-run');
+  });
 
-    const shared = path.join(path.sep, 'shared', 'Logs', 'Prismical');
-    const resolved = log.transports.file.resolvePathFn(vars('main.log', shared));
-    expect(resolved).toBe(path.join(shared, 'main.log'));
+  it('exports current and backup with partial-line and legacy notices', async () => {
+    const paths = profile();
+    const logging = makeMainLogging('export-run');
+    logging.service.scopedSync('test').info('current');
+    writeFileSync(paths.backup, readFileSync(paths.current, 'utf8') + '{incomplete');
+    writeFileSync(paths.legacy, 'secret legacy transcript');
+    state.savePath = path.join(state.profile, 'bundle.json');
+    await Effect.runPromise(logging.transport.exportBundle);
+    const bundle = JSON.parse(readFileSync(state.savePath, 'utf8'));
+    expect(bundle.files.map((file: { name: string }) => file.name)).toEqual([
+      'main-dev.jsonl',
+      'main-dev.old.jsonl',
+    ]);
+    expect(bundle.manifest.appRunIds).toEqual(['export-run']);
+    expect(bundle.manifest.notices.join(' ')).toMatch(/incomplete final line/);
+    expect(JSON.stringify(bundle)).not.toContain('secret legacy transcript');
+    expect(snapshotLogs(paths).notices.join(' ')).toContain('Legacy text logs excluded');
+  });
+
+  it('revalidates retained records and strips untrusted fields during export', () => {
+    const paths = profile();
+    makeMainLogging('export-run').service.scopedSync('test').info('seed');
+    const record = JSON.parse(readFileSync(paths.current, 'utf8'));
+    writeFileSync(
+      paths.current,
+      `${JSON.stringify({ ...record, context: { transcript: 'private transcript' }, extra: 'private extra' })}\n${JSON.stringify({ schemaVersion: 1, appRunId: 'forged' })}\n`
+    );
+    const snapshot = snapshotLogs(paths);
+    expect(snapshot.files[0]!.content).not.toMatch(/private transcript|private extra|forged/);
+    expect(snapshot.notices.join(' ')).toContain('invalid record excluded');
+    expect(JSON.parse(snapshot.files[0]!.content).context.transcript).toBe('[redacted]');
   });
 });

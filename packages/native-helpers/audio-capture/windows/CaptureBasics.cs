@@ -28,12 +28,20 @@ internal static class Logger
 
     public static void Info(string message)
     {
-        Console.Error.WriteLine($"[audio-capture] {message}");
+        Write("info", message);
     }
 
     public static void Error(string message)
     {
-        Console.Error.WriteLine($"[audio-capture] ERROR: {message}");
+        Write("error", message);
+    }
+
+    private static void Write(string level, string message)
+    {
+        Console.Error.WriteLine(JsonSerializer.Serialize(new {
+            schemaVersion = 1, timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
+            level, scope = "audio-capture", message = message.Length > 2048 ? message[..2048] : message
+        }));
     }
 
     public static void MicEvent(IReadOnlyDictionary<string, object> message)

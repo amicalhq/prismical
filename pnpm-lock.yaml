@@ -142,6 +142,9 @@ importers:
       '@ai-sdk/openai-compatible':
         specifier: 'catalog:'
         version: 3.0.34(zod@4.4.3)
+      '@desktop/logging':
+        specifier: workspace:*
+        version: link:../../packages/desktop-logging
       '@posthog/core':
         specifier: 1.29.2
         version: 1.29.2
@@ -702,6 +705,22 @@ importers:
         version: 9.39.4(jiti@2.7.0)
       typescript:
         specifier: 'catalog:'
+        version: 5.8.3
+
+  packages/desktop-logging:
+    dependencies:
+      effect:
+        specifier: ^3.21.2
+        version: 3.21.2
+    devDependencies:
+      '@types/node':
+        specifier: ^24.10.1
+        version: 24.13.3
+      tsx:
+        specifier: ^4.19.4
+        version: 4.22.0
+      typescript:
+        specifier: ^5.8.3
         version: 5.8.3
 
   packages/editor-markdown:

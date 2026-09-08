@@ -50,7 +50,8 @@ import { LocalWhisperLive } from '../domains/transcriber/local';
 import { CloudBackendLive } from '../domains/transport/live';
 import { WorkspaceBackend, WorkspaceTransport } from '../domains/transport/service';
 import { AppConfig } from '../infra/config/service';
-import { MainLogger } from '../infra/logging/service';
+import { MainLogger, LoggingTransport } from '../infra/logging/service';
+import { TelemetryService } from '../domains/telemetry/service';
 import { MicActivityLive } from '../infra/mic-detector/live';
 import { MicActivity } from '../infra/mic-detector/service';
 import { OperationalDb } from '../infra/operational-db/service';
@@ -101,6 +102,8 @@ export type DesiredWorkspace =
 export type WorkspaceLayerEnv =
   | AuthService
   | MainLogger
+  | LoggingTransport
+  | TelemetryService
   | AppConfig
   | WorkspaceTransport
   | OperationalDb
@@ -162,13 +165,17 @@ const makeSignedInSessionLayer = (
       const log = (yield* MainLogger).scoped('session');
       yield* Effect.acquireRelease(
         log.info('signed-in scope acquired', {
-          sub: subPrefix(pinned.sub),
-          org: pinned.activeOrgId,
+          context: {
+            sub: subPrefix(pinned.sub),
+            org: pinned.activeOrgId,
+          },
         }),
         () =>
           log.info('signed-in scope released', {
-            sub: subPrefix(pinned.sub),
-            org: pinned.activeOrgId,
+            context: {
+              sub: subPrefix(pinned.sub),
+              org: pinned.activeOrgId,
+            },
           })
       );
 
@@ -249,6 +256,8 @@ const sharedWorkspaceServices = (): Layer.Layer<
   | WorkspaceBackend
   | ProductDb
   | MainLogger
+  | LoggingTransport
+  | TelemetryService
   | AppConfig
   | OperationalDb
   | RecordingBridge

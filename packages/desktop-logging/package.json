@@ -1,0 +1,26 @@
+{
+  "name": "@desktop/logging",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "description": "Shared desktop diagnostic contracts and pure logging pipeline.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./wire": "./src/wire.ts"
+  },
+  "scripts": {
+    "test": "tsx --test tests/*.test.ts",
+    "type:check": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "effect": "^3.21.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
+  }
+}

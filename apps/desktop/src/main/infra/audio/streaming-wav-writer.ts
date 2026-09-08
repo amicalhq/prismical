@@ -1,6 +1,6 @@
-import * as fs from "node:fs";
-import { finished } from "node:stream/promises";
-import { logger } from "../../logger";
+import * as fs from 'node:fs';
+import { finished } from 'node:stream/promises';
+import type { SyncScopedLog } from '../logging/service';
 
 /**
  * StreamingWavWriter allows incremental writing of audio data to a WAV file.
@@ -16,10 +16,11 @@ export class StreamingWavWriter {
   private writeError: Error | undefined;
 
   constructor(
+    private readonly log: SyncScopedLog,
     filePath: string,
     sampleRate = 16000,
     channels = 1,
-    bitDepth = 16,
+    bitDepth = 16
   ) {
     this.sampleRate = sampleRate;
     this.channels = channels;
@@ -28,7 +29,9 @@ export class StreamingWavWriter {
     // Create write stream
     this.fileStream = fs.createWriteStream(filePath);
     // Header/open failures can occur before a frame supplies a write callback.
-    this.fileStream.on("error", (error) => { this.writeError = error; });
+    this.fileStream.on('error', error => {
+      this.writeError = error;
+    });
 
     // Write initial WAV header with placeholder sizes
     this.writeHeader();
@@ -41,25 +44,22 @@ export class StreamingWavWriter {
     const header = Buffer.alloc(44);
 
     // RIFF chunk
-    header.write("RIFF", 0);
+    header.write('RIFF', 0);
     header.writeUInt32LE(this.dataSize + 36, 4); // File size - 8
-    header.write("WAVE", 8);
+    header.write('WAVE', 8);
 
     // fmt sub-chunk
-    header.write("fmt ", 12);
+    header.write('fmt ', 12);
     header.writeUInt32LE(16, 16); // Sub-chunk size
     header.writeUInt16LE(1, 20); // Audio format (1 = PCM)
     header.writeUInt16LE(this.channels, 22);
     header.writeUInt32LE(this.sampleRate, 24);
-    header.writeUInt32LE(
-      (this.sampleRate * this.channels * this.bitDepth) / 8,
-      28,
-    ); // Byte rate
+    header.writeUInt32LE((this.sampleRate * this.channels * this.bitDepth) / 8, 28); // Byte rate
     header.writeUInt16LE((this.channels * this.bitDepth) / 8, 32); // Block align
     header.writeUInt16LE(this.bitDepth, 34);
 
     // data sub-chunk
-    header.write("data", 36);
+    header.write('data', 36);
     header.writeUInt32LE(this.dataSize, 40);
 
     this.fileStream.write(header);
@@ -75,7 +75,7 @@ export class StreamingWavWriter {
     }
 
     if (this.isFinalized) {
-      throw new Error("Cannot append to finalized WAV file");
+      throw new Error('Cannot append to finalized WAV file');
     }
     if (this.writeError) throw this.writeError;
 
@@ -88,7 +88,7 @@ export class StreamingWavWriter {
 
     // Write to file
     await new Promise<void>((resolve, reject) => {
-      this.fileStream.write(buffer, (err) => {
+      this.fileStream.write(buffer, err => {
         if (err) reject(err);
         else resolve();
       });
@@ -103,13 +103,13 @@ export class StreamingWavWriter {
     }
 
     if (this.isFinalized) {
-      throw new Error("Cannot append to finalized WAV file");
+      throw new Error('Cannot append to finalized WAV file');
     }
     if (this.writeError) throw this.writeError;
 
     const buffer = Buffer.alloc(sampleCount * 2);
     await new Promise<void>((resolve, reject) => {
-      this.fileStream.write(buffer, (err) => {
+      this.fileStream.write(buffer, err => {
         if (err) reject(err);
         else resolve();
       });
@@ -132,7 +132,7 @@ export class StreamingWavWriter {
     await closed;
 
     // Reopen file to update header with correct sizes
-    const fd = await fs.promises.open(this.fileStream.path as string, "r+");
+    const fd = await fs.promises.open(this.fileStream.path as string, 'r+');
 
     try {
       // Update file size in RIFF header
@@ -145,10 +145,11 @@ export class StreamingWavWriter {
       dataSizeBuffer.writeUInt32LE(this.dataSize, 0);
       await fd.write(dataSizeBuffer, 0, 4, 40);
 
-      logger.transcription.info("Finalized WAV file", {
-        path: this.fileStream.path,
-        dataSize: this.dataSize,
-        duration: this.dataSize / 2 / this.sampleRate, // seconds
+      this.log.debug('Finalized WAV file', {
+        context: {
+          dataSize: this.dataSize,
+          audioDurationMs: (this.dataSize / 2 / this.sampleRate) * 1000,
+        },
       });
     } finally {
       await fd.close();
@@ -169,9 +170,7 @@ export class StreamingWavWriter {
     this.fileStream.end();
     await closed;
 
-    logger.transcription.info("WAV writer aborted", {
-      path: this.fileStream.path,
-    });
+    this.log.debug('WAV writer aborted');
   }
 
   /**

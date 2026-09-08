@@ -1,3 +1,4 @@
+import { testTelemetryLayer } from '../helpers/telemetry';
 /**
  * The real local-whisper integration proof, run via
  * `pnpm test:local-asr`, never in the default suite): LocalWhisperLive over
@@ -40,7 +41,13 @@ import { ProductDb } from '../../src/main/infra/product-db/service';
 const desktopRoot = path.resolve(__dirname, '..', '..');
 
 const modelPath = path.join(homedir(), '.cache', 'prismical', 'models', 'ggml-base.en.bin');
-const vadModelPath = path.join(homedir(), '.cache', 'prismical', 'models', 'ggml-silero-v5.1.2.bin');
+const vadModelPath = path.join(
+  homedir(),
+  '.cache',
+  'prismical',
+  'models',
+  'ggml-silero-v5.1.2.bin'
+);
 const nodeBinaryPath = path.join(
   desktopRoot,
   'node-binaries',
@@ -157,7 +164,7 @@ describe('local whisper end to end (sidecar → worker → whisper.node → prod
       assert.isAtLeast(chunks.length, 3, 'the ~20 s fixture yields production-shaped 5 s chunks');
 
       const logger = makeTestLogger();
-      const env = Layer.mergeAll(testConfigLayer(), logger.layer);
+      const env = Layer.mergeAll(testConfigLayer(), logger.layer, testTelemetryLayer);
       const productDb = makeProductDbLayer({ kind: 'local' }); // ':memory:' via testConfig
       const engineLayer = makeWhisperEngineLive({
         paths: { nodeBinaryPath, workerPath, cwd: desktopRoot },
@@ -189,7 +196,11 @@ describe('local whisper end to end (sidecar → worker → whisper.node → prod
             status: 'recording',
             noteId: null,
             startedAt: Date.now(),
-            transcriptionConfig: { provider: 'local-whisper', model: `local:${ENGINE.modelId}`, language: 'en' },
+            transcriptionConfig: {
+              provider: 'local-whisper',
+              model: `local:${ENGINE.modelId}`,
+              language: 'en',
+            },
           })
           .pipe(Effect.orDie);
 
@@ -233,7 +244,9 @@ describe('local whisper end to end (sidecar → worker → whisper.node → prod
       const transcript = result.map(row => row.text).join(' ');
       console.log(`\n[local-asr] persisted segments (${result.length}):`);
       for (const row of result) {
-        console.log(`  [order ${row.segmentOrder}] ${row.startTimeMs}–${row.endTimeMs}ms: ${row.text}`);
+        console.log(
+          `  [order ${row.segmentOrder}] ${row.startTimeMs}–${row.endTimeMs}ms: ${row.text}`
+        );
       }
       console.log(`[local-asr] transcript: ${transcript}\n`);
 
@@ -251,103 +264,111 @@ describe('local whisper end to end (sidecar → worker → whisper.node → prod
     })
   );
 
-  it.live('with the VAD weights installed the fixture still transcribes, and a guard-bypassing noise chunk yields NO segments', () =>
-    Effect.gen(function* () {
-      require16k(
-        'eval model',
-        modelPath,
-        'pnpm --filter @prismical/desktop fetch-eval-model  (downloads ggml-base.en.bin, sha1-verified)'
-      );
-      require16k(
-        'VAD model',
-        vadModelPath,
-        'pnpm --filter @prismical/desktop fetch-eval-model --model silero-vad-v5'
-      );
-      require16k('Node sidecar', nodeBinaryPath, 'pnpm --filter @prismical/desktop download-node');
-      require16k('worker bundle', workerPath, 'pnpm --filter @prismical/desktop build:worker');
-      require16k('audio fixture', fixturePath, 'checked-in file missing — check the repo');
+  it.live(
+    'with the VAD weights installed the fixture still transcribes, and a guard-bypassing noise chunk yields NO segments',
+    () =>
+      Effect.gen(function* () {
+        require16k(
+          'eval model',
+          modelPath,
+          'pnpm --filter @prismical/desktop fetch-eval-model  (downloads ggml-base.en.bin, sha1-verified)'
+        );
+        require16k(
+          'VAD model',
+          vadModelPath,
+          'pnpm --filter @prismical/desktop fetch-eval-model --model silero-vad-v5'
+        );
+        require16k(
+          'Node sidecar',
+          nodeBinaryPath,
+          'pnpm --filter @prismical/desktop download-node'
+        );
+        require16k('worker bundle', workerPath, 'pnpm --filter @prismical/desktop build:worker');
+        require16k('audio fixture', fixturePath, 'checked-in file missing — check the repo');
 
-      const chunks = cutChunks(upsampleTo48k(readFixtureFloat32()));
+        const chunks = cutChunks(upsampleTo48k(readFixtureFloat32()));
 
-      const logger = makeTestLogger();
-      const env = Layer.mergeAll(testConfigLayer(), logger.layer);
-      const productDb = makeProductDbLayer({ kind: 'local' });
-      const engineLayer = makeWhisperEngineLive({
-        paths: { nodeBinaryPath, workerPath, cwd: desktopRoot },
-      });
-      const stack = Layer.mergeAll(
-        productDb,
-        LocalWhisperLive.pipe(
-          Layer.provide(productDb),
-          Layer.provide(engineLayer),
-          // The fake stands in for the real manager's contract: installedPath
-          // only ever answers with a SHA-1-verified file — the defense that
-          // matters for `vad_model_path`, where a non-Silero ggml would ABORT
-          // the worker process (mapped to a retryable worker-crashed).
-          Layer.provide(
-            fakeModelManagerLayer({
-              [RECOMMENDED_MODEL_ID]: modelPath,
-              [VAD_MODEL_ID]: vadModelPath,
-            })
-          ),
-          Layer.provide(Layer.effect(AppModeService, makeAppMode('local', true))),
-          Layer.provide(makeFakeWorkspaceBackend().layer)
-        )
-      ).pipe(Layer.provide(env));
+        const logger = makeTestLogger();
+        const env = Layer.mergeAll(testConfigLayer(), logger.layer, testTelemetryLayer);
+        const productDb = makeProductDbLayer({ kind: 'local' });
+        const engineLayer = makeWhisperEngineLive({
+          paths: { nodeBinaryPath, workerPath, cwd: desktopRoot },
+        });
+        const stack = Layer.mergeAll(
+          productDb,
+          LocalWhisperLive.pipe(
+            Layer.provide(productDb),
+            Layer.provide(engineLayer),
+            // The fake stands in for the real manager's contract: installedPath
+            // only ever answers with a SHA-1-verified file — the defense that
+            // matters for `vad_model_path`, where a non-Silero ggml would ABORT
+            // the worker process (mapped to a retryable worker-crashed).
+            Layer.provide(
+              fakeModelManagerLayer({
+                [RECOMMENDED_MODEL_ID]: modelPath,
+                [VAD_MODEL_ID]: vadModelPath,
+              })
+            ),
+            Layer.provide(Layer.effect(AppModeService, makeAppMode('local', true))),
+            Layer.provide(makeFakeWorkspaceBackend().layer)
+          )
+        ).pipe(Layer.provide(env));
 
-      const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(stack).pipe(Scope.extend(scope), Effect.orDie);
-      const lane = Context.get(ctx, LocalTranscriberLane);
+        const scope = yield* Scope.make();
+        const ctx = yield* Layer.build(stack).pipe(Scope.extend(scope), Effect.orDie);
+        const lane = Context.get(ctx, LocalTranscriberLane);
 
-      const outcome = yield* Effect.gen(function* () {
-        const texts: string[] = [];
-        for (const c of chunks) {
-          const res = yield* lane.transcribeChunk(
-            'rec_local_vad',
-            { chunkIndex: c.index, chunkStartMs: c.startMs, source: 'mic' },
-            { samples: c.samples, sampleRate: CAPTURE_SAMPLE_RATE },
+        const outcome = yield* Effect.gen(function* () {
+          const texts: string[] = [];
+          for (const c of chunks) {
+            const res = yield* lane.transcribeChunk(
+              'rec_local_vad',
+              { chunkIndex: c.index, chunkStartMs: c.startMs, source: 'mic' },
+              { samples: c.samples, sampleRate: CAPTURE_SAMPLE_RATE },
+              ENGINE
+            );
+            assert.isTrue(
+              res.ok,
+              `chunk ${c.index} failed: ${res.ok ? '' : JSON.stringify(res.failure)}`
+            );
+            if (res.ok) texts.push(...res.value.map(segment => segment.text));
+          }
+          // 5 s of uniform noise at 0.02 peak: ABOVE the ~0.0100 near-silence
+          // guard, so the engine IS called — and VAD must find no speech spans.
+          // The no-VAD arm may hallucinate text on this input (whisper does on
+          // non-speech), so only the VAD side is pinned.
+          const noise = yield* lane.transcribeChunk(
+            'rec_vad_noise',
+            { chunkIndex: 0, chunkStartMs: 0, source: 'mic' },
+            { samples: noiseChunk(CHUNK_SAMPLES, 0.02), sampleRate: CAPTURE_SAMPLE_RATE },
             ENGINE
           );
-          assert.isTrue(
-            res.ok,
-            `chunk ${c.index} failed: ${res.ok ? '' : JSON.stringify(res.failure)}`
-          );
-          if (res.ok) texts.push(...res.value.map(segment => segment.text));
-        }
-        // 5 s of uniform noise at 0.02 peak: ABOVE the ~0.0100 near-silence
-        // guard, so the engine IS called — and VAD must find no speech spans.
-        // The no-VAD arm may hallucinate text on this input (whisper does on
-        // non-speech), so only the VAD side is pinned.
-        const noise = yield* lane.transcribeChunk(
-          'rec_vad_noise',
-          { chunkIndex: 0, chunkStartMs: 0, source: 'mic' },
-          { samples: noiseChunk(CHUNK_SAMPLES, 0.02), sampleRate: CAPTURE_SAMPLE_RATE },
-          ENGINE
+          return { texts, noise };
+        }).pipe(
+          Effect.tapErrorCause(() =>
+            Effect.sync(() => {
+              for (const entry of logger.entries) {
+                console.error(`[${entry.scope}:${entry.level}] ${entry.message}`, entry.data ?? '');
+              }
+            })
+          ),
+          Effect.ensuring(Scope.close(scope, Exit.void))
         );
-        return { texts, noise };
-      }).pipe(
-        Effect.tapErrorCause(() =>
-          Effect.sync(() => {
-            for (const entry of logger.entries) {
-              console.error(`[${entry.scope}:${entry.level}] ${entry.message}`, entry.data ?? '');
-            }
-          })
-        ),
-        Effect.ensuring(Scope.close(scope, Exit.void))
-      );
 
-      const transcript = outcome.texts.join(' ');
-      console.log(`\n[local-asr:vad] transcript (${outcome.texts.length} segments): ${transcript}\n`);
+        const transcript = outcome.texts.join(' ');
+        console.log(
+          `\n[local-asr:vad] transcript (${outcome.texts.length} segments): ${transcript}\n`
+        );
 
-      assert.isAbove(outcome.texts.length, 0, 'a non-empty transcript with VAD on');
-      const normalized = normalize(transcript);
-      assert.include(normalized, 'movie');
-      assert.include(normalized, 'documentary');
-      assert.isTrue(outcome.noise.ok, 'the noise chunk decodes cleanly');
-      if (outcome.noise.ok) {
-        assert.deepStrictEqual([...outcome.noise.value], [], 'VAD finds no speech in noise');
-      }
-      console.log('[local-asr:vad] 5 s noise chunk (peak 0.02, guard bypassed): 0 segments');
-    })
+        assert.isAbove(outcome.texts.length, 0, 'a non-empty transcript with VAD on');
+        const normalized = normalize(transcript);
+        assert.include(normalized, 'movie');
+        assert.include(normalized, 'documentary');
+        assert.isTrue(outcome.noise.ok, 'the noise chunk decodes cleanly');
+        if (outcome.noise.ok) {
+          assert.deepStrictEqual([...outcome.noise.value], [], 'VAD finds no speech in noise');
+        }
+        console.log('[local-asr:vad] 5 s noise chunk (peak 0.02, guard bypassed): 0 segments');
+      })
   );
 });

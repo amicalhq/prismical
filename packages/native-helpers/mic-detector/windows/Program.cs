@@ -117,7 +117,7 @@ internal static class Program
         }
         catch (Exception ex)
         {
-            LogError($"Failed to load active input apps: {ex.Message}");
+            LogError("Failed to load active input applications");
         }
     }
 
@@ -128,12 +128,12 @@ internal static class Program
 
     private static void LogInfo(string message)
     {
-        Console.Error.WriteLine($"[prismical-mic-detector] {message}");
+        DiagnosticLog.Write("info", message);
     }
 
     private static void LogError(string message)
     {
-        Console.Error.WriteLine($"[prismical-mic-detector] ERROR: {message}");
+        DiagnosticLog.Write("error", message);
     }
 }
 
@@ -212,7 +212,7 @@ internal sealed class MicDetector : IDisposable
 
     private static void LogError(string message)
     {
-        Console.Error.WriteLine($"[prismical-mic-detector] ERROR: {message}");
+        DiagnosticLog.Write("error", message);
     }
 }
 
@@ -293,5 +293,16 @@ internal static class ProcessIdentityResolver
         }
 
         return string.IsNullOrWhiteSpace(process.ProcessName) ? null : process.ProcessName;
+    }
+}
+
+internal static class DiagnosticLog
+{
+    internal static void Write(string level, string message)
+    {
+        Console.Error.WriteLine(JsonSerializer.Serialize(new {
+            schemaVersion = 1, timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
+            level, scope = "mic-detector", message = message.Length > 2048 ? message[..2048] : message
+        }));
     }
 }

@@ -24,6 +24,7 @@
  * Only the versioned prefix exists — the transport allowlist
  * already pins it, the double-check here is defense in depth.
  */
+import type { LogMetadata } from '../../infra/logging/service';
 import type Database from 'better-sqlite3';
 import {
   LOCAL_FEATURE_FLAGS,
@@ -61,7 +62,7 @@ export interface LocalRouteContext {
   readonly client: Database.Database;
   readonly ai: LocalAiPort;
   readonly locale: string;
-  readonly log: (message: string, data?: unknown) => void;
+  readonly log: (message: string, data?: LogMetadata['context']) => void;
   /**
    * The workspace's single title-run writer: apply/undo read-compare-write a
    * note's titleRevision. One process, one lock — the lanes cannot interleave.

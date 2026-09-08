@@ -60,6 +60,7 @@ test.describe('main-window preload contract', () => {
       'platform',
       'recording',
       'settings',
+      'logging',
       'telemetry',
       'theme',
       'transport',

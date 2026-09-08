@@ -61,9 +61,9 @@ export const runDockHotkey: Effect.Effect<void, never, HotkeyEnv | Scope.Scope> 
             }).pipe(Effect.catchAll(() => Effect.succeed(false as const)));
             if (ok) {
               registeredAccelerator = accelerator;
-              yield* log.info('dock hotkey registered', { accelerator });
+              yield* log.info('dock hotkey registered', { context: { accelerator } });
             } else {
-              yield* log.warn('dock hotkey registration failed — hotkey off', { accelerator });
+              yield* log.warn('dock hotkey registration failed — hotkey off', { context: { accelerator } });
             }
           })
         )
@@ -79,7 +79,7 @@ export const runDockHotkey: Effect.Effect<void, never, HotkeyEnv | Scope.Scope> 
         Stream.runForEach(accelerator =>
           apply(accelerator).pipe(
             Effect.catchAllDefect(defect =>
-              log.error('dock hotkey apply failed — fiber continues', { defect: String(defect) })
+              log.error('dock hotkey apply failed — fiber continues', { error: defect })
             )
           )
         )

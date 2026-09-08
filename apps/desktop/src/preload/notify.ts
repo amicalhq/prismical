@@ -24,11 +24,18 @@ const notifyBuffer = makeReplayBuffer<NotifyStateView>({
 });
 
 const telemetryBuffer = makeReplayBuffer<TelemetryState>({
-  on: listener => ipcRenderer.on(CHANNELS.telemetryStateChanged,
-    (_event: Electron.IpcRendererEvent, state: TelemetryState) => listener(state)),
+  on: listener =>
+    ipcRenderer.on(
+      CHANNELS.telemetryStateChanged,
+      (_event: Electron.IpcRendererEvent, state: TelemetryState) => listener(state)
+    ),
 });
 
 const api: NotifyDesktopApi = {
+  logging: {
+    getConfig: () => ipcRenderer.invoke(CHANNELS.loggingGetConfig),
+    write: record => ipcRenderer.invoke(CHANNELS.loggingWrite, record),
+  },
   telemetry: {
     getState: () => ipcRenderer.invoke(CHANNELS.telemetryGetState),
     onChanged: telemetryBuffer.onState,

@@ -20,7 +20,7 @@ internal sealed class DebugWavWriter : IDisposable
         Directory.CreateDirectory(Path.GetDirectoryName(filePath) ?? ".");
         stream = new FileStream(filePath, FileMode.Create, FileAccess.ReadWrite, FileShare.Read);
         WriteHeader();
-        Logger.Info($"Debug audio file initialized: {filePath}");
+        Logger.Info("Debug audio file initialized");
     }
 
     public void Append(float[] samples)

@@ -284,9 +284,9 @@ export const EventKitServiceLive: Layer.Layer<
       }).pipe(
         Effect.catchAll(error =>
           log
-            .error('Apple Calendar refresh failed', {
+            .error('Apple Calendar refresh failed', { context: {
               operation: error instanceof EventKitSyncError ? error.operation : 'helper',
-            })
+            } })
             .pipe(
               Effect.zipRight(
                 Ref.updateAndGet(
@@ -339,9 +339,9 @@ export const EventKitServiceLive: Layer.Layer<
         Effect.flatMap(result => (result.permission === 'granted' ? sync : Effect.succeed(result))),
         Effect.catchAll(error =>
           log
-            .error('Apple Calendar connect failed', {
+            .error('Apple Calendar connect failed', { context: {
               operation: error instanceof EventKitSyncError ? error.operation : 'enable',
-            })
+            } })
             .pipe(
               Effect.zipRight(
                 Ref.updateAndGet(
@@ -375,9 +375,9 @@ export const EventKitServiceLive: Layer.Layer<
             })
           ),
           Effect.catchAll(error =>
-            log.warn('Apple Calendar change watcher stopped', {
+            log.warn('Apple Calendar change watcher stopped', { context: {
               operation: error.operation,
-            })
+            } })
           )
         )
       );

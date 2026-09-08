@@ -40,7 +40,7 @@ internal sealed class TimedDualAecSession : IDisposable
         else
         {
             echoReducer = new ReferenceEchoReducer();
-            Logger.Info($"WebRTC AEC3 unavailable; using reference reducer: {nativeReason}");
+            Logger.Info("WebRTC AEC3 unavailable; using reference reducer");
         }
 
         MicrophoneHoldbackMs = Math.Max(0, microphoneHoldbackMs);

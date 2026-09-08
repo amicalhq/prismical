@@ -128,10 +128,10 @@ export const makeProductDbLayer = (
           catch: cause => new ProductDbError({ op: 'open', cause: redactCause(target, cause) }),
         }).pipe(
           Effect.tap(({ ran }) =>
-            log.info('product db opened', {
+            log.info('product db opened', { context: {
               ...describeTarget(dbPath, target),
               migrationsRun: ran,
-            })
+            } })
           )
         ),
         ({ client }) =>

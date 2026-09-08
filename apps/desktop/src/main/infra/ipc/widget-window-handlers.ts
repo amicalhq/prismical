@@ -109,7 +109,7 @@ export const registerWidgetWindowHandlers: Effect.Effect<
           Option.isSome(identity) && identity.value.kind === 'widget'
             ? Effect.void
             : log
-                .warn('widget ipc rejected: unknown sender', { webContentsId: event.sender.id })
+                .warn('widget ipc rejected: unknown sender', { context: { webContentsId: event.sender.id } })
                 .pipe(Effect.zipRight(Effect.fail(new SenderRejected('UNKNOWN_SENDER'))))
         )
       );
@@ -154,7 +154,7 @@ export const registerWidgetWindowHandlers: Effect.Effect<
           const parsed = parseSetInteractiveRequest(payload);
           if (!parsed.success) {
             return log
-              .warn('widget:setInteractive rejected: invalid payload', { issues: parsed.issues })
+              .warn('widget:setInteractive rejected: invalid payload', { context: { issues: parsed.issues } })
               .pipe(Effect.zipRight(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
           }
           return windows.setWidgetIgnoreMouse(!parsed.data.interactive);
@@ -222,7 +222,7 @@ export const registerWidgetWindowHandlers: Effect.Effect<
     const parsed = parseWidgetDrag(payload);
     if (!parsed.success) {
       return log
-        .warn('widget:drag rejected: invalid payload', { issues: parsed.issues })
+        .warn('widget:drag rejected: invalid payload', { context: { issues: parsed.issues } })
         .pipe(Effect.zipRight(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
     }
     return windows.dragDockWindow(parsed.data).pipe(
@@ -241,7 +241,7 @@ export const registerWidgetWindowHandlers: Effect.Effect<
                   // A persist failure must not fail the reposition (already
                   // applied); log and move on — the next dragEnd retries.
                   Effect.catchTag('DbError', error =>
-                    log.warn('widget:dragEnd persist failed', { op: error.op })
+                    log.warn('widget:dragEnd persist failed', { context: { op: error.op } })
                   )
                 )
               : Effect.void,
@@ -299,12 +299,12 @@ export const registerWidgetWindowHandlers: Effect.Effect<
                   .pipe(Effect.asVoid)
               )
             )
-          : log.error('widget:state push dropped: view failed the schema', {
+          : log.error('widget:state push dropped: view failed the schema', { context: {
               issues: parsed.issues,
-            });
+            } });
         return push.pipe(
           Effect.catchAllDefect(defect =>
-            log.error('widget:state push failed — fiber continues', { defect: String(defect) })
+            log.error('widget:state push failed — fiber continues', { error: defect })
           )
         );
       })
@@ -338,12 +338,12 @@ export const registerWidgetWindowHandlers: Effect.Effect<
               ? windows
                   .sendToWidgetWindow(WIDGET_CHANNELS.levelStream, parsed.data)
                   .pipe(Effect.asVoid)
-              : log.warn('widget:level push dropped: payload failed the schema', {
+              : log.warn('widget:level push dropped: payload failed the schema', { context: {
                   issues: parsed.issues,
-                });
+                } });
           }),
           Effect.catchAllDefect(defect =>
-            log.error('widget:level push failed — fiber continues', { defect: String(defect) })
+            log.error('widget:level push failed — fiber continues', { error: defect })
           )
         )
       )
@@ -386,7 +386,7 @@ export const registerWidgetWindowHandlers: Effect.Effect<
         windows.repositionDockWindow.pipe(
           Effect.zipRight(windows.repositionFloatNoteWindow),
           Effect.catchAllDefect(defect =>
-            log.error('dock reposition failed — fiber continues', { defect: String(defect) })
+            log.error('dock reposition failed — fiber continues', { error: defect })
           )
         )
       )
@@ -400,9 +400,7 @@ export const registerWidgetWindowHandlers: Effect.Effect<
       Stream.runForEach(enabled =>
         windows.setDockContentProtection(enabled).pipe(
           Effect.catchAllDefect(defect =>
-            log.error('dock content protection apply failed — fiber continues', {
-              defect: String(defect),
-            })
+            log.error('dock content protection apply failed — fiber continues', { error: defect })
           )
         )
       )

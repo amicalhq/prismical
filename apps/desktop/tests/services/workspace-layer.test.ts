@@ -1,3 +1,4 @@
+import { testTelemetryLayer } from '../helpers/telemetry';
 /**
  * Workspace lifecycle and layer tests: exactly one
  * workspace per valid (mode, identity), idempotent duplicate emissions,
@@ -216,6 +217,7 @@ const setup = (
     const env = Layer.mergeAll(
       Layer.succeed(AuthService, stub.api),
       logger.layer,
+      testTelemetryLayer,
       testConfigLayer(),
       testI18nLayer(),
       WorkspaceTransportLive,
@@ -471,6 +473,7 @@ describe('SignedInRuntime lifecycle', () => {
       const env = Layer.mergeAll(
         Layer.succeed(AuthService, stub.api),
         logger.layer,
+        testTelemetryLayer,
         testConfigLayer({ platform: 'linux' }),
         testI18nLayer(),
         WorkspaceTransportLive,
@@ -539,23 +542,42 @@ describe('SignedInRuntime lifecycle', () => {
       const stub = yield* makeAuthStub;
       const resolving = yield* Deferred.make<void>();
       const token = yield* Deferred.make<string>();
-      yield* SubscriptionRef.set(stub.sessionState, authState('signed-in', [account('user_1', 'org_a')], 'user_1'));
+      yield* SubscriptionRef.set(
+        stub.sessionState,
+        authState('signed-in', [account('user_1', 'org_a')], 'user_1')
+      );
       const env = Layer.mergeAll(
         Layer.succeed(AuthService, {
           ...stub.api,
-          getIdToken: () => Deferred.succeed(resolving, undefined).pipe(Effect.zipRight(Deferred.await(token))),
+          getIdToken: () =>
+            Deferred.succeed(resolving, undefined).pipe(Effect.zipRight(Deferred.await(token))),
         }),
-        logger.layer, testConfigLayer({ platform: 'linux' }), testI18nLayer(), WorkspaceTransportLive,
+        logger.layer,
+        testTelemetryLayer,
+        testConfigLayer({ platform: 'linux' }),
+        testI18nLayer(),
+        WorkspaceTransportLive,
         OperationalDbLive.pipe(Layer.provide(testConfigLayer()), Layer.provide(logger.layer)),
-        RecordingBridgeLive, DetectionBridgeLive, EventKitBridgeLive, CollabBridgeLive, workspaceEnvStubs('cloud')
+        RecordingBridgeLive,
+        DetectionBridgeLive,
+        EventKitBridgeLive,
+        CollabBridgeLive,
+        workspaceEnvStubs('cloud')
       );
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(makeCloudWorkspaceLayer({
-        sub: 'user_1', email: 'user_1@example.com', activeOrgId: 'org_a',
-      }).pipe(Layer.provide(env))).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(
+        makeCloudWorkspaceLayer({
+          sub: 'user_1',
+          email: 'user_1@example.com',
+          activeOrgId: 'org_a',
+        }).pipe(Layer.provide(env))
+      ).pipe(Scope.extend(scope));
       const pending = yield* Effect.fork(Context.get(ctx, SignedInSession).idToken);
       yield* Deferred.await(resolving);
-      yield* SubscriptionRef.set(stub.sessionState, authState('signed-in', [account('user_1', 'org_b')], 'user_1'));
+      yield* SubscriptionRef.set(
+        stub.sessionState,
+        authState('signed-in', [account('user_1', 'org_b')], 'user_1')
+      );
       yield* Deferred.succeed(token, 'late-token');
       const failure = failureOf(yield* Fiber.await(pending));
       assert.instanceOf(failure, StaleSessionError);
@@ -588,6 +610,12 @@ describe('SignedInRuntime lifecycle', () => {
         authState('signed-in', [account('user_1')], 'user_1')
       );
       yield* awaitLog(logger, 'workspace scope acquisition failed — torn down');
+
+      const failureLog = logger.find(
+        e => e.message === 'workspace scope acquisition failed — torn down'
+      );
+      assert.strictEqual(failureLog?.error?.message, 'acquire boom');
+      assert.include(failureLog?.error?.stack ?? '', 'acquire boom');
 
       // Rollback: the probe acquired, then released exactly once. Zero runtimes.
       assert.deepStrictEqual(probe.events, ['acquire:user_1/-', 'release:user_1/-']);
@@ -690,54 +718,52 @@ describe('SignedInRuntime lifecycle', () => {
     })
   );
 
-  it.effect(
-    'an acquire failure counts as acquireFailures — never as acquire or release',
-    () =>
-      Effect.gen(function* () {
-        const probe = makeProbe();
-        const failing = { on: true };
-        const factory: NonNullable<WorkspaceLifecycleOptions['makeLayer']> = desired => {
-          const probeLayer = probe.layerFor(cloudPinned(desired));
-          const failLayer = Layer.effectDiscard(
-            ProbeReady.pipe(
-              Effect.flatMap(() =>
-                failing.on ? Effect.fail(new Error('acquire boom')) : Effect.void
-              )
+  it.effect('an acquire failure counts as acquireFailures — never as acquire or release', () =>
+    Effect.gen(function* () {
+      const probe = makeProbe();
+      const failing = { on: true };
+      const factory: NonNullable<WorkspaceLifecycleOptions['makeLayer']> = desired => {
+        const probeLayer = probe.layerFor(cloudPinned(desired));
+        const failLayer = Layer.effectDiscard(
+          ProbeReady.pipe(
+            Effect.flatMap(() =>
+              failing.on ? Effect.fail(new Error('acquire boom')) : Effect.void
             )
-          ).pipe(Layer.provide(probeLayer));
-          return Layer.mergeAll(makeWorkspaceLayer(desired), probeLayer, failLayer);
-        };
-        const { logger, stub, scope, lifecycleProbe } = yield* setup(factory);
+          )
+        ).pipe(Layer.provide(probeLayer));
+        return Layer.mergeAll(makeWorkspaceLayer(desired), probeLayer, failLayer);
+      };
+      const { logger, stub, scope, lifecycleProbe } = yield* setup(factory);
 
-        yield* SubscriptionRef.set(
-          stub.sessionState,
-          authState('signed-in', [account('user_1')], 'user_1')
-        );
-        yield* awaitLog(logger, 'workspace scope acquisition failed — torn down');
-        yield* awaitProbe(lifecycleProbe, s => s.acquireFailures === 1);
-        // The rollback close of the PARTIAL acquisition is not a session release.
-        assert.deepStrictEqual(yield* lifecycleProbe.snapshot, {
-          acquires: 0,
-          releases: 0,
-          acquireFailures: 1,
-          pinned: null,
-        });
+      yield* SubscriptionRef.set(
+        stub.sessionState,
+        authState('signed-in', [account('user_1')], 'user_1')
+      );
+      yield* awaitLog(logger, 'workspace scope acquisition failed — torn down');
+      yield* awaitProbe(lifecycleProbe, s => s.acquireFailures === 1);
+      // The rollback close of the PARTIAL acquisition is not a session release.
+      assert.deepStrictEqual(yield* lifecycleProbe.snapshot, {
+        acquires: 0,
+        releases: 0,
+        acquireFailures: 1,
+        pinned: null,
+      });
 
-        // Recovery acquires for real; quit releases it.
-        failing.on = false;
-        yield* SubscriptionRef.set(
-          stub.sessionState,
-          authState('signed-in', [account('user_1')], 'user_1')
-        );
-        yield* awaitProbe(lifecycleProbe, s => s.acquires === 1);
-        yield* Scope.close(scope, Exit.void);
-        assert.deepStrictEqual(yield* lifecycleProbe.snapshot, {
-          acquires: 1,
-          releases: 1,
-          acquireFailures: 1,
-          pinned: null,
-        });
-      })
+      // Recovery acquires for real; quit releases it.
+      failing.on = false;
+      yield* SubscriptionRef.set(
+        stub.sessionState,
+        authState('signed-in', [account('user_1')], 'user_1')
+      );
+      yield* awaitProbe(lifecycleProbe, s => s.acquires === 1);
+      yield* Scope.close(scope, Exit.void);
+      assert.deepStrictEqual(yield* lifecycleProbe.snapshot, {
+        acquires: 1,
+        releases: 1,
+        acquireFailures: 1,
+        pinned: null,
+      });
+    })
   );
 
   it.effect('a wedged finalizer is bounded: swap proceeds after WORKSPACE_CLOSE_DEADLINE', () =>
@@ -750,7 +776,11 @@ describe('SignedInRuntime lifecycle', () => {
       );
       const factory: NonNullable<WorkspaceLifecycleOptions['makeLayer']> = desired =>
         cloudPinned(desired).sub === 'user_1'
-          ? Layer.mergeAll(makeWorkspaceLayer(desired), probe.layerFor(cloudPinned(desired)), hangRelease)
+          ? Layer.mergeAll(
+              makeWorkspaceLayer(desired),
+              probe.layerFor(cloudPinned(desired)),
+              hangRelease
+            )
           : Layer.mergeAll(makeWorkspaceLayer(desired), probe.layerFor(cloudPinned(desired)));
       const { logger, stub, scope } = yield* setup(factory);
 
@@ -770,6 +800,11 @@ describe('SignedInRuntime lifecycle', () => {
 
       yield* TestClock.adjust(WORKSPACE_CLOSE_DEADLINE);
       yield* awaitLog(logger, 'workspace scope close did not complete cleanly');
+      assert.strictEqual(
+        logger.find(e => e.message === 'workspace scope close did not complete cleanly')?.error
+          ?.message,
+        'close-deadline'
+      );
       yield* awaitEvent(probe, 'acquire:user_2/-');
       yield* Scope.close(scope, Exit.void);
       assert.include(probe.events, 'release:user_2/-');
@@ -809,7 +844,10 @@ describe('SignedInRuntime lifecycle', () => {
       assert.isTrue(Option.isSome(yield* transport.current), 'local backend registered');
       // NoteBodyStore registered into the boot-scoped CollabBridge.
       assert.isTrue(Option.isSome(yield* collabBridge.current), 'note-body store registered');
-      const served = yield* transport.request({ method: 'GET', path: '/apps/v1/me/tags' }, { mode: 'local' });
+      const served = yield* transport.request(
+        { method: 'GET', path: '/apps/v1/me/tags' },
+        { mode: 'local' }
+      );
       assert.deepStrictEqual(served, { ok: true, status: 200, bodyJson: { results: [] } });
 
       // Auth traffic never swaps or tears the local workspace down.
@@ -830,63 +868,68 @@ describe('SignedInRuntime lifecycle', () => {
       assert.isTrue(Exit.isInterrupted(fiberExit), 'local workspace fiber interrupted on quit');
       assert.isTrue(Option.isNone(yield* transport.current), 'local backend deregistered');
       assert.isTrue(Option.isNone(yield* collabBridge.current), 'note-body store deregistered');
-      assert.deepStrictEqual(yield* transport.request({ method: 'GET', path: '/apps/v1/me/tags' }, { mode: 'local' }), {
-        error: { code: 'INTERNAL' },
-      });
+      assert.deepStrictEqual(
+        yield* transport.request({ method: 'GET', path: '/apps/v1/me/tags' }, { mode: 'local' }),
+        {
+          error: { code: 'INTERNAL' },
+        }
+      );
     })
   );
 
-  it.effect('a failed local acquire retries after acquireRetryDelay — no auth emission needed', () =>
-    Effect.gen(function* () {
-      const probe = makeProbe();
-      const failing = { on: true };
-      const factory: NonNullable<WorkspaceLifecycleOptions['makeLayer']> = desired => {
-        const probeLayer = probe.layerFor({ sub: desired.mode, email: 'local@device' });
-        const failLayer = Layer.effectDiscard(
-          ProbeReady.pipe(
-            Effect.flatMap(() =>
-              failing.on ? Effect.fail(new Error('local acquire boom')) : Effect.void
+  it.effect(
+    'a failed local acquire retries after acquireRetryDelay — no auth emission needed',
+    () =>
+      Effect.gen(function* () {
+        const probe = makeProbe();
+        const failing = { on: true };
+        const factory: NonNullable<WorkspaceLifecycleOptions['makeLayer']> = desired => {
+          const probeLayer = probe.layerFor({ sub: desired.mode, email: 'local@device' });
+          const failLayer = Layer.effectDiscard(
+            ProbeReady.pipe(
+              Effect.flatMap(() =>
+                failing.on ? Effect.fail(new Error('local acquire boom')) : Effect.void
+              )
             )
-          )
-        ).pipe(Layer.provide(probeLayer));
-        return Layer.mergeAll(makeWorkspaceLayer(desired), probeLayer, failLayer);
-      };
-      const { logger, scope, lifecycleProbe } = yield* setup(factory, 'local', {
-        acquireRetryDelay: ACQUIRE_RETRY_DELAY,
-      });
+          ).pipe(Layer.provide(probeLayer));
+          return Layer.mergeAll(makeWorkspaceLayer(desired), probeLayer, failLayer);
+        };
+        const { logger, scope, lifecycleProbe } = yield* setup(factory, 'local', {
+          acquireRetryDelay: ACQUIRE_RETRY_DELAY,
+        });
 
-      // The very first emission mounts local, which fails and rolls back.
-      yield* awaitLog(logger, 'workspace scope acquisition failed — torn down');
-      yield* awaitProbe(lifecycleProbe, s => s.acquireFailures === 1);
-      // No auth emission arrives in local mode — nothing retries early.
-      failing.on = false;
-      yield* flush;
-      assert.deepStrictEqual(yield* lifecycleProbe.snapshot, {
-        acquires: 0,
-        releases: 0,
-        acquireFailures: 1,
-        pinned: null,
-      });
+        // The very first emission mounts local, which fails and rolls back.
+        yield* awaitLog(logger, 'workspace scope acquisition failed — torn down');
+        yield* awaitProbe(lifecycleProbe, s => s.acquireFailures === 1);
+        // No auth emission arrives in local mode — nothing retries early.
+        failing.on = false;
+        yield* flush;
+        assert.deepStrictEqual(yield* lifecycleProbe.snapshot, {
+          acquires: 0,
+          releases: 0,
+          acquireFailures: 1,
+          pinned: null,
+        });
 
-      // The timed wake-up fires after the retry delay and the second attempt
-      // acquires for real (identity-free — pinned stays null).
-      yield* TestClock.adjust(ACQUIRE_RETRY_DELAY);
-      yield* awaitProbe(lifecycleProbe, s => s.acquires === 1);
-      assert.deepStrictEqual(yield* lifecycleProbe.snapshot, {
-        acquires: 1,
-        releases: 0,
-        acquireFailures: 1,
-        pinned: null,
-      });
-      yield* awaitEvent(probe, 'acquire:local/-');
+        // The timed wake-up fires after the retry delay and the second attempt
+        // acquires for real (identity-free — pinned stays null).
+        yield* TestClock.adjust(ACQUIRE_RETRY_DELAY);
+        yield* awaitProbe(lifecycleProbe, s => s.acquires === 1);
+        assert.deepStrictEqual(yield* lifecycleProbe.snapshot, {
+          acquires: 1,
+          releases: 0,
+          acquireFailures: 1,
+          pinned: null,
+        });
+        yield* awaitEvent(probe, 'acquire:local/-');
 
-      yield* Scope.close(scope, Exit.void);
-      assert.deepStrictEqual(yield* lifecycleProbe.snapshot, {
-        acquires: 1,
-        releases: 1,
-        acquireFailures: 1,
-        pinned: null,
-      });
-    })
+        yield* Scope.close(scope, Exit.void);
+        assert.deepStrictEqual(yield* lifecycleProbe.snapshot, {
+          acquires: 1,
+          releases: 1,
+          acquireFailures: 1,
+          pinned: null,
+        });
+      })
   );
 });

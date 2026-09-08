@@ -1,3 +1,4 @@
+import { testTelemetryLayer } from '../helpers/telemetry';
 import { assert, describe, it } from "@effect/vitest";
 import {
   Cause,
@@ -75,6 +76,7 @@ const buildCapture = (
   Layer.build(
     CaptureLive.pipe(
       Layer.provide(logger.layer),
+      Layer.provide(testTelemetryLayer),
       Layer.provide(testConfigLayer({ platform })),
     ),
   ).pipe(
@@ -309,7 +311,7 @@ describe("CaptureProvider native audio-capture Effect wrapper", () => {
 
       child.stderr.pushData('mic-event={"kind":"not-real"}\n');
       assert.strictEqual(yield* Queue.size(session.micEvents), 0);
-      assert.isDefined(logger.find(entry => entry.message === "ignoring invalid mic event"));
+      assert.isDefined(logger.find(entry => entry.message === "Ignoring invalid microphone control event"));
 
       yield* Scope.close(scope, Exit.void);
     }),

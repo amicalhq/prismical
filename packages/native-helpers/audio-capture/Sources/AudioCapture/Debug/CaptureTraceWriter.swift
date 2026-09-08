@@ -23,7 +23,7 @@ final class CaptureTraceWriter {
             FileManager.default.createFile(atPath: jsonlURL.path, contents: nil)
             self.jsonHandle = try FileHandle(forWritingTo: jsonlURL)
         } catch {
-            Logger.error("Failed to initialize capture trace writer at \(jsonlURL.path): \(error.localizedDescription)")
+            Logger.error("Failed to initialize capture trace writer")
             return nil
         }
     }
@@ -47,7 +47,7 @@ final class CaptureTraceWriter {
             try jsonHandle.write(contentsOf: data)
             try jsonHandle.write(contentsOf: Data([0x0A]))
         } catch {
-            Logger.error("Failed to write capture trace event \(event): \(error.localizedDescription)")
+            Logger.error("Failed to write capture trace event")
         }
     }
 
@@ -122,7 +122,7 @@ final class CaptureTraceWriter {
             try jsonHandle.write(contentsOf: data)
             try jsonHandle.write(contentsOf: Data([0x0A]))
         } catch {
-            Logger.error("Failed to write capture trace sample event \(event): \(error.localizedDescription)")
+            Logger.error("Failed to write capture trace samples")
         }
     }
 
@@ -165,7 +165,7 @@ final class CaptureTraceWriter {
                 channelByteOffsets[channelKey] = 0
                 handle = newHandle
             } catch {
-                Logger.error("Failed to initialize trace channel \(channel): \(error.localizedDescription)")
+                Logger.error("Failed to initialize capture trace channel")
                 return nil
             }
         }
@@ -177,7 +177,7 @@ final class CaptureTraceWriter {
             channelByteOffsets[channelKey] = byteOffset + UInt64(payload.count)
             return (fileURL.path, byteOffset)
         } catch {
-            Logger.error("Failed to append trace channel \(channel): \(error.localizedDescription)")
+            Logger.error("Failed to append capture trace channel")
             return nil
         }
     }

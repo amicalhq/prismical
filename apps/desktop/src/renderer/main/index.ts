@@ -11,7 +11,9 @@ import { openAskStream, type AskStreamHandle } from './stream';
 import { createDesktopRendererI18n } from './application-i18n';
 import { mountRendererBootstrapFailure } from './bootstrap-failure';
 import { captureRendererException, installRendererTelemetry } from '../telemetry';
+import { installRendererLogging } from '../logging';
 
+installRendererLogging(window.desktop.logging);
 installRendererTelemetry(window.desktop.telemetry);
 
 declare global {

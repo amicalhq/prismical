@@ -220,8 +220,8 @@ export const runWorkspaceLifecycle = (
         Effect.timeoutFail({ duration: deadline, onTimeout: () => 'close-deadline' as const }),
         Effect.catchAllCause(cause =>
           log.error('workspace scope close did not complete cleanly', {
-            ...describeWorkspace(workspace.desired),
-            cause: String(cause),
+            context: { ...describeWorkspace(workspace.desired) },
+            error: Cause.squash(cause),
           })
         )
       );
@@ -254,16 +254,15 @@ export const runWorkspaceLifecycle = (
           yield* Ref.set(currentRef, Option.none());
           yield* closeWorkspace({ desired, scope });
           yield* probe.recordFailure;
-          // Effect renders a TaggedError's Cause as its name only — surface the
-          // typed failure's own op + (already redacted) cause so the log says
-          // WHICH store failed and why (product-db/live.ts#redactCause).
-          const failure = Option.getOrNull(Cause.failureOption(exit.cause));
+          // Unwrap Effect at its owner boundary; the shared codec preserves
+          // the typed error and its cause without importing Effect internals.
+          const failure = Cause.squash(exit.cause);
           yield* log.error('workspace scope acquisition failed — torn down', {
-            ...describeWorkspace(desired),
-            cause:
-              failure instanceof ProductDbError
-                ? `${failure.op}: ${String(failure.cause)}`
-                : String(exit.cause),
+            context: {
+              ...describeWorkspace(desired),
+              ...(failure instanceof ProductDbError ? { op: failure.op } : {}),
+            },
+            error: failure,
           });
           // Arm the timed retry: in local mode there may be no further
           // auth emissions, so without this a failed local.db open would stay

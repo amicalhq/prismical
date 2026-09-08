@@ -1,3 +1,4 @@
+import { testTelemetryLayer } from '../helpers/telemetry';
 /**
  * Shared MicActivity supervisor + DetectionService consumer tests.
  *
@@ -100,7 +101,7 @@ const setup = (): Effect.Effect<Harness> =>
     const recState = yield* SubscriptionRef.make<RecordingState>(idleRecordingState);
     const recApi: RecordingServiceApi = {
       claimCompletion: () => Effect.succeed(false),
-        resolveCompletion: () => Effect.void,
+      resolveCompletion: () => Effect.void,
       state: recState,
       level: yield* SubscriptionRef.make(0),
       start: () => Effect.succeed('rec_fake'),
@@ -112,7 +113,10 @@ const setup = (): Effect.Effect<Harness> =>
     };
     const recLayer = Layer.succeed(RecordingService, recApi);
 
-    const micActivityLayer = MicActivityLive.pipe(Layer.provide(logger.layer));
+    const micActivityLayer = MicActivityLive.pipe(
+      Layer.provide(logger.layer),
+      Layer.provide(testTelemetryLayer)
+    );
     const detectionLayer = DetectionServiceLive.pipe(
       Layer.provide(recLayer),
       Layer.provide(DetectionBridgeLive),

@@ -1,3 +1,4 @@
+import { makeWire } from '@desktop/logging';
 import { assert, describe, it } from '@effect/vitest';
 import {
   CHANNELS,
@@ -329,6 +330,8 @@ const ALL_HANDLER_CHANNELS = [
   CHANNELS.recordingClaimCompletion,
   CHANNELS.recordingPause,
   CHANNELS.recordingResume,
+  CHANNELS.loggingGetConfig,
+  CHANNELS.loggingWrite,
   CHANNELS.telemetryGetState,
   CHANNELS.telemetryCapture,
   CHANNELS.telemetryCaptureException,
@@ -473,6 +476,34 @@ const POISONED_STATE = {
 } as unknown as AuthState;
 
 describe('registerMainWindowHandlers', () => {
+  it.effect('accepts only registered renderer log ingress and binds origin in main', () =>
+    Effect.gen(function* () {
+      const { layer, logger } = build();
+      const scope = yield* Scope.make();
+      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+      const widget = yield* Context.get(ctx, WindowRegistry).openWidgetWindow.pipe(Scope.extend(scope));
+      const sender = widget.webContents;
+      const wire = makeWire('warn', 'widget-ui', 'Widget diagnostic', {
+        context: { apiKey: 'private-key' }, error: Object.assign(new Error('failure'), { code: 'EPIPE' }),
+      });
+      yield* Effect.promise(() => fake.ipcMain.invoke(CHANNELS.loggingWrite, { sender }, {
+        ...wire, runtime: 'main', pid: 999, surface: 'spoof', appRunId: 'spoof',
+      }));
+      assert.strictEqual(logger.entries.at(-1)?.runtime, 'renderer');
+      assert.strictEqual(logger.entries.at(-1)?.pid, sender.getOSProcessId());
+      assert.isFalse(JSON.stringify(logger.entries.at(-1)).includes('private-key'));
+      const count = logger.entries.length;
+      yield* Effect.promise(() => fake.ipcMain.invoke(CHANNELS.loggingWrite, { sender }, { ...wire, level: 'fatal' }));
+      assert.strictEqual(logger.entries.length, count);
+      const rejected = yield* Effect.exit(Effect.tryPromise(() => fake.ipcMain.invoke(
+        CHANNELS.loggingWrite, { sender: { id: 9999 } }, wire,
+      )));
+      assert.isTrue(Exit.isFailure(rejected));
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+
   it.effect('telemetry validates senders and bounded DTOs and assigns renderer origin', () =>
     Effect.gen(function* () {
       const { layer, telemetry } = build();
@@ -1884,7 +1915,7 @@ describe('registerMainWindowHandlers', () => {
       })
   );
 
-  it.effect('capability:exportLogs reveals the log file, sender-validated', () =>
+  it.effect('capability:exportLogs requests a diagnostic bundle, sender-validated', () =>
     Effect.gen(function* () {
       const { layer, nativeOs } = build();
       const scope = yield* Scope.make();

@@ -3,7 +3,7 @@ import { Context, type Effect } from 'effect';
 /**
  * The thin electron edge for native OS side-effects the settings + diagnostics
  * surfaces drive. One injectable boundary — the Live
- * layer touches `app` / `app.dock` / `shell` / electron-log, unit tests provide
+ * layer touches `app` / `app.dock` / `shell` / diagnostic export, unit tests provide
  * a fake that records the calls — so the OS-sync consumer and capability IPC
  * handlers stay headless-testable and the domains that
  * use them (SettingsService et al.) stay electron-free.
@@ -19,8 +19,8 @@ export interface NativeOsApi {
   readonly setDockVisible: (visible: boolean) => Effect.Effect<void>;
   /** `shell.openExternal(url)` — the System Settings deep-link lane. */
   readonly openExternal: (url: string) => Effect.Effect<void>;
-  /** `shell.showItemInFolder(<electron-log file>)` — reveal the log. */
-  readonly revealLogs: Effect.Effect<void>;
+  /** Save a current + rotated diagnostic bundle through the persistence owner. */
+  readonly revealLogs: Effect.Effect<void, unknown>;
   /** Request a relaunch (through the launcher in dev), then quit gracefully. */
   readonly relaunch: Effect.Effect<void>;
 }

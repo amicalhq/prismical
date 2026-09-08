@@ -78,6 +78,7 @@ let nextWindowId = 1;
 type WindowOpenHandler = (details: { url: string }) => { action: 'allow' | 'deny' };
 
 export class FakeWebContents extends EventEmitter {
+  getOSProcessId(): number { return this.id + 1000; }
   readonly id = nextWebContentsId++;
   windowOpenHandler: WindowOpenHandler | null = null;
   sent: Array<{ channel: string; payload: unknown }> = [];
