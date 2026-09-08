@@ -22,6 +22,7 @@ import {
   launchAttempt,
   makePkceMaterial,
   matchAttempt,
+  parseIdToken,
   parseIdTokenIdentity,
   parseTokenResponse,
   restoreAuthState,
@@ -191,7 +192,7 @@ describe('auth policy — token response parsing', () => {
   });
 });
 
-describe('auth policy — verified identity claims', () => {
+describe('auth policy — ID token claims', () => {
   const claims = {
     sub: 'user_1',
     email: 'u1@example.com',
@@ -199,6 +200,63 @@ describe('auth policy — verified identity claims', () => {
     prismical_first_party: true,
     org_users: [{ id: 'ou_1', org_id: 'org_1', user_id: 'user_1' }],
   };
+
+  const expected = {
+    issuer: 'https://core.test/api/auth',
+    audience: 'desktop-client',
+    nowMs: 1_000_000,
+  };
+  const tokenClaims = {
+    ...claims,
+    iss: expected.issuer,
+    aud: expected.audience,
+    exp: 2_000,
+    iat: 900,
+    nbf: 1_000,
+  };
+
+  it('accepts valid claims without verifying a token signature', () => {
+    expect(parseIdToken(unsignedJwt(tokenClaims), expected)).toEqual({
+      ok: true,
+      value: identity(),
+    });
+    expect(parseIdToken(unsignedJwt({ ...tokenClaims, aud: [expected.audience] }), expected).ok)
+      .toBe(true);
+  });
+
+  it.each([
+    ['wrong issuer', { iss: 'https://other.test/api/auth' }],
+    ['missing issuer', { iss: undefined }],
+    ['wrong audience', { aud: 'web-client' }],
+    ['missing audience', { aud: undefined }],
+    ['audience array without desktop', { aud: ['web-client'] }],
+    ['malformed audience array', { aud: [expected.audience, 1] }],
+    ['missing expiry', { exp: undefined }],
+    ['string expiry', { exp: '2000' }],
+    ['future not-before', { nbf: 1_001 }],
+    ['string not-before', { nbf: '1000' }],
+    ['string issued-at', { iat: '900' }],
+  ])('rejects %s', (_name, overrides) => {
+    expect(parseIdToken(unsignedJwt({ ...tokenClaims, ...overrides }), expected)).toEqual({
+      ok: false,
+      reason: 'invalid-claims',
+    });
+  });
+
+  it('rejects an expired token, including the exact expiry boundary', () => {
+    for (const exp of [999, 1_000]) {
+      expect(parseIdToken(unsignedJwt({ ...tokenClaims, exp }), expected)).toEqual({
+        ok: false,
+        reason: 'expired',
+      });
+    }
+  });
+
+  it('rejects malformed tokens', () => {
+    for (const token of ['not-a-jwt', 'a.!!!.c', 'a.bnVsbA.c']) {
+      expect(parseIdToken(token, expected)).toEqual({ ok: false, reason: 'invalid-token' });
+    }
+  });
 
   it('parses the full claim set including org memberships', () => {
     expect(parseIdTokenIdentity(claims)).toEqual({ ok: true, value: identity() });

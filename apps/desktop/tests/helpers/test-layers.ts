@@ -43,7 +43,6 @@ export const testConfig = (overrides: Partial<AppConfigService> = {}): AppConfig
     authorizeUrl: 'https://core.test/api/auth/oauth2/authorize',
     tokenUrl: 'https://core.test/api/auth/oauth2/token',
     revokeUrl: 'https://core.test/api/auth/oauth2/revoke',
-    jwksUrl: 'https://core.test/api/auth/jwks',
     issuer: 'https://core.test/api/auth',
   },
   updaterEnabled: false,

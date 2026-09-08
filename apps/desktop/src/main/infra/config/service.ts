@@ -29,7 +29,6 @@ export interface AuthDescriptor {
   readonly authorizeUrl: string;
   readonly tokenUrl: string;
   readonly revokeUrl: string;
-  readonly jwksUrl: string;
   /** Expected id_token `iss` at the auth base path: `${coreApiUrl}/api/auth`. */
   readonly issuer: string;
 }

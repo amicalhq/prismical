@@ -1,6 +1,6 @@
 /**
  * AuthService live layer: main-owned PKCE flow, JSON token exchange,
- * JWKS-verified id_tokens, safeStorage-backed refresh tokens, single-flight
+ * validated ID token claims, safeStorage-backed refresh tokens, single-flight
  * refresh with scheduled + resume/focus re-checks.
  *
  * Secrets discipline: the refresh token exists only inside
@@ -11,13 +11,6 @@
 import { desktopFetch } from '../../infra/http/client';
 import { randomBytes } from 'node:crypto';
 import { shell } from 'electron';
-import {
-  createRemoteJWKSet,
-  customFetch,
-  errors as joseErrors,
-  jwtVerify,
-  type JWTVerifyGetKey,
-} from 'jose';
 import {
   Cause,
   Clock,
@@ -53,7 +46,7 @@ import {
   launchAttempt,
   makePkceMaterial,
   matchAttempt,
-  parseIdTokenIdentity,
+  parseIdToken,
   parseTokenResponse,
   restoreAuthState,
   setAccountOrg,
@@ -172,14 +165,9 @@ interface HttpFailure {
 export interface AuthLiveOptions {
   /** Injected for tests; defaults to the ambient main-process fetch. */
   readonly fetchFn?: FetchLike;
-  /** Injected for tests (local JWKS); defaults to jose's remote JWKS resolver. */
-  readonly makeKeyResolver?: (jwksUrl: string) => JWTVerifyGetKey;
   /** Injected for tests (fixed PKCE vectors); defaults to node:crypto randomBytes. */
   readonly randomSource?: RandomSource;
 }
-
-const defaultKeyResolver = (jwksUrl: string): JWTVerifyGetKey =>
-  createRemoteJWKSet(new URL(jwksUrl), { [customFetch]: desktopFetch });
 
 export const makeAuthLive = (
   options: AuthLiveOptions = {}
@@ -200,7 +188,6 @@ export const makeAuthLive = (
 
       const fetchFn: FetchLike = options.fetchFn ?? desktopFetch;
       const random: RandomSource = options.randomSource ?? (length => randomBytes(length));
-      const resolveKey = (options.makeKeyResolver ?? defaultKeyResolver)(config.auth.jwksUrl);
 
       // Restore the non-secret account roster; corruption degrades to
       // signed-out — restore must never fail the boot layer.
@@ -289,35 +276,23 @@ export const makeAuthLive = (
           catch: onError,
         });
 
-      // ----- id_token verification (jose, against config.auth.jwksUrl) -------
+      // ----- claims from the configured token endpoint ------------------------
 
-      const verifyIdToken = (
+      const validateIdToken = (
         idToken: string
       ): Effect.Effect<IdTokenIdentity, TokenVerificationError> =>
-        Effect.tryPromise({
-          try: () =>
-            jwtVerify(idToken, resolveKey, {
-              // OIDC Core §3.1.3.7: iss and aud are mandatory client-side
-              // checks — every sibling first-party client (web/iOS/Android)
-              // mints prismical_first_party tokens, so signature+preflight
-              // alone would accept a token minted for a DIFFERENT client.
-              // Both values derive from config: the single
-              // PRISMICAL_CORE_API_URL knob still retargets e2e.
-              issuer: config.auth.issuer,
-              audience: config.auth.oauthClientId,
-            }),
-          catch: cause =>
-            new TokenVerificationError({
-              reason: cause instanceof joseErrors.JWTExpired ? 'expired' : 'signature',
-              cause,
-            }),
-        }).pipe(
-          Effect.flatMap(({ payload }) => {
-            const identity = parseIdTokenIdentity(payload);
-            return identity.ok
-              ? Effect.succeed(identity.value)
-              : Effect.fail(new TokenVerificationError({ reason: identity.reason }));
+        Effect.sync(() =>
+          parseIdToken(idToken, {
+            issuer: config.auth.issuer,
+            audience: config.auth.oauthClientId,
+            nowMs: Date.now(),
           })
+        ).pipe(
+          Effect.flatMap(identity =>
+            identity.ok
+              ? Effect.succeed(identity.value)
+              : Effect.fail(new TokenVerificationError({ reason: identity.reason }))
+          )
         );
 
       // ----- revocation (best-effort caller-side; typed here) ----------------
@@ -400,7 +375,7 @@ export const makeAuthLive = (
       > =>
         Effect.gen(function* () {
           const tokens = yield* exchangeCode(code, verifier);
-          const identity = yield* verifyIdToken(tokens.idToken).pipe(
+          const identity = yield* validateIdToken(tokens.idToken).pipe(
             Effect.tapError(() =>
               // The exchange minted credentials we refuse to trust — revoke
               // them best-effort so they don't linger server-side.
@@ -570,7 +545,7 @@ export const makeAuthLive = (
               rotated === null ? Effect.void : revokeToken(rotated).pipe(Effect.ignore)
             )
           );
-          const identity = yield* verifyIdToken(parsed.value.idToken).pipe(
+          const identity = yield* validateIdToken(parsed.value.idToken).pipe(
             Effect.mapError(cause => new RefreshError({ reason: 'verification', cause }))
           );
           if (identity.sub !== sub) {

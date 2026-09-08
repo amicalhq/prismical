@@ -155,8 +155,8 @@ export async function startFakeOAuthServer(
   let integrationsEnabled = options.integrationsEnabled;
   const organizationRole = options.organizationRole ?? 'owner';
 
-  // In-process ES256 keypair; the public half is served on /api/auth/jwks and
-  // the app's createRemoteJWKSet verifies every id_token against it.
+  // Signed token responses; the JWKS endpoint remains available so tests can
+  // assert that desktop does not request it.
   const keys = await generateKeyPair('ES256', { extractable: true });
   const publicJwk = { ...(await exportJWK(keys.publicKey)), kid: 'e2e-key-1', alg: 'ES256', use: 'sig' };
 

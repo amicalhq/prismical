@@ -64,7 +64,6 @@ describe('AppConfig auth block', () => {
       authorizeUrl: 'https://prismical-core.localhost/api/auth/oauth2/authorize',
       tokenUrl: 'https://prismical-core.localhost/api/auth/oauth2/token',
       revokeUrl: 'https://prismical-core.localhost/api/auth/oauth2/revoke',
-      jwksUrl: 'https://prismical-core.localhost/api/auth/jwks',
       issuer: 'https://prismical-core.localhost/api/auth',
     });
   });
@@ -84,7 +83,6 @@ describe('AppConfig auth block', () => {
     expect(config.auth.authorizeUrl).toBe('http://127.0.0.1:43210/api/auth/oauth2/authorize');
     expect(config.auth.tokenUrl).toBe('http://127.0.0.1:43210/api/auth/oauth2/token');
     expect(config.auth.revokeUrl).toBe('http://127.0.0.1:43210/api/auth/oauth2/revoke');
-    expect(config.auth.jwksUrl).toBe('http://127.0.0.1:43210/api/auth/jwks');
     expect(config.auth.issuer).toBe('http://127.0.0.1:43210/api/auth');
   });
 

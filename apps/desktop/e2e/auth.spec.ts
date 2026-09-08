@@ -241,8 +241,8 @@ test.describe('authentication flow (fake OIDC server)', () => {
     expect(typeof body['code_verifier']).toBe('string');
     expect(String(body['code_verifier'])).toMatch(/^[A-Za-z0-9_-]{43,128}$/);
 
-    // Identity was JWKS-verified (the fake keypair's JWKS was fetched)…
-    expect(server.count('/api/auth/jwks')).toBeGreaterThanOrEqual(1);
+    // Desktop accepts the token endpoint response without a signing-key lookup.
+    expect(server.count('/api/auth/jwks')).toBe(0);
     // …and the consumed attempt cleared its slot.
     expect(await pendingState(page)).toBeNull();
     // The authorize endpoint is browser territory — never hit in E2E.

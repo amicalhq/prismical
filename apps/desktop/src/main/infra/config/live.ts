@@ -94,9 +94,7 @@ const readAuth = (isPackaged: boolean, endpoints: EndpointDescriptor): AuthDescr
     authorizeUrl: `${core}/api/auth/oauth2/authorize`,
     tokenUrl: `${core}/api/auth/oauth2/token`,
     revokeUrl: `${core}/api/auth/oauth2/revoke`,
-    jwksUrl: `${core}/api/auth/jwks`,
-    // The auth base path is the id_token `iss`; jwtVerify pins it
-    // (OIDC Core §3.1.3.7).
+    // Expected ID token issuer, checked after exchange and refresh.
     issuer: `${core}/api/auth`,
   };
 };

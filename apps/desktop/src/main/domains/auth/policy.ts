@@ -5,6 +5,7 @@
  * tests/policy/auth.test.ts.
  */
 import { createHash, timingSafeEqual } from 'node:crypto';
+import { decodeJwt } from 'jose';
 import { z } from 'zod';
 import type { SessionGateState, SessionView } from '@prismical/desktop-contracts';
 
@@ -154,7 +155,7 @@ const toSeconds = (value: number | string | undefined): number | null => {
 
 /**
  * Best-effort exp (epoch ms) from a JWT payload. Expiry fallback ONLY — claims
- * used as identity go through JWKS verification, never this.
+ * used as identity go through parseIdToken, never this.
  */
 export const decodeJwtExpiryMs = (jwt: string): number | null => {
   const segments = jwt.split('.');
@@ -190,7 +191,7 @@ export const parseTokenResponse = (body: unknown, now: number): TokenResponsePar
 };
 
 // ---------------------------------------------------------------------------
-// Verified id_token identity (`prismical_first_party` + `org_users` claims).
+// ID token claims from the configured token endpoint.
 // ---------------------------------------------------------------------------
 
 export interface OrgMembership {
@@ -208,6 +209,9 @@ export interface IdTokenIdentity {
 }
 
 export type IdentityParseFailure =
+  | 'invalid-token'
+  | 'invalid-claims'
+  | 'expired'
   | 'missing-sub'
   | 'not-first-party'
   | 'missing-email'
@@ -227,8 +231,40 @@ const orgUsersClaimSchema = z.array(
     .passthrough()
 );
 
+/** Validate claims from the token endpoint response; HTTPS authenticates that response. */
+export const parseIdToken = (
+  token: string,
+  expected: { readonly issuer: string; readonly audience: string; readonly nowMs: number }
+): IdentityParse => {
+  let payload: Record<string, unknown>;
+  try {
+    payload = decodeJwt(token);
+  } catch {
+    return { ok: false, reason: 'invalid-token' };
+  }
+  const audience = payload['aud'];
+  const exp = payload['exp'];
+  const nbf = payload['nbf'];
+  const iat = payload['iat'];
+  const now = Math.floor(expected.nowMs / 1000);
+  if (
+    payload['iss'] !== expected.issuer ||
+    !(audience === expected.audience ||
+      (Array.isArray(audience) &&
+        audience.every(value => typeof value === 'string') &&
+        audience.includes(expected.audience))) ||
+    typeof exp !== 'number' || !Number.isFinite(exp) ||
+    (nbf !== undefined && (typeof nbf !== 'number' || !Number.isFinite(nbf) || nbf > now)) ||
+    (iat !== undefined && (typeof iat !== 'number' || !Number.isFinite(iat)))
+  ) {
+    return { ok: false, reason: 'invalid-claims' };
+  }
+  if (exp <= now) return { ok: false, reason: 'expired' };
+  return parseIdTokenIdentity(payload);
+};
+
 /**
- * Runs on a SIGNATURE-VERIFIED payload only. `prismical_first_party` is the
+ * Runs after the standard token claims are checked. `prismical_first_party` is the
  * sign-in preflight: third-party tokens never become desktop sessions.
  */
 export const parseIdTokenIdentity = (payload: Record<string, unknown>): IdentityParse => {

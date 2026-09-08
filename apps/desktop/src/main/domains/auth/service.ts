@@ -1,7 +1,7 @@
 import { Context, Data, type Effect, type SubscriptionRef } from 'effect';
 import type { DbError } from '../../infra/operational-db/service';
 import type { PendingOAuthEntry } from '../deep-link/service';
-import type { AuthState } from './policy';
+import type { AuthState, IdentityParseFailure } from './policy';
 
 /**
  * Flow-start failures. Reasons map 1:1 onto signInResultSchema codes
@@ -23,13 +23,7 @@ export class TokenExchangeError extends Data.TaggedError('TokenExchangeError')<{
 }> {}
 
 export class TokenVerificationError extends Data.TaggedError('TokenVerificationError')<{
-  readonly reason:
-    | 'signature'
-    | 'expired'
-    | 'missing-sub'
-    | 'not-first-party'
-    | 'missing-email'
-    | 'malformed-org-users';
+  readonly reason: IdentityParseFailure;
   readonly cause?: unknown;
 }> {}
 

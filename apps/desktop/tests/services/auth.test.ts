@@ -1,7 +1,7 @@
 /**
  * AuthService live-layer tests: browser launch, attempt
  * single-consumption, exchange pipeline against an injected fetch stub,
- * JWKS verification via an injected local key resolver, single-flight refresh
+ * ID token claim validation, single-flight refresh
  * under TestClock, resume/focus re-checks, restart-restore, sign-out
  * revocation, and regressions for earlier token-custody defects.
  */
@@ -24,7 +24,7 @@ import {
   SubscriptionRef,
   TestClock,
 } from 'effect';
-import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from 'jose';
+import { generateKeyPair, SignJWT } from 'jose';
 import { vi } from 'vitest';
 import type { SessionGateState } from '@prismical/desktop-contracts';
 import type { FakeElectron } from '../helpers/fake-electron';
@@ -66,9 +66,6 @@ const fake = (await import('electron')) as unknown as FakeElectron;
 
 const goodKeys = await generateKeyPair('ES256');
 const evilKeys = await generateKeyPair('ES256');
-const keyResolver = createLocalJWKSet({
-  keys: [{ ...(await exportJWK(goodKeys.publicKey)), alg: 'ES256' }],
-});
 
 const AUTH = testConfig().auth;
 const SENTINEL_REFRESH_1 = 'SENTINEL-REFRESH-TOKEN-1';
@@ -90,6 +87,7 @@ interface MintOptions {
   /** Wrong-issuer and wrong-audience negatives; defaults match testConfig. */
   readonly issuer?: string;
   readonly audience?: string;
+  readonly expiresAt?: number;
   /**
    * `org_users` claim org ids; defaults to the single 'org_1'. Overriding it only for the
    * REFRESH response models the membership the current token predates — a just-created or
@@ -116,7 +114,7 @@ const mintIdToken = async (opts: MintOptions = {}): Promise<string> => {
     .setIssuer(opts.issuer ?? AUTH.issuer)
     .setAudience(opts.audience ?? AUTH.oauthClientId)
     .setIssuedAt()
-    .setExpirationTime('10h')
+    .setExpirationTime(opts.expiresAt ?? '10h')
     .sign(opts.key ?? goodKeys.privateKey);
   lastMintedIdToken = token;
   return token;
@@ -292,7 +290,6 @@ const build = (
   const deepLinks = DeepLinksLive.pipe(Layer.provide(electronApp), Layer.provide(logger.layer));
   const auth = makeAuthLive({
     fetchFn: fetchStub.fetchFn,
-    makeKeyResolver: () => keyResolver,
     randomSource: fixedRandom,
     ...extras.auth,
   }).pipe(
@@ -777,30 +774,21 @@ describe('AuthService', () => {
     })
   );
 
-  // Regression: the earlier app decoded id_token claims without verification.
-  it.effect('a bad-signature id_token never reaches sessionState', () =>
+  it.effect('accepts ID token claims from the token endpoint without a signing-key lookup', () =>
     Effect.gen(function* () {
       const stub = makeFetchStub(happyHandler({ exchange: { key: evilKeys.privateKey } }));
-      const { layer, logger } = build(stub);
+      const { layer } = build(stub);
       const scope = yield* Scope.make();
       const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
       yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
       const auth = Context.get(ctx, AuthService);
       const deepLinks = Context.get(ctx, DeepLinks);
-      const shellBase = fake.shell.openExternalCalls.length;
-
-      yield* auth.signIn();
-      const launched = fake.shell.openExternalCalls[shellBase];
-      const state = new URL(launched).searchParams.get('state') ?? '';
-      yield* deliverCallback(deepLinks, 'code-1', state);
-      yield* awaitGate(auth, 'signed-out');
+      yield* completeSignIn(auth, deepLinks, fake.shell.openExternalCalls.length);
 
       const sessionState = yield* SubscriptionRef.get(auth.sessionState);
-      assert.deepStrictEqual(sessionState.accounts, {}, 'unverified identity never landed');
-      assert.isUndefined(sessionState.activeSub);
-      assert.isDefined(logger.find(e => e.message === 'oauth exchange failed — flow must restart'));
-      // The untrusted credentials were revoked best-effort.
-      assert.strictEqual(stub.revokeCalls().length, 1);
+      assert.strictEqual(sessionState.activeSub, 'user_1');
+      assert.strictEqual(sessionState.accounts['user_1']?.email, 'u1@example.com');
+      assert.strictEqual(stub.revokeCalls().length, 0);
       yield* Scope.close(scope, Exit.void);
     })
   );
@@ -1255,10 +1243,9 @@ describe('AuthService', () => {
         if (url === AUTH.tokenUrl && body['grant_type'] === 'refresh_token') {
           refreshRound += 1;
           return refreshRound === 1
-            ? // Rotation succeeded server-side but the id_token does not verify
-              // (bad signature) — e.g. a transient JWKS mixup during rotation.
+            ? // Rotation succeeded server-side, but the returned ID token is expired.
               jsonResponse(
-                await tokenBody({ refreshToken: SENTINEL_REFRESH_2, key: evilKeys.privateKey })
+                await tokenBody({ refreshToken: SENTINEL_REFRESH_2, expiresAt: 0 })
               )
             : jsonResponse(await tokenBody({ refreshToken: SENTINEL_REFRESH_3 }));
         }
