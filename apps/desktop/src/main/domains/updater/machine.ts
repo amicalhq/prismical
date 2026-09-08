@@ -1,3 +1,4 @@
+import { getClientHeaders } from '../../infra/http/client';
 import { gt } from './semver';
 import { computeUpdatePrompt, type UpdatePrompt } from './update-prompt';
 
@@ -9,9 +10,7 @@ import { computeUpdatePrompt, type UpdatePrompt } from './update-prompt';
  *   periodic checks) lives in the Effect layer (`live.ts`) — Clock/Schedule
  *   only, per the main-process convention. That also makes the whole machine
  *   unit-testable without Electron.
- * - No telemetry device-id header on metadata requests (no desktop
- *   analytics) — the server treats every install as unbucketed and applies
- *   default policy.
+ * - Metadata requests include the shared machine/install ID for staged rollouts.
  * - No remote-config idle-install lane: installs happen via the
  *   user-facing restart affordance / prompt, or naturally on next launch
  *   (Squirrel applies a staged update at relaunch).
@@ -58,7 +57,7 @@ export interface UpdaterStateView {
 export type NativeUpdaterListener = (...args: any[]) => void;
 
 export interface NativeUpdaterFacade {
-  setFeedURL(options: { url: string }): void;
+  setFeedURL(options: { url: string; headers?: Record<string, string> }): void;
   checkForUpdates(): void;
   quitAndInstall(): void;
   on(event: string, listener: NativeUpdaterListener): void;
@@ -78,6 +77,8 @@ export interface UpdaterMachineOptions {
   platform: string;
   arch: string;
   native: NativeUpdaterFacade;
+  /** Cached machine/install ID, resolved before each metadata request. */
+  getDeviceId: () => Promise<string>;
   fetchFn: (url: string, init: { headers: Record<string, string> }) => Promise<Response>;
   log: MachineLog;
   /** Fired after any state/prompt change — live.ts re-projects getStateView(). */
@@ -185,7 +186,7 @@ export class UpdaterMachine {
     const url = `${this.opts.updateServerUrl}/update/${channel}/${this.opts.platform}-${this.opts.arch}/${this.effectiveVersion}?runningVersion=${runningVersion}${targetVersionQuery}`;
 
     try {
-      this.opts.native.setFeedURL({ url });
+      this.opts.native.setFeedURL({ url, headers: getClientHeaders(this.opts) });
       this.opts.log('info', 'updater feed URL set', { url });
     } catch (error) {
       this.opts.log('error', 'updater failed to set feed URL', { error: getErrorMessage(error) });
@@ -399,8 +400,12 @@ export class UpdaterMachine {
     const url = `${this.opts.updateServerUrl}/update-meta/${this.currentChannel}/${this.opts.platform}-${this.opts.arch}/${this.opts.appVersion}`;
 
     try {
+      const deviceId = await this.opts.getDeviceId();
       const response = await this.opts.fetchFn(url, {
-        headers: { 'User-Agent': `Prismical/${this.opts.appVersion}` },
+        headers: {
+          ...getClientHeaders(this.opts),
+          'prismical-device-id': deviceId,
+        },
       });
 
       if (!response.ok) {

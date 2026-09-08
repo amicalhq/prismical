@@ -554,6 +554,38 @@ describe('TelemetryService policy and identity', () => {
 
 describe('device fallback and lifecycle', () => {
   const unavailable = () => Promise.reject(new Error('machine unavailable'));
+  it.effect('resolves the shared device ID for updates without starting telemetry or substituting an account ID', () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const setupResult = yield* setup();
+        const { telemetry, setPreference, sessionState } = setupResult;
+        assert.strictEqual(setupResult.machineReads, 0);
+        assert.strictEqual(yield* telemetry.getDeviceId, 'hashed-machine-id');
+        assert.lengthOf(setupResult.sinks, 0);
+        assert.isFalse((yield* telemetry.getState).enabled);
+        yield* setPreference(true);
+        yield* telemetry.getState;
+        yield* SubscriptionRef.set(sessionState, signedIn('account-a'));
+        yield* telemetry.getState;
+        assert.strictEqual(yield* telemetry.getDeviceId, 'hashed-machine-id');
+        assert.strictEqual(setupResult.machineReads, 1);
+      })
+    )
+  );
+  it.effect('reuses the persisted installation fallback for updates with telemetry disabled', () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const f = yield* setup({ machineId: unavailable, seed: { [DEVICE_ID_KEY]: 'install-id' } });
+        const ids = yield* Effect.all([f.telemetry.getDeviceId, f.telemetry.getDeviceId], {
+          concurrency: 'unbounded',
+        });
+        assert.deepStrictEqual(ids, ['install-id', 'install-id']);
+        assert.strictEqual(f.machineReads, 1);
+        assert.lengthOf(f.sinks, 0);
+        assert.isFalse((yield* f.telemetry.getState).enabled);
+      })
+    )
+  );
   it.effect('machine ID takes precedence over a saved fallback', () =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -577,6 +609,7 @@ describe('device fallback and lifecycle', () => {
         });
         yield* telemetry.capture('app_launch');
         assert.equal(sinks[0]!.captures[0]!.distinctId, 'fallback');
+        assert.equal(yield* telemetry.getDeviceId, 'fallback');
       })
     )
   );

@@ -14,6 +14,7 @@ import { assert, describe as edescribe, it as eit } from '@effect/vitest';
 import { Context, Duration, Effect, Exit, Layer, Scope, SubscriptionRef, TestClock } from 'effect';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FakeAutoUpdater, type FakeElectron } from '../helpers/fake-electron';
+import { testTelemetryLayer } from '../helpers/telemetry';
 import { makeFakeOperationalDb } from '../helpers/fake-operational-db';
 import { makeTestLogger, testConfigLayer } from '../helpers/test-layers';
 import { UpdaterMachine, type UpdateMetadata } from '../../src/main/domains/updater/machine';
@@ -51,6 +52,7 @@ function makeHarness(): Harness {
   };
   const machine = new UpdaterMachine({
     updateServerUrl: 'https://core.test',
+    getDeviceId: async () => 'test-device-id',
     appVersion: '0.1.0',
     platform: 'darwin',
     arch: 'arm64',
@@ -67,6 +69,57 @@ function makeHarness(): Harness {
 }
 
 describe('UpdaterMachine', () => {
+  it('identifies metadata and native feed requests with the running version', async () => {
+    const native = new FakeAutoUpdater();
+    const fetchFn = vi.fn(async () => Response.json({ action: 'none' }));
+    const machine = new UpdaterMachine({
+      updateServerUrl: 'https://core.test',
+      getDeviceId: async () => 'test-device-id',
+      appVersion: '1.2.3', platform: 'darwin', arch: 'arm64', native, fetchFn,
+      log: () => {}, onChanged: () => {},
+    });
+    machine.initialize('stable');
+    await machine.checkForUpdates();
+    const metadata = (fetchFn.mock.calls[0] as unknown as [string, RequestInit])[1];
+    for (const headers of [new Headers(metadata.headers), new Headers(native.feedURLs[0].headers)]) {
+      expect(headers.get('prismical-client')).toBe('desktop');
+      expect(headers.get('prismical-version')).toBe('1.2.3');
+      expect(headers.get('prismical-platform')).toBe('darwin');
+      expect(headers.get('prismical-arch')).toBeNull();
+      expect(headers.get('user-agent')).toBe('prismical-desktop/1.2.3 (macOS)');
+    }
+    machine.dispose();
+  });
+
+  it('sends the installation fallback on metadata requests only', async () => {
+    const native = new FakeAutoUpdater();
+    const fetchFn = vi.fn(async (_url: string, _init: { headers: Record<string, string> }) =>
+      Response.json({ action: 'none' })
+    );
+    const machine = new UpdaterMachine({
+      updateServerUrl: 'https://core.test',
+      appVersion: '1.2.3',
+      platform: 'darwin',
+      arch: 'arm64',
+      getDeviceId: async () => 'persisted-installation-id',
+      native,
+      fetchFn,
+      log: () => {},
+      onChanged: () => {},
+    });
+    machine.initialize('stable');
+    await machine.checkForUpdates();
+    await machine.checkForUpdates();
+    for (const [url, init] of fetchFn.mock.calls) {
+      expect(url).toBe('https://core.test/update-meta/stable/darwin-arm64/1.2.3');
+      const headers = new Headers(init.headers);
+      expect(headers.get('prismical-device-id')).toBe('persisted-installation-id');
+      expect(headers.get('prismical-version')).toBe('1.2.3');
+    }
+    expect(native.feedURLs.every(feed => !new Headers(feed.headers).has('prismical-device-id'))).toBe(true);
+    machine.dispose();
+  });
+
   it('downloads and stages: view downloaded, effective version advanced, feed pinned to target', async () => {
     const h = makeHarness();
     h.native.nextCycle = DOWNLOAD_CYCLE;
@@ -234,6 +287,7 @@ const build = (overrides: Parameters<typeof testConfigLayer>[0]) => {
     layer: Layer.mergeAll(
       settings,
       UpdaterServiceLive.pipe(
+        Layer.provide(testTelemetryLayer),
         Layer.provide(config),
         Layer.provide(settings),
         Layer.provide(logger.layer)

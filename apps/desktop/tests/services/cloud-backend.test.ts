@@ -823,7 +823,7 @@ describe('makeCloudWorkspaceLayer → WorkspaceBackend (boot↔session bridge)',
         const stamped: Array<{ auth: string; org: string | undefined }> = [];
         vi.stubGlobal('fetch', (_url: string, init: { headers: Record<string, string> }) => {
           stamped.push({
-            auth: init.headers['Authorization'],
+            auth: new Headers(init.headers).get('Authorization')!,
             org: init.headers['x-active-org-id'],
           });
           return Promise.resolve(jsonResponse({ results: [] }));
@@ -949,9 +949,9 @@ describe('makeCloudWorkspaceLayer → WorkspaceBackend (boot↔session bridge)',
             wire.push({
               url,
               method: init.method,
-              auth: init.headers['Authorization'],
+              auth: new Headers(init.headers).get('Authorization')!,
               org: init.headers['x-active-org-id'],
-              contentType: init.headers['Content-Type'],
+              contentType: new Headers(init.headers).get('Content-Type')!,
               body: init.body,
             });
             return Promise.resolve(

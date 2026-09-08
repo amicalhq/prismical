@@ -16,6 +16,7 @@
  * effects — Electron callback edges (permission handler) read it
  * synchronously, business logic stays out of callbacks.
  */
+import { withClientHeaders } from '../../infra/http/client';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -121,6 +122,18 @@ export const WindowRegistryLive: Layer.Layer<
 
     // --- Session-level controls (scoped) -----------------------------------
     const ses = session.defaultSession;
+    // Covers renderer HTTP requests and WebSocket handshakes, including redirects.
+    yield* Effect.acquireRelease(
+      Effect.sync(() => {
+        ses.webRequest.onBeforeSendHeaders(
+          { urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*'] },
+          (details, callback) => {
+            callback({ requestHeaders: withClientHeaders(details.requestHeaders, config) });
+          }
+        );
+      }),
+      () => Effect.sync(() => ses.webRequest.onBeforeSendHeaders(null))
+    );
 
     // Permission allowlist: media, main window only; deny everything else.
     // Both the async request handler AND the synchronous check handler are

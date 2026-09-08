@@ -1,3 +1,4 @@
+import { desktopFetch } from '../../infra/http/client';
 import { Clock, Effect, Layer, Ref } from 'effect';
 import type { LanguageModel } from 'ai';
 import type { AiModelListing, AiProviderKind, AiProviderSetting } from '@prismical/desktop-contracts';
@@ -63,7 +64,7 @@ export const makeAiProviderLive = (
       const settings = yield* SettingsService;
       const secrets = yield* SecureStore;
       const log = (yield* MainLogger).scoped('ai-provider');
-      const fetchFn: FetchLike = options.fetchFn ?? ((url, init) => fetch(url, init));
+      const fetchFn: FetchLike = options.fetchFn ?? desktopFetch;
       const ttl = options.catalogueTtlMs ?? CATALOGUE_TTL_MS;
       const memoTtl = options.toolSupportTtlMs ?? TOOL_SUPPORT_TTL_MS;
       // The scripted seam: every provider resolves to the fake, the catalogue

@@ -116,16 +116,23 @@ export const makeTelemetryServiceLive = (
         if (sink) yield* bestEffort(Effect.sync(() => sink.discard()));
       });
 
-      // Capture re-reads auth/settings, so an event cannot race a subscription push.
-      const reconcile = Effect.gen(function* () {
-        let next = yield* snapshot;
-        if (!closed && next.policy.enabled && deviceId === undefined) {
-          // Choosing the default cloud mode does not restart the app. Resolve
-          // identity only when its live choice/consent first enables telemetry.
+      const ensureDeviceId = Effect.gen(function* () {
+        if (deviceId === undefined) {
           deviceId = yield* resolveDeviceId(machineId).pipe(
             Effect.provideService(OperationalDb, db),
             Effect.provideService(MainLogger, logger)
           );
+        }
+        return deviceId;
+      });
+      // Update rollouts need this identity even when analytics delivery is disabled.
+      const getDeviceId = lock.withPermits(1)(ensureDeviceId);
+
+      // Capture re-reads auth/settings, so an event cannot race a subscription push.
+      const reconcile = Effect.gen(function* () {
+        let next = yield* snapshot;
+        if (!closed && next.policy.enabled && deviceId === undefined) {
+          yield* ensureDeviceId;
           next = yield* snapshot;
         }
         noteBoundary(next.identityKey, next.policy.preference, next.chosen);
@@ -331,6 +338,6 @@ export const makeTelemetryServiceLive = (
           )
         )
       );
-      return { state, getState, capture, captureException } satisfies TelemetryServiceApi;
+      return { state, getState, getDeviceId, capture, captureException } satisfies TelemetryServiceApi;
     })
   );

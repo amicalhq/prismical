@@ -156,6 +156,7 @@ export const makeBootLayer = (
   const settings = SettingsServiceLive.pipe(Layer.provide(operationalDb), Layer.provide(logging));
   const i18n = DesktopI18nLive.pipe(Layer.provide(electronApp), Layer.provide(settings));
   const windowRegistry = WindowRegistryLive.pipe(
+    Layer.provide(i18n),
     Layer.provide(appConfigLayer),
     Layer.provide(electronApp),
     Layer.provide(settings),
@@ -199,6 +200,8 @@ export const makeBootLayer = (
     Layer.provide(logging)
   );
   const updater = UpdaterServiceLive.pipe(
+    Layer.provide(telemetry),
+    Layer.provide(i18n),
     Layer.provide(appConfigLayer),
     Layer.provide(settings),
     Layer.provide(logging)

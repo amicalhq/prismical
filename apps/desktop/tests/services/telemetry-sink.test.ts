@@ -36,6 +36,9 @@ describe('PostHog SDK transport boundary', () => {
     await sink.shutdown(2_000);
     expect(transport).toHaveBeenCalledOnce();
     const options = (transport.mock.calls[0] as unknown as [string, RequestInit])[1];
+    const headers = new Headers(options.headers);
+    expect(headers.get('prismical-client')).toBe('desktop');
+    expect(headers.get('user-agent')).toContain('prismical-desktop/');
     const body = JSON.parse(
       gunzipSync(Buffer.from(await new Response(options.body).arrayBuffer())).toString()
     );

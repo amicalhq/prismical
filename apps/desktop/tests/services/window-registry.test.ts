@@ -92,13 +92,41 @@ describe('WindowRegistry (session controls)', () => {
       assert.isNotNull(ses().permissionRequestHandler);
       assert.isNotNull(ses().permissionCheckHandler);
       assert.isNotNull(ses().headersReceivedHandler);
+      assert.isNotNull(ses().beforeSendHeadersHandler);
       assert.isTrue(ses().protocol.isProtocolHandled('prismical-app'));
 
       yield* Scope.close(scope, Exit.void);
       assert.isNull(ses().permissionRequestHandler);
       assert.isNull(ses().permissionCheckHandler);
       assert.isNull(ses().headersReceivedHandler);
+      assert.isNull(ses().beforeSendHeadersHandler);
       assert.isFalse(ses().protocol.isProtocolHandled('prismical-app'));
+    })
+  );
+
+  it.effect('identifies renderer HTTP and WebSocket requests without losing existing headers', () =>
+    Effect.gen(function* () {
+      const { layer } = build({ appVersion: '1.2.3', platform: 'darwin' });
+      const scope = yield* Scope.make();
+      yield* Layer.build(layer).pipe(Scope.extend(scope));
+      assert.deepStrictEqual(ses().beforeSendHeadersFilter?.urls, [
+        'http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*',
+      ]);
+      for (const url of ['https://core.test/me', 'wss://note.test/collaboration']) {
+        const callback = vi.fn();
+        ses().beforeSendHeadersHandler!(
+          { url, requestHeaders: { Authorization: 'Bearer token', 'User-Agent': 'Chromium', 'Sec-WebSocket-Protocol': 'test' } },
+          callback
+        );
+        const headers = new Headers(callback.mock.calls[0][0].requestHeaders);
+        assert.strictEqual(headers.get('prismical-client'), 'desktop');
+        assert.strictEqual(headers.get('prismical-version'), '1.2.3');
+        assert.strictEqual(headers.get('prismical-platform'), 'darwin');
+        assert.strictEqual(headers.get('user-agent'), 'prismical-desktop/1.2.3 (macOS)');
+        assert.strictEqual(headers.get('authorization'), 'Bearer token');
+        assert.strictEqual(headers.get('sec-websocket-protocol'), 'test');
+      }
+      yield* Scope.close(scope, Exit.void);
     })
   );
 

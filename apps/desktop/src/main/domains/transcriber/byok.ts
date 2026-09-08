@@ -20,6 +20,7 @@
  * but the deterministic replacement pass runs on-device using the workspace
  * vocabulary source.
  */
+import { desktopFetch } from '../../infra/http/client';
 import { Clock, Duration, Effect, HashSet, Layer, Ref } from 'effect';
 import { classifyProviderError } from '@prismical/ai-prompts';
 import { applyReplacements, filterWhisperTranscript } from '@prismical/ai-prompts/transcription';
@@ -78,7 +79,7 @@ export const makeByokTranscriberLive = (
       const appMode = yield* AppModeService;
       const backend = yield* WorkspaceBackend;
       const log = (yield* MainLogger).scoped('transcriber');
-      const fetchFn: FetchLike = options.fetchFn ?? ((url, init) => fetch(url, init));
+      const fetchFn: FetchLike = options.fetchFn ?? desktopFetch;
       // The mode-aware term source for the on-device replacement pass.
       const source = makeVocabularySource({ mode: appMode.mode, product, backend, log });
       const warnedUnconfigured = yield* Ref.make(HashSet.empty<string>());

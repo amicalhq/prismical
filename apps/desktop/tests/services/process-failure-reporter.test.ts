@@ -22,6 +22,7 @@ describe('process failure ownership', () => {
           const telemetry: TelemetryServiceApi = {
             state,
             getState: SubscriptionRef.get(state),
+            getDeviceId: Effect.succeed('test-device-id'),
             capture: () => Effect.void,
             captureException: (_error, _props, _source, revision) =>
               Effect.sync(() => {
@@ -59,6 +60,7 @@ describe('process failure ownership', () => {
             {
               state,
               getState: SubscriptionRef.get(state),
+              getDeviceId: Effect.succeed('test-device-id'),
               capture: () => Effect.void,
               captureException: () => Effect.never,
             },

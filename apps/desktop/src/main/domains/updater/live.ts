@@ -3,6 +3,7 @@ import { Duration, Effect, Layer, Ref, Runtime, Stream, SubscriptionRef } from '
 import { AppConfig } from '../../infra/config/service';
 import { MainLogger } from '../../infra/logging/service';
 import { SettingsService } from '../settings/service';
+import { TelemetryService } from '../telemetry/service';
 import {
   UpdaterMachine,
   type NativeUpdaterFacade,
@@ -49,7 +50,7 @@ const DISABLED_VIEW: UpdaterStateView = {
 export const UpdaterServiceLive: Layer.Layer<
   UpdaterService,
   never,
-  AppConfig | MainLogger | SettingsService
+  AppConfig | MainLogger | SettingsService | TelemetryService
 > = Layer.scoped(
   UpdaterService,
   Effect.gen(function* () {
@@ -79,6 +80,7 @@ export const UpdaterServiceLive: Layer.Layer<
       return disabled;
     }
 
+    const telemetry = yield* TelemetryService;
     const runtime = yield* Effect.runtime<never>();
 
     const machine = new UpdaterMachine({
@@ -88,6 +90,7 @@ export const UpdaterServiceLive: Layer.Layer<
       platform: config.platform,
       arch: process.arch,
       native: autoUpdater as NativeUpdaterFacade,
+      getDeviceId: () => Runtime.runPromise(runtime)(telemetry.getDeviceId),
       fetchFn: (url, init) => net.fetch(url, init),
       log: (level, message, data) => logUnsafe[level](message, data),
       onChanged: () => {

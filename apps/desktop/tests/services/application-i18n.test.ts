@@ -1,6 +1,7 @@
 import { assert, describe, it } from '@effect/vitest';
 import { Context, Effect, Exit, Layer, Queue, Scope, SubscriptionRef } from 'effect';
 import { DEFAULT_DEVICE_SETTINGS, type DeviceSettings } from '@prismical/desktop-contracts';
+import { getClientHeaders } from '../../src/main/infra/http/client';
 import { DesktopI18n } from '../../src/main/domains/i18n/service';
 import { DesktopI18nLive } from '../../src/main/domains/i18n/live';
 import { SettingsService, type SettingsServiceApi } from '../../src/main/domains/settings/service';
@@ -64,6 +65,7 @@ describe('DesktopI18n', () => {
     Effect.gen(function* () {
       const service = yield* readI18n('de', ['ja-JP']);
       assert.strictEqual(service.locale, 'de');
+      assert.strictEqual(getClientHeaders()['Accept-Language'], 'de');
       assert.strictEqual(service.systemLocale, 'ja');
       assert.strictEqual(service.t('desktop.tray.open'), 'Prismical öffnen');
     })

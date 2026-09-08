@@ -31,6 +31,7 @@
  * the streaming SHA-1 over prefix+tail is the backstop (a changed upstream
  * surfaces as checksum-mismatch → .part discarded → clean retry).
  */
+import { desktopFetch } from '../../infra/http/client';
 import { createHash, type Hash } from 'node:crypto';
 import { once } from 'node:events';
 import * as fs from 'node:fs';
@@ -244,7 +245,7 @@ export const makeModelManagerLive = (
       ): Effect.Effect<Response, ModelError> =>
         Effect.tryPromise({
           try: () =>
-            fetch(entry.downloadUrl, {
+            desktopFetch(entry.downloadUrl, {
               // HF `resolve/main` answers 302 → CDN; undici re-follows with the
               // Range header intact, so a resume lands on the same byte offset.
               redirect: 'follow',

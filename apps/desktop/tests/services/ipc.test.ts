@@ -1,3 +1,4 @@
+import { testTelemetryLayer } from '../helpers/telemetry';
 import { makeWire } from '@desktop/logging';
 import { assert, describe, it } from '@effect/vitest';
 import {
@@ -220,6 +221,7 @@ const makeTelemetryStub = () => {
     return {
       state,
       getState: SubscriptionRef.get(state),
+      getDeviceId: Effect.succeed('test-device-id'),
       capture: (...args: Parameters<TelemetryServiceApi['capture']>) => Effect.sync(() => { captures.push(args); }),
       captureException: (...args: Parameters<TelemetryServiceApi['captureException']>) => Effect.sync(() => { exceptions.push(args); }),
     };
@@ -287,6 +289,7 @@ const build = (
     sysPermissions.layer,
     nativeOs.layer,
     UpdaterServiceLive.pipe(
+      Layer.provide(testTelemetryLayer),
       Layer.provide(config),
       Layer.provide(settings),
       Layer.provide(logger.layer)
@@ -1396,6 +1399,7 @@ describe('registerMainWindowHandlers', () => {
           makeFakeSystemPermissions().layer,
           makeFakeNativeOs().layer,
           UpdaterServiceLive.pipe(
+            Layer.provide(testTelemetryLayer),
             Layer.provide(config),
             Layer.provide(settings),
             Layer.provide(logger.layer)

@@ -8,10 +8,12 @@
  * in-memory tokensRef. Nothing token-shaped enters sessionState, the settings
  * index, or a log call.
  */
+import { desktopFetch } from '../../infra/http/client';
 import { randomBytes } from 'node:crypto';
 import { shell } from 'electron';
 import {
   createRemoteJWKSet,
+  customFetch,
   errors as joseErrors,
   jwtVerify,
   type JWTVerifyGetKey,
@@ -177,7 +179,7 @@ export interface AuthLiveOptions {
 }
 
 const defaultKeyResolver = (jwksUrl: string): JWTVerifyGetKey =>
-  createRemoteJWKSet(new URL(jwksUrl));
+  createRemoteJWKSet(new URL(jwksUrl), { [customFetch]: desktopFetch });
 
 export const makeAuthLive = (
   options: AuthLiveOptions = {}
@@ -196,7 +198,7 @@ export const makeAuthLive = (
       const windows = yield* WindowRegistry;
       const log = (yield* MainLogger).scoped('auth');
 
-      const fetchFn: FetchLike = options.fetchFn ?? ((url, init) => fetch(url, init));
+      const fetchFn: FetchLike = options.fetchFn ?? desktopFetch;
       const random: RandomSource = options.randomSource ?? (length => randomBytes(length));
       const resolveKey = (options.makeKeyResolver ?? defaultKeyResolver)(config.auth.jwksUrl);
 

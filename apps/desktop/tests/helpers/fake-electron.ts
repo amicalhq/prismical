@@ -200,6 +200,13 @@ export type PermissionRequestHandler =
     ) => void)
   | null;
 
+export type BeforeSendHeadersHandler =
+  | ((
+      details: { requestHeaders: Record<string, string>; url: string },
+      callback: (response: { requestHeaders: Record<string, string> }) => void
+    ) => void)
+  | null;
+
 export type HeadersReceivedHandler =
   | ((
       details: { responseHeaders?: Record<string, string[]>; url: string },
@@ -220,6 +227,8 @@ class FakeSession {
   permissionRequestHandler: PermissionRequestHandler = null;
   permissionCheckHandler: PermissionCheckHandler = null;
   headersReceivedHandler: HeadersReceivedHandler = null;
+  beforeSendHeadersHandler: BeforeSendHeadersHandler = null;
+  beforeSendHeadersFilter: { urls: string[] } | null = null;
   /** capability:resetApp wipes renderer storage — record each call. */
   readonly clearStorageDataCalls: Array<{ storages?: readonly string[] }> = [];
   clearStorageData(options?: { storages?: readonly string[] }): Promise<void> {
@@ -240,6 +249,13 @@ class FakeSession {
     },
   };
   readonly webRequest = {
+    onBeforeSendHeaders: (
+      filter: { urls: string[] } | null,
+      handler?: BeforeSendHeadersHandler
+    ): void => {
+      this.beforeSendHeadersFilter = filter;
+      this.beforeSendHeadersHandler = handler ?? null;
+    },
     onHeadersReceived: (handler: HeadersReceivedHandler): void => {
       this.headersReceivedHandler = handler;
     },
@@ -373,13 +389,13 @@ export interface FakeMenuItem {
  * downloads or fail.
  */
 export class FakeAutoUpdater extends EventEmitter {
-  feedURLs: Array<{ url: string }> = [];
+  feedURLs: Array<{ url: string; headers?: Record<string, string> }> = [];
   checkCalls = 0;
   quitAndInstallCalls = 0;
   /** The events the next checkForUpdates() emits, in order. */
   nextCycle: Array<[string, ...unknown[]]> = [['checking-for-update'], ['update-not-available']];
 
-  setFeedURL(options: { url: string }): void {
+  setFeedURL(options: { url: string; headers?: Record<string, string> }): void {
     this.feedURLs.push(options);
   }
 

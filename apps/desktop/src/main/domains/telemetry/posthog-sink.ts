@@ -1,3 +1,4 @@
+import { desktopFetch } from '../../infra/http/client';
 import { QueuedPostHog, TELEMETRY_QUEUE_CAPACITY } from './posthog-queue';
 import type { ProjectedTelemetryError } from '../../../shared/telemetry-exception';
 
@@ -56,7 +57,7 @@ export const makePostHogNodeSink: MakePostHogSink = (apiKey, host, isAllowed, on
         const signal = options.signal
           ? AbortSignal.any([abort.signal, options.signal])
           : abort.signal;
-        return fetch(url, { ...options, signal });
+        return desktopFetch(url, { ...options, signal });
       },
     },
     () => onQueueDrop(1)

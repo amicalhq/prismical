@@ -14,6 +14,7 @@
  * Authorization header and NEVER passed to a log call. Only method/path/status
  * are ever logged.
  */
+import { desktopFetch } from '../../infra/http/client';
 import {
   AI_ERROR_CODES,
   ASK_ERROR_FORMAT_HEADER,
@@ -473,7 +474,7 @@ export const makeCloudBackendLive = (
       const { locale } = yield* DesktopI18n;
       const config = yield* AppConfig;
       const coreTransport = yield* WorkspaceTransport;
-      const fetchFn: FetchLike = options.fetchFn ?? ((url, init) => fetch(url, init));
+      const fetchFn: FetchLike = options.fetchFn ?? desktopFetch;
 
       // Fresh per call: session.idToken runs the StaleSessionError guard then
       // delegates to AuthService.getIdToken; pinned.activeOrgId is constant for

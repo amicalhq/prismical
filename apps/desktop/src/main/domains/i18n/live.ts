@@ -1,4 +1,5 @@
 import { Effect, Layer } from 'effect';
+import { setApplicationLocale } from './application-locale';
 import { defaultLocale, matchSupportedLocale } from '@prismical/app-i18n';
 import { initializeDesktopI18n } from '../../../shared/application-i18n';
 import { SettingsService } from '../settings/service';
@@ -27,6 +28,7 @@ export const DesktopI18nLive: Layer.Layer<DesktopI18n, never, ElectronApp | Sett
         defaultLocale;
       const preferredLocale = matchSupportedLocale(current.language) ?? resolvedSystemLocale;
       const { instance, locale } = initializeDesktopI18n(preferredLocale);
+      setApplicationLocale(locale);
 
       return {
         locale,

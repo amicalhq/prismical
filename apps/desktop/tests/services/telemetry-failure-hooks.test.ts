@@ -73,6 +73,7 @@ const withHooks = (
           Effect.provideService(TelemetryService, {
             state,
             getState: Effect.succeed(policy),
+            getDeviceId: Effect.succeed('test-device-id'),
             capture: () => Effect.void,
             captureException: (error, properties, source, revision) =>
               Effect.sync(() => {

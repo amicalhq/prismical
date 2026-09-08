@@ -10,6 +10,8 @@ export type TelemetrySource = 'main' | 'renderer';
 export interface TelemetryServiceApi {
   readonly state: SubscriptionRef.SubscriptionRef<TelemetryState>;
   readonly getState: Effect.Effect<TelemetryState>;
+  /** Resolve the shared machine/install ID for update rollouts without enabling telemetry. */
+  readonly getDeviceId: Effect.Effect<string>;
   readonly capture: (
     event: string,
     properties?: TelemetryEventProperties,
