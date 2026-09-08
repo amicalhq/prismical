@@ -55,6 +55,8 @@ import {
 
 /** Unary request budget — mirrors auth's TOKEN_REQUEST_TIMEOUT. */
 export const REQUEST_TIMEOUT = Duration.seconds(15);
+/** Chunk uploads include audio transfer and the transcription response. */
+const CHUNK_UPLOAD_TIMEOUT = Duration.minutes(1);
 /** Wait for a workspace swap, separately from the HTTP request budget. */
 export const WORKSPACE_READY_TIMEOUT = Duration.seconds(10);
 
@@ -305,7 +307,8 @@ const runRecordingCall = <T>(
     readonly headers: Record<string, string>;
     readonly body: string | Uint8Array;
   },
-  parse: (bodyJson: unknown) => T
+  parse: (bodyJson: unknown) => T,
+  timeout = REQUEST_TIMEOUT
 ): Effect.Effect<RecordingLaneResult<T>> =>
   deps.resolveIdentity.pipe(
     // The guard runs FIRST: a stale/switched-away identity fails here, before fetch.
@@ -356,7 +359,7 @@ const runRecordingCall = <T>(
         catch: (): LaneAbort => ({ kind: 'network' }),
       }).pipe(
         Effect.timeoutFail({
-          duration: REQUEST_TIMEOUT,
+          duration: timeout,
           onTimeout: (): LaneAbort => ({ kind: 'timeout' }),
         })
       );
@@ -424,7 +427,8 @@ export const makeUploadTranscriptionChunk =
         headers: recordingHeaders(identity, 'audio/wav'),
         body: wav,
       }),
-      parseSegments
+      parseSegments,
+      CHUNK_UPLOAD_TIMEOUT
     );
 
 /** PUT /apps/v1/me/recordings/:id — the ONLY finalize signal (status→'completed'), JSON. */

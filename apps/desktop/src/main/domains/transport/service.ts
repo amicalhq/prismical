@@ -43,7 +43,7 @@ export interface RecordingSegment {
  *  - `stale-identity`  the SignedInSession guard short-circuited BEFORE any fetch
  *                      (a switched-away session never uploads) — transient.
  *  - `network`         the fetch rejected (offline / DNS / reset) — transient.
- *  - `timeout`         exceeded the 15s budget — transient (a premature timeout on a
+ *  - `timeout`         exceeded the request budget — transient (a premature timeout on a
  *                      chunk is safe: the retry is idempotent per (recordingId,chunkIndex)).
  *  - `invalid-response` the successful response could not be decoded or validated;
  *                      retain the pending work because acknowledgement is unknown.

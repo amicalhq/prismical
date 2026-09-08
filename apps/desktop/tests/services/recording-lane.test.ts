@@ -13,14 +13,13 @@
  * proven in cloud-backend.test.ts's makeCloudWorkspaceLayer integration test.
  */
 import { assert, describe, it } from '@effect/vitest';
-import { Deferred, Effect, Fiber, Option, TestClock } from 'effect';
+import { Deferred, Duration, Effect, Fiber, Option, TestClock } from 'effect';
 import {
   isTransientStatus,
   makeCreateRecording,
   makeFinalizeRecording,
   makeUploadTranscriptionChunk,
   MANAGED_TRANSCRIPTION_CONFIG,
-  REQUEST_TIMEOUT,
   type CloudBackendDeps,
   type FetchLike,
   type RequestIdentity,
@@ -383,7 +382,7 @@ describe('makeUploadTranscriptionChunk', () => {
     })
   );
 
-  it.effect('a hung upload trips the 15s budget → transient timeout', () =>
+  it.effect('a hung upload stays pending through 59s and times out at 60s', () =>
     Effect.gen(function* () {
       const { fetchFn } = recordingFetch(() => new Promise<Response>(() => {}));
       const fiber = yield* Effect.fork(
@@ -393,7 +392,9 @@ describe('makeUploadTranscriptionChunk', () => {
           new Uint8Array([1])
         )
       );
-      yield* TestClock.adjust(REQUEST_TIMEOUT);
+      yield* TestClock.adjust(Duration.seconds(59));
+      assert.isTrue(Option.isNone(yield* Fiber.poll(fiber)));
+      yield* TestClock.adjust(Duration.seconds(1));
       const res = yield* Fiber.join(fiber);
       assert.deepStrictEqual(res, { ok: false, retryable: true, failure: { kind: 'timeout' } });
     })
@@ -420,7 +421,7 @@ describe('makeUploadTranscriptionChunk', () => {
           )('rec_1', CHUNK_PARAMS, new Uint8Array([1]))
         );
         yield* Deferred.await(readingBody);
-        yield* TestClock.adjust(REQUEST_TIMEOUT);
+        yield* TestClock.adjust(Duration.minutes(1));
         assert.isTrue(
           Option.isSome(yield* Fiber.poll(fiber)),
           'the body shares the request deadline'
