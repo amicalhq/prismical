@@ -69,8 +69,8 @@ const INTERNAL: TransportResponse = { error: { code: 'INTERNAL' } };
  * Content-Type: audio/wav (the non-JSON path); the BYOK transcription lane
  * sends a multipart `FormData` (fetch sets its boundary
  * Content-Type). The interrupt signal flows through so a dying caller aborts
- * the fetch; the ambient default is the main-process global fetch (TLS over
- * portless relies on process-level NODE_EXTRA_CA_CERTS — no per-request TLS).
+ * the fetch; the ambient default is the main-process global fetch (TLS uses
+ * the startup trust store and NODE_EXTRA_CA_CERTS — no per-request TLS).
  */
 export type FetchLike = (
   url: string,

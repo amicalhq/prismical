@@ -94,7 +94,8 @@ In-app restarts recreate Forge and Vite while retaining that route; a normal qui
 Register `https://prismical-desktop.localhost/oauth/callback` on the backend's OAuth client;
 the internal port does not appear in the redirect URI. The launcher also
 adds a trusted dev-proxy CA (`~/.portless/ca.pem`) to Node only when that file exists; set
-`NODE_EXTRA_CA_CERTS` yourself for any other self-signed dev stack.
+`NODE_EXTRA_CA_CERTS` yourself for any other self-signed dev stack. At startup, the app also
+adds OS-trusted certificates to Node's defaults, excluding expired or invalid certificates.
 
 ### Environment variables
 

@@ -2,6 +2,7 @@ import { app, dialog } from 'electron';
 import { randomUUID } from 'node:crypto';
 import type { MainLoggerService } from '@desktop/logging';
 import { handleSquirrelStartup } from './squirrel-startup';
+import { configureSystemTrustStore } from './system-trust-store';
 import { bakedE2EBuild, e2eEnvTrusted, scrubE2EEnv } from './e2e-gate';
 
 // Packaged-E2E gating: a production packaged binary must ignore
@@ -45,6 +46,11 @@ if (handleSquirrelStartup()) {
       const logging = makeMainLogging(appRunId);
       logger = logging.service;
       logger.scopedSync('startup').info('Application logging initialized');
+      try {
+        configureSystemTrustStore();
+      } catch (error) {
+        logger.scopedSync('startup').warn('Failed to load system CA certificates', { error });
+      }
       return import('./runtime/start').then(({ startDesktop }) => startDesktop(logging));
     })
     .catch(async (error: unknown) => {

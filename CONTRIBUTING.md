@@ -57,8 +57,9 @@ silence,editor-markdown,editor-schema,id,note-derive,ai-prompts}`) — the scree
 - **Sign-in fails `invalid_redirect`** → the loopback URI is missing from the OAuth client's
   redirect allow-list on the backend you sign in against.
 - **Sign-in returns to the app, then bounces back to the gate** with
-  `oauth exchange failed { reason: 'network' }` → Electron's main process uses Node's CA bundle,
-  not the OS keychain; set `NODE_EXTRA_CA_CERTS` to your dev stack's CA.
+  `oauth exchange failed { reason: 'network' }` → check the backend connection and certificate
+  chain. Startup adds OS-trusted certificates to Node's defaults; use `NODE_EXTRA_CA_CERTS`
+  for a dev CA that is not installed in the OS trust store.
 - **"Microphone access was denied"** → grant Microphone to **Electron** in System Settings →
   Privacy & Security.
 - **Second launch silently exits** → single-instance lock: `pkill -f "electron-forge start"`.

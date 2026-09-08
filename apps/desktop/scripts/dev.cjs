@@ -4,11 +4,10 @@
  * Portless owns the persistent runner so requested restarts retain the callback route.
  *
  * Cloud-mode development against a self-hosted TLS dev stack (the Prismical
- * monorepo's portless `*.localhost` proxy) needs Node to trust that proxy's CA,
- * and Electron's MAIN process uses Node's CA bundle, not the OS keychain. The
- * CA is opt-in: `NODE_EXTRA_CA_CERTS` is honoured when set, else the portless
- * CA is used only if it exists on this machine. Local-mode development (no
- * account, no backend) needs neither.
+ * monorepo's portless `*.localhost` proxy) needs Node to trust that proxy's CA.
+ * Startup also imports the OS trust store. `NODE_EXTRA_CA_CERTS` is honoured
+ * when set; otherwise the portless CA is used only if it exists on this machine.
+ * Local-mode development (no account, no backend) needs neither.
  */
 const { spawn } = require('node:child_process');
 const { existsSync } = require('node:fs');
