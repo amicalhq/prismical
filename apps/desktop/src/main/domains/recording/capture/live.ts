@@ -26,14 +26,6 @@ import {
   type CaptureSession,
 } from './service';
 
-/**
- * Bounded frame buffer (drop-oldest). ~1.7 s of headroom at the dual-mode worst
- * case (3 sources × ~100 frames/s of 10 ms frames). A well-behaved consumer
- * (the WAV writer) drains far faster than this fills; the cap is the OOM valve
- * for a stalled consumer, and every shed frame is metered.
- */
-const FRAME_QUEUE_CAPACITY = 512;
-
 /** SIGTERM → this grace → SIGKILL, mirroring the transplanted helper's stop(). */
 const TERMINATION_GRACE = Duration.millis(1500);
 
@@ -90,7 +82,7 @@ export const CaptureLive: Layer.Layer<
           catch: cause => new CaptureSpawnError({ mode, reason: errorMessage(cause) }),
         });
 
-        const frames = yield* Queue.sliding<AudioFrame>(FRAME_QUEUE_CAPACITY);
+        const frames = yield* Queue.unbounded<AudioFrame>();
         const micEvents = yield* Queue.sliding<MicCaptureEvent>(64);
         // The frame consumer races this: void on a clean stop, failed on a dead
         // helper (crash / unexpected exit / malformed packet).
@@ -102,7 +94,6 @@ export const CaptureLive: Layer.Layer<
         // Callback-edge state (single-threaded event loop; read via Effect.sync).
         const reader = createPacketReader();
         let aecMode = Option.none<string>();
-        let dropped = 0;
         let childPid = process.pid;
         let stopping = false;
         let dead = false;
@@ -125,11 +116,6 @@ export const CaptureLive: Layer.Layer<
             return;
           }
           for (const frame of decoded) {
-            // Sliding queue silently evicts; count the eviction ourselves.
-            const size = Option.getOrElse(frames.unsafeSize(), () => 0);
-            if (size >= FRAME_QUEUE_CAPACITY) {
-              dropped += 1;
-            }
             Queue.unsafeOffer(frames, frame);
           }
         };
@@ -240,7 +226,7 @@ export const CaptureLive: Layer.Layer<
             yield* Queue.shutdown(frames);
             yield* Queue.shutdown(micEvents);
             yield* log.info('capture child reaped', {
-              context: { mode, droppedFrames: dropped },
+              context: { mode },
             });
           });
 
@@ -282,7 +268,6 @@ export const CaptureLive: Layer.Layer<
                 return;
               proc.stdin.write(`${JSON.stringify(command)}\n`);
             }),
-          droppedFrames: Effect.sync(() => dropped),
           awaitExit: Deferred.await(terminated),
         };
         return session;

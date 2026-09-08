@@ -46,7 +46,7 @@ import {
 import { WhisperEngine, WhisperEngineError, type WhisperEngineApi } from './service';
 
 /**
- * Budget for ONE decode of a ≤5 s chunk. Deliberately generous: whisper.cpp
+ * Budget for ONE decode of a ≤15 s chunk. Deliberately generous: whisper.cpp
  * pads every chunk to a full 30 s encoder window, and a large model on a weak
  * CPU (the GPU is off on Intel-only darwin-x64) can take minutes per window.
  * The budget exists ONLY to unwedge a genuinely stuck synchronous addon call —

@@ -115,12 +115,12 @@ export const deriveDrainChunks = (
     while (micOff < boundary.micSamples || sysOff < boundary.systemSamples) {
       if (mic && micOff < boundary.micSamples) {
         const end = Math.min(micOff + CHUNK_SAMPLES, boundary.micSamples);
-        state = bufferSamples(state, 'mic', mic.subarray(micOff, end)).state;
+        state = bufferSamples(state, 'mic', mic.subarray(micOff, end));
         micOff = end;
       }
       if (system && sysOff < boundary.systemSamples) {
         const end = Math.min(sysOff + CHUNK_SAMPLES, boundary.systemSamples);
-        state = bufferSamples(state, 'system', system.subarray(sysOff, end)).state;
+        state = bufferSamples(state, 'system', system.subarray(sysOff, end));
         sysOff = end;
       }
       const [cut, next] = cutAll(state);

@@ -95,7 +95,6 @@ export const makeFakeCapture = (): FakeCapture => {
         aec: Effect.succeed(Option.none<string>()),
         micEvents,
         sendMicCommand: command => Effect.sync(() => void commands.push(command)),
-        droppedFrames: Effect.succeed(0),
         awaitExit: Deferred.await(terminated),
       };
       return session;

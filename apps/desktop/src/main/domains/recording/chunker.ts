@@ -3,15 +3,15 @@
  * stream of decoded AudioFrames into fixed-cadence, per-source upload chunks.
  *
  * No Effect, no I/O: the RecordingService's frame fiber folds each frame in with
- * `bufferSamples`, and its chunk-cut fiber harvests COMPLETE fixed-size chunks
- * on a Clock tick (`flushAll` emits the sub-`CHUNK_SAMPLES` tail once at stop).
+ * `bufferSamples`, then harvests COMPLETE fixed-size chunks for upload
+ * (`flushAll` emits the sub-`CHUNK_SAMPLES` tail at pause or stop).
  * Keeping it pure makes the cadence / index / chunkStartMs accounting
  * unit-testable without a clock or a device.
  *
  * Key invariants the recovery drain inherits:
  *  - `nextIndex` is ONE monotonic counter shared across sources — the server's
  *    transcribe idempotency is keyed on (recordingId, chunkIndex), so mic and
- *    system must never collide on an index. Within a tick, mic is cut before
+ *    system must never collide on an index. Within a round, mic is cut before
  *    system (mic gets the lower index).
  *  - `chunkStartMs` is per-source cumulative: the offset (ms) of already-cut
  *    audio for THAT source, so each source carries its own timeline.
@@ -25,47 +25,13 @@ export type ChunkSource = 'mic' | 'system';
 export const CAPTURE_SAMPLE_RATE = 48_000;
 
 /**
- * The fixed chunk cadence — SINGLE SOURCE OF TRUTH for the boundary the live
- * loop and the recovery drain must agree on. RecordingServiceLive cuts on a
- * Clock tick every `CHUNK_INTERVAL_SECONDS`, harvesting only COMPLETE
- * `CHUNK_SAMPLES`-sized chunks (`cutPaired` for dual mode) and carrying the
- * remainder to the next tick; the drain re-derives chunks from the retained WAV
- * by feeding `CHUNK_SAMPLES`-sized windows through this same chunker, so its chunkIndex /
- * chunkStartMs land on the same boundaries — the server dedupes per (recordingId,
- * chunkIndex), so the two MUST match or a re-sent chunk would collide with a
- * different span.
- *
- * Both paths cut fixed complete chunks round-by-round
- * (mic before system) and flush the sub-`CHUNK_SAMPLES` tail exactly ONCE at the
- * end (`flushAll`) — the live path at graceful stop, the drain after its window
- * loop. For identical per-source sample counts the two produce the IDENTICAL chunk
- * sequence (index / source / chunkStartMs / bytes), so a crash-recovery seam
- * continues seamlessly from `lastChunkIndex+1` with no duplicate/gap. (Previously
- * the live tick flushed whatever had accumulated — a VARIABLE span drifting over
- * `CHUNK_SAMPLES` via `delay(5s).forever` — so it diverged from the drain's fixed
- * windows at the seam.)
- *
- * Overflow drops: under a sustained stall the OOM
- * valve (`bufferSamples` drop-newest at `MAX_BUFFERED_SAMPLES`) drops samples
- * the live path never chunks, so live chunk boundaries diverge from the WAV
- * past the first dropped frame. The chunker COUNTS drops per source
- * (`SourceAccum.dropped`, summed by `droppedSamples`); the graceful-stop path
- * treats ANY drop as not-fully-acked, resets the drain cursor, and parks the
- * row (`buffer-overflow`) so the drain re-transcribes the FULL recording from
- * the retained WAV instead of deleting it.
+ * Fixed audio span shared by live capture and recovery. Capture cuts complete
+ * chunks as samples arrive and queues them for upload. Recovery feeds the same
+ * chunker in CHUNK_SAMPLES-sized windows, preserving chunk indices and offsets.
+ * Both paths cut mic before system and flush partial tails at pause and stop.
  */
-export const CHUNK_INTERVAL_SECONDS = 5;
+export const CHUNK_INTERVAL_SECONDS = 15;
 export const CHUNK_SAMPLES = CHUNK_INTERVAL_SECONDS * CAPTURE_SAMPLE_RATE;
-
-/**
- * Cap on buffered (un-cut) samples per source — the OOM valve (no unbounded
- * backlog). The cut fiber drains every chunk interval, so in normal operation
- * the buffer holds well under one interval; this is only approached under a
- * SUSTAINED upload stall. Excess samples are dropped from the in-memory buffer
- * (they still live in the recovery WAV, so the drain re-sends them) and metered.
- * ~30 s at 48 kHz.
- */
-export const MAX_BUFFERED_SAMPLES = 30 * CAPTURE_SAMPLE_RATE;
 
 /**
  * Which transcribe lane a decoded frame feeds, or `null` to drop it:
@@ -98,9 +64,6 @@ interface SourceAccum {
   readonly buffered: number;
   /** Cumulative samples already cut into chunks for this source (drives chunkStartMs). */
   readonly cut: number;
-  /** Cumulative samples the OOM valve dropped for this source — any drop means
-   * the cut chunks skipped audio only the recovery WAV still holds. */
-  readonly dropped: number;
 }
 
 export interface PipelineState {
@@ -109,7 +72,7 @@ export interface PipelineState {
   readonly system: SourceAccum;
 }
 
-const emptyAccum: SourceAccum = { buffers: [], buffered: 0, cut: 0, dropped: 0 };
+const emptyAccum: SourceAccum = { buffers: [], buffered: 0, cut: 0 };
 
 export const initialPipeline: PipelineState = {
   nextIndex: 0,
@@ -120,41 +83,25 @@ export const initialPipeline: PipelineState = {
 const chunkStartMs = (accum: SourceAccum): number =>
   Math.round((accum.cut / CAPTURE_SAMPLE_RATE) * 1000);
 
-/**
- * Fold one frame's samples into a source's buffer. Returns the next state and
- * how many samples were DROPPED (the OOM valve fired) — the caller meters drops
- * and freezes the drain cursor so the drain re-covers them from the recovery WAV.
- */
+/** Append every captured sample; completed chunks leave the buffer when cut. */
 export const bufferSamples = (
   state: PipelineState,
   lane: ChunkSource,
   samples: Float32Array
-): { readonly state: PipelineState; readonly dropped: number } => {
+): PipelineState => {
   const accum = state[lane];
-  const headroom = MAX_BUFFERED_SAMPLES - accum.buffered;
-  if (headroom <= 0) {
-    return {
-      state: { ...state, [lane]: { ...accum, dropped: accum.dropped + samples.length } },
-      dropped: samples.length,
-    };
-  }
-  const dropped = Math.max(0, samples.length - headroom);
-  const kept = dropped === 0 ? samples : samples.subarray(0, headroom);
-  const next: SourceAccum = {
-    buffers: [...accum.buffers, kept],
-    buffered: accum.buffered + kept.length,
-    cut: accum.cut,
-    dropped: accum.dropped + dropped,
+  return {
+    ...state,
+    [lane]: {
+      buffers: [...accum.buffers, samples],
+      buffered: accum.buffered + samples.length,
+      cut: accum.cut,
+    },
   };
-  return { state: { ...state, [lane]: next }, dropped };
 };
 
-/** Total samples the OOM valve dropped across both sources — non-zero means the
- * cut chunk sequence is NOT the full recording (only the recovery WAV is). */
-export const droppedSamples = (state: PipelineState): number =>
-  state.mic.dropped + state.system.dropped;
-
 const flatten = (accum: SourceAccum): Float32Array => {
+  if (accum.buffers.length === 1) return accum.buffers[0];
   const out = new Float32Array(accum.buffered);
   let offset = 0;
   for (const part of accum.buffers) {
@@ -188,14 +135,13 @@ const cutFixed = (state: PipelineState, lane: ChunkSource, index: number): CutRe
     buffers: [remainder],
     buffered: remainder.length,
     cut: accum.cut + CHUNK_SAMPLES,
-    dropped: accum.dropped,
   };
   return { chunk, state: { ...state, [lane]: next } };
 };
 
 /**
  * Flush ALL of a source's remaining buffer as one final (sub-`CHUNK_SAMPLES`)
- * chunk — the partial tail, used ONCE at the end (graceful stop / drain end).
+ * chunk — the partial tail at pause, graceful stop, or drain end.
  * Returns `null` when the buffer is empty; buffered silence still uploads.
  */
 const flushLane = (state: PipelineState, lane: ChunkSource, index: number): CutResult => {
@@ -207,7 +153,6 @@ const flushLane = (state: PipelineState, lane: ChunkSource, index: number): CutR
     buffers: [],
     buffered: 0,
     cut: accum.cut + samples.length,
-    dropped: accum.dropped,
   };
   return { chunk, state: { ...state, [lane]: next } };
 };
@@ -216,8 +161,8 @@ const flushLane = (state: PipelineState, lane: ChunkSource, index: number): CutR
  * Harvest every COMPLETE fixed-size chunk available, round by round — mic before
  * system within each round (mic gets the lower index), mirroring
  * `deriveDrainChunks`' round order. Emits 0+ chunks per call and leaves each
- * source's sub-`CHUNK_SAMPLES` remainder buffered for the next tick. Shaped for
- * `Ref.modify`: returns `[chunks, nextState]`. Cut on the Clock tick.
+ * source's sub-`CHUNK_SAMPLES` remainder buffered for the next frame. Shaped for
+ * `Ref.modify`: returns `[chunks, nextState]`.
  */
 export const cutAll = (
   state: PipelineState
@@ -248,7 +193,7 @@ export const cutAll = (
 };
 
 /**
- * Periodic dual-mode cut: release only complete mic/system pairs. The faster
+ * Dual-mode cut: release only complete mic/system pairs. The faster
  * lane remains buffered until its partner reaches the same fixed boundary, so
  * live upload and recovery assign the shared indices to the same sources.
  */
@@ -276,7 +221,7 @@ export const cutPaired = (
  * Flush the final partial tail — ONE round: mic then system (at most one
  * sub-`CHUNK_SAMPLES` chunk each), sharing the monotonic index mic-before-system.
  * Run once after the last `cutAll` (so each buffer is already below
- * `CHUNK_SAMPLES`): the live path at graceful stop, the drain after its window
+ * `CHUNK_SAMPLES`): the live path at pause or stop, the drain after its window
  * loop. Shaped for `Ref.modify`: returns `[chunks, nextState]`.
  */
 export const flushAll = (

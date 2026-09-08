@@ -4,9 +4,9 @@
  * Wires capture → recovery WAV (recovery-writer) → chunk upload lane →
  * recovery outbox. One `FiberMap<recordingId>` + a `Semaphore(1)` (one active
  * recording). Every timer uses Clock/Schedule, not raw timers, so TestClock
- * drives chunk cadence + restart backoff. The whole thing lives in the session
- * scope, so sign-out / org-switch / quit interrupts the native child, parks the
- * outbox `interrupted`, and retains the WAV for the next session's drain.
+ * drives restart backoff and auto-pause. Chunk boundaries follow audio samples.
+ * The session scope interrupts the native child on sign-out / org-switch / quit,
+ * parks the outbox `interrupted`, and retains the WAV for the next session's drain.
  *
  * Normal Stop drains in-flight chunks before closing the WAV and handing durable
  * finalization work to the workspace recovery worker. Exhausted capture
@@ -25,6 +25,7 @@ import {
   FiberMap,
   Layer,
   Option,
+  Queue,
   Ref,
   Schedule,
   Stream,
@@ -75,11 +76,9 @@ import { Transcriber } from '../transcriber/service';
 import { mirrorSegmentsToCore } from './segment-mirror';
 import {
   CAPTURE_SAMPLE_RATE,
-  CHUNK_INTERVAL_SECONDS,
   bufferSamples,
   cutAll,
   cutPaired,
-  droppedSamples,
   flushAll,
   initialPipeline,
   laneForFrame,
@@ -104,10 +103,6 @@ import {
   type MicAlignmentState,
   type MicSource,
 } from './mic-alignment';
-
-/** Fixed chunk cadence. Every chunk is a valid standalone WAV. The seconds
- * live in chunker.ts so the drain re-chunks on the same boundary. */
-const CHUNK_INTERVAL = Duration.seconds(CHUNK_INTERVAL_SECONDS);
 
 // Recovery WAVs live under `<config.recoveryDir>/<recordingId>/`; the directory
 // is resolved by AppConfig so the destructive reset purges the
@@ -504,6 +499,10 @@ export const RecordingServiceLive: Layer.Layer<
           callbackLog: logger.scopedSync('wav-writer'),
         });
         const pipeline = yield* Ref.make(initialPipeline);
+        const uploadQueue = yield* Effect.acquireRelease(
+          Queue.unbounded<PendingChunk | null>(),
+          Queue.shutdown
+        );
         const alignment = yield* SubscriptionRef.make(initialAlignment);
         const pendingMicTransition = yield* Ref.make<PendingMicTransition | null>(null);
         const unavailableSinceMs = yield* Ref.make<number | null>(null);
@@ -590,8 +589,6 @@ export const RecordingServiceLive: Layer.Layer<
             return effects;
           });
 
-        const cutGate = yield* Effect.makeSemaphore(1);
-
         // Advance `lastChunkIndex` ONLY through a contiguous run of resolved chunks:
         // a retryable-failed (or dropped) chunk leaves a gap that freezes the cursor,
         // so the drain re-sends from there — no audio dropped past the cursor.
@@ -657,38 +654,22 @@ export const RecordingServiceLive: Layer.Layer<
             yield* advanceCursor(chunk.index);
           });
 
-        // Dual ticks publish only complete mic/system pairs so recovery cannot
+        // Dual capture publishes only complete mic/system pairs so recovery cannot
         // assign a shared chunk index to the other source after a mic stall.
-        const periodicCut = mode === 'dual' ? cutPaired : cutAll;
-        const flush: Effect.Effect<void> = cutGate.withPermits(1)(
-          Ref.modify(pipeline, periodicCut).pipe(
-            Effect.flatMap(chunks => Effect.forEach(chunks, uploadChunk, { discard: true })),
-            Effect.zipRight(
-              Effect.all([
-                Ref.get(acceptedSamplesRef),
-                Clock.currentTimeMillis,
-                Ref.get(pausedRef),
-              ]).pipe(
-                Effect.flatMap(([samples, now, paused]) =>
-                  paused
-                    ? Effect.void
-                    : setState({ elapsedMs: mediaDurationMs(samples), elapsedAt: now })
-                )
-              )
-            )
-          )
-        );
+        const cutComplete = mode === 'dual' ? cutPaired : cutAll;
+        const enqueueChunks = (chunks: readonly PendingChunk[]): Effect.Effect<void> =>
+          Queue.offerAll(uploadQueue, chunks).pipe(Effect.asVoid);
 
         // Once capture is quiescent, cut every remaining complete chunk. Unequal
         // final lane lengths are safe here and must match recovery's final order.
         const flushComplete: Effect.Effect<void> = Ref.modify(pipeline, cutAll).pipe(
-          Effect.flatMap(chunks => Effect.forEach(chunks, uploadChunk, { discard: true }))
+          Effect.flatMap(enqueueChunks)
         );
 
-        // Graceful-stop only: emit each source's sub-CHUNK partial tail (one round,
+        // Pause or stop: emit each source's sub-CHUNK partial tail (one round,
         // mic before system), so the drain re-derives the SAME final sequence.
         const flushTail: Effect.Effect<void> = Ref.modify(pipeline, flushAll).pipe(
-          Effect.flatMap(chunks => Effect.forEach(chunks, uploadChunk, { discard: true }))
+          Effect.flatMap(enqueueChunks)
         );
 
         const pauseRecording: Effect.Effect<boolean> = frameGate
@@ -735,9 +716,7 @@ export const RecordingServiceLive: Layer.Layer<
           .pipe(
             Effect.flatMap(paused =>
               paused
-                ? cutGate.withPermits(1)(
-                    flushComplete.pipe(Effect.zipRight(flushTail), Effect.as(true))
-                  )
+                ? flushComplete.pipe(Effect.zipRight(flushTail), Effect.as(true))
                 : Effect.succeed(false)
             )
           );
@@ -816,16 +795,14 @@ export const RecordingServiceLive: Layer.Layer<
           ).pipe(Effect.delay(AUTO_STOP_POLL), Effect.forever)
         );
 
-        // Periodic cut+upload (outer scope: survives capture restarts, drained sequentially).
+        // Upload in order independently of capture. Stop appends a sentinel after
+        // its final chunks; workspace interruption cancels the worker and retains the WAV.
         const uploadFiber = yield* Effect.forkScoped(
           Effect.gen(function* () {
-            while (
-              yield* Effect.raceFirst(
-                Effect.sleep(CHUNK_INTERVAL).pipe(Effect.as(true)),
-                Deferred.await(stopSignal).pipe(Effect.as(false))
-              )
-            ) {
-              yield* flush;
+            while (true) {
+              const chunk = yield* Queue.take(uploadQueue);
+              if (chunk === null) return;
+              yield* uploadChunk(chunk);
             }
           })
         );
@@ -845,10 +822,7 @@ export const RecordingServiceLive: Layer.Layer<
                         : updateLevel(frame.samples).pipe(
                             Effect.zipRight(recovery.append(lane, frame.samples)),
                             Effect.zipRight(
-                              Ref.modify(pipeline, s => {
-                                const next = bufferSamples(s, lane, frame.samples);
-                                return [next.dropped, next.state] as const;
-                              })
+                              Ref.update(pipeline, s => bufferSamples(s, lane, frame.samples))
                             ),
                             Effect.tap(() =>
                               Ref.update(acceptedSamplesRef, current => ({
@@ -858,13 +832,22 @@ export const RecordingServiceLive: Layer.Layer<
                                   frame.samples.length,
                               }))
                             ),
-                            Effect.flatMap(dropped =>
-                              dropped > 0
-                                ? log.warn(
-                                    'recording buffer overflow — dropped samples (recovery WAV retains them)',
-                                    { context: { recordingId, dropped } }
+                            Effect.zipRight(Ref.modify(pipeline, cutComplete)),
+                            Effect.tap(enqueueChunks),
+                            Effect.flatMap(chunks =>
+                              chunks.length === 0
+                                ? Effect.void
+                                : Effect.all([
+                                    Ref.get(acceptedSamplesRef),
+                                    Clock.currentTimeMillis,
+                                  ]).pipe(
+                                    Effect.flatMap(([samples, now]) =>
+                                      setState({
+                                        elapsedMs: mediaDurationMs(samples),
+                                        elapsedAt: now,
+                                      })
+                                    )
                                   )
-                                : Effect.void
                             ),
                             Effect.zipRight(observeSilence(lane, frame.samples))
                           )
@@ -1144,13 +1127,13 @@ export const RecordingServiceLive: Layer.Layer<
             durationMs: mediaDurationMs(stoppingSamples),
           })
           .pipe(Effect.catchAll(() => Effect.void));
-        yield* Fiber.join(uploadFiber); // finish any already-cut upload before the final cut
-        yield* cutGate.withPermits(1)(
+        yield* synchronize(
           flushComplete.pipe(
-            // any now-complete fixed chunk(s)
-            Effect.zipRight(flushTail) // then the sub-CHUNK partial tail (mic before system)
+            Effect.zipRight(flushTail),
+            Effect.zipRight(Queue.offer(uploadQueue, null))
           )
         );
+        yield* Fiber.join(uploadFiber);
 
         const endedAt = stoppingAt;
         const acceptedSamples = yield* Ref.get(acceptedSamplesRef);
@@ -1158,11 +1141,8 @@ export const RecordingServiceLive: Layer.Layer<
         const cursor = yield* Ref.get(cursorRef);
         const finalPipeline = yield* Ref.get(pipeline);
         const totalAssigned = finalPipeline.nextIndex;
-        const droppedTotal = droppedSamples(finalPipeline);
         const allAcked =
-          created &&
-          droppedTotal === 0 &&
-          (cursor === null ? totalAssigned === 0 : cursor + 1 === totalAssigned);
+          created && (cursor === null ? totalAssigned === 0 : cursor + 1 === totalAssigned);
 
         // Close audio and persist the exact stop metadata before another owner
         // can process this job. A failed bookkeeping write retains the WAV.
@@ -1179,8 +1159,7 @@ export const RecordingServiceLive: Layer.Layer<
             phase: !created ? 'create' : allAcked ? 'finalize' : 'chunks',
             endedAt,
             durationMs,
-            ...(droppedTotal > 0 ? { lastChunkIndex: null } : {}),
-            lastError: allAcked ? null : droppedTotal > 0 ? 'buffer-overflow' : 'stop-incomplete',
+            lastError: allAcked ? null : 'stop-incomplete',
           })
           .pipe(
             Effect.as(true),
@@ -1258,7 +1237,7 @@ export const RecordingServiceLive: Layer.Layer<
           }
         } else {
           yield* log.warn('recording stopped with unresolved chunks — parked for drain', {
-            context: { recordingId, cursor, totalAssigned, droppedSamples: droppedTotal },
+            context: { recordingId, cursor, totalAssigned },
           });
         }
 

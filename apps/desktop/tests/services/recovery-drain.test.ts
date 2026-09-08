@@ -251,9 +251,9 @@ const installModel = (
   });
 
 describe('deriveDrainChunks matches live-capture boundaries', () => {
-  it('dual: interleaves mic-before-system per 5 s window with per-source chunkStartMs', () => {
-    // 6 s each → window0 (240k) + window1 (48k) per source.
-    const chunks = deriveDrainChunks(seconds(6), seconds(6));
+  it('dual: interleaves mic-before-system per 15 s window with per-source chunkStartMs', () => {
+    // 16 s each → window0 (720k) + window1 (48k) per source.
+    const chunks = deriveDrainChunks(seconds(16), seconds(16));
     assert.deepStrictEqual(
       chunks.map(c => ({
         index: c.index,
@@ -262,16 +262,16 @@ describe('deriveDrainChunks matches live-capture boundaries', () => {
         len: c.samples.length,
       })),
       [
-        { index: 0, source: 'mic', startMs: 0, len: 240_000 },
-        { index: 1, source: 'system', startMs: 0, len: 240_000 },
-        { index: 2, source: 'mic', startMs: 5000, len: 48_000 },
-        { index: 3, source: 'system', startMs: 5000, len: 48_000 },
+        { index: 0, source: 'mic', startMs: 0, len: 720_000 },
+        { index: 1, source: 'system', startMs: 0, len: 720_000 },
+        { index: 2, source: 'mic', startMs: 15_000, len: 48_000 },
+        { index: 3, source: 'system', startMs: 15_000, len: 48_000 },
       ]
     );
   });
 
   it('mic-only: one contiguous lane, monotonic indices', () => {
-    const chunks = deriveDrainChunks(seconds(12), null);
+    const chunks = deriveDrainChunks(seconds(32), null);
     assert.deepStrictEqual(
       chunks.map(c => ({
         index: c.index,
@@ -280,33 +280,33 @@ describe('deriveDrainChunks matches live-capture boundaries', () => {
         len: c.samples.length,
       })),
       [
-        { index: 0, source: 'mic', startMs: 0, len: 240_000 },
-        { index: 1, source: 'mic', startMs: 5000, len: 240_000 },
-        { index: 2, source: 'mic', startMs: 10_000, len: 96_000 },
+        { index: 0, source: 'mic', startMs: 0, len: 720_000 },
+        { index: 1, source: 'mic', startMs: 15_000, len: 720_000 },
+        { index: 2, source: 'mic', startMs: 30_000, len: 96_000 },
       ]
     );
   });
 
   it('replays every persisted pause boundary with one shared monotonic index', () => {
-    const chunks = deriveDrainChunks(seconds(12), null, [
+    const chunks = deriveDrainChunks(seconds(22), null, [
       { micSamples: 2 * 48_000, systemSamples: 0 },
-      { micSamples: 8 * 48_000, systemSamples: 0 },
+      { micSamples: 18 * 48_000, systemSamples: 0 },
     ]);
     assert.deepStrictEqual(
       chunks.map(c => ({ index: c.index, startMs: c.chunkStartMs, len: c.samples.length })),
       [
         { index: 0, startMs: 0, len: 96_000 },
-        { index: 1, startMs: 2_000, len: 240_000 },
-        { index: 2, startMs: 7_000, len: 48_000 },
-        { index: 3, startMs: 8_000, len: 192_000 },
+        { index: 1, startMs: 2_000, len: 720_000 },
+        { index: 2, startMs: 17_000, len: 48_000 },
+        { index: 3, startMs: 18_000, len: 192_000 },
       ]
     );
   });
 
   it('dual pause replay preserves live cutAll-then-flushAll ordering for unequal lanes', () => {
-    const chunks = deriveDrainChunks(seconds(8), seconds(7), [
+    const chunks = deriveDrainChunks(seconds(18), seconds(17), [
       { micSamples: 2 * 48_000, systemSamples: 1 * 48_000 },
-      { micSamples: 6 * 48_000, systemSamples: 6 * 48_000 },
+      { micSamples: 16 * 48_000, systemSamples: 16 * 48_000 },
     ]);
     assert.deepStrictEqual(
       chunks.map(c => ({
@@ -318,10 +318,10 @@ describe('deriveDrainChunks matches live-capture boundaries', () => {
       [
         { index: 0, source: 'mic', startMs: 0, len: 96_000 },
         { index: 1, source: 'system', startMs: 0, len: 48_000 },
-        { index: 2, source: 'system', startMs: 1_000, len: 240_000 },
-        { index: 3, source: 'mic', startMs: 2_000, len: 192_000 },
-        { index: 4, source: 'mic', startMs: 6_000, len: 96_000 },
-        { index: 5, source: 'system', startMs: 6_000, len: 48_000 },
+        { index: 2, source: 'system', startMs: 1_000, len: 720_000 },
+        { index: 3, source: 'mic', startMs: 2_000, len: 672_000 },
+        { index: 4, source: 'mic', startMs: 16_000, len: 96_000 },
+        { index: 5, source: 'system', startMs: 16_000, len: 48_000 },
       ]
     );
   });
@@ -347,8 +347,8 @@ describe('RecoveryDrain (re-chunk retained WAV → resend tail → finalize → 
         const h = yield* setup;
         const recordingId = 'rec_server_spool';
         const dir = h.recoveryDir(recordingId);
-        yield* writeWav(dir, 'mic', seconds(6), false);
-        yield* writeWav(dir, 'system', new Float32Array(6 * RATE), false);
+        yield* writeWav(dir, 'mic', seconds(16), false);
+        yield* writeWav(dir, 'system', new Float32Array(16 * RATE), false);
         yield* h.insertRecovery({
           recordingId,
           captureMode: 'dual',
@@ -366,11 +366,11 @@ describe('RecoveryDrain (re-chunk retained WAV → resend tail → finalize → 
           h.fakeCloud.uploadCalls.map(call => call.params),
           [
             { chunkIndex: 1, chunkStartMs: 0, source: 'system' },
-            { chunkIndex: 2, chunkStartMs: 5000, source: 'mic' },
-            { chunkIndex: 3, chunkStartMs: 5000, source: 'system' },
+            { chunkIndex: 2, chunkStartMs: 15_000, source: 'mic' },
+            { chunkIndex: 3, chunkStartMs: 15_000, source: 'system' },
           ]
         );
-        assertWavSamples(h.fakeCloud.uploadCalls[0].wav, 5 * RATE);
+        assertWavSamples(h.fakeCloud.uploadCalls[0].wav, 15 * RATE);
         assert.isTrue(
           Buffer.from(h.fakeCloud.uploadCalls[0].wav)
             .subarray(44)
@@ -385,7 +385,7 @@ describe('RecoveryDrain (re-chunk retained WAV → resend tail → finalize → 
         assert.strictEqual(summary.resolved, 1);
         assert.deepStrictEqual(h.fakeCloud.uploadCalls[3].params, {
           chunkIndex: 3,
-          chunkStartMs: 5000,
+          chunkStartMs: 15_000,
           source: 'system',
         });
         assertWavSamples(h.fakeCloud.uploadCalls[3].wav, RATE);
@@ -395,7 +395,7 @@ describe('RecoveryDrain (re-chunk retained WAV → resend tail → finalize → 
             .every(byte => byte === 0)
         );
         assert.strictEqual(h.fakeCloud.timeline.at(-1), 'finalize');
-        assert.strictEqual(h.fakeCloud.finalizeCalls[0].input.durationMs, 6000);
+        assert.strictEqual(h.fakeCloud.finalizeCalls[0].input.durationMs, 16_000);
 
         assert.isNull(yield* h.db.getRecoveryOutbox(recordingId));
         assert.isFalse(fs.existsSync(dir));
@@ -434,7 +434,7 @@ describe('RecoveryDrain (re-chunk retained WAV → resend tail → finalize → 
         const h = yield* setup;
         const recordingId = 'rec_parked';
         const dir = h.recoveryDir(recordingId);
-        yield* writeWav(dir, 'mic', seconds(12)); // chunks 0,1,2
+        yield* writeWav(dir, 'mic', seconds(32)); // chunks 0,1,2
 
         yield* h.insertRecovery({ recordingId, captureMode: 'mic', wavPath: dir });
         yield* h.db.updateRecoveryOutbox(recordingId, { status: 'interrupted', lastChunkIndex: 1 });
@@ -451,7 +451,7 @@ describe('RecoveryDrain (re-chunk retained WAV → resend tail → finalize → 
         assert.strictEqual(call.recordingId, recordingId);
         assert.strictEqual(call.params.chunkIndex, 2);
         assert.strictEqual(call.params.source, 'mic');
-        assert.strictEqual(call.params.chunkStartMs, 10_000);
+        assert.strictEqual(call.params.chunkStartMs, 30_000);
         assertWavSamples(call.wav, 96_000);
 
         assert.strictEqual(h.fakeCloud.finalizeCalls.length, 1);
@@ -469,7 +469,7 @@ describe('RecoveryDrain (re-chunk retained WAV → resend tail → finalize → 
       const h = yield* setup;
       const recordingId = 'rec_done';
       const dir = h.recoveryDir(recordingId);
-      yield* writeWav(dir, 'mic', seconds(10)); // chunks 0,1
+      yield* writeWav(dir, 'mic', seconds(30)); // chunks 0,1
 
       yield* h.insertRecovery({ recordingId, captureMode: 'mic', wavPath: dir });
       yield* h.db.updateRecoveryOutbox(recordingId, { status: 'finalizing', lastChunkIndex: 1 });
@@ -491,8 +491,8 @@ describe('RecoveryDrain (re-chunk retained WAV → resend tail → finalize → 
       const h = yield* setup;
       const recordingId = 'rec_dual';
       const dir = h.recoveryDir(recordingId);
-      yield* writeWav(dir, 'mic', seconds(6));
-      yield* writeWav(dir, 'system', seconds(6));
+      yield* writeWav(dir, 'mic', seconds(16));
+      yield* writeWav(dir, 'system', seconds(16));
 
       yield* h.insertRecovery({ recordingId, captureMode: 'dual', wavPath: dir });
       yield* h.db.updateRecoveryOutbox(recordingId, { status: 'interrupted' }); // nothing uploaded yet
@@ -507,8 +507,8 @@ describe('RecoveryDrain (re-chunk retained WAV → resend tail → finalize → 
       assert.deepStrictEqual(seen, [
         { index: 0, source: 'mic', startMs: 0 },
         { index: 1, source: 'system', startMs: 0 },
-        { index: 2, source: 'mic', startMs: 5000 },
-        { index: 3, source: 'system', startMs: 5000 },
+        { index: 2, source: 'mic', startMs: 15_000 },
+        { index: 3, source: 'system', startMs: 15_000 },
       ]);
       assert.strictEqual(h.fakeCloud.finalizeCalls.length, 1);
       assert.isNull(yield* h.db.getRecoveryOutbox(recordingId));
@@ -524,7 +524,7 @@ describe('RecoveryDrain (re-chunk retained WAV → resend tail → finalize → 
       const h = yield* setup;
       const recordingId = 'rec_persist';
       const dir = h.recoveryDir(recordingId);
-      yield* writeWav(dir, 'mic', seconds(10)); // chunks 0,1
+      yield* writeWav(dir, 'mic', seconds(30)); // chunks 0,1
 
       yield* h.insertRecovery({ recordingId, captureMode: 'mic', wavPath: dir });
       yield* h.db.updateRecoveryOutbox(recordingId, { status: 'interrupted' }); // nothing acked
@@ -573,7 +573,7 @@ describe('RecoveryDrain (re-chunk retained WAV → resend tail → finalize → 
       );
       assert.strictEqual(rows.length, 1);
       assert.strictEqual(rows[0].status, 'completed');
-      assert.strictEqual(rows[0].durationMs, 10_000);
+      assert.strictEqual(rows[0].durationMs, 30_000);
       assert.isNotNull(rows[0].endedAt);
       assert.isFalse(Number.isNaN(Date.parse(rows[0].endedAt!)), 'endedAt stored as ISO');
 
@@ -723,13 +723,13 @@ describe('RecoveryDrain (re-chunk retained WAV → resend tail → finalize → 
       const h = yield* setup;
       const recordingId = 'rec_kill9';
       const dir = h.recoveryDir(recordingId);
-      // 7 s written but NOT finalized → header data-size stays a placeholder 0.
-      yield* writeWav(dir, 'mic', seconds(7), false);
+      // 17 s written but NOT finalized → header data-size stays a placeholder 0.
+      yield* writeWav(dir, 'mic', seconds(17), false);
 
       // Prove the premise: the on-disk header claims 0 bytes.
       const onDisk = fs.readFileSync(path.join(dir, 'mic.wav'));
       assert.strictEqual(onDisk.readUInt32LE(40), 0, 'kill -9 leaves the data size un-patched');
-      assert.strictEqual(onDisk.length, 44 + 7 * RATE * 2, 'but the data is all on disk');
+      assert.strictEqual(onDisk.length, 44 + 17 * RATE * 2, 'but the data is all on disk');
       fs.appendFileSync(path.join(dir, 'mic.wav'), Buffer.from([1])); // incomplete last sample
 
       yield* h.insertRecovery({ recordingId, captureMode: 'mic', wavPath: dir });
@@ -737,7 +737,7 @@ describe('RecoveryDrain (re-chunk retained WAV → resend tail → finalize → 
 
       const summary = yield* h.drain();
 
-      // Recovered 7 s → chunks 0 (240k) + 1 (96k) — NOT zero, despite the header.
+      // Recovered 17 s → chunks 0 (720k) + 1 (96k) — NOT zero, despite the header.
       assert.strictEqual(
         h.fakeCloud.uploadCalls.length,
         2,
@@ -747,7 +747,7 @@ describe('RecoveryDrain (re-chunk retained WAV → resend tail → finalize → 
         h.fakeCloud.uploadCalls.map(c => c.params.chunkIndex),
         [0, 1]
       );
-      assertWavSamples(h.fakeCloud.uploadCalls[0].wav, 240_000);
+      assertWavSamples(h.fakeCloud.uploadCalls[0].wav, 720_000);
       assertWavSamples(h.fakeCloud.uploadCalls[1].wav, 96_000);
       const recoveredPcm = Buffer.concat(
         h.fakeCloud.uploadCalls.map(call => Buffer.from(call.wav).subarray(44))
@@ -868,7 +868,7 @@ describe('RecoveryDrain (re-chunk retained WAV → resend tail → finalize → 
         const env = yield* buildEnv(Layer.succeed(WorkspaceBackend, api));
         const recordingId = 'rec_interrupt';
         const dir = env.recoveryDir(recordingId);
-        yield* writeWav(dir, 'mic', seconds(12)); // chunks 0,1,2
+        yield* writeWav(dir, 'mic', seconds(32)); // chunks 0,1,2
         yield* env.insertRecovery({ recordingId, captureMode: 'mic', wavPath: dir });
         yield* env.db.updateRecoveryOutbox(recordingId, { status: 'interrupted' });
 
@@ -974,8 +974,8 @@ describe('RecoveryDrain — transcription engine at drain time', () => {
         });
         const recordingId = 'rec_local_drain';
         const dir = h.recoveryDir(recordingId);
-        yield* writeWav(dir, 'mic', seconds(6));
-        yield* writeWav(dir, 'system', seconds(6));
+        yield* writeWav(dir, 'mic', seconds(16));
+        yield* writeWav(dir, 'system', seconds(16));
         yield* installModel(h, 'whisper-tiny');
         yield* h.insertRecovery({
           recordingId,
@@ -1203,7 +1203,7 @@ describe('RecoveryDrain — engine follows the row and yields to live capture', 
         const h = yield* setup;
         const recordingId = 'rec_mid_row_yield';
         const dir = h.recoveryDir(recordingId);
-        yield* writeWav(dir, 'mic', seconds(12)); // chunks 0,1,2
+        yield* writeWav(dir, 'mic', seconds(32)); // chunks 0,1,2
         yield* h.insertRecovery({ recordingId, captureMode: 'mic', wavPath: dir });
         yield* h.db.updateRecoveryOutbox(recordingId, { status: 'interrupted' });
 

@@ -5,7 +5,7 @@ import { testTelemetryLayer } from '../helpers/telemetry';
  * the REAL WhisperEngine host, which forks the REAL built worker
  * (.vite/build/whisper-worker-fork.js) under the DEV Node sidecar and loads
  * the REAL ggml-base.en model — then feeds the committed two-speaker fixture
- * as production-shaped 5 s / 48 kHz chunks and asserts a non-empty transcript
+ * as production-shaped 15 s / 48 kHz chunks and asserts a non-empty transcript
  * persisted through the RecordingStore into a real (in-memory) product DB.
  *
  * Prerequisites are asserted LOUDLY (no conditional skips):
@@ -112,7 +112,7 @@ const normalize = (text: string): string =>
     .replace(/\s+/g, ' ')
     .trim();
 
-/** The fixture as production-shaped 5 s / 48 kHz chunks. */
+/** The fixture as production-shaped 15 s / 48 kHz chunks. */
 const cutChunks = (
   audio48k: Float32Array
 ): Array<{ index: number; startMs: number; samples: Float32Array }> => {
@@ -161,7 +161,7 @@ describe('local whisper end to end (sidecar → worker → whisper.node → prod
       require16k('audio fixture', fixturePath, 'checked-in file missing — check the repo');
 
       const chunks = cutChunks(upsampleTo48k(readFixtureFloat32()));
-      assert.isAtLeast(chunks.length, 3, 'the ~20 s fixture yields production-shaped 5 s chunks');
+      assert.lengthOf(chunks, 2, 'the ~20 s fixture yields one 15 s chunk and a partial tail');
 
       const logger = makeTestLogger();
       const env = Layer.mergeAll(testConfigLayer(), logger.layer, testTelemetryLayer);
@@ -333,7 +333,7 @@ describe('local whisper end to end (sidecar → worker → whisper.node → prod
             );
             if (res.ok) texts.push(...res.value.map(segment => segment.text));
           }
-          // 5 s of uniform noise at 0.02 peak: ABOVE the ~0.0100 near-silence
+          // 15 s of uniform noise at 0.02 peak: ABOVE the ~0.0100 near-silence
           // guard, so the engine IS called — and VAD must find no speech spans.
           // The no-VAD arm may hallucinate text on this input (whisper does on
           // non-speech), so only the VAD side is pinned.
@@ -368,7 +368,7 @@ describe('local whisper end to end (sidecar → worker → whisper.node → prod
         if (outcome.noise.ok) {
           assert.deepStrictEqual([...outcome.noise.value], [], 'VAD finds no speech in noise');
         }
-        console.log('[local-asr:vad] 5 s noise chunk (peak 0.02, guard bypassed): 0 segments');
+        console.log('[local-asr:vad] 15 s noise chunk (peak 0.02, guard bypassed): 0 segments');
       })
   );
 });

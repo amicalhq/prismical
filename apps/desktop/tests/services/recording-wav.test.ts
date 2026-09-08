@@ -16,11 +16,9 @@ import { encodeWavPcm16 } from '../../src/main/domains/recording/wav';
 import {
   CAPTURE_SAMPLE_RATE,
   CHUNK_SAMPLES,
-  MAX_BUFFERED_SAMPLES,
   bufferSamples,
   cutAll,
   cutPaired,
-  droppedSamples,
   flushAll,
   initialPipeline,
   laneForFrame,
@@ -111,9 +109,9 @@ describe('laneForFrame', () => {
 describe('chunker (bufferSamples / cutAll / flushAll)', () => {
   it('cutAll cuts fixed CHUNK_SAMPLES chunks (mic before system) and carries the remainder', () => {
     let state = initialPipeline;
-    // 6 s per lane: one full 5 s chunk each + a 1 s remainder that must carry.
-    state = bufferSamples(state, 'mic', new Float32Array(6 * CAPTURE_SAMPLE_RATE)).state;
-    state = bufferSamples(state, 'system', new Float32Array(6 * CAPTURE_SAMPLE_RATE)).state;
+    // 16 s per lane: one full 15 s chunk each + a 1 s remainder that must carry.
+    state = bufferSamples(state, 'mic', new Float32Array(16 * CAPTURE_SAMPLE_RATE));
+    state = bufferSamples(state, 'system', new Float32Array(16 * CAPTURE_SAMPLE_RATE));
 
     const [chunks, next] = cutAll(state);
     // mic gets the lower index (cut first per round) — indices are globally unique.
@@ -124,19 +122,19 @@ describe('chunker (bufferSamples / cutAll / flushAll)', () => {
         ['system', 1, 0, CHUNK_SAMPLES],
       ]
     );
-    assert.strictEqual(next.nextIndex, 2, 'index advances across the tick');
-    // The 1 s remainder is retained — a partial never cuts on a tick.
+    assert.strictEqual(next.nextIndex, 2, 'index advances across the round');
+    // The 1 s remainder is retained until pause or stop.
     assert.strictEqual(next.mic.buffered, CAPTURE_SAMPLE_RATE);
     assert.strictEqual(next.system.buffered, CAPTURE_SAMPLE_RATE);
-    assert.deepStrictEqual(cutAll(next)[0], [], 'a sub-CHUNK remainder is not cut on a tick');
+    assert.deepStrictEqual(cutAll(next)[0], [], 'a sub-CHUNK remainder is not cut');
 
     // flushAll (graceful stop / drain end) emits the remainder as the partial tail.
     const [tail, done] = flushAll(next);
     assert.deepStrictEqual(
       tail.map(c => [c.source, c.index, c.chunkStartMs, c.samples.length]),
       [
-        ['mic', 2, 5000, CAPTURE_SAMPLE_RATE],
-        ['system', 3, 5000, CAPTURE_SAMPLE_RATE],
+        ['mic', 2, 15_000, CAPTURE_SAMPLE_RATE],
+        ['system', 3, 15_000, CAPTURE_SAMPLE_RATE],
       ]
     );
     assert.strictEqual(done.nextIndex, 4);
@@ -145,32 +143,32 @@ describe('chunker (bufferSamples / cutAll / flushAll)', () => {
 
   it('cutAll drains a multi-interval backlog into several complete chunks in one call', () => {
     let state = initialPipeline;
-    // 11 s buffered on mic (a stalled tick): two full 5 s chunks + a 1 s remainder.
-    state = bufferSamples(state, 'mic', new Float32Array(11 * CAPTURE_SAMPLE_RATE)).state;
+    // 31 s buffered on mic: two full 15 s chunks and a 1 s remainder.
+    state = bufferSamples(state, 'mic', new Float32Array(31 * CAPTURE_SAMPLE_RATE));
     const [chunks, next] = cutAll(state);
     assert.deepStrictEqual(
       chunks.map(c => [c.index, c.chunkStartMs, c.samples.length]),
       [
         [0, 0, CHUNK_SAMPLES],
-        [1, 5000, CHUNK_SAMPLES],
+        [1, 15_000, CHUNK_SAMPLES],
       ]
     );
-    assert.strictEqual(next.mic.buffered, CAPTURE_SAMPLE_RATE, '1 s remainder carried, not cut');
+    assert.strictEqual(next.mic.buffered, CAPTURE_SAMPLE_RATE, 'partial remainder retained');
     assert.strictEqual(next.nextIndex, 2);
   });
 
   it('cutPaired holds the faster dual lane until both complete the boundary', () => {
     let state = initialPipeline;
-    state = bufferSamples(state, 'mic', new Float32Array(4 * CAPTURE_SAMPLE_RATE)).state;
-    state = bufferSamples(state, 'system', new Float32Array(6 * CAPTURE_SAMPLE_RATE)).state;
+    state = bufferSamples(state, 'mic', new Float32Array(14 * CAPTURE_SAMPLE_RATE));
+    state = bufferSamples(state, 'system', new Float32Array(16 * CAPTURE_SAMPLE_RATE));
 
     const [waiting, held] = cutPaired(state);
     assert.deepStrictEqual(waiting, []);
-    assert.strictEqual(held.mic.buffered, 4 * CAPTURE_SAMPLE_RATE);
-    assert.strictEqual(held.system.buffered, 6 * CAPTURE_SAMPLE_RATE);
+    assert.strictEqual(held.mic.buffered, 14 * CAPTURE_SAMPLE_RATE);
+    assert.strictEqual(held.system.buffered, 16 * CAPTURE_SAMPLE_RATE);
     assert.strictEqual(held.nextIndex, 0);
 
-    state = bufferSamples(held, 'mic', new Float32Array(2 * CAPTURE_SAMPLE_RATE)).state;
+    state = bufferSamples(held, 'mic', new Float32Array(2 * CAPTURE_SAMPLE_RATE));
     const [paired, next] = cutPaired(state);
     assert.deepStrictEqual(
       paired.map(c => [c.source, c.index, c.chunkStartMs, c.samples.length]),
@@ -185,44 +183,42 @@ describe('chunker (bufferSamples / cutAll / flushAll)', () => {
 
   it('advances chunkStartMs per source cumulatively (fixed cuts + fractional tail)', () => {
     let state = initialPipeline;
-    state = bufferSamples(state, 'mic', new Float32Array(CHUNK_SAMPLES)).state; // 5 s
+    state = bufferSamples(state, 'mic', new Float32Array(CHUNK_SAMPLES)); // 15 s
     const first = cutAll(state);
     state = first[1];
     assert.strictEqual(first[0][0].chunkStartMs, 0);
     assert.strictEqual(first[0][0].index, 0);
 
-    state = bufferSamples(state, 'mic', new Float32Array(CHUNK_SAMPLES + 24_000)).state; // 5.5 s more
+    state = bufferSamples(state, 'mic', new Float32Array(CHUNK_SAMPLES + 24_000)); // 15.5 s more
     const second = cutAll(state);
-    assert.strictEqual(second[0][0].chunkStartMs, 5000, 'starts where the previous cut ended');
+    assert.strictEqual(second[0][0].chunkStartMs, 15_000, 'starts where the previous cut ended');
     assert.strictEqual(second[0][0].index, 1, 'index kept climbing');
     state = second[1];
 
     const [tail] = flushAll(state);
-    assert.strictEqual(tail[0].chunkStartMs, 10_000, 'the tail starts after two 5 s chunks');
+    assert.strictEqual(tail[0].chunkStartMs, 30_000, 'the tail starts after two 15 s chunks');
     assert.strictEqual(tail[0].samples.length, 24_000, 'the 0.5 s fractional partial');
     assert.strictEqual(tail[0].index, 2);
   });
 
-  it('bounds the per-source buffer and reports dropped samples (OOM valve)', () => {
-    const overflow = bufferSamples(
-      initialPipeline,
-      'mic',
-      new Float32Array(MAX_BUFFERED_SAMPLES + 5_000)
+  it('retains every sample beyond 30 seconds until it can be cut', () => {
+    const samples = new Float32Array(61 * CAPTURE_SAMPLE_RATE).fill(0.25);
+    const buffered = bufferSamples(initialPipeline, 'mic', samples);
+    assert.strictEqual(buffered.mic.buffered, samples.length);
+    const [chunks, next] = cutAll(buffered);
+    const [tail, done] = flushAll(next);
+    assert.deepStrictEqual(
+      [...chunks, ...tail].map(chunk => [chunk.chunkStartMs, chunk.samples.length]),
+      [
+        [0, CHUNK_SAMPLES],
+        [15_000, CHUNK_SAMPLES],
+        [30_000, CHUNK_SAMPLES],
+        [45_000, CHUNK_SAMPLES],
+        [60_000, CAPTURE_SAMPLE_RATE],
+      ]
     );
-    assert.strictEqual(overflow.dropped, 5_000, 'excess is dropped from the in-memory buffer');
-    assert.strictEqual(overflow.state.mic.buffered, MAX_BUFFERED_SAMPLES, 'buffer stays capped');
-    assert.strictEqual(overflow.state.mic.dropped, 5_000, 'per-source dropped counter accumulates');
-    // A further append when already full drops entirely.
-    const again = bufferSamples(overflow.state, 'mic', new Float32Array(10));
-    assert.strictEqual(again.dropped, 10);
-    assert.strictEqual(again.state.mic.dropped, 5_010, 'a full-buffer drop is counted too');
-    assert.strictEqual(again.state.system.dropped, 0, 'the other source is untouched');
-    assert.strictEqual(droppedSamples(again.state), 5_010);
-    // The counter is cumulative for the recording — cut/flush carry it along,
-    // so the graceful-stop path can read it after the final flush.
-    const [, afterCut] = cutAll(again.state);
-    const [, afterFlush] = flushAll(afterCut);
-    assert.strictEqual(droppedSamples(afterFlush), 5_010);
+    assert.strictEqual(done.mic.cut, samples.length);
+    assert.strictEqual(done.mic.buffered, 0);
   });
 });
 
@@ -238,8 +234,8 @@ describe('live and drain boundary invariant', () => {
     return a;
   };
 
-  // Live simulation: feed lockstep increments across ticks, pairing periodic
-  // dual cuts, then use unrestricted cutAll + flushAll at graceful stop.
+  // Live simulation: feed lockstep frames, cutting complete dual pairs as they
+  // arrive, then use unrestricted cutAll + flushAll at graceful stop.
   const simulateLive = (
     mic: Float32Array | null,
     system: Float32Array | null,
@@ -249,15 +245,15 @@ describe('live and drain boundary invariant', () => {
     const chunks: PendingChunk[] = [];
     const micLen = mic?.length ?? 0;
     const sysLen = system?.length ?? 0;
-    const periodicCut = mic !== null && system !== null ? cutPaired : cutAll;
+    const cutComplete = mic !== null && system !== null ? cutPaired : cutAll;
     for (let off = 0; off < micLen || off < sysLen; off += step) {
       if (mic && off < micLen) {
-        state = bufferSamples(state, 'mic', mic.subarray(off, Math.min(off + step, micLen))).state;
+        state = bufferSamples(state, 'mic', mic.subarray(off, Math.min(off + step, micLen)));
       }
       if (system && off < sysLen) {
-        state = bufferSamples(state, 'system', system.subarray(off, Math.min(off + step, sysLen))).state;
+        state = bufferSamples(state, 'system', system.subarray(off, Math.min(off + step, sysLen)));
       }
-      const [cut, next] = periodicCut(state);
+      const [cut, next] = cutComplete(state);
       chunks.push(...cut);
       state = next;
     }
@@ -274,21 +270,21 @@ describe('live and drain boundary invariant', () => {
     chunks.map(c => ({ index: c.index, source: c.source, chunkStartMs: c.chunkStartMs, wav: encode(c) }));
 
   const S = CAPTURE_SAMPLE_RATE;
-  const micWithSwitchGap = ramp(8 * S);
+  const micWithSwitchGap = ramp(18 * S);
   // The helper emits real-time silence while rebinding. This gap crosses the
-  // first 5 s cut, which is where unequal lane progress used to corrupt the
+  // first 15 s cut, which is where unequal lane progress used to corrupt the
   // shared mic/system chunk-index interleave during recovery.
-  micWithSwitchGap.fill(0, 4 * S, 6 * S);
+  micWithSwitchGap.fill(0, 14 * S, 16 * S);
   const CASES: Array<{ name: string; mic: Float32Array | null; system: Float32Array | null }> = [
     { name: 'exact multiples of CHUNK_SAMPLES (2 chunks each)', mic: ramp(2 * CHUNK_SAMPLES), system: ramp(2 * CHUNK_SAMPLES) },
-    { name: 'non-multiples with a partial tail (7 s each)', mic: ramp(7 * S), system: ramp(7 * S) },
-    { name: 'mic longer than system (12 s vs 6 s)', mic: ramp(12 * S), system: ramp(6 * S) },
-    { name: 'system longer than mic (12 s vs 6 s)', mic: ramp(6 * S), system: ramp(12 * S) },
-    { name: 'one source empty (mic-only, 8 s)', mic: ramp(8 * S), system: null },
+    { name: 'non-multiples with a partial tail (17 s each)', mic: ramp(17 * S), system: ramp(17 * S) },
+    { name: 'mic longer than system (32 s vs 16 s)', mic: ramp(32 * S), system: ramp(16 * S) },
+    { name: 'system longer than mic (32 s vs 16 s)', mic: ramp(16 * S), system: ramp(32 * S) },
+    { name: 'one source empty (mic-only, 18 s)', mic: ramp(18 * S), system: null },
     {
-      name: 'dual mic-switch silence straddles a 5 s cut',
+      name: 'dual mic-switch silence straddles a 15 s cut',
       mic: micWithSwitchGap,
-      system: ramp(8 * S),
+      system: ramp(18 * S),
     },
   ];
 
@@ -305,24 +301,24 @@ describe('live and drain boundary invariant', () => {
   }
 
   it('live == drain when system crosses a boundary during a mic callback stall', () => {
-    const mic = ramp(8 * S);
-    const system = ramp(8 * S);
-    mic.fill(0, 4 * S, 6 * S); // silence inserted when the watchdog detects the stall
+    const mic = ramp(18 * S);
+    const system = ramp(18 * S);
+    mic.fill(0, 14 * S, 16 * S); // silence inserted when the watchdog detects the stall
 
     let state = initialPipeline;
     const live: PendingChunk[] = [];
-    state = bufferSamples(state, 'mic', mic.subarray(0, 4 * S)).state;
-    state = bufferSamples(state, 'system', system.subarray(0, 6 * S)).state;
+    state = bufferSamples(state, 'mic', mic.subarray(0, 14 * S));
+    state = bufferSamples(state, 'system', system.subarray(0, 16 * S));
 
     const [whileStalled, held] = cutPaired(state);
     assert.deepStrictEqual(whileStalled, [], 'system does not consume the mic-first index');
 
-    state = bufferSamples(held, 'mic', mic.subarray(4 * S, 6 * S)).state;
+    state = bufferSamples(held, 'mic', mic.subarray(14 * S, 16 * S));
     const [caughtUp, afterCatchUp] = cutPaired(state);
     live.push(...caughtUp);
 
-    state = bufferSamples(afterCatchUp, 'mic', mic.subarray(6 * S)).state;
-    state = bufferSamples(state, 'system', system.subarray(6 * S)).state;
+    state = bufferSamples(afterCatchUp, 'mic', mic.subarray(16 * S));
+    state = bufferSamples(state, 'system', system.subarray(16 * S));
     const [complete, afterComplete] = cutAll(state);
     live.push(...complete);
     const [tail] = flushAll(afterComplete);

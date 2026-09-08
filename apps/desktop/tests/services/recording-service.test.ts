@@ -4,7 +4,7 @@
  * Fully headless: a FAKE Capture (emits AudioFrames + a controllable awaitExit +
  * release tracking), a FAKE WorkspaceBackend recording lane (records + configurable
  * results), a REAL OperationalDb (temp file, so the outbox lifecycle is real),
- * and TestClock for chunk cadence + restart backoff. NO binary, NO cloud, NO device.
+ * and TestClock for upload delays + restart backoff. NO binary, NO cloud, NO device.
  *
  * The boot OperationalDb is built in an OUTER scope and the RecordingService in an
  * INNER (session) scope — so closing the session scope (sign-out / quit) parks the
@@ -100,7 +100,7 @@ import {
   type ProductDbService,
 } from '../../src/main/infra/product-db/service';
 
-const CHUNK_INTERVAL = Duration.seconds(5);
+const CHUNK_INTERVAL = Duration.seconds(15);
 
 /** Poll a boolean Effect while letting real async (fs writes, the frame fiber)
  * settle — WITHOUT advancing the (Test) Clock. The budget is WALL-CLOCK time
@@ -277,7 +277,7 @@ const setup = (
   });
 
 const oneSecond = (): Float32Array => new Float32Array(48_000).fill(0.25);
-/** N seconds of audio — used to fill a full fixed chunk (5 s) plus tails. */
+/** N seconds of audio — used to fill a full fixed chunk (15 s) plus tails. */
 const seconds = (n: number): Float32Array => new Float32Array(n * 48_000).fill(0.25);
 
 const zoomMicActivity = (uid: string, timestampMs: number): Option.Option<LatestMicActivity> =>
@@ -330,6 +330,54 @@ const productSegments = (h: Harness, recordingId: string) =>
   );
 
 describe('RecordingService (capture → recovery WAV → chunked upload → outbox)', () => {
+  it.effect('cuts every 15 seconds of audio independently of two-second uploads', () =>
+    Effect.gen(function* () {
+      const started: number[] = [];
+      const h = yield* setup({}, undefined, {
+        backendTransform: api => ({
+          ...api,
+          uploadTranscriptionChunk: (id, params, wav) =>
+            Effect.gen(function* () {
+              started.push(yield* Clock.currentTimeMillis);
+              yield* Effect.sleep(Duration.seconds(2));
+              return yield* api.uploadTranscriptionChunk(id, params, wav);
+            }),
+        }),
+      });
+      const recordingId = yield* h.service.start({ captureMode: 'mic' });
+      yield* poll(
+        SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')),
+        'capture ready'
+      );
+      const startedAt = yield* Clock.currentTimeMillis;
+      const session = h.fakeCapture.current();
+      const wavPath = path.join(h.recoveryDir(recordingId), 'mic.wav');
+      for (let elapsed = 5; elapsed <= 45; elapsed += 5) {
+        yield* TestClock.adjust(Duration.seconds(5));
+        yield* Queue.offer(session.frames, fakeFrame('mic_raw', seconds(5)));
+        yield* poll(
+          Effect.sync(
+            () =>
+              fs.existsSync(wavPath) &&
+              fs.statSync(wavPath).size === 44 + elapsed * 48_000 * 2
+          ),
+          'captured frame written'
+        );
+        yield* settle;
+        assert.strictEqual(started.length, Math.floor(elapsed / 15));
+      }
+      assert.deepStrictEqual(started.map(time => time - startedAt), [15_000, 30_000, 45_000]);
+      yield* TestClock.adjust(Duration.seconds(2));
+      yield* h.service.stop(recordingId);
+      assert.deepStrictEqual(
+        h.fakeCloud.uploadCalls.map(call => call.params.chunkStartMs),
+        [0, 15_000, 30_000]
+      );
+      for (const call of h.fakeCloud.uploadCalls) assertWav(call.wav, 15 * 48_000);
+      yield* Scope.close(h.sessionScope, Exit.void);
+    })
+  );
+
   it.effect(
     'server staging uploads silent dual chunks and tails before finalizing without a settings lookup',
     () =>
@@ -341,8 +389,8 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
           'capture ready'
         );
         const session = h.fakeCapture.current();
-        yield* Queue.offer(session.frames, fakeFrame('mic_processed', seconds(6)));
-        yield* Queue.offer(session.frames, fakeFrame('system', new Float32Array(6 * 48_000)));
+        yield* Queue.offer(session.frames, fakeFrame('mic_processed', seconds(16)));
+        yield* Queue.offer(session.frames, fakeFrame('system', new Float32Array(16 * 48_000)));
         yield* settle;
         yield* TestClock.adjust(CHUNK_INTERVAL);
         yield* poll(
@@ -356,12 +404,12 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
           [
             { chunkIndex: 0, chunkStartMs: 0, source: 'mic' },
             { chunkIndex: 1, chunkStartMs: 0, source: 'system' },
-            { chunkIndex: 2, chunkStartMs: 5000, source: 'mic' },
-            { chunkIndex: 3, chunkStartMs: 5000, source: 'system' },
+            { chunkIndex: 2, chunkStartMs: 15_000, source: 'mic' },
+            { chunkIndex: 3, chunkStartMs: 15_000, source: 'system' },
           ]
         );
         for (const call of h.fakeCloud.uploadCalls) {
-          assertWav(call.wav, call.params.chunkIndex < 2 ? 240_000 : 48_000);
+          assertWav(call.wav, call.params.chunkIndex < 2 ? 720_000 : 48_000);
           const wav = Buffer.from(call.wav);
           assert.strictEqual(wav.readUInt16LE(20), 1, 'PCM');
           assert.strictEqual(wav.readUInt16LE(22), 1, 'mono');
@@ -375,7 +423,7 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
           h.fakeCloud.timeline.indexOf('upload:3'),
           h.fakeCloud.timeline.indexOf('finalize')
         );
-        assert.strictEqual(h.fakeCloud.finalizeCalls[0].input.durationMs, 6000);
+        assert.strictEqual(h.fakeCloud.finalizeCalls[0].input.durationMs, 16_000);
         const terminal = h.logger.entries.filter(entry =>
           [
             'Recording capture ended',
@@ -399,7 +447,7 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
               audioDurationMs: number;
             }
           ).audioDurationMs,
-          6000
+          16_000
         );
 
         assert.deepStrictEqual(Object.keys(h.fakeCloud.finalizeCalls[0].input).sort(), [
@@ -489,19 +537,18 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
           'observable status recording'
         );
 
-        // 6 s of mic (post-AEC) + system (mic_raw dropped in dual): one COMPLETE 5 s
-        // chunk per source cut on the tick, a 1 s remainder flushed as the tail at stop.
+        // 16 s of mic (post-AEC) + system (mic_raw dropped in dual): one COMPLETE 15 s
+        // chunk per source cut on arrival, a 1 s remainder flushed as the tail at stop.
         const session = h.fakeCapture.current();
-        yield* Queue.offer(session.frames, fakeFrame('mic_processed', seconds(6)));
-        yield* Queue.offer(session.frames, fakeFrame('system', seconds(6)));
-        yield* Queue.offer(session.frames, fakeFrame('mic_raw', seconds(6)));
+        yield* Queue.offer(session.frames, fakeFrame('mic_processed', seconds(16)));
+        yield* Queue.offer(session.frames, fakeFrame('system', seconds(16)));
+        yield* Queue.offer(session.frames, fakeFrame('mic_raw', seconds(16)));
         yield* settle;
 
-        // The periodic tick cuts only the COMPLETE fixed 5 s chunks (mic before system).
-        yield* TestClock.adjust(CHUNK_INTERVAL);
+        // Frame arrival cuts the COMPLETE fixed 15 s chunks (mic before system).
         yield* poll(
           Effect.sync(() => h.fakeCloud.uploadCalls.length === 2),
-          'two complete chunks cut on the tick'
+          'two complete chunks cut on arrival'
         );
 
         const mic = h.fakeCloud.uploadCalls.find(c => c.params.source === 'mic');
@@ -512,8 +559,8 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
         assert.strictEqual(sys!.params.chunkIndex, 1);
         assert.strictEqual(mic!.params.chunkStartMs, 0);
         assert.strictEqual(sys!.params.chunkStartMs, 0);
-        assertWav(mic!.wav, 240_000);
-        assertWav(sys!.wav, 240_000);
+        assertWav(mic!.wav, 720_000);
+        assertWav(sys!.wav, 720_000);
 
         yield* poll(
           h.db.getRecoveryOutbox(recordingId).pipe(Effect.map(r => r?.lastChunkIndex === 1)),
@@ -538,17 +585,17 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
         assert.isTrue(fs.existsSync(path.join(h.recoveryDir(recordingId), 'mic.wav')));
         assert.isTrue(fs.existsSync(path.join(h.recoveryDir(recordingId), 'system.wav')));
 
-        // Stop → flushTail emits the 1 s partial tail per source (indices 2,3 @ 5000 ms)
+        // Stop → flushTail emits the 1 s partial tail per source (indices 2,3 @ 15_000 ms)
         // → finalize → delete (all four chunks acknowledged).
         yield* h.service.stop(recordingId);
         assert.strictEqual(h.fakeCloud.uploadCalls.length, 4, 'periodic 2 + graceful-stop tail 2');
         const micTail = h.fakeCloud.uploadCalls.find(c => c.params.chunkIndex === 2);
         const sysTail = h.fakeCloud.uploadCalls.find(c => c.params.chunkIndex === 3);
         assert.strictEqual(micTail?.params.source, 'mic');
-        assert.strictEqual(micTail?.params.chunkStartMs, 5000);
+        assert.strictEqual(micTail?.params.chunkStartMs, 15_000);
         assertWav(micTail!.wav, 48_000);
         assert.strictEqual(sysTail?.params.source, 'system');
-        assert.strictEqual(sysTail?.params.chunkStartMs, 5000);
+        assert.strictEqual(sysTail?.params.chunkStartMs, 15_000);
         assertWav(sysTail!.wav, 48_000);
 
         assert.strictEqual(h.fakeCloud.finalizeCalls.length, 1);
@@ -605,7 +652,7 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
         SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')),
         'recording despite the failing store'
       );
-      yield* Queue.offer(h.fakeCapture.current().frames, fakeFrame('mic_raw', seconds(5)));
+      yield* Queue.offer(h.fakeCapture.current().frames, fakeFrame('mic_raw', seconds(15)));
       yield* settle;
       yield* TestClock.adjust(CHUNK_INTERVAL);
       yield* poll(
@@ -637,8 +684,8 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
       );
       const session = h.fakeCapture.current();
 
-      yield* Queue.offer(session.frames, fakeFrame('mic_processed', seconds(4)));
-      yield* Queue.offer(session.frames, fakeFrame('system', seconds(6)));
+      yield* Queue.offer(session.frames, fakeFrame('mic_processed', seconds(14)));
+      yield* Queue.offer(session.frames, fakeFrame('system', seconds(16)));
       yield* settle;
       yield* TestClock.adjust(CHUNK_INTERVAL);
       yield* settle;
@@ -690,7 +737,10 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
         assert.strictEqual(paused.recordingId, recordingId);
         assert.strictEqual(paused.elapsedMs, 2_000);
         assert.strictEqual(yield* SubscriptionRef.get(h.service.level), 0);
-        assert.strictEqual(h.fakeCloud.uploadCalls.length, 1, 'pause flushed the 2 s partial');
+        yield* poll(
+          Effect.sync(() => h.fakeCloud.uploadCalls.length === 1),
+          'pause tail uploaded'
+        );
         assert.strictEqual(h.fakeCloud.uploadCalls[0].recordingId, recordingId);
         assert.deepStrictEqual(h.fakeCloud.uploadCalls[0].params, {
           chunkIndex: 0,
@@ -812,10 +862,17 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
   );
 
   it.effect(
-    'interrupt mid-recording (session scope close) → capture killed, outbox interrupted, WAV retained',
+    'workspace close cancels a blocked upload and retains queued audio for recovery',
     () =>
       Effect.gen(function* () {
-        const h = yield* setup();
+        const entered = yield* Deferred.make<void>();
+        const h = yield* setup({}, undefined, {
+          backendTransform: api => ({
+            ...api,
+            uploadTranscriptionChunk: () =>
+              Deferred.succeed(entered, undefined).pipe(Effect.zipRight(Effect.never)),
+          }),
+        });
         const recordingId = yield* h.service.start({ captureMode: 'mic' });
         yield* poll(
           Effect.sync(() => h.fakeCapture.sessions.length === 1),
@@ -827,23 +884,24 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
         );
 
         const session = h.fakeCapture.current();
-        yield* Queue.offer(session.frames, fakeFrame('mic_raw', oneSecond()));
-        yield* settle;
+        yield* Queue.offer(session.frames, fakeFrame('mic_raw', seconds(46)));
+        yield* Deferred.await(entered);
 
-        // Sign-out / quit.
+        // Sign-out / quit must finish without waiting for the blocked upload.
         yield* Scope.close(h.sessionScope, Exit.void);
 
         assert.isTrue(session.released, 'native child interrupted on scope close');
         const parked = yield* h.db.getRecoveryOutbox(recordingId);
         assert.strictEqual(parked?.status, 'interrupted', 'row parked (not deleted)');
+        assert.isNull(parked?.lastChunkIndex, 'unacknowledged chunks remain replayable');
         const wavPath = path.join(h.recoveryDir(recordingId), 'mic.wav');
         assert.isTrue(fs.existsSync(wavPath), 'WAV retained for the drain');
         const wav = fs.readFileSync(wavPath);
         assert.strictEqual(wav.toString('ascii', 0, 4), 'RIFF');
-        assert.isAbove(
+        assert.strictEqual(
           wav.readUInt32LE(40),
-          0,
-          'data size patched by the recovery finalizer (valid WAV)'
+          46 * 48_000 * 2,
+          'all audio retained and WAV header patched by the recovery finalizer'
         );
         assert.strictEqual(h.fakeCloud.finalizeCalls.length, 0, 'no finalize on interrupt');
       })
@@ -928,7 +986,7 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
       assert.isTrue(h.fakeCapture.sessions[0].released, 'crashed child reaped');
 
       const restarted = h.fakeCapture.current();
-      yield* Queue.offer(restarted.frames, fakeFrame('system', seconds(5))); // one full fixed chunk
+      yield* Queue.offer(restarted.frames, fakeFrame('system', seconds(15))); // one full fixed chunk
       yield* settle;
       yield* TestClock.adjust(CHUNK_INTERVAL);
       yield* poll(
@@ -1010,7 +1068,7 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
       );
 
       const session = h.fakeCapture.current();
-      yield* Queue.offer(session.frames, fakeFrame('mic_raw', seconds(5))); // one full fixed chunk
+      yield* Queue.offer(session.frames, fakeFrame('mic_raw', seconds(15))); // one full fixed chunk
       yield* settle;
       yield* TestClock.adjust(CHUNK_INTERVAL);
       yield* poll(
@@ -1019,7 +1077,7 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
       );
 
       // A later chunk uploads OK, but the cursor stays frozen behind the gap.
-      yield* Queue.offer(session.frames, fakeFrame('mic_raw', seconds(5)));
+      yield* Queue.offer(session.frames, fakeFrame('mic_raw', seconds(15)));
       yield* settle;
       yield* TestClock.adjust(CHUNK_INTERVAL);
       yield* poll(
@@ -1050,11 +1108,11 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
         const recordingId = yield* h.service.start({ captureMode: 'mic' });
         yield* poll(Effect.sync(() => h.fakeCapture.sessions.length === 1), 'capture acquired');
         const session = h.fakeCapture.current();
-        yield* Queue.offer(session.frames, fakeFrame('mic_raw', seconds(5)));
+        yield* Queue.offer(session.frames, fakeFrame('mic_raw', seconds(15)));
         yield* settle;
         yield* TestClock.adjust(CHUNK_INTERVAL);
         yield* poll(Effect.sync(() => h.fakeCloud.uploadCalls.length === 1), 'session rejected');
-        yield* Queue.offer(session.frames, fakeFrame('mic_raw', seconds(5)));
+        yield* Queue.offer(session.frames, fakeFrame('mic_raw', seconds(15)));
         yield* settle;
         yield* TestClock.adjust(CHUNK_INTERVAL);
         yield* h.service.stop(recordingId);
@@ -1077,7 +1135,7 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
       const recordingId = yield* h.service.start({ captureMode: 'mic' });
       yield* poll(Effect.sync(() => h.fakeCapture.sessions.length === 1), 'capture acquired');
       const session = h.fakeCapture.current();
-      yield* Queue.offer(session.frames, fakeFrame('mic_raw', seconds(5)));
+      yield* Queue.offer(session.frames, fakeFrame('mic_raw', seconds(15)));
       yield* settle;
       yield* TestClock.adjust(CHUNK_INTERVAL);
       yield* poll(
@@ -1086,7 +1144,7 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
       );
       const deadline = (yield* h.db.getRecoveryOutbox(recordingId))!.nextAttemptAt!;
 
-      yield* Queue.offer(session.frames, fakeFrame('mic_raw', seconds(5)));
+      yield* Queue.offer(session.frames, fakeFrame('mic_raw', seconds(15)));
       yield* settle;
       yield* TestClock.adjust(CHUNK_INTERVAL);
       yield* h.service.stop(recordingId);
@@ -1106,56 +1164,76 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
     })
   );
 
-  it.effect(
-    'an OOM-valve drop parks the row (buffer-overflow) at stop — the WAV is never deleted',
-    () =>
-      Effect.gen(function* () {
-        const h = yield* setup();
-        const recordingId = yield* h.service.start({ captureMode: 'mic', title: 'Overflow' });
-        yield* poll(
-          SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')),
-          'recording'
-        );
-        // 31 s arrive with no cut tick in between: the 30 s per-source cap drops
-        // the newest 1 s from the in-memory buffer (the recovery WAV keeps it).
-        yield* Queue.offer(h.fakeCapture.current().frames, fakeFrame('mic_raw', seconds(31)));
-        yield* settle;
-        yield* poll(
-          Effect.sync(() =>
-            h.logger.entries.some(
-              e =>
-                e.message ===
-                'recording buffer overflow — dropped samples (recovery WAV retains them)'
-            )
-          ),
-          'overflow metered'
-        );
-
-        // Graceful stop: all six CUT chunks ack contiguously, the finalize lands
-        // — and the recording must STILL park, because the cut chunks silently
-        // skipped audio only the WAV holds.
-        yield* h.service.stop(recordingId);
-
-        assert.strictEqual(h.fakeCloud.finalizeCalls.length, 0, 'finalize waits for missing audio');
-        const parked = yield* h.db.getRecoveryOutbox(recordingId);
-        assert.strictEqual(parked?.status, 'finalizing');
-        assert.strictEqual(parked?.lastError, 'buffer-overflow');
-        assert.isNull(
-          parked?.lastChunkIndex,
-          'cursor reset — the drain re-transcribes the FULL recording from the WAV'
-        );
-        const wavPath = path.join(h.recoveryDir(recordingId), 'mic.wav');
-        assert.isTrue(fs.existsSync(wavPath), 'recovery WAV retained');
-        const wav = fs.readFileSync(wavPath);
-        assert.strictEqual(
-          wav.length,
-          44 + 31 * 48_000 * 2,
-          'the WAV holds ALL 31 s including the dropped second'
-        );
-        assert.strictEqual((yield* SubscriptionRef.get(h.service.state)).status, 'idle');
-
-        yield* Scope.close(h.sessionScope, Exit.void);
-      })
+  it.effect('keeps all audio and pauses while an upload is blocked beyond 30 seconds', () =>
+    Effect.gen(function* () {
+      const entered = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      const h = yield* setup({}, undefined, {
+        backendTransform: api => ({
+          ...api,
+          uploadTranscriptionChunk: (id, params, wav) =>
+            (params.chunkIndex === 0
+              ? Deferred.succeed(entered, undefined).pipe(
+                  Effect.zipRight(Deferred.await(release))
+                )
+              : Effect.void
+            ).pipe(Effect.zipRight(api.uploadTranscriptionChunk(id, params, wav))),
+        }),
+      });
+      const recordingId = yield* h.service.start({ captureMode: 'mic' });
+      yield* poll(
+        SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')),
+        'capture ready'
+      );
+      const session = h.fakeCapture.current();
+      yield* Queue.offer(session.frames, fakeFrame('mic_raw', seconds(15)));
+      yield* Deferred.await(entered);
+      yield* Queue.offer(session.frames, fakeFrame('mic_raw', seconds(46)));
+      const wavPath = path.join(h.recoveryDir(recordingId), 'mic.wav');
+      yield* poll(
+        Effect.sync(() => fs.statSync(wavPath).size === 44 + 61 * 48_000 * 2),
+        'all 61 seconds saved while upload remains blocked'
+      );
+      const pausing = yield* Effect.fork(h.service.pause(recordingId));
+      yield* poll(
+        Fiber.poll(pausing).pipe(Effect.map(Option.isSome)),
+        'pause does not wait for upload'
+      );
+      assert.isTrue(yield* Fiber.join(pausing));
+      assert.strictEqual(h.fakeCloud.uploadCalls.length, 0);
+      assert.isTrue(yield* h.service.resume(recordingId));
+      yield* Queue.offer(session.frames, fakeFrame('mic_raw', oneSecond()));
+      yield* poll(
+        Effect.sync(() => fs.statSync(wavPath).size === 44 + 62 * 48_000 * 2),
+        'capture resumed while upload remains blocked'
+      );
+      const stopping = yield* Effect.fork(h.service.stop(recordingId));
+      yield* poll(
+        SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'stopping')),
+        'capture stopped before the upload finishes'
+      );
+      assert.isTrue(Option.isNone(yield* Fiber.poll(stopping)));
+      yield* Deferred.succeed(release, undefined);
+      yield* Fiber.join(stopping);
+      assert.deepStrictEqual(
+        h.fakeCloud.uploadCalls.map(call => [call.params.chunkIndex, call.params.chunkStartMs]),
+        [
+          [0, 0],
+          [1, 15_000],
+          [2, 30_000],
+          [3, 45_000],
+          [4, 60_000],
+          [5, 61_000],
+        ]
+      );
+      const uploadedPcm = Buffer.concat(
+        h.fakeCloud.uploadCalls.map(call => Buffer.from(call.wav).subarray(44))
+      );
+      assert.deepStrictEqual(uploadedPcm, fs.readFileSync(wavPath).subarray(44));
+      assert.strictEqual(h.fakeCloud.finalizeCalls[0].input.durationMs, 62_000);
+      assert.strictEqual((yield* h.db.getRecoveryOutbox(recordingId))?.phase, 'cleanup');
+      yield* Scope.close(h.sessionScope, Exit.void);
+    })
   );
 
   it.effect('Semaphore(1): a second concurrent start is rejected (one active recording)', () =>
@@ -1906,7 +1984,7 @@ describe('RecordingService — transcription engine', () => {
           SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')),
           'recording'
         );
-        yield* Queue.offer(h.fakeCapture.current().frames, fakeFrame('mic_raw', seconds(10)));
+        yield* Queue.offer(h.fakeCapture.current().frames, fakeFrame('mic_raw', seconds(30)));
         yield* settle;
         yield* TestClock.adjust(CHUNK_INTERVAL);
         yield* poll(
@@ -1963,17 +2041,12 @@ describe('RecordingService — transcription engine', () => {
           'recording'
         );
         const session = h.fakeCapture.current();
-        yield* Queue.offer(session.frames, fakeFrame('mic_processed', seconds(6)));
-        yield* Queue.offer(session.frames, fakeFrame('system', seconds(6)));
-        // A dequeued frame can still be awaiting its WAV write. Keep the periodic
-        // worker ticking until both durable frames reach the chunk buffers.
+        yield* Queue.offer(session.frames, fakeFrame('mic_processed', seconds(16)));
+        yield* Queue.offer(session.frames, fakeFrame('system', seconds(16)));
+        // A dequeued frame can still be awaiting its WAV write and upload.
         yield* poll(
           SubscriptionRef.get(h.service.state).pipe(
-            Effect.flatMap(s =>
-              s.segments.length === 2
-                ? Effect.succeed(true)
-                : TestClock.adjust(CHUNK_INTERVAL).pipe(Effect.as(false))
-            )
+            Effect.map(s => s.segments.length === 2)
           ),
           'two live segments minted on-device'
         );
@@ -2053,7 +2126,7 @@ describe('RecordingService — transcription engine', () => {
           SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')),
           'recording'
         );
-        yield* Queue.offer(h.fakeCapture.current().frames, fakeFrame('mic_raw', seconds(5)));
+        yield* Queue.offer(h.fakeCapture.current().frames, fakeFrame('mic_raw', seconds(15)));
         yield* settle;
         yield* TestClock.adjust(CHUNK_INTERVAL);
         yield* poll(
@@ -2098,14 +2171,14 @@ describe('RecordingService — transcription engine', () => {
           'recording'
         );
         const session = h.fakeCapture.current();
-        yield* Queue.offer(session.frames, fakeFrame('mic_raw', seconds(5)));
+        yield* Queue.offer(session.frames, fakeFrame('mic_raw', seconds(15)));
         yield* settle;
         yield* TestClock.adjust(CHUNK_INTERVAL);
         yield* poll(
           Effect.sync(() => calls === 1),
           'first chunk attempted'
         );
-        yield* Queue.offer(session.frames, fakeFrame('mic_raw', seconds(5)));
+        yield* Queue.offer(session.frames, fakeFrame('mic_raw', seconds(15)));
         yield* settle;
         yield* TestClock.adjust(CHUNK_INTERVAL);
         yield* poll(
@@ -2154,7 +2227,7 @@ describe('RecordingService — transcription engine', () => {
         SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')),
         'recording'
       );
-      yield* Queue.offer(h.fakeCapture.current().frames, fakeFrame('mic_raw', seconds(5)));
+      yield* Queue.offer(h.fakeCapture.current().frames, fakeFrame('mic_raw', seconds(15)));
       yield* settle;
       yield* TestClock.adjust(CHUNK_INTERVAL);
       yield* poll(
@@ -2381,7 +2454,7 @@ describe('RecordingService — lifecycle ownership and durability', () => {
         SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')),
         'recording'
       );
-      yield* Queue.offer(h.fakeCapture.current().frames, fakeFrame('mic_raw', seconds(6)));
+      yield* Queue.offer(h.fakeCapture.current().frames, fakeFrame('mic_raw', seconds(16)));
       yield* settle;
       yield* TestClock.adjust(CHUNK_INTERVAL);
       yield* Deferred.await(entered);
@@ -2402,7 +2475,7 @@ describe('RecordingService — lifecycle ownership and durability', () => {
         [0, 1]
       );
       assert.strictEqual(h.fakeCloud.finalizeCalls[0].input.endedAt, stoppingAt);
-      assert.strictEqual(h.fakeCloud.finalizeCalls[0].input.durationMs, 6000);
+      assert.strictEqual(h.fakeCloud.finalizeCalls[0].input.durationMs, 16_000);
       assert.strictEqual((yield* h.db.getRecoveryOutbox(id))?.phase, 'cleanup');
       yield* h.drain;
       assert.isNull(yield* h.db.getRecoveryOutbox(id));

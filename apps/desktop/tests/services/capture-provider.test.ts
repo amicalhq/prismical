@@ -317,7 +317,7 @@ describe("CaptureProvider native audio-capture Effect wrapper", () => {
     }),
   );
 
-  it.effect("bounds the queue and meters drop-oldest overflow when the consumer stalls", () =>
+  it.effect("retains every frame in order when the consumer stalls", () =>
     Effect.gen(function* () {
       const logger = makeTestLogger();
       const scope = yield* Scope.make();
@@ -325,7 +325,7 @@ describe("CaptureProvider native audio-capture Effect wrapper", () => {
       const session = yield* capture.capture("dual").pipe(Scope.extend(scope));
       const child = control.last();
 
-      // Never take → force overflow. One big chunk of many packets.
+      // Queue more than the former 512-frame cap before the consumer starts.
       const total = 600;
       const packets: Buffer[] = [];
       for (let i = 0; i < total; i++) {
@@ -333,15 +333,11 @@ describe("CaptureProvider native audio-capture Effect wrapper", () => {
       }
       child.stdout.pushData(Buffer.concat(packets));
 
-      const size = yield* Queue.size(session.frames);
-      const dropped = yield* session.droppedFrames;
-      assert.isBelow(size, total, "queue stayed bounded (no unbounded backlog)");
-      assert.isAbove(dropped, 0, "overflow was metered");
-      assert.strictEqual(
-        size + dropped,
-        total,
-        "every frame is either queued or counted as dropped",
-      );
+      assert.strictEqual(yield* Queue.size(session.frames), total);
+      for (let i = 0; i < total; i++) {
+        const frame = yield* Queue.take(session.frames);
+        assert.strictEqual(frame.sequenceNum, i);
+      }
 
       yield* Scope.close(scope, Exit.void);
     }),

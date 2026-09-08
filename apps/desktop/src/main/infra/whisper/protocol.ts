@@ -9,7 +9,7 @@
  *   log       { type: 'log', ...LogWire }   worker → main (routed to MainLogger)
  *
  * Float32Array arguments cross process IPC as `{ __type: 'Float32Array', data:
- * number[] }` (JSON has no typed arrays). ~80k numbers per 5 s chunk at 16 kHz
+ * number[] }` (JSON has no typed arrays). ~240k numbers per 15 s chunk at 16 kHz
  * — which is why the host resamples to 16 kHz BEFORE sending, never 48 kHz.
  */
 

@@ -92,10 +92,8 @@ export interface CaptureSession {
   /** The mode the child was spawned with (drives which `frame.source`s arrive). */
   readonly mode: MeetingCaptureMode;
   /**
-   * Bounded (sliding, drop-oldest) queue of decoded frames across ALL sources —
-   * each frame is self-describing via `frame.source`. Drop-oldest is the OOM
-   * safety valve: if the consumer stalls, the newest audio is kept and the
-   * oldest is shed (counted in `droppedFrames`), never an unbounded backlog.
+   * Unbounded queue of decoded frames across all sources. Each frame identifies
+   * its source; a stalled consumer retains every frame in arrival order.
    */
   readonly frames: Queue.Dequeue<AudioFrame>;
   /**
@@ -107,8 +105,6 @@ export interface CaptureSession {
   readonly micEvents: Queue.Dequeue<MicCaptureEvent>;
   /** Declaratively assert the desired macOS/Windows microphone binding. A no-op elsewhere. */
   readonly sendMicCommand: (command: MicBindingCommand) => Effect.Effect<void>;
-  /** Count of frames shed by the drop-oldest queue (overflow metric). */
-  readonly droppedFrames: Effect.Effect<number>;
   /**
    * Resolves void on a clean stop (scope close / teardown); fails typed the
    * moment the child crashes, exits unexpectedly, or emits a malformed packet.
