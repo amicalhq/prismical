@@ -2309,6 +2309,12 @@ const zhTW = {
       useLocally: '改為在此裝置上使用',
       welcome: '歡迎使用 {{productName}}',
     },
+    logging: {
+      saveTitle: '儲存診斷記錄',
+      bundleLabel: '診斷資料包',
+      exportErrorTitle: '記錄匯出失敗',
+      exportErrorMessage: '無法儲存診斷資料包。請嘗試其他儲存位置。',
+    },
     fatal: {
       description:
         'Prismical 無法完成啟動。請結束應用程式後重新開啟。若問題持續發生，請將下方的技術詳細資料提供給支援團隊。',

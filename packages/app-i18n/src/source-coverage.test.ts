@@ -63,6 +63,7 @@ interface Finding {
 }
 
 const REVIEWED_VISIBLE_LITERALS = new Map<string, string>([
+  ['Failed to initialize application logging', 'stderr-only diagnostic record, not native UI'],
   ['Prismical', 'product name'],
   ['OpenAI', 'provider name'],
   ['Anthropic', 'provider name'],

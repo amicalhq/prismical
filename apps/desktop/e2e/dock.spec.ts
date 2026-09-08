@@ -93,6 +93,7 @@ test.describe('dock windows', () => {
       'dragMove',
       'expandNote',
       'getState',
+      'logging',
       'onLevel',
       'onState',
       'openMain',
@@ -101,7 +102,6 @@ test.describe('dock windows', () => {
       'setInteractive',
       'startRecording',
       'stopRecording',
-      'logging',
       'telemetry',
     ]);
     expect(widgetShape.hasDesktop).toBe(false);

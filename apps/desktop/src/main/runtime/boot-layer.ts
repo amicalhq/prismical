@@ -278,7 +278,7 @@ export const makeBootLayer = (
     // for the recording permission gate; both instances are stateless so a second
     // boot-scoped one is harmless. NativeOs wraps login-item/dock/shell/relaunch.
     SystemPermissionsLive,
-    NativeOsLive.pipe(Layer.provide(logging)),
+    NativeOsLive.pipe(Layer.provide(logging), Layer.provide(i18n)),
     // Leaf: the boot-scoped workspace-current backend accessor. The
     // workspace-scoped WorkspaceBackend self-publishes here on acquire; the unary
     // IPC handler and the StreamBroker Ask lane reach the live workspace

@@ -2,6 +2,8 @@ import path from 'node:path';
 import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createApplicationI18nSync } from '@prismical/app-i18n';
+import { dialog } from 'electron';
 
 const state = vi.hoisted(() => ({ profile: '', packaged: false, savePath: '' }));
 vi.mock('electron', () => ({
@@ -13,7 +15,7 @@ vi.mock('electron', () => ({
     },
   },
   dialog: {
-    showSaveDialog: async () => ({ canceled: !state.savePath, filePath: state.savePath }),
+    showSaveDialog: vi.fn(async () => ({ canceled: !state.savePath, filePath: state.savePath })),
     showErrorBox: vi.fn(),
   },
 }));
@@ -26,6 +28,7 @@ import {
 import { Effect } from 'effect';
 
 afterEach(() => {
+  vi.clearAllMocks();
   vi.unstubAllEnvs();
   state.packaged = false;
   state.savePath = '';
@@ -90,7 +93,7 @@ describe('real diagnostic persistence', () => {
     writeFileSync(paths.backup, readFileSync(paths.current, 'utf8') + '{incomplete');
     writeFileSync(paths.legacy, 'secret legacy transcript');
     state.savePath = path.join(state.profile, 'bundle.json');
-    await Effect.runPromise(logging.transport.exportBundle);
+    await Effect.runPromise(logging.transport.exportBundle(createApplicationI18nSync('en').t));
     const bundle = JSON.parse(readFileSync(state.savePath, 'utf8'));
     expect(bundle.files.map((file: { name: string }) => file.name)).toEqual([
       'main-dev.jsonl',
@@ -100,6 +103,26 @@ describe('real diagnostic persistence', () => {
     expect(bundle.manifest.notices.join(' ')).toMatch(/incomplete final line/);
     expect(JSON.stringify(bundle)).not.toContain('secret legacy transcript');
     expect(snapshotLogs(paths).notices.join(' ')).toContain('Legacy text logs excluded');
+  });
+
+  it('uses the selected language for export dialogs and rejects failed saves without exposing the path', async () => {
+    profile();
+    const logging = makeMainLogging('export-failure');
+    state.savePath = path.join(state.profile, 'missing-private-directory', 'bundle.json');
+    const t = createApplicationI18nSync('de').t;
+
+    await expect(Effect.runPromise(logging.transport.exportBundle(t))).rejects.toThrow();
+
+    expect(dialog.showSaveDialog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Diagnoseprotokolle speichern',
+        filters: [{ name: 'Diagnosepaket', extensions: ['json'] }],
+      })
+    );
+    expect(dialog.showErrorBox).toHaveBeenCalledExactlyOnceWith(
+      'Protokollexport fehlgeschlagen',
+      'Das Diagnosepaket konnte nicht gespeichert werden. Bitte versuchen Sie einen anderen Speicherort.'
+    );
   });
 
   it('revalidates retained records and strips untrusted fields during export', () => {

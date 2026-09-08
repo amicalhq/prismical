@@ -15,6 +15,7 @@ import type { FakeElectron } from '../helpers/fake-electron';
 import { testConfigLayer } from '../helpers/test-layers';
 import { makeBootLayer } from '../../src/main/runtime/boot-layer';
 import { OperationalDb } from '../../src/main/infra/operational-db/service';
+import { MIGRATIONS } from '../../src/main/infra/operational-db/migrations';
 import { UpdaterService } from '../../src/main/domains/updater/service';
 
 vi.mock('electron', async () => (await import('../helpers/fake-electron')).createFakeElectron());
@@ -152,7 +153,7 @@ describe('Boot layer (leak gate)', () => {
       const { DatabaseSync } = yield* Effect.promise(() => import('node:sqlite'));
       const probe = new DatabaseSync(dbPath);
       const rows = probe.prepare('SELECT version FROM schema_meta').all();
-      assert.strictEqual(rows.length, 7, 'migrations ran before rollback');
+      assert.strictEqual(rows.length, MIGRATIONS.length, 'migrations ran before rollback');
       probe.exec('BEGIN EXCLUSIVE');
       probe.exec('COMMIT');
       probe.close();

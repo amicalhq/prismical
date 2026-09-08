@@ -2387,6 +2387,12 @@ const ja = {
       useLocally: '代わりにこのデバイス上で使う',
       welcome: '{{productName}} へようこそ',
     },
+    logging: {
+      saveTitle: '診断ログを保存',
+      bundleLabel: '診断バンドル',
+      exportErrorTitle: 'ログのエクスポートに失敗しました',
+      exportErrorMessage: '診断バンドルを保存できませんでした。別の保存先を選んでください。',
+    },
     fatal: {
       description:
         'Prismical の起動を完了できませんでした。アプリを終了して、もう一度開いてください。問題が解決しない場合は、以下の技術情報をサポートに共有してください。',

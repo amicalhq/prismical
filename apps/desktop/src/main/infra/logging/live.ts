@@ -6,6 +6,7 @@ import { openSync, closeSync, fstatSync, readSync, existsSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { Effect, Layer } from 'effect';
+import type { ApplicationTFunction } from '@prismical/app-i18n';
 import {
   makeFilter,
   makeLogger,
@@ -128,44 +129,45 @@ export function makeMainLogging(appRunId: string = randomUUID()) {
     },
     { origin, source: { runtime: 'main', pid: process.pid }, filter }
   );
-  const exportBundle = Effect.tryPromise(async () => {
-    const snapshot = snapshotLogs(paths);
-    const bundle = {
-      manifest: {
-        schemaVersion: 1,
-        app: origin.app,
-        appVersion: origin.appVersion,
-        ...(buildId ? { buildId } : {}),
-        platform: process.platform,
-        osRelease: release(),
-        arch: process.arch,
-        exportedAt: new Date().toISOString(),
-        appRunIds: snapshot.appRunIds,
-        notices: snapshot.notices,
-      },
-      files: snapshot.files,
-    };
-    const result = await dialog.showSaveDialog({
-      title: 'Save diagnostic logs',
-      defaultPath: `prismical-diagnostics-${new Date().toISOString().slice(0, 10)}.json`,
-      filters: [{ name: 'Diagnostic bundle', extensions: ['json'] }],
-    });
-    if (!result.canceled && result.filePath)
-      await writeFile(result.filePath, JSON.stringify(bundle, null, 2), { mode: 0o600 });
-  });
-  const transport = {
-    ingest: logger.ingest,
-    rendererConfig,
-    exportBundle: exportBundle.pipe(
+  const exportBundle = (t: ApplicationTFunction) =>
+    Effect.tryPromise(async () => {
+      const snapshot = snapshotLogs(paths);
+      const bundle = {
+        manifest: {
+          schemaVersion: 1,
+          app: origin.app,
+          appVersion: origin.appVersion,
+          ...(buildId ? { buildId } : {}),
+          platform: process.platform,
+          osRelease: release(),
+          arch: process.arch,
+          exportedAt: new Date().toISOString(),
+          appRunIds: snapshot.appRunIds,
+          notices: snapshot.notices,
+        },
+        files: snapshot.files,
+      };
+      const result = await dialog.showSaveDialog({
+        title: t('desktop.logging.saveTitle'),
+        defaultPath: `prismical-diagnostics-${new Date().toISOString().slice(0, 10)}.json`,
+        filters: [{ name: t('desktop.logging.bundleLabel'), extensions: ['json'] }],
+      });
+      if (!result.canceled && result.filePath)
+        await writeFile(result.filePath, JSON.stringify(bundle, null, 2), { mode: 0o600 });
+    }).pipe(
       Effect.tapError(() =>
         Effect.sync(() =>
           dialog.showErrorBox(
-            'Log export failed',
-            'The diagnostic bundle could not be saved. Please try another location.'
+            t('desktop.logging.exportErrorTitle'),
+            t('desktop.logging.exportErrorMessage')
           )
         )
       )
-    ),
+    );
+  const transport = {
+    ingest: logger.ingest,
+    rendererConfig,
+    exportBundle,
   };
   const layer = Layer.merge(
     Layer.succeed(MainLogger, logger.service),

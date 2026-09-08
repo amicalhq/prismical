@@ -1,4 +1,4 @@
-import { makeTestLogger } from '../helpers/test-layers';
+import { makeTestLogger, testI18nLayer } from '../helpers/test-layers';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -25,7 +25,11 @@ afterEach(() => {
 });
 const relaunch = () =>
   Effect.runPromise(
-    Effect.flatMap(NativeOs, nativeOs => nativeOs.relaunch).pipe(Effect.provide(NativeOsLive.pipe(Layer.provide(makeTestLogger().layer))))
+    Effect.flatMap(NativeOs, nativeOs => nativeOs.relaunch).pipe(
+      Effect.provide(
+        NativeOsLive.pipe(Layer.provide(makeTestLogger().layer), Layer.provide(testI18nLayer()))
+      )
+    )
   );
 
 describe('native relaunch', () => {

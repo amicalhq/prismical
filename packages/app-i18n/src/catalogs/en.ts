@@ -2441,6 +2441,12 @@ const en = {
       useLocally: 'Use on this device instead',
       welcome: 'Welcome to {{productName}}',
     },
+    logging: {
+      saveTitle: 'Save diagnostic logs',
+      bundleLabel: 'Diagnostic bundle',
+      exportErrorTitle: 'Log export failed',
+      exportErrorMessage: 'The diagnostic bundle could not be saved. Please try another location.',
+    },
     fatal: {
       description:
         'Prismical could not finish starting. Quit and reopen the app. If the problem continues, share the technical details with support.',

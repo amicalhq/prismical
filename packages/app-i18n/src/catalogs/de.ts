@@ -2482,6 +2482,12 @@ const de = {
       useLocally: 'Stattdessen auf diesem Gerät verwenden',
       welcome: 'Willkommen bei {{productName}}',
     },
+    logging: {
+      saveTitle: 'Diagnoseprotokolle speichern',
+      bundleLabel: 'Diagnosepaket',
+      exportErrorTitle: 'Protokollexport fehlgeschlagen',
+      exportErrorMessage: 'Das Diagnosepaket konnte nicht gespeichert werden. Bitte versuchen Sie einen anderen Speicherort.',
+    },
     fatal: {
       description:
         'Prismical konnte den Start nicht abschließen. Beende die App und öffne sie erneut. Wenn das Problem weiterhin auftritt, teile dem Support die technischen Details mit.',

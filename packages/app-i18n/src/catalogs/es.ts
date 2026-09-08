@@ -2454,6 +2454,12 @@ const es = {
       useLocally: 'Usar en este dispositivo en su lugar',
       welcome: 'Te damos la bienvenida a {{productName}}',
     },
+    logging: {
+      saveTitle: 'Guardar registros de diagnóstico',
+      bundleLabel: 'Paquete de diagnóstico',
+      exportErrorTitle: 'Error al exportar los registros',
+      exportErrorMessage: 'No se pudo guardar el paquete de diagnóstico. Prueba con otra ubicación.',
+    },
     fatal: {
       description:
         'Prismical no pudo terminar de iniciarse. Cierra la aplicación y vuelve a abrirla. Si el problema continúa, comparte los detalles técnicos con el equipo de soporte.',

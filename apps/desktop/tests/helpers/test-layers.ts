@@ -136,7 +136,7 @@ export const makeTestLogger = (): TestLogger => {
   const transport = {
     ingest: logger.ingest,
     rendererConfig: { appVersion: 'test', appRunId: 'test-run', isDev: true },
-    exportBundle: Effect.void,
+    exportBundle: () => Effect.void,
   };
   return {
     entries,

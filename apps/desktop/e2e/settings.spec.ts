@@ -71,6 +71,7 @@ interface DeviceSettingsSnapshot {
   meetingNotifications: boolean;
   dockContentProtection: boolean;
   updateChannel: string;
+  telemetryOptOut: boolean;
 }
 
 const deviceSettings = (page: Page): Promise<DeviceSettingsSnapshot> =>
@@ -169,6 +170,7 @@ test.describe('native settings UI', () => {
         widgetVisibility: 'never',
         meetingNotifications: false,
         dockContentProtection: true,
+        telemetryOptOut: true,
       });
 
     await page.getByRole('link', { name: 'About', exact: true }).click();
@@ -212,7 +214,7 @@ test.describe('native settings UI', () => {
         meetingNotifications: false,
         dockContentProtection: true,
         updateChannel: 'beta',
-        telemetryOptOut: false,
+        telemetryOptOut: true,
       });
     expect(server.refreshRequests()).toHaveLength(1);
   });
