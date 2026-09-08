@@ -1737,6 +1737,7 @@ const de = {
         gateAutomations: 'Automatisierungen sind in deinem Plan nicht enthalten. Führe ein Upgrade durch, um Ereignisse an einen Webhook zu senden.',
         gateByokDescription: 'Dein Plan läuft über Prismical Cloud. Führe ein Upgrade durch, um eigene Anbieter-Schlüssel zu verbinden.',
         gateByokTitle: 'Eigene Schlüssel mit einem Upgrade',
+        gateFloatingMode: 'Der schwebende Modus ist in deinem Tarif nicht enthalten. Sieh dir die Tarife unter Abrechnung an.',
         gateSeePlans: 'Pläne ansehen',
         usageAiCredits: 'KI-Credits',
         usageCloudTranscription: 'Cloud-Transkription',

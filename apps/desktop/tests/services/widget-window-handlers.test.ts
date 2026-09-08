@@ -1,3 +1,4 @@
+import { WorkspaceTransportLive } from '../../src/main/domains/transport/live';
 /**
  * Widget-window IPC handler tests.
  *
@@ -98,6 +99,7 @@ const setup = (): Effect.Effect<Harness> =>
       settingsLayer,
       windowRegistryLayer,
       FloatBridgeLive.pipe(
+        Layer.provide(WorkspaceTransportLive),
         Layer.provide(windowRegistryLayer),
         Layer.provide(RecordingBridgeLive),
         Layer.provide(Layer.succeed(AuthService, authStub)),

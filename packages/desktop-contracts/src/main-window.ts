@@ -487,6 +487,7 @@ export interface SessionProbe {
 
 export const navPushSchema = z.object({
   path: z.string().min(1),
+  notice: z.literal('floating-mode-unavailable').optional(),
 });
 export type NavPush = z.infer<typeof navPushSchema>;
 

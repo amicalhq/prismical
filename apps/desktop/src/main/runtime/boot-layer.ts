@@ -200,12 +200,15 @@ export const makeBootLayer = (
       return makeRecordingBridgeLive(remote.isUpdateRequired, windows.focusMainWindow);
     })
   ).pipe(Layer.provide(remoteConfig), Layer.provide(windowRegistry));
+  // Share the workspace backend accessor with the float gate, streaming, and IPC.
+  const coreTransport = WorkspaceTransportLive;
   // The floating-note coordinator owns the float slot; the
   // main-window float:* verbs + the widget's expandNote reach it. AuthService
   // feeds the signed-out open guard — cloud only: local mode is
   // accountless and renders the float unconditionally, so the
   // guard reads the boot-resolved mode.
   const floatBridge = FloatBridgeLive.pipe(
+    Layer.provide(coreTransport),
     Layer.provide(windowRegistry),
     Layer.provide(recordingBridge),
     Layer.provide(auth),
@@ -253,12 +256,6 @@ export const makeBootLayer = (
     Layer.provide(appConfigLayer),
     Layer.provide(logging)
   );
-  // ONE WorkspaceTransport reference (the boot-scoped workspace-current backend
-  // accessor): shared here with the StreamBroker Ask lane and merged as a
-  // top-level service for the unary IPC handler, so both read the SAME registered
-  // backend (Effect memoizes the layer by reference — a second instance would
-  // never see the workspace's self-published backend).
-  const coreTransport = WorkspaceTransportLive;
   const streamBroker = StreamBrokerLive.pipe(Layer.provide(logging), Layer.provide(coreTransport));
   // One CollabBridge reference (the boot-scoped note-body-store accessor):
   // shared here with the CollabBroker AND merged as a top-level service so the

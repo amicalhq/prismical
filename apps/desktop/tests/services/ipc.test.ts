@@ -275,6 +275,7 @@ const build = (
     electronApp,
     // The float coordinator: the float:* handlers reach it.
     FloatBridgeLive.pipe(
+      Layer.provide(WorkspaceTransportLive),
       Layer.provide(windowRegistry),
       Layer.provide(RecordingBridgeLive),
       Layer.provide(auth.layer),
@@ -1387,6 +1388,7 @@ describe('registerMainWindowHandlers', () => {
           windowsStub,
           ElectronAppLive.pipe(Layer.provide(logger.layer)),
           FloatBridgeLive.pipe(
+            Layer.provide(WorkspaceTransportLive),
             Layer.provide(windowsStub),
             Layer.provide(RecordingBridgeLive),
             Layer.provide(auth.layer),

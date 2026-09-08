@@ -18,13 +18,14 @@
  * onClosed callback keeps `open` honest on EVERY close path, including an
  * OS-initiated close the verbs never saw.
  */
+import { OrganizationsResponseSchema } from '@prismical/api-contracts/apps/v1';
 import { Context, Effect, Layer, SubscriptionRef } from 'effect';
 import { CHANNELS, type FloatStateView, type NavPush } from '@prismical/desktop-contracts';
 import { AppModeService } from '../app-mode/service';
-import { toSessionView } from '../auth/policy';
 import { AuthService } from '../auth/service';
 import { MainLogger } from '../../infra/logging/service';
 import { RecordingBridge } from '../recording/bridge';
+import { WorkspaceTransport } from '../transport/service';
 import { WindowRegistry } from './service';
 
 /**
@@ -48,7 +49,7 @@ export interface FloatBridgeApi {
   readonly state: SubscriptionRef.SubscriptionRef<FloatStateView>;
   /**
    * Open/focus the float on `noteId` (null = the slot / slot-less). Resolves
-   * `false` when the float did NOT open (no active account, window-create
+   * `false` when the float did NOT open (no active account, plan gate, window-create
    * failure) — dock-initiated callers keep their affordance on false.
    */
   readonly open: (noteId: string | null, options?: FloatOpenOptions) => Effect.Effect<boolean>;
@@ -72,34 +73,16 @@ export class FloatBridge extends Context.Tag('desktop/windows/FloatBridge')<
 export const FloatBridgeLive: Layer.Layer<
   FloatBridge,
   never,
-  WindowRegistry | RecordingBridge | AuthService | AppModeService | MainLogger
+  WindowRegistry | RecordingBridge | AuthService | AppModeService | MainLogger | WorkspaceTransport
 > = Layer.effect(
     FloatBridge,
     Effect.gen(function* () {
       const windows = yield* WindowRegistry;
       const recording = yield* RecordingBridge;
       const auth = yield* AuthService;
+      const transport = yield* WorkspaceTransport;
       const { mode } = yield* AppModeService;
       const log = (yield* MainLogger).scoped('float');
-
-      // Signed-out guard, CLOUD ONLY: there the float renderer renders NOTHING
-      // without an active account (the auth gate is main-window chrome), so
-      // opening it would put an invisible, focusable, always-on-top window
-      // over everything. The sign-out watcher (main-window-handlers) only
-      // covers the TRANSITION — this covers a hotkey/pill press while already
-      // signed out. Local mode is accountless by design:
-      // the shell — float included — renders unconditionally, so the guard
-      // must not consult the (permanently signed-out) auth state there.
-      const hasActiveAccount = auth.sessionState.pipe(
-        SubscriptionRef.get,
-        Effect.map(state => {
-          const view = toSessionView(state);
-          return (
-            view.activeSub !== undefined &&
-            view.accounts.some(account => account.sub === view.activeSub)
-          );
-        })
-      );
 
       const state = yield* SubscriptionRef.make<FloatStateView>({ open: false, noteId: null });
 
@@ -115,9 +98,49 @@ export const FloatBridgeLive: Layer.Layer<
         state,
         open: (noteId, options) =>
           Effect.gen(function* () {
-            if (mode !== 'local' && !(yield* hasActiveAccount)) {
-              yield* log.info('float open ignored — no active account');
-              return false;
+            if (mode !== 'local') {
+              const before = yield* SubscriptionRef.get(auth.sessionState);
+              const account =
+                before.activeSub === undefined ? undefined : before.accounts[before.activeSub];
+              if (account === undefined) {
+                yield* log.info('float open ignored — no active account');
+                return false;
+              }
+              // Slot resolution calls open again after creating a note. An already
+              // visible window needs no second lookup; collapsed windows do.
+              if (account.activeOrgId !== undefined && !(yield* SubscriptionRef.get(state)).open) {
+                const response = yield* transport.request(
+                  { method: 'GET', path: '/apps/v1/me/organizations' },
+                  { mode: 'cloud', sessionState: auth.sessionState }
+                );
+                // A response from a switched-away account/org must never open a window.
+                const after = yield* SubscriptionRef.get(auth.sessionState);
+                const active =
+                  after.activeSub === undefined ? undefined : after.accounts[after.activeSub];
+                if (active?.sub !== account.sub || active.activeOrgId !== account.activeOrgId) {
+                  return false;
+                }
+                const parsed =
+                  'ok' in response && response.status === 200
+                    ? OrganizationsResponseSchema.safeParse(response.bodyJson)
+                    : null;
+                const org = parsed?.success
+                  ? parsed.data.results.find(org => org.orgId === account.activeOrgId)
+                  : undefined;
+                if (org === undefined) {
+                  yield* log.warn('float open ignored — plan unavailable');
+                  return false;
+                }
+                if (org.entitlements?.features.floatingMode === false) {
+                  const payload: NavPush = {
+                    path: '/settings/billing',
+                    notice: 'floating-mode-unavailable',
+                  };
+                  yield* windows.sendToMainWindow(CHANNELS.navPush, payload);
+                  yield* windows.focusMainWindow;
+                  return false;
+                }
+              }
             }
             const fresh = options?.fresh === true;
             const autoStart = options?.autoStart === true;

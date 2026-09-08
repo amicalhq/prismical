@@ -1612,6 +1612,7 @@ const zhTW = {
         gateAutomations: '自動化不包含在你的方案中。升級後即可將事件傳送至 Webhook。',
         gateByokDescription: '你的方案以 Prismical Cloud 執行。升級後即可連接自己的供應商金鑰。',
         gateByokTitle: '升級後即可使用自己的金鑰',
+        gateFloatingMode: '你的方案不包含浮動模式。請前往帳務查看方案。',
         gateSeePlans: '查看方案',
         usageAiCredits: 'AI 點數',
         usageCloudTranscription: '雲端轉錄',

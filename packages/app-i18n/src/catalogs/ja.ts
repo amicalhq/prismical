@@ -1664,6 +1664,7 @@ const ja = {
         gateAutomations: '自動化は現在のプランに含まれていません。イベントを Webhook に送信するにはアップグレードしてください。',
         gateByokDescription: '現在のプランは Prismical Cloud で動作します。自分のプロバイダーキーを接続するにはアップグレードしてください。',
         gateByokTitle: 'アップグレードして自分のキーを使う',
+        gateFloatingMode: 'フローティングモードは現在のプランに含まれていません。請求設定でプランをご確認ください。',
         gateSeePlans: 'プランを見る',
         usageAiCredits: 'AI クレジット',
         usageCloudTranscription: 'クラウド文字起こし',

@@ -1718,6 +1718,7 @@ const en = {
         gateAutomations: 'Automations aren’t included in your plan. Upgrade to send events to a webhook.',
         gateByokDescription: 'Your plan runs on Prismical Cloud. Upgrade to connect your own provider keys.',
         gateByokTitle: 'Bring your own keys with an upgrade',
+        gateFloatingMode: 'Floating mode isn’t included in your plan. See plans in Billing.',
         gateSeePlans: 'See plans',
         usageAiCredits: 'AI credits',
         usageCloudTranscription: 'Cloud transcription',

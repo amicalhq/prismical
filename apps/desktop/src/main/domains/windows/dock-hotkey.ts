@@ -10,7 +10,7 @@
  * returns false when another app holds it) logs a warning and leaves the
  * hotkey off; the settings UI stays the source of truth, never crashes boot.
  * Gated behind the `global-shortcuts` capability renderer-side; main just
- * honors whatever the persisted setting says.
+ * honors the persisted setting, while FloatBridge checks the active plan.
  */
 import { globalShortcut } from 'electron';
 import { Effect, Runtime, Stream, SubscriptionRef, type Scope } from 'effect';

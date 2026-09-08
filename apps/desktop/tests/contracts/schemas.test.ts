@@ -156,6 +156,10 @@ describe('schema parse helpers', () => {
 
   it('nav push payloads', () => {
     expect(parseNavPush({ path: '/notes' }).success).toBe(true);
+    expect(parseNavPush({ path: '/settings/billing', notice: 'floating-mode-unavailable' })).toEqual({
+      success: true, data: { path: '/settings/billing', notice: 'floating-mode-unavailable' },
+    });
+    expect(parseNavPush({ path: '/settings/billing', notice: 'unknown' }).success).toBe(false);
     expect(parseNavPush({ path: '' }).success).toBe(false);
     expect(parseNavPush({}).success).toBe(false);
   });

@@ -1719,6 +1719,7 @@ const es = {
         gateAutomations: 'Las automatizaciones no están incluidas en tu plan. Mejora tu plan para enviar eventos a un webhook.',
         gateByokDescription: 'Tu plan funciona con Prismical Cloud. Mejora tu plan para conectar tus propias claves de proveedor.',
         gateByokTitle: 'Usa tus propias claves con una mejora de plan',
+        gateFloatingMode: 'El modo flotante no está incluido en tu plan. Consulta los planes en Facturación.',
         gateSeePlans: 'Ver planes',
         usageAiCredits: 'Créditos de IA',
         usageCloudTranscription: 'Transcripción en la nube',

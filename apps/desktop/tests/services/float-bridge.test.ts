@@ -8,14 +8,18 @@
  *   an external close (onClosed) flips `open` without touching the slot.
  */
 import { assert, describe, it } from '@effect/vitest';
-import { Context, Effect, Exit, Layer, Option, Scope, SubscriptionRef } from 'effect';
-import { CHANNELS } from '@prismical/desktop-contracts';
+import { Context, Deferred, Effect, Exit, Fiber, Layer, Option, Scope, SubscriptionRef } from 'effect';
+import { CHANNELS, type TransportResponse } from '@prismical/desktop-contracts';
 import { makeTestLogger } from '../helpers/test-layers';
 import { AppModeService, makeAppMode, type AppMode } from '../../src/main/domains/app-mode/service';
 import { FloatBridge, FloatBridgeLive } from '../../src/main/domains/windows/float-bridge';
 import { WindowRegistry, type WindowRegistryService } from '../../src/main/domains/windows/service';
 import { RecordingBridge, type RecordingBridgeApi } from '../../src/main/domains/recording/bridge';
 import { AuthService, type AuthApi } from '../../src/main/domains/auth/service';
+import {
+  WorkspaceTransport,
+  type WorkspaceTransportApi,
+} from '../../src/main/domains/transport/service';
 import { initialAuthState, type AuthState } from '../../src/main/domains/auth/policy';
 
 interface FakeRegistry {
@@ -105,7 +109,10 @@ const signedInAuthState: AuthState = {
 const setup = (
   activeNoteId: string | null = null,
   authState: AuthState = signedInAuthState,
-  appMode: AppMode = 'cloud'
+  appMode: AppMode = 'cloud',
+  response: TransportResponse | Effect.Effect<TransportResponse> = {
+    ok: true, status: 200, bodyJson: { results: [] },
+  }
 ) =>
   Effect.gen(function* () {
     const logger = makeTestLogger();
@@ -119,7 +126,16 @@ const setup = (
     const authStub = {
       sessionState: yield* SubscriptionRef.make<AuthState>(authState),
     } as unknown as AuthApi;
+    const requests: unknown[] = [];
+    const transport = {
+      request: (request: unknown) =>
+        Effect.gen(function* () {
+          requests.push(request);
+          return Effect.isEffect(response) ? yield* response : response;
+        }),
+    } as unknown as WorkspaceTransportApi;
     const layer = FloatBridgeLive.pipe(
+      Layer.provide(Layer.succeed(WorkspaceTransport, transport)),
       Layer.provide(Layer.succeed(WindowRegistry, fake.service)),
       Layer.provide(Layer.succeed(RecordingBridge, recordingStub)),
       Layer.provide(Layer.succeed(AuthService, authStub)),
@@ -128,7 +144,7 @@ const setup = (
     );
     const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
     const bridge = Context.get(ctx, FloatBridge);
-    return { bridge, fake, scope, logger };
+    return { bridge, fake, scope, logger, requests, auth: authStub };
   }).pipe(Effect.orDie);
 
 describe('FloatBridge slot semantics', () => {
@@ -338,6 +354,189 @@ describe('FloatBridge slot semantics', () => {
         channel: CHANNELS.navPush,
         payload: { path: '/float/nt_1?autostart=1' },
       });
+      yield* Scope.close(h.scope, Exit.void);
+    })
+  );
+});
+
+const organization = (orgId: string, floatingMode?: boolean) => ({
+  orgId,
+  orgUserId: `member_${orgId}`,
+  name: 'Test',
+  slug: orgId,
+  role: 'owner',
+  allowPublicSharing: false,
+  features: {},
+  memberCount: 1,
+  ...(floatingMode === undefined
+    ? {}
+    : {
+        entitlements: {
+          planExternalId: null,
+          aiModelTier: 'standard',
+          pooled: false,
+          features: {
+            askAi: true,
+            floatingMode,
+            byok: true,
+            automations: true,
+            extendedRecording: true,
+          },
+          limits: {
+            seats: null,
+            cloudTranscriptionSeconds: null,
+            aiCredits: null,
+            maxRecordingSeconds: null,
+          },
+        },
+      }),
+});
+const orgAuthState: AuthState = {
+  ...signedInAuthState,
+  accounts: { sub_1: { ...signedInAuthState.accounts.sub_1!, activeOrgId: 'org_1' } },
+};
+
+describe('FloatBridge plan gate', () => {
+  it.effect('blocks the active org even when another org allows floating mode', () =>
+    Effect.gen(function* () {
+      const h = yield* setup(null, orgAuthState, 'cloud', {
+        ok: true,
+        status: 200,
+        bodyJson: { results: [organization('org_2', true), organization('org_1', false)] },
+      });
+      assert.strictEqual(yield* h.bridge.open(null, { fresh: true, autoStart: true }), false);
+      assert.deepStrictEqual(h.fake.openCalls, []);
+      assert.deepStrictEqual(h.fake.floatSends, []);
+      assert.deepStrictEqual(yield* SubscriptionRef.get(h.bridge.state), {
+        open: false,
+        noteId: null,
+      });
+      assert.deepStrictEqual(h.fake.mainSends, [
+        {
+          channel: CHANNELS.navPush,
+          payload: { path: '/settings/billing', notice: 'floating-mode-unavailable' },
+        },
+      ]);
+      assert.strictEqual(h.fake.focusMainCount(), 1);
+      assert.deepStrictEqual(h.requests, [{ method: 'GET', path: '/apps/v1/me/organizations' }]);
+      yield* Scope.close(h.scope, Exit.void);
+    })
+  );
+
+  for (const floatingMode of [true, undefined]) {
+    it.effect(`allows an org with floatingMode=${floatingMode}`, () =>
+      Effect.gen(function* () {
+        const h = yield* setup(null, orgAuthState, 'cloud', {
+          ok: true,
+          status: 200,
+          bodyJson: { results: [organization('org_1', floatingMode)] },
+        });
+        assert.strictEqual(yield* h.bridge.open('nt_1'), true);
+        assert.strictEqual(h.fake.openCalls.length, 1);
+        assert.deepStrictEqual(h.fake.mainSends, []);
+        yield* Scope.close(h.scope, Exit.void);
+      })
+    );
+  }
+
+  for (const response of [
+    { error: { code: 'INTERNAL' as const } },
+    { ok: true as const, status: 500, bodyJson: {} },
+    { ok: true as const, status: 200, bodyJson: {} },
+    { ok: true as const, status: 200, bodyJson: { results: [organization('org_2', true)] } },
+  ]) {
+    it.effect(
+      `does not open when the active plan cannot be read: ${JSON.stringify(response)}`,
+      () =>
+        Effect.gen(function* () {
+          const h = yield* setup(null, orgAuthState, 'cloud', response);
+          assert.strictEqual(yield* h.bridge.open(null), false);
+          assert.deepStrictEqual(h.fake.openCalls, []);
+          assert.deepStrictEqual(h.fake.mainSends, []);
+          yield* Scope.close(h.scope, Exit.void);
+        })
+    );
+  }
+
+  it.effect('retargets an already-open window without a second plan request', () =>
+    Effect.gen(function* () {
+      const h = yield* setup(null, orgAuthState, 'cloud', {
+        ok: true,
+        status: 200,
+        bodyJson: { results: [organization('org_1', true)] },
+      });
+      assert.strictEqual(yield* h.bridge.open(null, { fresh: true }), true);
+      assert.strictEqual(yield* h.bridge.open('nt_created'), true);
+      assert.strictEqual(h.requests.length, 1);
+      assert.deepStrictEqual(h.fake.floatSends.at(-1), {
+        channel: CHANNELS.navPush,
+        payload: { path: '/float/nt_created' },
+      });
+      yield* Scope.close(h.scope, Exit.void);
+    })
+  );
+
+  it.effect('rechecks the plan when reopening after a downgrade', () =>
+    Effect.gen(function* () {
+      const row = organization('org_1', true);
+      const h = yield* setup(null, orgAuthState, 'cloud', {
+        ok: true,
+        status: 200,
+        bodyJson: { results: [row] },
+      });
+      assert.strictEqual(yield* h.bridge.open('nt_1'), true);
+      yield* h.bridge.collapse;
+      row.entitlements!.features.floatingMode = false;
+      assert.strictEqual(yield* h.bridge.open('nt_2'), false);
+      assert.strictEqual(h.fake.openCalls.length, 1);
+      assert.deepStrictEqual(yield* SubscriptionRef.get(h.bridge.state), {
+        open: false,
+        noteId: 'nt_1',
+      });
+      yield* Scope.close(h.scope, Exit.void);
+    })
+  );
+
+  for (const nextState of [
+    initialAuthState,
+    {
+      ...orgAuthState,
+      accounts: { sub_1: { ...orgAuthState.accounts.sub_1!, activeOrgId: 'org_2' } },
+    },
+  ]) {
+    it.effect(
+      `ignores a response after ${nextState.activeSub ? 'switching orgs' : 'sign-out'}`,
+      () =>
+        Effect.gen(function* () {
+          const started = yield* Deferred.make<void>();
+          const result = yield* Deferred.make<TransportResponse>();
+          const h = yield* setup(
+            null,
+            orgAuthState,
+            'cloud',
+            Deferred.succeed(started, undefined).pipe(Effect.zipRight(Deferred.await(result)))
+          );
+          const opening = yield* Effect.fork(h.bridge.open(null));
+          yield* Deferred.await(started);
+          yield* SubscriptionRef.set(h.auth.sessionState, nextState);
+          yield* Deferred.succeed(result, {
+            ok: true,
+            status: 200,
+            bodyJson: { results: [organization('org_1', true)] },
+          });
+          assert.strictEqual(yield* Fiber.join(opening), false);
+          assert.deepStrictEqual(h.fake.openCalls, []);
+          assert.deepStrictEqual(h.fake.mainSends, []);
+          yield* Scope.close(h.scope, Exit.void);
+        })
+    );
+  }
+
+  it.effect('local mode never requests cloud entitlements', () =>
+    Effect.gen(function* () {
+      const h = yield* setup(null, orgAuthState, 'local', { error: { code: 'INTERNAL' } });
+      assert.strictEqual(yield* h.bridge.open(null), true);
+      assert.deepStrictEqual(h.requests, []);
       yield* Scope.close(h.scope, Exit.void);
     })
   );

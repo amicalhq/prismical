@@ -19,6 +19,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { useTranslation } from 'react-i18next';
 import { RouterProvider } from '@tanstack/react-router';
 import {
   ApiQueryProvider,
@@ -51,6 +52,7 @@ import type {
 import './globals.css';
 
 function ShellOverlay() {
+  const { t } = useTranslation();
   const { appMode } = useDesktopEnv();
   // Drain main→renderer navigation pushes onto the hash router. The preload
   // nav buffer holds any push that arrived before this subscription — a
@@ -66,10 +68,15 @@ function ShellOverlay() {
   // load settles — a replayed cold-start deep link then wins the destination.
   useEffect(
     () =>
-      window.desktop.nav.onPush(({ path }) => {
-        void (router.latestLoadPromise ?? Promise.resolve()).then(() => router.history.push(path));
+      window.desktop.nav.onPush(({ path, notice }) => {
+        void (router.latestLoadPromise ?? Promise.resolve()).then(() => {
+          router.history.push(path);
+          if (notice === 'floating-mode-unavailable') {
+            toast.info(t('settings.billing.screen.gateFloatingMode'), { id: notice });
+          }
+        });
       }),
-    []
+    [t]
   );
   return (
     <div
