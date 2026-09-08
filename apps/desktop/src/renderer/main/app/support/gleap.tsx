@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import { MessageSquare } from 'lucide-react';
+import { MessageCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSessionView } from '@prismical/app-client';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@prismical/app-ui/ui/tooltip';
@@ -43,6 +43,8 @@ export function GleapProvider({ children }: { children: ReactNode }) {
       Gleap.attachCustomData({ appVersion, platform });
       Gleap.setUrlHandler(url => window.open(url, '_blank', 'noopener,noreferrer'));
       Gleap.showFeedbackButton(false);
+      // The separate chatbar resurfaces on close and can reopen the messenger in Electron.
+      Gleap.hideAiChatbar();
       Gleap.on('initialized', () => {
         if (!disposed) setSdk(() => Gleap);
       });
@@ -100,14 +102,18 @@ export function useGleapSupportAction(): ReactNode {
       <TooltipTrigger asChild>
         <button
           type="button"
-          aria-label={t('navigation.secondary.sendFeedback')}
-          onClick={() => sdk.open()}
+          aria-label={t('navigation.secondary.chat')}
+          onClick={event => {
+            const bottom = Math.max(20, window.innerHeight - event.currentTarget.getBoundingClientRect().top + 8);
+            document.documentElement.style.setProperty('--support-chat-bottom', `${bottom}px`);
+            sdk.open();
+          }}
           className="flex size-7 items-center justify-center rounded-md text-sidebar-foreground-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:outline-hidden"
         >
-          <MessageSquare className="size-4" />
+          <MessageCircle className="size-4" />
         </button>
       </TooltipTrigger>
-      <TooltipContent side="top">{t('navigation.secondary.feedback')}</TooltipContent>
+      <TooltipContent side="top">{t('navigation.secondary.chat')}</TooltipContent>
     </Tooltip>
   );
 }

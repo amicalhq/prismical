@@ -15,6 +15,22 @@
  * this file (apps/desktop/src/renderer/main/app/). */
 @source "../../../../../../packages/app-ui/src";
 
+/* Match the web app's support panel placement above the sidebar chat button. */
+@media (width > 450px) {
+  .gleap-frame-container,
+  .gleap-notification-container {
+    left: 20px !important;
+    right: auto !important;
+  }
+  .gleap-frame-container {
+    bottom: min(var(--support-chat-bottom, 20px), 40dvh) !important;
+    height: min(620px, calc(100dvh - min(var(--support-chat-bottom, 20px), 40dvh) - 20px)) !important;
+  }
+  .gleap-frame-container-inner {
+    height: 100% !important;
+  }
+}
+
 /* macOS vibrancy. Main
  * creates the darwin window with `vibrancy: 'menu'` + a transparent
  * backgroundColor, which mounts an NSVisualEffectView BEHIND the web contents;

@@ -13,7 +13,7 @@ const mock = vi.hoisted(() => ({
     setCSPNonce: vi.fn(), setDisablePageTracking: vi.fn(), disableConsoleLogOverwrite: vi.fn(),
     setMaxNetworkRequests: vi.fn(), setNetworkLogsBlacklist: vi.fn(), setReplayOptions: vi.fn(),
     setLanguage: vi.fn(), setAppVersionCode: vi.fn(), attachCustomData: vi.fn(), setUrlHandler: vi.fn(),
-    showFeedbackButton: vi.fn(), on: vi.fn(), initialize: vi.fn(), destroy: vi.fn(),
+    showFeedbackButton: vi.fn(), hideAiChatbar: vi.fn(), on: vi.fn(), initialize: vi.fn(), destroy: vi.fn(),
     getIdentity: vi.fn(), identify: vi.fn(), clearIdentity: vi.fn(), close: vi.fn(), open: vi.fn(),
   },
 }));
@@ -41,6 +41,7 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   document.body.innerHTML = '';
+  document.documentElement.style.removeProperty('--support-chat-bottom');
 });
 const SupportAction = () => useGleapSupportAction() ?? createElement('a', { href: 'mailto:support@test.invalid' }, 'Email support');
 const render = (strict = false) => act(async () => {
@@ -66,6 +67,8 @@ describe('cloud-only Gleap lifecycle', () => {
     expect(mock.sdk.setCSPNonce).toHaveBeenCalledWith('test-nonce');
     expect(mock.sdk.disableConsoleLogOverwrite.mock.invocationCallOrder[0]).toBeLessThan(mock.sdk.initialize.mock.invocationCallOrder[0]!);
     expect(mock.sdk.setMaxNetworkRequests).toHaveBeenCalledWith(0);
+    expect(mock.sdk.hideAiChatbar).toHaveBeenCalledOnce();
+    expect(mock.sdk.hideAiChatbar.mock.invocationCallOrder[0]).toBeLessThan(mock.sdk.initialize.mock.invocationCallOrder[0]!);
     await ready();
     expect(mock.sdk.showFeedbackButton).toHaveBeenLastCalledWith(true);
   });
@@ -120,9 +123,11 @@ describe('cloud-only Gleap lifecycle', () => {
     });
     expect(mock.sdk.clearIdentity).toHaveBeenCalledOnce();
     const supportButton = document.querySelector('button');
-    expect(supportButton?.getAttribute('aria-label')).toBe('navigation.secondary.sendFeedback');
+    expect(supportButton?.getAttribute('aria-label')).toBe('navigation.secondary.chat');
+    supportButton!.getBoundingClientRect = () => new DOMRect(20, window.innerHeight - 100, 28, 28);
     await act(async () => supportButton!.click());
     expect(mock.sdk.open).toHaveBeenCalledOnce();
+    expect(document.documentElement.style.getPropertyValue('--support-chat-bottom')).toBe('108px');
     if (transition === 'switch') {
       expect(mock.sdk.identify).toHaveBeenLastCalledWith('b', { name: 'B', email: 'b@test.invalid' });
       expect(mock.sdk.clearIdentity.mock.invocationCallOrder[0]).toBeLessThan(mock.sdk.identify.mock.invocationCallOrder[1]!);

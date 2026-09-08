@@ -23,17 +23,28 @@ for (const mode of ['local', null] as const) {
   });
 }
 
-test('live cloud support loads and opens without sending feedback', async () => {
+test('live cloud support opens, stays closed, and reopens only on request', async () => {
   test.skip(!process.env.GLEAP_KEY, 'Set GLEAP_KEY to run the live SDK smoke test.');
   launched = await launchPrismical({ GLEAP_KEY: process.env.GLEAP_KEY! });
   const page = await launched.app.firstWindow();
   // Signed out cloud mode exposes the vendor launcher; no account or message is sent.
   const button = page.locator('.bb-feedback-button');
   await expect(button).toBeVisible({ timeout: 45_000 });
+  const chatbar = page.locator('.gleap-chatbar');
+  await expect(chatbar).toHaveCount(0);
   await button.click();
   const frame = page.frameLocator('iframe[src*="messenger-app.gleap.io"]');
   await expect(frame.locator('body')).toBeVisible({ timeout: 30_000 });
   await expect(frame.locator('body')).not.toHaveText('');
+  const panel = page.locator('.gleap-frame-container');
+  await frame.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(panel).toBeHidden();
+  // A recreated chatbar can asynchronously reopen the messenger after its handshake.
+  await page.waitForTimeout(2_000);
+  await expect(panel).toBeHidden();
+  await expect(chatbar).toHaveCount(0);
+  await button.click();
+  await expect(panel).toBeVisible();
   const inlineAllowed = await page.evaluate(() => {
     const script = document.createElement('script');
     script.textContent = 'window.__gleapInlineTest = true';
