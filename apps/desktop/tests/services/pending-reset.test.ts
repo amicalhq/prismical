@@ -1,13 +1,13 @@
 /**
  * PendingResetLive — the boot-time half of the destructive
  * reset: applies the marker the reset handler wrote (paths + local_model
- * rows), keeps it when incomplete, drops it when malformed, never fails boot.
+ * rows), keeps it when incomplete, and blocks boot if device cleanup cannot run.
  */
 import { mkdirSync, mkdtempSync, existsSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { assert, describe, it } from '@effect/vitest';
-import { Context, Effect, Layer } from 'effect';
+import { Context, Effect, Exit, Layer } from 'effect';
 import { DbError, OperationalDb } from '../../src/main/infra/operational-db/service';
 import { makeFakeOperationalDb } from '../helpers/fake-operational-db';
 import { makeTestLogger } from '../helpers/test-layers';
@@ -42,6 +42,43 @@ const build = (seed: Record<string, string>, localModels?: ReadonlyArray<LocalMo
   }).pipe(Effect.scoped);
 
 describe('PendingResetLive boot-time purge', () => {
+  it.effect('finishes interrupted reset and removes credentials and settings written during shutdown', () =>
+    Effect.gen(function* () {
+      const { db } = yield* build({
+        [PENDING_PURGE_KEY]: encodePendingPurge({
+          v: 1, paths: [], localModels: true,
+          settings: { 'telemetry:deviceId': 'fresh-device' },
+        }),
+        'auth.accounts': 'late-oauth-account',
+        'secure:auth.refreshToken.late': 'late-oauth-token',
+        'pref:launchAtLogin': 'true',
+        'app:mode': 'local',
+        'legacy.setting': 'old',
+      }, [row('m1')]);
+
+      assert.deepStrictEqual(Object.fromEntries(db.store), { 'telemetry:deviceId': 'fresh-device' });
+      assert.strictEqual(db.localModels.size, 0);
+    })
+  );
+
+  it.effect('a failed device wipe stops boot and retains the reset marker for retry', () =>
+    Effect.gen(function* () {
+      const marker = encodePendingPurge({ v: 1, paths: [], localModels: false, settings: {} });
+      const db = makeFakeOperationalDb({ [PENDING_PURGE_KEY]: marker, 'auth.accounts': 'old' });
+      const failingDb = Layer.effect(OperationalDb, Effect.map(OperationalDb, service => ({
+        ...service,
+        resetDeviceState: () => Effect.fail(new DbError({ op: 'resetDeviceState', cause: 'disk unavailable' })),
+      }))).pipe(Layer.provide(db.layer));
+      const result = yield* Effect.exit(Layer.build(PendingResetLive.pipe(
+        Layer.provide(failingDb), Layer.provide(makeTestLogger().layer)
+      )));
+
+      assert.isTrue(Exit.isFailure(result));
+      if (Exit.isFailure(result)) assert.include(JSON.stringify(result.cause), 'BootError');
+      assert.strictEqual(db.store.get(PENDING_PURGE_KEY), marker);
+    }).pipe(Effect.scoped)
+  );
+
   it.effect('no marker ⇒ nothing applied, no rows touched', () =>
     Effect.gen(function* () {
       const { api, db } = yield* build({}, [row('m1')]);
@@ -106,14 +143,15 @@ describe('PendingResetLive boot-time purge', () => {
     })
   );
 
-  it.effect('an unreadable marker is skipped for this boot', () =>
+  it.effect('an unreadable marker stops boot so account restoration cannot bypass reset', () =>
     Effect.gen(function* () {
       const logger = makeTestLogger();
       const db = makeFakeOperationalDb({ [PENDING_PURGE_KEY]: encodePendingPurge({ v: 1, paths: [], localModels: false }) });
       db.failGet(true);
       const layer = PendingResetLive.pipe(Layer.provide(db.layer), Layer.provide(logger.layer));
-      const ctx = yield* Layer.build(layer);
-      assert.isNull(Context.get(ctx, PendingReset).applied);
+      const result = yield* Effect.exit(Layer.build(layer));
+      assert.isTrue(Exit.isFailure(result));
+      if (Exit.isFailure(result)) assert.include(JSON.stringify(result.cause), 'BootError');
       // Kept: the next boot retries.
       assert.isString(db.store.get(PENDING_PURGE_KEY));
     }).pipe(Effect.scoped)
@@ -124,7 +162,7 @@ describe('PendingResetLive boot-time purge', () => {
       const root = mkdtempSync(path.join(tmpdir(), 'prismical-purge-'));
       const target = path.join(root, 'models');
       mkdirSync(target);
-      const marker = encodePendingPurge({ v: 1, paths: [target], localModels: true });
+      const marker = encodePendingPurge({ v: 1, paths: [target], localModels: true, settings: { 'app:mode': 'local' } });
       const logger = makeTestLogger();
       const db = makeFakeOperationalDb({ [PENDING_PURGE_KEY]: marker }, { localModels: [row('m1')] });
       // The row clear fails as a typed DbError (the real store's failure shape).
@@ -150,6 +188,14 @@ describe('PendingResetLive boot-time purge', () => {
         localModels: true,
         attempts: 1,
       });
+      // Device cleanup completed. Retrying the files/model rows must not wipe
+      // a new session or preferences created after this boot.
+      assert.strictEqual(db.store.get('app:mode'), 'local');
+      db.store.set('pref:language', '"en"');
+      yield* Layer.build(PendingResetLive.pipe(
+        Layer.provide(failingDb), Layer.provide(logger.layer)
+      ));
+      assert.strictEqual(db.store.get('pref:language'), '"en"');
       assert.isTrue(
         logger.entries.some(
           entry => entry.message === 'pending purge incomplete — outstanding work re-armed for the next boot'

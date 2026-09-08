@@ -111,6 +111,17 @@ export const OperationalDbLive: Layer.Layer<OperationalDb, BootError, AppConfig 
             if (keys.length === 0) return;
             db.delete(schema.settings).where(inArray(schema.settings.key, keys)).run();
           }),
+        resetDeviceState: settings =>
+          tryDb('resetDeviceState', () => {
+            db.transaction(tx => {
+              tx.delete(schema.settings).run();
+              tx.delete(schema.recoveryOutbox).run();
+              tx.delete(schema.localModel).run();
+              const updatedAt = new Date().toISOString();
+              const rows = Object.entries(settings).map(([key, value]) => ({ key, value, updatedAt }));
+              if (rows.length > 0) tx.insert(schema.settings).values(rows).run();
+            });
+          }),
         insertRecoveryOutbox: row =>
           tryDb('insertRecoveryOutbox', () => {
             const now = new Date().toISOString();

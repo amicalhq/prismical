@@ -78,6 +78,8 @@ export interface OperationalDbService {
    * reset sweeps a whole namespace such as `eventkit:`.
    */
   readonly deleteSettingsByPrefix: (prefix: string) => Effect.Effect<void, DbError>;
+  /** Atomically clear device data and replace settings with the reset's retained rows. */
+  readonly resetDeviceState: (settings: Readonly<Record<string, string>>) => Effect.Effect<void, DbError>;
   /** Open a recovery-outbox row at recording acquire. */
   readonly insertRecoveryOutbox: (row: NewRecoveryOutbox) => Effect.Effect<void, DbError>;
   /** Advance an existing row's state / drain bookkeeping. */

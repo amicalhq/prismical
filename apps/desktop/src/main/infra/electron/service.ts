@@ -20,7 +20,7 @@ export interface ElectronAppService {
   readonly quit: Effect.Effect<void>;
   readonly exit: (code: number) => Effect.Effect<void>;
   /**
-   * Wipe every renderer storage on the default session: run
+   * Wipe renderer storage, browsing data and HTTP authentication on the default session: run
    * at boot, before any window exists, when a destructive reset was applied —
    * a live renderer's sync poll could otherwise write back into a partition the
    * in-process wipe had just cleared. Requires app ready.

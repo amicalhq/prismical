@@ -23,7 +23,7 @@ import { LIMITS } from '@desktop/logging/wire';
  * auth:sessionChanged view.
  */
 import { randomUUID } from 'node:crypto';
-import { ipcMain, type IpcMainInvokeEvent, session } from 'electron';
+import { ipcMain, type IpcMainInvokeEvent } from 'electron';
 import {
   CHANNELS,
   DEFAULT_DEVICE_SETTINGS,
@@ -61,7 +61,6 @@ import {
   telemetryStateSchema,
   type AiModelListing,
   type AppModeState,
-  type AppModeValue,
   type ChooseAppModeResult,
   type CollabOpenResponse,
   type DeviceSettings,
@@ -81,7 +80,6 @@ import { CollabBroker } from '../../domains/collab/service';
 import { EventKitBridge } from '../../domains/eventkit/bridge';
 import { APP_MODE_KEY } from '../../domains/app-mode/live';
 import { AppModeService } from '../../domains/app-mode/service';
-import { AI_PROVIDER_KINDS } from '../../domains/ai-provider/instances';
 import { aiProviderSecretKey } from '../../domains/ai-provider/secrets';
 import { AiProvider } from '../../domains/ai-provider/service';
 import { DesktopI18n } from '../../domains/i18n/service';
@@ -110,7 +108,7 @@ import { MainLogger, LoggingTransport } from '../logging/service';
 import { NativeOs } from '../native-os/service';
 import { OperationalDb, type DbError } from '../operational-db/service';
 import { PENDING_PURGE_KEY, encodePendingPurge } from '../pending-reset/service';
-import { SECURE_KEY_PREFIX, SecureStore } from '../secure-store/service';
+import { SecureStore } from '../secure-store/service';
 import { SystemPermissions } from '../system-permissions/service';
 
 type HandlerEnv =
@@ -1103,126 +1101,9 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
       )
     );
 
-    // capability:resetApp — the destructive device reset and, with `{ mode }`,
-    // the mode switch. Everything in-process
-    // is best-effort and logged; the relaunch always runs (the user asked for
-    // it). Two halves:
-    //  1. In-process, while the operational store is open: [sign out every
-    //     account]* → the known non-auth secrets (BYOK + one slot per AI
-    //     provider) → device settings (incl. ai/transcription/telemetryOptOut)
-    //     → the EventKit device identity → a new fallback installation UUID →
-    //     recording-recovery rows → every renderer storage (the Legend
-    //     IndexedDB partition, legacy analytics persistence, cookies) → [app:mode]*
-    //     → the pending-purge marker.
-    //  2. At the next boot, before any product/model/recovery handle exists,
-    //     PendingResetLive removes local.db (+WAL/SHM), the cloud-cache dir, the
-    //     model weights + local_model rows and the recovery WAVs. Deleting those
-    //     here would race the open SQLite handles and the whisper sidecar's
-    //     mmapped model (EBUSY on Windows).
-    //  (*) switch only: a plain reset keeps the signed-in accounts (their refresh
-    //  secrets stay in the secure store) and the running mode.
-    // Reset rotates the fallback installation UUID and clears legacy renderer
-    // analytics persistence. The machine-derived device ID remains stable.
-    const clearKnownSecrets = Effect.forEach(
-      [BYOK_API_KEY_SECRET, ...AI_PROVIDER_KINDS.map(aiProviderSecretKey)],
-      key =>
-        secureStore
-          .deleteSecret(key)
-          .pipe(
-            Effect.catchTag('DbError', () => log.error('capability:resetApp — secret clear failed'))
-          ),
-      { discard: true }
-    );
-    const purgeMarker = encodePendingPurge({
-      v: 1,
-      paths: [config.localDbPath, config.cloudCacheDir, config.modelsDir, config.recoveryDir],
-      localModels: true,
-    });
-    // The switch also SWEEPS the whole secure namespace after the sign-outs: a
-    // sign-out whose secret delete failed (auth/live.ts tolerates that) or an
-    // orphaned refresh-token row from an earlier roster must not ride into the
-    // accountless install. The plain reset keeps the accounts, so it only
-    // clears the known non-auth slots.
-    const sweepSecureNamespace = operationalDb
-      .deleteSettingsByPrefix(SECURE_KEY_PREFIX)
-      .pipe(
-        Effect.catchTag('DbError', () => log.error('capability:resetApp — secure sweep failed'))
-      );
-    const clearDeviceState = (mode: AppModeValue | undefined): Effect.Effect<void> =>
-      (mode === undefined
-        ? Effect.void
-        : signOutEveryAccount.pipe(Effect.zipRight(sweepSecureNamespace))
-      ).pipe(
-        Effect.zipRight(clearKnownSecrets),
-        Effect.zipRight(
-          settings.reset.pipe(
-            Effect.catchTag('DbError', () =>
-              log.error('capability:resetApp — settings clear failed')
-            )
-          )
-        ),
-        Effect.zipRight(
-          operationalDb
-            .deleteSettingsByPrefix('eventkit:')
-            .pipe(
-              Effect.catchTag('DbError', () =>
-                log.error('capability:resetApp — eventkit identity clear failed')
-              )
-            )
-        ),
-        Effect.zipRight(
-          operationalDb
-            .setSetting(DEVICE_ID_KEY, randomUUID())
-            .pipe(
-              Effect.catchTag('DbError', () =>
-                log.error('capability:resetApp — fallback installation id rotation failed')
-              )
-            )
-        ),
-        Effect.zipRight(
-          operationalDb.listRecoveryOutbox().pipe(
-            Effect.flatMap(rows =>
-              Effect.forEach(rows, row => operationalDb.deleteRecoveryOutbox(row.recordingId), {
-                discard: true,
-              })
-            ),
-            Effect.catchTag('DbError', () =>
-              log.error('capability:resetApp — recovery clear failed')
-            )
-          )
-        ),
-        Effect.zipRight(
-          Effect.tryPromise({
-            // Every storage, not a list: the Legend sync store's IndexedDB
-            // partitions, posthog-js localStorage/cookies, and anything a
-            // later renderer feature adds. All windows share defaultSession.
-            try: () => session.defaultSession.clearStorageData(),
-            catch: () => 'storage-clear-failed' as const,
-          }).pipe(
-            Effect.catchAll(() => log.error('capability:resetApp — renderer storage clear failed'))
-          )
-        ),
-        Effect.zipRight(
-          mode === undefined
-            ? Effect.void
-            : operationalDb
-                .setSetting(APP_MODE_KEY, mode)
-                .pipe(
-                  Effect.catchTag('DbError', () =>
-                    log.error('capability:resetApp — mode persist failed', { context: { mode } })
-                  )
-                )
-        ),
-        Effect.zipRight(
-          operationalDb
-            .setSetting(PENDING_PURGE_KEY, purgeMarker)
-            .pipe(
-              Effect.catchTag('DbError', () =>
-                log.error('capability:resetApp — purge marker write failed')
-              )
-            )
-        )
-      );
+    // Reset signs out accounts now so their tokens are revoked best-effort.
+    // The durable marker repeats the device wipe before any reader starts on
+    // the next boot, then purges files whose handles are still open here.
     yield* acquireHandle(CHANNELS.capabilityResetApp, (event, payload) =>
       runPromise(
         validateMainSender(event).pipe(
@@ -1237,9 +1118,45 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
                 .pipe(Effect.zipRight(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
             }
             const { mode } = parsed.data;
-            return clearDeviceState(mode).pipe(
+            const retainedSettings = {
+              [DEVICE_ID_KEY]: randomUUID(),
+              ...(mode === undefined ? {} : { [APP_MODE_KEY]: mode }),
+            };
+            const purgeMarker = encodePendingPurge({
+              v: 1,
+              paths: [config.localDbPath, config.cloudCacheDir, config.modelsDir, config.recoveryDir],
+              localModels: true,
+              settings: retainedSettings,
+            });
+            return operationalDb.setSetting(PENDING_PURGE_KEY, purgeMarker).pipe(
+              Effect.catchTag('DbError', () =>
+                log.error('capability:resetApp — purge marker write failed').pipe(
+                  Effect.zipRight(Effect.fail(new PayloadRejected('INTERNAL')))
+                )
+              ),
+              Effect.zipRight(signOutEveryAccount),
+              // Publish defaults so OS preferences such as launch-at-login are
+              // reset too. The boot-time wipe retries any failed persistence.
               Effect.zipRight(
-                log.warn('capability:resetApp — device state cleared; relaunching', {
+                settings.reset.pipe(
+                  Effect.catchTag('DbError', () => log.error('capability:resetApp — settings clear failed'))
+                )
+              ),
+              Effect.zipRight(
+                operationalDb.resetDeviceState({
+                  ...retainedSettings,
+                  [PENDING_PURGE_KEY]: purgeMarker,
+                }).pipe(
+                  Effect.catchTag('DbError', () => log.error('capability:resetApp — device clear deferred to boot'))
+                )
+              ),
+              Effect.zipRight(
+                electronApp.clearRendererStorage.pipe(
+                  Effect.catchAllDefect(() => log.error('capability:resetApp — renderer storage clear failed'))
+                )
+              ),
+              Effect.zipRight(
+                log.warn('capability:resetApp — reset scheduled; relaunching', {
                   context: {
                     switchTo: mode ?? null,
                   },

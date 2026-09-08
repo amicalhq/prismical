@@ -244,9 +244,9 @@ export const SettingsServiceLive: Layer.Layer<SettingsService, never, Operationa
           ),
         // Delete every pref row, then publish the defaults (delete-then-publish,
         // so a DbError leaves the observed settings untouched — like set).
-        reset: Effect.forEach(FIELDS, field => store.deleteSetting(prefKey(field)), {
-          discard: true,
-        }).pipe(Effect.zipRight(SubscriptionRef.set(ref, DEFAULT_DEVICE_SETTINGS))),
+        reset: store.deleteSettingsByPrefix(PREF_PREFIX).pipe(
+          Effect.zipRight(SubscriptionRef.set(ref, DEFAULT_DEVICE_SETTINGS))
+        ),
       };
       return api;
     })

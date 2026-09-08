@@ -388,9 +388,8 @@ export interface DesktopCapabilityPort {
   /**
    * Erase the device state, then relaunch. This destructive reset clears on-device
    * notes/recordings, the cloud cache, downloaded models, saved keys,
-   * AI/transcription settings, and the telemetry identity. The
-   * running mode and the signed-in accounts are kept — the mode SWITCH is a
-   * desktop-owned control that talks to main directly.
+   * AI/transcription settings, and the fallback installation identity. All
+   * accounts are signed out and the next boot shows first-run setup.
    */
   resetApp(): Promise<void>;
   /** The current native permission statuses. */

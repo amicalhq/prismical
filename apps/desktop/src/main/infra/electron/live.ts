@@ -98,7 +98,18 @@ export const ElectronAppLive: Layer.Layer<ElectronApp, never, MainLogger> = Laye
         Effect.sync(() => {
           app.exit(code);
         }),
-      clearRendererStorage: Effect.promise(() => session.defaultSession.clearStorageData()),
+      clearRendererStorage: Effect.gen(function* () {
+        // clearData includes the HTTP cache and all Chromium storage types.
+        // Attempt both clears even if one fails, and report failures together.
+        const results = yield* Effect.promise(() => Promise.allSettled([
+          session.defaultSession.clearData(),
+          session.defaultSession.clearAuthCache(),
+        ]));
+        const failures = results.filter(result => result.status === 'rejected');
+        if (failures.length > 0) {
+          return yield* Effect.die(new AggregateError(failures.map(result => result.reason)));
+        }
+      }),
       events: { secondInstance, openUrl, activate, beforeQuit, windowAllClosed, powerResume },
     };
     return service;

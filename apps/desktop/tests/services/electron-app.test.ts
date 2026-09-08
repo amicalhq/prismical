@@ -13,6 +13,36 @@ const fake = (await import('electron')) as unknown as FakeElectron;
 const APP_EVENTS = ['second-instance', 'open-url', 'activate', 'before-quit', 'window-all-closed'];
 
 describe('ElectronApp', () => {
+  it.effect('reset clears all browsing data and HTTP authentication, without filters', () =>
+    Effect.gen(function* () {
+      const ctx = yield* Layer.build(ElectronAppLive.pipe(Layer.provide(makeTestLogger().layer)));
+      const storage = fake.session.defaultSession;
+      const dataBefore = storage.clearDataCalls.length;
+      const authBefore = storage.clearAuthCacheCalls;
+
+      yield* Context.get(ctx, ElectronApp).clearRendererStorage;
+
+      assert.deepStrictEqual(storage.clearDataCalls.slice(dataBefore), [{}]);
+      assert.strictEqual(storage.clearAuthCacheCalls, authBefore + 1);
+    }).pipe(Effect.scoped)
+  );
+
+  it.effect('reset still clears HTTP authentication when browsing-data cleanup fails', () =>
+    Effect.gen(function* () {
+      const ctx = yield* Layer.build(ElectronAppLive.pipe(Layer.provide(makeTestLogger().layer)));
+      const storage = fake.session.defaultSession;
+      const authBefore = storage.clearAuthCacheCalls;
+      const clear = vi.spyOn(storage, 'clearData').mockRejectedValueOnce(new Error('cache unavailable'));
+      try {
+        const result = yield* Effect.exit(Context.get(ctx, ElectronApp).clearRendererStorage);
+        assert.isTrue(Exit.isFailure(result));
+        assert.strictEqual(storage.clearAuthCacheCalls, authBefore + 1);
+      } finally {
+        clear.mockRestore();
+      }
+    }).pipe(Effect.scoped)
+  );
+
   it.effect('acquire registers one listener per event; release removes them all', () =>
     Effect.gen(function* () {
       const logger = makeTestLogger();

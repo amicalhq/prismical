@@ -1,5 +1,6 @@
 import { rmSync } from 'node:fs';
 import { Effect, Layer } from 'effect';
+import { BootError } from '../../runtime/boot-error';
 import { MainLogger } from '../logging/service';
 import { OperationalDb } from '../operational-db/service';
 import {
@@ -46,12 +47,13 @@ const applyPurge = (purge: PendingPurge): Omit<PurgeReport, 'localModelsCleared'
 /**
  * PendingResetLive applies the marker written by the reset
  * handler, before any product store / model / recovery handle exists.
- * Infallible — a failure is logged. An incomplete purge is re-armed for the
+ * Device-data reset failures stop boot so credentials cannot be restored.
+ * An incomplete file purge is re-armed for the
  * NEXT boot with only what is still outstanding (never the original list —
  * the workspace recreated at a purged path meanwhile is the user's new data)
  * and only MAX_PURGE_ATTEMPTS times; after that the marker is dropped loudly.
  */
-export const PendingResetLive: Layer.Layer<PendingReset, never, OperationalDb | MainLogger> =
+export const PendingResetLive: Layer.Layer<PendingReset, BootError, OperationalDb | MainLogger> =
   Layer.effect(
     PendingReset,
     Effect.gen(function* () {
@@ -60,11 +62,7 @@ export const PendingResetLive: Layer.Layer<PendingReset, never, OperationalDb | 
       const none: PendingResetApi = { applied: null };
 
       const raw = yield* db.getSetting(PENDING_PURGE_KEY).pipe(
-        Effect.catchTag('DbError', error =>
-          log.error('pending purge marker unreadable — skipping', { context: { op: error.op } }).pipe(
-            Effect.as(null)
-          )
-        )
+        Effect.mapError(cause => new BootError({ stage: 'pending-reset', cause }))
       );
       if (raw === null) return none;
 
@@ -78,6 +76,19 @@ export const PendingResetLive: Layer.Layer<PendingReset, never, OperationalDb | 
           .deleteSetting(PENDING_PURGE_KEY)
           .pipe(Effect.catchTag('DbError', () => Effect.void));
         return none;
+      }
+
+      if (parsed.settings !== undefined) {
+        // Old renderers, OAuth exchanges and shutdown finalizers may have
+        // written after the in-process wipe. No reader/writer has started yet.
+        // Retire this part of the marker atomically with the wipe: file retries
+        // must never erase accounts or settings created after this boot.
+        const { settings, ...remaining } = parsed;
+        yield* db.resetDeviceState({
+          ...settings,
+          [PENDING_PURGE_KEY]: encodePendingPurge(remaining),
+        }).pipe(Effect.mapError(cause => new BootError({ stage: 'pending-reset', cause })));
+        parsed = remaining;
       }
 
       const outcome = applyPurge(parsed);

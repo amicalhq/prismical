@@ -13,7 +13,8 @@ import { z } from 'zod';
  * inode — and in local mode nothing can release the workspace short of
  * quitting. So the reset handler writes ONE marker row into the operational
  * store and relaunches gracefully; the next boot reads the marker BEFORE any
- * of those handles exist, purges, and clears the marker. Crash-safe by
+ * device-state reader or product handle exists, repeats the device wipe,
+ * purges, and clears the marker. Crash-safe by
  * construction: a purge that does not complete is retried on the next boot.
  */
 export const PENDING_PURGE_KEY = 'app:pendingPurge';
@@ -25,6 +26,8 @@ export const pendingPurgeSchema = z
     paths: z.array(z.string().min(1)),
     /** Also drop every `local_model` row (the weights under modelsDir are gone). */
     localModels: z.boolean(),
+    /** Replace device data with these settings before any boot-time reader starts. */
+    settings: z.record(z.string(), z.string()).optional(),
     /**
      * Boots that already tried this marker. An incomplete purge is re-armed
      * ONLY for what is still outstanding, and only MAX_PURGE_ATTEMPTS times —

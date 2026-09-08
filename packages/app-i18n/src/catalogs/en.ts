@@ -2075,12 +2075,12 @@ const en = {
       reset: {
         action: 'Reset app',
         confirm:
-          'This erases everything Prismical stores on this device: settings, notes, recordings and transcripts kept on this device, the local copy of your cloud notes, downloaded speech models and saved API keys. Then the app restarts. Notes in a Prismical account and your sign-in are not affected. This cannot be undone.',
+          'This signs out all accounts and erases everything Prismical stores on this device: settings, notes, recordings and transcripts kept on this device, the local copy of your cloud notes, downloaded speech models and saved API keys. Then the app restarts with first-time setup. Notes stored in your Prismical accounts are kept. This cannot be undone.',
         confirmTitle: 'Reset Prismical?',
         dangerDescription: 'Irreversible actions that affect the data on this device.',
         dangerTitle: 'Danger zone',
         description:
-          'Erase everything Prismical stores on this device — settings, on-device notes and recordings, the local copy of cloud notes, speech models and saved API keys — then restart.',
+          'Sign out all accounts, erase all data stored on this device, and restart with first-time setup.',
         restart: 'Reset and restart',
       },
       title: 'Advanced',

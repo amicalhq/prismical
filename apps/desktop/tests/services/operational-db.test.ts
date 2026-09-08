@@ -8,6 +8,7 @@ import { makeTestLogger, testConfigLayer } from '../helpers/test-layers';
 import { OperationalDb, type NewRecoveryOutbox } from '../../src/main/infra/operational-db/service';
 import { MIGRATIONS } from '../../src/main/infra/operational-db/migrations';
 import { OperationalDbLive } from '../../src/main/infra/operational-db/live';
+import * as schema from '../../src/main/infra/operational-db/schema';
 
 // The db layer never touches electron, but its transitive imports (logger
 // service types only) keep the module graph electron-free; no mock needed.
@@ -40,6 +41,49 @@ const recordingInput = (
 });
 
 describe('OperationalDb', () => {
+  it.effect('reset clears all device rows, retains only reset settings, and preserves migrations', () =>
+    Effect.gen(function* () {
+      const ctx = yield* Layer.build(buildDb(':memory:').layer);
+      const db = Context.get(ctx, OperationalDb);
+      yield* db.setSetting('secure:auth.refreshToken.user', 'credential');
+      yield* db.setSetting('unknown-old-setting', 'old');
+      yield* db.insertRecoveryOutbox(recordingInput({
+        recordingId: 'reset-rec', captureMode: 'mic', wavPath: '/recovery.wav',
+      }));
+      yield* db.upsertLocalModel({
+        modelId: 'reset-model', filename: 'model.bin', path: '/model.bin',
+        sizeBytes: 1, checksum: 'x', downloadedAt: '2026-01-01', verifiedAt: null,
+      });
+      const migrations = db.db.select().from(schema.schemaMeta).all();
+
+      yield* db.resetDeviceState({ 'app:pendingPurge': 'marker', 'app:mode': 'local' });
+
+      assert.deepStrictEqual(
+        Object.fromEntries(db.db.select().from(schema.settings).all().map(row => [row.key, row.value])),
+        { 'app:pendingPurge': 'marker', 'app:mode': 'local' }
+      );
+      assert.deepStrictEqual(yield* db.listRecoveryOutbox(), []);
+      assert.deepStrictEqual(yield* db.listLocalModels(), []);
+      assert.deepStrictEqual(db.db.select().from(schema.schemaMeta).all(), migrations);
+    }).pipe(Effect.scoped)
+  );
+
+  it.effect('reset rolls back the wipe if retaining the purge marker fails', () =>
+    Effect.gen(function* () {
+      const ctx = yield* Layer.build(buildDb(':memory:').layer);
+      const db = Context.get(ctx, OperationalDb);
+      yield* db.setSetting('app:pendingPurge', 'retry-me');
+      yield* db.setSetting('old-setting', 'old');
+      // A failed INSERT after DELETE must not lose the retry marker.
+      const result = yield* Effect.exit(db.resetDeviceState({
+        'app:pendingPurge': null as unknown as string,
+      }));
+      assert.isTrue(Exit.isFailure(result));
+      assert.strictEqual(yield* db.getSetting('app:pendingPurge'), 'retry-me');
+      assert.strictEqual(yield* db.getSetting('old-setting'), 'old');
+    }).pipe(Effect.scoped)
+  );
+
   it.effect('opens, migrates (settings + schema_meta) and round-trips settings', () =>
     Effect.gen(function* () {
       const dbPath = path.join(tempDir, 'roundtrip.db');

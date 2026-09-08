@@ -178,8 +178,8 @@ export const CHANNELS = {
    * invoke(ResetAppRequest?) → void. Erase the device state, then relaunch:
    * product stores, downloaded models, saved keys, AI/transcription settings,
    * and the fallback installation UUID. The machine-derived device ID is unchanged.
-   * With `mode` it is the MODE SWITCH: every account is
-   * signed out and the next boot comes up in that mode. Destructive — the
+   * Every account is signed out. Without `mode`, the next boot shows first-run
+   * setup; with `mode`, it comes up in that mode. Destructive — the
    * renderer gates it behind a confirm.
    */
   capabilityResetApp: 'capability:resetApp',
@@ -1170,8 +1170,8 @@ export const chooseAppModeResultSchema = z.object({ relaunch: z.boolean() }).str
 export type ChooseAppModeResult = z.infer<typeof chooseAppModeResultSchema>;
 
 /**
- * capability:resetApp payload. Absent / `{}` = the plain device reset (the
- * running mode and the signed-in accounts are kept); `mode` = the mode switch.
+ * capability:resetApp payload. Every reset signs out all accounts. Absent / `{}`
+ * returns to first-run setup; `mode` starts the next boot in the requested mode.
  */
 export const resetAppRequestSchema = z.object({ mode: appModeSchema.optional() }).strict();
 export type ResetAppRequest = z.infer<typeof resetAppRequestSchema>;

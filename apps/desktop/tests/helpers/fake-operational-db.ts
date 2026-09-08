@@ -69,6 +69,12 @@ export const makeFakeOperationalDb = (
       Effect.sync(() => {
         for (const key of [...store.keys()]) if (key.startsWith(prefix)) store.delete(key);
       }),
+    resetDeviceState: settings => Effect.sync(() => {
+      store.clear();
+      for (const [key, value] of Object.entries(settings)) store.set(key, value);
+      recovery.clear();
+      localModels.clear();
+    }),
     insertRecoveryOutbox: row =>
       recoveryOr(
         'insertRecoveryOutbox',

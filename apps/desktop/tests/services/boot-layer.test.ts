@@ -9,16 +9,23 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { assert, describe, it } from '@effect/vitest';
-import { Context, Duration, Effect, Exit, Layer, Scope, TestClock } from 'effect';
+import { Context, Duration, Effect, Exit, Layer, Scope, SubscriptionRef, TestClock } from 'effect';
 import { beforeEach, afterEach, vi } from 'vitest';
 beforeEach(() => vi.stubGlobal('fetch', vi.fn(async () => Response.json({}))));
 afterEach(() => vi.unstubAllGlobals());
 import type { FakeElectron } from '../helpers/fake-electron';
-import { testConfigLayer } from '../helpers/test-layers';
+import { makeTestLogger, testConfigLayer } from '../helpers/test-layers';
 import { makeBootLayer } from '../../src/main/runtime/boot-layer';
 import { OperationalDb } from '../../src/main/infra/operational-db/service';
 import { MIGRATIONS } from '../../src/main/infra/operational-db/migrations';
 import { UpdaterService } from '../../src/main/domains/updater/service';
+import { AuthService } from '../../src/main/domains/auth/service';
+import { AppModeService } from '../../src/main/domains/app-mode/service';
+import { SettingsService } from '../../src/main/domains/settings/service';
+import { encodeAccountIndex, initialAuthState } from '../../src/main/domains/auth/policy';
+import { OperationalDbLive } from '../../src/main/infra/operational-db/live';
+import { PENDING_PURGE_KEY, encodePendingPurge } from '../../src/main/infra/pending-reset/service';
+import { DEFAULT_DEVICE_SETTINGS } from '@prismical/desktop-contracts';
 
 vi.mock('electron', async () => (await import('../helpers/fake-electron')).createFakeElectron());
 const fake = (await import('electron')) as unknown as FakeElectron;
@@ -44,6 +51,36 @@ const awaitCheckCount = (
 const APP_EVENTS = ['second-instance', 'open-url', 'activate', 'before-quit', 'window-all-closed'];
 
 describe('Boot layer (leak gate)', () => {
+  it.effect('finishes a pending reset before auth, mode and preferences read persisted state', () =>
+    Effect.gen(function* () {
+      const config = testConfigLayer({ operationalDbPath: path.join(tempDir, 'reset.db') });
+      yield* Effect.gen(function* () {
+        const ctx = yield* Layer.build(OperationalDbLive.pipe(
+          Layer.provide(config), Layer.provide(makeTestLogger().layer)
+        ));
+        const db = Context.get(ctx, OperationalDb);
+        yield* db.setSetting(PENDING_PURGE_KEY, encodePendingPurge({
+          v: 1, paths: [], localModels: true, settings: {},
+        }));
+        yield* db.setSetting('app:mode', 'local');
+        yield* db.setSetting('pref:launchAtLogin', 'true');
+        yield* db.setSetting('auth.accounts', encodeAccountIndex({
+          gate: 'signed-in', activeSub: 'late-user', accounts: {
+            'late-user': { sub: 'late-user', email: 'late@example.com', name: 'Late', orgs: [] },
+          },
+        }));
+        yield* db.setSetting('secure:auth.refreshToken.late-user', 'late-token');
+      }).pipe(Effect.scoped);
+
+      const ctx = yield* Layer.build(makeBootLayer(config));
+      assert.deepStrictEqual(yield* SubscriptionRef.get(Context.get(ctx, AuthService).sessionState), initialAuthState);
+      assert.isFalse(yield* SubscriptionRef.get(Context.get(ctx, AppModeService).chosenState));
+      assert.deepStrictEqual(yield* Context.get(ctx, SettingsService).get, DEFAULT_DEVICE_SETTINGS);
+      assert.isNull(yield* Context.get(ctx, OperationalDb).getSetting('secure:auth.refreshToken.late-user'));
+      assert.isNull(yield* Context.get(ctx, OperationalDb).getSetting(PENDING_PURGE_KEY));
+    }).pipe(Effect.scoped)
+  );
+
   it.effect('acquires the full graph and releases ALL of it on scope close', () =>
     Effect.gen(function* () {
       const dbPath = path.join(tempDir, 'boot.db');

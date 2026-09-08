@@ -230,9 +230,14 @@ class FakeSession {
   beforeSendHeadersHandler: BeforeSendHeadersHandler = null;
   beforeSendHeadersFilter: { urls: string[] } | null = null;
   /** capability:resetApp wipes renderer storage — record each call. */
-  readonly clearStorageDataCalls: Array<{ storages?: readonly string[] }> = [];
-  clearStorageData(options?: { storages?: readonly string[] }): Promise<void> {
-    this.clearStorageDataCalls.push(options ?? {});
+  readonly clearDataCalls: Array<{ dataTypes?: readonly string[] }> = [];
+  clearData(options?: { dataTypes?: readonly string[] }): Promise<void> {
+    this.clearDataCalls.push(options ?? {});
+    return Promise.resolve();
+  }
+  clearAuthCacheCalls = 0;
+  clearAuthCache(): Promise<void> {
+    this.clearAuthCacheCalls++;
     return Promise.resolve();
   }
   readonly protocol = {

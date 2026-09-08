@@ -276,12 +276,13 @@ describe('SettingsService', () => {
     })
   );
 
-  it.effect('reset deletes every pref row and publishes the defaults', () =>
+  it.effect('reset deletes every pref row, including obsolete fields, and publishes the defaults', () =>
     Effect.gen(function* () {
       const { layer, db } = build({
         'pref:launchAtLogin': JSON.stringify(true),
         'pref:dockVisible': JSON.stringify(false),
         'pref:widgetVisibility': JSON.stringify('never'),
+        'pref:obsoleteSetting': 'true',
       });
       const scope = yield* Scope.make();
       const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));

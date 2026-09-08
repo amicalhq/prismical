@@ -29,6 +29,7 @@ import { makeTestLogger, recordingLaneStub, testConfigLayer } from '../helpers/t
 import { fakeSecureStoreLayer } from '../helpers/fake-workspace-env';
 import { makeAiProviderLive } from '../../src/main/domains/ai-provider/live';
 import { SecureStore } from '../../src/main/infra/secure-store/service';
+import { SecureStoreLive } from '../../src/main/infra/secure-store/live';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { ElectronAppLive } from '../../src/main/infra/electron/live';
@@ -51,7 +52,8 @@ import {
   type RecordingState,
   type StartRecordingInput,
 } from '../../src/main/domains/recording/service';
-import { initialAuthState, type AuthState } from '../../src/main/domains/auth/policy';
+import { encodeAccountIndex, initialAuthState, type AuthState } from '../../src/main/domains/auth/policy';
+import { makeAuthLive } from '../../src/main/domains/auth/live';
 import {
   AuthFlowError,
   AuthService,
@@ -69,6 +71,7 @@ import { WindowRegistry, type WindowRegistryService } from '../../src/main/domai
 import { WindowRegistryLive } from '../../src/main/domains/windows/live';
 import { FloatBridgeLive } from '../../src/main/domains/windows/float-bridge';
 import { AppModeService, makeAppMode } from '../../src/main/domains/app-mode/service';
+import { AppModeLive } from '../../src/main/domains/app-mode/live';
 import {
   ModelError,
   ModelManager,
@@ -257,7 +260,12 @@ const build = (
   const sysPermissions: FakeSystemPermissions =
     extras.sysPermissions ?? makeFakeSystemPermissions();
   const models = makeModelsStub();
-  const secureStore = fakeSecureStoreLayer();
+  const secureStore = SecureStoreLive.pipe(
+    Layer.provide(config),
+    Layer.provide(electronApp),
+    Layer.provide(db.layer),
+    Layer.provide(logger.layer)
+  );
   const windowRegistry = WindowRegistryLive.pipe(
     Layer.provide(appMode),
     Layer.provide(config),
@@ -2081,10 +2089,13 @@ describe('registerMainWindowHandlers', () => {
       // A preference row, the telemetry device id (which must be regenerated),
       // the EventKit device identity, and the secrets that reset sweeps.
       db.store.set('pref:launchAtLogin', 'true');
+      db.store.set('pref:obsoleteSetting', 'true');
+      db.store.set('app:mode', extras.appMode ?? 'cloud');
       db.store.set('telemetry:deviceId', 'old-device-id');
       db.store.set('eventkit:device-id', 'ek-device');
       db.store.set('eventkit:sequence:user_1:org_1', '7');
-      db.store.set('auth.accounts', '["user_1"]');
+      db.store.set('auth.accounts', encodeAccountIndex(twoAccountsState));
+      db.store.set('legacy.setting', 'stale-device-data');
       // An ORPHANED refresh secret (a sub no longer in the roster) as the real
       // secure store keeps it: a `secure:`-prefixed settings row.
       db.store.set('secure:auth.refreshToken.user_gone', 'ciphertext');
@@ -2095,8 +2106,9 @@ describe('registerMainWindowHandlers', () => {
       yield* SubscriptionRef.set(Context.get(ctx, AuthService).sessionState, twoAccountsState);
       assert.strictEqual(db.recovery.size, 2);
       // The fake session accumulates across tests — assert on this test's tail.
-      const storageCallsBefore = fake.session.defaultSession.clearStorageDataCalls.length;
-      return { ...built, scope, ctx, wc, secrets, storageCallsBefore };
+      const storageCallsBefore = fake.session.defaultSession.clearDataCalls.length;
+      const authCacheCallsBefore = fake.session.defaultSession.clearAuthCacheCalls;
+      return { ...built, scope, ctx, wc, secrets, storageCallsBefore, authCacheCallsBefore };
     });
 
   const assertDeviceStateCleared = (
@@ -2108,19 +2120,24 @@ describe('registerMainWindowHandlers', () => {
       assert.isFalse([...db.store.keys()].some(key => key.startsWith('pref:')));
       assert.strictEqual(db.recovery.size, 0);
       assert.isFalse([...db.store.keys()].some(key => key.startsWith('eventkit:')));
+      assert.isFalse([...db.store.keys()].some(key => key.startsWith('auth.')));
+      assert.isFalse([...db.store.keys()].some(key => key.startsWith('secure:')));
+      assert.isUndefined(db.store.get('legacy.setting'));
       // The known non-auth secrets are gone.
       assert.isNull(yield* secrets.getSecret('transcription.byok.apiKey'));
       assert.isNull(yield* secrets.getSecret('ai.openai.apiKey'));
       assert.isNull(yield* secrets.getSecret('ai.ollama.apiKey'));
+      assert.isNull(yield* secrets.getSecret('auth.refreshToken.user_1'));
       // Identity severance: a FRESH device id was written (not merely cleared),
       // and EVERY renderer storage was wiped (no storages filter).
       const newDeviceId = db.store.get('telemetry:deviceId');
       assert.isString(newDeviceId);
       assert.notStrictEqual(newDeviceId, 'old-device-id');
       assert.deepStrictEqual(
-        fake.session.defaultSession.clearStorageDataCalls.slice(h.storageCallsBefore),
+        fake.session.defaultSession.clearDataCalls.slice(h.storageCallsBefore),
         [{}]
       );
+      assert.strictEqual(fake.session.defaultSession.clearAuthCacheCalls, h.authCacheCallsBefore + 1);
       // The boot-time purge marker names the product stores, the models and the
       // recovery WAVs (from AppConfig) and asks for the local_model rows too.
       const marker = db.store.get('app:pendingPurge');
@@ -2134,28 +2151,35 @@ describe('registerMainWindowHandlers', () => {
           '/fake/user-data/recovery',
         ],
         localModels: true,
+        settings: {
+          'telemetry:deviceId': newDeviceId,
+          ...(db.store.has('app:mode') ? { 'app:mode': db.store.get('app:mode') } : {}),
+        },
         attempts: 0,
       });
     });
 
   it.effect(
-    'capability:resetApp (plain) clears device state, writes the purge marker, keeps accounts and mode, then relaunches',
+    'capability:resetApp (plain) signs out every account, clears device state and mode, then relaunches',
     () =>
       Effect.gen(function* () {
         const h = yield* openForReset();
-        const { db, nativeOs, auth, wc, secrets, scope } = h;
+        const { db, nativeOs, auth, wc, scope } = h;
 
         // The legacy preload sent no payload — still the plain reset.
         yield* Effect.promise(() => fake.ipcMain.invoke(CHANNELS.capabilityResetApp, { sender: wc }));
 
         yield* assertDeviceStateCleared(h);
-        // Plain reset: the signed-in accounts survive (their refresh secret and
-        // index stay), and the running mode is untouched — no app:mode row.
-        assert.deepStrictEqual(auth.signOutCalls, []);
-        assert.strictEqual(yield* secrets.getSecret('auth.refreshToken.user_1'), 'refresh-secret');
-        assert.strictEqual(db.store.get('secure:auth.refreshToken.user_gone'), 'ciphertext');
-        assert.strictEqual(db.store.get('auth.accounts'), '["user_1"]');
+        assert.deepStrictEqual(auth.signOutCalls, ['user_1', 'user_2']);
         assert.isUndefined(db.store.get('app:mode'));
+        // A new boot sees an unchosen mode, rather than restoring the old
+        // cloud roster through AppModeLive's upgrade inference.
+        const next = yield* Layer.build(Layer.mergeAll(
+          AppModeLive,
+          makeAuthLive({ fetchFn: () => Promise.reject(new Error('reset must not restore a session')) })
+        ).pipe(Layer.provide(Layer.succeedContext(h.ctx)))).pipe(Scope.extend(scope));
+        assert.isFalse(yield* SubscriptionRef.get(Context.get(next, AppModeService).chosenState));
+        assert.deepStrictEqual(yield* SubscriptionRef.get(Context.get(next, AuthService).sessionState), initialAuthState);
         assert.strictEqual(nativeOs.calls.relaunch, 1);
 
         // Unknown sender → typed rejection, no second relaunch.
@@ -2210,6 +2234,49 @@ describe('registerMainWindowHandlers', () => {
       assert.isUndefined(db.store.get('app:pendingPurge'));
       assert.strictEqual(nativeOs.calls.relaunch, 0);
       yield* Scope.close(scope, Exit.void);
+    })
+  );
+
+  it.effect('plain reset clears local mode and stale credentials even with an empty live roster', () =>
+    Effect.gen(function* () {
+      const h = yield* openForReset({}, { appMode: 'local' });
+      yield* SubscriptionRef.set(Context.get(h.ctx, AuthService).sessionState, initialAuthState);
+
+      yield* Effect.promise(() =>
+        fake.ipcMain.invoke(CHANNELS.capabilityResetApp, { sender: h.wc }, {})
+      );
+
+      yield* assertDeviceStateCleared(h);
+      assert.deepStrictEqual(h.auth.signOutCalls, []);
+      assert.isUndefined(h.db.store.get('app:mode'));
+      assert.strictEqual(h.nativeOs.calls.relaunch, 1);
+      yield* Scope.close(h.scope, Exit.void);
+    })
+  );
+
+  it.effect('reset refuses to clear state or relaunch if the purge marker cannot be saved', () =>
+    Effect.gen(function* () {
+      const h = yield* openForReset();
+      const db = Context.get(h.ctx, OperationalDb);
+      const write = vi.spyOn(db, 'setSetting').mockReturnValueOnce(
+        Effect.fail(new DbError({ op: 'setSetting', cause: 'disk unavailable' }))
+      );
+      try {
+        const result = yield* Effect.exit(Effect.tryPromise(() =>
+          fake.ipcMain.invoke(CHANNELS.capabilityResetApp, { sender: h.wc })
+        ));
+        assert.isTrue(Exit.isFailure(result));
+        assert.deepStrictEqual(h.auth.signOutCalls, []);
+        assert.strictEqual(h.db.store.get('app:mode'), 'cloud');
+        assert.strictEqual(h.db.store.get('pref:launchAtLogin'), 'true');
+        assert.strictEqual(yield* h.secrets.getSecret('auth.refreshToken.user_1'), 'refresh-secret');
+        assert.strictEqual(h.db.recovery.size, 2);
+        assert.strictEqual(fake.session.defaultSession.clearDataCalls.length, h.storageCallsBefore);
+        assert.strictEqual(h.nativeOs.calls.relaunch, 0);
+      } finally {
+        write.mockRestore();
+        yield* Scope.close(h.scope, Exit.void);
+      }
     })
   );
 
@@ -2315,7 +2382,7 @@ describe('registerMainWindowHandlers', () => {
         const registry = Context.get(ctx, WindowRegistry);
         yield* registry.openMainWindow.pipe(Scope.extend(scope));
         const wc = fake.__windowInstances().at(-1)?.webContents;
-        const storageCallsBefore = fake.session.defaultSession.clearStorageDataCalls.length;
+        const storageCallsBefore = fake.session.defaultSession.clearDataCalls.length;
 
         // Booted 'cloud' (the fresh-install default): choosing cloud is a
         // persist-and-proceed, no relaunch.
@@ -2343,7 +2410,7 @@ describe('registerMainWindowHandlers', () => {
         // Nothing else was touched — this is a choice, not a reset.
         assert.isUndefined(db.store.get('app:pendingPurge'));
         assert.strictEqual(
-          fake.session.defaultSession.clearStorageDataCalls.length,
+          fake.session.defaultSession.clearDataCalls.length,
           storageCallsBefore
         );
 

@@ -131,10 +131,14 @@ export const makeBootLayer = (
   logging: Layer.Layer<MainLogger | LoggingTransport> = MainLoggerLive
 ): Layer.Layer<BootServices, BootError | WindowError> => {
   const electronApp = ElectronAppLive.pipe(Layer.provide(logging));
-  const operationalDb = OperationalDbLive.pipe(
+  const openedOperationalDb = OperationalDbLive.pipe(
     Layer.provide(appConfigLayer),
     Layer.provide(logging)
   );
+  // Complete a pending reset before auth, mode, preferences or any other
+  // device-data reader is built. All consumers share this same opened store.
+  const pendingReset = PendingResetLive.pipe(Layer.provide(openedOperationalDb), Layer.provide(logging));
+  const operationalDb = openedOperationalDb.pipe(Layer.provide(pendingReset));
   const secureStore = SecureStoreLive.pipe(
     Layer.provide(appConfigLayer),
     Layer.provide(electronApp),
@@ -147,10 +151,6 @@ export const makeBootLayer = (
   // keys (mode, identity) reconciliation on it; env:get forwards it to the
   // renderer's telemetry gate.
   const appMode = AppModeLive.pipe(Layer.provide(operationalDb), Layer.provide(logging));
-  // The boot-time purge applies a pending destructive reset before any
-  // product store / model / recovery handle exists (ModelManager depends on it
-  // explicitly; the workspace lifecycle only starts once the boot layer is up).
-  const pendingReset = PendingResetLive.pipe(Layer.provide(operationalDb), Layer.provide(logging));
   // Device-local preferences are global (not session-scoped), backed by
   // the operational KV table under the `pref:` prefix. Defined before the window
   // registry so the dock can seed its per-display anchor from `dockAnchors`

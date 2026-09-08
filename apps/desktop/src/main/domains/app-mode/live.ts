@@ -8,9 +8,9 @@ import { AppModeService, makeAppMode, type AppMode } from './service';
  * Operational KV key holding the chosen mode. Own namespace — deliberately NOT
  * a `pref:` DeviceSettings field: the mode is boot-structural state read BEFORE
  * the workspace lifecycle starts, and SettingsService.reset (the app
- * reset) must not silently flip a device between modes. Written by the
+ * preferences reset) must not silently flip a device between modes. Written by the
  * first-run chooser (capability:chooseAppMode) and the mode switch
- * (capability:resetApp with a mode); a plain reset keeps it.
+ * (capability:resetApp with a mode); a full app reset clears it for first-run setup.
  */
 export const APP_MODE_KEY = 'app:mode';
 

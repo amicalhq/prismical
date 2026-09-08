@@ -19,10 +19,9 @@ import { useTranslation } from 'react-i18next';
 
 /**
  * App reset. Desktop-only danger-zone Card, hidden on web
- * where `has('app-reset')` is false. Destructive: clears device settings + local
- * recording-recovery state and relaunches — behind an AlertDialog confirm. Notes
- * and account/keychain are untouched (notes are cloud-backed; the keychain is
- * sign-out territory).
+ * where `has('app-reset')` is false. Signs out all accounts, erases device data
+ * and credentials, then relaunches into first-run setup after confirmation.
+ * Server-side account data is kept.
  */
 export function AppResetSetting() {
   const { t } = useTranslation();
