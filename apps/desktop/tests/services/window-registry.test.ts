@@ -4,7 +4,7 @@ import { assert, describe, it } from '@effect/vitest';
 import { Context, Effect, Exit, Layer, Option, Queue, Scope } from 'effect';
 import { vi } from 'vitest';
 import type { FakeElectron } from '../helpers/fake-electron';
-import { FakeEvent } from '../helpers/fake-electron';
+import { FakeBrowserWindow, FakeEvent } from '../helpers/fake-electron';
 import { makeTestLogger, testConfigLayer } from '../helpers/test-layers';
 import { makeFakeOperationalDb } from '../helpers/fake-operational-db';
 import { ElectronAppLive } from '../../src/main/infra/electron/live';
@@ -36,6 +36,53 @@ const build = (overrides: Parameters<typeof testConfigLayer>[0] = {}) => {
 const ses = () => fake.session.defaultSession;
 
 describe('WindowRegistry (session controls)', () => {
+  it.effect('focusing after the main window closes recreates one window', () =>
+    Effect.gen(function* () {
+      const { layer } = build({ isE2E: false });
+      const scope = yield* Scope.make();
+      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const registry = Context.get(ctx, WindowRegistry);
+      yield* registry.openMainWindow.pipe(Scope.extend(scope));
+      const original = Option.getOrThrow(yield* registry.mainWindow);
+      original.destroy();
+      const before = fake.__windowInstances().length;
+
+      yield* Effect.all([registry.focusMainWindow, registry.focusMainWindow], { concurrency: 'unbounded' });
+      const reopened = Option.getOrThrow(yield* registry.mainWindow);
+      assert.notStrictEqual(reopened.id, original.id);
+      assert.strictEqual(fake.__windowInstances().length, before + 1);
+      assert.isTrue(reopened.isVisible());
+      reopened.destroy();
+      yield* Effect.yieldNow();
+      assert.isTrue(Option.isNone(yield* registry.identityForWebContents(reopened.webContents.id)));
+      assert.strictEqual(reopened.listenerCount('closed'), 0);
+      yield* registry.focusMainWindow;
+      const last = Option.getOrThrow(yield* registry.mainWindow);
+      yield* Scope.close(scope, Exit.void);
+      assert.isTrue(last.isDestroyed());
+    })
+  );
+
+  it.effect('a failed reopen releases the window and allows the next launch to retry', () =>
+    Effect.gen(function* () {
+      const { layer } = build();
+      const scope = yield* Scope.make();
+      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const registry = Context.get(ctx, WindowRegistry);
+      const load = vi.spyOn(FakeBrowserWindow.prototype, 'loadURL');
+      load.mockRejectedValueOnce(new Error('renderer load failed'));
+      yield* registry.focusMainWindow;
+      load.mockRestore();
+      const failed = fake.__windowInstances().at(-1)!;
+      assert.isTrue(failed.isDestroyed());
+      assert.isTrue(Option.isNone(yield* registry.identityForWebContents(failed.webContents.id)));
+
+      yield* registry.focusMainWindow;
+      assert.isTrue(Option.isSome(yield* registry.mainWindow));
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+
   it.effect('installs and removes permission handler, CSP injector and scheme handler', () =>
     Effect.gen(function* () {
       const { layer } = build();
@@ -196,7 +243,7 @@ describe('WindowRegistry (main window resource)', () => {
       assert.deepStrictEqual(event, { _tag: 'focused', windowId: window.id });
 
       // Listeners attached.
-      assert.strictEqual(window.listenerCount('closed'), 1);
+      assert.strictEqual(window.listenerCount('closed'), 2); // event stream + window scope release
       assert.strictEqual(window.webContents.listenerCount('will-navigate'), 1);
       assert.isNotNull(window.webContents.windowOpenHandler);
 

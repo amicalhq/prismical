@@ -1,7 +1,7 @@
 import { app, dialog } from 'electron';
 import { randomUUID } from 'node:crypto';
 import type { MainLoggerService } from '@desktop/logging';
-import started from 'electron-squirrel-startup';
+import { handleSquirrelStartup } from './squirrel-startup';
 import { bakedE2EBuild, e2eEnvTrusted, scrubE2EEnv } from './e2e-gate';
 
 // Packaged-E2E gating: a production packaged binary must ignore
@@ -25,13 +25,12 @@ if (process.env.PRISMICAL_E2E_USER_DATA_DIR) {
   app.setPath('sessionData', process.env.PRISMICAL_E2E_USER_DATA_DIR);
 }
 
-if (process.platform === 'win32' && started) {
+if (handleSquirrelStartup()) {
   // Squirrel.Windows event hook process (--squirrel-install/-updated/
-  // -obsolete/-uninstall): electron-squirrel-startup spawns the Update.exe
-  // shortcut work and quits once it completes. Nothing else may run here —
+  // -obsolete/-uninstall): the handler runs Update.exe, applies our shortcut
+  // identity, then quits. Nothing else may run here —
   // loading the app would reach requestSingleInstanceLock(), which fires
   // second-instance in the already-running app mid-background-update.
-  app.quit();
 } else {
   // The entire app lives behind this dynamic import so a module-evaluation
   // failure anywhere in its graph rejects here — the fatal boundary — instead

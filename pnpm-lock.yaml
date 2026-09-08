@@ -211,9 +211,6 @@ importers:
       electron-log:
         specifier: ^5.4.0
         version: 5.4.4
-      electron-squirrel-startup:
-        specifier: ^1.0.1
-        version: 1.0.1
       i18next:
         specifier: 'catalog:'
         version: 25.10.10(typescript@5.8.3)
@@ -5201,9 +5198,6 @@ packages:
   electron-log@5.4.4:
     resolution: {integrity: sha512-istWgaXjBfURBSS8LWVW9C3jsc6+ac+tY1lXrQEOTp0lVj+a4OlO1Tmqb36GgnEUDv92DGC9VI1HNXwJinWpgA==}
     engines: {node: '>= 14'}
-
-  electron-squirrel-startup@1.0.1:
-    resolution: {integrity: sha512-sTfFIHGku+7PsHLJ7v0dRcZNkALrV+YEozINTW8X1nM//e5O3L+rfYuvSW00lmGHnYmUjARZulD8F2V8ISI9RA==}
 
   electron-to-chromium@1.5.355:
     resolution: {integrity: sha512-LUPZhKzZPYSPme1jEYohpkA+ybYCJztr1quAdBd7E7h3+VOBVcKkwwtBJu41nrjawrRzfb8mtMfzWozoaK0ZIQ==}
@@ -13463,12 +13457,6 @@ snapshots:
     optional: true
 
   electron-log@5.4.4: {}
-
-  electron-squirrel-startup@1.0.1:
-    dependencies:
-      debug: 2.6.9
-    transitivePeerDependencies:
-      - supports-color
 
   electron-to-chromium@1.5.355: {}
 

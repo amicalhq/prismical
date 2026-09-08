@@ -39,7 +39,7 @@ export interface WindowRegistryService {
   readonly openMainWindow: Effect.Effect<BrowserWindow, WindowError, Scope.Scope>;
   readonly identityForWebContents: (webContentsId: number) => Effect.Effect<Option.Option<WindowIdentity>>;
   readonly mainWindow: Effect.Effect<Option.Option<BrowserWindow>>;
-  /** Show + focus the main window if it is still alive (tray/activate consumers). */
+  /** Reopen if closed, then show + focus the main window (tray/activate consumers). */
   readonly focusMainWindow: Effect.Effect<void>;
   /** Typed push to the main window renderer. False when no live window. */
   readonly sendToMainWindow: (channel: string, payload: unknown) => Effect.Effect<boolean>;

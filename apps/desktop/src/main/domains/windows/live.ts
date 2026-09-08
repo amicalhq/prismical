@@ -20,7 +20,9 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { app, BrowserWindow, nativeTheme, net, screen, session, shell } from 'electron';
-import { Effect, Fiber, Layer, Option, Queue, Runtime, SubscriptionRef } from 'effect';
+import {
+  Effect, ExecutionStrategy, Exit, Fiber, Layer, Option, Queue, Runtime, Scope, SubscriptionRef,
+} from 'effect';
 import { AppConfig } from '../../infra/config/service';
 import { ElectronApp } from '../../infra/electron/service';
 import { MainLogger } from '../../infra/logging/service';
@@ -111,6 +113,8 @@ export const WindowRegistryLive: Layer.Layer<
     // SubscriptionRef.set completes synchronously, so runSync is safe on the edge.
     const mainWindowFocused = yield* SubscriptionRef.make(false);
     const runtime = yield* Effect.runtime<never>();
+    const windowScope = yield* Effect.scope;
+    const mainWindowFocusLock = yield* Effect.makeSemaphore(1);
 
     const identityKindFor = (webContentsId: number): WindowKind | 'unknown' =>
       registered.get(webContentsId)?.identity.kind ?? 'unknown';
@@ -214,7 +218,7 @@ export const WindowRegistryLive: Layer.Layer<
         : { color: '#fafafa', symbolColor: '#4d4d4d', height: 32 };
 
     // --- Per-window acquisition ---------------------------------------------
-    const openMainWindow = Effect.acquireRelease(
+    const acquireMainWindow = Effect.acquireRelease(
       Effect.try({
         try: () => {
           // Sized from the display (policy.computeMainWindowSize) rather than a
@@ -369,6 +373,26 @@ export const WindowRegistryLive: Layer.Layer<
       Effect.tap(({ identity }) => log.info('main window opened', { context: { windowId: identity.windowId } })),
       Effect.map(({ window }) => window)
     );
+
+    const openMainWindow = Effect.gen(function* () {
+      // Release each closed window promptly, including failed loads. Forking
+      // also ties a live window to its caller's shutdown scope.
+      const parent = yield* Effect.scope;
+      const scope = yield* Scope.fork(parent, ExecutionStrategy.sequential);
+      const window = yield* acquireMainWindow.pipe(
+        Scope.extend(scope),
+        Effect.onError(() => Scope.close(scope, Exit.void))
+      );
+      const onClosed = () => {
+        Runtime.runFork(runtime)(Scope.close(scope, Exit.void));
+      };
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => { window.removeListener('closed', onClosed); })
+      ).pipe(Scope.extend(scope));
+      window.once('closed', onClosed);
+      if (window.isDestroyed()) yield* Scope.close(scope, Exit.void);
+      return window;
+    });
 
     const liveMainWindow: Effect.Effect<Option.Option<BrowserWindow>> = Effect.sync(() => {
       for (const entry of registered.values()) {
@@ -813,18 +837,23 @@ export const WindowRegistryLive: Layer.Layer<
       identityForWebContents: webContentsId =>
         Effect.sync(() => Option.fromNullable(registered.get(webContentsId)?.identity)),
       mainWindow: liveMainWindow,
-      focusMainWindow: liveMainWindow.pipe(
-        Effect.flatMap(
-          Option.match({
-            onNone: () => log.warn('focusMainWindow: no live main window'),
-            onSome: window =>
-              Effect.sync(() => {
-                if (config.isE2E) return;
-                if (window.isMinimized()) window.restore();
-                window.show();
-                window.focus();
-              }),
-          })
+      focusMainWindow: mainWindowFocusLock.withPermits(1)(
+        liveMainWindow.pipe(
+          Effect.flatMap(
+            Option.match({
+              onNone: () => openMainWindow.pipe(Scope.extend(windowScope)),
+              onSome: Effect.succeed,
+            })
+          ),
+          Effect.flatMap(window =>
+            Effect.sync(() => {
+              if (config.isE2E || window.isDestroyed()) return;
+              if (window.isMinimized()) window.restore();
+              window.show();
+              window.focus();
+            })
+          ),
+          Effect.catchAll(error => log.error('failed to reopen main window', { error }))
         )
       ),
       sendToMainWindow: (channel, payload) =>

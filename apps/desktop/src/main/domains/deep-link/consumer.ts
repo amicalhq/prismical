@@ -146,14 +146,17 @@ export const runSecondInstanceConsumer: Effect.Effect<
   const options = { allowDevScheme: !config.isPackaged };
 
   return yield* Queue.take(electronApp.events.secondInstance).pipe(
-    Effect.flatMap(({ argv }) =>
-      windows.focusMainWindow.pipe(
+    Effect.flatMap(({ argv }) => {
+      // Outgoing versions can still acquire the lock from Squirrel hooks.
+      // Background install events must not focus windows or deliver links.
+      if (argv.some(arg => arg.startsWith('--squirrel-'))) return Effect.void;
+      return windows.focusMainWindow.pipe(
         Effect.zipRight(
           Effect.forEach(deepLinksFromArgv(argv, options), url => deepLinks.offerUrl(url))
         ),
         Effect.zipRight(log.info('second instance handled', { context: { argvLength: argv.length } }))
-      )
-    ),
+      );
+    }),
     Effect.forever
   );
 });

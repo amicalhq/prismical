@@ -17,6 +17,7 @@
  *      failures never soft-continue.
  */
 import path from 'node:path';
+import { WINDOWS_APP_USER_MODEL_ID } from '../app-identity';
 import { app, protocol } from 'electron';
 import { Cause, Effect, Runtime } from 'effect';
 import { disposeAndExit } from '../domains/shutdown/shutdown';
@@ -37,6 +38,11 @@ export function startDesktop(logging: ReturnType<typeof makeMainLogging>): void 
     // Another instance owns this profile. Nothing below may run.
     app.quit();
   } else {
+    if (process.platform === 'win32') {
+      // Match the custom identity written by our Squirrel install/update hooks.
+      app.setAppUserModelId(WINDOWS_APP_USER_MODEL_ID);
+    }
+
     // The renderer's rooted scheme is standard+secure so root-absolute
     // asset paths and fetch() work; served by WindowRegistry's protocol.handle.
     protocol.registerSchemesAsPrivileged([

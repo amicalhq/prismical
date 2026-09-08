@@ -235,6 +235,28 @@ describe('DeepLinks', () => {
     })
   );
 
+  it.effect('Squirrel second instances neither focus nor deliver deep links', () =>
+    Effect.gen(function* () {
+      const { layer, state } = build({ platform: 'win32' });
+      const scope = yield* Scope.make();
+      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const deepLinks = Context.get(ctx, DeepLinks);
+      yield* Effect.forkScoped(runSecondInstanceConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+
+      for (const hook of ['install', 'updated', 'obsolete', 'uninstall', 'firstrun']) {
+        fake.app.emit('second-instance', new FakeEvent(), [
+          'Prismical.exe', `--squirrel-${hook}`, 'prismical://app/unexpected',
+        ]);
+      }
+      // A normal launch behind the hooks proves the consumer drained them.
+      fake.app.emit('second-instance', new FakeEvent(), ['Prismical.exe', 'prismical://app/notes']);
+      const queued = yield* Queue.take(deepLinks.urls);
+      assert.strictEqual(queued, 'prismical://app/notes');
+      assert.strictEqual(state.focusCount, 1);
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+
   it.effect('cold-start: win32 argv deep link reaches the url queue', () =>
     Effect.gen(function* () {
       const { layer } = build({ platform: 'win32', isPackaged: true });

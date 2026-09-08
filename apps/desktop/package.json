@@ -54,7 +54,6 @@
     "drizzle-orm": "catalog:",
     "effect": "3.21.2",
     "electron-log": "^5.4.0",
-    "electron-squirrel-startup": "^1.0.1",
     "i18next": "catalog:",
     "jose": "^6.1.0",
     "lucide-react": "^0.553.0",
