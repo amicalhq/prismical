@@ -22,6 +22,10 @@ sanitized records immediately; the asynchronous relay retains at most one active
 IPC invocation, counted inside the queue budget until it settles. A stalled relay
 pauses delivery and accounts for overflow without creating more pending calls.
 Failed deliveries emit one nonrecursive suppression notice after recovery.
+Renderer Error arguments and uncaught/rejection values use a conservative local
+projection: static failure text, safe source coordinates, bounded classification
+and causes. Incident deduplication uses the original object. Explicit injected
+main/worker diagnostics retain their ordinary normalized error details.
 
 ## Shared limits
 

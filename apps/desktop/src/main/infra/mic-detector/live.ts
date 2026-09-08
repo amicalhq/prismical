@@ -132,7 +132,7 @@ export const MicActivityLive: Layer.Layer<
 
         const onStdinError = (error: Error): void => {
           unsafeLog.warn('mic-detector child stdin error', {
-            context: { reason: error.message },
+            error,
           });
         };
 
@@ -141,7 +141,7 @@ export const MicActivityLive: Layer.Layer<
           dead = true;
           reportFailure(error);
           clearLatest();
-          unsafeLog.error('mic-detector child errored', { context: { reason: error.message } });
+          unsafeLog.error('mic-detector child errored', { error });
           Deferred.unsafeDone(
             terminated,
             Effect.fail(new DetectorCrashError({ reason: error.message }))

@@ -11,6 +11,7 @@ import {
   makeRecord,
   makeWire,
   normalizeError,
+  normalizeUnexpectedError,
   parseRecord,
   parseWire,
   type LogRecord,
@@ -408,4 +409,46 @@ test('truncation evidence survives wire and retained-record reprojection', () =>
   assert.equal(exported.truncated, true);
   assert.equal(exported.error?.truncated, true);
   assert.equal(exported.error?.causes?.length, 3);
+});
+
+test('credential headers and complete home directory names never reach JSONL', () => {
+  const error = new Error(
+    'Authorization: Basic dXNlcjpwYXNz\nCookie: session=PRIVATE_COOKIE; other=PRIVATE_OTHER\nSet-Cookie: id=PRIVATE_SET_COOKIE\nCookie: session=first}PRIVATE_COOKIE_TAIL'
+  );
+  error.stack =
+    'Error: failed\n    at C:\\Users\\Jane Doe\\app\\main.js:4:2\n    at /Users/John Smith/app/main.js:5:3';
+  const record = makeRecord(makeWire('error', 'test', error.message, { error }), origin, source);
+  const output = formatJsonLine(record);
+  assert.doesNotMatch(
+    output,
+    /dXNlcjpwYXNz|PRIVATE_COOKIE|PRIVATE_OTHER|PRIVATE_SET_COOKIE|Jane|Doe|John|Smith/
+  );
+  assert.match(output, /main\.js:4:2/);
+  assert.match(output, /main\.js:5:3/);
+});
+
+test('unexpected error projection preserves bounded classification and frames without prose', () => {
+  const cause = Object.assign(new Error('PRIVATE_CAUSE'), { code: 'ENOENT' });
+  cause.stack =
+    'Error: PRIVATE_CAUSE\n    at PRIVATE_FUNCTION (/Users/private/app/assets/worker.js:9:2)';
+  const error = Object.assign(new Error('PRIVATE_MESSAGE', { cause }), {
+    _tag: 'WorkerCrashed',
+    reason: 'worker-exited',
+    code: 'EPIPE',
+  });
+  error.stack =
+    'Error: PRIVATE_MESSAGE\nPRIVATE_EXTRA_LINE\n    at PRIVATE_FUNCTION (/Users/private/app/assets/main.js:12:3)';
+  const safe = normalizeUnexpectedError(error);
+  assert.equal(safe.tag, 'WorkerCrashed');
+  assert.equal(safe.code, 'EPIPE');
+  assert.equal(safe.reason, 'worker-exited');
+  assert.equal(safe.cause?.code, 'ENOENT');
+  assert.equal(safe.stack, '    at assets/main.js:12:3');
+  assert.equal(safe.cause?.stack, '    at assets/worker.js:9:2');
+  assert.doesNotMatch(JSON.stringify(safe), /PRIVATE_|Users\/private/);
+  assert.equal(normalizeUnexpectedError('PRIVATE_REJECTION').message, 'Failure captured');
+  const queryError = new Error('private');
+  queryError.stack =
+    'Error: private\n    at load (https://host/assets/main.js?token=PRIVATE_QUERY:12:3)';
+  assert.equal(normalizeUnexpectedError(queryError).stack, '    at assets/main.js:12:3');
 });

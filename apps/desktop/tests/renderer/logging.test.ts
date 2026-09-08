@@ -85,4 +85,26 @@ describe('renderer diagnostic boundary', () => {
     await vi.waitFor(() => expect(write).toHaveBeenCalledTimes(129));
     expect(write.mock.calls.at(-1)?.[0]).toMatchObject({ context: { count: 172 } });
   });
+  it('projects uncaught, console and non-Error rejection details before local delivery', async () => {
+    const output = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const write = vi.fn(async (_frame: unknown) => {});
+    cleanup = installRendererLogging({ getConfig: async () => config, write });
+    await Promise.resolve();
+    const error = Object.assign(new Error('PRIVATE_RENDERER_CONTENT'), { code: 'EPIPE' });
+    error.stack =
+      'Error: PRIVATE_RENDERER_CONTENT\n    at PRIVATE_FUNCTION (/Users/private/app/assets/main.js:12:3)';
+    console.error('Renderer operation failed', error);
+    window.dispatchEvent(new ErrorEvent('error', { error }));
+    const rejection = Object.assign(new Event('unhandledrejection'), {
+      reason: 'PRIVATE_REJECTION',
+    });
+    window.dispatchEvent(rejection);
+    await vi.waitFor(() => expect(write).toHaveBeenCalledTimes(2));
+    expect(write.mock.calls[0]?.[0]).toMatchObject({
+      error: { code: 'EPIPE', stack: '    at assets/main.js:12:3' },
+    });
+    expect(JSON.stringify([write.mock.calls, output.mock.calls])).not.toMatch(
+      /PRIVATE_|Users\/private/
+    );
+  });
 });

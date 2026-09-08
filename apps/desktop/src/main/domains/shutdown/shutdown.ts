@@ -7,6 +7,7 @@ export interface DisposeAndExitOptions {
   readonly dispose: () => Promise<void>;
   readonly exit: (code: number) => void;
   readonly onTimeout?: () => void;
+  readonly onFailure?: (error: unknown) => void;
   readonly deadline?: Duration.Duration;
 }
 
@@ -27,6 +28,7 @@ export const disposeAndExit = (options: DisposeAndExitOptions): Effect.Effect<vo
     Effect.tapError(error =>
       Effect.sync(() => {
         if (error === 'dispose-timeout') options.onTimeout?.();
+        else options.onFailure?.(error);
       })
     ),
     Effect.ignore,

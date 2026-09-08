@@ -114,15 +114,21 @@ describe('disposeAndExit', () => {
     })
   );
 
-  it.effect('a rejecting dispose still exits 0', () =>
+  it.effect('a rejecting dispose reports the failure and still exits 0', () =>
     Effect.gen(function* () {
       const exits: number[] = [];
+      const failures: unknown[] = [];
+      const error = new Error('finalizer blew up');
       yield* disposeAndExit({
-        dispose: () => Promise.reject(new Error('finalizer blew up')),
+        dispose: () => Promise.reject(error),
+        onFailure: failure => {
+          failures.push(failure);
+        },
         exit: code => {
           exits.push(code);
         },
       });
+      assert.deepStrictEqual(failures, [error]);
       assert.deepStrictEqual(exits, [0]);
     })
   );

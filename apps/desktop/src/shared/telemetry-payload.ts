@@ -1,3 +1,6 @@
+import { sourceFrame } from '@desktop/logging/wire';
+export { sanitizeSourceLocation as sanitizeTelemetrySourceLocation } from '@desktop/logging/wire';
+
 type TelemetryValue = string | number | boolean | null;
 
 // Only metadata used by the product event catalog or diagnostic boundaries.
@@ -245,27 +248,6 @@ export function sanitizeTelemetryProperties(input: unknown): Record<string, Tele
     }
   }
   return result;
-}
-
-export function sanitizeTelemetrySourceLocation(input: string): string | undefined {
-  let location = input.replaceAll('\\', '/').split(/[?#]/, 1)[0]!;
-  const anchor = location.match(
-    /(?:^|\/)(app\.asar(?:\.unpacked)?\/|\.vite\/|assets\/|src\/|node_modules\/)/
-  );
-  if (anchor?.index !== undefined) location = location.slice(anchor.index).replace(/^\//, '');
-  else if (!location.startsWith('node:')) location = location.slice(location.lastIndexOf('/') + 1);
-  if (location.length > 300 || !/^[a-zA-Z0-9_./@:+-]+$/.test(location)) return undefined;
-  if (!location.startsWith('node:') && !/\.(?:[cm]?js|tsx?)$/.test(location)) return undefined;
-  return location;
-}
-
-function sourceFrame(line: string): string | undefined {
-  // Keep source coordinates, not function labels, eval text, URL queries or the
-  // arbitrary error-message lines which V8 places before its first frame.
-  const match = line.match(/^\s*at (?:[^()\n]*\()?([^()\n]+):(\d{1,9}):(\d{1,9})\)?$/);
-  if (!match) return undefined;
-  const location = sanitizeTelemetrySourceLocation(match[1]!);
-  return location ? `    at ${location}:${match[2]}:${match[3]}` : undefined;
 }
 
 /** Preserve grouping and source frames without forwarding messages or bodies. */

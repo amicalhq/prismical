@@ -2195,6 +2195,11 @@ describe('RecordingService — lifecycle ownership and durability', () => {
         throw new Error('header update failed');
       });
       yield* h.service.stop(id);
+      assert.include(h.logger.find(e => e.message === 'Recording processing attempt ended')?.data, {
+        recordingId: id,
+        outcome: 'failure',
+        failedStage: 'storage',
+      });
       assert.strictEqual((yield* SubscriptionRef.get(h.service.state)).status, 'error');
       assert.strictEqual(h.fakeCloud.finalizeCalls.length, 0);
       assert.strictEqual(h.fakeCapture.sessions.length, 1);
@@ -2407,6 +2412,11 @@ describe('RecordingService — lifecycle ownership and durability', () => {
       yield* Queue.offer(h.fakeCapture.current().frames, fakeFrame('mic_raw', oneSecond()));
       yield* settle;
       yield* h.service.stop(id);
+      assert.include(h.logger.find(e => e.message === 'Recording processing attempt ended')?.data, {
+        recordingId: id,
+        outcome: 'failure',
+        failedStage: 'storage',
+      });
       const row = yield* h.db.getRecoveryOutbox(id);
       assert.isNull(row?.lastChunkIndex);
       assert.strictEqual(row?.phase, 'chunks');

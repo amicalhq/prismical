@@ -14,7 +14,7 @@ export const resolveDeviceId = (read: () => Promise<string>) =>
     const log = (yield* MainLogger).scoped('telemetry');
     return yield* Effect.tryPromise(read).pipe(
       Effect.filterOrFail(id => id.trim().length > 0),
-      Effect.timeout('1 second'),
+      Effect.timeout('2 seconds'),
       Effect.catchAll(() =>
         store.getSetting(DEVICE_ID_KEY).pipe(
           Effect.flatMap(existing => {

@@ -607,6 +607,7 @@ export const RecordingServiceLive: Layer.Layer<
               } else if (
                 !(yield* persistRequired(recordingId, store.segmentsReceived(res.value)))
               ) {
+                failedStage ??= 'storage';
                 return;
               }
               if (mirrorToCore) {
@@ -1131,7 +1132,13 @@ export const RecordingServiceLive: Layer.Layer<
 
         // Close audio and persist the exact stop metadata before another owner
         // can process this job. A failed bookkeeping write retains the WAV.
-        yield* recovery.finalizeAndClose;
+        yield* recovery.finalizeAndClose.pipe(
+          Effect.tapError(() =>
+            Effect.sync(() => {
+              failedStage ??= 'storage';
+            })
+          )
+        );
         const savedStop = yield* db
           .updateRecoveryOutbox(recordingId, {
             status: 'finalizing',

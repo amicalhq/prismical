@@ -1,4 +1,4 @@
-import { byteLength, formatConsole, makeWire } from './codec';
+import { byteLength, formatConsole, makeWire, normalizeUnexpectedError } from './codec';
 import { makeFilter } from './filter';
 import { LIMITS, type Level, type LogWire } from './types';
 
@@ -107,7 +107,7 @@ export function installRendererLogBridge(bridge: RendererLogBridge, scope: strin
         enqueue(
           makeWire(level, scope, typeof args[0] === 'string' ? args[0] : 'Renderer diagnostic', {
             context: { argumentCount: args.length },
-            error,
+            error: error ? normalizeUnexpectedError(error) : undefined,
           })
         );
       } catch {
@@ -119,7 +119,8 @@ export function installRendererLogBridge(bridge: RendererLogBridge, scope: strin
   console.warn = emit('warn');
   console.error = emit('error');
   const failure = (message: string, error: unknown) => {
-    if (!alreadyReported(error)) enqueue(makeWire('error', scope, message, { error }));
+    if (!alreadyReported(error))
+      enqueue(makeWire('error', scope, message, { error: normalizeUnexpectedError(error) }));
   };
   const onError = (event: ErrorEvent) => failure('Renderer uncaught exception', event.error);
   const onRejection = (event: PromiseRejectionEvent) =>

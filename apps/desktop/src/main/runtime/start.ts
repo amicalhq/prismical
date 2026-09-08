@@ -65,6 +65,8 @@ export function startDesktop(logging: ReturnType<typeof makeMainLogging>): void 
             exit: code => {
               app.exit(code);
             },
+            onFailure: error =>
+              log.error('Runtime shutdown failed', { error: failureCause(error) }),
             onTimeout: () => {
               log.error('Runtime shutdown exceeded deadline; exiting');
             },
@@ -75,13 +77,15 @@ export function startDesktop(logging: ReturnType<typeof makeMainLogging>): void 
         // Boot/program failure. No dispose here — the quit path is the only
         // dispose caller; a non-zero exit tears the process down regardless.
         log.error('Application boot failed', {
-          error: Runtime.isFiberFailure(error)
-            ? Cause.squash(error[Runtime.FiberFailureCauseId])
-            : error,
+          error: failureCause(error),
         });
         app.exit(1);
       });
   }
+}
+
+function failureCause(error: unknown): unknown {
+  return Runtime.isFiberFailure(error) ? Cause.squash(error[Runtime.FiberFailureCauseId]) : error;
 }
 
 function registerProtocolHandlers(): void {

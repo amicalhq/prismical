@@ -35,6 +35,10 @@ export function sanitizeText(input: string, max: number = LIMITS.stringChars): s
   return trim(
     input
       .slice(0, Math.max(max * 4, LIMITS.stackChars))
+      .replace(
+        /((?:\b(?:proxy-)?authorization|\b(?:set-)?cookie)["']?\s*[=:]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\r\n]+)/gi,
+        `$1${redacted}`
+      )
       .replace(/\bBearer\s+[^\s,;"']+/gi, `Bearer ${redacted}`)
       .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)?\b/g, redacted)
       .replace(/\b(?:sk|pk)[-_][A-Za-z0-9_-]{16,}\b/g, redacted)
@@ -44,8 +48,8 @@ export function sanitizeText(input: string, max: number = LIMITS.stringChars): s
       )
       .replace(/\b([a-z][a-z0-9+.-]*:\/\/)(?:[^\s/@]+(?::[^\s/@]*)?@)/gi, `$1${redacted}@`)
       .replace(/\b([a-z][a-z0-9+.-]*:\/\/[^\s?#"'<>]+)[?#][^\s"'<>]*/gi, `$1${redacted}`)
-      .replace(/(?:\/Users\/|\/home\/)[^/\s:]+/g, '/[user]')
-      .replace(/[A-Za-z]:[\\/]Users[\\/][^\\/\s:]+/gi, '[user]')
+      .replace(/(?:\/Users\/|\/home\/)[^/\r\n:"'<>]+/g, '/[user]')
+      .replace(/[A-Za-z]:[\\/]Users[\\/][^\\/\r\n:"'<>]+/gi, '[user]')
       .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, '[email]'),
     max
   );
@@ -101,7 +105,7 @@ const label = (value: unknown): string | undefined =>
   typeof value === 'string' && /^[A-Za-z][A-Za-z0-9_.:-]{0,127}$/.test(value)
     ? sanitizeText(value, 128)
     : undefined;
-export function normalizeError(input: unknown): LogError {
+function projectError(input: unknown, unexpected: boolean): LogError {
   const seen = new WeakSet<object>();
   const project = (value: unknown, depth: number): LogError => {
     if (depth >= LIMITS.causes) return { name: 'Error', message: marker, truncated: true };
@@ -112,8 +116,9 @@ export function normalizeError(input: unknown): LogError {
     const name = label(field(value, 'name')) ?? label(field(value, '_tag')) ?? 'Error';
     const tag = label(field(value, '_tag')) ?? label(field(value, 'tag'));
     const rawMessage = field(value, 'message');
-    const message =
-      typeof rawMessage === 'string'
+    const message = unexpected
+      ? 'Failure captured'
+      : typeof rawMessage === 'string'
         ? sanitizeText(rawMessage)
         : typeof value === 'string'
           ? sanitizeText(value)
@@ -128,7 +133,25 @@ export function normalizeError(input: unknown): LogError {
       message,
       ...(field(value, 'truncated') === true ? { truncated: true as const } : {}),
       ...(tag ? { tag } : {}),
-      ...(typeof rawStack === 'string' ? { stack: sanitizeText(rawStack, LIMITS.stackChars) } : {}),
+      ...(typeof rawStack === 'string'
+        ? {
+            stack: unexpected
+              ? trim(
+                  rawStack
+                    .slice(0, 16_384)
+                    .split('\n')
+                    .slice(0, 80)
+                    .flatMap(line => {
+                      const frame = sourceFrame(line);
+                      return frame ? [frame] : [];
+                    })
+                    .slice(0, 20)
+                    .join('\n'),
+                  LIMITS.stackChars
+                )
+              : sanitizeText(rawStack, LIMITS.stackChars),
+          }
+        : {}),
       ...(label(code)
         ? { code: label(code)! }
         : typeof code === 'number' && Number.isSafeInteger(code)
@@ -150,6 +173,32 @@ export function normalizeError(input: unknown): LogError {
     return { name: 'Error', message: 'Unserializable failure' };
   }
 }
+
+export function sanitizeSourceLocation(input: string): string | undefined {
+  let location = input.replaceAll('\\', '/').split(/[?#]/, 1)[0]!;
+  const anchor = location.match(
+    /(?:^|\/)(app\.asar(?:\.unpacked)?\/|\.vite\/|assets\/|src\/|node_modules\/)/
+  );
+  if (anchor?.index !== undefined) location = location.slice(anchor.index).replace(/^\//, '');
+  else if (!location.startsWith('node:')) location = location.slice(location.lastIndexOf('/') + 1);
+  if (location.length > 300 || !/^[a-zA-Z0-9_./@:+-]+$/.test(location)) return undefined;
+  if (!location.startsWith('node:') && !/\.(?:[cm]?js|tsx?)$/.test(location)) return undefined;
+  return location;
+}
+
+export function sourceFrame(line: string): string | undefined {
+  // Keep source coordinates, not function labels, eval text, URL queries or the
+  // arbitrary error-message lines which V8 places before its first frame.
+  const match = line.match(/^\s*at (?:[^()\n]*\()?([^()\n]+):(\d{1,9}):(\d{1,9})\)?$/);
+  if (!match) return undefined;
+  const location = sanitizeSourceLocation(match[1]!);
+  return location ? `    at ${location}:${match[2]}:${match[3]}` : undefined;
+}
+
+export const normalizeError = (input: unknown): LogError => projectError(input, false);
+
+/** Unknown renderer failures must not retain messages or stack function labels. */
+export const normalizeUnexpectedError = (input: unknown): LogError => projectError(input, true);
 
 function fit<T extends LogWire>(record: T, limit: number): T {
   if (byteLength(JSON.stringify(record)) + 1 <= limit) return record;
