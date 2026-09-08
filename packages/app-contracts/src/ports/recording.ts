@@ -92,7 +92,7 @@ export interface NativeRecordingState {
  */
 export type NativeStartResult =
   | { readonly ok: true; readonly recordingId: string }
-  | { readonly ok: false; readonly reason: 'permission-denied' | 'busy' | 'no-session' | 'model-missing' | 'storage-unavailable' };
+  | { readonly ok: false; readonly reason: 'permission-denied' | 'busy' | 'no-session' | 'model-missing' | 'storage-unavailable' | 'update-required' };
 
 export interface NativeRecordingControl {
   /**

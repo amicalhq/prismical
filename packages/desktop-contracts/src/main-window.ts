@@ -160,6 +160,10 @@ export const CHANNELS = {
   capabilityCheckUpdates: 'capability:checkUpdates',
   /** invoke → UpdateStateView. The current live updater view. */
   updaterGetState: 'updater:getState',
+  updaterGetAccess: 'updater:getAccess',
+  updaterAccessChanged: 'updater:accessChanged',
+  updaterOpenDownload: 'updater:openDownload',
+  updaterQuit: 'updater:quit',
   /** push main→renderer: UpdateStateView fan-out on any updater state change. */
   updaterStateChanged: 'updater:stateChanged',
   /** invoke → void. Restart into a staged update (no-op when nothing staged). */
@@ -672,6 +676,7 @@ export const startRecordingResultSchema = z.discriminatedUnion('ok', [
         'no-session',
         'model-missing',
         'storage-unavailable',
+        'update-required',
       ]),
     })
     .strict(),
@@ -1220,6 +1225,19 @@ export const updatePromptViewSchema = z
   .strip();
 export type UpdatePromptView = z.infer<typeof updatePromptViewSchema>;
 
+export const updateRequirementSchema = z.object({
+  required: z.boolean(),
+  evaluatedVersion: z.string().min(1),
+  minimumVersion: z.string().min(1).optional(),
+});
+export type UpdateRequirement = z.infer<typeof updateRequirementSchema>;
+
+export const updateAccessViewSchema = z.object({
+  requirement: updateRequirementSchema.nullable(),
+  recordingActive: z.boolean(),
+});
+export type UpdateAccessView = z.infer<typeof updateAccessViewSchema>;
+
 /**
  * The live updater view crossing updater:getState / updater:stateChanged.
  * `.strip()` like deviceSettingsSchema: main's own derived state, re-parsed
@@ -1565,6 +1583,10 @@ export type ThemeSource = z.infer<typeof themeSourceSchema>;
  * channel; `resetApp` relaunches the process so its promise never resolves.
  */
 export interface MainWindowCapabilitiesApi {
+  readonly getUpdateAccess: () => Promise<UpdateAccessView>;
+  readonly onUpdateAccess: (listener: (access: UpdateAccessView) => void) => () => void;
+  readonly openUpdateDownload: () => Promise<void>;
+  readonly quitApp: () => Promise<void>;
   readonly checkForUpdates: () => Promise<UpdateCheckResult>;
   /** The current live updater view. */
   readonly getUpdateState: () => Promise<UpdateStateView>;

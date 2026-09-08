@@ -1,3 +1,5 @@
+import { RemoteConfig } from '../../domains/remote-config/service';
+import type { UpdateAccessView } from '@prismical/desktop-contracts';
 import { LIMITS } from '@desktop/logging/wire';
 /**
  * Main-window IPC membrane.
@@ -130,6 +132,7 @@ type HandlerEnv =
   | SystemPermissions
   | NativeOs
   | UpdaterService
+  | RemoteConfig
   | ModelManager
   | OperationalDb
   | SecureStore
@@ -182,7 +185,9 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
     const telemetry = yield* TelemetryService;
     const sysPermissions = yield* SystemPermissions;
     const nativeOs = yield* NativeOs;
+    const scope = yield* Effect.scope;
     const updater = yield* UpdaterService;
+    const remoteConfig = yield* RemoteConfig;
     const models = yield* ModelManager;
     const operationalDb = yield* OperationalDb;
     const secureStore = yield* SecureStore;
@@ -847,9 +852,43 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
     yield* acquireHandle(CHANNELS.capabilityCheckUpdates, event =>
       runPromise(
         validateMainSender(event).pipe(
+          Effect.zipRight(Effect.forkIn(remoteConfig.refresh, scope)),
           Effect.zipRight(updater.checkForUpdates),
           Effect.map((status): UpdateCheckResult => ({ status }))
         )
+      )
+    );
+
+    const updateAccessChanges = Stream.zipLatest(
+      remoteConfig.requirement.changes,
+      recording.stateChanges
+    ).pipe(
+      Stream.map(([requirement, state]): UpdateAccessView => ({
+        requirement,
+        recordingActive: !['idle', 'error'].includes(state.status),
+      }))
+    );
+    yield* acquireHandle(CHANNELS.updaterGetAccess, event =>
+      runPromise(
+        validateMainSender(event).pipe(
+          Effect.zipRight(Stream.runHead(updateAccessChanges)),
+          Effect.map(Option.getOrThrow)
+        )
+      )
+    );
+    yield* acquireHandle(CHANNELS.updaterOpenDownload, event =>
+      runPromise(
+        validateMainSender(event).pipe(
+          Effect.zipRight(nativeOs.openExternal('https://prismical.ai/download'))
+        )
+      )
+    );
+    yield* acquireHandle(CHANNELS.updaterQuit, event =>
+      runPromise(validateMainSender(event).pipe(Effect.zipRight(electronApp.quit)))
+    );
+    yield* Effect.forkScoped(
+      Stream.runForEach(updateAccessChanges, access =>
+        windows.sendToAppWindows(CHANNELS.updaterAccessChanged, access)
       )
     );
 

@@ -1,3 +1,4 @@
+import type { UpdateAccessView } from '@prismical/desktop-contracts';
 /**
  * Main-window preload — the typed capability bridge.
  *
@@ -105,6 +106,14 @@ const telemetryBuffer = makeReplayBuffer<TelemetryState>({
     ipcRenderer.on(
       CHANNELS.telemetryStateChanged,
       (_event: Electron.IpcRendererEvent, state: TelemetryState) => listener(state)
+    ),
+});
+
+const updateAccessBuffer = makeReplayBuffer<UpdateAccessView>({
+  on: listener =>
+    ipcRenderer.on(
+      CHANNELS.updaterAccessChanged,
+      (_event: Electron.IpcRendererEvent, access: UpdateAccessView) => listener(access)
     ),
 });
 
@@ -300,6 +309,10 @@ const api: MainWindowDesktopApi = {
   // never resolves — the adapter treats it as fire-and-forget.
   capabilities: {
     checkForUpdates: () => ipcRenderer.invoke(CHANNELS.capabilityCheckUpdates),
+    getUpdateAccess: () => ipcRenderer.invoke(CHANNELS.updaterGetAccess),
+    onUpdateAccess: updateAccessBuffer.onState,
+    openUpdateDownload: () => ipcRenderer.invoke(CHANNELS.updaterOpenDownload),
+    quitApp: () => ipcRenderer.invoke(CHANNELS.updaterQuit),
     getUpdateState: () => ipcRenderer.invoke(CHANNELS.updaterGetState),
     onUpdateState: updaterBuffer.onChanged,
     restartToUpdate: () => ipcRenderer.invoke(CHANNELS.updaterQuitInstall),

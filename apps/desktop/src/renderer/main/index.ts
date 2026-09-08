@@ -5,7 +5,8 @@
 // once an account is active. Both read the same multi-subscriber session buffer.
 // The streaming prototype hook stays for the e2e suite, gated behind the
 // e2e-only preload surface so a production build exposes no test API.
-import { mountAuthGate } from './auth-gate';
+import { mountAuthGate, type AuthGateHandle } from './auth-gate';
+import type { UpdateAccessView } from '@prismical/desktop-contracts';
 import { mountAppShell } from './app/mount';
 import { openAskStream, type AskStreamHandle } from './stream';
 import { createDesktopRendererI18n } from './application-i18n';
@@ -115,10 +116,25 @@ const bootstrap = async (): Promise<void> => {
   // While no mode is chosen the gate is mounted INERT: the chooser paints over
   // it, and it must not be reachable by keyboard underneath (a sign-in started
   // under the chooser would carry a cloud roster into a later local choice).
-  const gate =
-    !isFloatWindow && desktopEnv.appMode !== 'local'
-      ? mountAuthGate(root, applicationI18n.instance, { inert: !appModeState.chosen })
-      : null;
+  let gate: AuthGateHandle | null = null;
+  let modeChosen = appModeState.chosen;
+  let latestAccess: UpdateAccessView | null = null;
+  const applyUpdateAccess = (access: UpdateAccessView) => {
+    latestAccess = access;
+    if (!isFloatWindow && desktopEnv.appMode !== 'local') {
+      // A blocked boot never mounts sign-in work. Existing auth UI stays inert.
+      if (!access.requirement && !gate)
+        gate = mountAuthGate(root, applicationI18n.instance, { inert: !modeChosen });
+      gate?.setInert(!modeChosen || (!!access.requirement && !access.recordingActive));
+    }
+  };
+  let pushedAccess = false;
+  window.desktop.capabilities.onUpdateAccess(access => {
+    pushedAccess = true;
+    applyUpdateAccess(access);
+  });
+  const initialAccess = await window.desktop.capabilities.getUpdateAccess();
+  if (!pushedAccess) applyUpdateAccess(initialAccess);
 
   // In cloud mode the shell renders nothing until an account is active, so the
   // gate above owns the pre-auth surface. Both roots share the exact same i18n
@@ -127,8 +143,9 @@ const bootstrap = async (): Promise<void> => {
   await mountAppShell(root, desktopEnv, applicationI18n, appModeState, {
     onboarding: settings.onboarding,
     onModeChosen: () => {
-      gate?.setInert(false);
-      gate?.startSignIn();
+      modeChosen = true;
+      if (latestAccess) applyUpdateAccess(latestAccess);
+      if (!latestAccess?.requirement) gate?.startSignIn();
     },
   });
 };

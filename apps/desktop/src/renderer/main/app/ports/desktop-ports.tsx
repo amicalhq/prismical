@@ -448,7 +448,7 @@ const createDesktopCapabilityPort = (appMode: 'local' | 'cloud'): DesktopCapabil
   // `subscribe` SEEDS from getState: a renderer reload (Cmd+R) recreates the
   // preload push-buffer empty and main pushes only on a state CHANGE, so a
   // subscription alone would leave a reloaded screen blank until the next
-  // change (the same lesson as mount.tsx's UpdatePromptOverlay). The pull is
+  // change (the same lesson as the required-update gate). The pull is
   // dropped once any push has landed — a push is always at least as fresh.
   localModels: {
     getState: () => window.desktop.models.getState(),

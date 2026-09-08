@@ -31,7 +31,9 @@
  * makeBootLayer exists so tests can substitute the AppConfig leaf (fake paths,
  * updater gates, failure injection) while building the real graph.
  */
-import { Layer } from 'effect';
+import { Effect, Layer } from 'effect';
+import { RemoteConfigLive } from '../domains/remote-config/live';
+import { RemoteConfig } from '../domains/remote-config/service';
 import { AppModeLive } from '../domains/app-mode/live';
 import type { AppModeService } from '../domains/app-mode/service';
 import { AiProviderLive } from '../domains/ai-provider/live';
@@ -42,7 +44,7 @@ import { CollabBrokerLive } from '../domains/collab/live';
 import type { CollabBroker } from '../domains/collab/service';
 import { CollabBridgeLive } from '../domains/collab/store-live';
 import type { CollabBridge } from '../domains/collab/store';
-import { RecordingBridgeLive, type RecordingBridge } from '../domains/recording/bridge';
+import { makeRecordingBridgeLive, type RecordingBridge } from '../domains/recording/bridge';
 import { DetectionBridgeLive, type DetectionBridge } from '../domains/detection/bridge';
 import { EventKitBridgeLive, type EventKitBridge } from '../domains/eventkit/bridge';
 import { DesktopI18nLive } from '../domains/i18n/live';
@@ -68,7 +70,7 @@ import type { TrayService } from '../domains/tray/service';
 import { UpdaterServiceLive } from '../domains/updater/live';
 import type { UpdaterService } from '../domains/updater/service';
 import { WindowRegistryLive } from '../domains/windows/live';
-import type { WindowError, WindowRegistry } from '../domains/windows/service';
+import { WindowRegistry, type WindowError } from '../domains/windows/service';
 import { AppConfigLive } from '../infra/config/live';
 import type { AppConfig } from '../infra/config/service';
 import { ElectronAppLive } from '../infra/electron/live';
@@ -92,6 +94,7 @@ import { SessionLifecycleProbeLive, type SessionLifecycleProbe } from './workspa
 
 export type BootServices =
   | AppConfig
+  | RemoteConfig
   | MainLogger
   | LoggingTransport
   | ElectronApp
@@ -171,18 +174,6 @@ export const makeBootLayer = (
     Layer.provide(windowRegistry),
     Layer.provide(logging)
   );
-  // The floating-note coordinator owns the float slot; the
-  // main-window float:* verbs + the widget's expandNote reach it. AuthService
-  // feeds the signed-out open guard — cloud only: local mode is
-  // accountless and renders the float unconditionally, so the
-  // guard reads the boot-resolved mode.
-  const floatBridge = FloatBridgeLive.pipe(
-    Layer.provide(windowRegistry),
-    Layer.provide(RecordingBridgeLive),
-    Layer.provide(auth),
-    Layer.provide(appMode),
-    Layer.provide(logging)
-  );
   // Product analytics: the main posthog-node client for
   // One telemetry owner for main and renderer, with auth/settings policy.
   const telemetry = makeTelemetryServiceLive(makePostHogNodeSink).pipe(
@@ -191,6 +182,33 @@ export const makeBootLayer = (
     Layer.provide(auth),
     Layer.provide(appMode),
     Layer.provide(settings),
+    Layer.provide(logging)
+  );
+  const remoteConfig = RemoteConfigLive.pipe(
+    Layer.provide(appConfigLayer),
+    Layer.provide(operationalDb),
+    Layer.provide(auth),
+    Layer.provide(telemetry),
+    Layer.provide(i18n),
+    Layer.provide(logging)
+  );
+  const recordingBridge = Layer.unwrapEffect(
+    Effect.gen(function* () {
+      const remote = yield* RemoteConfig;
+      const windows = yield* WindowRegistry;
+      return makeRecordingBridgeLive(remote.isUpdateRequired, windows.focusMainWindow);
+    })
+  ).pipe(Layer.provide(remoteConfig), Layer.provide(windowRegistry));
+  // The floating-note coordinator owns the float slot; the
+  // main-window float:* verbs + the widget's expandNote reach it. AuthService
+  // feeds the signed-out open guard — cloud only: local mode is
+  // accountless and renders the float unconditionally, so the
+  // guard reads the boot-resolved mode.
+  const floatBridge = FloatBridgeLive.pipe(
+    Layer.provide(windowRegistry),
+    Layer.provide(recordingBridge),
+    Layer.provide(auth),
+    Layer.provide(appMode),
     Layer.provide(logging)
   );
   const tray = TrayServiceLive.pipe(
@@ -291,10 +309,11 @@ export const makeBootLayer = (
     // MessagePort relay broker the collab:open handler dispatches into.
     collabBridge,
     collabBroker,
-    // Leaf: the boot-scoped record-button bridge. The workspace-scoped
+    // The boot-scoped record-button bridge. The workspace-scoped
     // RecordingService self-publishes here; the recording:* IPC handlers + state
     // push fiber reach the live workspace through it.
-    RecordingBridgeLive,
+    recordingBridge,
+    remoteConfig,
     // Leaf: the boot-scoped meeting-detection bridge. The workspace-scoped
     // DetectionService self-publishes here; the widget:dismiss handler + widget
     // state push fiber reach the live workspace through it.

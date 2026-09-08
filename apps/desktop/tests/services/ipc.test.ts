@@ -1,3 +1,4 @@
+import { testRemoteConfigLayer } from '../helpers/remote-config';
 import { testTelemetryLayer } from '../helpers/telemetry';
 import { makeWire } from '@desktop/logging';
 import { assert, describe, it } from '@effect/vitest';
@@ -35,6 +36,7 @@ import { UpdaterServiceLive } from '../../src/main/domains/updater/live';
 import type { RecoveryOutboxRow } from '../../src/main/infra/operational-db/service';
 import { registerMainWindowHandlers } from '../../src/main/infra/ipc/main-window-handlers';
 import { RecordingBridge, RecordingBridgeLive } from '../../src/main/domains/recording/bridge';
+import { RemoteConfig } from '../../src/main/domains/remote-config/service';
 import { EventKitBridge, EventKitBridgeLive } from '../../src/main/domains/eventkit/bridge';
 import { SettingsService } from '../../src/main/domains/settings/service';
 import { TelemetryService, type TelemetryServiceApi } from '../../src/main/domains/telemetry/service';
@@ -263,6 +265,7 @@ const build = (
     Layer.provide(logger.layer)
   );
   const layer = Layer.mergeAll(
+    testRemoteConfigLayer,
     telemetry.layer,
     config,
     logger.layer,
@@ -341,6 +344,9 @@ const ALL_HANDLER_CHANNELS = [
   CHANNELS.settingsGet,
   CHANNELS.settingsSet,
   CHANNELS.capabilityCheckUpdates,
+  CHANNELS.updaterGetAccess,
+  CHANNELS.updaterOpenDownload,
+  CHANNELS.updaterQuit,
   CHANNELS.updaterGetState,
   CHANNELS.updaterQuitInstall,
   CHANNELS.updaterDismissPrompt,
@@ -1371,6 +1377,7 @@ describe('registerMainWindowHandlers', () => {
         );
         const secureStore = fakeSecureStoreLayer();
         const layer = Layer.mergeAll(
+    testRemoteConfigLayer,
           makeTelemetryStub().layer,
           config,
           logger.layer,
@@ -1884,7 +1891,12 @@ describe('registerMainWindowHandlers', () => {
       const { layer } = build();
       const scope = yield* Scope.make();
       const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+      let refreshStarted = false;
+      const handlerCtx = Context.add(ctx, RemoteConfig, {
+        ...Context.get(ctx, RemoteConfig),
+        refresh: Effect.sync(() => { refreshStarted = true; }).pipe(Effect.zipRight(Effect.never)),
+      });
+      yield* registerMainWindowHandlers.pipe(Effect.provide(handlerCtx), Scope.extend(scope));
       const registry = Context.get(ctx, WindowRegistry);
       yield* registry.openMainWindow.pipe(Scope.extend(scope));
       const wc = fake.__windowInstances().at(-1)?.webContents;
@@ -1897,6 +1909,9 @@ describe('registerMainWindowHandlers', () => {
         ),
         { status: 'disabled' }
       );
+      // A stalled policy refresh must not delay the native updater action.
+      yield* drainUntil(() => refreshStarted);
+      assert.isTrue(refreshStarted);
 
       const foreign = yield* Effect.exit(
         Effect.tryPromise(() =>
@@ -1905,6 +1920,42 @@ describe('registerMainWindowHandlers', () => {
       );
       assert.isTrue(Exit.isFailure(foreign));
       yield* Scope.close(scope, Exit.void);
+    })
+  );
+
+  it.scoped('update access follows policy and recording completion; native actions reject foreign senders', () =>
+    Effect.gen(function* () {
+      const { layer, nativeOs } = build();
+      const ctx = yield* Layer.build(layer);
+      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx));
+      yield* Context.get(ctx, WindowRegistry).openMainWindow;
+      const wc = fake.__windowInstances().at(-1)!.webContents;
+      const policy = Context.get(ctx, RemoteConfig).requirement;
+      const rec = yield* makeFakeRecordingService();
+      yield* Context.get(ctx, RecordingBridge).register(rec.api);
+      const read = Effect.promise(() => fake.ipcMain.invoke(CHANNELS.updaterGetAccess, { sender: wc }));
+      assert.deepEqual(yield* read, { requirement: null, recordingActive: false });
+      const requirement = { required: true, evaluatedVersion: '0.0.0-test' };
+      yield* SubscriptionRef.set(rec.state, { ...idleRecordingState, recordingId: 'rec_1', status: 'recording' });
+      yield* SubscriptionRef.set(policy, requirement);
+      assert.deepEqual(yield* read, { requirement, recordingActive: true });
+      yield* SubscriptionRef.set(rec.state, { ...idleRecordingState, recordingId: 'rec_1', status: 'stopping' });
+      assert.deepEqual(yield* read, { requirement, recordingActive: true });
+      yield* SubscriptionRef.set(rec.state, idleRecordingState);
+      assert.deepEqual(yield* read, { requirement, recordingActive: false });
+      yield* drainUntil(() => wc.sent.some(e => e.channel === CHANNELS.updaterAccessChanged &&
+        JSON.stringify(e.payload) === JSON.stringify({ requirement, recordingActive: false })));
+      assert.deepEqual(wc.sent.filter(e => e.channel === CHANNELS.updaterAccessChanged).at(-1)?.payload,
+        { requirement, recordingActive: false });
+      for (const channel of [CHANNELS.updaterGetAccess, CHANNELS.updaterOpenDownload, CHANNELS.updaterQuit]) {
+        const result = yield* Effect.exit(Effect.tryPromise(() => fake.ipcMain.invoke(channel, { sender: { id: 9999 } })));
+        assert.isTrue(Exit.isFailure(result));
+      }
+      yield* Effect.promise(() => fake.ipcMain.invoke(CHANNELS.updaterOpenDownload, { sender: wc }));
+      assert.deepEqual(nativeOs.calls.openExternal, ['https://prismical.ai/download']);
+      const quits = fake.app.quitCount;
+      yield* Effect.promise(() => fake.ipcMain.invoke(CHANNELS.updaterQuit, { sender: wc }));
+      assert.equal(fake.app.quitCount, quits + 1);
     })
   );
 

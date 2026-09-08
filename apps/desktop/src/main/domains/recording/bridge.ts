@@ -36,7 +36,8 @@ export type StartRecordingOutcome =
         | 'busy'
         | 'no-session'
         | 'model-missing'
-        | 'storage-unavailable';
+        | 'storage-unavailable'
+        | 'update-required';
     };
 
 export interface RecordingBridgeApi {
@@ -100,7 +101,10 @@ export class RecordingBridge extends Context.Tag('desktop/recording/RecordingBri
   RecordingBridgeApi
 >() {}
 
-export const RecordingBridgeLive: Layer.Layer<RecordingBridge> = Layer.effect(
+export const makeRecordingBridgeLive = (
+  isUpdateRequired: Effect.Effect<boolean> = Effect.succeed(false),
+  onUpdateRequired: Effect.Effect<void> = Effect.void
+): Layer.Layer<RecordingBridge> => Layer.effect(
   RecordingBridge,
   Effect.gen(function* () {
     const currentRef = yield* SubscriptionRef.make<Option.Option<RecordingServiceApi>>(
@@ -116,30 +120,38 @@ export const RecordingBridgeLive: Layer.Layer<RecordingBridge> = Layer.effect(
         ).pipe(Effect.asVoid),
 
       start: input =>
-        SubscriptionRef.get(currentRef).pipe(
-          Effect.flatMap(
-            Option.match({
-              onNone: () =>
-                Effect.succeed<StartRecordingOutcome>({ ok: false, reason: 'no-session' }),
-              onSome: service =>
-                service.start(input).pipe(
-                  Effect.map((recordingId): StartRecordingOutcome => ({ ok: true, recordingId })),
-                  Effect.catchTag('RecordingBusyError', () =>
-                    Effect.succeed<StartRecordingOutcome>({ ok: false, reason: 'busy' })
+        Effect.gen(function* () {
+          if (yield* isUpdateRequired) {
+            yield* onUpdateRequired;
+            return { ok: false, reason: 'update-required' } as const;
+          }
+          return yield* SubscriptionRef.get(currentRef).pipe(
+            Effect.flatMap(
+              Option.match({
+                onNone: () =>
+                  Effect.succeed<StartRecordingOutcome>({ ok: false, reason: 'no-session' }),
+                onSome: service =>
+                  service.start(input).pipe(
+                    Effect.map(
+                      (recordingId): StartRecordingOutcome => ({ ok: true, recordingId })
+                    ),
+                    Effect.catchTag('RecordingBusyError', () =>
+                      Effect.succeed<StartRecordingOutcome>({ ok: false, reason: 'busy' })
+                    ),
+                    Effect.catchTag('RecordingStartError', error =>
+                      Effect.succeed<StartRecordingOutcome>({ ok: false, reason: error.reason })
+                    ),
+                    Effect.catchTag('PermissionError', () =>
+                      Effect.succeed<StartRecordingOutcome>({
+                        ok: false,
+                        reason: 'permission-denied',
+                      })
+                    )
                   ),
-                  Effect.catchTag('RecordingStartError', error =>
-                    Effect.succeed<StartRecordingOutcome>({ ok: false, reason: error.reason })
-                  ),
-                  Effect.catchTag('PermissionError', () =>
-                    Effect.succeed<StartRecordingOutcome>({
-                      ok: false,
-                      reason: 'permission-denied',
-                    })
-                  )
-                ),
-            })
-          )
-        ),
+              })
+            )
+          );
+        }),
 
       stop: recordingId =>
         SubscriptionRef.get(currentRef).pipe(
@@ -305,3 +317,5 @@ export const RecordingBridgeLive: Layer.Layer<RecordingBridge> = Layer.effect(
     return api;
   })
 );
+
+export const RecordingBridgeLive = makeRecordingBridgeLive();

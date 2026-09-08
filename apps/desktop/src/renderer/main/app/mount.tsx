@@ -17,9 +17,8 @@
  * EnvPort.getEnv() is synchronous and app-client's non-React data lane reads it
  * at request time.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { useTranslation } from 'react-i18next';
 import { RouterProvider } from '@tanstack/react-router';
 import {
   ApiQueryProvider,
@@ -29,9 +28,10 @@ import {
   useSessionView,
 } from '@prismical/app-client';
 import { ApplicationI18nProvider } from '@prismical/app-i18n';
-import type { UpdateStateView, OnboardingState } from '@prismical/desktop-contracts';
+import type { OnboardingState } from '@prismical/desktop-contracts';
 import { Toaster, toast } from '@prismical/app-ui/ui/sonner';
-import { Button } from '@prismical/app-ui/ui/button';
+import { RequiredUpdateGate } from './updater/required-update-gate';
+import { UpdatePrompt } from './updater/update-prompt';
 import { router } from './router';
 import { openNoteLog } from '../collab';
 import { createDesktopPorts } from './ports/desktop-ports';
@@ -48,110 +48,6 @@ import type {
   EnvDescriptor as DesktopEnvDescriptor,
 } from '@prismical/desktop-contracts';
 import './globals.css';
-
-/**
- * Update-prompt surface. Reflects the live updater view: a policy `prompt`
- * on a staged install raises a persistent sonner toast with the restart action;
- * a `force` renders a blocking overlay whose only exit is "Restart now"; main
- * refuses to dismiss force prompts.
- *
- * The view is SEEDED from getUpdateState() on every mount and then kept live via
- * onUpdateState. Seeding is load-bearing for the force gate: a renderer reload
- * (Cmd+R) recreates the preload push-buffer empty and main only pushes on a
- * state CHANGE, so a subscription alone would leave a reloaded renderer with no
- * force overlay until the next change (up to the 9h staged re-check) — an escape
- * hatch. The active pull closes it.
- *
- * Signed-out gate sessions never see this (the overlay mounts with the shell);
- * staged installs still apply on the next launch, so that gap is cosmetic.
- */
-function UpdatePromptOverlay() {
-  const { t } = useTranslation();
-  const [view, setView] = useState<UpdateStateView | null>(null);
-  // sonner fires onDismiss on a PROGRAMMATIC toast.dismiss too, not only a user
-  // dismiss. When the prompt transitions away on its own (a newer version
-  // supersedes it, the update downloads, etc.) we dismiss the toast ourselves —
-  // that must NOT be reported to main as a user dismissal, or main would record
-  // dismissedVersion for a version the user never dismissed and silently
-  // suppress its proactive nudge. This flag marks our own dismissals.
-  const selfDismissing = useRef(false);
-
-  useEffect(() => {
-    let active = true;
-    void window.desktop.capabilities.getUpdateState().then(v => {
-      if (active) setView(v);
-    });
-    const off = window.desktop.capabilities.onUpdateState(setView);
-    return () => {
-      active = false;
-      off();
-    };
-  }, []);
-
-  const prompt = view?.prompt ?? null;
-  useEffect(() => {
-    if (!prompt || prompt.action !== 'prompt') {
-      selfDismissing.current = true;
-      toast.dismiss('app-update-prompt');
-      return;
-    }
-    selfDismissing.current = false;
-    toast.info(
-      prompt.version
-        ? t('desktop.updater.readyWithVersion', { version: prompt.version })
-        : t('desktop.updater.ready'),
-      {
-        id: 'app-update-prompt',
-        duration: Infinity,
-        action: {
-          label: t('desktop.updater.restartNow'),
-          onClick: () => void window.desktop.capabilities.restartToUpdate(),
-        },
-        onDismiss: () => {
-          // Ignore our own programmatic dismissals; only a real user dismiss
-          // (the toast's close control) records the version as dismissed.
-          if (selfDismissing.current) {
-            selfDismissing.current = false;
-            return;
-          }
-          void window.desktop.capabilities.dismissUpdatePrompt();
-        },
-      }
-    );
-  }, [prompt, t]);
-
-  if (!prompt || prompt.action !== 'force') return null;
-  return (
-    <div
-      data-testid="force-update-overlay"
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 50,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: 'color-mix(in srgb, var(--background) 85%, transparent)',
-        backdropFilter: 'blur(4px)',
-      }}
-    >
-      <div className="bg-card text-card-foreground w-[380px] rounded-lg border p-6 shadow-lg">
-        <h2 className="text-base font-semibold">{t('desktop.updater.requiredTitle')}</h2>
-        <p className="text-muted-foreground mt-2 text-sm">
-          {prompt.version
-            ? t('desktop.updater.requiredWithVersion', { version: prompt.version })
-            : t('desktop.updater.required')}{' '}
-          {t('desktop.updater.restartInstruction')}
-        </p>
-        <div className="mt-4 flex justify-end">
-          <Button onClick={() => void window.desktop.capabilities.restartToUpdate()}>
-            {t('desktop.updater.restartNow')}
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function ShellOverlay() {
   const { appMode } = useDesktopEnv();
@@ -184,14 +80,13 @@ function ShellOverlay() {
           nav push cannot reach a screen the sidebar hides. */}
       <RouterProvider router={router} context={{ appMode }} />
       <Toaster />
-      <UpdatePromptOverlay />
     </div>
   );
 }
 
 // The float-note window mounts the same providers + router
 // but skips the opaque shell overlay chrome: the page stays transparent (the
-// FloatNoteView draws its own rounded surface), and Toaster/UpdatePromptOverlay
+// FloatNoteView draws its own rounded surface), and Toaster/UpdatePrompt
 // stay main-window-only. The nav drain still runs — main retargets the float
 // via nav pushes (float:open on a live window).
 function FloatOverlay() {
@@ -269,19 +164,22 @@ function DesktopRoot({
   const env = useMemo(() => ({ ...desktopEnv, appModeChosen }), [desktopEnv, appModeChosen]);
   return (
     <DesktopEnvProvider value={env}>
-      <ApiQueryProvider>
-        <DesktopApp
-          onboarding={onboarding}
-          saveOnboarding={async progress => {
-            await window.desktop.settings.set({ onboarding: progress });
-            setOnboarding(progress);
-          }}
-          onChosen={() => {
-            setAppModeChosen(true);
-            onModeChosen();
-          }}
-        />
-      </ApiQueryProvider>
+      <RequiredUpdateGate>
+        <ApiQueryProvider>
+          <DesktopApp
+            onboarding={onboarding}
+            saveOnboarding={async progress => {
+              await window.desktop.settings.set({ onboarding: progress });
+              setOnboarding(progress);
+            }}
+            onChosen={() => {
+              setAppModeChosen(true);
+              onModeChosen();
+            }}
+          />
+        </ApiQueryProvider>
+        {!isFloatWindow() && <UpdatePrompt />}
+      </RequiredUpdateGate>
     </DesktopEnvProvider>
   );
 }
