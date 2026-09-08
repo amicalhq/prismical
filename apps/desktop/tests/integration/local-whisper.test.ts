@@ -24,7 +24,7 @@ import { Context, Effect, Exit, Layer, Scope } from 'effect';
 import { makeTestLogger, testConfigLayer } from '../helpers/test-layers';
 import { makeFakeWorkspaceBackend } from '../helpers/fake-recording';
 import { fakeModelManagerLayer } from '../helpers/fake-workspace-env';
-import { AppModeService } from '../../src/main/domains/app-mode/service';
+import { AppModeService, makeAppMode } from '../../src/main/domains/app-mode/service';
 import { RECOMMENDED_MODEL_ID, VAD_MODEL_ID } from '../../src/main/domains/models/catalogue';
 import { CAPTURE_SAMPLE_RATE, CHUNK_SAMPLES } from '../../src/main/domains/recording/chunker';
 import { RecordingStore } from '../../src/main/domains/recording/store';
@@ -169,7 +169,7 @@ describe('local whisper end to end (sidecar → worker → whisper.node → prod
           Layer.provide(productDb),
           Layer.provide(engineLayer),
           Layer.provide(fakeModelManagerLayer({ [RECOMMENDED_MODEL_ID]: modelPath })),
-          Layer.provide(Layer.succeed(AppModeService, { mode: 'local', chosen: true })),
+          Layer.provide(Layer.effect(AppModeService, makeAppMode('local', true))),
           Layer.provide(makeFakeWorkspaceBackend().layer)
         )
       ).pipe(Layer.provide(env));
@@ -290,7 +290,7 @@ describe('local whisper end to end (sidecar → worker → whisper.node → prod
               [VAD_MODEL_ID]: vadModelPath,
             })
           ),
-          Layer.provide(Layer.succeed(AppModeService, { mode: 'local', chosen: true })),
+          Layer.provide(Layer.effect(AppModeService, makeAppMode('local', true))),
           Layer.provide(makeFakeWorkspaceBackend().layer)
         )
       ).pipe(Layer.provide(env));

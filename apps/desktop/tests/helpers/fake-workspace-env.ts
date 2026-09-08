@@ -14,7 +14,7 @@ import {
   type DeviceSettings,
   type ModelsStateView,
 } from '@prismical/desktop-contracts';
-import { AppModeService, type AppMode } from '../../src/main/domains/app-mode/service';
+import { AppModeService, makeAppMode, type AppMode } from '../../src/main/domains/app-mode/service';
 import { ModelManager, type ModelManagerApi } from '../../src/main/domains/models/service';
 import { SettingsService, type SettingsServiceApi } from '../../src/main/domains/settings/service';
 import { CloudTranscriberLive } from '../../src/main/domains/transcriber/cloud';
@@ -248,7 +248,7 @@ export const workspaceEnvStubs = (
     fakeModelManagerLayer(),
     makeFakeWhisperEngine().layer,
     fakeAiProviderLayer(),
-    Layer.succeed(AppModeService, { mode, chosen: true })
+    Layer.effect(AppModeService, makeAppMode(mode, true))
   );
 
 /**

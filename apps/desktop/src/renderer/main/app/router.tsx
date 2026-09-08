@@ -29,6 +29,8 @@ import { useDesktopEnv } from "./desktop-env";
 import { FloatErrorFallback, FloatNoteView } from "./float-note-view";
 import { LocalWorkspaceFooter } from "./local-workspace-footer";
 import { AppModeSetting } from "./settings/app-mode-setting";
+import { TelemetrySetting } from "./settings/telemetry-setting";
+import { captureRendererException } from "../../telemetry";
 import { LocalModelsScreen } from "./settings/local-models-screen";
 import { AiProviderSetting } from "./settings/ai-provider-setting";
 import { TranscriptionEngineSetting } from "./settings/transcription-engine-setting";
@@ -199,7 +201,7 @@ function AiModelsRoute() {
 // The shared Advanced screen renders the desktop-owned
 // app-mode switch card through its named `modeSettings` slot.
 function AdvancedRoute() {
-  return <AdvancedScreen modeSettings={<AppModeSetting />} />;
+  return <AdvancedScreen modeSettings={<><TelemetrySetting /><AppModeSetting /></>} />;
 }
 
 function useActiveEmail(): string {
@@ -344,7 +346,8 @@ const routeTree = rootRoute.addChildren([
   child("settings/vocabulary", VocabularyScreen),
 ]);
 
-function RouteError() {
+function RouteError({ error }: { error: unknown }) {
+  React.useEffect(() => captureRendererException(window.desktop.telemetry, error, 'react_error_boundary'), [error]);
   const { t } = useTranslation();
   // Per-route isolation: a screen that throws shows this instead of blanking
   // the shell.
@@ -363,5 +366,5 @@ export const router = createRouter({
   // boot-resolved mode; this default only satisfies the type.
   context: { appMode: "cloud" },
   defaultNotFoundComponent: () => <NotFoundScreen />,
-  defaultErrorComponent: () => <RouteError />,
+  defaultErrorComponent: RouteError,
 });

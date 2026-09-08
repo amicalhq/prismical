@@ -291,8 +291,8 @@ export interface DeviceSettings {
   /** Hide the dock windows from screen sharing (setContentProtection). */
   readonly dockContentProtection: boolean;
   /**
-   * LOCAL-MODE telemetry opt-out. Ignored in cloud mode (service telemetry under the ToS);
-   * honored in local mode. The setting does not yet have a UI.
+   * Saved signed-out telemetry preference. Signed-in sessions enable telemetry
+   * without changing this value; logout restores the saved preference.
    */
   readonly telemetryOptOut: boolean;
   /** Transcription engine choice. Main resolves the effective engine. */
@@ -320,7 +320,7 @@ export const DEFAULT_DEVICE_SETTINGS: DeviceSettings = {
   dockHotkey: 'Alt+Shift+N',
   autoExpandOnRecording: false,
   dockContentProtection: false,
-  telemetryOptOut: false,
+  telemetryOptOut: true,
   transcription: { engine: 'cloud', modelId: null, byokBaseUrl: null, byokModel: null },
   ai: { provider: 'openai', model: null, baseUrl: null },
 };

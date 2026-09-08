@@ -53,6 +53,9 @@ import {
   parseTranscriptionByokKeyRequest,
   parseTransportRequest,
   parseUpdateStateView,
+  telemetryCaptureRequestSchema,
+  telemetryExceptionRequestSchema,
+  telemetryStateSchema,
   type AiModelListing,
   type AppModeState,
   type AppModeValue,
@@ -86,7 +89,7 @@ import {
   systemSettingsDeepLink,
 } from '../../domains/settings/native-permissions';
 import { SettingsService } from '../../domains/settings/service';
-import { DEVICE_ID_KEY } from '../../domains/telemetry/service';
+import { DEVICE_ID_KEY, TelemetryService } from '../../domains/telemetry/service';
 import { StreamBroker } from '../../domains/streams/service';
 import {
   BYOK_API_KEY_SECRET,
@@ -122,6 +125,7 @@ type HandlerEnv =
   | RecordingBridge
   | DesktopI18n
   | SettingsService
+  | TelemetryService
   | SystemPermissions
   | NativeOs
   | UpdaterService
@@ -173,6 +177,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
     const recording = yield* RecordingBridge;
     const i18n = yield* DesktopI18n;
     const settings = yield* SettingsService;
+    const telemetry = yield* TelemetryService;
     const sysPermissions = yield* SystemPermissions;
     const nativeOs = yield* NativeOs;
     const updater = yield* UpdaterService;
@@ -231,9 +236,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
       noteWsUrl: config.endpoints.noteWsUrl,
       webAppOrigin: config.endpoints.webAppOrigin,
       analyticsKey: config.isE2E ? null : config.endpoints.analyticsKey,
-      // The boot-resolved operating mode: the renderer's posthog-js init keys
-      // its policy + config
-      // baseline on this, so nothing beacons before the mode is known.
+      // Boot-resolved product mode; telemetry policy is exposed separately.
       appMode: appMode.mode,
       analyticsHost: config.isE2E ? null : config.endpoints.analyticsHost,
       platform: config.platform,
@@ -598,6 +601,40 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
     yield* registerRecordingControl(CHANNELS.recordingPause, 'pause');
     yield* registerRecordingControl(CHANNELS.recordingResume, 'resume');
 
+    yield* acquireHandle(CHANNELS.telemetryGetState, event =>
+      runPromise(windows.identityForWebContents(event.sender.id).pipe(
+        Effect.flatMap(identity => Option.isSome(identity)
+          ? telemetry.getState : Effect.fail(new SenderRejected('UNKNOWN_SENDER')))
+      ))
+    );
+    yield* acquireHandle(CHANNELS.telemetryCapture, (event, payload) =>
+      runPromise(validateMainSender(event).pipe(Effect.flatMap(() => {
+        const parsed = telemetryCaptureRequestSchema.safeParse(payload);
+        if (!parsed.success) return Effect.fail(new PayloadRejected('INVALID_REQUEST'));
+        return telemetry.capture(parsed.data.event, parsed.data.properties, 'renderer', parsed.data.revision);
+      })))
+    );
+    yield* acquireHandle(CHANNELS.telemetryCaptureException, (event, payload) =>
+      runPromise(windows.identityForWebContents(event.sender.id).pipe(Effect.flatMap((identity): Effect.Effect<void, SenderRejected | PayloadRejected> => {
+        // Every registered renderer may report errors, including the narrow widget/notify surfaces.
+        if (Option.isNone(identity)) return Effect.fail(new SenderRejected('UNKNOWN_SENDER'));
+        const parsed = telemetryExceptionRequestSchema.safeParse(payload);
+        if (!parsed.success) return Effect.fail(new PayloadRejected('INVALID_REQUEST'));
+        return telemetry.captureException(parsed.data.error, {
+          ...parsed.data.properties, window_type: identity.value.kind,
+        }, 'renderer', parsed.data.revision);
+      })))
+    );
+    yield* Effect.forkScoped(Stream.runForEach(telemetry.state.changes, current => {
+      const parsed = telemetryStateSchema.safeParse(current);
+      if (!parsed.success) return log.error('telemetry state failed validation');
+      return Effect.forEach([
+        windows.sendToAppWindows, windows.sendToWidgetWindow, windows.sendToNotifyWindow,
+      ], send => send(CHANNELS.telemetryStateChanged, parsed.data).pipe(
+        Effect.catchAllDefect(() => log.warn('telemetry state push failed'))
+      ), { discard: true });
+    }));
+
     // settings:get — the current device-local preferences. Re-parsed
     // through the schema belt-and-braces before it crosses (mirrors auth); the ref
     // is always a valid DeviceSettings, so the fallback is unreachable in practice.
@@ -628,8 +665,12 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
                 .warn('settings:set rejected: invalid payload', { issues: parsed.issues })
                 .pipe(Effect.zipRight(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
             }
-            return settings
-              .set(parsed.data)
+            return Effect.gen(function* () {
+              if (parsed.data.telemetryOptOut !== undefined && !(yield* telemetry.getState).canChangePreference) {
+                return yield* Effect.fail(new PayloadRejected('INVALID_REQUEST'));
+              }
+              yield* settings.set(parsed.data);
+            })
               .pipe(
                 Effect.catchTag('DbError', () =>
                   log.error('settings:set could not persist — change dropped')
@@ -797,14 +838,12 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
     );
 
     // capability:getAppModeState — the boot mode + whether one was ever chosen
-    // `chosen` is a Ref, not the boot constant: choosing the boot mode
-    // persists without a relaunch, and a renderer reload (Cmd+R) re-asks —
-    // it must not see the chooser again over a live session.
-    const chosenRef = yield* Ref.make(appMode.chosen);
+    // Share the durable first-choice observation with telemetry and every consumer.
+    // Choosing the boot mode persists without a relaunch.
     yield* acquireHandle(CHANNELS.capabilityGetAppModeState, event =>
       runPromise(
         validateMainSender(event).pipe(
-          Effect.zipRight(Ref.get(chosenRef)),
+          Effect.zipRight(SubscriptionRef.get(appMode.chosenState)),
           Effect.map((chosen): AppModeState => ({ mode: appMode.mode, chosen }))
         )
       )
@@ -840,7 +879,8 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
                   .pipe(Effect.zipRight(Effect.fail(new PayloadRejected('INTERNAL'))))
               ),
               Effect.zipRight(severAccounts),
-              Effect.zipRight(Ref.set(chosenRef, true)),
+              Effect.zipRight(mode === appMode.mode
+                ? SubscriptionRef.set(appMode.chosenState, true) : Effect.void),
               Effect.zipRight(
                 mode === appMode.mode
                   ? log
@@ -866,9 +906,9 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
     //  1. In-process, while the operational store is open: [sign out every
     //     account]* → the known non-auth secrets (BYOK + one slot per AI
     //     provider) → device settings (incl. ai/transcription/telemetryOptOut)
-    //     → the EventKit device identity → a REGENERATED telemetry device id →
+    //     → the EventKit device identity → a new fallback installation UUID →
     //     recording-recovery rows → every renderer storage (the Legend
-    //     IndexedDB partition, posthog-js persistence, cookies) → [app:mode]*
+    //     IndexedDB partition, legacy analytics persistence, cookies) → [app:mode]*
     //     → the pending-purge marker.
     //  2. At the next boot, before any product/model/recovery handle exists,
     //     PendingResetLive removes local.db (+WAL/SHM), the cloud-cache dir, the
@@ -877,9 +917,8 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
     //     mmapped model (EBUSY on Windows).
     //  (*) switch only: a plain reset keeps the signed-in accounts (their refresh
     //  secrets stay in the secure store) and the running mode.
-    // The renderer runs posthog.reset() BEFORE this invoke; the storage wipe
-    // below then clears posthog-js persistence, so a reset install is not
-    // joinable to the prior identity.
+    // Reset rotates the fallback installation UUID and clears legacy renderer
+    // analytics persistence. The machine-derived device ID remains stable.
     const clearKnownSecrets = Effect.forEach(
       [BYOK_API_KEY_SECRET, ...AI_PROVIDER_KINDS.map(aiProviderSecretKey)],
       key =>
@@ -932,7 +971,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
             .setSetting(DEVICE_ID_KEY, randomUUID())
             .pipe(
               Effect.catchTag('DbError', () =>
-                log.error('capability:resetApp — device id regeneration failed')
+                log.error('capability:resetApp — fallback installation id rotation failed')
               )
             )
         ),

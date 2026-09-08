@@ -55,7 +55,7 @@ import {
   WorkspaceBackend,
   type WorkspaceBackendApi,
 } from '../../src/main/domains/transport/service';
-import { AppModeService, type AppMode } from '../../src/main/domains/app-mode/service';
+import { AppModeService, makeAppMode, type AppMode } from '../../src/main/domains/app-mode/service';
 import type { DeviceSettings } from '@prismical/desktop-contracts';
 import { SyncTranscriptSegmentCreateRequestSchema } from '@prismical/api-contracts';
 import { RECOMMENDED_MODEL_ID } from '../../src/main/domains/models/catalogue';
@@ -178,10 +178,7 @@ const setup = (
         Effect.map(api => options.backendTransform?.(api) ?? api)
       )
     );
-    const modeLayer = Layer.succeed(AppModeService, {
-      mode: options.mode ?? 'cloud',
-      chosen: true,
-    });
+    const modeLayer = Layer.effect(AppModeService, makeAppMode(options.mode ?? 'cloud', true));
     const ownerLayer = Layer.succeed(
       WorkspaceIdentity,
       options.mode === 'local' ? { mode: 'local' } : { mode: 'cloud', sub: 'user-one', orgId: null }

@@ -32,3 +32,6 @@ declare const __PRISMICAL_CORE_API_URL__: string | undefined;
 declare const __PRISMICAL_NOTE_WS_URL__: string | undefined;
 declare const __PRISMICAL_WEB_APP_ORIGIN__: string | undefined;
 declare const __PRISMICAL_ANALYTICS_HOST__: string | undefined;
+
+/** Public build revision for diagnostics; source-map credentials are never baked. */
+declare const __PRISMICAL_BUILD_ID__: string | undefined;

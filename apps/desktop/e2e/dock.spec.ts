@@ -101,6 +101,7 @@ test.describe('dock windows', () => {
       'setInteractive',
       'startRecording',
       'stopRecording',
+      'telemetry',
     ]);
     expect(widgetShape.hasDesktop).toBe(false);
     expect(widgetShape.hasNotify).toBe(false);
@@ -113,7 +114,7 @@ test.describe('dock windows', () => {
         hasWidget: 'widget' in globals,
       };
     });
-    expect(notifyShape.notifyKeys).toEqual(['action', 'getState', 'onState', 'setInteractive']);
+    expect(notifyShape.notifyKeys).toEqual(['action', 'getState', 'onState', 'setInteractive', 'telemetry']);
     expect(notifyShape.hasDesktop).toBe(false);
     expect(notifyShape.hasWidget).toBe(false);
 

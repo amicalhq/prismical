@@ -182,15 +182,13 @@ export const makeBootLayer = (
     Layer.provide(logging)
   );
   // Product analytics: the main posthog-node client for
-  // MAIN-ORIGIN events (launch, updater, native crashes, exceptions). Mirrors
-  // AuthService identity so its events share the renderer's person; disabled
-  // (no key / E2E) ⇒ an inert no-op. The renderer captures product events +
-  // session replay through its own posthog-js — main never double-counts.
+  // One telemetry owner for main and renderer, with auth/settings policy.
   const telemetry = makeTelemetryServiceLive(makePostHogNodeSink).pipe(
     Layer.provide(appConfigLayer),
     Layer.provide(operationalDb),
     Layer.provide(auth),
     Layer.provide(appMode),
+    Layer.provide(settings),
     Layer.provide(logging)
   );
   const tray = TrayServiceLive.pipe(

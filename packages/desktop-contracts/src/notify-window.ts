@@ -12,7 +12,7 @@
  * producers fill later — the renderer already knows how to draw all three.
  */
 import { z } from 'zod';
-import { applicationLocaleSchema, toParseResult, type ParseResult } from './main-window';
+import { applicationLocaleSchema, toParseResult, type ParseResult, type MainWindowTelemetryApi } from './main-window';
 
 // ---------------------------------------------------------------------------
 // Channel names
@@ -114,6 +114,7 @@ export const parseNotifySetInteractive = (value: unknown): ParseResult<NotifySet
 
 export interface NotifyDesktopApi {
   /** Pull the current snapshot so initial paint never depends on an early push winning a race. */
+  readonly telemetry: Pick<MainWindowTelemetryApi, 'getState' | 'onChanged' | 'captureException'>;
   readonly getState: () => Promise<NotifyStateView>;
   /** Subscribe to the pushed card stack (latest replays to a late subscriber). */
   readonly onState: (listener: (state: NotifyStateView) => void) => () => void;

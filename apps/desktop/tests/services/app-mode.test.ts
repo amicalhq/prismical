@@ -4,7 +4,7 @@
  * missing/malformed/unreadable outcome, and never blocks boot.
  */
 import { assert, describe, it } from '@effect/vitest';
-import { Effect } from 'effect';
+import { Effect, SubscriptionRef } from 'effect';
 import { makeFakeOperationalDb } from '../helpers/fake-operational-db';
 import { makeTestLogger } from '../helpers/test-layers';
 import { APP_MODE_KEY, AppModeLive } from '../../src/main/domains/app-mode/live';
@@ -22,8 +22,8 @@ describe('AppModeService', () => {
       return mode;
     }).pipe(Effect.provide(AppModeLive), Effect.provide(db.layer), Effect.provide(logger.layer));
     const full = Effect.gen(function* () {
-      const { mode, chosen } = yield* AppModeService;
-      return { mode, chosen };
+      const { mode, chosenState } = yield* AppModeService;
+      return { mode, chosen: yield* SubscriptionRef.get(chosenState) };
     }).pipe(Effect.provide(AppModeLive), Effect.provide(db.layer), Effect.provide(logger.layer));
     return { program, full, logger, db };
   };

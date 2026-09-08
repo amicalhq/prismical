@@ -40,6 +40,7 @@ test.describe('main-window preload contract', () => {
         auth: Object.keys(desktop.auth as object).sort(),
         recording: Object.keys(desktop.recording as object).sort(),
         settings: Object.keys(desktop.settings as object).sort(),
+        telemetry: Object.keys(desktop.telemetry as object).sort(),
         models: Object.keys(desktop.models as object).sort(),
         capabilities: Object.keys(desktop.capabilities as object).sort(),
         float: Object.keys(desktop.float as object).sort(),
@@ -59,9 +60,11 @@ test.describe('main-window preload contract', () => {
       'platform',
       'recording',
       'settings',
+      'telemetry',
       'theme',
       'transport',
     ]);
+    expect(shape.telemetry).toEqual(['capture', 'captureException', 'getState', 'onChanged']);
     expect(shape.float).toEqual(['collapse', 'dockBack', 'onState', 'open']);
     expect(shape.env).toEqual(['get']);
     expect(shape.transport).toEqual(['openStream', 'request']);

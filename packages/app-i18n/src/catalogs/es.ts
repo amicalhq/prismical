@@ -2387,6 +2387,10 @@ const es = {
     verifying: 'Verificando el usuario y la organización…',
   },
   desktop: {
+    telemetry: {
+      title: 'Compartir datos de uso',
+      description: 'Ayuda a mejorar Prismical con datos de uso e informes de errores.',
+    },
     aiProvider: {
       apiKeyLabel: 'Clave de API',
       apiKeyPlaceholder: 'Pega una clave para guardarla en este dispositivo',

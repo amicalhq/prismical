@@ -2414,6 +2414,10 @@ const de = {
     verifying: 'Ziel und Organisation werden überprüft…',
   },
   desktop: {
+    telemetry: {
+      title: 'Nutzungsdaten teilen',
+      description: 'Hilf mit Nutzungsdaten und Fehlerberichten, Prismical zu verbessern.',
+    },
     aiProvider: {
       apiKeyLabel: 'API-Schlüssel',
       apiKeyPlaceholder: 'Schlüssel einfügen, um ihn auf diesem Gerät zu speichern',

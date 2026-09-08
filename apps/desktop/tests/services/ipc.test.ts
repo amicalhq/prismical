@@ -10,6 +10,7 @@ import {
   type ModelsStateView,
   type RecordingStateView,
   type TransportResponse,
+  type TelemetryState,
 } from '@prismical/desktop-contracts';
 import { Context, Effect, Exit, Layer, Option, Queue, Scope, SubscriptionRef } from 'effect';
 import { vi } from 'vitest';
@@ -34,6 +35,7 @@ import { registerMainWindowHandlers } from '../../src/main/infra/ipc/main-window
 import { RecordingBridge, RecordingBridgeLive } from '../../src/main/domains/recording/bridge';
 import { EventKitBridge, EventKitBridgeLive } from '../../src/main/domains/eventkit/bridge';
 import { SettingsService } from '../../src/main/domains/settings/service';
+import { TelemetryService, type TelemetryServiceApi } from '../../src/main/domains/telemetry/service';
 import { SettingsServiceLive } from '../../src/main/domains/settings/live';
 import { DesktopI18nLive } from '../../src/main/domains/i18n/live';
 import { DesktopI18n } from '../../src/main/domains/i18n/service';
@@ -52,7 +54,7 @@ import {
   AuthStateError,
   type AuthApi,
 } from '../../src/main/domains/auth/service';
-import type { DbError } from '../../src/main/infra/operational-db/service';
+import { OperationalDb, DbError } from '../../src/main/infra/operational-db/service';
 import { CollabBrokerLive } from '../../src/main/domains/collab/live';
 import { CollabBridgeLive } from '../../src/main/domains/collab/store-live';
 import { CollabBridge, type NoteBodyStoreApi } from '../../src/main/domains/collab/store';
@@ -62,7 +64,7 @@ import { WorkspaceTransport } from '../../src/main/domains/transport/service';
 import { WindowRegistry, type WindowRegistryService } from '../../src/main/domains/windows/service';
 import { WindowRegistryLive } from '../../src/main/domains/windows/live';
 import { FloatBridgeLive } from '../../src/main/domains/windows/float-bridge';
-import { AppModeService } from '../../src/main/domains/app-mode/service';
+import { AppModeService, makeAppMode } from '../../src/main/domains/app-mode/service';
 import {
   ModelError,
   ModelManager,
@@ -207,18 +209,38 @@ const makeModelsStub = () => {
   };
 };
 
+const makeTelemetryStub = () => {
+  const captures: Array<Parameters<TelemetryServiceApi['capture']>> = [];
+  const exceptions: Array<Parameters<TelemetryServiceApi['captureException']>> = [];
+  const layer = Layer.effect(TelemetryService, Effect.gen(function* () {
+    const state = yield* SubscriptionRef.make<TelemetryState>({
+      revision: 0, available: true, enabled: false, signedIn: false, preference: false, canChangePreference: true,
+    });
+    return {
+      state,
+      getState: SubscriptionRef.get(state),
+      capture: (...args: Parameters<TelemetryServiceApi['capture']>) => Effect.sync(() => { captures.push(args); }),
+      captureException: (...args: Parameters<TelemetryServiceApi['captureException']>) => Effect.sync(() => { exceptions.push(args); }),
+    };
+  }));
+  return { layer, captures, exceptions };
+};
+
 const build = (
   overrides: Parameters<typeof testConfigLayer>[0] = {},
   extras: {
     dbOptions?: Parameters<typeof makeFakeOperationalDb>[1];
     sysPermissions?: FakeSystemPermissions;
     appMode?: 'local' | 'cloud';
+    appModeChosen?: boolean;
   } = {}
 ) => {
   const logger = makeTestLogger();
   const config = testConfigLayer(overrides);
   const electronApp = ElectronAppLive.pipe(Layer.provide(logger.layer));
   const auth = makeAuthStub();
+  const telemetry = makeTelemetryStub();
+  const appMode = Layer.effect(AppModeService, makeAppMode(extras.appMode ?? 'cloud', extras.appModeChosen ?? true));
   const db: FakeOperationalDb = makeFakeOperationalDb({}, extras.dbOptions);
   // One SettingsService instance, shared (by reference — Effect memoizes) between
   // the IPC handler environment and the window registry that depends on it.
@@ -238,6 +260,7 @@ const build = (
     Layer.provide(logger.layer)
   );
   const layer = Layer.mergeAll(
+    telemetry.layer,
     config,
     logger.layer,
     windowRegistry,
@@ -248,7 +271,7 @@ const build = (
       Layer.provide(windowRegistry),
       Layer.provide(RecordingBridgeLive),
       Layer.provide(auth.layer),
-      Layer.provide(Layer.succeed(AppModeService, { mode: extras.appMode ?? 'cloud', chosen: true })),
+      Layer.provide(appMode),
       Layer.provide(logger.layer)
     ),
     StreamBrokerLive.pipe(Layer.provide(logger.layer), Layer.provide(WorkspaceTransportLive)),
@@ -269,7 +292,7 @@ const build = (
     ),
     auth.layer,
     // env:get forwards the boot-resolved mode.
-    Layer.succeed(AppModeService, { mode: extras.appMode ?? 'cloud', chosen: true }),
+    appMode,
     // The models:* handlers and push fiber reach the model manager.
     models.layer,
     // The BYOK key capability handlers reach the secure store.
@@ -284,7 +307,7 @@ const build = (
     ),
     SessionLifecycleProbeLive
   );
-  return { logger, layer, auth, db, nativeOs, sysPermissions, models };
+  return { logger, layer, auth, db, nativeOs, sysPermissions, models, telemetry };
 };
 
 const UUID = '33333333-3333-4333-8333-333333333333';
@@ -306,6 +329,9 @@ const ALL_HANDLER_CHANNELS = [
   CHANNELS.recordingClaimCompletion,
   CHANNELS.recordingPause,
   CHANNELS.recordingResume,
+  CHANNELS.telemetryGetState,
+  CHANNELS.telemetryCapture,
+  CHANNELS.telemetryCaptureException,
   CHANNELS.settingsGet,
   CHANNELS.settingsSet,
   CHANNELS.capabilityCheckUpdates,
@@ -447,6 +473,77 @@ const POISONED_STATE = {
 } as unknown as AuthState;
 
 describe('registerMainWindowHandlers', () => {
+  it.effect('telemetry validates senders and bounded DTOs and assigns renderer origin', () =>
+    Effect.gen(function* () {
+      const { layer, telemetry } = build();
+      const scope = yield* Scope.make();
+      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+      yield* Context.get(ctx, WindowRegistry).openMainWindow.pipe(Scope.extend(scope));
+      const sender = fake.__windowInstances().at(-1)?.webContents;
+      yield* Effect.promise(() => fake.ipcMain.invoke(CHANNELS.telemetryCapture, { sender }, {
+        revision: 0, event: 'recording_completed', properties: { recording_id: 'rec_1' },
+      }));
+      yield* Effect.promise(() => fake.ipcMain.invoke(CHANNELS.telemetryCaptureException, { sender }, {
+        revision: 0, error: { name: 'Error', message: 'renderer failed', stack: 'safe-stack' },
+      }));
+      assert.deepStrictEqual(telemetry.captures, [['recording_completed', { recording_id: 'rec_1' }, 'renderer', 0]]);
+      assert.deepStrictEqual(telemetry.exceptions, [[{ name: 'Error', message: 'renderer failed', stack: 'safe-stack' }, { window_type: 'main' }, 'renderer', 0]]);
+      const foreign = yield* Effect.exit(Effect.tryPromise(() => fake.ipcMain.invoke(
+        CHANNELS.telemetryCapture, { sender: { id: 9999 } }, { event: 'foreign', revision: 0 },
+      )));
+      const oversized = yield* Effect.exit(Effect.tryPromise(() => fake.ipcMain.invoke(
+        CHANNELS.telemetryCaptureException, { sender }, { revision: 0, error: { name: 'Error', message: 'x'.repeat(2049) } },
+      )));
+      const originOverride = yield* Effect.exit(Effect.tryPromise(() => fake.ipcMain.invoke(
+        CHANNELS.telemetryCapture, { sender }, { revision: 0, event: 'fake', source: 'main' },
+      )));
+      assert.isTrue(Exit.isFailure(foreign));
+      assert.isTrue(Exit.isFailure(oversized));
+      assert.isTrue(Exit.isFailure(originOverride));
+      assert.strictEqual(telemetry.captures.length, 1);
+      assert.strictEqual(telemetry.exceptions.length, 1);
+      const widget = yield* Context.get(ctx, WindowRegistry).openWidgetWindow.pipe(Scope.extend(scope));
+      const notify = yield* Context.get(ctx, WindowRegistry).openNotifyWindow.pipe(Scope.extend(scope));
+      yield* Effect.promise(() => fake.ipcMain.invoke(CHANNELS.telemetryCaptureException, { sender: widget.webContents }, {
+        revision: 0, error: { name: 'Error', message: 'widget failed' }, properties: { window_type: 'main' },
+      }));
+      yield* Effect.promise(() => fake.ipcMain.invoke(CHANNELS.telemetryCaptureException, { sender: notify.webContents }, {
+        revision: 0, error: { name: 'Error', message: 'notify failed' },
+      }));
+      assert.deepStrictEqual(telemetry.exceptions.slice(1).map(call => call[1]), [
+        { window_type: 'widget' }, { window_type: 'notify' },
+      ]);
+      const widgetEvent = yield* Effect.exit(Effect.tryPromise(() => fake.ipcMain.invoke(
+        CHANNELS.telemetryCapture, { sender: widget.webContents }, { revision: 0, event: 'widget_spoof' },
+      )));
+      assert.isTrue(Exit.isFailure(widgetEvent));
+      assert.strictEqual(telemetry.captures.length, 1);
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+
+  it.effect('telemetry preference mutation is refused when main disallows changing it', () =>
+    Effect.gen(function* () {
+      const { layer } = build();
+      const scope = yield* Scope.make();
+      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+      yield* Context.get(ctx, WindowRegistry).openMainWindow.pipe(Scope.extend(scope));
+      const sender = fake.__windowInstances().at(-1)?.webContents;
+      const telemetry = Context.get(ctx, TelemetryService);
+      yield* SubscriptionRef.set(telemetry.state, {
+        revision: 1, available: true, enabled: true, signedIn: true, preference: false, canChangePreference: false,
+      });
+      const result = yield* Effect.exit(Effect.tryPromise(() => fake.ipcMain.invoke(
+        CHANNELS.settingsSet, { sender }, { telemetryOptOut: false },
+      )));
+      assert.isTrue(Exit.isFailure(result));
+      assert.isTrue((yield* Context.get(ctx, SettingsService).get).telemetryOptOut);
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+
   it.effect('registers handlers scoped — removeHandler runs on scope close', () =>
     Effect.gen(function* () {
       const { layer } = build();
@@ -1240,6 +1337,7 @@ describe('registerMainWindowHandlers', () => {
         );
         const secureStore = fakeSecureStoreLayer();
         const layer = Layer.mergeAll(
+          makeTelemetryStub().layer,
           config,
           logger.layer,
           windowsStub,
@@ -1248,7 +1346,7 @@ describe('registerMainWindowHandlers', () => {
             Layer.provide(windowsStub),
             Layer.provide(RecordingBridgeLive),
             Layer.provide(auth.layer),
-            Layer.provide(Layer.succeed(AppModeService, { mode: 'cloud', chosen: true })),
+            Layer.provide(Layer.effect(AppModeService, makeAppMode('cloud', true))),
             Layer.provide(logger.layer)
           ),
           StreamBrokerLive.pipe(Layer.provide(logger.layer), Layer.provide(WorkspaceTransportLive)),
@@ -1272,7 +1370,7 @@ describe('registerMainWindowHandlers', () => {
             Layer.provide(logger.layer)
           ),
           auth.layer,
-          Layer.succeed(AppModeService, { mode: 'cloud', chosen: true }),
+          Layer.effect(AppModeService, makeAppMode('cloud', true)),
           makeModelsStub().layer,
           secureStore,
           makeAiProviderLive({ fetchFn: () => Promise.reject(new Error('offline')) }).pipe(
@@ -2006,6 +2104,55 @@ describe('registerMainWindowHandlers', () => {
       yield* assertDeviceStateCleared(h);
       assert.strictEqual(nativeOs.calls.relaunch, 0);
       assert.strictEqual(fake.app.quitCount, quitsBefore + 1);
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+
+  it.effect('same-mode choice becomes shared state only after successful persistence', () =>
+    Effect.gen(function* () {
+      const { layer, db, nativeOs } = build({}, { appModeChosen: false });
+      const scope = yield* Scope.make();
+      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+      yield* Context.get(ctx, WindowRegistry).openMainWindow.pipe(Scope.extend(scope));
+      const sender = fake.__windowInstances().at(-1)?.webContents;
+      const appMode = Context.get(ctx, AppModeService);
+      const operationalDb = Context.get(ctx, OperationalDb);
+      const write = vi.spyOn(operationalDb, 'setSetting');
+      write.mockReturnValueOnce(Effect.fail(new DbError({ op: 'setSetting', cause: 'disk unavailable' })));
+      const failed = yield* Effect.exit(Effect.tryPromise(() => fake.ipcMain.invoke(
+        CHANNELS.capabilityChooseAppMode, { sender }, { mode: 'cloud' },
+      )));
+      assert.isTrue(Exit.isFailure(failed));
+      assert.isFalse(yield* SubscriptionRef.get(appMode.chosenState));
+      assert.isUndefined(db.store.get('app:mode'));
+      const chosen = yield* Effect.promise(() => fake.ipcMain.invoke(
+        CHANNELS.capabilityChooseAppMode, { sender }, { mode: 'cloud' },
+      ));
+      assert.deepStrictEqual(chosen, { relaunch: false });
+      assert.isTrue(yield* SubscriptionRef.get(appMode.chosenState));
+      assert.deepStrictEqual(yield* Effect.promise(() => fake.ipcMain.invoke(
+        CHANNELS.capabilityGetAppModeState, { sender },
+      )), { mode: 'cloud', chosen: true });
+      assert.strictEqual(nativeOs.calls.relaunch, 0);
+      write.mockRestore();
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+
+  it.effect('choosing local does not enable the old unchosen cloud process before relaunch', () =>
+    Effect.gen(function* () {
+      const { layer, nativeOs } = build({}, { appModeChosen: false });
+      const scope = yield* Scope.make();
+      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+      yield* Context.get(ctx, WindowRegistry).openMainWindow.pipe(Scope.extend(scope));
+      const sender = fake.__windowInstances().at(-1)?.webContents;
+      yield* Effect.promise(() => fake.ipcMain.invoke(
+        CHANNELS.capabilityChooseAppMode, { sender }, { mode: 'local' },
+      ));
+      assert.isFalse(yield* SubscriptionRef.get(Context.get(ctx, AppModeService).chosenState));
+      assert.strictEqual(nativeOs.calls.relaunch, 1);
       yield* Scope.close(scope, Exit.void);
     })
   );

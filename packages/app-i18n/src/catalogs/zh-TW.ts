@@ -2244,6 +2244,10 @@ const zhTW = {
     verifying: '正在驗證目標使用者與組織…',
   },
   desktop: {
+    telemetry: {
+      title: '分享使用資料',
+      description: '分享使用資料和錯誤報告，協助改善 Prismical。',
+    },
     aiProvider: {
       apiKeyLabel: 'API 金鑰',
       apiKeyPlaceholder: '貼上金鑰以儲存在此裝置',

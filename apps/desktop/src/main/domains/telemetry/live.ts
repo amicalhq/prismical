@@ -1,220 +1,318 @@
-/**
- * TelemetryServiceLive — the main-process posthog-node client
- * behind the TelemetryService tag. Electron-free and SDK-free (it depends only on
- * the injected PostHogSink factory + the PostHogSink type), so it unit-tests
- * against a fake sink with no network.
- *
- * Lifecycle: boot-scoped. On build it mints/reads the anonymous device id (a
- * persisted UUID in the OperationalDb KV — a DbError never blocks boot, an
- * ephemeral id is used instead), builds the super-property set, opens the sink,
- * and forks a subscriber that mirrors AuthService.sessionState into identify/reset
- * (the SAME (sub, org) reduction the session lifecycle uses). shutdown() flushes
- * the buffer on scope close (quit).
- *
- * Disabled when no analytics key/host is configured or under E2E ⇒ a no-op API,
- * no sink, no subscriber.
- */
 import { randomUUID } from 'node:crypto';
 import os from 'node:os';
-import { Effect, Layer, Ref, Stream } from 'effect';
+import { Deferred, Effect, Layer, Stream, SubscriptionRef } from 'effect';
 import { AppModeService } from '../app-mode/service';
-import type { AuthState } from '../auth/policy';
 import { AuthService } from '../auth/service';
+import { SettingsService } from '../settings/service';
 import { AppConfig } from '../../infra/config/service';
 import { MainLogger } from '../../infra/logging/service';
 import { OperationalDb } from '../../infra/operational-db/service';
-import type { MakePostHogSink } from './posthog-sink';
-import {
-  DEVICE_ID_KEY,
-  TelemetryService,
-  type TelemetryIdentity,
-  type TelemetryServiceApi,
-} from './service';
-
-/** The PostHog `platform` super-property: darwin→macos, win32→windows. */
-const platformTag = (platform: NodeJS.Platform): string =>
-  platform === 'darwin' ? 'macos' : platform === 'win32' ? 'windows' : platform;
-
-/**
- * Active (sub, org) identity from an auth snapshot — mirrors
- * runtime/workspace-lifecycle's desiredSession, replicated here so the domain does
- * not import the runtime layer.
- */
-const activeIdentity = (state: AuthState): TelemetryIdentity | null => {
-  if (state.gate === 'signed-out' || state.activeSub === undefined) return null;
-  const account = state.accounts[state.activeSub];
-  if (account === undefined) return null;
-  return {
-    sub: account.sub,
-    email: account.email,
-    ...(account.name === undefined ? {} : { name: account.name }),
-    ...(account.activeOrgId === undefined ? {} : { orgId: account.activeOrgId }),
-  };
-};
-
-/** Same-identity key (sub+org) — display-claim refreshes (name/email) don't re-identify. */
-const identityKey = (identity: TelemetryIdentity | null): string =>
-  identity === null ? '' : `${identity.sub}\0${identity.orgId ?? ''}`;
-
-const NOOP_API: TelemetryServiceApi = {
-  capture: () => Effect.void,
-  captureException: () => Effect.void,
-  identify: () => Effect.void,
-  reset: Effect.void,
-};
+import { sanitizeTelemetryProperties } from '../../../shared/telemetry-payload';
+import { projectTelemetryException } from '../../../shared/telemetry-exception';
+import { readMachineId, resolveDeviceId } from './device-id';
+import { makeExceptionLimiter } from './exception-limiter';
+import { telemetryIdentity, telemetryPolicy } from './policy';
+import type { MakePostHogSink, PostHogSink } from './posthog-sink';
+import { TelemetryService, type TelemetryServiceApi, type TelemetrySource } from './service';
 
 export const makeTelemetryServiceLive = (
-  makeSink: MakePostHogSink
-): Layer.Layer<
-  TelemetryService,
-  never,
-  AppConfig | OperationalDb | MainLogger | AuthService | AppModeService
-> =>
+  makeSink: MakePostHogSink,
+  machineId: () => Promise<string> = readMachineId
+) =>
   Layer.scoped(
     TelemetryService,
     Effect.gen(function* () {
       const config = yield* AppConfig;
-      const store = yield* OperationalDb;
-      const log = (yield* MainLogger).scoped('telemetry');
+      const db = yield* OperationalDb;
       const auth = yield* AuthService;
-      const { mode, chosen } = yield* AppModeService;
-
-      // Local mode sends nothing from main: local telemetry is off / opt-in,
-      // and the renderer's posthog-js is opted out by default. It also NEVER
-      // mirrors an auth identity — a local install must not be
-      // joinable to a person. Nor does an UNCHOSEN fresh install (it resolves
-      // 'cloud' only by default; the user may be about to pick local — nothing
-      // beacons under a policy nobody picked). No sink is constructed at
-      // all. A chosen cloud mode keeps service telemetry under the ToS.
-      if (mode === 'local' || !chosen) {
-        yield* log.info('telemetry disabled', { mode, chosen });
-        return NOOP_API;
-      }
-
-      const apiKey = config.endpoints.analyticsKey;
-      const host = config.endpoints.analyticsHost;
-      // Dev (null key) and E2E stay silent: no client, no subscriber.
-      if (apiKey === null || host === null || config.isE2E) {
-        yield* log.info('telemetry disabled', {
-          hasKey: apiKey !== null,
-          hasHost: host !== null,
-          isE2E: config.isE2E,
-        });
-        return NOOP_API;
-      }
-
-      // Anonymous device id — a persisted UUID (not node-machine-id: no reg.exe /
-      // hardware fingerprint). A DbError must never block boot: fall back to an
-      // ephemeral id (telemetry works, just not stable across restarts).
-      const deviceId = yield* store.getSetting(DEVICE_ID_KEY).pipe(
-        Effect.flatMap(existing =>
-          existing !== null
-            ? Effect.succeed(existing)
-            : Effect.sync(() => randomUUID()).pipe(
-                Effect.tap(id => store.setSetting(DEVICE_ID_KEY, id))
-              )
-        ),
-        Effect.catchTag('DbError', error =>
-          log
-            .warn('device id read/write failed — using an ephemeral id', { op: error.op })
-            .pipe(Effect.as(randomUUID()))
-        )
-      );
-
-      const superProperties: Record<string, string | number | boolean> = {
-        platform: platformTag(config.platform),
+      const settings = yield* SettingsService;
+      const { mode, chosenState } = yield* AppModeService;
+      const log = (yield* MainLogger).scoped('telemetry');
+      const { analyticsKey: key, analyticsHost: host } = config.endpoints;
+      const configured = !config.isE2E && Boolean(key && host);
+      let deviceId: string | undefined;
+      const common = {
+        app: 'prismical',
+        ...(typeof __PRISMICAL_BUILD_ID__ === 'string' && __PRISMICAL_BUILD_ID__
+          ? { build_id: __PRISMICAL_BUILD_ID__ }
+          : {}),
+        schema_version: 1,
+        app_run_id: randomUUID(),
         app_version: config.appVersion,
         app_is_packaged: config.isPackaged,
+        platform:
+          config.platform === 'darwin'
+            ? 'macos'
+            : config.platform === 'win32'
+              ? 'windows'
+              : config.platform,
         os_release: os.release(),
         arch: process.arch,
       };
-
-      const sink = makeSink(apiKey, host);
-      // The current distinct-id: the device id while anonymous, the user sub once
-      // identified. Org (if any) rides every capture as a PostHog group.
-      const current = yield* Ref.make<{ distinctId: string; orgId?: string }>({
-        distinctId: deviceId,
+      const identityKey = (identity: ReturnType<typeof telemetryIdentity>) =>
+        JSON.stringify([identity?.sub ?? null, identity?.activeOrgId ?? null]);
+      const snapshot = Effect.gen(function* () {
+        const identity = telemetryIdentity(yield* SubscriptionRef.get(auth.sessionState), mode);
+        const preference = !(yield* settings.get).telemetryOptOut;
+        const chosen = yield* SubscriptionRef.get(chosenState);
+        const policy = telemetryPolicy(configured && chosen, identity !== null, preference);
+        return {
+          policy,
+          chosen,
+          distinctId: identity?.sub ?? deviceId ?? '',
+          orgId: identity?.activeOrgId,
+          identityKey: identityKey(identity),
+          key: JSON.stringify([policy.enabled, identity?.sub ?? deviceId, identity?.activeOrgId]),
+        };
+      });
+      const initial = yield* snapshot;
+      let revision = 0;
+      let revisionIdentity = initial.identityKey;
+      let revisionPreference = initial.policy.preference;
+      let revisionChosen = initial.chosen;
+      const noteBoundary = (identity: string, preference: boolean, chosen: boolean) => {
+        if (
+          identity !== revisionIdentity ||
+          preference !== revisionPreference ||
+          chosen !== revisionChosen
+        ) {
+          revision++;
+          revisionIdentity = identity;
+          revisionPreference = preference;
+          revisionChosen = chosen;
+        }
+      };
+      const state = yield* SubscriptionRef.make({ ...initial.policy, revision });
+      const lock = yield* Effect.makeSemaphore(1);
+      let active:
+        | {
+            key: string;
+            identityKey: string;
+            preference: boolean;
+            chosen: boolean;
+            sink: PostHogSink;
+          }
+        | undefined;
+      let closed = false;
+      const exceptions = makeExceptionLimiter();
+      const bestEffort = <A>(operation: Effect.Effect<A>) =>
+        operation.pipe(
+          Effect.catchAllCause(() => log.warn('telemetry operation failed').pipe(Effect.asVoid))
+        );
+      const invalidate = Effect.gen(function* () {
+        exceptions.clear();
+        const sink = active?.sink;
+        active = undefined;
+        if (sink) yield* bestEffort(Effect.sync(() => sink.discard()));
       });
 
-      const capture: TelemetryServiceApi['capture'] = (event, properties) =>
-        Ref.get(current).pipe(
-          Effect.flatMap(({ distinctId, orgId }) =>
-            Effect.sync(() =>
-              sink.capture({
-                distinctId,
-                event,
-                properties: { ...superProperties, ...properties },
-                ...(orgId === undefined ? {} : { groups: { organization: orgId } }),
+      // Capture re-reads auth/settings, so an event cannot race a subscription push.
+      const reconcile = Effect.gen(function* () {
+        let next = yield* snapshot;
+        if (!closed && next.policy.enabled && deviceId === undefined) {
+          // Choosing the default cloud mode does not restart the app. Resolve
+          // identity only when its live choice/consent first enables telemetry.
+          deviceId = yield* resolveDeviceId(machineId).pipe(
+            Effect.provideService(OperationalDb, db)
+          );
+          next = yield* snapshot;
+        }
+        noteBoundary(next.identityKey, next.policy.preference, next.chosen);
+        const nextState = { ...next.policy, revision };
+        const previous = yield* SubscriptionRef.get(state);
+        if (
+          Object.keys(nextState).some(
+            key =>
+              nextState[key as keyof typeof nextState] !== previous[key as keyof typeof previous]
+          )
+        )
+          yield* SubscriptionRef.set(state, nextState);
+        if (active?.key !== next.key) {
+          yield* invalidate;
+          if (!closed && next.policy.enabled && key && host) {
+            yield* bestEffort(
+              Effect.sync(() => {
+                // Queued SDK work may outlive this session. Recheck at transport time.
+                const sink = makeSink(
+                  key,
+                  host,
+                  () => !closed && Effect.runSync(snapshot).key === next.key
+                );
+                active = {
+                  key: next.key,
+                  identityKey: next.identityKey,
+                  preference: next.policy.preference,
+                  chosen: next.chosen,
+                  sink,
+                };
+                if (next.policy.signedIn)
+                  sink.identify({ distinctId: next.distinctId, properties: common });
               })
-            )
-          )
-        );
-
-      const captureException: TelemetryServiceApi['captureException'] = (error, properties) =>
-        Ref.get(current).pipe(
-          Effect.flatMap(({ distinctId }) =>
-            Effect.sync(() =>
-              sink.captureException(error, distinctId, { ...superProperties, ...properties })
-            )
-          )
-        );
-
-      const identify: TelemetryServiceApi['identify'] = identity =>
-        Ref.set(current, {
-          distinctId: identity.sub,
-          ...(identity.orgId === undefined ? {} : { orgId: identity.orgId }),
-        }).pipe(
-          Effect.zipRight(
-            Effect.sync(() => {
-              sink.identify({
-                distinctId: identity.sub,
-                properties: {
-                  ...superProperties,
-                  ...(identity.email === undefined ? {} : { email: identity.email }),
-                  ...(identity.name === undefined ? {} : { name: identity.name }),
-                },
-              });
-              if (identity.orgId !== undefined) {
-                sink.groupIdentify({ groupType: 'organization', groupKey: identity.orgId });
-              }
+            );
+          }
+        }
+        return next;
+      });
+      const getState = lock.withPermits(1)(
+        reconcile.pipe(Effect.zipRight(SubscriptionRef.get(state)))
+      );
+      const send = (
+        source: TelemetrySource,
+        expectedRevision: number | undefined,
+        operation: (
+          sink: PostHogSink,
+          current: Effect.Effect.Success<typeof snapshot>,
+          context: Record<string, unknown>
+        ) => void
+      ) =>
+        lock.withPermits(1)(
+          bestEffort(
+            Effect.gen(function* () {
+              const current = yield* reconcile;
+              if (closed || !current.policy.enabled || !active) return;
+              if (
+                (source === 'renderer' || expectedRevision !== undefined) &&
+                expectedRevision !== revision
+              )
+                return;
+              const sink = active.sink;
+              yield* Effect.sync(() =>
+                operation(sink, current, {
+                  ...common,
+                  runtime: source,
+                  $process_person_profile: current.policy.signedIn,
+                })
+              );
             })
           )
         );
-
-      // Back to the anonymous device id. deviceId is a STABLE anonymous DEVICE
-      // identifier that is never merged into a user (no $anon_distinct_id is sent),
-      // so returning to it on logout/switch cannot bleed one user's identity onto
-      // the next on a shared device — the renderer's posthog-js keeps its own
-      // rotating anon id and merges that on login (product-event attribution).
-      const reset: TelemetryServiceApi['reset'] = Ref.set(current, { distinctId: deviceId });
-
-      // Mirror auth identity into telemetry: identify on sign-in, reset on
-      // sign-out, re-identify on account/org switch. `changes` replays the current
-      // state first, so a restored session identifies at boot. Keyed on (sub, org)
-      // only — a refreshed display claim never re-identifies.
-      const lastKey = yield* Ref.make('');
+      const capture: TelemetryServiceApi['capture'] = (
+        event,
+        properties,
+        source = 'main',
+        expectedRevision
+      ) =>
+        send(source, expectedRevision, (sink, current, context) => {
+          if (!/^[a-z][a-z0-9_]{0,99}$/.test(event)) return;
+          sink.capture({
+            distinctId: current.distinctId,
+            event,
+            properties: { ...sanitizeTelemetryProperties(properties), ...context },
+            ...(current.orgId ? { groups: { organization: current.orgId } } : {}),
+          });
+        });
+      const captureException: TelemetryServiceApi['captureException'] = (
+        error,
+        properties,
+        source = 'main',
+        expectedRevision
+      ) =>
+        send(source, expectedRevision, (sink, current, context) => {
+          const safeError = projectTelemetryException(error, source);
+          const safeProperties = sanitizeTelemetryProperties(properties);
+          if (
+            !exceptions.admit(
+              safeError,
+              `${source}:${safeProperties.source ?? ''}:${safeProperties.error_context ?? ''}`
+            )
+          )
+            return;
+          sink.captureException(safeError, current.distinctId, {
+            ...safeProperties,
+            ...sanitizeTelemetryProperties({
+              error_code: Reflect.get(safeError, 'code'),
+              reason: Reflect.get(safeError, 'reason'),
+            }),
+            ...context,
+            ...(current.orgId ? { $groups: { organization: current.orgId } } : {}),
+          });
+        });
+      let observedIdentity = identityKey(
+        telemetryIdentity(yield* SubscriptionRef.get(auth.sessionState), mode)
+      );
+      let observedPreference = !(yield* settings.get).telemetryOptOut;
+      let observedChosen = yield* SubscriptionRef.get(chosenState);
+      const ready = {
+        identity: yield* Deferred.make<void>(),
+        preference: yield* Deferred.make<void>(),
+        choice: yield* Deferred.make<void>(),
+      };
       yield* Effect.forkScoped(
-        Stream.runForEach(auth.sessionState.changes, state =>
-          Effect.gen(function* () {
-            const desired = activeIdentity(state);
-            const key = identityKey(desired);
-            if (key === (yield* Ref.get(lastKey))) return;
-            yield* Ref.set(lastKey, key);
-            yield* desired === null ? reset : identify(desired);
-          })
+        Stream.runForEach(
+          Stream.mergeWithTag(
+            {
+              identity: Stream.map(auth.sessionState.changes, value =>
+                identityKey(telemetryIdentity(value, mode))
+              ),
+              preference: Stream.map(settings.settings.changes, value => !value.telemetryOptOut),
+              choice: chosenState.changes,
+            },
+            { concurrency: 'unbounded' }
+          ),
+          change =>
+            lock.withPermits(1)(
+              Effect.gen(function* () {
+                // Consume each emitted transition, not just the current snapshot:
+                // A→B→A or ON→OFF→ON must revoke the earlier queue. If capture has
+                // already opened the next session, do not discard that new queue.
+                if (change._tag === 'identity') {
+                  if (change.value !== observedIdentity)
+                    noteBoundary(change.value, revisionPreference, revisionChosen);
+                  if (change.value !== observedIdentity && active?.identityKey === observedIdentity)
+                    yield* invalidate;
+                  observedIdentity = change.value;
+                } else if (change._tag === 'preference') {
+                  if (change.value !== observedPreference)
+                    noteBoundary(revisionIdentity, change.value, revisionChosen);
+                  if (
+                    change.value !== observedPreference &&
+                    active?.preference === observedPreference
+                  )
+                    yield* invalidate;
+                  observedPreference = change.value;
+                } else {
+                  if (change.value !== observedChosen)
+                    noteBoundary(revisionIdentity, revisionPreference, change.value);
+                  if (change.value !== observedChosen && active?.chosen === observedChosen)
+                    yield* invalidate;
+                  observedChosen = change.value;
+                }
+                yield* reconcile;
+                yield* Deferred.succeed(ready[change._tag], undefined);
+              })
+            )
         )
       );
-
-      // Best-effort flush on quit (boot scope close). A rejected/timed-out flush
-      // (offline) must not become a finalizer defect; 2s keeps headroom under the
-      // runtime's 5s dispose deadline.
+      // Do not expose capture until all lossless subscriptions are attached.
+      yield* Deferred.await(ready.identity);
+      yield* Deferred.await(ready.preference);
+      yield* Deferred.await(ready.choice);
+      yield* getState;
       yield* Effect.addFinalizer(() =>
-        Effect.promise(() => sink.shutdown(2_000).catch(() => undefined)).pipe(
-          Effect.zipRight(log.info('telemetry client shut down'))
+        lock.withPermits(1)(
+          Effect.gen(function* () {
+            // Do not open a new client just to close it. A current policy or
+            // identity change discards the previous queue instead of flushing it.
+            const next = yield* snapshot;
+            if (active?.key !== next.key) yield* invalidate;
+            const sink = active?.sink;
+            if (sink)
+              yield* Effect.tryPromise(() => sink.shutdown(2_000)).pipe(
+                // Scope finalizers are uninterruptible by default. The flush
+                // must remain interruptible for this deadline to take effect.
+                Effect.interruptible,
+                Effect.timeout('2 seconds'),
+                Effect.ignore
+              );
+          }).pipe(
+            Effect.ensuring(
+              Effect.sync(() => {
+                closed = true;
+              }).pipe(Effect.zipRight(invalidate))
+            )
+          )
         )
       );
-
-      yield* log.info('telemetry enabled', { platform: superProperties.platform });
-      return { capture, captureException, identify, reset };
+      return { state, getState, capture, captureException } satisfies TelemetryServiceApi;
     })
   );

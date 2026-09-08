@@ -37,7 +37,7 @@ import {
   DetectionBridgeLive,
   type DetectionBridgeApi,
 } from '../../src/main/domains/detection/bridge';
-import { AppModeService } from '../../src/main/domains/app-mode/service';
+import { AppModeService, makeAppMode } from '../../src/main/domains/app-mode/service';
 import { FloatBridgeLive } from '../../src/main/domains/windows/float-bridge';
 import { AuthService, type AuthApi } from '../../src/main/domains/auth/service';
 import { initialAuthState, type AuthState } from '../../src/main/domains/auth/policy';
@@ -116,7 +116,7 @@ const setup = (): Effect.Effect<Harness> =>
         Layer.provide(windowRegistryLayer),
         Layer.provide(RecordingBridgeLive),
         Layer.provide(Layer.succeed(AuthService, authStub)),
-        Layer.provide(Layer.succeed(AppModeService, { mode: 'cloud', chosen: true })),
+        Layer.provide(Layer.effect(AppModeService, makeAppMode('cloud', true))),
         Layer.provide(logger.layer)
       ),
       RecordingBridgeLive,

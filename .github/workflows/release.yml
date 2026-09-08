@@ -2,7 +2,7 @@ name: desktop-release
 
 # Build, sign and publish Prismical Desktop for macOS and Windows.
 #
-# Release flow (amical's bumpp pattern): `pnpm --filter @prismical/desktop exec
+# Release flow: `pnpm --filter @prismical/desktop exec
 # bumpp <version>` bumps apps/desktop/package.json, commits `chore: release
 # v<version>` and pushes the `v<version>` tag; that tag runs this workflow.
 # Every leg builds + signs on its own runner and uploads its artifacts as run
@@ -10,7 +10,7 @@ name: desktop-release
 # changelog is created from them. Publish the draft by hand after checking it;
 # Core serves its auto-update feed from the published GitHub Release assets.
 #
-# Signing (amical's recipe): mac Developer-ID + notarization, Windows Azure
+# Signing: mac Developer-ID + notarization, Windows Azure
 # Trusted Signing. Version tags always sign, so an unsigned build can never
 # enter a published release. Manual/preview builds use the dispatch checkbox or
 # repository variable:
@@ -153,6 +153,11 @@ jobs:
       # preview builds, the dispatch checkbox overrides vars.SKIP_CODESIGNING;
       # those builds remain unsigned by default.
       SKIP_CODESIGNING: ${{ github.ref_type == 'tag' && 'false' || github.event.inputs.sign == 'true' && 'false' || vars.SKIP_CODESIGNING || 'true' }}
+      POSTHOG_SOURCE_MAP_UPLOAD: ${{ vars.POSTHOG_SOURCE_MAP_UPLOAD || 'false' }}
+      POSTHOG_PERSONAL_API_KEY: ${{ secrets.POSTHOG_PERSONAL_API_KEY }}
+      POSTHOG_PROJECT_ID: ${{ vars.POSTHOG_PROJECT_ID }}
+      POSTHOG_RELEASE_SHA: ${{ github.sha }}
+      POSTHOG_HOST: ${{ vars.POSTHOG_HOST }}
 
     steps:
       - name: Checkout
@@ -266,7 +271,7 @@ jobs:
           PRISMICAL_ANALYTICS_KEY: ${{ secrets.PRISMICAL_ANALYTICS_KEY }}
         run: pnpm make
 
-      # Signed path (Azure Trusted Signing, amical's recipe): package first, sign
+      # Signed path (Azure Trusted Signing): package first, sign
       # the packaged binaries, then releasify (make --skip-package) so Squirrel's
       # generated stubs (Update.exe, the launcher) get signed too.
       - name: Package (Windows, signing on)

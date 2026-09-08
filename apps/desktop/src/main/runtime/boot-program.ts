@@ -5,6 +5,7 @@
  * fiber. Layer-owned resources (DB, tray, session handlers, event listeners)
  * are released afterwards by runtime.dispose().
  */
+import { app } from 'electron';
 import { Effect, Queue, type Scope } from 'effect';
 import { runAuthConsumer } from '../domains/auth/consumer';
 import {
@@ -16,6 +17,7 @@ import { runDevLoopbackOAuthServer } from '../domains/deep-link/dev-loopback';
 import { runOsSync } from '../domains/settings/os-sync';
 import { ShutdownCoordinator } from '../domains/shutdown/service';
 import { TelemetryService } from '../domains/telemetry/service';
+import { registerFailureHooks } from '../domains/telemetry/failure-hooks';
 import { TrayService } from '../domains/tray/service';
 import { WindowRegistry, type WindowError } from '../domains/windows/service';
 import { ElectronApp } from '../infra/electron/service';
@@ -42,6 +44,7 @@ export const bootProgram: Effect.Effect<void, WindowError, BootServices | Scope.
     const log = (yield* MainLogger).scoped('main');
 
     yield* electronApp.whenReady;
+    yield* registerFailureHooks({ app, process });
     // A destructive reset applied at this boot: wipe the renderer storages
     // again now that the app is ready and BEFORE any window exists — the
     // in-process wipe raced the old renderers' sync polls; nothing can write

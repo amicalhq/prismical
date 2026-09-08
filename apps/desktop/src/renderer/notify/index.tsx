@@ -6,9 +6,12 @@ import { createRoot } from 'react-dom/client';
 import { I18nextProvider } from 'react-i18next';
 import { NotifyApp } from './app';
 import { bootstrapPanelI18n } from '../panel-i18n';
+import { captureRendererException, installRendererTelemetry } from '../telemetry';
 import { mountRendererBootstrapFailure } from '../main/bootstrap-failure';
 import './types';
 import './notify.css';
+
+installRendererTelemetry(window.notify.telemetry);
 
 const container = document.getElementById('root');
 if (container === null) {
@@ -27,5 +30,6 @@ const mount = async (): Promise<void> => {
 
 void mount().catch(error => {
   console.error('Failed to initialize the notification renderer', error);
+  captureRendererException(window.notify.telemetry, error, 'startup');
   mountRendererBootstrapFailure(container);
 });

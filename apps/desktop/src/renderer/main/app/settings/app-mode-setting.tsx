@@ -8,8 +8,7 @@
  * mode): main signs every account out, clears the device state, writes the
  * new mode and relaunches; the next boot purges the product stores, models
  * and recovery WAVs before anything opens them. The confirm dialog states
- * exactly that. The renderer severs its analytics identity FIRST, as the
- * shared reset card does.
+ * exactly that. Main owns the telemetry identity and resets it with device state.
  */
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -29,7 +28,6 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@prismical/app-ui/ui/alert-dialog';
-import { resetAnalyticsIdentity } from '../analytics/posthog';
 import { useDesktopEnv } from '../desktop-env';
 
 export function AppModeSetting() {
@@ -46,10 +44,6 @@ export function AppModeSetting() {
   const switchMode = (): void => {
     if (busy) return;
     setBusy(true);
-    // Sever the renderer analytics identity FIRST; main then wipes storage,
-    // regenerates the telemetry device id and relaunches (a switched install
-    // must not be joinable to the prior identity).
-    resetAnalyticsIdentity();
     // Main relaunches, so the invoke may never resolve; a rejection is logged
     // by the preload/port lane and the user can retry.
     window.desktop.capabilities.resetApp({ mode: target }).catch(() => {

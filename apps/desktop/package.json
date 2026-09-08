@@ -58,14 +58,15 @@
     "i18next": "catalog:",
     "jose": "^6.1.0",
     "lucide-react": "^0.553.0",
-    "posthog-js": "^1.396.6",
     "posthog-node": "5.34.2",
     "react": "catalog:",
     "react-dom": "catalog:",
     "react-i18next": "catalog:",
     "split2": "^4.2.0",
     "ai": "catalog:",
-    "zod": "catalog:"
+    "zod": "catalog:",
+    "@posthog/core": "1.29.2",
+    "node-machine-id": "^1.1.12"
   },
   "devDependencies": {
     "@effect/vitest": "^0.29.0",
@@ -96,6 +97,7 @@
     "tsx": "catalog:",
     "typescript": "catalog:",
     "vite": "^7.1.5",
-    "vitest": "catalog:"
+    "vitest": "catalog:",
+    "@posthog/rollup-plugin": "^1.6.0"
   }
 }

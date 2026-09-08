@@ -134,6 +134,10 @@ export const CHANNELS = {
   settingsSet: 'settings:set',
   /** push main→renderer: DeviceSettings fan-out on any settings change. */
   settingsChanged: 'settings:changed',
+  telemetryGetState: 'telemetry:getState',
+  telemetryStateChanged: 'telemetry:stateChanged',
+  telemetryCapture: 'telemetry:capture',
+  telemetryCaptureException: 'telemetry:captureException',
   /**
    * Local whisper model manager. Device state shared by both
    * modes: the catalogue × installed rows × active downloads. The verbs are
@@ -167,7 +171,8 @@ export const CHANNELS = {
   /**
    * invoke(ResetAppRequest?) → void. Erase the device state, then relaunch:
    * product stores, downloaded models, saved keys, AI/transcription settings,
-   * and the telemetry identity. With `mode` it is the MODE SWITCH: every account is
+   * and the fallback installation UUID. The machine-derived device ID is unchanged.
+   * With `mode` it is the MODE SWITCH: every account is
    * signed out and the next boot comes up in that mode. Destructive — the
    * renderer gates it behind a confirm.
    */
@@ -275,10 +280,8 @@ export const envDescriptorSchema = z.object({
   // own host); null when analytics is disabled (dev / E2E).
   analyticsHost: z.string().nullable(),
   /**
-   * The app's operating mode. Main resolves the user's first-run choice. The
-   * renderer's posthog-js init KEYS on it — telemetry policy differs by mode
-   * (cloud: service telemetry under the ToS; local: opted-out baseline
-   * config) — so nothing may beacon before the mode is known.
+   * The app's boot-resolved operating mode. Main owns telemetry policy and
+   * publishes effective availability separately through the telemetry API.
    */
   appMode: z.enum(['cloud', 'local']),
   platform: z.string(),
@@ -901,9 +904,8 @@ export const deviceSettingsSchema = z
     autoExpandOnRecording: z.boolean(),
     dockContentProtection: z.boolean(),
     /**
-     * LOCAL-MODE telemetry opt-out. Policy: cloud-mode
-     * users get service telemetry under the ToS (this flag is ignored there);
-     * local mode honors it.
+     * Signed-out telemetry preference. Real signed-in accounts always enable
+     * telemetry when the build supports it; local synthetic sessions do not.
      */
     telemetryOptOut: z.boolean(),
     /** Transcription engine choice — see transcriptionSettingSchema. */
@@ -957,10 +959,56 @@ export const DEFAULT_DEVICE_SETTINGS: DeviceSettings = {
   dockHotkey: DEFAULT_DOCK_HOTKEY,
   autoExpandOnRecording: false,
   dockContentProtection: false,
-  telemetryOptOut: false,
+  telemetryOptOut: true,
   transcription: DEFAULT_TRANSCRIPTION_SETTING,
   ai: DEFAULT_AI_PROVIDER_SETTING,
 };
+
+// Effective telemetry policy is owned by main, including identity and availability.
+export const telemetryStateSchema = z.object({
+  revision: z.number().int().nonnegative(),
+  available: z.boolean(),
+  enabled: z.boolean(),
+  signedIn: z.boolean(),
+  preference: z.boolean(),
+  canChangePreference: z.boolean(),
+}).strict();
+export type TelemetryState = z.infer<typeof telemetryStateSchema>;
+
+const telemetryPropertiesSchema = z.record(
+  z.string().max(128),
+  z.union([z.string().max(2048), z.number().finite(), z.boolean(), z.null(), z.undefined()]),
+).refine(value => Object.keys(value).length <= 32, 'Too many telemetry properties');
+
+export const telemetryCaptureRequestSchema = z.object({
+  revision: z.number().int().nonnegative(),
+  event: z.string().min(1).max(128),
+  properties: telemetryPropertiesSchema.optional(),
+}).strict();
+export type TelemetryCaptureRequest = z.infer<typeof telemetryCaptureRequestSchema>;
+
+export const telemetryStackFrameSchema = z.object({
+  filename: z.string().max(300),
+  lineno: z.number().int().positive(),
+  colno: z.number().int().nonnegative(),
+  chunk_id: z.string().uuid().optional(),
+  platform: z.enum(['web:javascript', 'node:javascript']).optional(),
+}).strict();
+export type TelemetryStackFrame = z.infer<typeof telemetryStackFrameSchema>;
+
+export const telemetryErrorSchema = z.object({
+  name: z.string().max(128),
+  message: z.string().max(2048),
+  stack: z.string().max(8192).optional(),
+  frames: z.array(telemetryStackFrameSchema).max(20).optional(),
+}).strict();
+export type TelemetryError = z.infer<typeof telemetryErrorSchema>;
+export const telemetryExceptionRequestSchema = z.object({
+  revision: z.number().int().nonnegative(),
+  error: telemetryErrorSchema,
+  properties: telemetryPropertiesSchema.optional(),
+}).strict();
+export type TelemetryExceptionRequest = z.infer<typeof telemetryExceptionRequestSchema>;
 
 // ---------------------------------------------------------------------------
 // capability:* (native action surface over IPC)
@@ -1405,6 +1453,13 @@ export interface MainWindowRecordingApi {
   readonly onStateChanged: (listener: (state: RecordingStateView) => void) => () => void;
 }
 
+export interface MainWindowTelemetryApi {
+  readonly getState: () => Promise<TelemetryState>;
+  readonly onChanged: (listener: (state: TelemetryState) => void) => () => void;
+  readonly capture: (request: TelemetryCaptureRequest) => Promise<void>;
+  readonly captureException: (request: TelemetryExceptionRequest) => Promise<void>;
+}
+
 /**
  * Device-settings read/write/observe. `get`/`set` invoke main; `set` is
  * fire-and-forget (the observed truth flows back through `onChanged`, which — like
@@ -1506,6 +1561,7 @@ export interface MainWindowDesktopApi {
   readonly recording: MainWindowRecordingApi;
   /** Device-local preferences read/write/observe. */
   readonly settings: MainWindowSettingsApi;
+  readonly telemetry: MainWindowTelemetryApi;
   /** Local whisper model manager: download/cancel/delete + state. */
   readonly models: MainWindowModelsApi;
   /** Native action surface: updates, logs/reset, permissions. */

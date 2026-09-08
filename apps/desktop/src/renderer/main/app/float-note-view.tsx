@@ -18,6 +18,7 @@
  * because robust Yjs mounting is more important than avoiding a rare empty note.
  */
 import * as React from 'react';
+import { captureRendererException } from '../../telemetry';
 import { ArrowUpLeft, FileText, Plus, SquareArrowOutUpRight, X } from 'lucide-react';
 import {
   Command,
@@ -73,7 +74,8 @@ const autoStartIntent: { armed: boolean; noteId: string | null } = {
  * reload. It only reads the outer application-locale provider, which mounts
  * before the router and remains available when a route/provider below fails.
  */
-export function FloatErrorFallback() {
+export function FloatErrorFallback({ error }: { error: unknown }) {
+  React.useEffect(() => captureRendererException(window.desktop.telemetry, error, 'react_error_boundary'), [error]);
   const { t } = useTranslation();
   return (
     <div className="h-screen w-screen p-0">

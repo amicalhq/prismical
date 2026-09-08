@@ -2320,6 +2320,10 @@ const ja = {
     verifying: '対象ユーザーと組織を確認しています…',
   },
   desktop: {
+    telemetry: {
+      title: '使用状況データを共有',
+      description: '使用状況データとエラーレポートを共有して、Prismical の改善にご協力ください。',
+    },
     aiProvider: {
       apiKeyLabel: 'API キー',
       apiKeyPlaceholder: 'キーを貼り付けてこのデバイスに保存',

@@ -10,6 +10,9 @@ import { mountAppShell } from './app/mount';
 import { openAskStream, type AskStreamHandle } from './stream';
 import { createDesktopRendererI18n } from './application-i18n';
 import { mountRendererBootstrapFailure } from './bootstrap-failure';
+import { captureRendererException, installRendererTelemetry } from '../telemetry';
+
+installRendererTelemetry(window.desktop.telemetry);
 
 declare global {
   interface Window {
@@ -129,6 +132,7 @@ const bootstrap = async (): Promise<void> => {
 
 void bootstrap().catch(error => {
   console.error('Failed to initialize the desktop renderer', error);
+  captureRendererException(window.desktop.telemetry, error, 'startup');
   mountRendererBootstrapFailure(root);
 });
 

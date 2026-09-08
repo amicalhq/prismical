@@ -11,7 +11,7 @@ import { assert, describe, it } from '@effect/vitest';
 import { Context, Effect, Exit, Layer, Option, Scope, SubscriptionRef } from 'effect';
 import { CHANNELS } from '@prismical/desktop-contracts';
 import { makeTestLogger } from '../helpers/test-layers';
-import { AppModeService, type AppMode } from '../../src/main/domains/app-mode/service';
+import { AppModeService, makeAppMode, type AppMode } from '../../src/main/domains/app-mode/service';
 import { FloatBridge, FloatBridgeLive } from '../../src/main/domains/windows/float-bridge';
 import { WindowRegistry, type WindowRegistryService } from '../../src/main/domains/windows/service';
 import { RecordingBridge, type RecordingBridgeApi } from '../../src/main/domains/recording/bridge';
@@ -123,7 +123,7 @@ const setup = (
       Layer.provide(Layer.succeed(WindowRegistry, fake.service)),
       Layer.provide(Layer.succeed(RecordingBridge, recordingStub)),
       Layer.provide(Layer.succeed(AuthService, authStub)),
-      Layer.provide(Layer.succeed(AppModeService, { mode: appMode, chosen: true })),
+      Layer.provide(Layer.effect(AppModeService, makeAppMode(appMode, true))),
       Layer.provide(logger.layer)
     );
     const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));

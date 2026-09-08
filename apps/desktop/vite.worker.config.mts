@@ -30,6 +30,7 @@
 import { builtinModules } from 'node:module';
 import { resolve } from 'node:path';
 import { defineConfig } from 'vite';
+import { posthogSourceMapPlugins } from './vite.posthog';
 
 const builtins = [
   'electron',
@@ -39,7 +40,9 @@ const builtins = [
 ];
 
 export default defineConfig({
+  plugins: posthogSourceMapPlugins(),
   build: {
+    sourcemap: process.env.POSTHOG_SOURCE_MAP_UPLOAD === 'true' ? 'hidden' : false,
     outDir: '.vite/build',
     emptyOutDir: false,
     copyPublicDir: false,

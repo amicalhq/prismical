@@ -10,12 +10,14 @@
  */
 import { contextBridge, ipcRenderer } from 'electron';
 import {
+  CHANNELS,
   WIDGET_CHANNELS,
   type WidgetDesktopApi,
+  type TelemetryState,
   type WidgetLevel,
   type WidgetStateView,
 } from '@prismical/desktop-contracts';
-import { makeWidgetBuffer } from './widget-buffer';
+import { makeWidgetBuffer, makeReplayBuffer } from './widget-buffer';
 
 // Attach the widget:state source at preload EVAL time (not lazily on first
 // onState) so a push that fires before the renderer subscribes (a recording
@@ -28,7 +30,17 @@ const widgetBuffer = makeWidgetBuffer({
     ),
 });
 
+const telemetryBuffer = makeReplayBuffer<TelemetryState>({
+  on: listener => ipcRenderer.on(CHANNELS.telemetryStateChanged,
+    (_event: Electron.IpcRendererEvent, state: TelemetryState) => listener(state)),
+});
+
 const api: WidgetDesktopApi = {
+  telemetry: {
+    getState: () => ipcRenderer.invoke(CHANNELS.telemetryGetState),
+    onChanged: telemetryBuffer.onState,
+    captureException: request => ipcRenderer.invoke(CHANNELS.telemetryCaptureException, request),
+  },
   getState: () => ipcRenderer.invoke(WIDGET_CHANNELS.stateGet),
   onState: widgetBuffer.onState,
   // Ephemeral by design (no replay buffer, unlike onState): a level is only

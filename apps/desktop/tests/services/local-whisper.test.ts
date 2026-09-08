@@ -22,7 +22,7 @@ import { Context, Effect, Exit, Layer, Scope } from 'effect';
 import { makeTestLogger, testConfigLayer } from '../helpers/test-layers';
 import { makeFakeWorkspaceBackend } from '../helpers/fake-recording';
 import { fakeModelManagerLayer, makeFakeWhisperEngine } from '../helpers/fake-workspace-env';
-import { AppModeService, type AppMode } from '../../src/main/domains/app-mode/service';
+import { AppModeService, makeAppMode, type AppMode } from '../../src/main/domains/app-mode/service';
 import { CAPTURE_SAMPLE_RATE } from '../../src/main/domains/recording/chunker';
 import { VAD_MODEL_ID } from '../../src/main/domains/models/catalogue';
 import { SILENCE_PEAK_FLOAT } from '../../src/main/domains/transcriber/audio';
@@ -72,7 +72,7 @@ const build = (
           Layer.provide(productDb),
           Layer.provide(whisper.layer),
           Layer.provide(fakeModelManagerLayer(installed)),
-          Layer.provide(Layer.succeed(AppModeService, { mode, chosen: true })),
+          Layer.provide(Layer.effect(AppModeService, makeAppMode(mode, true))),
           Layer.provide(fakeCloud.layer)
         )
       ).pipe(Layer.provide(env))

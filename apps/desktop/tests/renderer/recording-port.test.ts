@@ -5,7 +5,7 @@ import { createDesktopPorts } from '../../src/renderer/main/app/ports/desktop-po
 
 vi.mock('../../src/renderer/main/app/router', () => ({ router: {} }));
 vi.mock('../../src/renderer/main/app/analytics/posthog', () => ({
-  desktopAnalyticsPort: {}, resetAnalyticsIdentity: vi.fn(),
+  desktopAnalyticsPort: {},
 }));
 
 afterEach(() => vi.unstubAllGlobals());

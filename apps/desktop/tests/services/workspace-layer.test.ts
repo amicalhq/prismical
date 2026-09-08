@@ -44,7 +44,7 @@ import { CollabBridge } from '../../src/main/domains/collab/store';
 import { WorkspaceTransportLive } from '../../src/main/domains/transport/live';
 import { WorkspaceTransport } from '../../src/main/domains/transport/service';
 import { OperationalDbLive } from '../../src/main/infra/operational-db/live';
-import { AppModeService, type AppMode } from '../../src/main/domains/app-mode/service';
+import { AppModeService, makeAppMode, type AppMode } from '../../src/main/domains/app-mode/service';
 import {
   fakeAiProviderLayer,
   fakeModelManagerLayer,
@@ -230,7 +230,7 @@ const setup = (
       CollabBridgeLive,
       SessionLifecycleProbeLive,
       // The lifecycle reconciles under the boot-resolved mode.
-      Layer.succeed(AppModeService, { mode, chosen: true }),
+      Layer.effect(AppModeService, makeAppMode(mode, true)),
       // The workspace environment carries the transcription-engine inputs.
       makeFakeSettings().layer,
       fakeSecureStoreLayer(),

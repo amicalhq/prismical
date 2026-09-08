@@ -4,13 +4,16 @@
 // signing config first, so `pnpm dev` / `pnpm package` still pick a local .env
 // up — but a bare `vite build` no longer silently absorbs one. See .env.example.
 import { defineConfig } from 'vite';
+import { posthogSourceMapPlugins } from './vite.posthog';
 
 // The forge vite plugin supplies the load-bearing defaults for the `main`
 // target: cjs lib build of the forge entry into .vite/build/, electron + node
 // builtins external, and the MAIN_WINDOW_VITE_* define constants.
 // https://vitejs.dev/config
 export default defineConfig({
+  plugins: posthogSourceMapPlugins(),
   build: {
+    sourcemap: process.env.POSTHOG_SOURCE_MAP_UPLOAD === 'true' ? 'hidden' : false,
     rollupOptions: {
       // ONE entry only (the forge lib default: src/main/entry.ts →
       // .vite/build/entry.js). The whisper worker is deliberately NOT a
@@ -33,6 +36,9 @@ export default defineConfig({
     },
   },
   define: {
+    __PRISMICAL_BUILD_ID__: JSON.stringify(
+      process.env.POSTHOG_RELEASE_SHA ?? process.env.GITHUB_SHA ?? ''
+    ),
     // Baked E2E gate: only PRISMICAL_E2E_PACKAGE=1 builds — the
     // same env that flips the inspector fuse in forge.config.ts — may honor
     // the PRISMICAL_E2E* env family when app.isPackaged. Production packages

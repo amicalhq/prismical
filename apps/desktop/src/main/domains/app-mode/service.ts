@@ -1,4 +1,4 @@
-import { Context } from 'effect';
+import { Context, Effect, SubscriptionRef } from 'effect';
 
 /**
  * The app's operating mode decides the data
@@ -15,7 +15,7 @@ export type AppMode = 'local' | 'cloud';
  * reset + relaunch, never a live re-mount, so nothing ever
  * observes a mode change mid-process. The workspace lifecycle keys the
  * (mode, identity) reconciliation on this value; env:get forwards it to the
- * renderer, whose posthog-js initialization gates on it.
+ * renderer. The first choice of that same mode can be persisted without relaunch.
  */
 export interface AppModeApi {
   readonly mode: AppMode;
@@ -24,10 +24,14 @@ export interface AppModeApi {
    * valid. A fresh install resolves 'cloud' by default with
    * `chosen: false`; the renderer's first-run chooser keys on it.
    */
-  readonly chosen: boolean;
+  readonly chosenState: SubscriptionRef.SubscriptionRef<boolean>;
 }
 
 export class AppModeService extends Context.Tag('desktop/app-mode/AppModeService')<
   AppModeService,
   AppModeApi
 >() {}
+
+/** The mode stays immutable; its first durable choice is shared observable state. */
+export const makeAppMode = (mode: AppMode, chosen: boolean): Effect.Effect<AppModeApi> =>
+  SubscriptionRef.make(chosen).pipe(Effect.map(chosenState => ({ mode, chosenState })));

@@ -35,7 +35,6 @@ import { Button } from '@prismical/app-ui/ui/button';
 import { router } from './router';
 import { openNoteLog } from '../collab';
 import { createDesktopPorts } from './ports/desktop-ports';
-import { DesktopPostHogProvider } from './analytics/posthog-provider';
 import { DesktopEnvProvider, useDesktopEnv } from './desktop-env';
 import { ModeChooser } from './mode-chooser';
 import { resolveSurface } from './mode-router';
@@ -251,16 +250,14 @@ function DesktopRoot({
   const env = useMemo(() => ({ ...desktopEnv, appModeChosen }), [desktopEnv, appModeChosen]);
   return (
     <DesktopEnvProvider value={env}>
-      <DesktopPostHogProvider env={desktopEnv} enabled={appModeChosen}>
-        <ApiQueryProvider>
-          <DesktopApp
-            onChosen={() => {
-              setAppModeChosen(true);
-              onModeChosen();
-            }}
-          />
-        </ApiQueryProvider>
-      </DesktopPostHogProvider>
+      <ApiQueryProvider>
+        <DesktopApp
+          onChosen={() => {
+            setAppModeChosen(true);
+            onModeChosen();
+          }}
+        />
+      </ApiQueryProvider>
     </DesktopEnvProvider>
   );
 }

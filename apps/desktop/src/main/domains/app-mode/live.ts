@@ -2,7 +2,7 @@ import { Effect, Layer } from 'effect';
 import { MainLogger } from '../../infra/logging/service';
 import { OperationalDb } from '../../infra/operational-db/service';
 import { restoreAuthState } from '../auth/policy';
-import { AppModeService, type AppMode, type AppModeApi } from './service';
+import { AppModeService, makeAppMode, type AppMode } from './service';
 
 /**
  * Operational KV key holding the chosen mode. Own namespace — deliberately NOT
@@ -51,8 +51,7 @@ export const AppModeLive: Layer.Layer<AppModeService, never, OperationalDb | Mai
       );
       if (isAppMode(stored)) {
         yield* log.info('app mode resolved', { mode: stored, chosen: true });
-        const api: AppModeApi = { mode: stored, chosen: true };
-        return api;
+        return yield* makeAppMode(stored, true);
       }
 
       // No (valid) row: a signed-in roster means an upgraded cloud install —
@@ -68,13 +67,11 @@ export const AppModeLive: Layer.Layer<AppModeService, never, OperationalDb | Mai
           )
         );
         yield* log.info('app mode resolved', { mode: 'cloud', chosen: true, inferred: 'accounts' });
-        const api: AppModeApi = { mode: 'cloud', chosen: true };
-        return api;
+        return yield* makeAppMode('cloud', true);
       }
 
       const mode: AppMode = 'cloud';
       yield* log.info('app mode resolved', { mode, chosen: false });
-      const api: AppModeApi = { mode, chosen: false };
-      return api;
+      return yield* makeAppMode(mode, false);
     })
   );

@@ -45,8 +45,8 @@ import { I18nextProvider, useTranslation } from 'react-i18next';
 import type { SessionAccount, SessionView } from '@prismical/desktop-contracts';
 import { Button } from '@prismical/app-ui/ui/button';
 import { ShineBorder } from '@prismical/app-ui/ui/shine-border';
-import { resetAnalyticsIdentity } from './app/analytics/posthog';
 import { GateCard } from './gate-card';
+import { TelemetrySetting } from './app/settings/telemetry-setting';
 import './app/globals.css';
 
 type RenderMode = 'gate' | 'pending' | 'session';
@@ -232,13 +232,13 @@ function AuthGate({ ref }: { ref: Ref<Pick<AuthGateHandle, 'startSignIn'>> }) {
           data-testid="auth-use-locally"
           disabled={busy}
           onClick={() => {
-            resetAnalyticsIdentity();
             void window.desktop.capabilities.resetApp({ mode: 'local' }).catch(() => {});
           }}
           className="text-muted-foreground hover:text-foreground justify-self-center text-xs font-normal"
         >
           {t('desktop.modeChooser.local.choose')}
         </Button>
+        <TelemetrySetting />
         {notice === null ? null : <NoticeText notice={notice} />}
       </div>
     </GateCard>

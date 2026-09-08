@@ -2375,6 +2375,10 @@ const en = {
     verifying: 'Verifying target and organization…',
   },
   desktop: {
+    telemetry: {
+      title: 'Share usage data',
+      description: 'Help improve Prismical with usage data and error reports.',
+    },
     aiProvider: {
       apiKeyLabel: 'API key',
       apiKeyPlaceholder: 'Paste a key to save it on this device',

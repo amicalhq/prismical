@@ -19,7 +19,6 @@
  * getCollabToken addition is reflected there (auth key enumeration).
  */
 import * as React from 'react';
-import { resetAnalyticsIdentity } from '../analytics/posthog';
 import { useLocation, useParams } from '@tanstack/react-router';
 import type {
   AppSearchParams,
@@ -248,7 +247,7 @@ function createExternalPort(desktopEnv: DesktopEnvDescriptor): ExternalPort {
 }
 
 // Product events + session replay run through the renderer's
-// posthog-js, initialised by DesktopPostHogProvider (mount.tsx). The port just
+// main-owned telemetry over the explicit preload bridge. The port just
 // forwards to that singleton (guarded on init — a disabled build drops silently).
 // See ../analytics/posthog.ts.
 
@@ -427,11 +426,7 @@ const createDesktopCapabilityPort = (appMode: 'local' | 'cloud'): DesktopCapabil
       .restartApp()
       .catch(error => log('capabilities.restartApp invoke failed', error)),
   resetApp: () => {
-    // Sever the renderer analytics identity FIRST (posthog.reset()); main then
-    // wipes storage, regenerates the telemetry device id and relaunches
-    // (a reset install must not be joinable to the
-    // prior identity).
-    resetAnalyticsIdentity();
+    // Main resets telemetry identity with the rest of the device state.
     return window.desktop.capabilities
       .resetApp()
       .catch(error => log('capabilities.resetApp invoke failed', error));

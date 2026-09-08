@@ -13,7 +13,7 @@
  * (belt-and-braces) rather than crossing the membrane.
  */
 import { z } from 'zod';
-import { applicationLocaleSchema, toParseResult, type ParseResult } from './main-window';
+import { applicationLocaleSchema, toParseResult, type ParseResult, type MainWindowTelemetryApi } from './main-window';
 
 // ---------------------------------------------------------------------------
 // Channel names
@@ -170,6 +170,7 @@ export const parseWidgetDrag = (value: unknown): ParseResult<WidgetDrag> =>
  */
 export interface WidgetDesktopApi {
   /** Pull the current snapshot so initial paint never depends on an early push winning a race. */
+  readonly telemetry: Pick<MainWindowTelemetryApi, 'getState' | 'onChanged' | 'captureException'>;
   readonly getState: () => Promise<WidgetStateView>;
   /** Subscribe to the pushed widget state (latest replays to a late subscriber). */
   readonly onState: (listener: (state: WidgetStateView) => void) => () => void;

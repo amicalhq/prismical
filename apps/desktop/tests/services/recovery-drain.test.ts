@@ -36,7 +36,7 @@ import { makeFakeSettings, makeTranscriberStack } from '../helpers/fake-workspac
 import type { DeviceSettings } from '@prismical/desktop-contracts';
 import { SyncTranscriptSegmentCreateRequestSchema } from '@prismical/api-contracts';
 import { WorkspaceIdentity, type RecoveryOwner } from '../../src/main/runtime/workspace-identity';
-import { AppModeService, type AppMode } from '../../src/main/domains/app-mode/service';
+import { AppModeService, makeAppMode, type AppMode } from '../../src/main/domains/app-mode/service';
 import { TRANSCRIPT_SEGMENTS_PATH } from '../../src/main/domains/recording/segment-mirror';
 import { RECOMMENDED_MODEL_ID } from '../../src/main/domains/models/catalogue';
 import { resolveRecordingEngine } from '../../src/main/domains/transcriber/engine';
@@ -168,7 +168,7 @@ const buildEnv = (coreLayer: Layer.Layer<WorkspaceBackend>, options: EnvOptions 
           ...options.transcription,
         },
       }).layer,
-      Layer.succeed(AppModeService, { mode: options.mode ?? 'cloud', chosen: true }),
+      Layer.effect(AppModeService, makeAppMode(options.mode ?? 'cloud', true)),
       logger.layer
     );
     const ctx = yield* Layer.build(envLayer).pipe(Scope.extend(scope), Effect.orDie);

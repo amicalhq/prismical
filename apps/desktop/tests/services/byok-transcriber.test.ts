@@ -21,7 +21,7 @@ import { parseWavHeader } from '@prismical/ai-prompts/transcription';
 import { makeTestLogger, testConfigLayer } from '../helpers/test-layers';
 import { makeFakeWorkspaceBackend } from '../helpers/fake-recording';
 import { fakeSecureStoreLayer } from '../helpers/fake-workspace-env';
-import { AppModeService, type AppMode } from '../../src/main/domains/app-mode/service';
+import { AppModeService, makeAppMode, type AppMode } from '../../src/main/domains/app-mode/service';
 import { CAPTURE_SAMPLE_RATE } from '../../src/main/domains/recording/chunker';
 import { makeByokTranscriberLive } from '../../src/main/domains/transcriber/byok';
 import { BYOK_API_KEY_SECRET, encodeByokCredential } from '../../src/main/domains/transcriber/byok-credential';
@@ -80,7 +80,7 @@ const build = (options: { key?: string | null; mode?: AppMode } = {}) =>
         makeByokTranscriberLive({ fetchFn }).pipe(
           Layer.provide(secure),
           Layer.provide(productDb),
-          Layer.provide(Layer.succeed(AppModeService, { mode: options.mode ?? 'local', chosen: true })),
+          Layer.provide(Layer.effect(AppModeService, makeAppMode(options.mode ?? 'local', true))),
           Layer.provide(fakeCloud.layer),
           Layer.provide(logger.layer)
         )

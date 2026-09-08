@@ -44,6 +44,7 @@ import {
   type TranscriptionByokKeyRequest,
   type TransportRequest,
   type UpdateStateView,
+  type TelemetryState,
 } from '@prismical/desktop-contracts';
 import { makeE2ESurface } from './e2e-surface';
 import { makeNavBuffer } from './nav-buffer';
@@ -96,6 +97,14 @@ const settingsBuffer = makeSettingsBuffer({
       CHANNELS.settingsChanged,
       (_event: Electron.IpcRendererEvent, settings: DeviceSettings) => listener(settings)
     ),
+});
+
+// Keep the latest main-owned telemetry policy available before renderer boot.
+const telemetryBuffer = makeReplayBuffer<TelemetryState>({
+  on: listener => ipcRenderer.on(
+    CHANNELS.telemetryStateChanged,
+    (_event: Electron.IpcRendererEvent, state: TelemetryState) => listener(state),
+  ),
 });
 
 // Same eval-time attachment for updater:stateChanged: the initial replay
@@ -238,6 +247,12 @@ const api: MainWindowDesktopApi = {
 
   // Device-local preferences: get/set invoke main; onChanged replays
   // main's pushed DeviceSettings (the latest snapshot to a late subscriber).
+  telemetry: {
+    getState: () => ipcRenderer.invoke(CHANNELS.telemetryGetState),
+    onChanged: telemetryBuffer.onState,
+    capture: request => ipcRenderer.invoke(CHANNELS.telemetryCapture, request),
+    captureException: request => ipcRenderer.invoke(CHANNELS.telemetryCaptureException, request),
+  },
   settings: {
     get: () => ipcRenderer.invoke(CHANNELS.settingsGet),
     set: (patch: DeviceSettingsPatch) => ipcRenderer.invoke(CHANNELS.settingsSet, patch),
