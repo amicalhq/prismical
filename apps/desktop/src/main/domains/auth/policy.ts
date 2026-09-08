@@ -203,6 +203,7 @@ export interface IdTokenIdentity {
   readonly sub: string;
   readonly email: string;
   readonly name?: string;
+  readonly signupAt?: string;
   readonly orgs: ReadonlyArray<OrgMembership>;
 }
 
@@ -239,12 +240,16 @@ export const parseIdTokenIdentity = (payload: Record<string, unknown>): Identity
   const orgs = orgUsersClaimSchema.safeParse(payload['org_users'] ?? []);
   if (!orgs.success) return { ok: false, reason: 'malformed-org-users' };
   const name = payload['name'];
+  const signupAt = payload['signup_at'];
   return {
     ok: true,
     value: {
       sub,
       email,
       ...(typeof name === 'string' && name !== '' ? { name } : {}),
+      ...(typeof signupAt === 'string' && Number.isFinite(Date.parse(signupAt))
+        ? { signupAt }
+        : {}),
       orgs: orgs.data.map(org => ({ id: org.id, orgId: org.org_id, userId: org.user_id })),
     },
   };
@@ -259,6 +264,7 @@ export interface AuthAccountView {
   readonly sub: string;
   readonly email: string;
   readonly name?: string;
+  readonly signupAt?: string;
   readonly activeOrgId?: string;
   readonly orgs: ReadonlyArray<OrgMembership>;
 }
@@ -286,6 +292,7 @@ const accountFromIdentity = (
     sub: identity.sub,
     email: identity.email,
     ...(identity.name === undefined ? {} : { name: identity.name }),
+    ...(identity.signupAt === undefined ? {} : { signupAt: identity.signupAt }),
     ...(activeOrgId === undefined ? {} : { activeOrgId }),
     orgs: identity.orgs,
   };
@@ -351,6 +358,7 @@ export const setAccountOrg = (state: AuthState, sub: string, orgId: string | nul
     sub: account.sub,
     email: account.email,
     ...(account.name === undefined ? {} : { name: account.name }),
+    ...(account.signupAt === undefined ? {} : { signupAt: account.signupAt }),
     ...(orgId === null ? {} : { activeOrgId: orgId }),
     orgs: account.orgs,
   };
@@ -364,6 +372,7 @@ export const toSessionView = (state: AuthState): SessionView => ({
     sub: account.sub,
     email: account.email,
     ...(account.name === undefined ? {} : { name: account.name }),
+    ...(account.signupAt === undefined ? {} : { signupAt: account.signupAt }),
     ...(account.activeOrgId === undefined ? {} : { activeOrgId: account.activeOrgId }),
   })),
   ...(state.activeSub === undefined ? {} : { activeSub: state.activeSub }),
@@ -383,6 +392,7 @@ const indexAccountSchema = z.object({
   sub: z.string().min(1),
   email: z.string().min(1),
   name: z.string().min(1).optional(),
+  signupAt: z.string().optional(),
   activeOrgId: z.string().min(1).optional(),
   orgs: z.array(indexOrgSchema),
 });

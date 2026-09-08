@@ -570,6 +570,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
                     recording.start({
                       captureMode: parsed.data.captureMode,
                       noteId: parsed.data.noteId ?? null,
+                      quotaRemainingAtStartSeconds: parsed.data.quotaRemainingAtStartSeconds ?? null,
                       ...(parsed.data.title !== undefined ? { title: parsed.data.title } : {}),
                       ...(parsed.data.autoPause !== undefined
                         ? { autoPause: parsed.data.autoPause }

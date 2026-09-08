@@ -13,6 +13,7 @@ import type { ProductDbError } from '../../infra/product-db/service';
 import { detectedSpeakerCountFor } from '../transcriber/segment';
 import { Transcriber } from '../transcriber/service';
 import { WorkspaceBackend, type RecordingLaneFailure } from '../transport/service';
+import { recordingRetryAfterMs } from '../transport/recording-retry';
 import { mirrorSegmentsToCore } from './segment-mirror';
 import {
   CAPTURE_SAMPLE_RATE,
@@ -197,11 +198,17 @@ export const drainRecoveries = (
     // Local storage is authoritative. A cloud recording already has another durable copy.
     const persist = (effect: Effect.Effect<void, ProductDbError>) =>
       appMode === 'local' ? effect : bestEffort(effect);
-    const park = (row: RecoveryOutboxRow, reason: string): Effect.Effect<DrainOutcome> =>
+    const park = (
+      row: RecoveryOutboxRow,
+      reason: string,
+      failure?: RecordingLaneFailure
+    ): Effect.Effect<DrainOutcome> =>
       Effect.gen(function* () {
         const attempt = row.attemptCount + 1;
         const now = yield* Clock.currentTimeMillis;
-        const nextAttemptAt = new Date(now + backoffMsFor(attempt)).toISOString();
+        const retryAfterMs =
+          failure?.kind === 'http' ? recordingRetryAfterMs(failure.retryAfterMs) ?? 0 : 0;
+        const nextAttemptAt = new Date(now + Math.max(backoffMsFor(attempt), retryAfterMs)).toISOString();
         yield* db
           .updateRecoveryOutbox(row.recordingId, {
             attemptCount: attempt,
@@ -326,7 +333,7 @@ export const drainRecoveries = (
             const created = yield* backend.createRecording(row.createInput);
             if (!created.ok)
               return yield* created.retryable
-                ? park(row, `create:${failureLabel(created.failure)}`)
+                ? park(row, `create:${failureLabel(created.failure)}`, created.failure)
                 : fail(row, `create:${failureLabel(created.failure)}`);
             yield* transition('chunks');
           }
@@ -353,7 +360,7 @@ export const drainRecoveries = (
               );
               if (!res.ok)
                 return yield* res.retryable
-                  ? park(row, `chunk-upload:${failureLabel(res.failure)}`)
+                  ? park(row, `chunk-upload:${failureLabel(res.failure)}`, res.failure)
                   : fail(row, `chunk-upload:${failureLabel(res.failure)}`);
               if (res.value.length > 0) {
                 // Locally produced text has no durable server copy yet, even in cloud mode.
@@ -369,7 +376,7 @@ export const drainRecoveries = (
                   );
                   if (!mirrored.ok)
                     return yield* mirrored.retryable
-                      ? park(row, `segment-mirror:${failureLabel(mirrored.failure)}`)
+                      ? park(row, `segment-mirror:${failureLabel(mirrored.failure)}`, mirrored.failure)
                       : fail(row, `segment-mirror:${failureLabel(mirrored.failure)}`);
                 }
               }
@@ -390,7 +397,7 @@ export const drainRecoveries = (
             });
             if (!finalized.ok)
               return yield* finalized.retryable
-                ? park(row, `finalize:${failureLabel(finalized.failure)}`)
+                ? park(row, `finalize:${failureLabel(finalized.failure)}`, finalized.failure)
                 : fail(row, `finalize:${failureLabel(finalized.failure)}`);
             yield* persist(
               store.recordingCompleted(row.recordingId, {

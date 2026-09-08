@@ -372,7 +372,10 @@ describe('makeOpenAskStream (Ask lane)', () => {
   it.effect('POSTs /apps/v1/me/ask with Bearer + org + SSE headers and the JSON body', () =>
     Effect.gen(function* () {
       const { calls, fetchFn } = recordingFetch(() => Promise.resolve(sseResponse()));
-      const body = { messages: [{ role: 'user', content: 'hi' }] };
+      const body = {
+        messages: [{ role: 'user', content: 'hi' }],
+        helpContext: { platform: 'macos', appVersion: '1.2.3' },
+      };
       const res = yield* runOpen({
         fetchFn,
         identity: { idToken: 'ASK-TOKEN', activeOrgId: 'org_7' },

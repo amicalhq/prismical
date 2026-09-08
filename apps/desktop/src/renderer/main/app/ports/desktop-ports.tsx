@@ -264,6 +264,8 @@ const toNativeState = (view: RecordingStateView): NativeRecordingState => ({
   status: view.status,
   captureMode: view.captureMode,
   requestedCaptureMode: view.requestedCaptureMode,
+  spendsCloudQuota: view.spendsCloudQuota ?? null,
+  quotaRemainingAtStartSeconds: view.quotaRemainingAtStartSeconds ?? null,
   micSource: view.micSource,
   noteId: view.noteId,
   segments: view.segments,
@@ -287,12 +289,13 @@ const recordingPort: RecordingPort = {
     );
   },
   control: {
-    start: async ({ noteId, title, autoPause }) => {
+    start: async ({ noteId, title, autoPause, quotaRemainingAtStartSeconds }) => {
       try {
         return await window.desktop.recording.start({
           captureMode: DESKTOP_CAPTURE_MODE,
           noteId,
           title,
+          quotaRemainingAtStartSeconds: quotaRemainingAtStartSeconds ?? null,
           // Auto-pause policy: resolved renderer-side from the org gate + tuning and
           // handed over per session, so main runs the same machine web does without looking
           // anything up. Absent ⇒ off.

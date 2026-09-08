@@ -28,6 +28,7 @@ import {
   TranscribeChunkResponseSchema,
 } from '@prismical/api-contracts/apps/v1';
 import { askErrorResponse } from './ask-error';
+import { recordingRetryAfterMs } from './recording-retry';
 import { DesktopI18n } from '../i18n/service';
 import { Duration, Effect, Layer, Option, Stream, SubscriptionRef } from 'effect';
 import type { TransportRequest, TransportResponse } from '@prismical/desktop-contracts';
@@ -334,6 +335,12 @@ const runRecordingCall = <T>(
           }
           const bodyJson: unknown = await response.json().catch(() => null);
           const code = (bodyJson as { error?: { code?: unknown } } | null)?.error?.code;
+          const retryAfterMs = response.status === 429
+            ? recordingRetryAfterMs(
+                (bodyJson as { error?: { details?: { retryAfterMs?: unknown } } } | null)
+                  ?.error?.details?.retryAfterMs
+              )
+            : undefined;
           return {
             ok: false,
             retryable: isTransientStatus(response.status),
@@ -341,6 +348,7 @@ const runRecordingCall = <T>(
               kind: 'http',
               status: response.status,
               ...(typeof code === 'string' ? { code } : {}),
+              ...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
             },
           } satisfies RecordingLaneResult<T>;
         },

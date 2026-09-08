@@ -18,7 +18,7 @@ import {
 // The db layer never touches electron, but its transitive imports (logger
 // service types only) keep the module graph electron-free; no mock needed.
 // A temp dir per test file keeps WAL siblings isolated.
-const tempDir = mkdtempSync(path.join(tmpdir(), 'prismical-product-db-test-'));
+const tempDir = mkdtempSync(path.join(tmpdir(), 'prismical-db-test-'));
 
 const buildDb = (target: ProductDbTarget, overrides: Partial<AppConfigService> = {}) => {
   const logger = makeTestLogger();

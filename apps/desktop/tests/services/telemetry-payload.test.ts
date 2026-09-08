@@ -41,6 +41,69 @@ describe('telemetry properties', () => {
     expect(sanitizeTelemetryProperties(properties)).toEqual(properties);
   });
 
+  it('retains skill timing correlation, phases, outcomes and known error codes', () => {
+    const properties = {
+      attempt_id: 'c61d78d1-1244-45fa-a731-7645c645b260',
+      execution_id: 'timing-abc-2-123',
+      request_id: 'req_123',
+      client_at_ms: 1_783_000_000_000,
+      elapsed_ms: 2_000,
+      duration_ms: 5_000,
+      execution_duration_ms: 4_900,
+      queued_ms: 100,
+      preparing_ms: 120,
+      request_ms: 3_000,
+      transcript_wait_ms: 1_800,
+      staging_ms: 80,
+      request_count: 2,
+      phase: 'waiting-transcript',
+      status: 'skipped',
+      error_code: 'TRANSCRIPT_FINALIZING',
+    };
+    expect(sanitizeTelemetryProperties(properties)).toEqual(properties);
+    for (const error_code of ['PROVIDER_QUOTA_EXCEEDED', 'NETWORK_ERROR', 'EDITOR_UNAVAILABLE']) {
+      expect(sanitizeTelemetryProperties({ error_code })).toEqual({ error_code });
+    }
+    expect(sanitizeTelemetryProperties({ request_id: null })).toEqual({ request_id: null });
+  });
+
+  it('retains bootstrap and local/cloud note-loading milestones', () => {
+    const properties = {
+      kind: 'sync_bootstrap',
+      status: 'published',
+      persistence_ready_ms: 20,
+      notes_loaded_ms: 200,
+      folders_failed_ms: 220,
+      tags_loaded_ms: 230,
+      note_tags_loaded_ms: 240,
+    };
+    expect(sanitizeTelemetryProperties(properties)).toEqual(properties);
+    const note = {
+      kind: 'note_collaboration',
+      status: 'ready',
+      create_gate_released_ms: 20,
+      token_requested_ms: 21,
+      token_resolved_ms: 30,
+      socket_connected_ms: 40,
+      authenticated_ms: 50,
+      document_synced_ms: 60,
+      local_log_hydrated_ms: 10,
+    };
+    expect(sanitizeTelemetryProperties(note)).toEqual(note);
+  });
+
+  it('retains first-note walkthrough metadata without trusting a renderer-supplied organization', () => {
+    const properties = {
+      tour: 'first_note',
+      tour_version: 1,
+      replay: false,
+      step: 'record',
+      action: 'recording',
+      code: 'recording_failed',
+    };
+    expect(sanitizeTelemetryProperties({ ...properties, org_id: 'org_other' })).toEqual(properties);
+  });
+
   it('drops secrets, content, arbitrary enums, nested values and non-finite/oversized metadata', () => {
     expect(
       sanitizeTelemetryProperties({
@@ -59,6 +122,19 @@ describe('telemetry properties', () => {
         duration_ms: Number.MAX_SAFE_INTEGER + 1,
         exit_code: 0.5,
         error_code: 'private-token',
+        attempt_id: 'private request context',
+        request_id: 'https://private.test/request',
+        execution_id: 'x'.repeat(129),
+        phase: 'private notes',
+        status: 'provider response with secret',
+        kind: 'private workspace',
+        action: 'private words',
+        step: 'private words',
+        code: 'private provider message',
+        tour: 'private words',
+        request_ms: Infinity,
+        client_at_ms: -1,
+        private_milestone_ms: 10,
         $exception_list: [{ message: 'secret' }],
       })
     ).toEqual({});

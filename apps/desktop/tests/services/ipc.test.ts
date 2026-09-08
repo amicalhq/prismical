@@ -1475,7 +1475,7 @@ describe('registerMainWindowHandlers', () => {
         // Happy path: the minted id comes back; the input reaches the service
         // (noteId defaulted, title threaded).
         assert.deepStrictEqual(
-          yield* start({ captureMode: 'dual', noteId: 'note_1', title: 'Standup' }),
+          yield* start({ captureMode: 'dual', noteId: 'note_1', title: 'Standup', quotaRemainingAtStartSeconds: 600 }),
           {
             ok: true,
             recordingId: 'rec_fake',
@@ -1485,6 +1485,7 @@ describe('registerMainWindowHandlers', () => {
           captureMode: 'dual',
           noteId: 'note_1',
           title: 'Standup',
+          quotaRemainingAtStartSeconds: 600,
         });
 
         // RecordingBusyError → busy.
@@ -1493,6 +1494,7 @@ describe('registerMainWindowHandlers', () => {
           ok: false,
           reason: 'busy',
         });
+        assert.isNull(rec.startCalls.at(-1)?.quotaRemainingAtStartSeconds);
 
         // PermissionError → permission-denied (the renderer shows "mic denied").
         rec.setStart(
@@ -1636,6 +1638,7 @@ describe('registerMainWindowHandlers', () => {
           status: 'recording',
           captureMode: 'mic',
           requestedCaptureMode: 'dual',
+          quotaRemainingAtStartSeconds: 600,
           noteId: 'note_1',
           segments: [
             {

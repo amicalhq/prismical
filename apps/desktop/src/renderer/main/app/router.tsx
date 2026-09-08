@@ -91,6 +91,9 @@ function RootLayout() {
   if (pathname.startsWith("/float")) return <Outlet />;
   return (
     <AppShell
+      // Only the main window hosts the guide. Local accounts have no signup
+      // timestamp, so they get manual replay without an automatic welcome.
+      enableOnboarding
       accountSwitcher={
         appMode === "local" ? (
           <LocalWorkspaceFooter />

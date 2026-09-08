@@ -48,6 +48,10 @@ export interface RecordingState {
    * the UI can show "mic only".
    */
   readonly requestedCaptureMode: MeetingCaptureMode | null;
+  /** Whether the configuration fixed at Start spends the workspace's Cloud allowance. */
+  readonly spendsCloudQuota?: boolean | null;
+  /** Cached allowance supplied at Start; null when unavailable. UI metadata only. */
+  readonly quotaRemainingAtStartSeconds?: number | null;
   readonly noteId: string | null;
   readonly segments: readonly RecordingSegment[];
   readonly elapsedMs: number;
@@ -85,6 +89,8 @@ export const idleRecordingState: RecordingState = {
   status: 'idle',
   captureMode: null,
   requestedCaptureMode: null,
+  spendsCloudQuota: null,
+  quotaRemainingAtStartSeconds: null,
   noteId: null,
   segments: [],
   elapsedMs: 0,
@@ -102,6 +108,8 @@ export interface StartRecordingInput {
   readonly noteId?: string | null;
   /** Recording title (defaults to "Untitled recording"). */
   readonly title?: string;
+  /** Cached workspace allowance for warning projection; never sent to the recording API. */
+  readonly quotaRemainingAtStartSeconds?: number | null;
   /**
    * Auto-pause policy for this session, resolved renderer-side from the org's
    * feature gate + tuning. Passed per-start rather than fetched by main: the renderer already

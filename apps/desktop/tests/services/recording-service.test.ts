@@ -29,6 +29,7 @@ import {
   Option,
   Queue,
   Scope,
+  Stream,
   SubscriptionRef,
   TestClock,
 } from 'effect';
@@ -136,6 +137,7 @@ interface Harness {
   readonly fakeCloud: ReturnType<typeof makeFakeWorkspaceBackend>;
   readonly fakePermissions: ReturnType<typeof makeFakeSystemPermissions>;
   readonly logger: ReturnType<typeof makeTestLogger>;
+  readonly settings: ReturnType<typeof makeFakeSettings>;
   readonly micActivityLatest: SubscriptionRef.SubscriptionRef<Option.Option<LatestMicActivity>>;
   readonly sessionScope: Scope.CloseableScope;
   readonly drain: Effect.Effect<DrainSummary>;
@@ -263,6 +265,7 @@ const setup = (
       fakeCloud,
       fakePermissions,
       logger,
+      settings,
       micActivityLatest,
       sessionScope,
       drain: drainRecoveries(
@@ -405,12 +408,12 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
         ]);
         assert.deepStrictEqual(
           h.fakeCloud.requestCalls,
-          [],
-          'no settings or full-session upload request'
+          [{ method: 'GET', path: '/apps/v1/me/model-defaults' }],
+          'loads the transcription default once, without a full-session upload request'
         );
         assert.isTrue(fs.existsSync(h.recoveryDir(recordingId)), 'recovery retained until drain');
         yield* h.drain;
-        assert.deepStrictEqual(h.fakeCloud.requestCalls, []);
+        assert.deepStrictEqual(h.fakeCloud.requestCalls, [{ method: 'GET', path: '/apps/v1/me/model-defaults' }]);
         assert.isNull(yield* h.db.getRecoveryOutbox(recordingId));
         assert.isFalse(fs.existsSync(h.recoveryDir(recordingId)));
         yield* Scope.close(h.sessionScope, Exit.void);
@@ -1032,6 +1035,73 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
         'audio retained in the WAV'
       );
 
+      yield* Scope.close(h.sessionScope, Exit.void);
+    })
+  );
+
+  it.effect('session quota and recording-length failures halt live uploads while retaining audio', () =>
+    Effect.gen(function* () {
+      for (const [status, code] of [
+        [429, 'PROVIDER_QUOTA_EXCEEDED'],
+        [413, 'RECORDING_LENGTH_EXCEEDED'],
+      ] as const) {
+        const h = yield* setup();
+        h.fakeCloud.setUploadResponder(() => laneFail(false, { kind: 'http', status, code }));
+        const recordingId = yield* h.service.start({ captureMode: 'mic' });
+        yield* poll(Effect.sync(() => h.fakeCapture.sessions.length === 1), 'capture acquired');
+        const session = h.fakeCapture.current();
+        yield* Queue.offer(session.frames, fakeFrame('mic_raw', seconds(5)));
+        yield* settle;
+        yield* TestClock.adjust(CHUNK_INTERVAL);
+        yield* poll(Effect.sync(() => h.fakeCloud.uploadCalls.length === 1), 'session rejected');
+        yield* Queue.offer(session.frames, fakeFrame('mic_raw', seconds(5)));
+        yield* settle;
+        yield* TestClock.adjust(CHUNK_INTERVAL);
+        yield* h.service.stop(recordingId);
+        assert.strictEqual(h.fakeCloud.uploadCalls.length, 1);
+        assert.isNull((yield* h.db.getRecoveryOutbox(recordingId))?.lastChunkIndex);
+        assert.isTrue(fs.existsSync(path.join(h.recoveryDir(recordingId), 'mic.wav')));
+        assert.strictEqual((yield* h.drain).failed, 1);
+        assert.isTrue(fs.existsSync(path.join(h.recoveryDir(recordingId), 'mic.wav')));
+        yield* Scope.close(h.sessionScope, Exit.void);
+      }
+    })
+  );
+
+  it.effect('provider cooldown keeps capture and Stop responsive and survives recovery handoff', () =>
+    Effect.gen(function* () {
+      const h = yield* setup();
+      h.fakeCloud.setUploadResponder(() => laneFail(true, {
+        kind: 'http', status: 429, code: 'PROVIDER_RATE_LIMITED', retryAfterMs: 90_000,
+      }));
+      const recordingId = yield* h.service.start({ captureMode: 'mic' });
+      yield* poll(Effect.sync(() => h.fakeCapture.sessions.length === 1), 'capture acquired');
+      const session = h.fakeCapture.current();
+      yield* Queue.offer(session.frames, fakeFrame('mic_raw', seconds(5)));
+      yield* settle;
+      yield* TestClock.adjust(CHUNK_INTERVAL);
+      yield* poll(
+        h.db.getRecoveryOutbox(recordingId).pipe(Effect.map(row => row?.nextAttemptAt !== null)),
+        'provider retry deadline saved'
+      );
+      const deadline = (yield* h.db.getRecoveryOutbox(recordingId))!.nextAttemptAt!;
+
+      yield* Queue.offer(session.frames, fakeFrame('mic_raw', seconds(5)));
+      yield* settle;
+      yield* TestClock.adjust(CHUNK_INTERVAL);
+      yield* h.service.stop(recordingId);
+      assert.strictEqual(h.fakeCloud.uploadCalls.length, 1, 'no request during provider cooldown');
+      assert.strictEqual((yield* SubscriptionRef.get(h.service.state)).status, 'idle');
+      const row = yield* h.db.getRecoveryOutbox(recordingId);
+      assert.strictEqual(row?.nextAttemptAt, deadline);
+      assert.isNull(row?.lastChunkIndex, 'skipped audio stays behind the recovery cursor');
+      assert.isTrue(fs.existsSync(path.join(h.recoveryDir(recordingId), 'mic.wav')));
+      assert.strictEqual((yield* h.drain).deferred, 1);
+
+      h.fakeCloud.setUploadResponder(() => ({ ok: true, value: [] }));
+      yield* TestClock.adjust(Duration.millis(Date.parse(deadline) - (yield* Clock.currentTimeMillis)));
+      assert.strictEqual((yield* h.drain).resolved, 1);
+      assert.deepStrictEqual(h.fakeCloud.uploadCalls.map(call => call.params.chunkIndex), [0, 0, 1]);
       yield* Scope.close(h.sessionScope, Exit.void);
     })
   );
@@ -1698,6 +1768,78 @@ const LOCAL_CONFIG = (modelId: string) => ({
 });
 
 describe('RecordingService — transcription engine', () => {
+  it.effect('serializes Start while loading defaults and starts the recording clock afterwards', () =>
+    Effect.gen(function* () {
+      const entered = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      let requests = 0;
+      const h = yield* setup({}, undefined, {
+        backendTransform: api => ({
+          ...api,
+          request: req => req.path === '/apps/v1/me/model-defaults'
+            ? Effect.gen(function* () {
+                requests += 1;
+                yield* Deferred.succeed(entered, undefined);
+                yield* Deferred.await(release);
+                return { ok: true, status: 200, bodyJson: { formatting: null, transcription: null } } as const;
+              })
+            : api.request(req),
+        }),
+      });
+      const first = yield* Effect.fork(h.service.start({ captureMode: 'mic' }));
+      yield* Deferred.await(entered);
+      const second = yield* Effect.fork(Effect.exit(h.service.start({ captureMode: 'mic' })));
+      yield* TestClock.adjust(Duration.seconds(10));
+      assert.strictEqual(requests, 1, 'a second Start cannot race the defaults request');
+      assert.strictEqual(h.fakeCapture.sessions.length, 0);
+      const startedAt = yield* Clock.currentTimeMillis;
+      yield* Deferred.succeed(release, undefined);
+      const recordingId = yield* Fiber.join(first);
+      const refused = yield* Fiber.join(second);
+      assert.isTrue(Exit.isFailure(refused));
+      if (Exit.isFailure(refused)) {
+        assert.strictEqual(Cause.failureOption(refused.cause).pipe(Option.getOrThrow)._tag, 'RecordingBusyError');
+      }
+      assert.strictEqual((yield* SubscriptionRef.get(h.service.state)).startedAt, startedAt);
+      yield* h.service.stop(recordingId);
+      yield* Scope.close(h.sessionScope, Exit.void);
+    })
+  );
+
+  it.effect('replays quota usage and baseline fixed at Start despite later device settings changes', () =>
+    Effect.gen(function* () {
+      const h = yield* setup();
+      const recordingId = yield* h.service.start({ captureMode: 'mic', quotaRemainingAtStartSeconds: 900 });
+      assert.strictEqual((yield* SubscriptionRef.get(h.service.state)).spendsCloudQuota, true);
+      assert.strictEqual((yield* SubscriptionRef.get(h.service.state)).quotaRemainingAtStartSeconds, 900);
+      yield* poll(
+        SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')),
+        'recording'
+      );
+      yield* SubscriptionRef.update(yield* h.settings.ref, settings => ({
+        ...settings,
+        transcription: { ...settings.transcription, engine: 'byok' as const },
+      }));
+      yield* h.service.pause(recordingId);
+      assert.strictEqual((yield* SubscriptionRef.get(h.service.state)).spendsCloudQuota, true);
+      const replay = Option.getOrThrow(yield* Stream.runHead(h.service.state.changes));
+      assert.strictEqual(replay.status, 'paused');
+      assert.strictEqual(replay.quotaRemainingAtStartSeconds, 900, 'late subscribers get the original baseline');
+      const row = yield* h.db.getRecoveryOutbox(recordingId);
+      assert.notProperty(row?.createInput, 'quotaRemainingAtStartSeconds');
+      assert.notProperty(h.fakeCloud.createCalls[0], 'quotaRemainingAtStartSeconds');
+      yield* h.service.resume(recordingId);
+      yield* h.service.stop(recordingId);
+      assert.strictEqual((yield* SubscriptionRef.get(h.service.state)).spendsCloudQuota, true);
+      assert.strictEqual((yield* SubscriptionRef.get(h.service.state)).quotaRemainingAtStartSeconds, 900);
+      const nextId = yield* h.service.start({ captureMode: 'mic' });
+      assert.strictEqual((yield* SubscriptionRef.get(h.service.state)).spendsCloudQuota, false);
+      assert.isNull((yield* SubscriptionRef.get(h.service.state)).quotaRemainingAtStartSeconds);
+      yield* h.service.stop(nextId);
+      yield* Scope.close(h.sessionScope, Exit.void);
+    })
+  );
+
   it.effect(
     'cloud engine (the default): managed config frozen, server finalization, no mirror, no speaker meta',
     () =>
@@ -2269,10 +2411,15 @@ describe('RecordingService — lifecycle ownership and durability', () => {
   );
 
   it.effect(
-    'failed creation retains audio and retries the original create intent before chunks',
+    'failed creation preserves the chosen Cloud BYOK default through recovery and later changes',
     () =>
       Effect.gen(function* () {
         const h = yield* setup();
+        h.fakeCloud.setRequestResponder(() => ({
+          ok: true,
+          status: 200,
+          bodyJson: { formatting: null, transcription: { instanceId: 'inst_original', modelId: 'nova-3' } },
+        }));
         h.fakeCloud.setCreateResponder(() => laneFail(true, { kind: 'http', status: 503 }));
         const id = yield* h.service.start({
           captureMode: 'mic',
@@ -2287,6 +2434,10 @@ describe('RecordingService — lifecycle ownership and durability', () => {
         yield* settle;
         yield* h.service.stop(id);
         const intent = h.fakeCloud.createCalls[0];
+        assert.deepStrictEqual(intent.transcriptionConfig, {
+          provider: 'byok', model: 'nova-3', language: 'en', instanceId: 'inst_original', modelId: 'nova-3',
+        });
+        assert.strictEqual((yield* SubscriptionRef.get(h.service.state)).spendsCloudQuota, false);
         assert.deepStrictEqual((yield* h.db.getRecoveryOutbox(id))?.createInput, intent);
         assert.strictEqual((yield* h.db.getRecoveryOutbox(id))?.phase, 'create');
         assert.strictEqual(h.fakeCloud.uploadCalls.length, 0);
@@ -2296,11 +2447,19 @@ describe('RecordingService — lifecycle ownership and durability', () => {
           ok: true,
           value: { recordingId: input.recordingId },
         }));
+        h.fakeCloud.setRequestResponder(() => ({
+          ok: true, status: 200, bodyJson: { formatting: null, transcription: null },
+        }));
         yield* h.drain;
         assert.deepStrictEqual(h.fakeCloud.createCalls[1], intent);
+        assert.strictEqual(h.fakeCloud.requestCalls.length, 1, 'recovery does not resolve a different default');
         assert.strictEqual(h.fakeCloud.uploadCalls.length, 1);
         assert.strictEqual(h.fakeCloud.finalizeCalls.length, 1);
         assert.isNull(yield* h.db.getRecoveryOutbox(id));
+        const next = yield* h.service.start({ captureMode: 'mic' });
+        assert.strictEqual((yield* SubscriptionRef.get(h.service.state)).spendsCloudQuota, true);
+        assert.strictEqual(h.fakeCloud.requestCalls.length, 2, 'a new recording resolves the new default');
+        yield* h.service.stop(next);
         yield* Scope.close(h.sessionScope, Exit.void);
       })
   );

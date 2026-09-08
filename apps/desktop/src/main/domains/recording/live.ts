@@ -55,16 +55,21 @@ import {
   type MicCaptureEvent,
 } from './capture/service';
 import { PermissionService } from './permission/service';
-import { WorkspaceBackend, type CreateRecordingInput } from '../transport/service';
+import {
+  WorkspaceBackend,
+  type CreateRecordingInput,
+  type RecordingLaneFailure,
+} from '../transport/service';
+import { isSessionTranscriptionFailure, recordingRetryAfterMs } from '../transport/recording-retry';
 import { RecordingStore } from './store';
 import { AppModeService } from '../app-mode/service';
 import { DesktopI18n } from '../i18n/service';
 import { SettingsService } from '../settings/service';
 import {
   resolveRecordingEngine,
-  transcriptionConfigFor,
   type RecordingEngine,
 } from '../transcriber/engine';
+import { resolveTranscriptionConfig } from '../transcriber/transcription-config';
 import { detectedSpeakerCountFor } from '../transcriber/segment';
 import { Transcriber } from '../transcriber/service';
 import { mirrorSegmentsToCore } from './segment-mirror';
@@ -358,6 +363,27 @@ export const RecordingServiceLive: Layer.Layer<
         let captureSummarized = false;
         let completed = false;
         let failedStage: string | undefined;
+        let nextUploadAt = 0;
+        let uploadsHalted = false;
+        const deferRetry = (failure: RecordingLaneFailure): Effect.Effect<void> =>
+          Effect.gen(function* () {
+            const delay =
+              failure.kind === 'http' ? recordingRetryAfterMs(failure.retryAfterMs) : undefined;
+            if (delay === undefined) return;
+            nextUploadAt = (yield* Clock.currentTimeMillis) + delay;
+            yield* db
+              .updateRecoveryOutbox(recordingId, {
+                nextAttemptAt: new Date(nextUploadAt).toISOString(),
+              })
+              .pipe(
+                Effect.catchAll(cause =>
+                  log.warn('recording retry deadline save failed', {
+                    context: { recordingId },
+                    error: cause,
+                  })
+                )
+              );
+          });
         yield* Effect.addFinalizer(exit =>
           Effect.gen(function* () {
             const durationMs = Number((yield* Clock.currentTimeNanos) - attemptStarted) / 1_000_000;
@@ -399,6 +425,8 @@ export const RecordingServiceLive: Layer.Layer<
           status: 'starting',
           captureMode: mode,
           requestedCaptureMode: requestedMode,
+          spendsCloudQuota: transcriptionConfig?.provider === 'prismical-cloud',
+          quotaRemainingAtStartSeconds: input.quotaRemainingAtStartSeconds ?? null,
           noteId,
           segments: [],
           elapsedMs: 0,
@@ -437,6 +465,7 @@ export const RecordingServiceLive: Layer.Layer<
         // finalization must wait for both creation and the authoritative row.
         const createRes = yield* coreClient.createRecording(createInput);
         if (!createRes.ok) {
+          yield* deferRetry(createRes.failure);
           yield* log.warn('createRecording failed — capturing anyway', {
             context: { recordingId, failure: createRes.failure },
           });
@@ -586,7 +615,10 @@ export const RecordingServiceLive: Layer.Layer<
           Effect.gen(function* () {
             // Creation is a prerequisite. The full WAV retains chunks until the
             // recovery worker can replay the durable create intent.
-            if (!created) return;
+            if (!created || uploadsHalted) return;
+            // Keep capture and Stop responsive during provider cooldown. The WAV
+            // retains skipped chunks and the unchanged cursor makes recovery replay them.
+            if ((yield* Clock.currentTimeMillis) < nextUploadAt) return;
             const res = yield* transcriber.transcribeChunk(
               recordingId,
               { chunkIndex: chunk.index, chunkStartMs: chunk.chunkStartMs, source: chunk.source },
@@ -595,6 +627,8 @@ export const RecordingServiceLive: Layer.Layer<
             );
             if (!res.ok) {
               failedStage ??= 'transcription';
+              if (!res.retryable && isSessionTranscriptionFailure(res.failure)) uploadsHalted = true;
+              yield* deferRetry(res.failure);
               yield* log.warn('chunk processing failed — retained for recovery', {
                 context: { recordingId, index: chunk.index, failure: res.failure },
               });
@@ -1216,6 +1250,7 @@ export const RecordingServiceLive: Layer.Layer<
               }
             } else {
               failedStage ??= 'finalize';
+              yield* deferRetry(finalized.failure);
               yield* log.warn('finalizeRecording failed — retained for recovery', {
                 context: { recordingId, failure: finalized.failure },
               });
@@ -1272,6 +1307,14 @@ export const RecordingServiceLive: Layer.Layer<
           const resolved = yield* permission.effectiveCaptureMode(input.captureMode);
           const effectiveInput: StartRecordingInput = { ...input, captureMode: resolved.mode };
 
+          const engine = resolveRecordingEngine(appMode, (yield* settings.get).transcription);
+          if (
+            engine.engine === 'local' &&
+            Option.isNone(yield* models.installedPath(engine.modelId))
+          ) {
+            return yield* Effect.fail(new RecordingStartError({ reason: 'model-missing' }));
+          }
+          const transcriptionConfig = yield* resolveTranscriptionConfig(engine, coreClient);
           const nowMs = yield* Clock.currentTimeMillis;
           const latest = yield* SubscriptionRef.get(micActivity.latest);
           const initialSnapshot = Option.match(latest, {
@@ -1291,13 +1334,6 @@ export const RecordingServiceLive: Layer.Layer<
                 : 'unidentified';
           }
 
-          const engine = resolveRecordingEngine(appMode, (yield* settings.get).transcription);
-          if (
-            engine.engine === 'local' &&
-            Option.isNone(yield* models.installedPath(engine.modelId))
-          ) {
-            return yield* Effect.fail(new RecordingStartError({ reason: 'model-missing' }));
-          }
           const recordingId = createId('recording');
           const completionReady = yield* Deferred.make<boolean>();
           completions.set(recordingId, { ready: completionReady, stopped: false });
@@ -1307,7 +1343,7 @@ export const RecordingServiceLive: Layer.Layer<
             captureMode: resolved.mode,
             noteId: input.noteId ?? null,
             startedAt: nowMs,
-            transcriptionConfig: transcriptionConfigFor(engine),
+            transcriptionConfig,
           };
           const stopSignal = yield* Deferred.make<void>();
           const done = yield* Deferred.make<void>();
@@ -1337,6 +1373,8 @@ export const RecordingServiceLive: Layer.Layer<
             recordingId,
             captureMode: resolved.mode,
             requestedCaptureMode: resolved.requested,
+            spendsCloudQuota: transcriptionConfig.provider === 'prismical-cloud',
+            quotaRemainingAtStartSeconds: input.quotaRemainingAtStartSeconds ?? null,
             noteId: createInput.noteId ?? null,
             startedAt: nowMs,
             elapsedAt: nowMs,

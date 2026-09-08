@@ -265,6 +265,7 @@ describe('ByokTranscriberLive', () => {
         sampleRate: 16_000,
         channels: 1,
         bitsPerSample: 16,
+        dataOffset: 44,
         dataBytes: 160_000,
         durationMs: 5_000,
       });
@@ -319,7 +320,7 @@ describe('ByokTranscriberLive', () => {
     })
   );
 
-  it.effect('status mapping: 429 / 5xx retryable http; other 4xx permanent (code kept); network + timeout retryable', () =>
+  it.effect('status mapping: rate limits / 5xx retryable; other 4xx permanent with stable codes; network + timeout retryable', () =>
     Effect.gen(function* () {
       const h = yield* build();
       const audio = chunk(tone(240_000));
@@ -328,13 +329,13 @@ describe('ByokTranscriberLive', () => {
       assert.deepStrictEqual(yield* h.lane.transcribeChunk('rec_s', PARAMS, audio, BYOK), {
         ok: false,
         retryable: true,
-        failure: { kind: 'http', status: 429 },
+        failure: { kind: 'http', status: 429, code: 'PROVIDER_RATE_LIMITED' },
       });
       h.setResponder(() => Promise.resolve(new Response('bad gateway', { status: 502 })));
       assert.deepStrictEqual(yield* h.lane.transcribeChunk('rec_s', PARAMS, audio, BYOK), {
         ok: false,
         retryable: true,
-        failure: { kind: 'http', status: 502 },
+        failure: { kind: 'http', status: 502, code: 'PROVIDER_UNAVAILABLE' },
       });
       h.setResponder(() =>
         Promise.resolve(jsonResponse({ error: { message: 'prompt too long', code: 'invalid_request_error' } }, 400))
@@ -342,13 +343,13 @@ describe('ByokTranscriberLive', () => {
       assert.deepStrictEqual(yield* h.lane.transcribeChunk('rec_s', PARAMS, audio, BYOK), {
         ok: false,
         retryable: false,
-        failure: { kind: 'http', status: 400, code: 'invalid_request_error' },
+        failure: { kind: 'http', status: 400, code: 'PROVIDER_REJECTED' },
       });
       h.setResponder(() => Promise.resolve(new Response(null, { status: 401 })));
       assert.deepStrictEqual(yield* h.lane.transcribeChunk('rec_s', PARAMS, audio, BYOK), {
         ok: false,
         retryable: false,
-        failure: { kind: 'http', status: 401 },
+        failure: { kind: 'http', status: 401, code: 'PROVIDER_KEY_INVALID' },
       });
       h.setResponder(() => Promise.reject(new TypeError('fetch failed')));
       assert.deepStrictEqual(yield* h.lane.transcribeChunk('rec_s', PARAMS, audio, BYOK), {
@@ -368,6 +369,36 @@ describe('ByokTranscriberLive', () => {
 
       const warns = h.logger.entries.filter(e => e.message === 'BYOK transcription chunk failed');
       assert.strictEqual(warns.length, 6);
+      yield* Scope.close(h.scope, Exit.void);
+    })
+  );
+
+  it.effect('distinguishes provider cooldowns from exhausted quota and invalid keys', () =>
+    Effect.gen(function* () {
+      const h = yield* build();
+      const audio = chunk(tone(240_000));
+      for (const [message, status, code] of [
+        ['insufficient_quota', 429, 'PROVIDER_QUOTA_EXCEEDED'],
+        ['rate limit reached; limit: 0', 429, 'PROVIDER_QUOTA_EXCEEDED'],
+        ['Please retry in 1h22m30s', 429, 'PROVIDER_QUOTA_EXCEEDED'],
+        ['API_KEY_INVALID', 400, 'PROVIDER_KEY_INVALID'],
+      ] as const) {
+        h.setResponder(() => Promise.resolve(jsonResponse({ error: { message } }, status)));
+        assert.deepStrictEqual(yield* h.lane.transcribeChunk('rec_quota', PARAMS, audio, BYOK), {
+          ok: false, retryable: false, failure: { kind: 'http', status, code },
+        });
+      }
+
+      for (const response of [
+        new Response('Please retry in 41.8s', { status: 429 }),
+        new Response('too many requests', { status: 429, headers: { 'Retry-After': '41.8' } }),
+      ]) {
+        h.setResponder(() => Promise.resolve(response));
+        assert.deepStrictEqual(yield* h.lane.transcribeChunk('rec_rate', PARAMS, audio, BYOK), {
+          ok: false, retryable: true,
+          failure: { kind: 'http', status: 429, code: 'PROVIDER_RATE_LIMITED', retryAfterMs: 41_800 },
+        });
+      }
       yield* Scope.close(h.scope, Exit.void);
     })
   );

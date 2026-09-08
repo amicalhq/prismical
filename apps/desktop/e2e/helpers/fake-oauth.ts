@@ -71,6 +71,7 @@ export interface FakeOAuthOptions {
   readonly sub?: string;
   readonly email?: string;
   readonly name?: string;
+  readonly signupAt?: string;
   /**
    * The `org_users` memberships baked into every minted id_token (user_id is the
    * sub). Default: one org — the org-switch spec passes two so a re-scope is
@@ -176,6 +177,7 @@ export async function startFakeOAuthServer(
     const idToken = await new SignJWT({
       email,
       name,
+      ...(options.signupAt === undefined ? {} : { signup_at: options.signupAt }),
       prismical_first_party: true,
       org_users: orgUsers.map(org => ({ id: org.id, org_id: org.org_id, user_id: sub })),
     })

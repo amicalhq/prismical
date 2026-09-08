@@ -14,13 +14,14 @@
  * Per chunk: key + base URL + model present (else `not-configured`,
  * retryable for missing credentials, ONE warn per recording) → the near-silence guard → 48 kHz →
  * 16 kHz → PCM16 WAV → the POST with a 30 s budget. A 429/5xx response or
- * network/timeout failure is retryable; other 4xx responses are
- * permanent (that chunk's text is lost, the recording continues). No `prompt`
+ * network/timeout failure is retryable; invalid keys and exhausted quota are
+ * permanent (the audio stays available for recovery). No `prompt`
  * multipart field — hint injection is provider-specific and not relied on —
  * but the deterministic replacement pass runs on-device using the workspace
  * vocabulary source.
  */
 import { Clock, Duration, Effect, HashSet, Layer, Ref } from 'effect';
+import { classifyProviderError } from '@prismical/ai-prompts';
 import { applyReplacements, filterWhisperTranscript } from '@prismical/ai-prompts/transcription';
 import { MainLogger } from '../../infra/logging/service';
 import { ProductDb } from '../../infra/product-db/service';
@@ -28,6 +29,7 @@ import { SecureStore } from '../../infra/secure-store/service';
 import { AppModeService } from '../app-mode/service';
 import { encodeWavPcm16 } from '../recording/wav';
 import { isTransientStatus, type FetchLike } from '../transport/live';
+import { recordingRetryAfterMs } from '../transport/recording-retry';
 import {
   WorkspaceBackend,
   type RecordingLaneFailure,
@@ -147,21 +149,27 @@ export const makeByokTranscriberLive = (
                 body: form,
                 signal,
               });
-              const bodyJson: unknown = await response.json().catch(() => null);
               if (response.ok) {
+                const bodyJson: unknown = await response.json().catch(() => null);
                 const text = (bodyJson as { text?: unknown } | null)?.text;
                 return typeof text === 'string'
                   ? { ok: true, value: isWhisper ? filterWhisperTranscript(text, bodyJson) : text }
                   : { ok: false, retryable: true, failure: { kind: 'invalid-response' } };
               }
-              const code = (bodyJson as { error?: { code?: unknown } } | null)?.error?.code;
+              const classified = classifyProviderError({
+                statusCode: response.status,
+                responseBody: await response.text().catch(() => ''),
+                responseHeaders: Object.fromEntries(response.headers),
+              });
+              const retryAfterMs = recordingRetryAfterMs(classified?.retryAfterMs);
               return {
                 ok: false,
-                retryable: isTransientStatus(response.status),
+                retryable: classified?.retryable ?? isTransientStatus(response.status),
                 failure: {
                   kind: 'http',
                   status: response.status,
-                  ...(typeof code === 'string' ? { code } : {}),
+                  ...(classified ? { code: classified.code } : {}),
+                  ...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
                 },
               };
             },

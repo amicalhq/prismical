@@ -73,7 +73,8 @@ const readOptional = (file: string): Promise<Buffer> =>
  * see packages/app-client/src/sync/purge.ts). That is by-design product state,
  * NOT token material — the account sub already crosses in the sanitized
  * SessionView. So the renderer-storage scan is keyed on the real invariant:
- * every localStorage key is on this allowlist AND no sentinel appears anywhere
+ * The optional first-note guide also persists progress under the account sub.
+ * Every localStorage key is on this allowlist AND no sentinel appears anywhere
  * in the stored keys/values. A rogue write to a new key still fails the test.
  */
 const ALLOWED_LOCAL_STORAGE_KEYS = new Set(['prismical-sync-partition-registry']);
@@ -82,6 +83,7 @@ const ALLOWED_LOCAL_STORAGE_KEYS = new Set(['prismical-sync-partition-registry']
  *  signed-in DOM carries no token material. */
 const scanRendererSurfaces = async (
   page: Page,
+  sub: string,
   email: string,
   sentinels: ReadonlyArray<string>
 ): Promise<void> => {
@@ -98,8 +100,12 @@ const scanRendererSurfaces = async (
     };
   });
   // No unexpected localStorage keys (a new persistence site must be reviewed).
+  const walkthroughKey = `prismical:first-note:v1:${encodeURIComponent(sub)}`;
   for (const [key] of renderer.localStorageEntries) {
-    expect(ALLOWED_LOCAL_STORAGE_KEYS.has(key), `unexpected localStorage key: ${key}`).toBe(true);
+    expect(
+      ALLOWED_LOCAL_STORAGE_KEYS.has(key) || key === walkthroughKey || key === `${walkthroughKey}:replay-retired`,
+      `unexpected localStorage key: ${key}`
+    ).toBe(true);
   }
   // No token material in any stored key OR value.
   const storageBlob = JSON.stringify(renderer.localStorageEntries);
@@ -227,7 +233,7 @@ test.describe('auth sentinel-token scans', () => {
     const sentinels = [minted.refreshToken, minted.accessToken, minted.idToken];
 
     // (d) + (c) live surfaces for generation 1 (exchange path).
-    await scanRendererSurfaces(page, server.email, sentinels);
+    await scanRendererSurfaces(page, server.sub, server.email, sentinels);
     await scanIpcSurfaces(page, server.email, sentinels);
     // The one sanctioned crossing: getCollabToken IS the id_token, never the
     // refresh/access sentinel (everything else above stayed token-free).
@@ -299,7 +305,7 @@ test.describe('auth sentinel-token scans', () => {
     ];
 
     // (d) + (c) live surfaces again, now against BOTH generations.
-    await scanRendererSurfaces(page2, server.email, bothGenerations);
+    await scanRendererSurfaces(page2, server.sub, server.email, bothGenerations);
     await scanIpcSurfaces(page2, server.email, bothGenerations);
     // The sanctioned crossing now serves the ROTATED id_token (the restore
     // refresh advanced the active token); still NEVER any refresh/access sentinel.

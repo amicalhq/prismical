@@ -510,7 +510,7 @@ export function FloatNoteView({
               isMac ? '' : 'shadow-2xl'
             }`}
           >
-            {noteId ? <FloatNoteBody noteId={noteId} /> : <FloatSlotResolver fresh={fresh} />}
+            {noteId ? <FloatNoteBody key={noteId} noteId={noteId} /> : <FloatSlotResolver fresh={fresh} />}
           </div>
         </div>
       </CurrentEditorProvider>

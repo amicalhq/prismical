@@ -1,22 +1,91 @@
 import { sourceFrame } from '@desktop/logging/wire';
+import { AI_ERROR_CODES, SKILL_RUN_ERROR_CODES } from '@prismical/api-contracts';
 export { sanitizeSourceLocation as sanitizeTelemetrySourceLocation } from '@desktop/logging/wire';
 
 type TelemetryValue = string | number | boolean | null;
 
 // Only metadata used by the product event catalog or diagnostic boundaries.
 // User-authored skill_name is deliberately excluded; skill_id still identifies it.
-const ID_KEYS = new Set(['note_id', 'recording_id', 'resource_id', 'conversation_id', 'skill_id']);
+const ID_KEYS = new Set([
+  'note_id',
+  'recording_id',
+  'resource_id',
+  'conversation_id',
+  'skill_id',
+  'attempt_id',
+  'execution_id',
+  'request_id',
+]);
 const BOOLEAN_KEYS = new Set([
   'from_folder',
   'from_event',
   'automatic',
   'has_context',
   'scoped_to_recording',
+  'replay',
   'app_is_packaged',
   '$process_person_profile',
 ]);
-const NUMBER_KEYS = new Set(['segments', 'grace_ms', 'duration_ms', 'attempt', 'chunk_index']);
+const NUMBER_KEYS = new Set([
+  'segments',
+  'grace_ms',
+  'duration_ms',
+  'attempt',
+  'chunk_index',
+  'client_at_ms',
+  'elapsed_ms',
+  'execution_duration_ms',
+  'queued_ms',
+  'preparing_ms',
+  'request_ms',
+  'transcript_wait_ms',
+  'staging_ms',
+  'request_count',
+  'persistence_ready_ms',
+  'notes_loaded_ms',
+  'notes_failed_ms',
+  'folders_loaded_ms',
+  'folders_failed_ms',
+  'tags_loaded_ms',
+  'tags_failed_ms',
+  'note_tags_loaded_ms',
+  'note_tags_failed_ms',
+  'create_gate_released_ms',
+  'token_requested_ms',
+  'token_resolved_ms',
+  'socket_connected_ms',
+  'authenticated_ms',
+  'document_synced_ms',
+  'local_log_hydrated_ms',
+  'tour_version',
+]);
 const ENUMS: Record<string, readonly string[]> = {
+  kind: ['sync_bootstrap', 'note_collaboration'],
+  status: [
+    'started',
+    'pending_at_five_seconds',
+    'ready',
+    'published',
+    'error',
+    'abandoned',
+    'superseded',
+    'stopped',
+    'skipped',
+    'applied',
+    'staged',
+  ],
+  phase: ['preparing', 'request', 'waiting-transcript', 'staging'],
+  tour: ['first_note'],
+  step: ['create', 'record', 'speak', 'stop', 'transcript', 'enhance', 'result', 'review'],
+  action: ['created', 'recording', 'ready-to-stop', 'recorded', 'review', 'kept', 'continue'],
+  code: [
+    'create_failed',
+    'recording_failed',
+    'enhance_failed',
+    'accept_failed',
+    'target_unavailable',
+    'tour_load_failed',
+  ],
   source: [
     'chip',
     'composer',
@@ -137,6 +206,14 @@ const CODES = [
   'SQLITE_BUSY',
   'SQLITE_CORRUPT',
 ];
+const PRODUCT_ERROR_CODES = [
+  ...CODES,
+  ...Object.values(AI_ERROR_CODES),
+  ...Object.values(SKILL_RUN_ERROR_CODES),
+  'EDITOR_UNAVAILABLE',
+  'NETWORK_ERROR',
+  'CLIENT_ERROR',
+];
 const PROPERTY_KEYS = [
   ...ID_KEYS,
   ...BOOLEAN_KEYS,
@@ -242,7 +319,7 @@ export function sanitizeTelemetryProperties(input: unknown): Record<string, Tele
         /^\d[\d.a-zA-Z_-]{0,63}$/.test(value)
       )
         result[key] = value;
-      else if (key === 'error_code' && CODES.includes(value)) result[key] = value;
+      else if (key === 'error_code' && PRODUCT_ERROR_CODES.includes(value)) result[key] = value;
       else if (key === 'reason' && REASONS.includes(value)) result[key] = value;
       else if (ENUMS[key]?.includes(value)) result[key] = value;
     }

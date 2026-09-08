@@ -17,6 +17,18 @@ const env: EnvDescriptor = {
 };
 
 describe('desktop recording port', () => {
+  it('forwards the cached quota baseline at Start and preserves an unavailable baseline', async () => {
+    const start = vi.fn().mockResolvedValue({ ok: true, recordingId: 'rec_1' });
+    vi.stubGlobal('window', { desktop: { recording: { start } } });
+    const control = createDesktopPorts(env).appPorts.recording.control!;
+    await control.start({ noteId: 'note_1', title: 'First note', quotaRemainingAtStartSeconds: 600 });
+    await control.start({ noteId: 'note_2', title: 'Second note' });
+    expect(start.mock.calls).toEqual([
+      [{ captureMode: 'dual', noteId: 'note_1', title: 'First note', quotaRemainingAtStartSeconds: 600 }],
+      [{ captureMode: 'dual', noteId: 'note_2', title: 'Second note', quotaRemainingAtStartSeconds: null }],
+    ]);
+  });
+
   it('returns the completion claim accepted by main', async () => {
     const claimCompletion = vi.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false);
     vi.stubGlobal('window', { desktop: { recording: { claimCompletion } } });
@@ -40,12 +52,17 @@ describe('desktop recording port', () => {
     const paused: RecordingStateView = {
       recordingId: 'rec_1', noteId: 'note_1', status: 'paused', captureMode: 'dual',
       requestedCaptureMode: 'dual', micSource: 'system-default', segments: [], elapsedMs: 30_000,
+      spendsCloudQuota: false,
+      quotaRemainingAtStartSeconds: 600,
       autoStopRequested: true, autoPausePrompt: { graceMs: 5_000, deadlineMs: 35_000 },
     };
     push!(paused);
-    push!({ ...paused, status: 'idle', autoStopRequested: false, autoPausePrompt: null });
+    push!({ ...paused, status: 'idle', autoStopRequested: false, autoPausePrompt: null,
+      quotaRemainingAtStartSeconds: undefined });
     expect(seen.map(state => state.autoStopRequested)).toEqual([true, false]);
     expect(seen[0].autoPausePrompt).toBeUndefined();
+    expect(seen[0].spendsCloudQuota).toBe(false);
+    expect(seen.map(state => state.quotaRemainingAtStartSeconds)).toEqual([600, null]);
     detach();
     expect(unsubscribe).toHaveBeenCalledOnce();
   });

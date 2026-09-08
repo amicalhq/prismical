@@ -479,6 +479,39 @@ describe('makeUploadTranscriptionChunk', () => {
       })
   );
 
+  it.effect('retains bounded rate-limit hints and rejects recording-length errors permanently', () =>
+    Effect.gen(function* () {
+      const call = (status: number, code: string, retryAfterMs: unknown) =>
+        makeUploadTranscriptionChunk(makeDeps({
+          fetchFn: recordingFetch(() => Promise.resolve(jsonResponse({
+            error: { code, details: { retryAfterMs } },
+          }, status))).fetchFn,
+        }))('rec_1', CHUNK_PARAMS, new Uint8Array([1]));
+
+      for (const [hint, expected] of [
+        [41_800, 41_800],
+        [2 * 60 * 60_000, 30 * 60_000],
+        [-1, undefined],
+        [249, undefined],
+        ['41800', undefined],
+      ] as const) {
+        assert.deepStrictEqual(yield* call(429, 'PROVIDER_RATE_LIMITED', hint), {
+          ok: false,
+          retryable: true,
+          failure: {
+            kind: 'http', status: 429, code: 'PROVIDER_RATE_LIMITED',
+            ...(expected !== undefined ? { retryAfterMs: expected } : {}),
+          },
+        });
+      }
+      assert.deepStrictEqual(yield* call(413, 'RECORDING_LENGTH_EXCEEDED', 41_800), {
+        ok: false,
+        retryable: false,
+        failure: { kind: 'http', status: 413, code: 'RECORDING_LENGTH_EXCEEDED' },
+      });
+    })
+  );
+
   it.effect('classifies transcribe error codes: 429/502 transient, 404/422 non-retryable', () =>
     Effect.gen(function* () {
       const call = (status: number) =>

@@ -60,7 +60,13 @@ export type RecordingLaneFailure =
   | { readonly kind: 'network' }
   | { readonly kind: 'timeout' }
   | { readonly kind: 'invalid-response' }
-  | { readonly kind: 'http'; readonly status: number; readonly code?: string }
+  | {
+      readonly kind: 'http';
+      readonly status: number;
+      readonly code?: string;
+      /** Bounded provider cooldown; retained across capture and durable recovery. */
+      readonly retryAfterMs?: number;
+    }
   | {
       readonly kind: 'engine';
       readonly reason:

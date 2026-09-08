@@ -290,6 +290,21 @@ describe('recording schemas', () => {
     expect(parseStopRecordingRequest({ recordingId: 'rec_1', extra: 1 }).success).toBe(false);
   });
 
+  it('quota baseline crosses Start and state only as a finite, nonnegative value or null', () => {
+    for (const quotaRemainingAtStartSeconds of [undefined, null, 0, 600.5]) {
+      const request = parseStartRecordingRequest({ captureMode: 'dual', quotaRemainingAtStartSeconds });
+      const view = parseRecordingStateView({ ...state, quotaRemainingAtStartSeconds });
+      expect(request.success).toBe(true);
+      expect(view.success).toBe(true);
+      if (request.success) expect(request.data.quotaRemainingAtStartSeconds).toBe(quotaRemainingAtStartSeconds);
+      if (view.success) expect(view.data.quotaRemainingAtStartSeconds).toBe(quotaRemainingAtStartSeconds);
+    }
+    for (const quotaRemainingAtStartSeconds of [-1, Infinity, NaN, '600']) {
+      expect(parseStartRecordingRequest({ captureMode: 'dual', quotaRemainingAtStartSeconds }).success).toBe(false);
+      expect(parseRecordingStateView({ ...state, quotaRemainingAtStartSeconds }).success).toBe(false);
+    }
+  });
+
   it('pause/resume request uses the same strict recording-id shape', () => {
     expect(parseRecordingControlRequest({ recordingId: 'rec_1' }).success).toBe(true);
     expect(parseRecordingControlRequest({ recordingId: '' }).success).toBe(false);
@@ -312,6 +327,14 @@ describe('recording schemas', () => {
     expect(parseRecordingStateView(state).success).toBe(true);
     expect(parseRecordingStateView({ ...state, micSource: 'unavailable' }).success).toBe(true);
     expect(parseRecordingStateView({ ...state, status: 'paused' }).success).toBe(true);
+    for (const spendsCloudQuota of [true, false, null]) {
+      const projected = parseRecordingStateView({ ...state, spendsCloudQuota });
+      expect(projected.success).toBe(true);
+      if (projected.success) expect(projected.data.spendsCloudQuota).toBe(spendsCloudQuota);
+    }
+    expect(
+      parseRecordingStateView({ ...state, spendsCloudQuota: 'cloud' }).success
+    ).toBe(false);
     expect(parseRecordingStateView({ ...state, captureMode: 'both' }).success).toBe(false);
     expect(parseRecordingStateView({ ...state, micSource: 'unknown' }).success).toBe(false);
     expect(parseRecordingStateView({ ...state, micSource: undefined }).success).toBe(false);

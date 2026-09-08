@@ -204,6 +204,20 @@ describe('auth policy — verified identity claims', () => {
     expect(parseIdTokenIdentity(claims)).toEqual({ ok: true, value: identity() });
   });
 
+  it('carries a verified signup date without guessing one for older tokens', () => {
+    const signupAt = '2026-09-08T00:00:00.000Z';
+    expect(parseIdTokenIdentity({ ...claims, signup_at: signupAt })).toEqual({
+      ok: true,
+      value: identity({ signupAt }),
+    });
+    for (const signup_at of [undefined, null, 123, '', 'invalid']) {
+      expect(parseIdTokenIdentity({ ...claims, signup_at })).toEqual({
+        ok: true,
+        value: identity(),
+      });
+    }
+  });
+
   it('rejects missing sub / non-first-party / missing email / malformed org_users', () => {
     expect(parseIdTokenIdentity({ ...claims, sub: undefined })).toEqual({
       ok: false,
@@ -313,6 +327,19 @@ describe('auth policy — session view projection', () => {
 });
 
 describe('auth policy — account index codec (restart persistence)', () => {
+  it('preserves signup metadata through org selection, restart, refresh and strict IPC', () => {
+    const signupAt = '2026-09-08T00:00:00.000Z';
+    const account = identity({ signupAt });
+    const signedIn = setAccountOrg(applySignIn(initialAuthState, account), 'user_1', 'org_1');
+    const restored = restoreAuthState(encodeAccountIndex(signedIn));
+    expect(restored.accounts['user_1']?.signupAt).toBe(signupAt);
+    const refreshed = applyRefreshedIdentity(restored, account);
+    const view = toSessionView(refreshed);
+    expect(parseSessionView(view).success).toBe(true);
+    expect(view.accounts[0]?.signupAt).toBe(signupAt);
+    expect(view.accounts[0]?.activeOrgId).toBe('org_1');
+  });
+
   it('round-trips accounts + activeSub + org pick; restore lands on refreshing', () => {
     const state = setAccountOrg(applySignIn(initialAuthState, identity()), 'user_1', 'org_1');
     const restored = restoreAuthState(encodeAccountIndex(state));

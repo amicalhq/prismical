@@ -521,6 +521,8 @@ export const sessionAccountSchema = z
     sub: z.string().min(1),
     email: z.string().min(1),
     name: z.string().optional(),
+    /** Verified account creation time; older tokens and local mode omit it. */
+    signupAt: z.string().optional(),
     activeOrgId: z.string().optional(),
   })
   .strict();
@@ -634,6 +636,8 @@ export const startRecordingRequestSchema = z
     captureMode: captureModeSchema,
     noteId: z.string().min(1).nullable().optional(),
     title: z.string().optional(),
+    /** Cached allowance at Start, used only to keep recording warnings consistent across windows. */
+    quotaRemainingAtStartSeconds: z.number().finite().nonnegative().nullable().optional(),
     /**
      * Auto-pause policy for this session. The renderer already holds the org's gate
      * + tuning, so it passes them at start rather than making main look them up; absent ⇒ off.
@@ -715,6 +719,9 @@ export const recordingStateViewSchema = z
     status: z.enum(['idle', 'starting', 'recording', 'paused', 'stopping', 'error']),
     captureMode: captureModeSchema.nullable(),
     requestedCaptureMode: captureModeSchema.nullable(),
+    /** Quota behavior fixed for the session, independent of later settings changes. */
+    spendsCloudQuota: z.boolean().nullable().optional(),
+    quotaRemainingAtStartSeconds: z.number().finite().nonnegative().nullable().optional(),
     micSource: z.enum(['meeting-app', 'system-default', 'unavailable']),
     noteId: z.string().nullable(),
     segments: z.array(recordingSegmentSchema),

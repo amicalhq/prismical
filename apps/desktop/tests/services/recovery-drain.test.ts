@@ -632,6 +632,37 @@ describe('RecoveryDrain (re-chunk retained WAV → resend tail → finalize → 
       })
   );
 
+  it.effect('waits for provider cooldown before replaying the same durable chunk', () =>
+    Effect.gen(function* () {
+      const h = yield* setup;
+      const recordingId = 'rec_rate_limit';
+      const dir = h.recoveryDir(recordingId);
+      yield* writeWav(dir, 'mic', seconds(5));
+      yield* h.insertRecovery({ recordingId, captureMode: 'mic', wavPath: dir });
+      yield* h.db.updateRecoveryOutbox(recordingId, { status: 'interrupted' });
+      h.fakeCloud.setUploadResponder(() => laneFail(true, {
+        kind: 'http', status: 429, code: 'PROVIDER_RATE_LIMITED', retryAfterMs: 90_000,
+      }));
+
+      const now = yield* Clock.currentTimeMillis;
+      assert.strictEqual((yield* h.drain()).parked, 1);
+      const row = yield* h.db.getRecoveryOutbox(recordingId);
+      assert.strictEqual(row?.nextAttemptAt, new Date(now + 90_000).toISOString());
+      assert.isNull(row?.lastChunkIndex);
+      assert.isTrue(fs.existsSync(dir));
+      yield* TestClock.adjust(Duration.seconds(89));
+      assert.strictEqual((yield* h.drain()).deferred, 1);
+      assert.strictEqual(h.fakeCloud.uploadCalls.length, 1);
+
+      h.fakeCloud.setUploadResponder(() => laneOk([]));
+      yield* TestClock.adjust(Duration.seconds(1));
+      assert.strictEqual((yield* h.drain()).resolved, 1);
+      assert.deepStrictEqual(h.fakeCloud.uploadCalls.map(call => call.params.chunkIndex), [0, 0]);
+      assert.isNull(yield* h.db.getRecoveryOutbox(recordingId));
+      yield* Scope.close(h.scope, Exit.void);
+    })
+  );
+
   it.effect('non-retryable failure → row marked failed (give up), WAV retained', () =>
     Effect.gen(function* () {
       const h = yield* setup;
