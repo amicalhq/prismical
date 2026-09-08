@@ -155,9 +155,9 @@ jobs:
       SKIP_CODESIGNING: ${{ github.ref_type == 'tag' && 'false' || github.event.inputs.sign == 'true' && 'false' || vars.SKIP_CODESIGNING || 'true' }}
       POSTHOG_SOURCE_MAP_UPLOAD: ${{ (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') && 'true' || 'false' }}
       POSTHOG_PERSONAL_API_KEY: ${{ secrets.POSTHOG_PERSONAL_API_KEY }}
-      POSTHOG_PROJECT_ID: ${{ vars.POSTHOG_PROJECT_ID }}
+      POSTHOG_PROJECT_ID: ${{ secrets.POSTHOG_PROJECT_ID }}
       POSTHOG_RELEASE_SHA: ${{ github.sha }}
-      POSTHOG_HOST: ${{ vars.POSTHOG_HOST }}
+      POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
 
     steps:
       - name: Checkout
