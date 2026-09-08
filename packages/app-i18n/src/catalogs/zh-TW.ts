@@ -1906,6 +1906,7 @@ const zhTW = {
         channelDescription: '選擇要接收更新的發行管道。',
         channelLabel: '更新管道',
         check: '檢查更新',
+        sidebarCta: '有可用的更新',
         restartToInstall: '重新啟動並安裝',
         stable: '穩定版',
         status: {

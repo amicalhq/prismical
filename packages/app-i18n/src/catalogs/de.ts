@@ -2053,6 +2053,7 @@ const de = {
         channelDescription: 'Wähle aus, von welchem Veröffentlichungskanal du Updates erhältst.',
         channelLabel: 'Update-Kanal',
         check: 'Nach Updates suchen',
+        sidebarCta: 'Update verfügbar',
         restartToInstall: 'Neu starten und installieren',
         stable: 'Stabil',
         status: {

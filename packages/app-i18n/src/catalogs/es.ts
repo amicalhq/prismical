@@ -2030,6 +2030,7 @@ const es = {
         channelDescription: 'Elige de qué canal de versiones quieres recibir actualizaciones.',
         channelLabel: 'Canal de actualizaciones',
         check: 'Buscar actualizaciones',
+        sidebarCta: 'Actualización disponible',
         restartToInstall: 'Reiniciar para instalar',
         stable: 'Estable',
         status: {

@@ -2024,6 +2024,7 @@ const en = {
         channelDescription: 'Choose which release track to receive updates from.',
         channelLabel: 'Update channel',
         check: 'Check for updates',
+        sidebarCta: 'Update available',
         restartToInstall: 'Restart to install',
         stable: 'Stable',
         status: {

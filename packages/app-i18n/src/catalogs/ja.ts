@@ -1969,6 +1969,7 @@ const ja = {
         channelDescription: '更新を受け取るリリースチャンネルを選択します。',
         channelLabel: '更新チャンネル',
         check: '更新を確認',
+        sidebarCta: 'アップデートがあります',
         restartToInstall: '再起動してインストール',
         stable: '安定版',
         status: {

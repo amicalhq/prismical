@@ -29,6 +29,7 @@ import { NavNotesGroups } from './nav-notes-groups';
 import { NavSecondary } from './nav-secondary';
 import { FirstNoteWalkthroughReplay } from '../onboarding/first-note-walkthrough';
 import { SidebarQuota } from './sidebar-quota';
+import { SidebarUpdate } from './sidebar-update';
 import { useHomeNavItems, useSettingsNavItems } from './sidebar-nav';
 import { SettingsNavigation } from './settings-navigation';
 import { ShortcutHint } from './shortcut-hint';
@@ -266,6 +267,7 @@ export function AppSidebar({
             figures in full, so a row linking to the page you may already be on is just noise. */}
         {isAppSidebar ? <FirstNoteWalkthroughReplay compact={isMobile} onReplay={() => setOpenMobile(false)} /> : null}
         {isAppSidebar ? <SidebarQuota /> : null}
+        <SidebarUpdate />
         {accountSwitcher}
       </SidebarFooter>
     </Sidebar>
