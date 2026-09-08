@@ -5,6 +5,7 @@ import {
   formatApplicationDate,
   formatApplicationDateLabel,
   formatApplicationDuration,
+  formatApplicationDurationCompact,
   formatApplicationEventDateLabel,
   formatApplicationEventTimeRange,
   formatApplicationLastMet,
@@ -43,6 +44,23 @@ describe('locale-aware application formatting', () => {
     expect(formatApplicationDuration(65 * 60_000, 'ja', ja.t)).toBe('1時間5分');
     expect(formatApplicationDuration(65 * 60_000, 'de', de.t)).toBe('1 Std. 5 Min.');
     expect(formatApplicationDuration(null, 'de', de.t)).toBe('');
+  });
+
+  it('narrows durations per locale without hard-coding h/m', async () => {
+    const en = await createApplicationI18n('en');
+    const ja = await createApplicationI18n('ja');
+    const de = await createApplicationI18n('de');
+
+    expect(formatApplicationDurationCompact((4 * 60 + 58) * 60_000, 'en', en.t)).toBe('4h 58m');
+    expect(formatApplicationDurationCompact(58 * 60_000, 'en', en.t)).toBe('58m');
+    expect(formatApplicationDurationCompact(4 * 60 * 60_000, 'en', en.t)).toBe('4h');
+    // Each locale keeps its own narrow unit and its own joining, from Intl and the catalogue —
+    // German narrows the minute but not the hour, and Japanese joins with no space.
+    expect(formatApplicationDurationCompact(65 * 60_000, 'de', de.t)).toBe('1h 5 Min.');
+    expect(formatApplicationDurationCompact(65 * 60_000, 'ja', ja.t)).toBe('1h5m');
+    // Sub-minute stays the catalogue sentence, and an absent value stays empty.
+    expect(formatApplicationDurationCompact(30_000, 'en', en.t)).toBe('<1 min');
+    expect(formatApplicationDurationCompact(null, 'en', en.t)).toBe('');
   });
 
   it('localizes calendar labels and event ranges', async () => {

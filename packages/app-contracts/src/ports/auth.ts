@@ -22,6 +22,8 @@ export interface SessionAccount {
   readonly sessionKey?: string;
   readonly email: string;
   readonly name?: string;
+  /** Account creation time for the optional first-use welcome; absent on older clients. */
+  readonly signupAt?: string;
   readonly activeOrgId?: string;
 }
 

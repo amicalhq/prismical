@@ -1,4 +1,78 @@
 const en = {
+  onboarding: {
+  "helpDocs": "Need a hand? Read the docs",
+  "continueToNote": "Continue to my note",
+  "useCases": {
+    "meetings": {
+      "title": "Meetings",
+      "body": "Turn conversations into clear notes and action items."
+    },
+    "lectures": {
+      "title": "Lectures",
+      "body": "Turn lessons into organized study notes."
+    },
+    "voiceNotes": {
+      "title": "Voice notes",
+      "body": "Capture ideas and turn scattered thoughts into something useful."
+    }
+  },
+    welcomeHeading: "Welcome to your AI Note taker",
+    welcomeTitle: "Create your first voice note",
+    welcomeBody: "Say a few words, turn them into a clear note, and learn how to review the result. We’ll guide you through each step.",
+    start: "Start walkthrough",
+    later: "Maybe later",
+
+    close: "Exit walkthrough",
+  "unavailable": "This control isn’t available yet. Wait for the app to finish loading, or use × to exit the walkthrough.",
+  "doneTitle": "Your first note is ready",
+  "doneBody": "What will you capture next?",
+  "download": "Download",
+  "mobileBeta": "Join mobile beta",
+  "platforms": {
+    "mac": "macOS",
+    "windows": "Windows",
+    "ios": "iOS",
+    "android": "Android"
+  },
+  "tour": {
+    "create": {
+      "title": "Create a note from the dock",
+      "body": "Click the + button in the dock below to create your first note."
+    },
+    "record": {
+      "title": "Start recording",
+      "body": "Click the microphone in the dock, then Start recording. Allow microphone access when asked."
+    },
+    "speak": {
+      "title": "Say a few words",
+      "body": "Try: ‘Today I’m trying Prismical. My next step is to turn this recording into a clear note.’ Keep speaking for a few seconds."
+    },
+    "stop": {
+      "title": "Now press Stop",
+      "body": "Click Stop in the recording controls. Your recording will save and the transcript will appear."
+    },
+    "transcript": {
+      "title": "Here’s your transcript",
+      "body": "This is what you said. Prismical can also label different speakers when your transcription model supports it; a short solo recording may have just one speaker."
+    },
+    "enhance": {
+      "title": "Turn speech into a note",
+      "body": "Click Enhance in the recording panel. We’ll wait for the draft — it won’t replace your note until you accept it."
+    },
+    "result": {
+      "title": "Review your enhanced note",
+      "body": "Here’s the suggested note. Read the highlighted changes, then continue to the review controls."
+    },
+    "review": {
+      "title": "Keep it, undo it, or ask for changes",
+      "body": "The dock lets you Keep this draft, Undo it, or describe changes in the text box. Click Keep to finish your first note."
+    }
+  },
+    replayTitle: "Getting started",
+    replayBody: "Replay the quick walkthrough",
+    title: 'Your first note',
+    recovery: "You can retry a failed action, or use × to exit this walkthrough.",
+  },
   common: {
     actions: {
       back: 'Back',
@@ -215,6 +289,7 @@ const en = {
       noTimeLeft: 'No time left',
     },
     secondary: {
+      chat: 'Chat',
       community: 'Community',
       docs: 'Docs',
       feedback: 'Feedback',
@@ -625,6 +700,13 @@ const en = {
       pausedNoSound: 'Paused — no sound',
       recording: 'Recording',
     },
+    budget: {
+      dismiss: 'Dismiss',
+      quotaSoon: 'About {{duration}} of transcription left this month',
+      quotaSoonDescription: 'This recording will outlast it. The transcript stops when it runs out.',
+      stopNow: 'Stop now',
+      upgrade: 'Upgrade',
+    },
     errors: {
       autoStartDescription: 'The note was not ready. You can start recording manually.',
       autoStartTitle: 'Automatic transcription could not start',
@@ -638,7 +720,7 @@ const en = {
       deadMicDescription: 'Your system may be blocking this browser’s microphone access.',
       deadMicHelp: 'How to fix',
       deadMicTitle: 'No audio is reaching your microphone',
-      limitSoon: '{{minutes}} minutes left on this recording',
+      limitSoon: 'Less than {{minutes}} minutes left on this recording',
       limitSoonDescription: 'Your plan allows {{limit}}-minute recordings. It will stop automatically at the limit.',
       limitStopped: 'Recording stopped at your plan’s {{minutes}}-minute limit.',
       limitStoppedDescription: 'The note and transcript are saved. Start a new recording to keep going, or upgrade for longer recordings.',
@@ -654,7 +736,7 @@ const en = {
       noMicrophone: 'No microphone is available - connect or enable an input.',
       noMicrophoneSystemAudioContinues:
         'No microphone is available - connect or enable an input. System audio is still being recorded.',
-      quotaExceeded: 'You’ve used this month’s included Cloud transcription.',
+      quotaExceeded: 'Cloud transcription paused for this session.',
       renameSpeaker: 'Could not rename speaker',
       savedWithErrors: 'Recording saved with errors.',
       someAudioNotTranscribed: 'Some audio could not be transcribed.',
@@ -668,6 +750,7 @@ const en = {
       empty: 'No transcript yet. Start recording to capture your meeting or voice note.',
       finishing: 'Finishing up…',
       identifyingSpeakers: 'Identifying speakers…',
+      waitingForTranscription: 'Waiting for transcription to finish…',
       input: 'Input',
       allAudioSettings: 'All audio settings…',
       systemAudioCaptured: 'System audio is also captured',
@@ -854,9 +937,9 @@ const en = {
       newSectionAdded: 'New section added',
       noteReplaced: 'Note replaced',
       previewRewriteFailed:
-        'Couldn’t preview this rewrite — the selected text has changed or been removed. Re-select and try again.',
+        'Couldn’t preview this rewrite - the selected text has changed or been removed. It’s still staged: undo it, or re-select the text and run it again.',
       previewRunFailed:
-        'Couldn’t preview this run — the editor state has moved on. Try running the skill again.',
+        'Couldn’t preview this suggestion right now. It’s still staged - keep or undo it from the review bar.',
       refine: 'Refine',
       refineInstruction: 'Refine with an instruction',
       refinePlaceholder: 'Refine instruction…',
@@ -869,6 +952,7 @@ const en = {
       submitRefinement: 'Submit refinement',
       targetMissing: 'The text this rewrite targeted no longer exists. Re-select and run it again.',
       undo: 'Undo',
+      waitingForDocument: 'Waiting for the note to load…',
     },
     inline: {
       captureError: 'Couldn’t capture the selection — try re-selecting the text.',
@@ -902,6 +986,10 @@ const en = {
         manage: 'Manage',
         noMatch: 'No models match “{{query}}”.',
         noModels: 'This provider has no {{useCase}} models available.',
+        freeTierRateLimited:
+          'Free {{provider}} keys are rate-limited too tightly for continuous recording. Use a key with billing enabled.',
+        noSpeakerLabels:
+          'Speaker identification is not supported with {{provider}} yet. Use a Prismical Cloud model to label speakers in your transcripts.',
         stepModel: 'Step 2 of 2 — pick a {{useCase}} model.',
         stepSource: 'Step 1 of 2 — choose a source.',
         title: 'Change {{useCase}} model',
@@ -1592,7 +1680,7 @@ const en = {
           displayName: 'Free',
           notesSharing: 'Notes sharing',
           price: '$0/mo',
-          recordingValue: '30 min',
+          recordingValue: '1 hr',
           seat: 'seat',
           seatValue: '1',
           standardModels: 'Standard AI models',

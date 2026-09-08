@@ -30,7 +30,7 @@ import {
   useNavigation,
   usePorts,
   useSessionView,
-  useEnsureActiveOrg,
+  useOrganizations,
   useFeatureFlag,
   useViewerProfile,
 } from '@prismical/app-client';
@@ -118,7 +118,7 @@ export function AccountSwitcher({ testIds = WEB_TEST_IDS }: { testIds?: AccountS
   const router = useNavigation();
   const { auth } = usePorts();
   const session = useSessionView();
-  const { data: orgs } = useEnsureActiveOrg();
+  const { data: orgs } = useOrganizations();
   // The signed-in user's own profile photo; falls back to initials when unset.
   const { data: viewerProfile } = useViewerProfile();
   const [createOpen, setCreateOpen] = React.useState(false);

@@ -27,9 +27,10 @@ export function runSkillRequest(
   skillId: string,
   body: RunSkillBody,
   signal?: AbortSignal,
+  onResponse?: (requestId: string | null) => void,
 ): Promise<RunResult> {
   return apiClient
-    .post<unknown>(`${ME_PREFIX}/skills/${skillId}/run`, body, { signal })
+    .post<unknown>(`${ME_PREFIX}/skills/${skillId}/run`, body, { signal, onResponse })
     .then((response) => RunSkillResultSchema.parse(response));
 }
 

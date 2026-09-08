@@ -21,8 +21,9 @@ function candidateKey(c: { skillId: string; mode: string; rawMarkdown: string })
 export function useSkillDiffDecorations(editor: Editor | null, noteId: string): void {
   const { t } = useTranslation();
   const candidate = useSkillDiffStore((s) => s.candidatesByNote.get(noteId));
-  const clear = useSkillDiffStore((s) => s.clear);
   const decoratedForRef = useRef<string | null>(null);
+  // The candidate key we have already warned about, so a retry loop can't stack toasts.
+  const warnedForRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!editor) return;
@@ -38,7 +39,7 @@ export function useSkillDiffDecorations(editor: Editor | null, noteId: string): 
     if (decoratedForRef.current === key) return;
 
     // (Re)compute + dispatch the decoration set against the CURRENT editor state. Returns false
-    // when the candidate can't preview anymore (caller then clears it with a toast).
+    // when the candidate can't be previewed against this document right now.
     const applyDecorations = (): boolean => {
       const view = editor.view;
       const state = view.state;
@@ -56,20 +57,25 @@ export function useSkillDiffDecorations(editor: Editor | null, noteId: string): 
       return true;
     };
 
-    const failPreview = () => {
+    // A candidate that cannot be previewed is NOT discarded. It cost a model call (for Enhance,
+    // a whole recording), and the usual reasons the diff won't build are transient: the Y.Doc has
+    // not synced yet, or a remote replace is mid-flight. Warn once, leave the candidate staged,
+    // and let the transaction listener below retry as the document settles. The review bar stays
+    // up, so Undo remains the user's way out if it never resolves.
+    const warnPreviewUnavailable = () => {
+      if (warnedForRef.current === key) return;
+      warnedForRef.current = key;
       toast.error(
         candidate.mode === "inline-rewrite"
           ? t("skills.diff.previewRewriteFailed")
           : t("skills.diff.previewRunFailed"),
       );
-      clear(noteId);
     };
 
-    if (!applyDecorations()) {
-      failPreview();
-      return;
-    }
-    decoratedForRef.current = key;
+    if (applyDecorations()) {
+      decoratedForRef.current = key;
+      warnedForRef.current = null;
+    } else warnPreviewUnavailable();
 
     // REBUILD on remote doc changes while staged. The plugin does map the set through incoming
     // transactions, but y-sync applies a remote update by replacing the whole changed range — any
@@ -85,13 +91,28 @@ export function useSkillDiffDecorations(editor: Editor | null, noteId: string): 
         if (editor.isDestroyed) return;
         // The candidate may have been cleared between scheduling and firing (accept/reject).
         if (useSkillDiffStore.getState().candidatesByNote.get(noteId) !== candidate) return;
-        if (!applyDecorations()) failPreview();
+        // Also the RECOVERY path: a candidate that could not be previewed on mount gets another
+        // attempt on every doc change, so the overlay appears as soon as the document is usable.
+        if (applyDecorations()) {
+          decoratedForRef.current = key;
+          // A preview that works again re-arms the warning: a target the user really does delete
+          // later must be reported, not swallowed by the first attempt's toast.
+          warnedForRef.current = null;
+          return;
+        }
+        // Drop a set we can no longer justify: the previous overlay was mapped through this change
+        // and would sit on the doc claiming a proposal we can't rebuild. The candidate itself stays.
+        if (decoratedForRef.current === key) {
+          clearDiffDecorations(editor);
+          decoratedForRef.current = null;
+        }
+        warnPreviewUnavailable();
       });
     };
     editor.on("transaction", onTransaction);
 
     // Scroll to where an appended diff begins so users at the top of a long note see the proposal.
-    if (candidate.mode === "append-section") {
+    if (candidate.mode === "append-section" && decoratedForRef.current === key) {
       requestAnimationFrame(() => {
         if (editor.isDestroyed) return;
         const firstInsert = editor.view.dom.querySelector(".prismical-diff-insert");
@@ -105,7 +126,7 @@ export function useSkillDiffDecorations(editor: Editor | null, noteId: string): 
       if (!editor.isDestroyed) clearDiffDecorations(editor);
       decoratedForRef.current = null;
     };
-  }, [editor, candidate, clear, noteId, t]);
+  }, [editor, candidate, noteId, t]);
 }
 
 export function clearDiffDecorations(editor: Editor): void {

@@ -1,5 +1,6 @@
 import type { ComponentType } from "react"
-import { Cloud, HardDrive, Plug, TestTube2 } from "lucide-react"
+import type { ApplicationTranslationKey } from "@prismical/app-i18n"
+import { AudioLines, Cloud, HardDrive, Plug, TestTube2 } from "lucide-react"
 
 import {
   AnthropicLogo,
@@ -31,6 +32,7 @@ export const PROVIDER_TYPES = {
   localWhisper: "local-whisper",
   mock: "mock",
   googleGemini: "google-gemini",
+  deepgram: "deepgram",
   // Coming-soon placeholders. Surfaced in the Available tiles (disabled, with
   // a "Coming soon" tooltip) so users can see what's on the roadmap.
   vercelAIGateway: "vercel-ai-gateway",
@@ -51,6 +53,7 @@ export const PROVIDER_TYPE_LABELS: Record<ProviderType, string> = {
   [PROVIDER_TYPES.localWhisper]: "Whisper (local)",
   [PROVIDER_TYPES.mock]: "Mock",
   [PROVIDER_TYPES.googleGemini]: "Google Gemini",
+  [PROVIDER_TYPES.deepgram]: "Deepgram",
   [PROVIDER_TYPES.vercelAIGateway]: "Vercel AI Gateway",
   [PROVIDER_TYPES.cloudflareWorkersAI]: "Cloudflare Workers AI",
   [PROVIDER_TYPES.cerebras]: "Cerebras",
@@ -67,6 +70,7 @@ export const PROVIDER_TYPE_COMING_SOON: Record<ProviderType, boolean> = {
   [PROVIDER_TYPES.localWhisper]: false,
   [PROVIDER_TYPES.mock]: false,
   [PROVIDER_TYPES.googleGemini]: false,
+  [PROVIDER_TYPES.deepgram]: false,
   [PROVIDER_TYPES.vercelAIGateway]: true,
   [PROVIDER_TYPES.cloudflareWorkersAI]: true,
   [PROVIDER_TYPES.cerebras]: true,
@@ -84,6 +88,7 @@ export const PROVIDER_TYPE_MULTI_INSTANCE: Record<ProviderType, boolean> = {
   [PROVIDER_TYPES.localWhisper]: false,
   [PROVIDER_TYPES.mock]: false,
   [PROVIDER_TYPES.googleGemini]: true,
+  [PROVIDER_TYPES.deepgram]: true,
   [PROVIDER_TYPES.vercelAIGateway]: true,
   [PROVIDER_TYPES.cloudflareWorkersAI]: true,
   [PROVIDER_TYPES.cerebras]: true,
@@ -112,6 +117,10 @@ export interface InstanceConfigFieldSpec {
   // When true, the field renders inside a collapsible "Advanced settings"
   // section instead of the main field stack.
   advanced?: boolean
+  // Overrides the field's generic placeholder. Set it where the generic one would
+  // be actively wrong: the shared apiKey hint is "sk-…", which is the OpenAI key
+  // shape and tells a Deepgram user to look for a prefix their key does not have.
+  placeholder?: string
 }
 
 export const PROVIDER_TYPE_CONFIG_FIELDS: Record<
@@ -146,6 +155,16 @@ export const PROVIDER_TYPE_CONFIG_FIELDS: Record<
   [PROVIDER_TYPES.googleGemini]: [
     { field: "apiKey", inputType: "password", required: true },
   ],
+  [PROVIDER_TYPES.deepgram]: [
+    {
+      field: "apiKey",
+      inputType: "password",
+      required: true,
+      // Deepgram keys are opaque tokens with no prefix, so hint the source rather
+      // than a shape the user could try to match.
+      placeholder: "Your Deepgram API key",
+    },
+  ],
   [PROVIDER_TYPES.vercelAIGateway]: [],
   [PROVIDER_TYPES.cloudflareWorkersAI]: [],
   [PROVIDER_TYPES.cerebras]: [],
@@ -165,10 +184,95 @@ export const PROVIDER_TYPE_CAPABILITIES: Record<ProviderType, ModelType[]> = {
   [PROVIDER_TYPES.localWhisper]: ["transcription"],
   [PROVIDER_TYPES.mock]: ["transcription", "language", "embedding"],
   // Google also exposes embeddings, but core has no embedding execution path yet.
-  [PROVIDER_TYPES.googleGemini]: ["language"],
+  [PROVIDER_TYPES.googleGemini]: ["transcription", "language"],
+  // ASR only. Deepgram also sells text-to-speech; nothing in the product consumes it, and
+  // the AI SDK provider's languageModel/embeddingModel throw NoSuchModelError by design.
+  [PROVIDER_TYPES.deepgram]: ["transcription"],
   [PROVIDER_TYPES.vercelAIGateway]: [],
   [PROVIDER_TYPES.cloudflareWorkersAI]: [],
   [PROVIDER_TYPES.cerebras]: [],
+}
+
+/**
+ * Provider types whose transcription lane can label speakers. Mirrors `diarizeBatch` in the
+ * server's `asr-capabilities.ts`, which is the authority — keep the two in step, same as
+ * PROVIDER_TYPE_CAPABILITIES mirrors the server's PROVIDER_CAPABILITIES.
+ *
+ * The picker uses this to warn before a user makes a provider their transcription default, so
+ * absent-or-false must mean "no speaker labels": a provider missing from this map gets the
+ * warning rather than a silent surprise after their first recording.
+ */
+export const PROVIDER_TYPE_SPEAKER_LABELS: Record<ProviderType, boolean> = {
+  // OpenAI can diarize, but not on the terms the finalize lane pays for yet — see the reasoning
+  // in the server's asr-capabilities.ts. Flip together with `openai.diarizeBatch` there.
+  [PROVIDER_TYPES.openai]: false,
+  [PROVIDER_TYPES.groq]: false,
+  [PROVIDER_TYPES.localWhisper]: false,
+  // Deepgram BYOK diarizes a whole session in one request, same wire call as the managed
+  // strategy-A pass — so it labels speakers and must NOT carry the warning.
+  [PROVIDER_TYPES.deepgram]: true,
+  // Exhaustive on purpose: a `Partial` with a warn-default would tell users of any newly added
+  // transcription provider that their speakers are not labelled until someone remembered to add
+  // a key here. A compile error is the cheaper reminder.
+  [PROVIDER_TYPES.mock]: false,
+  [PROVIDER_TYPES.anthropic]: false,
+  [PROVIDER_TYPES.openRouter]: false,
+  [PROVIDER_TYPES.ollama]: false,
+  [PROVIDER_TYPES.openAICompatible]: false,
+  // Gemini CAN diarize, but only in a request that excludes custom vocabulary and is capped at
+  // 30 minutes - so its transcription lane ships without speaker labels for now, and the picker
+  // must say so. Flip together with `google-gemini.diarizeBatch` in the server's asr-capabilities.
+  [PROVIDER_TYPES.googleGemini]: false,
+  [PROVIDER_TYPES.vercelAIGateway]: false,
+  [PROVIDER_TYPES.cloudflareWorkersAI]: false,
+  [PROVIDER_TYPES.cerebras]: false,
+}
+
+export function providerLabelsSpeakers(provider: string): boolean {
+  return isProviderType(provider) ? (PROVIDER_TYPE_SPEAKER_LABELS[provider] ?? false) : false
+}
+
+/**
+ * Extra per-provider caveat shown in the TRANSCRIPTION picker, as a translation key.
+ *
+ * Separate from the speaker-labels warning because it answers a different question: not "what will
+ * my transcript be missing" but "will this key keep up with a recording at all". Partial on
+ * purpose - most providers have nothing to say here, and a note that appears for everyone is a note
+ * nobody reads.
+ */
+export const PROVIDER_TYPE_TRANSCRIPTION_NOTE: Partial<
+  Record<ProviderType, ApplicationTranslationKey>
+> = {
+  // Measured against the live API. The free tier's per-window request cap is far below what the
+  // live lane needs: it posts a chunk every ~15s, so one recording asks for ~4/min and a
+  // dual-lane desktop recording ~8/min. The exact ceiling varies by account and model (both
+  // `limit: 3` and `limit: 25` were observed on the same metric), which is why the copy states
+  // the consequence rather than a number. Worse, past the limit requests stall rather than
+  // failing fast, so without this note the user just sees a live transcript stop. Nothing
+  // rejects a free key; this sets the expectation instead.
+  [PROVIDER_TYPES.googleGemini]: 'settings.aiModels.change.freeTierRateLimited',
+}
+
+export function providerTranscriptionNote(
+  provider: string
+): ApplicationTranslationKey | undefined {
+  return isProviderType(provider) ? PROVIDER_TYPE_TRANSCRIPTION_NOTE[provider] : undefined
+}
+
+/**
+ * Every caveat to show before this provider becomes someone's dictation default, in display order.
+ *
+ * A single accessor because the two facts have to travel together: they were previously rendered
+ * as two hand-written blocks in one dialog, which is how the wizard - the screen where a new key
+ * ACTUALLY becomes the default - ended up showing neither. Callers render the list; adding a third
+ * caveat reaches every picker without touching one.
+ */
+export function providerTranscriptionCaveats(provider: string): ApplicationTranslationKey[] {
+  const keys: ApplicationTranslationKey[] = []
+  if (!providerLabelsSpeakers(provider)) keys.push('settings.aiModels.change.noSpeakerLabels')
+  const note = providerTranscriptionNote(provider)
+  if (note) keys.push(note)
+  return keys
 }
 
 // The provider types the CLOUD backend actually serves today — it has BYOK factories + a fetchable
@@ -179,6 +283,7 @@ export const CLOUD_CATALOG_PROVIDERS: ProviderType[] = [
   PROVIDER_TYPES.openai,
   PROVIDER_TYPES.openRouter,
   PROVIDER_TYPES.googleGemini,
+  PROVIDER_TYPES.deepgram,
 ]
 
 // Type guard for narrowing arbitrary strings to ProviderType.
@@ -246,6 +351,15 @@ export const PROVIDER_META: Record<ProviderType, ProviderMeta> = {
   [PROVIDER_TYPES.googleGemini]: {
     label: PROVIDER_TYPE_LABELS[PROVIDER_TYPES.googleGemini],
     Logo: GeminiLogo,
+  },
+  // Lucide + brand tint rather than a wordmark: `provider-logos.tsx` renders real brand
+  // SVGs from `public/provider-logos/`, and we hold no licensed Deepgram asset there. The
+  // same fallback shape the OpenAI-Compatible and local-Whisper tiles already use; drop in
+  // a themed SVG pair and swap this entry when one is available.
+  [PROVIDER_TYPES.deepgram]: {
+    label: PROVIDER_TYPE_LABELS[PROVIDER_TYPES.deepgram],
+    Logo: AudioLines,
+    tint: "text-emerald-600 dark:text-emerald-400",
   },
   [PROVIDER_TYPES.vercelAIGateway]: {
     label: PROVIDER_TYPE_LABELS[PROVIDER_TYPES.vercelAIGateway],

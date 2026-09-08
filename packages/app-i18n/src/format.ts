@@ -163,6 +163,40 @@ export function formatApplicationDuration(
   });
 }
 
+/**
+ * The narrow form of {@link formatApplicationDuration}: "4h 58m" where the full form reads
+ * "4 hrs 58 min". For surfaces too tight to spell the units out - the sidebar quota meter sits
+ * beside its own label on one line - never for anything read aloud, where the full form is
+ * clearer. Unit labels come from Intl rather than a hard-coded "h"/"m", so each locale gets
+ * whatever CLDR calls narrow there - de "58 Min.", zh-TW "58 分鐘", and a plain "58m" for the
+ * several locales (en, ja) whose narrow form really is the latin letter. The two halves are
+ * joined by the same catalogue key as the full form, which carries the per-locale spacing.
+ */
+export function formatApplicationDurationCompact(
+  milliseconds: number | null,
+  locale: SupportedLocale,
+  t: TFunction
+): string {
+  if (milliseconds === null || milliseconds <= 0) return '';
+
+  const totalMinutes = Math.floor(milliseconds / 60_000);
+  // No narrow form for this one: it is a sentence, not a number with a unit, and every catalogue
+  // already keeps it short ("<1 min", "1分未満").
+  if (totalMinutes < 1) return t('common.time.lessThanMinute');
+
+  const narrow = (value: number, unit: 'hour' | 'minute') =>
+    formatApplicationNumber(value, locale, { style: 'unit', unit, unitDisplay: 'narrow' });
+
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours === 0) return narrow(minutes, 'minute');
+  if (minutes === 0) return narrow(hours, 'hour');
+  return t('common.time.durationHoursMinutes', {
+    hours: narrow(hours, 'hour'),
+    minutes: narrow(minutes, 'minute'),
+  });
+}
+
 export function formatApplicationLastMet(
   iso: string | null,
   now: number,

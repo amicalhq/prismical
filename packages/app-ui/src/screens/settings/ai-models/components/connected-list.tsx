@@ -60,7 +60,8 @@ function configPreview(
     case PROVIDER_TYPES.anthropic:
     case PROVIDER_TYPES.groq:
     case PROVIDER_TYPES.openRouter:
-    case PROVIDER_TYPES.googleGemini: {
+    case PROVIDER_TYPES.googleGemini:
+    case PROVIDER_TYPES.deepgram: {
       const apiKey = 'apiKey' in config ? config.apiKey : '';
       return apiKey ? `${apiKey.slice(0, 4)}…${apiKey.slice(-4)}` : '—';
     }

@@ -57,6 +57,10 @@ export interface NativeRecordingState {
   readonly status: NativeRecordingStatus;
   readonly captureMode: NativeCaptureMode | null;
   readonly requestedCaptureMode: NativeCaptureMode | null;
+  /** Whether this recording spends Cloud transcription quota, fixed by main at Start. */
+  readonly spendsCloudQuota?: boolean | null;
+  /** Cached allowance captured before Start; shared by every native window. */
+  readonly quotaRemainingAtStartSeconds?: number | null;
   readonly micSource: 'meeting-app' | 'system-default' | 'unavailable';
   readonly noteId: string | null;
   readonly segments: readonly RecordingTranscriptSegment[];
@@ -100,6 +104,8 @@ export interface NativeRecordingControl {
   start(input: {
     noteId: string | null;
     title: string;
+    /** Cached allowance before capture begins. Omitted when unknown or unlimited. */
+    quotaRemainingAtStartSeconds?: number | null;
     /**
      * Auto-pause policy for this session, resolved renderer-side from the org's
      * feature gate + tuning. Passed per-start so the rules are fixed for the session's lifetime and

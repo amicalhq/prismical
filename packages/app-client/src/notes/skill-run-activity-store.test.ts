@@ -67,6 +67,15 @@ describe('skill run feed (useSkillRunActivityStore)', () => {
     expect(runs().map(r => r.status)).toEqual(['kept', 'undone']);
   });
 
+  it('settles a staged run that failed to apply into a visible error, not silence', () => {
+    const a = begin();
+    useSkillRunActivityStore.getState().finish(a, 'staged');
+    useSkillRunActivityStore.getState().resolveStaged(NOTE, 'error', 'target is gone');
+    // The turn must remain in the feed with a reason: dropping it would read as data loss.
+    expect(runs()[0]).toMatchObject({ status: 'error', detail: 'target is gone' });
+    expect(runs()[0]!.endedAt).toEqual(expect.any(Number));
+  });
+
   it('supersedes the previous staged candidate only once a refine actually stages', () => {
     const a = begin();
     useSkillRunActivityStore.getState().finish(a, 'staged');

@@ -1,11 +1,16 @@
-import { DefaultChatTransport, type UIMessage } from "ai";
-import { ASK_ERROR_FORMAT_ENVELOPE, ASK_ERROR_FORMAT_HEADER } from "@prismical/api-contracts";
-import { coreApiBaseUrl, getAskFetch } from "../runtime";
-import { getAuthHeaders, getAuthHeadersForToken } from "../api/auth";
-import { ME_PREFIX } from "../api/client";
-import { uiMessageText, type AskScope } from "./scope";
-import { isAuto, type AskModelSelection } from "./models";
-import type { AuthPort, SessionView } from "@prismical/app-contracts";
+import { DefaultChatTransport, type UIMessage, type UIMessageChunk } from 'ai';
+import {
+  AI_ERROR_CODES,
+  encodeAskStreamError,
+  ASK_ERROR_FORMAT_ENVELOPE,
+  ASK_ERROR_FORMAT_HEADER,
+} from '@prismical/api-contracts';
+import { coreApiBaseUrl, getAskFetch, getClientEnv } from '../runtime';
+import { getAuthHeaders, getAuthHeadersForToken } from '../api/auth';
+import { ME_PREFIX } from '../api/client';
+import { uiMessageText, type AskScope } from './scope';
+import { isAuto, type AskModelSelection } from './models';
+import type { AuthPort, SessionView } from '@prismical/app-contracts';
 
 /**
  * Model-context window: the most-recent turns sent to `/me/ask`. Must stay ≤ the backend's
@@ -17,6 +22,38 @@ export const MAX_REQUEST_MESSAGES = 40;
 
 export class AskSessionChangedError extends Error {}
 
+/** An HTTP success can still be a truncated stream (for example, a server restart).
+ * The SDK accepts EOF without a finish event, leaving the question silently unanswered.
+ * Require an explicit outcome, including when some answer text already arrived. */
+export class AskChatTransport extends DefaultChatTransport<UIMessage> {
+  protected override processResponseStream(stream: ReadableStream<Uint8Array>) {
+    let settled = false;
+    let hasContent = false;
+    let hasError = false;
+    return super.processResponseStream(stream).pipeThrough(
+      new TransformStream<UIMessageChunk, UIMessageChunk>({
+        transform(chunk, controller) {
+          if (chunk.type === 'finish' || chunk.type === 'error') settled = true;
+          if (chunk.type === 'error') hasError = true;
+          if (
+            (chunk.type === 'text-delta' && chunk.delta.trim().length > 0) ||
+            chunk.type.startsWith('tool-')
+          )
+            hasContent = true;
+          controller.enqueue(chunk);
+        },
+        flush() {
+          if (!settled || (!hasContent && !hasError)) {
+            throw new Error(
+              encodeAskStreamError(AI_ERROR_CODES.ASK_REQUEST_FAILED, { retryable: true })
+            );
+          }
+        },
+      })
+    );
+  }
+}
+
 function exactSessionKey(view: SessionView): string | null {
   return view.activeSessionKey ?? view.activeSub ?? null;
 }
@@ -24,7 +61,7 @@ function exactSessionKey(view: SessionView): string | null {
 function activeOrgId(view: SessionView): string | null {
   const sessionKey = exactSessionKey(view);
   return (
-    view.accounts.find((account) => (account.sessionKey ?? account.sub) === sessionKey)
+    view.accounts.find(account => (account.sessionKey ?? account.sub) === sessionKey)
       ?.activeOrgId ?? null
   );
 }
@@ -32,7 +69,7 @@ function activeOrgId(view: SessionView): string | null {
 function ownsAskContext(
   view: SessionView,
   ownerSessionKey: string,
-  ownerOrgId: string | null,
+  ownerOrgId: string | null
 ): boolean {
   return exactSessionKey(view) === ownerSessionKey && activeOrgId(view) === ownerOrgId;
 }
@@ -41,7 +78,7 @@ function ownsAskContext(
 export async function exactSessionAskHeaders(
   auth: AuthPort,
   ownerSessionKey: string,
-  ownerOrgId: string | null,
+  ownerOrgId: string | null
 ): Promise<Record<string, string>> {
   if (!ownsAskContext(auth.getSession(), ownerSessionKey, ownerOrgId)) {
     throw new AskSessionChangedError();
@@ -63,9 +100,9 @@ export function askHeadersForPlatform(
   platform: string,
   auth: AuthPort,
   ownerSessionKey: string,
-  ownerOrgId: string | null,
+  ownerOrgId: string | null
 ): Promise<Record<string, string>> {
-  return platform === "web"
+  return platform === 'web'
     ? exactSessionAskHeaders(auth, ownerSessionKey, ownerOrgId)
     : Promise.resolve({});
 }
@@ -77,18 +114,22 @@ export interface AskRequestInput {
   /** The chosen provider instance + model. Auto (Prismical Cloud) is sent as nothing (backend default). */
   model?: AskModelSelection;
   headers: Record<string, string>;
+  helpContext?: {
+    platform: 'web' | 'macos' | 'windows' | 'linux' | 'unknown';
+    appVersion?: string;
+  };
 }
 
 /** Pure reshaping: UIMessages → backend {messages:[{role,content}], scope?, conversationId?}. Drops empty-text msgs, windows to the most-recent turns. */
 export function buildAskRequest(input: AskRequestInput): { body: object; headers: HeadersInit } {
   const messages = input.messages
     // The backend accepts only user/assistant turns; useChat never emits `system`, but guard anyway.
-    .filter((m) => m.role === "user" || m.role === "assistant")
+    .filter(m => m.role === 'user' || m.role === 'assistant')
     // Full parts ride along so tool calls + approval responses round-trip; `content`
     // stays as the text fallback for legacy consumers/persistence. A turn that is ONLY tool
     // activity has no text — keep it (dropping it would break the approval resume).
-    .map((m) => ({ role: m.role, content: uiMessageText(m) || "[tool activity]", parts: m.parts }))
-    .filter((m) => m.content.length > 0)
+    .map(m => ({ role: m.role, content: uiMessageText(m) || '[tool activity]', parts: m.parts }))
+    .filter(m => m.content.length > 0)
     // Keep only the most-recent window; the last element stays the new user turn.
     .slice(-MAX_REQUEST_MESSAGES);
   const body: {
@@ -98,7 +139,9 @@ export function buildAskRequest(input: AskRequestInput): { body: object; headers
     instanceId?: string;
     modelId?: string;
     suggestFollowups?: boolean;
+    helpContext?: AskRequestInput['helpContext'];
   } = { messages, suggestFollowups: true };
+  if (input.helpContext) body.helpContext = input.helpContext;
   if (input.scope) body.scope = input.scope;
   // The conversation this thread persists into; omitted ⇒ stateless ask.
   if (input.conversationId) body.conversationId = input.conversationId;
@@ -120,7 +163,7 @@ export function createAskTransport(
   getScope: () => AskScope | undefined,
   conversationId: string | undefined,
   getModel?: () => AskModelSelection | undefined,
-  getHeaders: () => Record<string, string> | Promise<Record<string, string>> = getAuthHeaders,
+  getHeaders: () => Record<string, string> | Promise<Record<string, string>> = getAuthHeaders
 ) {
   // Desktop injects an AskFetch shim over the MessagePort stream lane so
   // the renderer never reaches the server — the `api` becomes a relative marker
@@ -128,16 +171,38 @@ export function createAskTransport(
   // by construction). Web injects nothing and keeps the direct-fetch lane
   // byte-identical.
   const askFetch = getAskFetch();
-  return new DefaultChatTransport<UIMessage>({
+  let scopeMessageId: string | undefined;
+  let scope: AskScope | undefined;
+  return new AskChatTransport({
     api: askFetch ? `${ME_PREFIX}/ask` : `${coreApiBaseUrl()}${ME_PREFIX}/ask`,
     ...(askFetch ? { fetch: askFetch as typeof fetch } : {}),
-    prepareSendMessagesRequest: async ({ messages }) =>
-      buildAskRequest({
+    prepareSendMessagesRequest: async ({ messages }) => {
+      const userMessageId = messages.filter(message => message.role === 'user').at(-1)?.id;
+      // Retrying/approving a turn must retain its attachment after the composer consumed it.
+      // A new user turn reads fresh context, including an explicitly unscoped question.
+      if (userMessageId !== scopeMessageId) {
+        scopeMessageId = userMessageId;
+        scope = getScope();
+      }
+      return buildAskRequest({
         messages,
-        scope: getScope(),
+        scope,
         conversationId,
         model: getModel?.(),
         headers: await getHeaders(),
-      }),
+        helpContext: askHelpContext(getClientEnv()),
+      });
+    },
   });
+}
+
+export function askHelpContext(env: {
+  platform: string;
+  appVersion: string | null;
+}): NonNullable<AskRequestInput['helpContext']> {
+  const platforms = { web: 'web', darwin: 'macos', win32: 'windows', linux: 'linux' } as const;
+  return {
+    platform: platforms[env.platform as keyof typeof platforms] ?? 'unknown',
+    ...(env.appVersion ? { appVersion: env.appVersion.slice(0, 80) } : {}),
+  };
 }

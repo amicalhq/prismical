@@ -19,6 +19,7 @@ export type ProviderType =
   | 'local-whisper'
   | 'mock'
   | 'google-gemini'
+  | 'deepgram'
   | 'vercel-ai-gateway'
   | 'cloudflare-workers-ai'
   | 'cerebras';

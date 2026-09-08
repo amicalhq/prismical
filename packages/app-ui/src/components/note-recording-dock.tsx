@@ -103,6 +103,7 @@ export function RecordingPillFace({
                   zones around it, user feedback). */}
               <button
                 type="button"
+                data-onboarding="record-open"
                 onClick={onTogglePanel}
                 className="flex h-full w-full cursor-pointer items-center justify-center text-dock-ink-2 transition-[background-color,color] hover:bg-dock-hover hover:text-dock-ink active:scale-95"
                 // Labelled by INTENT: the pill's job is starting a recording
@@ -141,6 +142,7 @@ export function RecordingPillFace({
               <TooltipTrigger asChild>
                 <button
                   type="button"
+                  data-onboarding="record-stop"
                   disabled={!live && !paused}
                   onClick={e => {
                     e.preventDefault();
@@ -190,6 +192,7 @@ export function RecordingPillFace({
             <TooltipTrigger asChild>
               <button
                 type="button"
+                data-onboarding="record-stop"
                 disabled={!live && !paused}
                 onClick={e => {
                   e.preventDefault();

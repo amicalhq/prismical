@@ -12,7 +12,7 @@ import { useSkillDiffStore } from '@prismical/app-client';
 import { useAutoEnhanceStore, useSessionView, activeOrgIdOf } from '@prismical/app-client';
 import { useInlineRunStore } from '@prismical/app-client';
 import { useAskSkillRunStore } from '@prismical/app-client';
-import { SkillDiffDockBar } from './skill-diff-dock-bar';
+import { SkillDiffDockBar, SkillDiffPendingBar } from './skill-diff-dock-bar';
 import { ENHANCE_SKILL_ID } from '@prismical/app-contracts';
 import { useTranslation } from 'react-i18next';
 import { skillDisplayName } from '../lib/skill-presentation';
@@ -65,8 +65,15 @@ export function SkillDockSlot({ compact = false }: { compact?: boolean } = {}) {
         noteId={noteId}
         editor={editorForNote}
       />
-      {candidate && editorForNote ? (
-        <SkillDiffDockBar editor={editorForNote} noteId={noteId} compact={compact} />
+      {/* A staged candidate is ALWAYS represented. Without its editor there is nothing to review
+          against yet, so the holding face stands in rather than the slot going empty - the
+          suggestion is still in the store, and silence here reads as the work being thrown away. */}
+      {candidate ? (
+        editorForNote ? (
+          <SkillDiffDockBar editor={editorForNote} noteId={noteId} compact={compact} />
+        ) : (
+          <SkillDiffPendingBar noteId={noteId} skillName={candidate.skillName} compact={compact} />
+        )
       ) : null}
     </>
   );
@@ -135,6 +142,8 @@ function SkillRunBridge({
       recordingId: autoRequest.recordingId,
       noteMarkdown: md !== undefined && md.length <= 1_000_000 ? md : undefined,
       source: autoRequest.source,
+      requestedAt: autoRequest.requestedAt,
+      attemptId: autoRequest.attemptId,
     }).finally(() => {
       runningRequestRef.current = null;
       if (mountedRef.current) consumeAutoRequest(autoRequest.recordingId);
@@ -164,6 +173,8 @@ function SkillRunBridge({
       refineInstruction: askRequest.instruction,
       noteMarkdown: md !== undefined && md.length <= 1_000_000 ? md : undefined,
       source: askRequest.source,
+      requestedAt: askRequest.requestedAt,
+      attemptId: askRequest.attemptId,
     });
   }, [askRequest, noteId, editor, allSkills, run, clearAskRequest, t]);
 
@@ -177,6 +188,8 @@ function SkillRunBridge({
     clearInlineRequest();
     void run({
       skillId: inlineRequest.skillId,
+      requestedAt: inlineRequest.requestedAt,
+      attemptId: inlineRequest.attemptId,
       skillName: inlineRequest.skillName,
       mode: 'inline-rewrite',
       selectionText: inlineRequest.selectionText,

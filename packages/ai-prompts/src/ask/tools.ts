@@ -8,12 +8,16 @@ import { z } from 'zod';
 
 export const ASK_SEARCH_NOTES_TOOL = 'search_notes';
 export const ASK_GET_NOTE_TOOL = 'get_note';
+export const ASK_PRODUCT_HELP_TOOL = 'search_product_help';
 
 /**
- * The two built-ins in stable registration order. Progressive disclosure keeps
- * both visible on the MCP path.
+ * Cloud built-ins in stable registration order, kept visible on the MCP path.
  */
-export const ASK_BUILTIN_TOOL_NAMES = [ASK_SEARCH_NOTES_TOOL, ASK_GET_NOTE_TOOL] as const;
+export const ASK_BUILTIN_TOOL_NAMES = [
+  ASK_SEARCH_NOTES_TOOL,
+  ASK_GET_NOTE_TOOL,
+  ASK_PRODUCT_HELP_TOOL,
+] as const;
 
 /**
  * Default `k` when the model passes `null`. The schema description is built
@@ -71,6 +75,20 @@ export const ASK_GET_NOTE_SPEC = {
 /** Both specs in stable registration order. */
 export const ASK_TOOL_SPECS = [ASK_SEARCH_NOTES_SPEC, ASK_GET_NOTE_SPEC] as const;
 
+/** Kept separate from note-only eval tools; the help harness executes this production contract. */
+export const ASK_PRODUCT_HELP_SPEC = {
+  name: ASK_PRODUCT_HELP_TOOL,
+  description:
+    'Search official Prismical product documentation for how-to questions, features, platform differences, limits and troubleshooting. Use concise topic keywords (e.g. "export", "system audio", "sync offline"). Includes related sections from matching pages. Search again with different keywords if results are empty or do not answer the requested action. Results are not exhaustive. This reads documentation, not account state or private notes. Returns passages with citation markers; cite only these markers.',
+  inputSchema: z.object({
+    query: z
+      .string()
+      .min(1)
+      .max(300)
+      .describe('Concise product topic keywords, not a full conversational question.'),
+  }),
+} as const;
+
 /** Characters of body text one `search_notes` hit carries. Part of what the model sees. */
 export const ASK_SNIPPET_CHARS = 600;
 
@@ -80,6 +98,7 @@ export const ASK_SNIPPET_CHARS = 600;
  * (browse mode uses 0).
  */
 export interface AskSearchResult {
+  citation?: string;
   noteId: string;
   title: string;
   snippet: string;
@@ -87,6 +106,7 @@ export interface AskSearchResult {
 }
 
 export interface AskGetNoteFound {
+  citation?: string;
   noteId: string;
   title: string;
   content: string;

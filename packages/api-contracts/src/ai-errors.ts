@@ -51,6 +51,12 @@ export const AI_ERROR_CODES = {
   // ── Transcription (the wire code predates this vocabulary and is kept for older clients) ───
   /** The member has used this month's included Cloud transcription (402, enforce mode only). */
   TRANSCRIPTION_QUOTA_EXCEEDED: 'TRANSCRIPTION_QUOTA_EXCEEDED',
+  /**
+   * The chunk starts past the longest single recording this plan allows, or past the global
+   * technical ceiling (413). Distinct from the quota above: that one is "no allowance left this
+   * month", this one is "this ONE session has run long enough". Starting a new recording works.
+   */
+  RECORDING_LENGTH_EXCEEDED: 'RECORDING_LENGTH_EXCEEDED',
 
   // ── Plan entitlements (decided before any provider call; see core `usage/entitlements.ts`) ──
   /** Ask AI is not included in the organization's plan. */

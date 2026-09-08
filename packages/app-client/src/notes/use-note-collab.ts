@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as Y from "yjs";
 import { HocuspocusProvider } from "@hocuspocus/provider";
 import type { NoteLogHandle } from "@prismical/app-contracts";
@@ -13,6 +13,7 @@ import {
   usePorts,
 } from "../ports-context";
 import { getNoteLogConfig } from "../runtime";
+import { startLoadingTiming } from "../loading-timing";
 import { useSyncStore } from "../sync/provider";
 
 export type CollabStatus = "connecting" | "connected" | "disconnected";
@@ -78,7 +79,9 @@ export function useNoteCollab(noteId: string): NoteCollab {
   // fetches a main-owned token per (re)connect) — never env sniffing / the raw
   // token seam directly.
   const { noteWsUrl } = useEnv();
-  const { auth } = usePorts();
+  const { auth, analytics } = usePorts();
+  const analyticsRef = useRef(analytics);
+  analyticsRef.current = analytics;
   const syncStore = useSyncStore();
   const [state, setState] = useState<NoteCollab>({
     doc: null,
@@ -89,6 +92,7 @@ export function useNoteCollab(noteId: string): NoteCollab {
   });
 
   useEffect(() => {
+    const timing = startLoadingTiming(analyticsRef.current, "note_collaboration", noteId);
     const doc = new Y.Doc();
     setState({ doc, status: "connecting", synced: false, scope: "read-write", error: null });
 
@@ -121,20 +125,31 @@ export function useNoteCollab(noteId: string): NoteCollab {
 
     const connect = () => {
       if (disposed) return;
+      timing.mark("create_gate_released");
       provider = new HocuspocusProvider({
         url,
         name: noteId,
-        token: async () =>
-          activeSessionKey
+        token: async () => {
+          timing.mark("token_requested");
+          const token = activeSessionKey
             ? (await auth.getTokenForSession(activeSessionKey, activeOrgId)) ?? ""
-            : "",
+            : "";
+          timing.mark("token_resolved");
+          return token;
+        },
         document: doc,
-        onStatus: ({ status }) =>
-          setState((s) => ({ ...s, status: String(status) as CollabStatus })),
-        onAuthenticated: ({ scope }) =>
-          setState((s) => ({ ...s, scope: scope as CollabScope })),
+        onStatus: ({ status }) => {
+          if (status === "connected") timing.mark("socket_connected");
+          setState((s) => ({ ...s, status: String(status) as CollabStatus }));
+        },
+        onAuthenticated: ({ scope }) => {
+          timing.mark("authenticated");
+          setState((s) => ({ ...s, scope: scope as CollabScope }));
+        },
         onSynced: ({ state: synced }) => {
           if (synced) {
+            timing.mark("document_synced");
+            timing.finish("ready");
             hasSynced = true;
             authRetries = 0;
           }
@@ -152,6 +167,7 @@ export function useNoteCollab(noteId: string): NoteCollab {
             }, 2000 * authRetries);
             return;
           }
+          timing.finish("error");
           setState((s) => ({ ...s, error: reason || "authentication failed" }));
         },
       });
@@ -277,6 +293,7 @@ export function useNoteCollab(noteId: string): NoteCollab {
       // provider attached below and simply runs without the offline cache.
       const failOpen = (reason: string) => {
         if (disposed || noteLog.remote) return;
+        timing.finish("error");
         setState((s) => ({ ...s, status: "disconnected", synced: false, error: reason }));
       };
 
@@ -291,6 +308,8 @@ export function useNoteCollab(noteId: string): NoteCollab {
             if (disposed) return;
             // Local mode has no server: hydration IS the sync point.
             if (!noteLog.remote) {
+              timing.mark("local_log_hydrated");
+              timing.finish("ready");
               setState((s) => ({
                 ...s,
                 status: "connected",
@@ -314,6 +333,7 @@ export function useNoteCollab(noteId: string): NoteCollab {
 
     return () => {
       disposed = true;
+      timing.finish("abandoned");
       if (flushTimer) clearTimeout(flushTimer);
       if (onPageHide) window.removeEventListener("pagehide", onPageHide);
       // Final projection of unflushed local edits, BEFORE the doc is destroyed

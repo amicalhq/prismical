@@ -1,3 +1,5 @@
+import type { AnalyticsPort } from "@prismical/app-contracts";
+import { requestSkillRunTiming } from "./skill-run-timing";
 import { create } from "zustand";
 import type { SkillRunSource } from "./skill-run-activity-store";
 
@@ -7,6 +9,9 @@ import type { SkillRunSource } from "./skill-run-activity-store";
 // up in the Ask thread + on the collapsed Ask pill via the run feed. Keyed by noteId so a request
 // only fires on the note it belongs to.
 export interface AskSkillRunRequest {
+  /** Monotonic timestamp of the gesture, retained while the editor is unavailable. */
+  requestedAt?: number;
+  attemptId?: string;
   noteId: string;
   skillId: string;
   skillName: string;
@@ -19,13 +24,23 @@ export interface AskSkillRunRequest {
 interface AskSkillRunState {
   request: AskSkillRunRequest | null;
   /** Ask the skill dock to run a slash-command skill from the Ask composer. */
-  requestAskSkillRun: (req: AskSkillRunRequest) => void;
+  requestAskSkillRun: (req: AskSkillRunRequest, analytics?: AnalyticsPort) => void;
   /** Consume/drop the pending request (call after the dock kicks off the run). */
   clear: () => void;
 }
 
 export const useAskSkillRunStore = create<AskSkillRunState>((set) => ({
   request: null,
-  requestAskSkillRun: (request) => set({ request }),
+  requestAskSkillRun: (request, analytics) =>
+    set({
+      request: {
+        ...request,
+        ...requestSkillRunTiming(analytics, {
+          note_id: request.noteId,
+          skill_id: request.skillId,
+          source: request.source,
+        }),
+      },
+    }),
   clear: () => set({ request: null }),
 }));

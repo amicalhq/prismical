@@ -175,10 +175,12 @@ export function SkillToolsPicker({
   const { t } = useTranslation();
   const { resolvedLocale } = useApplicationLocale();
   const { enabled: integrationsEnabled } = useFeatureFlag('integrations');
-  const { data: queriedServers } = useMcpServers(integrationsEnabled);
+  const { enabled: skillMcpToolsEnabled } = useFeatureFlag('skillMcpTools');
+  const toolsEnabled = integrationsEnabled && skillMcpToolsEnabled;
+  const { data: queriedServers } = useMcpServers(toolsEnabled);
   const servers = React.useMemo(
-    () => (integrationsEnabled ? (queriedServers ?? []) : []),
-    [integrationsEnabled, queriedServers]
+    () => (toolsEnabled ? (queriedServers ?? []) : []),
+    [toolsEnabled, queriedServers]
   );
   const [dialogOpen, setDialogOpen] = React.useState(false);
   const [search, setSearch] = React.useState('');
@@ -209,7 +211,7 @@ export function SkillToolsPicker({
     return { serverId, server, label };
   });
 
-  if (!integrationsEnabled) return null;
+  if (!toolsEnabled) return null;
 
   return (
     <div className="space-y-2">

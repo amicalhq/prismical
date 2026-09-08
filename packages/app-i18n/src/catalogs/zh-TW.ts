@@ -2,6 +2,80 @@ import type { TranslationShape } from '../catalog-shape';
 import type en from './en';
 
 const zhTW = {
+  onboarding: {
+  "helpDocs": "需要協助嗎？閱讀使用文件",
+  "continueToNote": "繼續查看我的筆記",
+  "useCases": {
+    "meetings": {
+      "title": "會議",
+      "body": "將對話整理成清楚的筆記與待辦事項。"
+    },
+    "lectures": {
+      "title": "課堂",
+      "body": "將課程內容整理成有條理的學習筆記。"
+    },
+    "voiceNotes": {
+      "title": "語音筆記",
+      "body": "記下靈感，將零散的想法整理成實用的內容。"
+    }
+  },
+    welcomeHeading: "歡迎使用您的 AI 筆記助手",
+    welcomeTitle: "建立您的第一則語音筆記",
+    welcomeBody: "說幾句話，將內容整理成清楚的筆記，並學習如何檢查結果。我們會逐步引導您。",
+    start: "開始導覽",
+    later: "稍後再說",
+
+    close: "結束導覽",
+  "unavailable": "此控制項尚未就緒。請等待應用程式載入完成，或使用 × 結束導覽。",
+  "doneTitle": "您的第一則筆記已完成",
+  "doneBody": "接下來想記錄什麼？",
+  "download": "下載",
+  "mobileBeta": "申請行動版測試",
+  "platforms": {
+    "mac": "macOS",
+    "windows": "Windows",
+    "ios": "iOS",
+    "android": "Android"
+  },
+  "tour": {
+    "create": {
+      "title": "從 Dock 建立筆記",
+      "body": "點擊下方 Dock 的 + 按鈕，建立第一篇筆記。"
+    },
+    "record": {
+      "title": "開始錄音",
+      "body": "點擊 Dock 的麥克風，再按開始錄音。出現提示時請允許存取麥克風。"
+    },
+    "speak": {
+      "title": "說幾句話",
+      "body": "試著說：「今天我在試用 Prismical。接下來要把這段錄音整理成清楚的筆記。」請說幾秒鐘。"
+    },
+    "stop": {
+      "title": "現在按停止",
+      "body": "點擊錄音控制項的停止。錄音會儲存，接著顯示逐字稿。"
+    },
+    "transcript": {
+      "title": "這是你的逐字稿",
+      "body": "這裡顯示你說的內容。如果轉錄模型支援，Prismical 也能標示不同說話者。簡短的單人錄音可能只有一位說話者。"
+    },
+    "enhance": {
+      "title": "把語音整理成筆記",
+      "body": "點擊錄音面板的整理。請等待草稿完成；接受前不會取代筆記。"
+    },
+    "result": {
+      "title": "檢閱整理後的筆記",
+      "body": "這是建議的筆記。閱讀醒目標示的變更，再繼續到檢閱控制項。"
+    },
+    "review": {
+      "title": "保留、復原或要求修改",
+      "body": "你可以在 Dock 保留草稿、復原，或在文字欄描述想要的修改。點擊保留以完成第一篇筆記。"
+    }
+  },
+    replayTitle: "開始使用",
+    replayBody: "重新查看快速導覽",
+    title: '你的第一篇筆記',
+    recovery: "您可以重試失敗的操作，或使用 × 結束導覽。",
+  },
   common: {
     actions: {
       back: '返回',
@@ -166,6 +240,7 @@ const zhTW = {
       noTimeLeft: '沒有剩餘時間',
     },
     secondary: {
+      chat: '聊天',
       community: '社群',
       docs: '文件',
       feedback: '意見回饋',
@@ -554,6 +629,13 @@ const zhTW = {
       pausedNoSound: '已暫停 — 無聲音',
       recording: '錄音中',
     },
+    budget: {
+      dismiss: '關閉',
+      quotaSoon: '本月剩餘約 {{duration}} 的轉錄額度',
+      quotaSoonDescription: '這段錄音會超過這個長度。額度用完後就不再轉錄。',
+      stopNow: '立即停止',
+      upgrade: '升級方案',
+    },
     errors: {
       autoStartDescription: '筆記尚未準備好。你可以手動開始錄音。',
       autoStartTitle: '無法開始自動轉錄',
@@ -567,7 +649,7 @@ const zhTW = {
       deadMicDescription: '你的系統可能封鎖了此瀏覽器的麥克風存取權。',
       deadMicHelp: '如何修正',
       deadMicTitle: '麥克風未收到音訊',
-      limitSoon: '這段錄音還剩 {{minutes}} 分鐘',
+      limitSoon: '這段錄音剩餘不到 {{minutes}} 分鐘',
       limitSoonDescription: '你的方案允許 {{limit}} 分鐘的錄音，達到上限時會自動停止。',
       limitStopped: '錄音已在你方案的 {{minutes}} 分鐘上限停止。',
       limitStoppedDescription: '筆記與逐字稿已儲存。開始新的錄音以繼續，或升級以取得更長的錄音時間。',
@@ -582,7 +664,7 @@ const zhTW = {
       noMicrophone: '沒有可用的麥克風；請連接或啟用輸入裝置。',
       noMicrophoneSystemAudioContinues:
         '沒有可用的麥克風；請連接或啟用輸入裝置。系統音訊仍在錄製。',
-      quotaExceeded: '本月內含的雲端轉錄額度已用完。',
+      quotaExceeded: '本次工作階段的雲端轉錄已暫停。',
       renameSpeaker: '無法重新命名講者',
       savedWithErrors: '錄音已儲存，但發生錯誤。',
       someAudioNotTranscribed: '部分音訊無法轉錄。',
@@ -596,6 +678,7 @@ const zhTW = {
       empty: '尚無轉錄。開始錄音以擷取會議或語音筆記。',
       finishing: '正在完成…',
       identifyingSpeakers: '正在識別講者…',
+      waitingForTranscription: '正在等待轉錄完成…',
       input: '輸入',
       allAudioSettings: '所有音訊設定…',
       systemAudioCaptured: '系統音訊也會一併錄製',
@@ -772,8 +855,8 @@ const zhTW = {
       couldNotUndo: '無法復原這次編輯。',
       newSectionAdded: '已加入新區段',
       noteReplaced: '已取代筆記',
-      previewRewriteFailed: '無法預覽這次改寫，因為所選文字已變更或移除。請重新選取後再試一次。',
-      previewRunFailed: '無法預覽這次執行，因為編輯器狀態已變更。請再次執行技能。',
+      previewRewriteFailed: '無法預覽這次改寫，因為所選文字已變更或移除。建議仍保留著：請取消它，或重新選取文字後再執行一次。',
+      previewRunFailed: '目前無法預覽這項建議。建議仍保留著，請在檢閱列中保留或取消它。',
       refine: '調整',
       refineInstruction: '依指示調整',
       refinePlaceholder: '輸入調整指示…',
@@ -786,6 +869,7 @@ const zhTW = {
       submitRefinement: '送出調整',
       targetMissing: '這次改寫的目標文字已不存在。請重新選取後再執行一次。',
       undo: '復原',
+      waitingForDocument: '正在等待筆記載入…',
     },
     inline: { captureError: '無法擷取選取內容，請重新選取文字。' },
     run: {
@@ -814,6 +898,10 @@ const zhTW = {
         manage: '管理',
         noMatch: '沒有符合「{{query}}」的模型。',
         noModels: '此供應商沒有可用的{{useCase}}模型。',
+        freeTierRateLimited:
+          '免費的 {{provider}} 金鑰速率限制過嚴，無法支援連續錄音。請使用已啟用計費的金鑰。',
+        noSpeakerLabels:
+          '{{provider}} 尚未支援語者辨識。若要在逐字稿中標記語者，請使用 Prismical Cloud 模型。',
         stepModel: '步驟 2/2 — 選擇{{useCase}}模型。',
         stepSource: '步驟 1/2 — 選擇來源。',
         title: '變更{{useCase}}模型',
@@ -1486,7 +1574,7 @@ const zhTW = {
           displayName: '免費',
           notesSharing: '筆記分享',
           price: '$0/月',
-          recordingValue: '30 分鐘',
+          recordingValue: '1 小時',
           seat: '席位',
           seatValue: '1',
           standardModels: '標準 AI 模型',

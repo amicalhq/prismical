@@ -45,6 +45,7 @@ export * from "./api/hooks/skill-runs";
 export * from "./api/hooks/skills";
 export * from "./api/hooks/tags";
 export * from "./api/hooks/transcripts";
+export * from "./api/hooks/usage";
 export * from "./api/hooks/vocabulary";
 
 // ask
@@ -76,6 +77,7 @@ export * from "./notes/use-run-skill";
 // recording
 export * from "./recording/auto-enhance-setting";
 export * from "./recording/chunker";
+export * from "./recording/recording-budget";
 export * from "./recording/recording-preferences";
 export * from "./recording/use-recording";
 export * from "./recording/wav-encode";

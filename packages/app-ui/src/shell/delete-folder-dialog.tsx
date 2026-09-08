@@ -22,7 +22,7 @@ interface DeleteFolderDialogProps {
   pending?: boolean;
 }
 
-// Confirms folder deletion. The notes inside are preserved (core's note.folderId FK is `set null`),
+// Confirms folder deletion. The notes inside are preserved (core atomically clears their folder links),
 // so the copy reassures rather than warns about data loss.
 export function DeleteFolderDialog({
   folder,

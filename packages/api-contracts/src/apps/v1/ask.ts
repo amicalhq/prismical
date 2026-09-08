@@ -22,6 +22,13 @@ export const AskRequestSchema = z.object({
   // client to render as suggestion chips. Off by default so /v1 API consumers and older clients
   // never see the extra line.
   suggestFollowups: z.boolean().optional(),
+  // Presentation context only; never an authorization or entitlement signal.
+  helpContext: z
+    .object({
+      platform: z.enum(['web', 'macos', 'windows', 'linux', 'ios', 'android', 'unknown']),
+      appVersion: z.string().max(80).optional(),
+    })
+    .optional(),
 });
 export type AskRequest = z.input<typeof AskRequestSchema>;
 

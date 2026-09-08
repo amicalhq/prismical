@@ -2,6 +2,80 @@ import type { TranslationShape } from '../catalog-shape';
 import type en from './en';
 
 const de = {
+  onboarding: {
+  "helpDocs": "Brauchst du Hilfe? Lies die Dokumentation",
+  "continueToNote": "Weiter zu meiner Notiz",
+  "useCases": {
+    "meetings": {
+      "title": "Meetings",
+      "body": "Verwandle Gespräche in übersichtliche Notizen und Aufgaben."
+    },
+    "lectures": {
+      "title": "Vorlesungen",
+      "body": "Verwandle Unterricht in strukturierte Lernnotizen."
+    },
+    "voiceNotes": {
+      "title": "Sprachnotizen",
+      "body": "Halte Ideen fest und ordne deine Gedanken."
+    }
+  },
+    welcomeHeading: "Willkommen bei deinem KI-Notizassistenten",
+    welcomeTitle: "Erstelle deine erste Sprachnotiz",
+    welcomeBody: "Sprich ein paar Worte, verwandle sie in eine übersichtliche Notiz und prüfe das Ergebnis. Wir führen dich durch jeden Schritt.",
+    start: "Einführung starten",
+    later: "Vielleicht später",
+
+    close: "Einführung beenden",
+  "unavailable": "Dieses Steuerelement ist noch nicht verfügbar. Warte, bis die App geladen ist, oder beende die Einführung mit ×.",
+  "doneTitle": "Deine erste Notiz ist fertig",
+  "doneBody": "Was möchtest du als Nächstes festhalten?",
+  "download": "Herunterladen",
+  "mobileBeta": "Für mobile Beta anmelden",
+  "platforms": {
+    "mac": "macOS",
+    "windows": "Windows",
+    "ios": "iOS",
+    "android": "Android"
+  },
+  "tour": {
+    "create": {
+      "title": "Notiz über das Dock erstellen",
+      "body": "Klicke unten im Dock auf +, um deine erste Notiz zu erstellen."
+    },
+    "record": {
+      "title": "Aufnahme starten",
+      "body": "Klicke im Dock auf das Mikrofon und dann auf Aufnahme starten. Erlaube den Mikrofonzugriff, wenn du gefragt wirst."
+    },
+    "speak": {
+      "title": "Sprich ein paar Worte",
+      "body": "Zum Beispiel: ‚Heute teste ich Prismical. Als Nächstes möchte ich aus dieser Aufnahme eine klare Notiz machen.‘ Sprich einige Sekunden."
+    },
+    "stop": {
+      "title": "Jetzt Stopp drücken",
+      "body": "Klicke in den Aufnahme-Steuerelementen auf Stopp. Die Aufnahme wird gespeichert und das Transkript erscheint."
+    },
+    "transcript": {
+      "title": "Hier ist dein Transkript",
+      "body": "Das hast du gesagt. Prismical kann verschiedene Sprecher kennzeichnen, wenn dein Transkriptionsmodell dies unterstützt. Eine kurze Einzelaufnahme hat möglicherweise nur einen Sprecher."
+    },
+    "enhance": {
+      "title": "Sprache in eine Notiz verwandeln",
+      "body": "Klicke im Aufnahmefenster auf Verbessern. Wir warten auf den Entwurf — er ersetzt deine Notiz erst, wenn du ihn annimmst."
+    },
+    "result": {
+      "title": "Verbesserte Notiz prüfen",
+      "body": "Hier ist der Vorschlag. Lies die markierten Änderungen und gehe dann zu den Prüfoptionen weiter."
+    },
+    "review": {
+      "title": "Behalten, verwerfen oder ändern",
+      "body": "Im Dock kannst du den Entwurf behalten, rückgängig machen oder Änderungen im Textfeld beschreiben. Klicke auf Behalten, um abzuschließen."
+    }
+  },
+    replayTitle: "Erste Schritte",
+    replayBody: "Kurze Einführung wiederholen",
+    title: 'Deine erste Notiz',
+    recovery: "Du kannst eine fehlgeschlagene Aktion wiederholen oder die Einführung mit × beenden.",
+  },
   common: {
     actions: {
       back: 'Zurück',
@@ -202,6 +276,7 @@ const de = {
       noTimeLeft: 'Keine Zeit übrig',
     },
     secondary: {
+      chat: 'Chat',
       community: 'Community',
       docs: 'Dokumentation',
       feedback: 'Feedback',
@@ -611,6 +686,13 @@ const de = {
       pausedNoSound: 'Pausiert — kein Ton',
       recording: 'Aufnahme',
     },
+    budget: {
+      dismiss: 'Ausblenden',
+      quotaSoon: 'Noch etwa {{duration}} Transkription in diesem Monat',
+      quotaSoonDescription: 'Diese Aufnahme dauert länger. Das Transkript endet, wenn es aufgebraucht ist.',
+      stopNow: 'Jetzt stoppen',
+      upgrade: 'Tarif wechseln',
+    },
     errors: {
       autoStartDescription:
         'Die Notiz war noch nicht bereit. Du kannst die Aufnahme manuell starten.',
@@ -626,7 +708,7 @@ const de = {
         'Dein System blockiert möglicherweise den Mikrofonzugriff dieses Browsers.',
       deadMicHelp: 'Problem beheben',
       deadMicTitle: 'Dein Mikrofon liefert kein Audiosignal',
-      limitSoon: 'Noch {{minutes}} Minuten für diese Aufnahme',
+      limitSoon: 'Weniger als {{minutes}} Minuten für diese Aufnahme',
       limitSoonDescription: 'Dein Plan erlaubt Aufnahmen von {{limit}} Minuten. Die Aufnahme stoppt am Limit automatisch.',
       limitStopped: 'Aufnahme am {{minutes}}-Minuten-Limit deines Plans gestoppt.',
       limitStoppedDescription: 'Notiz und Transkript sind gespeichert. Starte eine neue Aufnahme, um weiterzumachen, oder führe ein Upgrade für längere Aufnahmen durch.',
@@ -643,7 +725,7 @@ const de = {
       noMicrophone: 'Kein Mikrofon verfügbar - schließe ein Eingabegerät an oder aktiviere es.',
       noMicrophoneSystemAudioContinues:
         'Kein Mikrofon verfügbar - schließe ein Eingabegerät an oder aktiviere es. Systemaudio wird weiterhin aufgenommen.',
-      quotaExceeded: 'Du hast die in diesem Monat enthaltene Cloud-Transkription aufgebraucht.',
+      quotaExceeded: 'Cloud-Transkription für diese Sitzung pausiert.',
       renameSpeaker: 'Sprecher konnte nicht umbenannt werden',
       savedWithErrors: 'Die Aufnahme wurde mit Fehlern gespeichert.',
       someAudioNotTranscribed: 'Ein Teil des Audios konnte nicht transkribiert werden.',
@@ -659,6 +741,7 @@ const de = {
         'Noch kein Transkript. Starte eine Aufnahme, um deine Besprechung oder Sprachnotiz zu erfassen.',
       finishing: 'Wird abgeschlossen…',
       identifyingSpeakers: 'Sprecher werden erkannt…',
+      waitingForTranscription: 'Warten, bis die Transkription abgeschlossen ist…',
       input: 'Eingang',
       allAudioSettings: 'Alle Audioeinstellungen…',
       systemAudioCaptured: 'Systemaudio wird ebenfalls aufgenommen',
@@ -837,9 +920,9 @@ const de = {
       newSectionAdded: 'Neuer Abschnitt hinzugefügt',
       noteReplaced: 'Notiz ersetzt',
       previewRewriteFailed:
-        'Diese Überarbeitung konnte nicht in der Vorschau angezeigt werden — der ausgewählte Text wurde geändert oder entfernt. Wähle ihn erneut aus und versuche es noch einmal.',
+        'Diese Überarbeitung konnte nicht in der Vorschau angezeigt werden - der ausgewählte Text wurde geändert oder entfernt. Sie ist weiterhin vorgemerkt: verwirf sie, oder wähle den Text erneut aus und führe sie noch einmal aus.',
       previewRunFailed:
-        'Dieser Durchlauf konnte nicht in der Vorschau angezeigt werden — der Editor hat sich geändert. Führe den Skill erneut aus.',
+        'Dieser Vorschlag kann gerade nicht in der Vorschau angezeigt werden. Er ist weiterhin vorgemerkt - übernimm ihn oder verwirf ihn in der Prüfleiste.',
       refine: 'Verfeinern',
       refineInstruction: 'Mit einer Anweisung verfeinern',
       refinePlaceholder: 'Anweisung zur Verfeinerung…',
@@ -854,6 +937,7 @@ const de = {
       targetMissing:
         'Der Text für diese Überarbeitung ist nicht mehr vorhanden. Wähle ihn erneut aus und starte sie noch einmal.',
       undo: 'Rückgängig',
+      waitingForDocument: 'Warte auf das Laden der Notiz…',
     },
     inline: {
       captureError: 'Die Auswahl konnte nicht erfasst werden — wähle den Text erneut aus.',
@@ -890,6 +974,10 @@ const de = {
         manage: 'Verwalten',
         noMatch: 'Keine Modelle entsprechen „{{query}}“.',
         noModels: 'Dieser Anbieter bietet keine Modelle für {{useCase}} an.',
+        freeTierRateLimited:
+          'Kostenlose API-Schlüssel von {{provider}} sind zu stark limitiert, um durchgehend aufzunehmen. Verwende einen API-Schlüssel mit aktivierter Abrechnung.',
+        noSpeakerLabels:
+          'Die Sprechererkennung wird mit {{provider}} noch nicht unterstützt. Verwende ein Prismical Cloud-Modell, um Sprecher in deinen Transkripten zu kennzeichnen.',
         stepModel: 'Schritt 2 von 2 — wähle ein Modell für {{useCase}}.',
         stepSource: 'Schritt 1 von 2 — wähle eine Quelle.',
         title: 'Modell für {{useCase}} ändern',
@@ -1611,7 +1699,7 @@ const de = {
           displayName: 'Kostenlos',
           notesSharing: 'Notizen teilen',
           price: '0 $/Monat',
-          recordingValue: '30 Min.',
+          recordingValue: '1 Std.',
           seat: 'Sitzplatz',
           seatValue: '1',
           standardModels: 'Standard-KI-Modelle',

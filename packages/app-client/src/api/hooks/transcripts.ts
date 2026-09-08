@@ -8,6 +8,7 @@ import {
   type CoreTranscriptSegment,
 } from '../transcription';
 import { listEnhancedRecordingIds } from './skill-runs';
+import { useSyncStore } from '../../sync/provider';
 import type { TranscriptLine } from '@prismical/app-contracts';
 // Clock-time formatter lives in the data layer (event-time.ts) so this hook can
 // use it without importing app-ui (which would be circular); app-ui re-exports it.
@@ -130,10 +131,18 @@ export function useNoteRecordings(noteId: string | null, opts?: { enabled?: bool
 /** The set of a note's recordings already folded in via Enhance — drives the wand vs "in note" state
  * of each recording in the picker. `opts.enabled` as in useNoteRecordings. */
 export function useEnhancedRecordings(noteId: string | null, opts?: { enabled?: boolean }) {
+  const store = useSyncStore();
   return useQuery({
     queryKey: enhancedRecordingsKey(noteId ?? 'none'),
     enabled: !!noteId && (opts?.enabled ?? true),
-    queryFn: async () => new Set(await listEnhancedRecordingIds(noteId!)),
+    queryFn: async ({ signal }) => {
+      // Optimistic notes render before their metadata exists on the server. History
+      // requires read access, so wait for the same create acknowledgement as collaboration.
+      await store?.whenNoteCreateAcked(noteId!);
+      // Navigation or an identity reset may cancel the query while the create is pending.
+      signal.throwIfAborted();
+      return new Set(await listEnhancedRecordingIds(noteId!));
+    },
   });
 }
 

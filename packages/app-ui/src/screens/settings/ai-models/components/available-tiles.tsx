@@ -30,6 +30,7 @@ const TILE_ORDER: ProviderType[] = [
   PROVIDER_TYPES.openai,
   PROVIDER_TYPES.openRouter,
   PROVIDER_TYPES.googleGemini,
+  PROVIDER_TYPES.deepgram,
   PROVIDER_TYPES.ollama,
   PROVIDER_TYPES.openAICompatible,
   PROVIDER_TYPES.mock,

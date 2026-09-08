@@ -31,6 +31,7 @@ import {
   useEnv,
   usePorts,
 } from '../ports-context';
+import { startLoadingTiming } from '../loading-timing';
 import { ApiError } from '../api/client';
 import { getSyncPersistenceFactory } from '../runtime';
 import { partitionDatabaseName } from './partition';
@@ -71,20 +72,26 @@ const SyncStoreContext = React.createContext<SyncStore | null>(null);
  * can never load must still be published, or the app would sit in a permanent loading state with
  * no way to write). Each collection is already activated by the caller, so this only waits.
  */
-function whenWaveOneLoaded(store: SyncStore): Promise<void> {
+function whenWaveOneLoaded(store: SyncStore, mark: (name: string) => void): Promise<void> {
   const collections = [store.notes$, store.folders$, store.tags$, store.noteTags$];
   return Promise.all(
     collections.map(
-      collection$ =>
+      (collection$, index) =>
         new Promise<void>(resolve => {
           const state = syncState(collection$ as never);
           const settled = () => state.isLoaded.get() || !!state.error.get();
+          const record = () =>
+            mark(
+              `${['notes', 'folders', 'tags', 'note_tags'][index]}_${state.error.get() ? 'failed' : 'loaded'}`
+            );
           if (settled()) {
+            record();
             resolve();
             return;
           }
           const dispose = observe(() => {
             if (!settled()) return;
+            record();
             resolve();
             // `observe` hands its own disposer to the reaction; calling the outer binding is safe
             // because the first run cannot settle (guarded above).
@@ -103,8 +110,17 @@ export function SyncStoreProvider({ children }: { children: React.ReactNode }) {
   const sessionKey = useActiveSessionKey();
   const orgId = useActiveOrgId();
   const { platform } = useEnv();
-  const { auth } = usePorts();
-  const [store, setStore] = React.useState<SyncStore | null>(null);
+  const { auth, analytics } = usePorts();
+  const analyticsRef = React.useRef(analytics);
+  analyticsRef.current = analytics;
+  const [published, setPublished] = React.useState<{
+    store: SyncStore;
+    accountId: string;
+    sessionKey: string | null;
+    orgId: string | null;
+    platform: string;
+    auth: typeof auth;
+  } | null>(null);
   const previousAccountRef = React.useRef<string | null>(null);
 
   React.useEffect(() => {
@@ -116,9 +132,17 @@ export function SyncStoreProvider({ children }: { children: React.ReactNode }) {
       // while another stays active is not detectable from the active id alone —
       // its partitions purge on its next full sign-out; acceptable residual.)
       if (previous) void purgeAccountPartitions(previous);
-      setStore(null);
+      setPublished(null);
       return;
     }
+    // Web must select its concrete workspace before accepting writes. A store
+    // using the server's implicit default is replaced by that selection, losing
+    // optimistic creates even when their POST subsequently succeeds.
+    if (platform === 'web' && !orgId) {
+      setPublished(null);
+      return;
+    }
+    const timing = startLoadingTiming(analyticsRef.current, 'sync_bootstrap');
     let cancelled = false;
     let created: SyncStore | null = null;
     const partition = { accountSub: accountId, orgId: orgId ?? '' };
@@ -137,6 +161,7 @@ export function SyncStoreProvider({ children }: { children: React.ReactNode }) {
         }
       }
       if (cancelled) return;
+      timing.mark('persistence_ready');
       created = createSyncStore({
         partition,
         persistPlugin: plugin,
@@ -187,17 +212,29 @@ export function SyncStoreProvider({ children }: { children: React.ReactNode }) {
       // WEB ONLY in effect: desktop passes a persistence plugin, whose retrySync bookkeeping
       // survives the snapshot. Web runs in-memory, so nothing does. Publishing late costs a beat
       // of the loading state the synchronized hooks already render for a null store.
-      await whenWaveOneLoaded(created);
+      await whenWaveOneLoaded(created, timing.mark);
       if (cancelled) return;
-      setStore(created);
+      setPublished({ store: created, accountId, sessionKey, orgId, platform, auth });
+      timing.finish('published');
     })();
     return () => {
       cancelled = true;
+      timing.finish('abandoned');
       created?.dispose();
-      setStore(null);
+      setPublished(null);
     };
   }, [accountId, sessionKey, orgId, platform, auth]);
 
+  // Effects clean up after the new identity has already rendered. Do not expose
+  // the previous store during that commit: a queued child action may run first.
+  const store =
+    published?.accountId === accountId &&
+    published.sessionKey === sessionKey &&
+    published.orgId === orgId &&
+    published.platform === platform &&
+    published.auth === auth
+      ? published.store
+      : null;
   return <SyncStoreContext.Provider value={store}>{children}</SyncStoreContext.Provider>;
 }
 

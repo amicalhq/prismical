@@ -6,6 +6,28 @@ import {
 } from './system-prompt.js';
 
 describe('buildAskSystemPrompt', () => {
+  it('routes product questions to docs while preserving note scope and source syntax', () => {
+    const prompt = buildAskSystemPrompt({
+      focusNotes: [],
+      hasScopeFilter: true,
+      productHelp: { platform: 'ios', appVersion: '1.2.3' },
+    });
+    expect(prompt).toContain('search_product_help');
+    expect(prompt).toContain('[[help:N]]');
+    expect(prompt).toContain('including follow-up questions');
+    expect(prompt).toContain('an explicitly requested platform takes precedence');
+    expect(prompt).toContain('"platform":"ios"');
+    expect(prompt).toContain('do not search private notes');
+    expect(prompt).toContain('Sources: <noteId>');
+    expect(
+      buildAskSystemPrompt({
+        focusNotes: [],
+        hasScopeFilter: false,
+        toolsAvailable: false,
+        productHelp: { platform: 'ios' },
+      })
+    ).not.toContain('search_product_help');
+  });
   it('always instructs grounding, the Sources line, and tool usage', () => {
     const p = buildAskSystemPrompt({ focusNotes: [], hasScopeFilter: false });
     expect(p).toContain('search_notes');
@@ -37,7 +59,11 @@ describe('buildAskSystemPrompt', () => {
   });
 
   it('instructs the Follow-ups line only when the client opted in', () => {
-    const on = buildAskSystemPrompt({ focusNotes: [], hasScopeFilter: false, suggestFollowups: true });
+    const on = buildAskSystemPrompt({
+      focusNotes: [],
+      hasScopeFilter: false,
+      suggestFollowups: true,
+    });
     expect(on).toContain('Follow-ups:');
     // Above Sources — clients parse citations off the LAST line, so Sources must stay last.
     expect(on).toContain('Directly before the `Sources:` line');

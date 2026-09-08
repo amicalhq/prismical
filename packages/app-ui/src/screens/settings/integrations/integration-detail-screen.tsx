@@ -90,6 +90,16 @@ function IntegrationDetailContent({ id }: { id: string }) {
     router.replace(`/settings/integrations/${id}`);
   }, [searchParams, router, id]);
 
+  // The "connected — loading the tool list" banner describes the background catalogue fetch
+  // that the callback kicks off, i.e. the row's `pending` window (useMcpServer polls it). Once
+  // the row settles the banner is stale: the header badge and tool list say everything, and an
+  // error/needs_auth outcome already renders its own reason. Found live — the banner used to
+  // stay up forever.
+  const serverStatus = query.data?.status;
+  React.useEffect(() => {
+    if (banner === 'connected' && serverStatus && serverStatus !== 'pending') setBanner(null);
+  }, [banner, serverStatus]);
+
   const startOAuth = () => {
     authorize.mutate(
       {

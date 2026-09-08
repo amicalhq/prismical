@@ -15,6 +15,7 @@ import { PortsProvider } from '../ports-context';
 import { createRecording, finalizeRecording } from '../api/transcription';
 import { useRecording } from './use-recording';
 import { organizationsKey } from '../api/hooks/organizations';
+import { usageKey } from '../api/hooks/usage';
 import {
   listPendingRecordingCompletions,
   savePendingRecordingCompletion,
@@ -228,7 +229,8 @@ function renderWithPorts(
     autoStopAfterPausedMinutes?: number;
   },
   auth?: AuthPort,
-  handleCompletion = true
+  handleCompletion = true,
+  skipAutoEnhanceForNote?: string
 ) {
   const qc = new QueryClient();
   if (autoPause) {
@@ -255,9 +257,11 @@ function renderWithPorts(
       <PortsProvider ports={makePorts(recording, auth)}>{children}</PortsProvider>
     </QueryClientProvider>
   );
-  const rendered = renderHook(() => useRecording({ handleCompletion }), { wrapper });
+  const rendered = renderHook(() => useRecording({ handleCompletion, skipAutoEnhanceForNote }), {
+    wrapper,
+  });
   stopAfterTest.push(() => rendered.result.current.stop());
-  return rendered;
+  return { ...rendered, qc };
 }
 
 function mutableAuth(initialView: ReturnType<AuthPort['getSession']>) {
@@ -361,12 +365,38 @@ describe('useRecording — native (desktop) branch', () => {
       noteId: 'note_1',
       segments: [segment],
       elapsedMs: 5000,
+      elapsedAt: Date.parse('2026-07-18T00:00:05.000Z'),
       startedAt: Date.parse('2026-07-18T00:00:00.000Z'),
     });
     expect(result.current.isRecording).toBe(true);
     expect(result.current.liveSegments).toEqual([segment]);
     expect(result.current.error).toBeNull();
     expect(result.current.startedAt).toBe('2026-07-18T00:00:00.000Z');
+    expect(result.current.nativeElapsed).toEqual({
+      status: 'recording',
+      elapsedMs: 5000,
+      elapsedAt: Date.parse('2026-07-18T00:00:05.000Z'),
+    });
+  });
+
+  it('passes only the active workspace cached starting allowance without fetching usage', async () => {
+    const fake = makeFakeControl();
+    const { result, qc } = renderRecording(fake.control);
+    qc.setQueryData(organizationsKey, []);
+    qc.setQueryData(usageKey('org_1'), {
+      quota: { cloudTranscription: { limitSeconds: 1800, usedSeconds: 600 } },
+    });
+    qc.setQueryData(usageKey('org_other'), {
+      quota: { cloudTranscription: { limitSeconds: 1800, usedSeconds: 1700 } },
+    });
+    const fetch = vi.spyOn(qc, 'fetchQuery');
+    const ensure = vi.spyOn(qc, 'ensureQueryData');
+    await act(async () => result.current.start('note_1', 'Standup'));
+    expect(fake.startCalls).toEqual([
+      { noteId: 'note_1', title: 'Standup', quotaRemainingAtStartSeconds: 1200 },
+    ]);
+    expect(fetch).not.toHaveBeenCalled();
+    expect(ensure.mock.calls.map(([options]) => options.queryKey)).toEqual([organizationsKey]);
   });
 
   it('claims externally stopped native completion with its immutable note owner', async () => {
@@ -390,6 +420,23 @@ describe('useRecording — native (desktop) branch', () => {
     );
     expect(result.current.noteId).toBe('note_owner');
     expect(fake.control.claimCompletion).toHaveBeenCalledWith('rec_native');
+  });
+
+  it.each([
+    ['note_owner', 0],
+    ['another_note', 1],
+  ])('only suppresses automatic enhancement for the tour note %s', async (tourNoteId, expected) => {
+    const fake = makeFakeControl();
+    const { result } = renderWithPorts(
+      { control: fake.control, uploadTranscriptionChunk: vi.fn() },
+      undefined,
+      undefined,
+      true,
+      tourNoteId
+    );
+    fake.push({ ...idle, status: 'idle', recordingId: 'rec_native', noteId: 'note_owner' });
+    await waitFor(() => expect(result.current.completedRecording?.recordingId).toBe('rec_native'));
+    expect(useAutoEnhanceStore.getState().requests).toHaveLength(expected);
   });
 
   it('allows passive native observers without taking the completion claim', async () => {
@@ -434,6 +481,8 @@ describe('useRecording — native (desktop) branch', () => {
     });
     expect(useAutoEnhanceStore.getState().requests).toEqual([
       {
+        requestedAt: expect.any(Number),
+        attemptId: expect.any(String),
         recordingId: 'rec_native',
         noteId: 'note_owner',
         ownerSessionKey: 'user_1',

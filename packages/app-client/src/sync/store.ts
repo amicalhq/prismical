@@ -390,8 +390,39 @@ export function createSyncStore(options: SyncStoreOptions): SyncStore {
     onDroppedCreate?: (input: T) => void,
   ) {
     return syncedCrud<T>({
-      list: ({ lastSync }: SyncedGetParams<T>) =>
-        list<T>(route, lastSync || undefined, route === "notes" ? { includeBody: 1 } : undefined),
+      list: async (params: SyncedGetParams<T>) => {
+        // Remember only rows acknowledged before this snapshot began. A row
+        // created during the request (or still awaiting POST) is not absent from
+        // the server merely because the older snapshot does not contain it.
+        const before = params.value as unknown as
+          | Record<string, T & { createdAt?: SyncTimestamp }>
+          | undefined;
+        const acknowledgedBefore = Object.values(before ?? {})
+          .filter(row => row.createdAt)
+          .map(row => row.id);
+        const rows = await list<T>(
+          route,
+          params.lastSync || undefined,
+          route === "notes" ? { includeBody: 1 } : undefined
+        );
+        if (params.lastSync) return rows;
+
+        // Full pulls must still remove older rows that were deleted or became
+        // unreadable. Express those absences as tombstones, then assign rows so
+        // concurrent optimistic/acknowledged creates and their pending writes
+        // survive. Do not echo local rows as GET results: that can cancel create
+        // retries or advance the server cursor past unseen changes.
+        const returned = new Set(rows.map(row => row.id));
+        const absent = acknowledgedBefore
+          .filter(id => !returned.has(id))
+          .map(id => ({
+            id,
+            deletedAt: "1970-01-01T00:00:00.000Z",
+            updatedAt: "1970-01-01T00:00:00.000Z",
+          }));
+        params.mode = "assign";
+        return [...rows, ...(absent as unknown as T[])];
+      },
       create: (input: T, params: SyncedSetParams<T>) =>
         create<T>(route, input).catch(
           terminal4xx(
@@ -407,7 +438,15 @@ export function createSyncStore(options: SyncStoreOptions): SyncStore {
         ),
       delete: (input: T, params: SyncedSetParams<T>) =>
         remove(route, input.id).then(
-          () => null,
+          () => {
+            // Deleting a folder also detaches notes and promotes child folders.
+            // Pull only after the server has committed those related changes.
+            if (route === "folders") {
+              void Promise.all([syncState(notes$).sync(), syncState(folders$).sync()])
+                .catch(() => undefined);
+            }
+            return null;
+          },
           terminal4xx(route, "delete", params, dropped(route, "delete")),
         ),
       ...persistFor(table),

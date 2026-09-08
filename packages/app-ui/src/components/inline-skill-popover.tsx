@@ -1,4 +1,5 @@
 'use client';
+import { usePorts } from "@prismical/app-client";
 
 import * as React from 'react';
 import type { Editor } from '@tiptap/react';
@@ -50,6 +51,7 @@ interface Props {
  */
 export function InlineSkillPopover({ editor, noteId }: Props) {
   const { t } = useTranslation();
+  const { analytics } = usePorts();
   const { data: allSkills = [] } = useSkillsList();
   const skills = allSkills.filter(
     s => s.enabled && s.config.outputTarget !== 'note-title' && s.config.surface.includes('inline')
@@ -167,7 +169,7 @@ export function InlineSkillPopover({ editor, noteId }: Props) {
       selectionText,
       selectionAnchors: anchors,
       noteMarkdown: md !== undefined && md.length <= 1_000_000 ? md : undefined,
-    });
+    }, analytics);
     setPopover(null);
   };
 

@@ -16,7 +16,7 @@ import {
 } from './recording-completion';
 import { AutoPauseMachine, SilenceWatcher, type AutoPauseEffect } from '@prismical/silence';
 import { ensureAutoPausePolicy } from '../api/hooks/organizations';
-import { usageKeyPrefix } from '../api/hooks/usage';
+import { usageKey, usageKeyPrefix, type Usage } from '../api/hooks/usage';
 import { useQueryClient } from '@tanstack/react-query';
 import type { AuthPort, NativeRecordingState, SessionView } from '@prismical/app-contracts';
 import type { ApplicationTranslationKey } from '@prismical/app-i18n';
@@ -157,7 +157,18 @@ async function openWebMicrophone(deviceId: string): Promise<MediaStream> {
  * A quota/config 4xx fails identically and just delays the next chunks. */
 function uploadRetryDelayMs(err: unknown, attempt: number): number | null {
   if (err instanceof ApiError) {
-    if (err.status === 429) return 5000 * attempt; // the server window is 1 min — back off for real
+    if (err.status === 429) {
+      // Prefer the provider's OWN wait when the server passed one through. The fixed ladder gives
+      // up at +5s and +10s, and the windows providers actually quote are 26.8s and 41.8s — so
+      // without this every chunk exhausts its attempts inside the window and is lost, which is the
+      // opposite of what a rate limit is asking for. Clamped: a chunk uploader is not a durable
+      // queue, and a wait longer than this means the recording is over anyway.
+      const hinted = (err.details as { retryAfterMs?: unknown } | undefined)?.retryAfterMs;
+      if (typeof hinted === 'number' && Number.isFinite(hinted) && hinted >= 250) {
+        return Math.min(hinted, 60_000);
+      }
+      return 5000 * attempt; // the server window is 1 min — back off for real
+    }
     // 401 = mid-recording token expiry. The port's onUnauthorized() has already kicked the
     // refresh, and every attempt obtains a fresh token only if the exact owner slot is still
     // active. Dropping instead of retrying would lose the chunk's audio permanently.
@@ -347,6 +358,8 @@ export interface UseRecording {
   completedRecording: RecordingCompletion | null;
   /** When the active session started (ISO), anchoring the live lines' wall-clock times. */
   startedAt: string | null;
+  /** Main's pause-aware media clock; null for browser capture. */
+  nativeElapsed: Pick<NativeRecordingState, 'status' | 'elapsedMs' | 'elapsedAt'> | null;
   /** Segments returned by chunk uploads during THIS session, in order. */
   liveSegments: CoreTranscriptSegment[];
   /** Mic permission / capture / upload-fatal error, for the dock to surface. */
@@ -389,7 +402,8 @@ export interface UseRecording {
 
 export function useRecording({
   handleCompletion = false,
-}: { handleCompletion?: boolean } = {}): UseRecording {
+  skipAutoEnhanceForNote,
+}: { handleCompletion?: boolean; skipAutoEnhanceForNote?: string } = {}): UseRecording {
   const [state, setState] = React.useState<RecState>('idle');
   const [recordingId, setRecordingId] = React.useState<string | null>(null);
   const [noteId, setNoteId] = React.useState<string | null>(null);
@@ -398,6 +412,7 @@ export function useRecording({
   const openingRef = React.useRef<object | null>(null);
   const mountedRef = React.useRef(true);
   const [startedAt, setStartedAt] = React.useState<string | null>(null);
+  const [nativeElapsed, setNativeElapsed] = React.useState<UseRecording['nativeElapsed']>(null);
   const [liveSegments, setLiveSegments] = React.useState<CoreTranscriptSegment[]>([]);
   const [error, setError] = React.useState<RecordingErrorKey | null>(null);
   // The server-rendered block travels with the key it was set for: any other key (or null)
@@ -452,17 +467,20 @@ export function useRecording({
         recording_id: finished.recordingId,
         segments: finished.segments,
       });
-      if (getAutoEnhanceEnabled())
-        useAutoEnhanceStore.getState().requestAutoEnhance({
-          noteId: finished.noteId,
-          recordingId: finished.recordingId,
-          ownerSessionKey: finished.ownerSessionKey,
-          ownerOrgId: finished.ownerOrgId,
-          source: 'auto-enhance',
-        });
+      if (getAutoEnhanceEnabled() && finished.noteId !== skipAutoEnhanceForNote)
+        useAutoEnhanceStore.getState().requestAutoEnhance(
+          {
+            noteId: finished.noteId,
+            recordingId: finished.recordingId,
+            ownerSessionKey: finished.ownerSessionKey,
+            ownerOrgId: finished.ownerOrgId,
+            source: 'auto-enhance',
+          },
+          analytics
+        );
       if (mountedRef.current) setCompletedRecording(finished);
     },
-    [analytics, qc]
+    [analytics, qc, skipAutoEnhanceForNote]
   );
   // Desktop only: when the port exposes native control, start/stop route
   // to main's RecordingService over IPC and the live segments arrive via the
@@ -540,6 +558,13 @@ export function useRecording({
       // Main asks; the cluster performs, through the same handler the stop button uses.
       setAutoStopRequested(s.autoStopRequested ?? false);
       setState(next);
+      setNativeElapsed(previous =>
+        previous?.status === s.status &&
+        previous.elapsedMs === s.elapsedMs &&
+        previous.elapsedAt === s.elapsedAt
+          ? previous
+          : { status: s.status, elapsedMs: s.elapsedMs, elapsedAt: s.elapsedAt }
+      );
       setRecordingId(s.recordingId);
       setNoteId(s.noteId);
       if (
@@ -823,9 +848,16 @@ export function useRecording({
         segmentCountRef.current = 0;
         // Desktop runs the same machine in main — it only needs the policy.
         const policy = await ensureAutoPausePolicy(qc, activeOrgIdOf(auth.getSession()));
+        // Main keeps this pre-capture estimate for every window. A later usage response
+        // already includes this recording's chunks and cannot serve as its starting allowance.
+        const usage = qc.getQueryData<Usage>(usageKey(activeOrgIdOf(auth.getSession())));
+        const quota = usage?.quota?.cloudTranscription;
+        const quotaRemainingAtStartSeconds =
+          quota?.limitSeconds != null ? Math.max(0, quota.limitSeconds - quota.usedSeconds) : null;
         const result = await control.start({
           noteId,
           title,
+          ...(quotaRemainingAtStartSeconds !== null ? { quotaRemainingAtStartSeconds } : {}),
           ...(policy.enabled
             ? {
                 autoPause: {
@@ -1138,6 +1170,14 @@ export function useRecording({
       const id = recordingId;
       if (id === null || (state !== 'starting' && state !== 'recording' && state !== 'paused'))
         return { segments: segmentCountRef.current };
+      try {
+        analytics.capture(EVENTS.RECORDING_STOP_REQUESTED, {
+          client_at_ms: Date.now(),
+          recording_id: id,
+        });
+      } catch {
+        /* Diagnostics must not prevent Stop. */
+      }
       setState('stopping');
       await control.stop(id);
       return { segments: segmentCountRef.current };
@@ -1154,6 +1194,14 @@ export function useRecording({
     if (s.phase !== 'recording' && s.phase !== 'paused')
       return { segments: segmentCountRef.current };
     pauseEpochRef.current++;
+    try {
+      analytics.capture(EVENTS.RECORDING_STOP_REQUESTED, {
+        client_at_ms: Date.now(),
+        recording_id: s.recordingId,
+      });
+    } catch {
+      /* Diagnostics must not prevent Stop. */
+    }
     s.phase = 'stopping';
     setState('stopping');
     let retryAfterStop = false;
@@ -1251,6 +1299,7 @@ export function useRecording({
     applyAutoPauseEffects,
     auth,
     finishRecording,
+    analytics,
   ]);
 
   // `stop` for callbacks registered before it exists (the mic track's `ended` listener). Kept
@@ -1311,6 +1360,7 @@ export function useRecording({
     noteId,
     completedRecording,
     startedAt,
+    nativeElapsed,
     liveSegments,
     error,
     errorUser,

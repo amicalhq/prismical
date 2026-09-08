@@ -9,16 +9,15 @@
 .prismical-diff-insert {
   color: var(--diff-insert);
   background: color-mix(in oklch, var(--diff-insert) 12%, transparent);
-  /* Reset font inheritance: when the changeset aligns blocks and the widget lands inside a heading,
-   * the <span> would otherwise inherit heading typography. Children with their own classes override. */
-  font-size: 1rem;
-  font-weight: 400;
-  line-height: 1.5;
+  /* Inline edits keep their surrounding heading, paragraph, or code typography. */
 }
 
 /* Block-level widget (multi-block proposed insert): soft border + padding so it reads as a distinct
  * surface. Targets only <div> wrappers — the inline <span> variant inherits the base rule. */
 div.prismical-diff-insert {
+  font-size: 1rem;
+  font-weight: 400;
+  line-height: 1.5;
   padding: 0.5rem 0.75rem;
   border-left: 3px solid var(--diff-insert);
   border-radius: 0.25rem;
@@ -30,13 +29,6 @@ div.prismical-diff-insert {
   text-decoration: line-through;
   text-decoration-color: var(--diff-delete);
   background: color-mix(in oklch, var(--diff-delete) 12%, transparent);
-}
-
-/* Word-level diff can produce adjacent <del><ins> pairs with no space between swapped words; a
- * small gap restores readability without changing diff semantics. */
-.prismical-diff-delete + .prismical-diff-insert,
-.prismical-diff-insert + .prismical-diff-delete {
-  margin-left: 0.35em;
 }
 
 .prismical-artifact-node--proposed {

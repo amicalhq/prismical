@@ -32,7 +32,11 @@ describe('buildSkillSystemPrompt', () => {
   });
 
   it('includes the mode block for a normal skill but skips it for a mode-agnostic skill', () => {
-    const normal = buildSkillSystemPrompt({ skill: skill(), mode: 'append-section', input: note() });
+    const normal = buildSkillSystemPrompt({
+      skill: skill(),
+      mode: 'append-section',
+      input: note(),
+    });
     expect(normal).toContain('# Active mode: append-section');
 
     const agnostic = buildSkillSystemPrompt({
@@ -177,6 +181,61 @@ describe('buildSkillSystemPrompt', () => {
   });
 
   describe('Enhance lane', () => {
+    it('preserves source fragments in replacements and limits additions to the recording', () => {
+      const input = note({
+        noteText: 'Archive ref-a19\n\nSearch ref-b23\n\nBudget cap USD 7400; proposal only.',
+        transcript: 'Speaker 1: The timeline looks tight.\nSpeaker 2: I will adjust the plan.',
+      });
+      const replacement = buildSkillSystemPrompt({
+        skill: skill(),
+        mode: 'replace-doc',
+        input,
+        enhanceLane: true,
+      });
+      const addition = buildSkillSystemPrompt({
+        skill: skill(),
+        mode: 'append-section',
+        input,
+        enhanceLane: true,
+      });
+      for (const prompt of [replacement, addition]) {
+        expect(prompt).toContain(input.noteText);
+        expect(prompt).toContain(input.transcript);
+        expect(prompt).toContain('unless the sources explicitly connect it');
+        expect(prompt).toContain('Proposed is not approved');
+        expect(prompt).toContain('Action items require a request or commitment');
+      }
+      expect(replacement).toContain('Preserve exact identifiers');
+      expect(replacement).toContain('every distinct original detail still appears');
+      expect(addition).toContain('do not import its unrelated facts, owners, or commitments');
+      expect(addition).not.toContain('every distinct original detail still appears');
+    });
+
+    it('keeps source fidelity when refining a draft with unsupported claims', () => {
+      const prompt = buildSkillSystemPrompt({
+        skill: skill(),
+        mode: 'replace-doc',
+        input: note({ transcript: 'Speaker 1: A proposal.' }),
+        enhanceLane: true,
+        refineInstruction: 'Make it shorter',
+        previousOutput: 'Approved scope.',
+      });
+      expect(prompt).toContain('draft to correct, not as evidence');
+      expect(prompt).toContain('# Refine context');
+      expect(prompt).toContain('Approved scope.');
+      expect(prompt).toContain('the note body');
+    });
+
+    it('does not add the recording source contract to unrelated or unscoped skills', () => {
+      const prompt = buildSkillSystemPrompt({
+        skill: skill(),
+        mode: 'replace-doc',
+        input: note(),
+      });
+      expect(prompt).not.toContain('# Source fidelity');
+      expect(prompt).toContain('You are a helpful enhancer.');
+    });
+
     it("REPLACES the skill body with the lane preamble (the stored body's self-contained-chunk contract contradicts the lane)", () => {
       const p = buildSkillSystemPrompt({
         skill: skill(),

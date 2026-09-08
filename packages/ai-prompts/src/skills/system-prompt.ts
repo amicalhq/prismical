@@ -16,7 +16,7 @@ const MARKDOWN_RULES = [
   '  ~~strikethrough~~, `inline code`, fenced code blocks for actual code, > quotes, tables,',
   '  links, and --- dividers.',
   '- Do not emit images or raw HTML. Never wrap the whole answer in a code fence.',
-  "- Prefer starting sections at ## (# only for a document title in a whole-note rewrite) — unless",
+  '- Prefer starting sections at ## (# only for a document title in a whole-note rewrite) — unless',
   "  the skill's own rules say to preserve the note's existing heading levels.",
   '- Use plain hyphens (-), never em-dashes.',
   '- Write in the same language as the note and transcript.',
@@ -41,12 +41,27 @@ const ENHANCE_LANE_PREAMBLE = [
   '- Meeting -> lead with "## Summary", then "## Action items" (name owners when the transcript',
   '  identifies them). Add "## Decisions" only when real decisions were made.',
   '- Voice note -> organize the thinking, do not write minutes: "## Key points" grouped by theme,',
-  "  then \"## Action items\" or \"## Open questions\" only when genuinely present. Keep the author's",
+  '  then "## Action items" or "## Open questions" only when genuinely present. Keep the author\'s',
   '  voice and intent - it is their thinking, cleaned up, not a report about it.',
   '',
   'Rules: be terse, no preamble; never invent facts - every point must be grounded in the note or',
   'transcript; drop filler, repetition, and transcription noise; skip any section that would be',
   'empty or trivial.',
+].join('\n');
+
+const ENHANCE_SOURCE_FIDELITY = [
+  '# Source fidelity',
+  '- Organize the sources without creating relationships between them. A standalone fragment or',
+  '  label is not evidence of project scope, a decision, a requirement, or a commitment. Keep',
+  '  unrelated material separate unless the sources explicitly connect it.',
+  '- Preserve attribution, disagreement, and uncertainty. Proposed is not approved, a concern is',
+  '  not an established fact, and a planned action is not completed. Do not infer missing owners,',
+  '  dates, currencies, or other details from context labels or nearby text.',
+  '- Action items require a request or commitment in the allowed source. Do not invent useful',
+  '  next steps or assign an existing note owner to an unrelated recording action.',
+  '- Treat a previous generated draft as a draft to correct, not as evidence. Before submitting,',
+  '  check each claim against the sources allowed by the active mode and remove unsupported claims.',
+  '  Do this silently; do not add a verification section to the note.',
 ].join('\n');
 
 /**
@@ -72,7 +87,8 @@ export function buildSkillSystemPrompt(args: {
   refineInstruction?: string;
   previousOutput?: string;
 }): string {
-  const { skill, mode, input, enhanceLane, selectionText, refineInstruction, previousOutput } = args;
+  const { skill, mode, input, enhanceLane, selectionText, refineInstruction, previousOutput } =
+    args;
 
   // Mode-agnostic skills want a self-contained chunk the user positions post-run via the diff bar
   // (append vs replace), so the mode block is skipped. The Enhance lane is the exception: its output
@@ -87,6 +103,11 @@ export function buildSkillSystemPrompt(args: {
   if (!skipModeBlock) {
     out.push(`# Active mode: ${mode}`);
     out.push(enhanceLane ? enhanceModeGuidance(mode) : modeGuidance(mode));
+  }
+
+  if (enhanceLane) {
+    out.push('');
+    out.push(ENHANCE_SOURCE_FIDELITY);
   }
 
   if (mode !== 'inline-rewrite') {
@@ -214,7 +235,7 @@ function modeGuidance(mode: ArtifactMode): string {
 
 /**
  * Mode guidance for the Enhance lane (recording→note). The whole note body ("# Note") AND the scoped
- * recording transcript ("# Meeting transcript") are always in context; these two branches decide
+ * recording transcript ("# Recording transcript") are always in context; these two branches decide
  * whether the model rebuilds the whole note or only adds a new section — the rule that
  * protects a running note / journal from being regenerated on every recording.
  */
@@ -223,11 +244,16 @@ function enhanceModeGuidance(mode: ArtifactMode): string {
     case 'replace-doc':
       return [
         'Rewrite the ENTIRE note as one clean, well-structured Markdown document.',
-        "Integrate the user's own written notes (under \"# Note\") with the recording transcript",
-        '(under "# Recording transcript") into a single coherent note: keep every meaningful point the',
-        'user wrote, weave in what the recording adds, and drop only filler, repetition, and',
-        "transcription noise. Do NOT discard the user's notes. Do NOT invent facts that are not present",
-        'in the note or the transcript. Return the whole note.',
+        'Integrate the user\'s own written notes (under "# Note") with the recording transcript',
+        '(under "# Recording transcript"): keep every distinct fact, constraint, and unresolved point',
+        'the user wrote and add what the recording establishes. Preserve exact identifiers, reference',
+        'codes, URLs, names, and the precision of dates and amounts. Unfamiliar labels and identifiers',
+        'are not filler. Keep standalone fragments with their identifiers in a separate notes section',
+        'when their relationship to the recording is unclear; do not invent a connecting explanation.',
+        'Drop only filler, true repetition, and transcription noise without losing unique information.',
+        "Do NOT discard the user's notes. Do NOT invent facts that are not present in the note or the",
+        'transcript. Before submitting, check that every distinct original detail still appears in',
+        'the replacement. Return the whole note.',
       ].join(' ');
     case 'append-section':
       return [
@@ -235,7 +261,9 @@ function enhanceModeGuidance(mode: ArtifactMode): string {
         'reorder it. Produce ONLY a new self-contained section for THIS recording (under',
         '"# Recording transcript"), to be appended to the end of the note. Start with a short ##',
         'heading. Capture what this recording adds; do not repeat points already in the note. Do NOT',
-        'invent facts that are not in the transcript.',
+        'invent facts that are not in the transcript. Use the existing note only to avoid duplication',
+        'and resolve explicit references; do not import its unrelated facts, owners, or commitments',
+        'into this recording. Preserve exact identifiers and uncertainty in the new material.',
       ].join(' ');
     case 'inline-rewrite':
       return modeGuidance(mode);

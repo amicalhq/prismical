@@ -165,6 +165,7 @@ function Sidebar({
 }) {
   const { t } = useTranslation()
   const { isMobile, state, openMobile, setOpenMobile } = useSidebar()
+  const returnFocusRef = React.useRef<HTMLElement | null>(null)
 
   if (collapsible === "none") {
     return (
@@ -195,6 +196,18 @@ function Sidebar({
             } as React.CSSProperties
           }
           side={side}
+          onOpenAutoFocus={() => {
+            // The sidebar opener is outside Sheet's trigger context.
+            returnFocusRef.current = document.activeElement instanceof HTMLElement
+              ? document.activeElement
+              : null
+          }}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault()
+            const opener = returnFocusRef.current
+            returnFocusRef.current = null
+            if (opener?.isConnected) opener.focus({ preventScroll: true })
+          }}
         >
           <SheetHeader className="sr-only">
             <SheetTitle>{t("navigation.sidebar.title")}</SheetTitle>
@@ -262,7 +275,7 @@ function SidebarTrigger({
   ...props
 }: React.ComponentProps<typeof Button>) {
   const { t } = useTranslation()
-  const { toggleSidebar } = useSidebar()
+  const { toggleSidebar, isMobile } = useSidebar()
 
   return (
     <Button
@@ -273,6 +286,9 @@ function SidebarTrigger({
       className={cn("size-7", className)}
       onClick={(event) => {
         onClick?.(event)
+        if (event.defaultPrevented) return
+        // Some browsers do not focus buttons on pointer activation.
+        if (isMobile) event.currentTarget.focus({ preventScroll: true })
         toggleSidebar()
       }}
       {...props}

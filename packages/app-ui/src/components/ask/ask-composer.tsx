@@ -2,10 +2,11 @@
 
 import * as React from 'react';
 import { FileText, Plus } from 'lucide-react';
-import { useNotes, useSkillsList } from '@prismical/app-client';
+import { useEntitlements, useNotes, useSkillsList } from '@prismical/app-client';
 import type { Skill } from '@prismical/app-contracts';
 import { DOCK_CTL, DOCK_CTL_PRIMARY } from '../dock-chrome';
 import { AskModelSelector } from './ask-model-selector';
+import { AppLink as Link } from '../../shell/app-link';
 import type { AskModelGroup, AskModelSelection } from '@prismical/app-client';
 import { skillDisplayDescription, skillDisplayName } from '../../lib/skill-presentation';
 import { useTranslation } from 'react-i18next';
@@ -34,6 +35,10 @@ export interface AskComposerHandle {
  * to /me/ask (onSend).
  *
  * Implements the dock composer, slash-menu, and plus-menu design.
+ *
+ * Plan gate: on a plan without Ask AI (`useEntitlements`) the composer keeps its skill lane and
+ * refuses a free-text send here (draft kept), with a persistent line above the draft saying so
+ * and linking to the plans; the server refuses an Ask turn regardless.
  */
 export const AskComposer = React.forwardRef<
   AskComposerHandle,
@@ -67,6 +72,14 @@ export const AskComposer = React.forwardRef<
   ref
 ) {
   const { t } = useTranslation();
+  const askAllowed = useEntitlements().entitlements.features.askAi;
+  // A refused free-text send swaps the gate line's copy for 8 s (restarted on every refusal).
+  const [refusedAt, setRefusedAt] = React.useState<number | null>(null);
+  React.useEffect(() => {
+    if (refusedAt === null) return;
+    const timer = window.setTimeout(() => setRefusedAt(null), 8000);
+    return () => window.clearTimeout(timer);
+  }, [refusedAt]);
   const inputRef = React.useRef<HTMLDivElement>(null);
   const [menu, setMenu] = React.useState<null | { mode: 'skill' | 'note'; query: string }>(null);
   const [menuSel, setMenuSel] = React.useState(0);
@@ -247,6 +260,12 @@ export const AskComposer = React.forwardRef<
       return;
     }
     if (!text) return;
+    if (!askAllowed) {
+      // Keep the draft: the user can turn it into a /skill instruction.
+      closeMenu();
+      setRefusedAt(Date.now());
+      return;
+    }
     el.innerHTML = '';
     closeMenu();
     onSend(
@@ -315,9 +334,38 @@ export const AskComposer = React.forwardRef<
   };
 
   const sel = Math.min(menuSel, Math.max(hits.length - 1, 0));
+  // On a plan without Ask the placeholder names the lane that still works (skills need a note).
+  const placeholderKey = !askAllowed
+    ? onRunSkill
+      ? 'ask.composerPlaceholderSkillsOnly'
+      : 'ask.composerPlaceholderUnavailable'
+    : compact
+      ? 'ask.composerPlaceholderShort'
+      : 'ask.composerPlaceholder';
+  const ariaKey = askAllowed ? 'ask.composerPlaceholder' : placeholderKey;
+  const gateKey =
+    refusedAt !== null && onRunSkill
+      ? 'ask.gate.refused'
+      : onRunSkill
+        ? 'ask.gate.skillsOnly'
+        : 'ask.gate.unavailable';
 
   return (
     <div className="relative shrink-0 border-t border-dock-line p-1.5">
+      {/* Plan gate line: always present while gated (a live region, so the refusal swap is
+          announced), so the state is explained before anyone types — the empty-state chips
+          are gone after the first run, this is not. */}
+      {!askAllowed ? (
+        <p role="status" className="px-1.5 pb-1.5 pt-1 text-xs text-dock-ink-3">
+          {t(gateKey)}{' '}
+          <Link
+            href="/settings/billing"
+            className="font-medium text-dock-ink-2 underline-offset-2 hover:underline"
+          >
+            {t('settings.billing.screen.gateSeePlans')}
+          </Link>
+        </p>
+      ) : null}
       {/* Trigger menu (skills via /, note mentions via @) — full composer width, opens upward. */}
       {menu && hits.length > 0 ? (
         <div className="absolute inset-x-1.5 bottom-[calc(100%+2px)] z-30 rounded-[10px] bg-dock-surface p-1 shadow-(--dock-shadow-raised)">
@@ -440,8 +488,8 @@ export const AskComposer = React.forwardRef<
           contentEditable
           role="textbox"
           aria-multiline="true"
-          aria-label={t('ask.composerPlaceholder')}
-          data-placeholder={t(compact ? 'ask.composerPlaceholderShort' : 'ask.composerPlaceholder')}
+          aria-label={t(ariaKey)}
+          data-placeholder={t(placeholderKey)}
           onInput={syncMenusFromDraft}
           onKeyDown={onKeyDown}
           onPaste={e => {

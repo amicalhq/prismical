@@ -86,8 +86,17 @@ interface SkillRunActivityState {
     detail?: string,
     extra?: Pick<SkillRunRecord, "body" | "actions">,
   ) => void;
-  /** Resolve the note's latest STAGED record (Keep → "kept", Undo → "undone"). */
-  resolveStaged: (noteId: string, status: "kept" | "undone" | "superseded") => void;
+  /**
+   * Resolve the note's latest STAGED record (Keep → "kept", Undo → "undone", a failed accept →
+   * "error"). A staged run that cannot be applied must settle into a VISIBLE end state: dropping
+   * the candidate without resolving its turn makes the run vanish from the thread, which reads as
+   * data loss rather than a failure the user can retry.
+   */
+  resolveStaged: (
+    noteId: string,
+    status: "kept" | "undone" | "superseded" | "error",
+    detail?: string,
+  ) => void;
   /** Place a record in the thread (the Ask chat calls this when it adopts the record). */
   anchor: (id: string, anchor: NonNullable<SkillRunRecord["anchor"]>) => void;
 }
@@ -179,14 +188,14 @@ export const useSkillRunActivityStore = create<SkillRunActivityState>((set) => (
       return { runsByNote: next };
     }),
 
-  resolveStaged: (noteId, status) =>
+  resolveStaged: (noteId, status, detail) =>
     set((s) => {
       const list = s.runsByNote.get(noteId);
       if (!list) return s;
       const idx = list.map((r) => r.status).lastIndexOf("staged");
       if (idx === -1) return s;
       const copy = list.slice();
-      copy[idx] = { ...copy[idx]!, status, endedAt: Date.now() };
+      copy[idx] = { ...copy[idx]!, status, detail: detail ?? copy[idx]!.detail, endedAt: Date.now() };
       const next = new Map(s.runsByNote);
       next.set(noteId, copy);
       return { runsByNote: next };

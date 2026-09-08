@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   CLOUD_CATALOG_PROVIDERS,
   HIDDEN_PROVIDER_TYPES,
+  PROVIDER_TYPE_CAPABILITIES,
   PROVIDER_TYPE_COMING_SOON,
   PROVIDER_TYPES,
 } from "./providers";
@@ -16,10 +17,20 @@ describe("AI provider availability", () => {
       PROVIDER_TYPES.openai,
       PROVIDER_TYPES.openRouter,
       PROVIDER_TYPES.googleGemini,
+      PROVIDER_TYPES.deepgram,
     ]);
     for (const provider of CLOUD_CATALOG_PROVIDERS) {
       expect(PROVIDER_TYPE_COMING_SOON[provider]).toBe(false);
     }
+  });
+
+  // Deepgram is the first catalog provider with no language models. The pickers and the
+  // connect/edit wizard branch on this list, so a stray "language" here would offer
+  // Deepgram instances for Ask and Skills, where every run would 422 unsupported_provider.
+  it("keeps Deepgram transcription-only", () => {
+    expect(PROVIDER_TYPE_CAPABILITIES[PROVIDER_TYPES.deepgram]).toEqual([
+      "transcription",
+    ]);
   });
 
   it("marks unsupported cloud providers as coming soon", () => {

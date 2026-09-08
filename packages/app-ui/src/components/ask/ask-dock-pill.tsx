@@ -1,7 +1,12 @@
 'use client';
 
 import { Sparkles, X } from 'lucide-react';
-import { useSkillsList, useSkillDiffStore, type SkillRunRecord } from '@prismical/app-client';
+import {
+  useEntitlements,
+  useSkillsList,
+  useSkillDiffStore,
+  type SkillRunRecord,
+} from '@prismical/app-client';
 import { CLEANUP_SKILL_ID } from '@prismical/app-contracts';
 import { skillDisplayDescription, skillDisplayName } from '../../lib/skill-presentation';
 import { Loader } from '../ai-elements/loader';
@@ -43,6 +48,8 @@ export function AskPillFace({
 }) {
   const { t } = useTranslation();
   const { data: allSkills = [] } = useSkillsList();
+  // Plan gate: on a plan without Ask the pill invites a skill run, not a question.
+  const askAllowed = useEntitlements().entitlements.features.askAi;
   const hasStagedCandidate = useSkillDiffStore(s =>
     noteId ? s.candidatesByNote.has(noteId) : false
   );
@@ -104,7 +111,7 @@ export function AskPillFace({
             placeholder (slash/@ grammar) belongs to the composer inside the
             panel. */}
         <span className="min-w-0 flex-1 truncate text-[13px] text-dock-ink-3">
-          {t('ask.pillPlaceholder')}
+          {t(askAllowed ? 'ask.pillPlaceholder' : 'ask.gate.pill')}
         </span>
       </button>
       {suggested ? (

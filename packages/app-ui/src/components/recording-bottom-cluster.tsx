@@ -1,5 +1,7 @@
 'use client';
 
+import { useWalkthroughEvent, useWalkthroughStage } from '../onboarding/context';
+
 import * as React from 'react';
 import { useQueryClient, useQueries } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -10,7 +12,11 @@ import { X } from 'lucide-react';
 import { RecordingPillFace, recordingPillWidth } from './note-recording-dock';
 import { DockUnit, DockRowmate } from './dock-unit';
 import { SkillDockSlot } from './skill-dock-slot';
-import { useEntitlements } from '@prismical/app-client';
+import {
+  useEntitlements,
+  useRecordingBudgetWarning,
+  recordingBudgetWarningKey,
+} from '@prismical/app-client';
 import {
   consumePendingAutoTranscribe,
   getRecordingPreferences,
@@ -18,6 +24,7 @@ import {
 } from '@prismical/app-client';
 import { useTranslation } from 'react-i18next';
 import {
+  formatApplicationDurationCompact,
   formatApplicationRelativeDay,
   formatApplicationTime,
   useApplicationLocale,
@@ -26,7 +33,9 @@ import { useAutoEnhanceStore } from '@prismical/app-client';
 import { useSkillDiffStore } from '@prismical/app-client';
 import { NewNoteDock } from './new-note-dock';
 import { AutoPausePrompt } from './auto-pause-prompt';
+import { RecordingNoticeCard } from './recording-notice-card';
 import { useRecordingDocumentTitle } from '../hooks/use-recording-document-title';
+import { useRecordingElapsed } from '../hooks/use-recording-elapsed';
 import { AnimatedWidth } from './animated-width';
 import { TranscriptPanel, type RecordingLog } from './transcript-panel';
 import { AskPillFace, ASK_PILL_WIDTH } from './ask/ask-dock-pill';
@@ -110,78 +119,31 @@ export function RecordingBottomCluster({
   const [recMaxi, setRecMaxi] = React.useState(false);
   const [askMaxi, setAskMaxi] = React.useState(false);
 
-  const rec = useRecording({ handleCompletion: true });
-
-  // Session timer: shared by the pill, the panel bar and Ask's
-  // recording-continues chip. Timestamp-DERIVED, not tick-accumulated: hidden
-  // tabs throttle intervals to ~1/min, and a counter would silently undercount
-  // a 30-minute meeting. `anchor` banks elapsed seconds across pauses; on a
-  // rehydrated mid-session mount (desktop float window) it seeds from
-  // rec.startedAt (wall clock — pause history isn't recoverable, best effort).
-  // The value survives the stop (the done bar shows "Saved · t") and resets
-  // when the NEXT session engages. ----
-  const [elapsedSeconds, setElapsedSeconds] = React.useState(0);
-  // `seeded` is an explicit flag, NOT inferred from baseSeconds===0 — a pause
-  // banked within the first second leaves base at 0 and an inferred sentinel
-  // would then re-seed from wall clock on resume, counting the whole pause.
-  const timerAnchorRef = React.useRef<{
-    baseSeconds: number;
-    runningSince: number | null;
-    seeded: boolean;
-  }>({ baseSeconds: 0, runningSince: null, seeded: false });
-  const recStartedAt = rec.startedAt;
+  const tour = useWalkthroughStage();
+  const rec = useRecording({ handleCompletion: true, skipAutoEnhanceForNote: tour?.noteId });
+  const walkthroughEvent = useWalkthroughEvent();
   React.useEffect(() => {
-    const anchor = timerAnchorRef.current;
-    const seedFromWallClock = () =>
-      recStartedAt ? Math.max(0, Math.round((Date.now() - Date.parse(recStartedAt)) / 1000)) : 0;
-    if (rec.state === 'starting') {
-      // New session engaging: reset (the previous session's value was held for
-      // the "Saved · t" bar until now).
-      timerAnchorRef.current = { baseSeconds: 0, runningSince: null, seeded: true };
-      setElapsedSeconds(0);
-      return;
-    }
-    if (rec.state === 'paused' && !anchor.seeded) {
-      // Rehydrated into an already-paused session (desktop float window): seed
-      // the display from wall clock (pause history isn't recoverable).
-      timerAnchorRef.current = {
-        baseSeconds: seedFromWallClock(),
-        runningSince: null,
-        seeded: true,
-      };
-      setElapsedSeconds(timerAnchorRef.current.baseSeconds);
-      return;
-    }
-    if (rec.state === 'recording') {
-      if (timerAnchorRef.current.runningSince === null) {
-        const base = timerAnchorRef.current.seeded
-          ? timerAnchorRef.current.baseSeconds
-          : seedFromWallClock();
-        timerAnchorRef.current = { baseSeconds: base, runningSince: Date.now(), seeded: true };
-      }
-      const tick = () => {
-        const a = timerAnchorRef.current;
-        setElapsedSeconds(
-          a.baseSeconds +
-            (a.runningSince !== null ? Math.round((Date.now() - a.runningSince) / 1000) : 0)
-        );
-      };
-      tick();
-      const id = setInterval(tick, 1000);
-      return () => {
-        clearInterval(id);
-        // Leaving 'recording' (pause or stop): bank the run into baseSeconds.
-        const a = timerAnchorRef.current;
-        if (a.runningSince !== null) {
-          timerAnchorRef.current = {
-            baseSeconds: a.baseSeconds + Math.round((Date.now() - a.runningSince) / 1000),
-            runningSince: null,
-            seeded: true,
-          };
-        }
-      };
-    }
-  }, [rec.state, recStartedAt]);
+    if (rec.error) walkthroughEvent({ type: 'error', noteId: currentNote?.noteId, code: 'recording_failed' });
+  }, [rec.error, currentNote?.noteId, walkthroughEvent]);
+  React.useEffect(() => {
+    if (rec.isRecording && rec.noteId && rec.recordingId)
+      walkthroughEvent({ type: 'recording', noteId: rec.noteId, recordingId: rec.recordingId });
+  }, [rec.isRecording, rec.noteId, rec.recordingId, walkthroughEvent]);
+  React.useEffect(() => {
+    const finished = rec.completedRecording;
+    if (finished)
+      walkthroughEvent({
+        type: 'recorded',
+        noteId: finished.noteId,
+        recordingId: finished.recordingId,
+      });
+  }, [rec.completedRecording, walkthroughEvent]);
+
+  const elapsedSeconds = useRecordingElapsed(rec);
+  React.useEffect(() => {
+    if (rec.isRecording && rec.noteId && rec.recordingId && elapsedSeconds >= 5)
+      walkthroughEvent({ type: 'ready-to-stop', noteId: rec.noteId, recordingId: rec.recordingId });
+  }, [rec.isRecording, rec.noteId, rec.recordingId, elapsedSeconds, walkthroughEvent]);
 
   // A live session, paused included: pausing must NOT hand the panel over to the persisted
   // rolling log (or re-enable its queries) — the live lines stay until the user stops.
@@ -325,6 +287,7 @@ export function RecordingBottomCluster({
   }, [autoPaused, micSilent, t]);
 
   const requestAutoEnhance = useAutoEnhanceStore(s => s.requestAutoEnhance);
+  const waitingRecordingId = useAutoEnhanceStore(s => s.waitingRecordingId);
 
   // The note's recordings (newest first) + which are already folded in — drives the rolling log,
   // the "N recordings" picker, and each row's wand vs "in note" state. The noteId stays in the
@@ -475,7 +438,9 @@ export function RecordingBottomCluster({
   // auto-enhance uses, so it runs through the skill bridge and stages a diff to review. An
   // explicit click, so the Ask unit opens on the run's turn (mock: the record panel's Enhance
   // chip expands Ask, then runs); the automatic on-stop lane stays on the collapsed pill.
-  const onEnhanceRecording = (recordingId: string) => {
+  // `auto` = the transcript bar re-firing a PARKED auto-enhance once the transcript settled: it
+  // keeps the on-stop lane's source and, like that lane, stays on the collapsed pill.
+  const onEnhanceRecording = (recordingId: string, opts?: { auto?: boolean }) => {
     if (!noteId) return;
     // Don't queue onto an unreviewed suggestion (the engine holds one candidate per note; the
     // request would linger and fire at a confusing moment).
@@ -487,9 +452,24 @@ export function RecordingBottomCluster({
     const ownerSessionKey = owner.activeSessionKey ?? owner.activeSub;
     const ownerOrgId = activeOrgIdOf(owner);
     if (!ownerSessionKey || !ownerOrgId) return;
-    requestAutoEnhance({ noteId, recordingId, source: 'wand', ownerSessionKey, ownerOrgId });
-    setExpandedUnit('ask');
+    requestAutoEnhance(
+      {
+        noteId,
+        recordingId,
+        source: opts?.auto ? 'auto-enhance' : 'wand',
+        ownerSessionKey,
+        ownerOrgId,
+      },
+      analytics
+    );
+    if (!opts?.auto) setExpandedUnit('ask');
   };
+
+  React.useEffect(() => {
+    if (tour?.noteId !== noteId) return;
+    if (tour && ['transcript', 'enhance'].includes(tour.step)) setExpandedUnit('rec');
+    if (tour && ['result', 'review'].includes(tour.step)) setExpandedUnit(null);
+  }, [tour, noteId]);
 
   const isAskOpen = expandedUnit === 'ask';
   const isTranscriptionOpen = expandedUnit === 'rec';
@@ -551,13 +531,16 @@ export function RecordingBottomCluster({
         toast.info(t('recording.errors.currentSuggestion'));
         return;
       }
-      useAskSkillRunStore.getState().requestAskSkillRun({
-        noteId: targetNoteId,
-        skillId: skill.id,
-        skillName: skill.name,
-        instruction: instruction || undefined,
-        source,
-      });
+      useAskSkillRunStore.getState().requestAskSkillRun(
+        {
+          noteId: targetNoteId,
+          skillId: skill.id,
+          skillName: skill.name,
+          instruction: instruction || undefined,
+          source,
+        },
+        analyticsRef.current
+      );
       setExpandedUnit('ask');
     };
   }, [currentNote, t]);
@@ -802,48 +785,124 @@ export function RecordingBottomCluster({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rec.autoStopRequested]);
 
-  // Plan gate: the longest continuous recording the plan allows (30 min on the entry plans, 2 h on
-  // paid ones). A heads-up toast five minutes out, then the same stop the dock's button performs —
-  // analytics, cache invalidations, auto-enhance — so the note is finished, not abandoned. Paused
-  // time does not count: the session timer banks only running seconds (a float-window remount
-  // that rehydrates from wall clock is the known exception). The stop fires ONCE per session:
-  // `elapsedSeconds` keeps ticking while the async stop settles, so the guard is what stops a
-  // second toast and a second stop. The client is the whole gate today; the server backstop is a
-  // follow-up.
+  // Plan gate: the longest continuous recording the plan allows (1 h on the entry plans, 2 h on
+  // paid ones). At the cap, the same stop the dock's button performs — analytics, cache
+  // invalidations, auto-enhance — so the note is finished, not abandoned. Paused time does not
+  // count: the session timer banks only running seconds (a float-window remount that rehydrates
+  // from wall clock is the known exception). The stop fires ONCE per session: `elapsedSeconds`
+  // keeps ticking while the async stop settles, so the guard is what stops a second stop. Core
+  // refuses over-cap chunks independently; this is what makes the recording END cleanly rather
+  // than run on against a server that has stopped accepting its audio.
   const { entitlements } = useEntitlements();
   const maxRecordingSeconds = entitlements.limits.maxRecordingSeconds;
-  const limitWarnedRef = React.useRef(false);
   const limitStoppedRef = React.useRef(false);
   React.useEffect(() => {
-    if (rec.state === 'starting') {
-      limitWarnedRef.current = false;
-      limitStoppedRef.current = false;
-    }
+    if (rec.state === 'starting') limitStoppedRef.current = false;
   }, [rec.state]);
   React.useEffect(() => {
     if (rec.state !== 'recording' || maxRecordingSeconds === null) return;
-    const limitMinutes = Math.round(maxRecordingSeconds / 60);
-    const remaining = maxRecordingSeconds - elapsedSeconds;
-    if (remaining <= 0) {
-      if (limitStoppedRef.current) return;
-      limitStoppedRef.current = true;
-      toast.warning(t('recording.errors.limitStopped', { minutes: limitMinutes }), {
-        description: t('recording.errors.limitStoppedDescription'),
-      });
-      analyticsRef.current.capture(EVENTS.RECORDING_AUTO_STOPPED, {
-        recording_id: rec.recordingId,
-      });
-      onStopRef.current({ returnToNote: false });
-      return;
-    }
-    if (remaining <= 300 && !limitWarnedRef.current) {
-      limitWarnedRef.current = true;
-      toast.info(t('recording.errors.limitSoon', { minutes: Math.ceil(remaining / 60) }), {
-        description: t('recording.errors.limitSoonDescription', { limit: limitMinutes }),
-      });
-    }
+    if (maxRecordingSeconds - elapsedSeconds > 0) return;
+    if (limitStoppedRef.current) return;
+    limitStoppedRef.current = true;
+    toast.warning(
+      t('recording.errors.limitStopped', { minutes: Math.round(maxRecordingSeconds / 60) }),
+      { description: t('recording.errors.limitStoppedDescription') }
+    );
+    analyticsRef.current.capture(EVENTS.RECORDING_AUTO_STOPPED, { recording_id: rec.recordingId });
+    onStopRef.current({ returnToNote: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rec.state, elapsedSeconds, maxRecordingSeconds]);
+
+  // Approaching either budget — the session cap or the month's Cloud transcription. Both raise the
+  // SAME notice card the auto-pause prompt uses, and both persist: a four-second toast during a
+  // meeting is a toast nobody sees, and unlike the silence prompt there is nothing the user can do
+  // to the card that buys them more time. Dismissing hides the notice they have read; the next,
+  // tighter threshold raises a fresh one.
+  const { warning: budgetWarning, dismiss: dismissBudgetWarning } = useRecordingBudgetWarning({
+    // The SESSION, not the running state: a pause is the same session, and keying this on
+    // `state === 'recording'` would reset the budget every time the silence detector pauses.
+    sessionId: rec.state === 'idle' ? null : rec.recordingId,
+    elapsedSeconds,
+  });
+  const budgetToastRef = React.useRef<string | number | null>(null);
+  const budgetKey = budgetWarning ? recordingBudgetWarningKey(budgetWarning) : null;
+  const budgetRef = React.useRef(budgetWarning);
+  budgetRef.current = budgetWarning;
+  const dismissBudgetRef = React.useRef(dismissBudgetWarning);
+  dismissBudgetRef.current = dismissBudgetWarning;
+  React.useEffect(() => {
+    const warning = budgetRef.current;
+    if (!warning) return; // the previous run's cleanup already took its card down
+    const session = warning.kind === 'session';
+    // sonner fires onDismiss for a PROGRAMMATIC toast.dismiss too, not just a user gesture — so
+    // without this flag our own withdrawal (the session ended, a tighter mark superseded this one)
+    // would record a dismissal the user never made, and suppress the mark on the next session.
+    let withdrawnByMachine = false;
+    const id = toast.custom(
+      () => (
+        <RecordingNoticeCard
+          title={
+            session
+              // Keyed on the MARK, not on live seconds: the card is raised once and sonner
+              // renders the JSX captured here, so a live figure would freeze at whatever it was
+              // when the card went up and read as a stopped clock for the next ten minutes.
+              ? t('recording.errors.limitSoon', {
+                  minutes: Math.round(warning.thresholdSeconds / 60),
+                })
+              : t('recording.budget.quotaSoon', {
+                  duration: formatApplicationDurationCompact(
+                    warning.remainingSeconds * 1000,
+                    resolvedLocale,
+                    t
+                  ),
+                })
+          }
+          description={
+            session
+              ? t('recording.errors.limitSoonDescription', {
+                  limit: Math.round((warning.capSeconds ?? 0) / 60),
+                })
+              : t('recording.budget.quotaSoonDescription')
+          }
+          actions={[
+            session
+              ? {
+                  label: t('recording.budget.stopNow'),
+                  onClick: () => onStopRef.current({ returnToNote: false }),
+                  emphasis: true,
+                }
+              : {
+                  label: t('recording.budget.upgrade'),
+                  onClick: () => router.push('/settings/billing'),
+                  emphasis: true,
+                },
+            {
+              label: t('recording.budget.dismiss'),
+              onClick: () => dismissBudgetRef.current(warning),
+            },
+          ]}
+        />
+      ),
+      // Persistent, and a swipe-away is a real dismissal (unlike the auto-pause prompt, where
+      // touching the card is itself the answer to what it asked).
+      {
+        duration: Infinity,
+        onDismiss: () => {
+          if (withdrawnByMachine) return;
+          dismissBudgetRef.current(warning);
+        },
+      }
+    );
+    budgetToastRef.current = id;
+    return () => {
+      withdrawnByMachine = true;
+      toast.dismiss(id);
+      if (budgetToastRef.current === id) budgetToastRef.current = null;
+    };
+    // Keyed on the warning's identity: re-running on `remainingSeconds` would tear the card down
+    // and re-raise it every second the timer ticks.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [budgetKey]);
 
   // Panel footprints: the unit morphs to these when expanded. The inner max()
   // keeps a usable panel on desktop; below 820px the `--dock-panel-w` custom
@@ -982,7 +1041,14 @@ export function RecordingBottomCluster({
             }
           >
             {currentNote ? (
-              <div className="flex items-end gap-2">
+              <div
+                className="flex items-end gap-2"
+                style={
+                  {
+                    '--skill-review-neighbor-width': `${recordingPillWidth(rec.state, rec.canPause, compact)}px`,
+                  } as React.CSSProperties
+                }
+              >
                 <DockUnit
                   compact={compact}
                   expanded={isTranscriptionOpen}
@@ -1028,11 +1094,18 @@ export function RecordingBottomCluster({
                       errorAction={isTranscriptionOpen ? recErrorAction : null}
                       onDismissError={rec.clearError}
                       finishedRecordingId={
-                        !sessionActive &&
-                        recentlyFinished &&
-                        Date.now() - recentlyFinished.at < 10 * 60_000
-                          ? recentlyFinished.id
-                          : null
+                        tour?.noteId === noteId && tour.recordingId && !sessionActive
+                          ? tour.recordingId
+                          : !sessionActive &&
+                              recentlyFinished &&
+                              // The post-stop bar lives ten minutes — or for as long as that recording's
+                              // Enhance is parked behind transcript finalization (the server's release
+                              // deadline is longer than ten minutes, so without this the parked state
+                              // and its re-fire would never have a bar to live in).
+                              (Date.now() - recentlyFinished.at < 10 * 60_000 ||
+                                waitingRecordingId === recentlyFinished.id)
+                            ? recentlyFinished.id
+                            : null
                       }
                     />
                   }
@@ -1161,8 +1234,6 @@ export function RecordingBottomCluster({
                 onRunSkill={onAskRunSkill}
                 noteId={noteId}
                 compact={compact}
-                // Plan gate: the thread stays (skill runs render there); only asking is gated.
-                askAllowed={entitlements.features.askAi}
               />
             }
           />

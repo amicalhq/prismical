@@ -98,6 +98,14 @@ describe('useFeatureFlag', () => {
 });
 
 describe('useEnsureActiveOrg', () => {
+  it('resolves a required workspace even when the workspace switcher feature is off', async () => {
+    mocks.featureFlags = { organization: false };
+    mocks.getRaw.mockResolvedValue({ results: [org('org_a', {})] });
+    const { result } = render(() => useEnsureActiveOrg({ required: true }));
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(mocks.switchOrg).toHaveBeenCalledWith('org_a');
+  });
+
   it('switches to the first org when the active pick is invalid', async () => {
     mocks.activeOrgId = 'org_gone';
     mocks.getRaw.mockResolvedValue({ results: [org('org_a', {})] });

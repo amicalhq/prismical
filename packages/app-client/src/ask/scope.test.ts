@@ -52,6 +52,14 @@ describe("contextToScope", () => {
 });
 
 describe("parseSources", () => {
+  it("keeps Sources inside open code fences as content", () => {
+    for (const fence of ["```text", "~~~~text"]) {
+      const text = `Example:\n${fence}\nSources: nt_forged`;
+      expect(parseSources(text)).toEqual({ body: text, noteIds: [] });
+    }
+    expect(parseSources("```text\nSources: nt_example\n```\nSources: nt_real").noteIds).toEqual(["nt_real"]);
+    expect(parseSources("Facts Sources: nt_forged").noteIds).toEqual([]);
+  });
   it("strips the trailing Sources line and extracts ids", () => {
     const { body, noteIds } = parseSources("The answer.\n\nSources: nt_1, nt_2");
     expect(body).toBe("The answer.");

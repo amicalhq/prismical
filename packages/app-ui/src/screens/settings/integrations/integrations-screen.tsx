@@ -91,8 +91,11 @@ interface CatalogItem {
 
 // Providers whose connect flow is actually live. The rest of MCP_DIRECTORY used to render as
 // disabled "Coming soon" cards; they are now simply absent, and the Request card below is how a
-// member asks for one. Add a key here when its flow ships.
-const CURATED_DIRECTORY_KEYS = ['notion'];
+// member asks for one. Add a key here when its flow ships (and its server-side twin in
+// apps/core `SINGLE_CONNECTION_PROVIDERS` carries whatever OAuth registration it needs).
+// Slack is verified end to end but deliberately absent: Slack's MCP server only serves internal
+// or Marketplace-listed apps, so the card returns once the Prismical Slack app is listed.
+export const CURATED_DIRECTORY_KEYS = ['notion'];
 
 /** Long-tail integration requests come in by mail — there is no in-product request queue yet. */
 const INTEGRATION_REQUEST_MAILTO =

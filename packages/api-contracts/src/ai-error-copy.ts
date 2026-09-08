@@ -60,6 +60,7 @@ interface Copy {
   fallbackToCloud: Entry;
   askFailed: Entry;
   transcriptionQuota: Entry;
+  recordingLengthExceeded: Entry;
   /** Transcription-surface bodies: no "use Prismical Cloud" mid-recording (nothing can bind it). */
   keyInvalidTranscription: Entry;
   keyMissingTranscription: Entry;
@@ -192,8 +193,12 @@ const en: Copy = {
   askFailed: { title: 'Ask AI couldn’t answer.', body: 'Try again in a moment.' },
   generic: { title: 'Couldn’t run {{name}}.', body: 'Try again in a moment.' },
   transcriptionQuota: {
-    title: 'You’ve used this month’s included Cloud transcription.',
-    body: 'This recording keeps going, but the rest of it won’t be transcribed. Add your own key in Settings to keep transcribing.',
+    title: 'Cloud transcription paused for this session.',
+    body: 'Audio is still being recorded, but the rest of it won’t be transcribed. Upgrade for more, or add your own key in Settings.',
+  },
+  recordingLengthExceeded: {
+    title: 'This recording reached your plan’s length limit.',
+    body: 'Everything up to the limit is saved. Start a new recording to keep going, or upgrade for longer sessions.',
   },
   keyInvalidTranscription: {
     title: 'Your {{provider}} key was rejected.',
@@ -367,8 +372,12 @@ const de: Copy = {
   },
   askFailed: { title: 'Ask AI konnte nicht antworten.', body: 'Versuche es gleich noch einmal.' },
   transcriptionQuota: {
-    title: 'Du hast die in diesem Monat enthaltene Cloud-Transkription aufgebraucht.',
-    body: 'Die Aufnahme läuft weiter, der Rest wird aber nicht transkribiert. Füge in den Einstellungen deinen eigenen Schlüssel hinzu, um weiter zu transkribieren.',
+    title: 'Cloud-Transkription für diese Sitzung pausiert.',
+    body: 'Der Ton wird weiter aufgenommen, der Rest wird aber nicht transkribiert. Wechsle den Tarif oder füge in den Einstellungen deinen eigenen Schlüssel hinzu.',
+  },
+  recordingLengthExceeded: {
+    title: 'Diese Aufnahme hat die Längenbegrenzung deines Tarifs erreicht.',
+    body: 'Alles bis zur Grenze ist gespeichert. Starte eine neue Aufnahme, um weiterzumachen, oder wechsle den Tarif für längere Sitzungen.',
   },
   keyInvalidTranscription: {
     title: 'Dein {{provider}}-Schlüssel wurde abgelehnt.',
@@ -538,8 +547,12 @@ const es: Copy = {
   },
   askFailed: { title: 'Ask AI no pudo responder.', body: 'Inténtalo de nuevo en un momento.' },
   transcriptionQuota: {
-    title: 'Has usado la transcripción en la nube incluida este mes.',
-    body: 'La grabación continúa, pero el resto no se transcribirá. Añade tu propia clave en Ajustes para seguir transcribiendo.',
+    title: 'Transcripción en la nube pausada en esta sesión.',
+    body: 'El audio se sigue grabando, pero el resto no se transcribirá. Mejora tu plan o añade tu propia clave en Ajustes.',
+  },
+  recordingLengthExceeded: {
+    title: 'Esta grabación alcanzó el límite de duración de tu plan.',
+    body: 'Todo lo anterior al límite está guardado. Inicia otra grabación para continuar, o mejora tu plan para sesiones más largas.',
   },
   keyInvalidTranscription: {
     title: 'Tu clave de {{provider}} fue rechazada.',
@@ -721,8 +734,12 @@ const ja: Copy = {
     body: '少ししてからもう一度お試しください。',
   },
   transcriptionQuota: {
-    title: '今月分のクラウド文字起こしを使い切りました。',
-    body: '録音は続きますが、これ以降は文字起こしされません。設定で自分のキーを追加すると文字起こしを続けられます。',
+    title: 'このセッションのクラウド文字起こしを一時停止しました。',
+    body: '音声の録音は続きますが、これ以降は文字起こしされません。アップグレードするか、設定で自分のキーを追加してください。',
+  },
+  recordingLengthExceeded: {
+    title: 'この録音はプランの長さの上限に達しました。',
+    body: '上限までの内容は保存されています。続けるには新しい録音を開始するか、より長く録音できるプランにアップグレードしてください。',
   },
   keyInvalidTranscription: {
     title: '{{provider}}のキーが拒否されました。',
@@ -877,8 +894,12 @@ const zhTW: Copy = {
   },
   askFailed: { title: 'Ask AI 無法回答。', body: '請稍後再試。' },
   transcriptionQuota: {
-    title: '本月內含的雲端轉錄額度已用完。',
-    body: '錄音會繼續，但之後的內容不會轉錄。到設定新增你自己的金鑰即可繼續轉錄。',
+    title: '本次工作階段的雲端轉錄已暫停。',
+    body: '錄音會繼續，但之後的內容不會轉錄。升級方案，或到設定新增你自己的金鑰。',
+  },
+  recordingLengthExceeded: {
+    title: '這段錄音已達到你方案的長度上限。',
+    body: '上限之前的內容都已儲存。開始新的錄音即可繼續，或升級方案以錄製更長的內容。',
   },
   keyInvalidTranscription: {
     title: '你的 {{provider}} 金鑰遭拒絕。',
@@ -1071,7 +1092,13 @@ export function describeAiError(input: DescribeAiErrorInput): AiUserError {
     case AI_ERROR_CODES.ASK_REQUEST_FAILED:
       return pick(copy.askFailed, 'error', act('retry'));
     case AI_ERROR_CODES.TRANSCRIPTION_QUOTA_EXCEEDED:
-      return pick(copy.transcriptionQuota, 'warning', act('open-ai-models'));
+      // Billing FIRST: the dock renders only the first action a client can perform, and the fix
+      // for a spent allowance is a bigger one. BYOK stays offered behind it.
+      return pick(copy.transcriptionQuota, 'warning', act('open-billing', 'open-ai-models'));
+    case AI_ERROR_CODES.RECORDING_LENGTH_EXCEEDED:
+      // Billing, not models: a longer session is something the plan sells, not something a
+      // different provider key would unlock.
+      return pick(copy.recordingLengthExceeded, 'warning', act('open-billing'));
     case AI_ERROR_CODES.ASK_NOT_IN_PLAN:
       return pick(copy.askNotInPlan, 'warning', act('open-billing'));
     case AI_ERROR_CODES.AI_CREDITS_EXHAUSTED:

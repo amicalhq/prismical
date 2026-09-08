@@ -84,11 +84,129 @@ describe("delta pull → observable", () => {
     store.tags$.get();
     await vi.waitFor(() => expect((store.tags$.peek() as Record<string, TagRow>).tag_x).toBeTruthy());
 
-    mocked.restList.mockResolvedValueOnce([
+    mocked.restList.mockImplementation(async route => route === "tags" ? [
       { id: "tag_x", name: "X", color: "#1", updatedAt: "2030-01-03T00:00:00.000Z", createdAt: "2030-01-01T00:00:00.000Z", deletedAt: "2030-01-03T00:00:00.000Z" },
-    ]);
+    ] : []);
     await store.refreshAll();
     await vi.waitFor(() => expect((store.tags$.peek() as Record<string, TagRow>).tag_x).toBeUndefined());
+  });
+});
+
+describe('full snapshot overlapping a note create', () => {
+  const stamp = '2020-01-01T00:00:00.000Z';
+  const existing = { id: 'nt_existing', title: 'Older', updatedAt: stamp, createdAt: stamp };
+  const holdNotesPull = () => {
+    let finish!: (rows: unknown[]) => void;
+    mocked.restList.mockImplementation(route =>
+      route === 'notes'
+        ? new Promise(resolve => {
+            finish = resolve;
+          })
+        : Promise.resolve([])
+    );
+    return async () => {
+      const pulling = store.refreshAll();
+      await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
+      return async (rows: unknown[]) => {
+        finish(rows);
+        await pulling;
+        await vi.waitFor(() => expect(syncState(store.notes$).isGetting.get()).toBe(false));
+      };
+    };
+  };
+  const createAndAck = async () => {
+    const id = store.createNote({ title: 'Created during refresh' });
+    await vi.waitFor(() => expect(store.notes$[id]!.createdAt.peek()).toBeTruthy());
+    return id;
+  };
+
+  it('keeps a successfully created note when an older empty refresh arrives', async () => {
+    await activate(store.notes$);
+    const finish = await holdNotesPull()();
+    const id = await createAndAck();
+    await finish([]);
+    expect(store.notes$[id]!.peek()).toMatchObject({ id, title: 'Created during refresh' });
+    expect(mocked.restCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a new note but removes older notes absent from the authoritative snapshot', async () => {
+    mocked.restList.mockResolvedValueOnce([existing]);
+    await activate(store.notes$);
+    const finish = await holdNotesPull()();
+    const id = await createAndAck();
+    await finish([]);
+    expect(store.notes$[id]!.peek()).toMatchObject({ id });
+    expect(store.notes$[existing.id]!.peek()).toBeUndefined();
+  });
+
+  it('accepts the server row when the snapshot includes the concurrently created note', async () => {
+    await activate(store.notes$);
+    const finish = await holdNotesPull()();
+    const id = await createAndAck();
+    await finish([{ id, title: 'Server title', createdAt: stamp, updatedAt: stamp }]);
+    expect(store.notes$[id]!.title.peek()).toBe('Server title');
+  });
+
+  it('honours a returned tombstone for the concurrently created note', async () => {
+    await activate(store.notes$);
+    const finish = await holdNotesPull()();
+    const id = await createAndAck();
+    await finish([{ id, title: 'Deleted', createdAt: stamp, updatedAt: stamp, deletedAt: stamp }]);
+    expect(store.notes$[id]!.peek()).toBeUndefined();
+  });
+
+  it('does not resurrect a concurrently created note deleted before the snapshot settles', async () => {
+    await activate(store.notes$);
+    const finish = await holdNotesPull()();
+    const id = await createAndAck();
+    store.deleteNote(id);
+    await vi.waitFor(() => expect(mocked.restRemove).toHaveBeenCalledWith('notes', id));
+    await finish([]);
+    expect(store.notes$[id]!.peek()).toBeUndefined();
+  });
+
+  it('preserves the in-flight create without duplicating or cancelling its request', async () => {
+    await activate(store.notes$);
+    const finish = await holdNotesPull()();
+    let ack!: () => void;
+    mocked.restCreate.mockImplementation(
+      (_route, input) =>
+        new Promise(resolve => {
+          ack = () => resolve({ ...(input as object), createdAt: stamp });
+        })
+    );
+    const id = store.createNote({ title: 'Pending' });
+    await vi.waitFor(() => expect(ack).toBeTypeOf('function'));
+    await finish([]);
+    expect(store.notes$[id]!.peek()).toMatchObject({ id, title: 'Pending' });
+    ack();
+    await vi.waitFor(() => expect(store.notes$[id]!.createdAt.peek()).toBeTruthy());
+    expect(mocked.restCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps retrying a failed create after a full snapshot arrives', async () => {
+    await activate(store.notes$);
+    mocked.restCreate.mockRejectedValueOnce(new ApiError("UNAVAILABLE", "try again", 503));
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const id = store.createNote({ title: "Retrying" });
+      await vi.waitFor(() => expect(mocked.restCreate).toHaveBeenCalledTimes(1));
+      const finish = await holdNotesPull()();
+      await finish([]);
+      expect(store.notes$[id]!.peek()).toMatchObject({ id, title: "Retrying" });
+      await vi.waitFor(() => expect(store.notes$[id]!.createdAt.peek()).toBeTruthy(), { timeout: 5000 });
+      expect(mocked.restCreate).toHaveBeenCalledTimes(2);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('does not preserve a note that was acknowledged before the refresh began', async () => {
+    await activate(store.notes$);
+    const id = await createAndAck();
+    const finish = await holdNotesPull()();
+    await finish([]);
+    expect(store.notes$[id]!.peek()).toBeUndefined();
   });
 });
 
@@ -265,5 +383,53 @@ describe("partition wiring", () => {
     store.tags$.get();
     await vi.waitFor(() => expect(mocked.restList).toHaveBeenCalled());
     expect(store.partition).toEqual(PARTITION);
+  });
+});
+
+describe('folder deletion reconciliation', () => {
+  const timestamp = '2030-01-01T00:00:00.000Z';
+  const folderRow = { id: 'folder_parent', name: 'Parent', createdAt: timestamp, updatedAt: timestamp };
+  const childRow = { id: 'folder_child', name: 'Child', parentId: folderRow.id, createdAt: timestamp, updatedAt: timestamp };
+  const noteRow = { id: 'note_preserved', title: 'Preserved', folderId: folderRow.id, createdAt: timestamp, updatedAt: timestamp };
+
+  async function load() {
+    mocked.restList.mockImplementation(async route => ({
+      folders: [folderRow, childRow], notes: [noteRow],
+    })[route as 'folders' | 'notes'] ?? []);
+    await activate(store.folders$);
+    await activate(store.notes$);
+  }
+
+  it('refreshes note links and child folders after DELETE commits, without waiting for polling', async () => {
+    await load();
+    let resolve!: () => void;
+    const response = { promise: new Promise<void>(done => { resolve = done; }) };
+    mocked.restRemove.mockReturnValueOnce(response.promise);
+    store.deleteFolder(folderRow.id);
+    await vi.waitFor(() => expect(mocked.restRemove).toHaveBeenCalledWith('folders', folderRow.id));
+    expect(store.notes$[noteRow.id]!.folderId.peek()).toBe(folderRow.id);
+    expect(store.folders$[childRow.id]!.parentId.peek()).toBe(folderRow.id);
+    const updatedAt = '2030-01-02T00:00:00.000Z';
+    mocked.restList.mockImplementation(async route => ({
+      folders: [{ ...childRow, parentId: null, updatedAt }, { ...folderRow, deletedAt: updatedAt, updatedAt }],
+      notes: [{ ...noteRow, folderId: null, updatedAt }],
+    })[route as 'folders' | 'notes'] ?? []);
+    resolve();
+    await vi.waitFor(() => {
+      expect(store.notes$[noteRow.id]!.folderId.peek()).toBeNull();
+      expect(store.folders$[childRow.id]!.parentId.peek()).toBeNull();
+      expect(store.folders$[folderRow.id]!.peek()).toBeUndefined();
+    });
+    expect(store.notes$[noteRow.id]!.title.peek()).toBe('Preserved');
+  });
+
+  it('preserves note links when DELETE is rejected', async () => {
+    await load();
+    mocked.restRemove.mockRejectedValueOnce(new ApiError('FORBIDDEN', 'Denied', 403));
+    store.deleteFolder(folderRow.id);
+    await vi.waitFor(() => expect(mocked.restRemove).toHaveBeenCalledWith('folders', folderRow.id));
+    await vi.waitFor(() => expect(syncState(store.folders$).isSetting.get()).toBe(false));
+    expect(store.notes$[noteRow.id]!.folderId.peek()).toBe(folderRow.id);
+    expect(store.folders$[childRow.id]!.parentId.peek()).toBe(folderRow.id);
   });
 });

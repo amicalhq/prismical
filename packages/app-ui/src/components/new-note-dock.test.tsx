@@ -7,15 +7,19 @@ import { I18nextProvider } from 'react-i18next';
 
 const mocks = vi.hoisted(() => ({
   mutate: vi.fn(),
+  error: vi.fn(),
   push: vi.fn(),
   storeReady: false,
   orgId: 'org_1' as string | null,
+  sessionKey: 'session_1' as string | null,
 }));
 
 // Known infidelity: `orgId` and `storeReady` are independent here, but in the real app changing
 // the org TEARS DOWN the sync store (SyncStoreProvider's deps include orgId), so the two never
 // flip on one commit. Tests that set both together are asserting a state production cannot reach;
 // the sequenced tests below are the ones that model reality.
+vi.mock('sonner', () => ({ toast: { error: mocks.error } }));
+
 vi.mock('@prismical/app-client', () => ({
   // Mirrors the real hook: a FRESH object every render, and `isPending` while the store is null.
   useCreateNote: () => ({
@@ -25,6 +29,7 @@ vi.mock('@prismical/app-client', () => ({
   }),
   useNavigation: () => ({ push: mocks.push }),
   useActiveOrgId: () => mocks.orgId,
+  useActiveSessionKey: () => mocks.sessionKey,
 }));
 
 const { NewNoteDock } = await import('./new-note-dock');
@@ -42,9 +47,11 @@ describe('NewNoteDock cold-start latch', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     mocks.mutate.mockReset();
+    mocks.error.mockReset();
     mocks.push.mockReset();
     mocks.storeReady = false;
     mocks.orgId = 'org_1';
+    mocks.sessionKey = 'session_1';
   });
   afterEach(() => {
     cleanup();
@@ -95,6 +102,7 @@ describe('NewNoteDock cold-start latch', () => {
       );
     });
     expect(mocks.mutate).not.toHaveBeenCalled();
+    expect(mocks.error).toHaveBeenCalledWith('Couldn’t create the note. Please try again.');
   });
 
   it('still fires when the org merely RESOLVES from null during the wait', () => {
@@ -143,6 +151,21 @@ describe('NewNoteDock cold-start latch', () => {
     expect(mocks.mutate).not.toHaveBeenCalled(); // must NOT create in org_2
   });
 
+  it('drops a queued click when the login session changes within the same workspace', () => {
+    const { rerender } = renderDock();
+    fireEvent.click(screen.getByLabelText('New note'));
+    mocks.sessionKey = 'session_2';
+    mocks.storeReady = true;
+    act(() => {
+      rerender(
+        <I18nextProvider i18n={createApplicationI18nSync()}>
+          <NewNoteDock />
+        </I18nextProvider>
+      );
+    });
+    expect(mocks.mutate).not.toHaveBeenCalled();
+  });
+
   it('drops the latch when the org switches underneath it', () => {
     const { rerender } = renderDock();
     fireEvent.click(screen.getByLabelText('New note'));
@@ -156,5 +179,16 @@ describe('NewNoteDock cold-start latch', () => {
       );
     });
     expect(mocks.mutate).not.toHaveBeenCalled();
+  });
+  it('shows feedback for a synchronous creation failure and allows a new click', () => {
+    mocks.storeReady = true;
+    mocks.mutate.mockImplementationOnce(() => {
+      throw new Error('store unavailable');
+    });
+    renderDock();
+    fireEvent.click(screen.getByLabelText('New note'));
+    expect(mocks.error).toHaveBeenCalledWith('Couldn’t create the note. Please try again.');
+    fireEvent.click(screen.getByLabelText('New note'));
+    expect(mocks.mutate).toHaveBeenCalledTimes(2);
   });
 });

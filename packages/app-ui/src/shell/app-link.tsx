@@ -16,9 +16,29 @@
 import * as React from "react";
 import { usePorts, type AppLinkComponentProps } from "@prismical/app-client";
 
+// Optional navigation boundary; ordinary links outside it keep their original handlers.
+export const LinkNavigationContext = React.createContext<(() => void) | null>(null);
+
 export const AppLink = React.forwardRef<HTMLAnchorElement, AppLinkComponentProps>(
   function AppLink(props, ref) {
     const Link = usePorts().navigation.Link;
-    return <Link ref={ref} {...props} />;
+    const dismissSidebar = React.useContext(LinkNavigationContext);
+    const onClick: React.MouseEventHandler<HTMLAnchorElement> = event => {
+      props.onClick?.(event);
+      const anchor = event.currentTarget;
+      // Ignore cancelled clicks, downloads, external destinations and new tabs.
+      // Run before the router handles this click so selecting the current route
+      // also dismisses the drawer, even when no route update will be emitted.
+      if (
+        !event.defaultPrevented && event.button === 0 &&
+        !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey &&
+        (!anchor.target || anchor.target === "_self") &&
+        !anchor.hasAttribute("download") &&
+        anchor.protocol === window.location.protocol && anchor.host === window.location.host
+      ) {
+        dismissSidebar?.();
+      }
+    };
+    return <Link ref={ref} {...props} onClick={dismissSidebar ? onClick : props.onClick} />;
   },
 );

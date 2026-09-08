@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigation } from '@prismical/app-client';
+import { useFeatureFlag, useNavigation } from '@prismical/app-client';
 import { MoreVertical } from 'lucide-react';
 import { Button } from '../../../../ui/button';
 import { Input } from '../../../../ui/input';
@@ -62,6 +62,8 @@ function toggleSet<T>(s: Set<T>, key: T, on: boolean): Set<T> {
 export function SkillForm({ mode, existing }: SkillFormProps) {
   const { t } = useTranslation();
   const router = useNavigation();
+  const { enabled: integrationsEnabled } = useFeatureFlag('integrations');
+  const { enabled: skillMcpToolsEnabled } = useFeatureFlag('skillMcpTools');
   const { create, update, remove, clone } = useSkills();
 
   const [name, setName] = React.useState(existing?.name ?? '');
@@ -283,7 +285,7 @@ export function SkillForm({ mode, existing }: SkillFormProps) {
         />
       </div>
 
-      {!isReadOnly && (
+      {!isReadOnly && integrationsEnabled && skillMcpToolsEnabled && (
         <div className="space-y-2">
           <Label>{t('settings.skillLibrary.form.toolsLabel')}</Label>
           {outputTarget !== 'note-title' && (

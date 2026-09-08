@@ -11,6 +11,8 @@ export interface WavInfo {
   sampleRate: number;
   channels: number;
   bitsPerSample: number;
+  /** Byte offset of the first PCM sample (the `data` chunk payload) within the buffer. */
+  dataOffset: number;
   dataBytes: number;
   durationMs: number;
 }
@@ -25,6 +27,7 @@ export function parseWavHeader(buf: Buffer): WavInfo {
   // insert LIST/INFO chunks between them).
   let fmt: { formatCode: number; channels: number; sampleRate: number; bitsPerSample: number } | null = null;
   let dataBytes: number | null = null;
+  let dataOffset: number | null = null;
   let off = 12;
   while (off + 8 <= buf.length) {
     const id = buf.toString('ascii', off, off + 4);
@@ -38,13 +41,14 @@ export function parseWavHeader(buf: Buffer): WavInfo {
         bitsPerSample: buf.readUInt16LE(off + 22),
       };
     } else if (id === 'data') {
+      dataOffset = off + 8;
       dataBytes = Math.min(size, buf.length - (off + 8));
     }
     off += 8 + size + (size % 2); // chunks are word-aligned
   }
 
   if (!fmt) throw new WavParseError('missing fmt chunk');
-  if (dataBytes === null) throw new WavParseError('missing data chunk');
+  if (dataBytes === null || dataOffset === null) throw new WavParseError('missing data chunk');
   if (fmt.formatCode !== 1) throw new WavParseError(`unsupported WAV format code ${fmt.formatCode} (need integer PCM)`);
   if (fmt.channels !== 1) throw new WavParseError(`unsupported channel count ${fmt.channels} (need mono)`);
   if (fmt.sampleRate <= 0 || fmt.bitsPerSample <= 0) throw new WavParseError('invalid fmt values');
@@ -54,9 +58,19 @@ export function parseWavHeader(buf: Buffer): WavInfo {
     sampleRate: fmt.sampleRate,
     channels: fmt.channels,
     bitsPerSample: fmt.bitsPerSample,
+    dataOffset,
     dataBytes,
     durationMs: Math.round((dataBytes / bytesPerSecond) * 1000),
   };
+}
+
+/**
+ * The raw PCM payload of a parsed WAV — a view (no copy) onto the `data` chunk bytes. This is what
+ * the live-lane spool keeps per chunk: header-free, so the stitched lane carries exactly one
+ * header and the payloads concatenate into valid audio.
+ */
+export function wavPcmPayload(buf: Buffer, info: WavInfo): Buffer {
+  return buf.subarray(info.dataOffset, info.dataOffset + info.dataBytes);
 }
 
 /** ~1% of full scale: a live mic's noise floor sits well above this; digital near-silence below. */

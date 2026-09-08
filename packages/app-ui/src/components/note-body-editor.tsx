@@ -109,11 +109,24 @@ function NoteBodyEditorInner({ doc, noteId, status, synced, writable }: InnerPro
     [doc, noteId, placeholder]
   );
 
-  // Publish the live editor to the layout-level dock so the skill run/diff/accept flow can drive it.
-  useRegisterNoteEditor(noteId, editor);
+  // The Y.Doc exists from the first render but is EMPTY until y-sync loads the body, and the editor
+  // is created before that. Publishing it early would let the dock accept a staged skill result into
+  // a document that has not loaded: replace-doc would snapshot an empty body (making its Undo a
+  // note-wipe) and then merge the proposal with the real content once sync landed. Sticky, not the
+  // live `synced` flag - once the body is here a routine reconnect must not yank the review pill.
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    if (synced) setLoaded(true);
+  }, [synced]);
+  const liveEditor = loaded ? editor : null;
 
-  // Apply/clear the diff overlay when a skill candidate is staged/cleared for this note.
-  useSkillDiffDecorations(editor, noteId);
+  // Publish the live editor to the layout-level dock so the skill run/diff/accept flow can drive it.
+  useRegisterNoteEditor(noteId, liveEditor);
+
+  // Apply/clear the diff overlay when a skill candidate is staged/cleared for this note. Also gated:
+  // previewing against the pre-sync empty doc would fail and (for inline-rewrite) claim the user's
+  // selection had been deleted when the document simply had not arrived.
+  useSkillDiffDecorations(liveEditor, noteId);
 
   // Editable only when we own write access and the doc has synced. A transient
   // disconnect deliberately keeps it editable: Yjs buffers offline edits and

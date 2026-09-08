@@ -42,6 +42,7 @@ export class ApiError extends Error {
 export type QueryParams = Record<string, string | number | boolean | string[] | undefined | null>;
 
 interface RequestOptions {
+  onResponse?: (requestId: string | null) => void;
   query?: QueryParams;
   body?: unknown;
   /** Send cookies (for cookie-auth routes like /me/plan). */
@@ -150,6 +151,12 @@ async function request<T>(method: string, path: string, opts: RequestOptions = {
     ...(opts.signal ? { signal: opts.signal } : {}),
   });
 
+  // Diagnostics must never change request behavior.
+  try {
+    opts.onResponse?.(res.headers.get("x-request-id"));
+  } catch {
+    /* best effort */
+  }
   const json = res.status === 204 ? undefined : await res.json().catch(() => ({}));
 
   if (!res.ok) {
@@ -183,11 +190,12 @@ export const apiClient = {
   post: async <T>(
     path: string,
     body: unknown,
-    opts?: { signal?: AbortSignal } & OrgOpt,
+    opts?: { signal?: AbortSignal; onResponse?: (requestId: string | null) => void } & OrgOpt,
   ): Promise<T> =>
     request<T>("POST", path, {
       body,
       signal: opts?.signal,
+      onResponse: opts?.onResponse,
       activeOrgId: opts?.activeOrgId,
       authToken: opts?.authToken,
     }),

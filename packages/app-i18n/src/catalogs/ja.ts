@@ -2,6 +2,80 @@ import type { TranslationShape } from '../catalog-shape';
 import type en from './en';
 
 const ja = {
+  onboarding: {
+  "helpDocs": "お困りですか？ドキュメントを読む",
+  "continueToNote": "ノートに戻る",
+  "useCases": {
+    "meetings": {
+      "title": "会議",
+      "body": "会話をわかりやすいノートやアクション項目にまとめます。"
+    },
+    "lectures": {
+      "title": "講義",
+      "body": "授業の内容を整理された学習ノートにまとめます。"
+    },
+    "voiceNotes": {
+      "title": "音声ノート",
+      "body": "アイデアを記録し、散らばった考えを役立つ形に整理します。"
+    }
+  },
+    welcomeHeading: "AIノートアシスタントへようこそ",
+    welcomeTitle: "最初の音声ノートを作成",
+    welcomeBody: "少し話して、わかりやすいノートにまとめ、結果を確認しましょう。各ステップをご案内します。",
+    start: "ガイドを開始",
+    later: "あとで",
+
+    close: "ガイドを終了",
+  "unavailable": "この操作はまだ利用できません。アプリの読み込みを待つか、× でガイドを終了してください。",
+  "doneTitle": "最初のノートができました",
+  "doneBody": "次は何を記録しますか？",
+  "download": "ダウンロード",
+  "mobileBeta": "モバイル版ベータに参加",
+  "platforms": {
+    "mac": "macOS",
+    "windows": "Windows",
+    "ios": "iOS",
+    "android": "Android"
+  },
+  "tour": {
+    "create": {
+      "title": "ドックからノートを作成",
+      "body": "下のドックの＋ボタンをクリックして、最初のノートを作成しましょう。"
+    },
+    "record": {
+      "title": "録音を開始",
+      "body": "ドックのマイクをクリックし、録音開始を押します。求められたらマイクへのアクセスを許可してください。"
+    },
+    "speak": {
+      "title": "少し話してみましょう",
+      "body": "例えば「今日はPrismicalを試しています。次はこの録音を分かりやすいノートにまとめます」と、数秒話してみてください。"
+    },
+    "stop": {
+      "title": "停止を押しましょう",
+      "body": "録音コントロールの停止をクリックします。録音が保存され、文字起こしが表示されます。"
+    },
+    "transcript": {
+      "title": "これが文字起こしです",
+      "body": "話した内容がここに表示されます。対応モデルでは話者ごとのラベルも付けられます。一人で短く録音した場合は、話者は一人だけのこともあります。"
+    },
+    "enhance": {
+      "title": "音声をノートに整理",
+      "body": "録音パネルの整理をクリックします。下書きができるまで待ちましょう。承認するまではノートを置き換えません。"
+    },
+    "result": {
+      "title": "整理されたノートを確認",
+      "body": "これが提案されたノートです。強調表示された変更を読み、確認操作に進みましょう。"
+    },
+    "review": {
+      "title": "保持、取り消し、修正依頼",
+      "body": "ドックで下書きを保持・取り消したり、テキスト欄で変更を依頼できます。保持をクリックして最初のノートを完成させましょう。"
+    }
+  },
+    replayTitle: "はじめに",
+    replayBody: "クイックガイドをもう一度",
+    title: '最初のノート',
+    recovery: "失敗した操作は再試行できます。× でガイドを終了できます。",
+  },
   common: {
     actions: {
       back: '戻る',
@@ -174,6 +248,7 @@ const ja = {
       noTimeLeft: '残り時間なし',
     },
     secondary: {
+      chat: 'チャット',
       community: 'コミュニティ',
       docs: 'ドキュメント',
       feedback: 'フィードバック',
@@ -577,6 +652,13 @@ const ja = {
       pausedNoSound: '一時停止 — 音なし',
       recording: '録音中',
     },
+    budget: {
+      dismiss: '閉じる',
+      quotaSoon: '今月の文字起こしは残り約 {{duration}} です',
+      quotaSoonDescription: 'この録音のほうが長くなります。使い切ると文字起こしは止まります。',
+      stopNow: '今すぐ停止',
+      upgrade: 'アップグレード',
+    },
     errors: {
       autoStartDescription: 'ノートの準備ができていませんでした。手動で録音を開始できます。',
       autoStartTitle: '自動文字起こしを開始できませんでした',
@@ -590,7 +672,7 @@ const ja = {
       deadMicDescription: 'システムがブラウザのマイクアクセスをブロックしている可能性があります。',
       deadMicHelp: '解決方法',
       deadMicTitle: 'マイクに音声が届いていません',
-      limitSoon: 'この録音はあと {{minutes}} 分です',
+      limitSoon: 'この録音は残り {{minutes}} 分未満です',
       limitSoonDescription: '現在のプランでは {{limit}} 分までの録音が可能です。上限に達すると自動的に停止します。',
       limitStopped: 'プランの上限（{{minutes}} 分）に達したため録音を停止しました。',
       limitStoppedDescription: 'ノートと文字起こしは保存されています。続けるには新しい録音を開始するか、アップグレードして長い録音を有効にしてください。',
@@ -606,7 +688,7 @@ const ja = {
       noMicrophone: '利用できるマイクがありません。入力機器を接続または有効にしてください。',
       noMicrophoneSystemAudioContinues:
         '利用できるマイクがありません。入力機器を接続または有効にしてください。システム音声の録音は続いています。',
-      quotaExceeded: '今月分のクラウド文字起こしを使い切りました。',
+      quotaExceeded: 'このセッションのクラウド文字起こしを一時停止しました。',
       renameSpeaker: '話者名を変更できませんでした',
       savedWithErrors: '録音はエラーを含む状態で保存されました。',
       someAudioNotTranscribed: '一部の音声を文字起こしできませんでした。',
@@ -620,6 +702,7 @@ const ja = {
       empty: '文字起こしはまだありません。録音を開始して会議やボイスノートを記録しましょう。',
       finishing: '仕上げています…',
       identifyingSpeakers: '話者を識別しています…',
+      waitingForTranscription: '文字起こしの完了を待っています…',
       input: '入力',
       allAudioSettings: 'すべてのオーディオ設定…',
       systemAudioCaptured: 'システム音声も録音されます',
@@ -794,9 +877,9 @@ const ja = {
       newSectionAdded: '新しいセクションを追加しました',
       noteReplaced: 'ノートを置き換えました',
       previewRewriteFailed:
-        '書き換えをプレビューできませんでした。選択したテキストが変更または削除されています。もう一度選択してお試しください。',
+        '書き換えをプレビューできませんでした。選択したテキストが変更または削除されています。提案は保持されています。取り消すか、テキストを選択し直して実行してください。',
       previewRunFailed:
-        '実行結果をプレビューできませんでした。エディターの状態が変更されています。スキルをもう一度実行してください。',
+        'この提案は現在プレビューできません。提案は保持されています。レビューバーから採用するか取り消してください。',
       refine: '調整',
       refineInstruction: '指示を追加して調整',
       refinePlaceholder: '調整内容を入力…',
@@ -810,6 +893,7 @@ const ja = {
       submitRefinement: '調整を送信',
       targetMissing: '書き換え対象のテキストはもう存在しません。選択し直して再度実行してください。',
       undo: '元に戻す',
+      waitingForDocument: 'ノートの読み込みを待っています…',
     },
     inline: { captureError: '選択範囲を取得できませんでした。テキストを選択し直してください。' },
     run: {
@@ -843,6 +927,10 @@ const ja = {
         manage: '管理',
         noMatch: '「{{query}}」に一致するモデルはありません。',
         noModels: 'このプロバイダーには利用可能な{{useCase}}モデルがありません。',
+        freeTierRateLimited:
+          '{{provider}} の無料キーはレート制限が厳しく、連続した録音には使えません。課金を有効にしたキーを使用してください。',
+        noSpeakerLabels:
+          '{{provider}} では話者の識別にまだ対応していません。文字起こしで話者を区別するには、Prismical Cloud のモデルをご利用ください。',
         stepModel: 'ステップ 2/2 — {{useCase}}モデルを選択します。',
         stepSource: 'ステップ 1/2 — ソースを選択します。',
         title: '{{useCase}}モデルを変更',
@@ -1538,7 +1626,7 @@ const ja = {
           displayName: '無料',
           notesSharing: 'ノート共有',
           price: '$0/月',
-          recordingValue: '30分',
+          recordingValue: '1時間',
           seat: '席',
           seatValue: '1',
           standardModels: '標準AIモデル',

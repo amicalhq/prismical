@@ -160,7 +160,8 @@ function CreateInstanceWizard({
     return Object.keys(creds).length > 0 ? creds : undefined;
   };
 
-  // Step 1 → create the instance (the catalog fetch on the next step validates the key).
+  // Step 1 → create the instance. The catalog fetch on the next step is what validates the
+  // key, so a provider whose catalog endpoint does not authenticate validates nothing here.
   const handleConnect = async () => {
     setBusy(true);
     setError(null);
@@ -348,6 +349,8 @@ function CreateInstanceWizard({
               value={transcribeModel}
               onChange={setTranscribeModel}
               open={open}
+              provider={provider}
+              providerLabel={meta.label}
             />
           )}
 
@@ -394,11 +397,15 @@ function DefaultStep({
   value,
   onChange,
   open,
+  provider,
+  providerLabel,
 }: {
   label: string;
   instanceId: string;
   modelType: ModelType;
   useCaseLabel: string;
+  provider?: string;
+  providerLabel?: string;
   value: string | null;
   onChange: (v: string | null) => void;
   open: boolean;
@@ -424,6 +431,8 @@ function DefaultStep({
         onChange={onChange}
         enabled={open}
         useCaseLabel={useCaseLabel}
+        provider={provider}
+        providerLabel={providerLabel}
       />
     </div>
   );
@@ -575,26 +584,30 @@ function EditInstanceDialog({
 
           {showCuration && (
             <div className="space-y-1 border-t pt-3">
-              {/* Ask — Manage curated list */}
-              <Collapsible className="space-y-2">
-                <CollapsibleTrigger className="flex w-full items-center justify-between rounded-md px-1 py-2 text-sm hover:bg-accent">
-                  <span className="font-medium">
-                    {t('settings.aiModels.form.askPickerTitle')}
-                    <span className="ml-2 text-xs text-muted-foreground">
-                      {t('settings.aiModels.form.selected', { count: selectedModels.length })}
+              {/* Ask — Manage curated list. Language-only: this feeds the Ask model picker and
+                  ModelCuration lists `type === 'language'` entries, so on a transcription-only
+                  provider (Deepgram) the section could only ever render empty. */}
+              {caps.includes('language') && (
+                <Collapsible className="space-y-2">
+                  <CollapsibleTrigger className="flex w-full items-center justify-between rounded-md px-1 py-2 text-sm hover:bg-accent">
+                    <span className="font-medium">
+                      {t('settings.aiModels.form.askPickerTitle')}
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        {t('settings.aiModels.form.selected', { count: selectedModels.length })}
+                      </span>
                     </span>
-                  </span>
-                  <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform data-[state=open]:rotate-180" />
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <ModelCuration
-                    instanceId={id}
-                    value={selectedModels}
-                    onChange={setSelectedModels}
-                    enabled={open}
-                  />
-                </CollapsibleContent>
-              </Collapsible>
+                    <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform data-[state=open]:rotate-180" />
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <ModelCuration
+                      instanceId={id}
+                      value={selectedModels}
+                      onChange={setSelectedModels}
+                      enabled={open}
+                    />
+                  </CollapsibleContent>
+                </Collapsible>
+              )}
 
               {/* Skills (formatting) default */}
               {caps.includes('language') && (
@@ -618,6 +631,8 @@ function EditInstanceDialog({
                   modelType="transcription"
                   useCaseLabel={t('settings.aiModels.useCases.transcription.pickerLabel')}
                   open={open}
+                  provider={provider}
+                  providerLabel={meta.label}
                   onPick={m => setDefaultFor('transcription', m)}
                 />
               )}
@@ -648,6 +663,8 @@ function EditDefaultRow({
   useCaseLabel,
   open,
   onPick,
+  provider,
+  providerLabel,
 }: {
   title: string;
   current: string;
@@ -655,6 +672,8 @@ function EditDefaultRow({
   modelType: ModelType;
   useCaseLabel: string;
   open: boolean;
+  provider?: string;
+  providerLabel?: string;
   onPick: (modelId: string) => void;
 }) {
   return (
@@ -674,6 +693,8 @@ function EditDefaultRow({
           onChange={onPick}
           enabled={open}
           useCaseLabel={useCaseLabel}
+          provider={provider}
+          providerLabel={providerLabel}
         />
       </CollapsibleContent>
     </Collapsible>
@@ -727,7 +748,7 @@ function ConfigField({
         placeholder={
           isEdit && SECRET_FIELDS.has(f.field)
             ? t('settings.aiModels.form.leaveKeyBlank')
-            : FIELD_PLACEHOLDERS[f.field]
+            : (f.placeholder ?? FIELD_PLACEHOLDERS[f.field])
         }
         value={stringValue}
         onChange={e => setValues(prev => ({ ...prev, [f.field]: e.target.value }))}

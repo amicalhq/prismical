@@ -25,6 +25,25 @@ function mockFetch(status: number, body: unknown) {
 afterEach(() => vi.restoreAllMocks());
 
 describe("apiClient", () => {
+  it("exposes the server request ID without letting diagnostics change the response", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ id: "result" }), {
+          status: 200,
+          headers: { "x-request-id": "req_server" },
+        }),
+      ),
+    );
+    const onResponse = vi.fn(() => {
+      throw new Error("analytics failed");
+    });
+    await expect(apiClient.post("/me/skills/test/run", {}, { onResponse })).resolves.toEqual({
+      id: "result",
+    });
+    expect(onResponse).toHaveBeenCalledWith("req_server");
+  });
+
   it.each(["http", "desktop"])("preserves actionable error details over %s", async (transport) => {
     const details = {
       lane: "your-key",
@@ -133,7 +152,9 @@ describe("apiClient", () => {
   it("maps an error envelope to ApiError", async () => {
     vi.stubGlobal("fetch", mockFetch(404, { error: { code: "NOT_FOUND", message: "Not found" } }));
     await expect(apiClient.get("/me/notes/none")).rejects.toMatchObject({
-      name: "ApiError", code: "NOT_FOUND", status: 404,
+      name: "ApiError",
+      code: "NOT_FOUND",
+      status: 404,
     });
   });
   it("calls onUnauthorized on 401", async () => {
@@ -148,9 +169,19 @@ describe("apiClient", () => {
     expect(f.mock.calls[0]![0]).toBe("https://core.test/me/notes?includeBody=1&folder=f1");
   });
   it("maps a flat string error body to ApiError", async () => {
-    vi.stubGlobal("fetch", mockFetch(400, { error: "Invalid request", message: "bad query", details: { query: ["required"] } }));
+    vi.stubGlobal(
+      "fetch",
+      mockFetch(400, {
+        error: "Invalid request",
+        message: "bad query",
+        details: { query: ["required"] },
+      }),
+    );
     await expect(apiClient.getRaw("/me/search")).rejects.toMatchObject({
-      name: "ApiError", code: "INVALID_REQUEST", message: "bad query", status: 400,
+      name: "ApiError",
+      code: "INVALID_REQUEST",
+      message: "bad query",
+      status: 400,
     });
   });
   it("list() returns [] on an empty 2xx body", async () => {

@@ -20,7 +20,8 @@ import { useTranslation } from 'react-i18next';
  * endpoint is one POST with no progress stream, so any steps would be invented. Keep / Undo stay
  * on the review pill (one source of truth); "Review in note" just hands the user to it.
  *
- * Ephemeral: the record lives in the client run feed (EXA-24 persists it as a conversation turn).
+ * Ephemeral: the record lives in the client run feed; persisting it as a conversation turn is
+ * follow-up work.
  */
 export function AskSkillRunTurn({
   run,

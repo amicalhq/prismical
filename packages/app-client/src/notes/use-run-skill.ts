@@ -19,6 +19,7 @@ import {
 } from "@prismical/editor-markdown";
 import { useSkillDiffStore } from "./diff/skill-diff-store";
 import { useSkillRunActivityStore, type SkillRunSource } from "./skill-run-activity-store";
+import { startSkillRunTiming } from "./skill-run-timing";
 import { EVENTS } from "../analytics-events";
 import { usePorts } from "../ports-context";
 import type { SelectionAnchors } from "./diff/selection-anchors";
@@ -48,6 +49,8 @@ function sameTitleIntent(before: TitleState | undefined, current: TitleState | u
 }
 
 export interface RunSkillArgs {
+  requestedAt?: number;
+  attemptId?: string;
   outputTarget?: "note-body" | "note-title";
   skillId: string;
   skillName: string; // for the error/cancel toast
@@ -99,23 +102,50 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
   // must cancel that wait so its eventual result cannot stage into a stale editor.
   useEffect(
     () => () => {
-      acRef.current?.abort();
+      acRef.current?.abort("unmounted");
     },
     [noteId],
   );
 
   const run = useCallback(
     async (args: RunSkillArgs) => {
-      if (!editor && args.outputTarget !== "note-title") return;
+      const timing = startSkillRunTiming(
+        analytics,
+        {
+          skill_id: args.skillId,
+          note_id: noteId,
+          recording_id: args.recordingId,
+          source: args.source ?? "dock",
+          output_target: args.outputTarget ?? "note-body",
+        },
+        undefined,
+        args.requestedAt,
+        args.attemptId,
+      );
+      if (!editor && args.outputTarget !== "note-title") {
+        timing.finish("skipped", "EDITOR_UNAVAILABLE");
+        return;
+      }
       if (args.outputTarget === "note-title" && hasDirtyTitleDraft(noteId)) {
+        timing.finish("skipped", "TITLE_CHANGED");
         toast.error(t("notes.titleConflict"));
         return;
       }
-      // Copy the snapshot: Legend's peek value can be mutated by subsequent sync merges.
+      let errorCode: string | undefined;
+      const onAbort = () =>
+        timing.finish(
+          ac.signal.reason === "unmounted"
+            ? "abandoned"
+            : ac.signal.reason === "superseded"
+              ? "superseded"
+              : "stopped",
+        );
+      // Copy the snapshot: sync merges can mutate the original object.
       const titleAtStart = { ...store?.notes$[noteId]?.peek() };
-      acRef.current?.abort();
+      acRef.current?.abort("superseded");
       const ac = new AbortController();
       acRef.current = ac;
+      ac.signal.addEventListener("abort", onAbort, { once: true });
       // Only a FRESH recording-scoped run is what the transcript bar's Enhance chip re-runs, so
       // only those participate in its failure marker. Refining an already-staged diff also carries
       // a recordingId, but re-showing that bar mid-review would offer a chip that can do nothing
@@ -126,6 +156,7 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
       // outlives the condition it describes.
       if (retryableFromTranscriptBar) {
         useAutoEnhanceStore.getState().clearFailed(args.recordingId!);
+        useAutoEnhanceStore.getState().clearWaiting(args.recordingId!);
       }
       setRunning(true);
       // Also publish to the cross-instance activity store — the inline popover hides while ANY
@@ -160,6 +191,7 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
         detail?: string,
         extra?: Parameters<typeof activity.finish>[3],
       ) => {
+        timing.finish(status, errorCode);
         if (feedId) activity.finish(feedId, status, detail, extra);
       };
       try {
@@ -167,7 +199,7 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
         // choice is never silently dropped on the first run. `forceCloud` (the "Use Prismical
         // Cloud" recovery action) sends no instance at all, which the server resolves to Auto.
         const modelParams = args.forceCloud ? {} : await ensureModelDefault(qc, "formatting");
-        const result = await retryTranscriptFinalizing(() => {
+        const result = await retryTranscriptFinalizing(async () => {
           // A readiness wait may last long enough for the user to keep editing. Re-serialize on
           // every attempt so the first request the server accepts carries the current note, not
           // the snapshot captured before diarization began.
@@ -183,22 +215,32 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
               );
             }
           }
-          return runSkillRequest(
-            args.skillId,
-            {
-              noteId,
-              recordingId: args.recordingId,
-              noteMarkdown,
-              mode: args.mode,
-              selectionText: args.selectionText,
-              refineInstruction: args.refineInstruction,
-              previousOutput: args.previousOutput,
-              ...modelParams,
-            },
-            ac.signal,
-          );
+          timing.request();
+          try {
+            return await runSkillRequest(
+              args.skillId,
+              {
+                noteId,
+                recordingId: args.recordingId,
+                noteMarkdown,
+                mode: args.mode,
+                selectionText: args.selectionText,
+                refineInstruction: args.refineInstruction,
+                previousOutput: args.previousOutput,
+                ...modelParams,
+              },
+              ac.signal,
+              timing.response,
+            );
+          } catch (err) {
+            if (err instanceof ApiError && err.code === "TRANSCRIPT_FINALIZING")
+              timing.transition("waiting-transcript");
+            throw err;
+          }
         }, ac.signal);
         if (ac.signal.aborted) return;
+        timing.model(result.modelId);
+        timing.transition("staging");
         if (result.outputTarget === "note-title") {
           if (
             !result.titleRunId ||
@@ -314,13 +356,31 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
           scoped_to_recording: !!result.recordingId,
         });
       } catch (err) {
+        if (err instanceof ApiError && err.requestId) timing.response(err.requestId);
+        errorCode =
+          err instanceof ApiError
+            ? err.code
+            : isNetworkFailure(err)
+              ? "NETWORK_ERROR"
+              : "CLIENT_ERROR";
         // User-initiated cancellation (abort) is not a failure — show no toast.
         if (ac.signal.aborted) return;
-        // Whatever the toast below says, republish the failure before returning down any of these
+        // Whatever the toast below says, republish the outcome before returning down any of these
         // branches: the transcript bar's Enhance chip is that recording's only retry affordance and
-        // it sits on a dismiss timer.
+        // it sits on a dismiss timer. A run that ran out its transcript-readiness budget is PARKED,
+        // not failed: the server's finalize work continues and the bar re-fires the run itself
+        // once that settles — it must never read as an error.
+        const parked = err instanceof ApiError && err.code === "TRANSCRIPT_FINALIZING";
         if (retryableFromTranscriptBar) {
-          useAutoEnhanceStore.getState().markFailed(args.recordingId!);
+          if (parked) useAutoEnhanceStore.getState().markWaiting(args.recordingId!);
+          else useAutoEnhanceStore.getState().markFailed(args.recordingId!);
+        }
+        if (parked && retryableFromTranscriptBar) {
+          // The transcript bar carries the parked state (and re-fires the run when the transcript
+          // settles), so no toast on top of it — the server's `details.user` copy below would
+          // otherwise render one. A bare whole-note run has no bar and keeps the toast.
+          finish("skipped", t("skills.run.transcriptFinalizing"));
+          return;
         }
         // The server describes AI failures for the user — localized title/body, severity, and the
         // recovery actions to offer (`details.user`). Render that as-is: the client only binds the
@@ -329,9 +389,22 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
         const user = aiUserErrorOf(err);
         if (user) {
           const actions = bindAiErrorActions(user.actions, {
-            retry: () => void runRef.current(args),
-            "use-cloud": () => void runRef.current({ ...args, forceCloud: true }),
-            "append-instead": () => void runRef.current({ ...args, mode: "append-section" }),
+            retry: () =>
+              void runRef.current({ ...args, requestedAt: undefined, attemptId: undefined }),
+            "use-cloud": () =>
+              void runRef.current({
+                ...args,
+                requestedAt: undefined,
+                attemptId: undefined,
+                forceCloud: true,
+              }),
+            "append-instead": () =>
+              void runRef.current({
+                ...args,
+                requestedAt: undefined,
+                attemptId: undefined,
+                mode: "append-section",
+              }),
             "open-ai-models": () => navigation.push("/settings/ai-models"),
             "choose-model": () => navigation.push("/settings/ai-models"),
             "open-billing": () => navigation.push("/settings/billing"),
@@ -357,7 +430,11 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
           const msg = t("skills.run.offline");
           toast.error(msg, {
             description: t("skills.run.offlineBody"),
-            action: { label: t("common.actions.retry"), onClick: () => void runRef.current(args) },
+            action: {
+              label: t("common.actions.retry"),
+              onClick: () =>
+                void runRef.current({ ...args, requestedAt: undefined, attemptId: undefined }),
+            },
           });
           finish("error", msg, {
             body: t("skills.run.offlineBody"),
@@ -365,7 +442,8 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
               {
                 kind: "retry",
                 label: t("common.actions.retry"),
-                onClick: () => void runRef.current(args),
+                onClick: () =>
+                  void runRef.current({ ...args, requestedAt: undefined, attemptId: undefined }),
               },
             ],
           });
@@ -400,7 +478,7 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
           finish("skipped", msg);
           return;
         }
-        if (err instanceof ApiError && err.code === "TRANSCRIPT_FINALIZING") {
+        if (parked) {
           const msg = t("skills.run.transcriptFinalizing");
           toast.info(msg);
           finish("skipped", msg);
@@ -414,6 +492,7 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
         // Catch-all so a record can never stay "running": an abort is the user's Stop; any other
         // early return (no editor, a silent bail) reads as a failure with no detail.
         finish(ac.signal.aborted ? "stopped" : "error");
+        ac.signal.removeEventListener("abort", onAbort);
         useSkillRunActivityStore.getState().stop(noteId);
         if (acRef.current === ac) {
           setRunning(false);

@@ -1,28 +1,31 @@
 'use client';
 
 import * as React from 'react';
-import { BookText, MessageCircle, MessageSquare } from 'lucide-react';
-import {
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-} from '../ui/sidebar';
+import { BookText, MessageSquare } from 'lucide-react';
+import { IconBrandDiscord } from '@tabler/icons-react';
+import { SidebarGroup, SidebarGroupContent } from '../ui/sidebar';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
+import { cn } from '../lib/utils';
 import { useTranslation } from 'react-i18next';
 
+// Secondary destinations are compact icon buttons that almost nobody
+// clicks in a session, so they sit as one row of icon buttons rather than three
+// full-width rows - the notes navigation above needs the vertical space more.
+// The label each row used to show lives in the tooltip and the aria-label.
 const secondaryLinks = [
   {
     id: 'docs',
     titleKey: 'navigation.secondary.docs',
     url: 'https://prismical.ai/docs',
     icon: BookText,
+    external: true,
   },
   {
     id: 'community',
     titleKey: 'navigation.secondary.community',
     url: 'https://prismical.ai/community',
-    icon: MessageCircle,
+    icon: IconBrandDiscord,
+    external: true,
   },
 ] as const;
 
@@ -30,40 +33,45 @@ const secondaryLinks = [
 // the web-only "Get the apps" link (https://prismical.ai/apps, gated off desktop via
 // useDesktopCapabilities().has("global-shortcuts")).
 
-export function NavSecondary({ ...props }: React.ComponentProps<typeof SidebarGroup>) {
+export function NavSecondary({ supportAction, className, ...props }: React.ComponentProps<typeof SidebarGroup> & { supportAction?: React.ReactNode }) {
   const { t } = useTranslation();
-  const links = secondaryLinks;
   return (
-    <SidebarGroup {...props}>
+    <SidebarGroup className={cn('px-2 py-1', className)} {...props}>
       <SidebarGroupContent>
-        <SidebarMenu>
-          {links.map(item => (
-            <SidebarMenuItem key={item.id}>
-              <SidebarMenuButton asChild size="sm" className="text-sm text-sidebar-foreground">
+        <div className="flex items-center gap-1">
+          {secondaryLinks.map(item => {
+            const label = item.id === 'community' ? 'Discord' : t(item.titleKey);
+            return (
+              <Tooltip key={item.id}>
+                <TooltipTrigger asChild>
+                  <a
+                    href={item.url}
+                    {...(item.external ? { target: '_blank', rel: 'noreferrer' } : {})}
+                    aria-label={label}
+                    className="flex size-7 items-center justify-center rounded-md text-sidebar-foreground-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:outline-hidden"
+                  >
+                    <item.icon className="size-4" />
+                  </a>
+                </TooltipTrigger>
+                <TooltipContent side="top">{label}</TooltipContent>
+              </Tooltip>
+            );
+          })}
+          {supportAction ?? (
+            <Tooltip>
+              <TooltipTrigger asChild>
                 <a
-                  href={item.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  aria-label={t(item.titleKey as never)}
+                  href="mailto:help@prismical.ai"
+                  aria-label={t('navigation.secondary.sendFeedback')}
+                  className="flex size-7 items-center justify-center rounded-md text-sidebar-foreground-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:outline-hidden"
                 >
-                  <item.icon className="size-4" />
-                  <span>{t(item.titleKey as never)}</span>
+                  <MessageSquare className="size-4" />
                 </a>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          ))}
-          <SidebarMenuItem>
-            <SidebarMenuButton asChild size="sm" className="text-sm text-sidebar-foreground">
-              <a
-                href="mailto:feedback@prismical.ai"
-                aria-label={t('navigation.secondary.sendFeedback')}
-              >
-                <MessageSquare className="size-4" />
-                <span>{t('navigation.secondary.feedback')}</span>
-              </a>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+              </TooltipTrigger>
+              <TooltipContent side="top">{t('navigation.secondary.feedback')}</TooltipContent>
+            </Tooltip>
+          )}
+        </div>
       </SidebarGroupContent>
     </SidebarGroup>
   );

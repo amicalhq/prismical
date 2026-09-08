@@ -2,7 +2,7 @@
 
 import { useTranslation } from 'react-i18next';
 import { MessageCircle, Sparkles } from 'lucide-react';
-import { useSkillsList } from '@prismical/app-client';
+import { useEntitlements, useSkillsList } from '@prismical/app-client';
 import { useCurrentNote } from '../../shell/current-note-context';
 import { askSkills } from '@prismical/app-client';
 import { skillDisplayDescription, skillDisplayName } from '../../lib/skill-presentation';
@@ -28,6 +28,10 @@ const CHIP_CLASS =
  * guidance or just sends); off-note they fall back to the user's `ask`-surface skills, whose saved
  * prompt FILLS the composer for editing. Capped at {@link MAX_SKILL_CHIPS}; descriptions live in
  * the hover tooltip, never inline.
+ *
+ * On a plan without Ask (`useEntitlements`) the question chips and the prompt-filling chips are
+ * not offered (they would only be refused); the dock skill chips stay, since skills run on
+ * credits, not on Ask. The composer's gate line says why.
  */
 export function AskSuggestions({
   canRunSkills,
@@ -47,6 +51,7 @@ export function AskSuggestions({
   const { t } = useTranslation();
   const { data: skills = [] } = useSkillsList();
   const { currentNote } = useCurrentNote();
+  const askAllowed = useEntitlements().entitlements.features.askAi;
 
   const questions = currentNote
     ? [t('ask.suggestions.noteSummary'), t('ask.suggestions.noteActions')]
@@ -62,25 +67,27 @@ export function AskSuggestions({
         .slice(0, MAX_SKILL_CHIPS)
     : [];
   const promptSkills =
-    dockSkills.length > 0
+    dockSkills.length > 0 || !askAllowed
       ? []
       : askSkills(skills, { hasNote: Boolean(currentNote) }).slice(0, MAX_SKILL_CHIPS);
 
   return (
     <div className="flex flex-col items-start gap-1.5">
-      <div className="flex flex-wrap gap-1.5">
-        {questions.map(q => (
-          <button
-            key={q}
-            type="button"
-            onClick={() => onAsk(q, questionNotes)}
-            className={CHIP_CLASS}
-          >
-            <MessageCircle className="size-3 shrink-0 text-dock-ink-3" />
-            <span className="max-w-[260px]">{q}</span>
-          </button>
-        ))}
-      </div>
+      {askAllowed ? (
+        <div className="flex flex-wrap gap-1.5">
+          {questions.map(q => (
+            <button
+              key={q}
+              type="button"
+              onClick={() => onAsk(q, questionNotes)}
+              className={CHIP_CLASS}
+            >
+              <MessageCircle className="size-3 shrink-0 text-dock-ink-3" />
+              <span className="max-w-[260px]">{q}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
       {dockSkills.length > 0 || promptSkills.length > 0 ? (
         <div className="flex flex-wrap gap-1.5">
           {dockSkills.map(s => (

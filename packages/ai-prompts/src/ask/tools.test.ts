@@ -9,19 +9,22 @@ import {
   ASK_STEP_BUDGET_NOTES_ONLY,
   ASK_STEP_BUDGET_WITH_MCP,
   ASK_TOOL_SPECS,
+  ASK_PRODUCT_HELP_SPEC,
 } from './tools.js';
 
 describe('the ask tool contract', () => {
-  it('declares exactly the two built-ins the system prompt promises', () => {
+  it('preserves the note tools and exposes product help on the cloud MCP path', () => {
     expect(ASK_TOOL_SPECS.map(s => s.name)).toEqual(['search_notes', 'get_note']);
-    expect([...ASK_BUILTIN_TOOL_NAMES]).toEqual(ASK_TOOL_SPECS.map(s => s.name));
+    expect([...ASK_BUILTIN_TOOL_NAMES]).toEqual(
+      [...ASK_TOOL_SPECS, ASK_PRODUCT_HELP_SPEC].map(s => s.name)
+    );
   });
 
   it('keeps every input key REQUIRED, using .nullable() rather than .optional()', () => {
     // Not a style preference: @ai-sdk/openai's strict structured tools require every property in
     // `required`, and an `.optional()` key 400s the call outright. The JSON schema below is what the
     // model is actually handed, so asserting on it is asserting on the wire.
-    for (const spec of ASK_TOOL_SPECS) {
+    for (const spec of [...ASK_TOOL_SPECS, ASK_PRODUCT_HELP_SPEC]) {
       const json = z.toJSONSchema(spec.inputSchema) as unknown as {
         properties: Record<string, unknown>;
         required?: string[];
@@ -31,7 +34,7 @@ describe('the ask tool contract', () => {
   });
 
   it('describes every input, because a describe() rides into the prompt', () => {
-    for (const spec of ASK_TOOL_SPECS) {
+    for (const spec of [...ASK_TOOL_SPECS, ASK_PRODUCT_HELP_SPEC]) {
       const json = z.toJSONSchema(spec.inputSchema) as unknown as {
         properties: Record<string, { description?: string }>;
       };

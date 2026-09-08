@@ -125,10 +125,14 @@ export const AuthorizeMcpServerResponseSchema = z
 export type AuthorizeMcpServerResponse = z.output<typeof AuthorizeMcpServerResponseSchema>;
 export const McpConnectCallbackQuerySchema = z.object({
   code: z.string().optional(),
-  state: z.string().min(1),
+  // Optional on purpose: some providers (Slack, on a cancelled consent) redirect back with only
+  // `error=...` and no `state`. The route decides what a missing/invalid state means; the schema
+  // must not turn it into a raw validation error page on the API host.
+  state: z.string().optional(),
   error: z.string().optional(),
   error_description: z.string().optional(),
 });
 
-/** This operation redirects on a valid flow and returns JSON for invalid state. */
+/** This operation redirects on a valid flow (and on a provider error without state) and serves a
+ *  friendly HTML page for an untrustable state. */
 export const MCP_CONNECT_CALLBACK_OPERATION_ID = 'mcpConnectCallback';

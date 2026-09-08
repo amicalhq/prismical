@@ -8,6 +8,7 @@ import { Label } from '../../../../ui/label';
 import { RadioGroup, RadioGroupItem } from '../../../../ui/radio-group';
 import { useInstanceModels } from '@prismical/app-client';
 import type { ModelType } from '../../../../lib/providers';
+import { TranscriptionCaveats } from './transcription-caveats';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -23,6 +24,8 @@ export function SingleModelPicker({
   onChange,
   enabled,
   useCaseLabel,
+  provider,
+  providerLabel,
 }: {
   instanceId: string;
   modelType: ModelType;
@@ -31,6 +34,14 @@ export function SingleModelPicker({
   enabled: boolean;
   /** e.g. "transcription" / "text generation" — used in the empty-state copy. */
   useCaseLabel: string;
+  /**
+   * Provider TYPE, for the transcription caveats below. Optional so non-transcription callers need
+   * not thread it - but note the caveats render only when it is present: an absent provider would
+   * otherwise produce "Speaker identification is not supported with  yet", since "no speaker
+   * labels" is the safe default for an unknown provider.
+   */
+  provider?: string;
+  providerLabel?: string;
 }) {
   const { t, i18n } = useTranslation();
   const {
@@ -57,6 +68,9 @@ export function SingleModelPicker({
 
   return (
     <div className="space-y-2">
+      {modelType === 'transcription' && provider && (
+        <TranscriptionCaveats provider={provider} providerLabel={providerLabel ?? provider} />
+      )}
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />

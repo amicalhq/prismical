@@ -80,6 +80,65 @@ function delayedResult() {
 }
 
 describe('title skill result dispatch', () => {
+  it('records a note-body suggestion only after it is staged', async () => {
+    mocks.request.mockResolvedValue({ skillId: 'skl_enhance', skillName: 'Enhance', modelId: 'test-model', mode: 'replace-doc', rawMarkdown: 'Summary', reasoning: null });
+    const editor = { getJSON: () => ({ type: 'doc', content: [] }) } as unknown as Editor;
+    const { result: hook } = renderHook(() => useRunSkill(noteId, editor));
+    await act(() => hook.current.run({ skillId: 'skl_enhance', skillName: 'Enhance' }));
+    expect(useSkillDiffStore.getState().getCandidate(noteId)?.rawMarkdown).toBe('Summary');
+    const terminal = mocks.capture.mock.calls.filter(([event]) => event === 'skill_run_finished');
+    expect(terminal).toHaveLength(1);
+    expect(terminal[0]?.[1]).toMatchObject({ status: 'staged', model_id: 'test-model', request_count: 1 });
+  });
+  it('records an abandoned attempt when its editor unmounts', async () => {
+    const finish = delayedResult();
+    const { result: hook, unmount } = renderHook(() => useRunSkill(noteId, null));
+    let pending!: Promise<void>;
+    act(() => { pending = hook.current.run(args); });
+    await waitFor(() => expect(mocks.request).toHaveBeenCalled());
+    unmount();
+    expect(mocks.capture).toHaveBeenCalledWith('skill_run_finished', expect.objectContaining({ status: 'abandoned' }));
+    await act(async () => { finish(); await pending; });
+    expect(mocks.capture.mock.calls.filter(([event]) => event === 'skill_run_finished')).toHaveLength(1);
+  });
+
+  it('emits one terminal event after the result is applied', async () => {
+    const { result: hook } = renderHook(() => useRunSkill(noteId, null));
+    await act(() => hook.current.run(args));
+    expect(mocks.capture).toHaveBeenCalledWith(
+      'skill_run_started',
+      expect.objectContaining({ skill_id: args.skillId })
+    );
+    const terminal = mocks.capture.mock.calls.filter(([event]) => event === 'skill_run_finished');
+    expect(terminal).toHaveLength(1);
+    expect(terminal[0]?.[1]).toMatchObject({
+      status: 'applied',
+      duration_ms: expect.any(Number),
+      request_count: 1,
+    });
+  });
+  it('records cancellation immediately even when the request has not settled', async () => {
+    const finish = delayedResult();
+    const { result: hook } = renderHook(() => useRunSkill(noteId, null));
+    let pending!: Promise<void>;
+    act(() => {
+      pending = hook.current.run(args);
+    });
+    await waitFor(() => expect(mocks.request).toHaveBeenCalled());
+    act(() => hook.current.cancel());
+    expect(mocks.capture).toHaveBeenCalledWith(
+      'skill_run_finished',
+      expect.objectContaining({ status: 'stopped' })
+    );
+    await act(async () => {
+      finish();
+      await pending;
+    });
+    expect(
+      mocks.capture.mock.calls.filter(([event]) => event === 'skill_run_finished')
+    ).toHaveLength(1);
+  });
+
   it('applies immediately, without staging a body diff, and offers guarded Undo', async () => {
     const { result: hook } = renderHook(() => useRunSkill(noteId, null));
     await act(() => hook.current.run(args));

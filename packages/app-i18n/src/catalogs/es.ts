@@ -2,6 +2,80 @@ import type { TranslationShape } from '../catalog-shape';
 import type en from './en';
 
 const es = {
+  onboarding: {
+  "helpDocs": "¿Necesitas ayuda? Lee la documentación",
+  "continueToNote": "Continuar a mi nota",
+  "useCases": {
+    "meetings": {
+      "title": "Reuniones",
+      "body": "Convierte conversaciones en notas claras y tareas."
+    },
+    "lectures": {
+      "title": "Clases",
+      "body": "Convierte las lecciones en apuntes de estudio organizados."
+    },
+    "voiceNotes": {
+      "title": "Notas de voz",
+      "body": "Captura ideas y convierte pensamientos sueltos en algo útil."
+    }
+  },
+    welcomeHeading: "Te damos la bienvenida a tu asistente de notas con IA",
+    welcomeTitle: "Crea tu primera nota de voz",
+    welcomeBody: "Di unas palabras, conviértelas en una nota clara y aprende a revisar el resultado. Te guiaremos paso a paso.",
+    start: "Iniciar recorrido",
+    later: "Quizás más tarde",
+
+    close: "Salir del recorrido",
+  "unavailable": "Este control aún no está disponible. Espera a que cargue la aplicación o usa × para salir del recorrido.",
+  "doneTitle": "Tu primera nota está lista",
+  "doneBody": "¿Qué vas a capturar ahora?",
+  "download": "Descargar",
+  "mobileBeta": "Unirse a la beta móvil",
+  "platforms": {
+    "mac": "macOS",
+    "windows": "Windows",
+    "ios": "iOS",
+    "android": "Android"
+  },
+  "tour": {
+    "create": {
+      "title": "Crea una nota desde el dock",
+      "body": "Haz clic en + en el dock de abajo para crear tu primera nota."
+    },
+    "record": {
+      "title": "Empieza a grabar",
+      "body": "Haz clic en el micrófono del dock y luego en Iniciar grabación. Permite el acceso al micrófono cuando se solicite."
+    },
+    "speak": {
+      "title": "Di unas palabras",
+      "body": "Prueba: ‘Hoy estoy probando Prismical. Mi siguiente paso es convertir esta grabación en una nota clara.’ Habla durante unos segundos."
+    },
+    "stop": {
+      "title": "Ahora pulsa Detener",
+      "body": "Haz clic en Detener en los controles de grabación. Se guardará la grabación y aparecerá la transcripción."
+    },
+    "transcript": {
+      "title": "Aquí está tu transcripción",
+      "body": "Esto es lo que has dicho. Prismical también puede etiquetar distintos hablantes si tu modelo lo admite; una grabación breve de una persona puede tener un solo hablante."
+    },
+    "enhance": {
+      "title": "Convierte tu voz en una nota",
+      "body": "Haz clic en Mejorar en el panel de grabación. Esperaremos el borrador; no reemplazará tu nota hasta que lo aceptes."
+    },
+    "result": {
+      "title": "Revisa tu nota mejorada",
+      "body": "Aquí está la nota sugerida. Lee los cambios resaltados y continúa a los controles de revisión."
+    },
+    "review": {
+      "title": "Conserva, deshaz o pide cambios",
+      "body": "El dock permite conservar el borrador, deshacerlo o describir cambios en el campo de texto. Haz clic en Conservar para terminar."
+    }
+  },
+    replayTitle: "Primeros pasos",
+    replayBody: "Repetir la guía rápida",
+    title: 'Tu primera nota',
+    recovery: "Puedes reintentar una acción fallida o usar × para salir del recorrido.",
+  },
   common: {
     actions: {
       back: 'Atrás',
@@ -197,6 +271,7 @@ const es = {
       noTimeLeft: 'Sin tiempo restante',
     },
     secondary: {
+      chat: 'Chat',
       community: 'Comunidad',
       docs: 'Documentación',
       feedback: 'Comentarios',
@@ -605,6 +680,13 @@ const es = {
       pausedNoSound: 'En pausa: sin sonido',
       recording: 'Grabando',
     },
+    budget: {
+      dismiss: 'Ocultar',
+      quotaSoon: 'Queda alrededor de {{duration}} de transcripción este mes',
+      quotaSoonDescription: 'Esta grabación durará más. La transcripción se detiene cuando se agote.',
+      stopNow: 'Detener ahora',
+      upgrade: 'Mejorar plan',
+    },
     errors: {
       autoStartDescription: 'La nota no estaba lista. Puedes iniciar la grabación manualmente.',
       autoStartTitle: 'No se pudo iniciar la transcripción automática',
@@ -619,7 +701,7 @@ const es = {
         'Es posible que el sistema esté bloqueando el acceso del navegador al micrófono.',
       deadMicHelp: 'Cómo solucionarlo',
       deadMicTitle: 'El micrófono no recibe audio',
-      limitSoon: 'Quedan {{minutes}} minutos en esta grabación',
+      limitSoon: 'Quedan menos de {{minutes}} minutos en esta grabación',
       limitSoonDescription: 'Tu plan permite grabaciones de {{limit}} minutos. Se detendrá automáticamente al llegar al límite.',
       limitStopped: 'Grabación detenida en el límite de {{minutes}} minutos de tu plan.',
       limitStoppedDescription: 'La nota y la transcripción están guardadas. Inicia una nueva grabación para continuar, o mejora tu plan para grabaciones más largas.',
@@ -636,7 +718,7 @@ const es = {
       noMicrophone: 'No hay ningún micrófono disponible; conecta o activa una entrada.',
       noMicrophoneSystemAudioContinues:
         'No hay ningún micrófono disponible; conecta o activa una entrada. El audio del sistema sigue grabándose.',
-      quotaExceeded: 'Has usado la transcripción en la nube incluida este mes.',
+      quotaExceeded: 'Transcripción en la nube pausada en esta sesión.',
       renameSpeaker: 'No se pudo cambiar el nombre del hablante',
       savedWithErrors: 'La grabación se ha guardado con errores.',
       someAudioNotTranscribed: 'No se ha podido transcribir parte del audio.',
@@ -652,6 +734,7 @@ const es = {
         'Aún no hay transcripción. Inicia una grabación para capturar tu reunión o nota de voz.',
       finishing: 'Finalizando…',
       identifyingSpeakers: 'Identificando hablantes…',
+      waitingForTranscription: 'Esperando a que termine la transcripción…',
       input: 'Entrada',
       allAudioSettings: 'Todos los ajustes de audio…',
       systemAudioCaptured: 'El audio del sistema también se captura',
@@ -831,9 +914,9 @@ const es = {
       newSectionAdded: 'Se añadió una sección nueva',
       noteReplaced: 'Nota reemplazada',
       previewRewriteFailed:
-        'No se ha podido previsualizar esta reescritura: el texto seleccionado ha cambiado o se ha eliminado. Vuelve a seleccionarlo e inténtalo de nuevo.',
+        'No se ha podido previsualizar esta reescritura: el texto seleccionado ha cambiado o se ha eliminado. Sigue pendiente: descártala, o vuelve a seleccionar el texto y ejecútala de nuevo.',
       previewRunFailed:
-        'No se ha podido previsualizar esta ejecución: el estado del editor ha cambiado. Vuelve a ejecutar la habilidad.',
+        'Ahora mismo no se puede previsualizar esta sugerencia. Sigue pendiente: consérvala o descártala desde la barra de revisión.',
       refine: 'Ajustar',
       refineInstruction: 'Ajustar con una instrucción',
       refinePlaceholder: 'Instrucción de ajuste…',
@@ -848,6 +931,7 @@ const es = {
       targetMissing:
         'El texto al que se dirigía esta reescritura ya no existe. Vuelve a seleccionarlo y ejecútala otra vez.',
       undo: 'Deshacer',
+      waitingForDocument: 'Esperando a que se cargue la nota…',
     },
     inline: { captureError: 'No se pudo capturar la selección; vuelve a seleccionar el texto.' },
     run: {
@@ -882,6 +966,10 @@ const es = {
         manage: 'Administrar',
         noMatch: 'Ningún modelo coincide con «{{query}}».',
         noModels: 'Este proveedor no tiene modelos disponibles de {{useCase}}.',
+        freeTierRateLimited:
+          'Las claves gratuitas de {{provider}} tienen un límite de uso demasiado bajo para grabar de forma continua. Usa una clave con facturación activada.',
+        noSpeakerLabels:
+          'El reconocimiento de hablantes todavía no es compatible con {{provider}}. Usa un modelo de Prismical Cloud para etiquetar a los hablantes en tus transcripciones.',
         stepModel: 'Paso 2 de 2: elige un modelo de {{useCase}}.',
         stepSource: 'Paso 1 de 2: elige una fuente.',
         title: 'Cambiar modelo de {{useCase}}',
@@ -1592,7 +1680,7 @@ const es = {
           displayName: 'Gratis',
           notesSharing: 'Compartir notas',
           price: '$0/mes',
-          recordingValue: '30 min',
+          recordingValue: '1 h',
           seat: 'puesto',
           seatValue: '1',
           standardModels: 'Modelos de IA estándar',

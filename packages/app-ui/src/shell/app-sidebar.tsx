@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { AppLink as Link } from './app-link';
+import { SidebarNavigation } from './sidebar-navigation';
 import {
   usePathname,
   useSearchParams,
@@ -26,6 +27,8 @@ import {
 import { CommandPaletteTrigger } from './command-palette';
 import { NavNotesGroups } from './nav-notes-groups';
 import { NavSecondary } from './nav-secondary';
+import { FirstNoteWalkthroughReplay } from '../onboarding/first-note-walkthrough';
+import { SidebarQuota } from './sidebar-quota';
 import { useHomeNavItems, useSettingsNavItems } from './sidebar-nav';
 import { SettingsNavigation } from './settings-navigation';
 import { ShortcutHint } from './shortcut-hint';
@@ -37,6 +40,7 @@ import { useTranslation } from 'react-i18next';
 
 export function AppSidebar({
   accountSwitcher,
+  supportAction,
   ...props
 }: React.ComponentProps<typeof Sidebar> & {
   // The footer account/org switcher. Provided by the platform shell (web: the
@@ -44,6 +48,7 @@ export function AppSidebar({
   // it drives platform-specific auth actions (add-account, sign-out) that live
   // outside the sanitized AuthPort.
   accountSwitcher?: React.ReactNode;
+  supportAction?: React.ReactNode;
 }) {
   const { t } = useTranslation();
   const homeNavItems = useHomeNavItems();
@@ -58,7 +63,7 @@ export function AppSidebar({
   // an app-mode branch. Nav reads `enabled` only; a hidden-then-shown link is
   // harmless, and the screens gate themselves.
   const features = useFeatureFlags();
-  const { isMobile } = useSidebar();
+  const { isMobile, setOpenMobile } = useSidebar();
   // Desktop frameless chrome (mac: hiddenInset traffic lights; Windows:
   // titleBarOverlay caption buttons). The DesktopChromeStrip is a fixed top-0
   // drag band over the window's top 40px, so the sidebar reserves the same 40px
@@ -128,6 +133,7 @@ export function AppSidebar({
   });
 
   return (
+    <SidebarNavigation>
     <Sidebar collapsible="offcanvas" {...props}>
       {desktopChromeSpacer ? <div className="h-10 shrink-0 [-webkit-app-region:drag]" /> : null}
       {isAppSidebar ? (
@@ -254,10 +260,15 @@ export function AppSidebar({
         {showNotesNavigation ? <NavNotesGroups /> : null}
       </SidebarContent>
 
-      <SidebarFooter className="p-0">
-        <NavSecondary />
+      <SidebarFooter className="gap-1 p-0">
+        <NavSecondary supportAction={supportAction} />
+        {/* App mode only: in settings the billing screen is one nav item away and shows the same
+            figures in full, so a row linking to the page you may already be on is just noise. */}
+        {isAppSidebar ? <FirstNoteWalkthroughReplay compact={isMobile} onReplay={() => setOpenMobile(false)} /> : null}
+        {isAppSidebar ? <SidebarQuota /> : null}
         {accountSwitcher}
       </SidebarFooter>
     </Sidebar>
+    </SidebarNavigation>
   );
 }

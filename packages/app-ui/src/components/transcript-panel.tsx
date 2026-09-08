@@ -1,4 +1,5 @@
 'use client';
+import { useWalkthroughStage } from '../onboarding/context';
 
 import * as React from 'react';
 import {
@@ -91,7 +92,8 @@ type TranscriptPanelProps = {
   /** All of the note's recordings, NEWEST first. */
   recordings: RecordingLog[];
   /** Enhance THAT recording into the note. */
-  onEnhanceRecording: (recordingId: string) => void;
+  /** `auto` = the bar re-firing a parked auto-enhance; stays on the on-stop lane (no Ask pop). */
+  onEnhanceRecording: (recordingId: string, opts?: { auto?: boolean }) => void;
   /** Rename a diarized speaker; absent ⇒ labels are not editable. */
   onRenameSpeaker?: (speakerId: string, displayName: string | null) => void;
   isExpanded: boolean;
@@ -224,7 +226,12 @@ function TranscriptPanelContent({
   const finished = finishedRecordingId
     ? recordings.find(r => r.id === finishedRecordingId)
     : undefined;
+  const tour = useWalkthroughStage();
+  const keepTourTranscript = !!tour && ['transcript', 'enhance'].includes(tour.step);
   const [doneDismissed, setDoneDismissed] = React.useState(false);
+  React.useEffect(() => {
+    if (keepTourTranscript) setDoneDismissed(false);
+  }, [keepTourTranscript]);
   React.useEffect(() => setDoneDismissed(false), [finishedRecordingId]);
   const doneReady = !!finished && !finished.processing;
   // What the settled bar says. A diarization pass that FAILED still leaves the live transcript
@@ -250,14 +257,35 @@ function TranscriptPanelContent({
   const failedRecordingId = useAutoEnhanceStore(s => s.failedRecordingId);
   const clearFailedRecording = useAutoEnhanceStore(s => s.clearFailed);
   const enhanceFailed = !!finished && failedRecordingId === finished.id;
+  // A PARKED Enhance (the server kept saying "still finalizing" past its own deadline) is not an
+  // error: hold the bar open saying so, and re-fire the run by itself the moment the recording's
+  // finalize phase settles. The chip stays as the manual way to do the same.
+  const waitingRecordingId = useAutoEnhanceStore(s => s.waitingRecordingId);
+  const clearWaitingRecording = useAutoEnhanceStore(s => s.clearWaiting);
+  const enhanceWaiting = !!finished && waitingRecordingId === finished.id;
+  const holdOpen = enhanceFailed || enhanceWaiting;
   React.useEffect(() => {
-    if (enhanceFailed) setDoneDismissed(false);
-  }, [enhanceFailed]);
+    if (holdOpen) setDoneDismissed(false);
+  }, [holdOpen]);
   React.useEffect(() => {
-    if (!doneReady || doneDismissed || enhanceFailed) return;
+    if (!doneReady || doneDismissed || holdOpen || keepTourTranscript) return;
     const id = setTimeout(() => setDoneDismissed(true), 8000);
     return () => clearTimeout(id);
-  }, [doneReady, doneDismissed, enhanceFailed]);
+  }, [doneReady, doneDismissed, holdOpen, keepTourTranscript]);
+  // At most ONE automatic re-fire per recording. The phase helper reports a recording as settled
+  // after a wall-clock cutoff even when the server row is still blocking, and a re-fired run that
+  // parks again would flip `enhanceWaiting` back on with `doneReady` still true — without this
+  // guard that is an unbounded request loop. The marker is NOT cleared here: `requestAutoEnhance`
+  // clears it only when the run is actually queued (the chip handler refuses while an unreviewed
+  // suggestion exists), so a refused re-fire leaves the bar holding the chip for the user.
+  const autoRefiredRef = React.useRef<Set<string>>(new Set());
+  React.useEffect(() => {
+    if (!enhanceWaiting || !doneReady || !finished) return;
+    if (autoRefiredRef.current.has(finished.id)) return;
+    autoRefiredRef.current.add(finished.id);
+    onEnhanceRecording(finished.id, { auto: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fire once on the settle transition
+  }, [enhanceWaiting, doneReady]);
   const doneMode = !isRecording && recState === 'idle' && !!finished && !doneDismissed;
 
   // The refetch gap right after a stop with no live-line bridge (short/silent
@@ -291,7 +319,7 @@ function TranscriptPanelContent({
   });
 
   return (
-    <div className="relative flex h-full w-full flex-col">
+    <div data-onboarding="transcript" className="relative flex h-full w-full flex-col">
       <DockPanelActions
         isMaximized={isExpanded}
         onToggleMaximized={onToggleExpanded}
@@ -556,6 +584,7 @@ function TranscriptPanelContent({
             <button
               type="button"
               disabled={!live && !isPaused}
+              data-onboarding="record-stop"
               onClick={onStopRecording}
               className="flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-lg bg-rec-soft px-2.5 text-[12.5px] font-medium text-rec transition-[filter,scale] hover:brightness-105 active:scale-[0.96] disabled:opacity-50"
               aria-label={t('recording.actions.stop')}
@@ -606,9 +635,11 @@ function TranscriptPanelContent({
                   <PxOrbitLoader />
                 </span>
                 <span className="shimmer shimmer-duration-1400 text-dock-ink-3 text-[12.5px]">
-                  {finished.lines.length === 0
-                    ? t('recording.panel.transcribing')
-                    : t('recording.panel.identifyingSpeakers')}
+                  {enhanceWaiting
+                    ? t('recording.panel.waitingForTranscription')
+                    : finished.lines.length === 0
+                      ? t('recording.panel.transcribing')
+                      : t('recording.panel.identifyingSpeakers')}
                 </span>
               </>
             ) : (
@@ -627,6 +658,7 @@ function TranscriptPanelContent({
             {doneReady && !finished.folded && finished.lines.length > 0 ? (
               <button
                 type="button"
+                data-onboarding="enhance"
                 onClick={() => {
                   setDoneDismissed(true);
                   onEnhanceRecording(finished.id);
@@ -641,11 +673,12 @@ function TranscriptPanelContent({
             ) : null}
             {/* Only while a failed run is holding the bar open: the timer is suppressed then, so
                 this is the one way to close an error the user does not want to retry. */}
-            {enhanceFailed ? (
+            {holdOpen ? (
               <button
                 type="button"
                 onClick={() => {
                   clearFailedRecording(finished.id);
+                  clearWaitingRecording(finished.id);
                   setDoneDismissed(true);
                 }}
                 aria-label={t('common.actions.close')}
@@ -659,6 +692,7 @@ function TranscriptPanelContent({
           <>
             <button
               type="button"
+              data-onboarding="record-start"
               onClick={onStartRecording}
               className="flex h-7 cursor-pointer items-center gap-2 rounded-lg px-2.5 text-[12.5px] font-medium text-dock-ink transition-[background-color,scale] hover:bg-dock-hover active:scale-[0.97]"
             >

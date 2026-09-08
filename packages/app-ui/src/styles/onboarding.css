@@ -1,0 +1,76 @@
+@import 'driver.js/dist/driver.css';
+
+.driver-popover.prismical-tour {
+  font-family: inherit;
+  color: var(--foreground);
+  background: var(--background);
+  border: 1px solid color-mix(in srgb, #818cf8 45%, var(--border));
+  border-radius: 16px;
+  box-shadow:
+    0 16px 48px #0003,
+    0 0 0 1px #6366f114,
+    0 0 32px #6366f12e,
+    inset 0 1px 0 #818cf81a;
+  padding: 20px;
+  max-width: min(340px, calc(100vw - 24px));
+}
+.prismical-tour .driver-popover-title { font-size: 16px; font-weight: 600; line-height: 1.4; }
+.prismical-tour .driver-popover-description { font-size: 14px; line-height: 1.6; margin-top: 8px; }
+.prismical-tour-hint { color: var(--muted-foreground); font-size: 12px; margin-top: 12px; }
+.prismical-tour .driver-popover-footer { margin-top: 16px; }
+.prismical-tour .driver-popover-footer button {
+  font-family: inherit; font-size: 12px; padding: 8px 12px;
+  border-radius: 8px; border: 1px solid var(--border); text-shadow: none;
+  background: var(--background); color: var(--foreground);
+}
+.prismical-tour .driver-popover-footer .driver-popover-next-btn {
+  color: var(--primary-foreground); background: var(--primary); border-color: var(--primary);
+}
+.prismical-tour button:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
+.prismical-tour .driver-popover-close-btn { color: var(--muted-foreground); }
+.prismical-tour .driver-popover-arrow {
+  border-width: 8px;
+  border-color: transparent;
+  filter: drop-shadow(0 0 4px #6366f166);
+}
+.prismical-tour .driver-popover-arrow-side-top { border-top-color: #818cf8; }
+.prismical-tour .driver-popover-arrow-side-bottom { border-bottom-color: #818cf8; }
+.prismical-tour .driver-popover-arrow-side-left { border-left-color: #818cf8; }
+.prismical-tour .driver-popover-arrow-side-right { border-right-color: #818cf8; }
+@media (prefers-reduced-motion: reduce) {
+  .driver-overlay, .driver-popover { animation: none !important; transition: none !important; }
+}
+
+/* Radix portals sit outside the highlighted control. Lift their positioning wrapper too,
+   since its inline z-index otherwise keeps tooltips beneath Driver's overlay. */
+body.driver-active [data-radix-popper-content-wrapper]:has(> [data-slot="tooltip-content"]),
+body.driver-active [data-slot="tooltip-content"] {
+  z-index: 1000000001 !important;
+}
+body.driver-active [data-slot="tooltip-content"],
+body.driver-active [data-slot="tooltip-content"] * {
+  pointer-events: auto;
+}
+
+/* An expanding halo draws attention without moving or resizing the actual control. */
+body:has(.prismical-tour) .driver-active-element {
+  outline: 2px solid #818cf8;
+  outline-offset: 3px;
+  animation: prismical-tour-pulse 2.4s ease-out infinite;
+}
+@keyframes prismical-tour-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 #6366f100; }
+  20% { box-shadow: 0 0 0 3px #6366f14d; }
+  80% { box-shadow: 0 0 0 11px #6366f100; }
+}
+@media (prefers-reduced-motion: reduce) {
+  body:has(.prismical-tour) .driver-active-element {
+    animation: none;
+    box-shadow: 0 0 0 4px #6366f126;
+  }
+}
+
+.prismical-welcome {
+  border-color: color-mix(in srgb, #818cf8 45%, var(--border));
+  box-shadow: 0 16px 48px #0003, 0 0 0 1px #6366f114, 0 0 32px #6366f12e, inset 0 1px 0 #818cf81a;
+}

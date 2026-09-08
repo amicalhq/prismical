@@ -23,9 +23,11 @@ import {
   PROVIDER_META,
   PROVIDER_TYPE_CAPABILITIES,
   PROVIDER_TYPE_MULTI_INSTANCE,
+
   type ModelType,
   type ProviderType,
 } from '../../../../lib/providers';
+import { TranscriptionCaveats } from './transcription-caveats';
 import { useInstanceModels } from '@prismical/app-client';
 import { AUTO_SELECTION, PRISMICAL_CLOUD_INSTANCE_ID } from '@prismical/app-client';
 
@@ -263,6 +265,17 @@ export default function ChangeDefaultDialog({ open, onOpenChange, useCase }: Cha
             {t('settings.aiModels.change.stepModel', { useCase: useCaseTitle })}
           </DialogDescription>
         </DialogHeader>
+
+        {/* Same component the wizard and edit dialog use. These caveats are properties of the
+            provider's transcription lane, not of BYOK - the managed lane labels speakers and some
+            BYOK providers will too - so they are keyed off the capability maps rather than "is this
+            a user's own key". */}
+        {useCase === 'transcription' && chosenMeta && (
+          <TranscriptionCaveats
+            provider={chosenInstance?.provider}
+            providerLabel={chosenMeta.label}
+          />
+        )}
 
         <div className="flex items-center gap-2">
           <div className="relative flex-1">

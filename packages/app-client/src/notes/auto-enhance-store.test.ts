@@ -3,7 +3,33 @@ import { useAutoEnhanceStore } from './auto-enhance-store';
 
 describe('useAutoEnhanceStore', () => {
   beforeEach(() => {
-    useAutoEnhanceStore.setState({ requests: [], failedRecordingId: null });
+    useAutoEnhanceStore.setState({ requests: [], failedRecordingId: null, waitingRecordingId: null });
+  });
+
+  it('parks a recording behind transcript finalization without calling it a failure', () => {
+    useAutoEnhanceStore.getState().markWaiting('rec_1');
+    expect(useAutoEnhanceStore.getState().waitingRecordingId).toBe('rec_1');
+    expect(useAutoEnhanceStore.getState().failedRecordingId).toBeNull();
+    // The two markers are exclusive: a later real failure replaces the park, and vice versa.
+    useAutoEnhanceStore.getState().markFailed('rec_1');
+    expect(useAutoEnhanceStore.getState().waitingRecordingId).toBeNull();
+    expect(useAutoEnhanceStore.getState().failedRecordingId).toBe('rec_1');
+    useAutoEnhanceStore.getState().markWaiting('rec_1');
+    expect(useAutoEnhanceStore.getState().failedRecordingId).toBeNull();
+  });
+
+  it('clears a park when the run is re-requested, and only for that recording', () => {
+    useAutoEnhanceStore.getState().markWaiting('rec_1');
+    useAutoEnhanceStore.getState().clearWaiting('rec_2');
+    expect(useAutoEnhanceStore.getState().waitingRecordingId).toBe('rec_1');
+    useAutoEnhanceStore.getState().requestAutoEnhance({
+      noteId: 'nt_1',
+      recordingId: 'rec_1',
+      source: 'wand',
+      ownerSessionKey: 'session_1',
+      ownerOrgId: 'org_1',
+    });
+    expect(useAutoEnhanceStore.getState().waitingRecordingId).toBeNull();
   });
 
   it('publishes a failed recording so its Enhance chip can be offered again', () => {
@@ -24,6 +50,8 @@ describe('useAutoEnhanceStore', () => {
     expect(useAutoEnhanceStore.getState().failedRecordingId).toBeNull();
     expect(useAutoEnhanceStore.getState().requests).toEqual([
       {
+        requestedAt: expect.any(Number),
+        attemptId: expect.any(String),
         noteId: 'nt_1',
         recordingId: 'rec_1',
         source: 'auto-enhance',

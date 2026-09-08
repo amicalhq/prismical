@@ -67,9 +67,10 @@ export function useOrganizations(options: { enabled?: boolean } = {}) {
  * Loads the org list and guarantees a valid active organization: if none is picked,
  * or the persisted pick is no longer a membership, fall back to the first
  * (oldest) org — which matches the backend's no-header default. Mount once in the
- * app shell; returns the same query result as `useOrganizations`.
+ * app shell; returns the same query result as `useOrganizations`. `required`
+ * resolves a concrete cloud workspace even when its switcher UI is disabled.
  */
-export function useEnsureActiveOrg() {
+export function useEnsureActiveOrg({ required = false }: { required?: boolean } = {}) {
   const query = useOrganizations();
   const activeOrgId = useActiveOrgId();
   const { switchOrg } = usePorts().auth;
@@ -80,11 +81,11 @@ export function useEnsureActiveOrg() {
   const orgs = query.data;
 
   React.useEffect(() => {
-    if (!organizations) return;
+    if (!organizations && !required) return;
     if (!orgs || orgs.length === 0) return;
     const valid = activeOrgId != null && orgs.some((o) => o.orgId === activeOrgId);
     if (!valid) switchOrg(orgs[0]!.orgId);
-  }, [organizations, orgs, activeOrgId, switchOrg]);
+  }, [organizations, required, orgs, activeOrgId, switchOrg]);
 
   return query;
 }
@@ -120,9 +121,9 @@ export function useActiveOrg(): Organization | null {
  * Cloud defaults for the flags that gate cloud-only surfaces.
  * Core only emits the operational flags in FEATURE_REGISTRY (integrations,
  * eventkitCalendar, autoPauseOnSilence, groqByok); these keys describe what a
- * cloud organization has by construction — members, billing, calendars, sharing,
- * automations, the public API, the account itself and the
- * BYOK instance CRUD — so an org that does not mention them resolves TRUE. A
+ * cloud organization has by construction — members, billing, calendars,
+ * sharing, automations, the public API, the account itself and the BYOK
+ * instance CRUD — so an org that does not mention them resolves TRUE. A
  * platform that resolves its own flags (the desktop local workspace, see
  * DesktopCapabilityPort.featureFlags) answers them itself, mostly false. Should
  * core ever register one of these server-side, its value wins.

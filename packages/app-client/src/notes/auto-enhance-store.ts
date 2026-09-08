@@ -1,3 +1,5 @@
+import type { AnalyticsPort } from "@prismical/app-contracts";
+import { requestSkillRunTiming } from "./skill-run-timing";
 import { create } from "zustand";
 import type { SkillRunSource } from "./skill-run-activity-store";
 
@@ -7,6 +9,9 @@ import type { SkillRunSource } from "./skill-run-activity-store";
 // Ask thread / on the Ask pill via the run feed. Requests retain their owner context
 // and recording identity until the matching note editor can run them.
 export interface AutoEnhanceRequest {
+  /** Monotonic timestamp of the gesture, retained while the editor is unavailable. */
+  requestedAt?: number;
+  attemptId?: string;
   noteId: string;
   recordingId: string;
   ownerSessionKey: string;
@@ -24,8 +29,16 @@ interface AutoEnhanceState {
    * and hold, so a failed Enhance is recoverable without starting a new recording.
    */
   failedRecordingId: string | null;
+  /**
+   * The recording whose Enhance is PARKED: the server kept answering "transcript still
+   * finalizing" until its own release deadline. Not a failure — the transcript work continues on
+   * the server — so the bar holds open saying so, and re-fires the run by itself once the
+   * recording's finalize phase settles (or on the chip). Distinct from `failedRecordingId` so the
+   * bar never shows a parked run as an error.
+   */
+  waitingRecordingId: string | null;
   /** Ask the skill dock to auto-enhance the just-stopped recording. */
-  requestAutoEnhance: (req: AutoEnhanceRequest) => void;
+  requestAutoEnhance: (req: AutoEnhanceRequest, analytics?: AnalyticsPort) => void;
   /** Consume/drop the pending request (call after the dock kicks off the run). */
   clear: () => void;
   consume: (recordingId: string) => void;
@@ -33,20 +46,43 @@ interface AutoEnhanceState {
   markFailed: (recordingId: string) => void;
   /** Drop the marker for a recording once it is retried, so a stale failure can't outlive it. */
   clearFailed: (recordingId: string) => void;
+  /** Record that a recording-scoped run is parked behind transcript finalization. */
+  markWaiting: (recordingId: string) => void;
+  clearWaiting: (recordingId: string) => void;
 }
 
 export const useAutoEnhanceStore = create<AutoEnhanceState>((set) => ({
   requests: [],
   failedRecordingId: null,
-  // A fresh attempt supersedes any earlier failure — otherwise the bar would keep holding open
-  // for a recording the user has already retried.
-  requestAutoEnhance: (request) => set((state) => ({
-    requests: [...state.requests.filter(item => item.recordingId !== request.recordingId), request],
-    failedRecordingId: null,
-  })),
+  waitingRecordingId: null,
+  // A fresh attempt supersedes any earlier failure or park — otherwise the bar would keep holding
+  // open for a recording the user has already retried.
+  requestAutoEnhance: (request, analytics) =>
+    set((state) => ({
+      requests: [
+        ...state.requests.filter((item) => item.recordingId !== request.recordingId),
+        {
+          ...request,
+          ...requestSkillRunTiming(analytics, {
+            note_id: request.noteId,
+            recording_id: request.recordingId,
+            skill_id: "skl_enhance",
+            source: request.source,
+          }),
+        },
+      ],
+      failedRecordingId: null,
+      waitingRecordingId: null,
+    })),
   clear: () => set({ requests: [] }),
-  consume: (recordingId) => set((state) => ({ requests: state.requests.filter(item => item.recordingId !== recordingId) })),
-  markFailed: (recordingId) => set({ failedRecordingId: recordingId }),
+  consume: (recordingId) =>
+    set((state) => ({
+      requests: state.requests.filter((item) => item.recordingId !== recordingId),
+    })),
+  markFailed: (recordingId) => set({ failedRecordingId: recordingId, waitingRecordingId: null }),
   clearFailed: (recordingId) =>
     set((state) => (state.failedRecordingId === recordingId ? { failedRecordingId: null } : state)),
+  markWaiting: (recordingId) => set({ waitingRecordingId: recordingId, failedRecordingId: null }),
+  clearWaiting: (recordingId) =>
+    set((state) => (state.waitingRecordingId === recordingId ? { waitingRecordingId: null } : state)),
 }));

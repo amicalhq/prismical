@@ -6,6 +6,7 @@
  * right after it, so Tailwind processes these @theme / @custom-variant / @apply
  * rules together with the engine. */
 @import "tw-animate-css";
+@import "./onboarding.css";
 @import "shadcn/tailwind.css";
 
 /* Self-hosted Ubuntu — replaces next/font/google so the shared renderer works
@@ -72,7 +73,7 @@ body {
   --accent: #ececee;
   --accent-foreground: oklch(0.205 0 0);
   --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.577 0.245 27.325);
+  --destructive-foreground: #ffffff;
   /* Status + diff semantics. Dark values are tuned for near-black surfaces;
    * light values are same-hue, darkened for contrast on light surfaces. */
   --success: #15803d;
@@ -113,10 +114,9 @@ body {
   --content-padding: 2rem;
   --content-max-width: 75rem;
   --header-height: 3rem;
-  /* The recording/Ask dock floats OVER the scroll area (a 42px pill row sitting
-   * 24px off the bottom), so every page needs to be able to scroll its last
-   * content clear of it — otherwise the final button or row sits under the
-   * dock and can never be reached. Measured height + gap + breathing room. */
+  /* Reserve space below the scroll viewport for the recording/Ask dock:
+   * 42px pill row + 16px bottom offset + breathing room. Content padding alone
+   * lets native focus/click scrolling leave visible controls behind the dock. */
   --dock-clearance: 5.5rem;
   /* Floating glass surface (dock panels: transcription, Ask). The fill is a
    * step BRIGHTER than --background so the surface reads raised even before
@@ -203,8 +203,8 @@ body {
    * reads on panels and inside menus. */
   --accent: #26262a;
   --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.396 0.141 25.723);
-  --destructive-foreground: oklch(0.637 0.237 25.331);
+  --destructive: oklch(0.704 0.191 22.216);
+  --destructive-foreground: #121215;
   --success: #69c967;
   --warning: #fbbf24;
   /* Dark text on the bright amber fill. */
@@ -558,5 +558,58 @@ ul[data-type="taskList"] li[data-checked="true"] > div {
 @media (max-width: 820px) {
   .dock-narrow-panels {
     --dock-panel-w: calc(100vw - 24px);
+  }
+}
+
+/* Size review controls to the content pane, including when a sidebar is open. */
+.dock-narrow-panels {
+  container-name: note-dock;
+  container-type: inline-size;
+}
+
+/* The narrow review bar fits beside the recording unit and uses two rows. */
+.skill-review-bar {
+  display: var(--skill-review-layout, flex);
+  width: var(--skill-review-width, auto);
+  height: var(--skill-review-height, 42px);
+  padding-block: var(--skill-review-padding, 0px);
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
+.skill-review-identity {
+  min-width: 0;
+}
+
+.skill-review-refinement {
+  grid-column: 1 / -1;
+  grid-row: 1;
+}
+
+.skill-review-refinement input {
+  width: var(--skill-review-input-width, 150px);
+  flex: var(--skill-review-input-flex, none);
+}
+
+.skill-review-refinement input:focus {
+  width: var(--skill-review-input-width, 230px);
+}
+
+.skill-review-bar[data-compact="true"] {
+  --skill-review-layout: grid;
+  --skill-review-width: calc(100cqw - 28px - var(--skill-review-neighbor-width, 0px));
+  --skill-review-height: auto;
+  --skill-review-padding: 5px;
+  --skill-review-input-width: 0px;
+  --skill-review-input-flex: 1;
+}
+
+@container note-dock (max-width: 820px) {
+  .skill-review-bar {
+    --skill-review-layout: grid;
+    --skill-review-width: calc(100cqw - 32px - var(--skill-review-neighbor-width, 0px));
+    --skill-review-height: auto;
+    --skill-review-padding: 5px;
+    --skill-review-input-width: 0px;
+    --skill-review-input-flex: 1;
   }
 }

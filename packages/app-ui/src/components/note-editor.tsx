@@ -264,7 +264,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
       {/* ph-mask-content: masks the note body text in PostHog session
           recordings while the surrounding chrome stays visible. */}
       {/* mt-4 stands in for the removed divider's breathing room. */}
-      <div className="ph-mask-content mt-8">
+      <div data-onboarding="note-body" className="ph-mask-content mt-8">
         <NoteBodyEditor noteId={note.id} writable={note.writable ?? true} />
       </div>
 

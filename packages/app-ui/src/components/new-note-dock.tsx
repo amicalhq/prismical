@@ -1,8 +1,10 @@
 'use client';
+import { useWalkthroughEvent } from '../onboarding/context';
 
-import { useActiveOrgId, useNavigation } from '@prismical/app-client';
+import { useActiveOrgId, useActiveSessionKey, useNavigation } from '@prismical/app-client';
 import * as React from 'react';
 import { Plus } from 'lucide-react';
+import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { useCreateNote } from '@prismical/app-client';
 import { DOCK_PILL_CHROME } from './dock-chrome';
@@ -28,17 +30,38 @@ export function NewNoteDock() {
   const { t } = useTranslation();
   const router = useNavigation();
   const createNote = useCreateNote();
+  const walkthroughEvent = useWalkthroughEvent();
   const activeOrgId = useActiveOrgId();
+  const activeSessionKey = useActiveSessionKey();
   // Not `disabled`: that swallowed the click outright, and `pointer-events-none` suppressed the
   // tooltip with it. Latch the intent instead and honour it when the store lands.
   const [queued, setQueued] = React.useState(false);
   const notReady = createNote.isPending;
 
+  const failureRef = React.useRef(() => {});
+  React.useLayoutEffect(() => {
+    failureRef.current = () => {
+      toast.error(t('common.mutationErrors.noteCreate'));
+      walkthroughEvent({ type: 'error', code: 'create_failed' });
+    };
+  }, [t, walkthroughEvent]);
+
   const create = React.useCallback(() => {
-    createNote.mutate(undefined, { onSuccess: note => router.push(`/notes/${note.id}`) });
-  }, [createNote, router]);
+    try {
+      createNote.mutate(undefined, {
+        onSuccess: note => {
+          walkthroughEvent({ type: 'created', noteId: note.id });
+          router.push(`/notes/${note.id}`);
+        },
+      });
+    } catch {
+      walkthroughEvent({ type: 'error', code: 'create_failed' });
+      toast.error(t('common.mutationErrors.noteCreate'));
+    }
+  }, [createNote, router, walkthroughEvent, t]);
 
   const queuedOrgRef = React.useRef<string | null>(null);
+  const queuedSessionRef = React.useRef<string | null>(null);
 
   // Expiry lives in its OWN effect keyed on `queued` alone. `useCreateNote` returns a fresh object
   // every render and this component re-renders on every navigation, so an expiry armed alongside
@@ -46,12 +69,20 @@ export function NewNoteDock() {
   // deadline would never actually arrive, which is the one thing it exists to guarantee.
   React.useEffect(() => {
     if (!queued) return;
-    const expire = setTimeout(() => setQueued(false), CREATE_LATCH_MS);
+    const expire = setTimeout(() => {
+      setQueued(false);
+      failureRef.current();
+    }, CREATE_LATCH_MS);
     return () => clearTimeout(expire);
   }, [queued]);
 
   React.useEffect(() => {
     if (!queued) return;
+    if (queuedSessionRef.current !== activeSessionKey) {
+      setQueued(false);
+      failureRef.current();
+      return;
+    }
     // A switch mid-wait would land the note in the WRONG org's (or account's) partition — drop it,
     // don't guess. The org may not be known at click time though: null is both "not resolved yet"
     // on a cold load AND a durable "no pick" state (a cleared pick, or mobile web where the
@@ -66,12 +97,13 @@ export function NewNoteDock() {
       if (activeOrgId !== null) queuedOrgRef.current = activeOrgId;
     } else if (activeOrgId !== clickedOrg) {
       setQueued(false);
+      failureRef.current();
       return;
     }
     if (notReady) return;
     setQueued(false);
     create();
-  }, [queued, notReady, activeOrgId, create]);
+  }, [queued, notReady, activeOrgId, activeSessionKey, create]);
 
   return (
     <TooltipProvider>
@@ -79,10 +111,12 @@ export function NewNoteDock() {
         <TooltipTrigger asChild>
           <button
             type="button"
+            data-onboarding="new-note"
             aria-busy={queued}
             onClick={() => {
               if (notReady) {
                 queuedOrgRef.current = activeOrgId;
+                queuedSessionRef.current = activeSessionKey;
                 setQueued(true);
                 return;
               }
