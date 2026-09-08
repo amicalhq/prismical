@@ -373,7 +373,7 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
         h.fakeCloud.uploadCalls.map(call => call.params.chunkStartMs),
         [0, 15_000, 30_000]
       );
-      for (const call of h.fakeCloud.uploadCalls) assertWav(call.wav, 15 * 48_000);
+      for (const call of h.fakeCloud.uploadCalls) assertWav(call.wav, 15 * 16_000);
       yield* Scope.close(h.sessionScope, Exit.void);
     })
   );
@@ -409,11 +409,11 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
           ]
         );
         for (const call of h.fakeCloud.uploadCalls) {
-          assertWav(call.wav, call.params.chunkIndex < 2 ? 720_000 : 48_000);
+          assertWav(call.wav, call.params.chunkIndex < 2 ? 240_000 : 16_000);
           const wav = Buffer.from(call.wav);
           assert.strictEqual(wav.readUInt16LE(20), 1, 'PCM');
           assert.strictEqual(wav.readUInt16LE(22), 1, 'mono');
-          assert.strictEqual(wav.readUInt32LE(24), 48_000);
+          assert.strictEqual(wav.readUInt32LE(24), 16_000);
           assert.strictEqual(wav.readUInt16LE(34), 16);
           assert.isBelow(wav.length - 44, 4 * 1024 * 1024);
           if (call.params.source === 'system')
@@ -559,8 +559,8 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
         assert.strictEqual(sys!.params.chunkIndex, 1);
         assert.strictEqual(mic!.params.chunkStartMs, 0);
         assert.strictEqual(sys!.params.chunkStartMs, 0);
-        assertWav(mic!.wav, 720_000);
-        assertWav(sys!.wav, 720_000);
+        assertWav(mic!.wav, 240_000);
+        assertWav(sys!.wav, 240_000);
 
         yield* poll(
           h.db.getRecoveryOutbox(recordingId).pipe(Effect.map(r => r?.lastChunkIndex === 1)),
@@ -593,10 +593,10 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
         const sysTail = h.fakeCloud.uploadCalls.find(c => c.params.chunkIndex === 3);
         assert.strictEqual(micTail?.params.source, 'mic');
         assert.strictEqual(micTail?.params.chunkStartMs, 15_000);
-        assertWav(micTail!.wav, 48_000);
+        assertWav(micTail!.wav, 16_000);
         assert.strictEqual(sysTail?.params.source, 'system');
         assert.strictEqual(sysTail?.params.chunkStartMs, 15_000);
-        assertWav(sysTail!.wav, 48_000);
+        assertWav(sysTail!.wav, 16_000);
 
         assert.strictEqual(h.fakeCloud.finalizeCalls.length, 1);
         assert.strictEqual(h.fakeCloud.finalizeCalls[0].recordingId, recordingId);
@@ -710,7 +710,7 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
       assert.strictEqual(h.fakeCloud.uploadCalls.length, 3);
       assert.strictEqual(h.fakeCloud.uploadCalls[2].params.source, 'system');
       assert.strictEqual(h.fakeCloud.uploadCalls[2].params.chunkIndex, 2);
-      assertWav(h.fakeCloud.uploadCalls[2].wav, 48_000);
+      assertWav(h.fakeCloud.uploadCalls[2].wav, 16_000);
 
       yield* Scope.close(h.sessionScope, Exit.void);
     })
@@ -747,7 +747,7 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
           chunkStartMs: 0,
           source: 'mic',
         });
-        assertWav(h.fakeCloud.uploadCalls[0].wav, 96_000);
+        assertWav(h.fakeCloud.uploadCalls[0].wav, 32_000);
         assert.strictEqual(h.fakeCloud.finalizeCalls.length, 0, 'pause never finalizes');
 
         const pausedRow = yield* h.db.getRecoveryOutbox(recordingId);
@@ -784,7 +784,7 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
           chunkStartMs: 2_000,
           source: 'mic',
         });
-        assertWav(h.fakeCloud.uploadCalls[1].wav, 48_000);
+        assertWav(h.fakeCloud.uploadCalls[1].wav, 16_000);
         assert.strictEqual(h.fakeCloud.finalizeCalls.length, 1);
         assert.strictEqual(h.fakeCloud.finalizeCalls[0].recordingId, recordingId);
         assert.strictEqual(h.fakeCloud.finalizeCalls[0].input.durationMs, 3_000);
@@ -1229,7 +1229,14 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
       const uploadedPcm = Buffer.concat(
         h.fakeCloud.uploadCalls.map(call => Buffer.from(call.wav).subarray(44))
       );
-      assert.deepStrictEqual(uploadedPcm, fs.readFileSync(wavPath).subarray(44));
+      assert.strictEqual(uploadedPcm.length, 62 * 16_000 * 2);
+      const retainedPcm = fs.readFileSync(wavPath).subarray(44);
+      assert.strictEqual(retainedPcm.length, uploadedPcm.length * 3);
+      // This fixture is constant amplitude: filtered uploads preserve every
+      // sample's value while the retained recording keeps all 48 kHz samples.
+      assert.isTrue(
+        uploadedPcm.every((byte, i) => byte === retainedPcm[Math.floor(i / 2) * 6 + (i % 2)])
+      );
       assert.strictEqual(h.fakeCloud.finalizeCalls[0].input.durationMs, 62_000);
       assert.strictEqual((yield* h.db.getRecoveryOutbox(recordingId))?.phase, 'cleanup');
       yield* Scope.close(h.sessionScope, Exit.void);
@@ -2383,7 +2390,7 @@ describe('RecordingService — lifecycle ownership and durability', () => {
       assert.isTrue(h.fakeCapture.current().released);
       assert.strictEqual((yield* SubscriptionRef.get(h.service.state)).elapsedMs, 1000);
       assert.strictEqual(h.fakeCloud.uploadCalls.length, 1);
-      assertWav(h.fakeCloud.uploadCalls[0].wav, 48_000);
+      assertWav(h.fakeCloud.uploadCalls[0].wav, 16_000);
       assert.strictEqual(h.fakeCloud.finalizeCalls[0].input.durationMs, 1000);
       assert.strictEqual((yield* h.db.getRecoveryOutbox(id))?.durationMs, 1000);
       assertWav(fs.readFileSync(path.join(h.recoveryDir(id), 'mic.wav')), 48_000);

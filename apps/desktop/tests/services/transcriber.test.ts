@@ -1,8 +1,7 @@
 /**
  * Transcriber seam tests.
  *
- *  - CloudTranscriberLive hands the fake backend the SAME (recordingId, params, WAV) the
- *    call sites used to build themselves — byte-identical on the wire;
+ *  - CloudTranscriberLive downsamples cloud uploads to filtered 16 kHz WAVs;
  *  - TranscriberLive dispatches on the frozen engine; placeholder local/BYOK lanes acknowledge
  *    empty and warn ONCE per recording;
  *  - engine resolution (mode × preference — model presence is a lane concern);
@@ -26,7 +25,6 @@ import {
   mirrorSegmentsToCore,
   transcriptSegmentCreateBody,
 } from '../../src/main/domains/recording/segment-mirror';
-import { encodeWavPcm16 } from '../../src/main/domains/recording/wav';
 import { CloudTranscriberLive } from '../../src/main/domains/transcriber/cloud';
 import {
   BYOK_DESKTOP_TRANSCRIPTION_CONFIG,
@@ -69,45 +67,62 @@ const BYOK: RecordingEngine = {
 const samples = (n: number, fill = 0.25): Float32Array => new Float32Array(n).fill(fill);
 const audio = (n: number): ChunkAudio => ({ samples: samples(n), sampleRate: CAPTURE_SAMPLE_RATE });
 
-describe('CloudTranscriberLive (the pre-seam upload, byte-identical)', () => {
+describe('CloudTranscriberLive', () => {
   it.effect(
-    'WAV-encodes the chunk and forwards the SAME recordingId/params/WAV to the backend',
+    'uploads filtered 16 kHz WAVs with unchanged source offsets and results',
     () =>
       Effect.gen(function* () {
         const fakeCloud = makeFakeWorkspaceBackend();
-        fakeCloud.setUploadResponder(call => ({
-          ok: true,
-          value: [fakeSegment(call.recordingId, call.params.source, call.params.chunkIndex, 'hi')],
-        }));
+        const answer = { ok: true as const, value: [fakeSegment('rec_16k', 'mic', 3, 'hi')] };
+        fakeCloud.setUploadResponder(() => answer);
         const scope = yield* Scope.make();
         const ctx = yield* Layer.build(
           CloudTranscriberLive.pipe(Layer.provide(fakeCloud.layer))
         ).pipe(Scope.extend(scope));
         const lane = Context.get(ctx, CloudTranscriberLane);
-        const chunk = samples(240_000, 0.5);
-
-        const res = yield* lane.transcribeChunk(
-          'rec_1',
-          PARAMS,
-          { samples: chunk, sampleRate: CAPTURE_SAMPLE_RATE },
-          CLOUD
-        );
-
-        assert.strictEqual(fakeCloud.uploadCalls.length, 1);
-        const call = fakeCloud.uploadCalls[0];
-        assert.strictEqual(call.recordingId, 'rec_1');
-        // The params object crosses UNCHANGED (no engine leaks into the wire params).
-        assert.deepStrictEqual(call.params, { chunkIndex: 3, chunkStartMs: 15_000, source: 'mic' });
-        assert.deepStrictEqual(
-          Buffer.from(call.wav),
-          Buffer.from(encodeWavPcm16(chunk, CAPTURE_SAMPLE_RATE)),
-          'the exact bytes encodeWavPcm16 produced at the old call site'
-        );
-        // The backend's answer passes through untouched (server-minted rows).
-        assert.isTrue(res.ok);
-        if (res.ok) assert.strictEqual(res.value[0]?.id, 'tsg_3');
+        for (const source of ['mic', 'system'] as const) {
+          // Speech-band signal plus a high-frequency tone that would alias to 6 kHz.
+          const input = Float32Array.from(
+            { length: 720_000 },
+            (_, i) =>
+              0.25 * Math.cos((2 * Math.PI * 1_000 * i) / 48_000) +
+              0.25 * Math.cos((2 * Math.PI * 10_000 * i) / 48_000)
+          );
+          const params = { ...PARAMS, source };
+          const result = yield* lane.transcribeChunk(
+            'rec_16k',
+            params,
+            { samples: input, sampleRate: 48_000 },
+            CLOUD
+          );
+          assert.strictEqual(result, answer);
+          const call = fakeCloud.uploadCalls.at(-1)!;
+          assert.strictEqual(call.recordingId, 'rec_16k');
+          assert.deepStrictEqual(call.params, params);
+          const wav = Buffer.from(call.wav);
+          assert.strictEqual(wav.length, 480_044);
+          assert.strictEqual(wav.readUInt32LE(24), 16_000);
+          assert.strictEqual(wav.readUInt32LE(28), 32_000);
+          assert.strictEqual(wav.readUInt16LE(20), 1);
+          assert.strictEqual(wav.readUInt16LE(22), 1);
+          assert.strictEqual(wav.readUInt16LE(34), 16);
+          assert.strictEqual(wav.readUInt32LE(40), 480_000);
+          for (let i = 160; i < 320; i += 1) {
+            assert.closeTo(
+              wav.readInt16LE(44 + i * 2) / 32768,
+              0.25 * Math.cos((2 * Math.PI * 1_000 * i) / 16_000),
+              0.0001
+            );
+          }
+        }
+        yield* lane.transcribeChunk('rec_16k', PARAMS, audio(481), CLOUD);
+        const tail = Buffer.from(fakeCloud.uploadCalls.at(-1)!.wav);
+        assert.strictEqual(tail.length, 44 + 161 * 2);
+        assert.strictEqual(tail.readUInt32LE(24), 16_000);
+        yield* Scope.close(scope, Exit.void);
       })
   );
+
 });
 
 describe('TranscriberLive dispatch and placeholder lanes', () => {

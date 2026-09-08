@@ -370,7 +370,8 @@ describe('RecoveryDrain (re-chunk retained WAV → resend tail → finalize → 
             { chunkIndex: 3, chunkStartMs: 15_000, source: 'system' },
           ]
         );
-        assertWavSamples(h.fakeCloud.uploadCalls[0].wav, 15 * RATE);
+        assertWavSamples(h.fakeCloud.uploadCalls[0].wav, 15 * 16_000);
+        assert.strictEqual(Buffer.from(h.fakeCloud.uploadCalls[0].wav).readUInt32LE(24), 16_000);
         assert.isTrue(
           Buffer.from(h.fakeCloud.uploadCalls[0].wav)
             .subarray(44)
@@ -388,7 +389,8 @@ describe('RecoveryDrain (re-chunk retained WAV → resend tail → finalize → 
           chunkStartMs: 15_000,
           source: 'system',
         });
-        assertWavSamples(h.fakeCloud.uploadCalls[3].wav, RATE);
+        assertWavSamples(h.fakeCloud.uploadCalls[3].wav, 16_000);
+        assert.strictEqual(Buffer.from(h.fakeCloud.uploadCalls[3].wav).readUInt32LE(24), 16_000);
         assert.isTrue(
           Buffer.from(h.fakeCloud.uploadCalls[3].wav)
             .subarray(44)
@@ -452,7 +454,7 @@ describe('RecoveryDrain (re-chunk retained WAV → resend tail → finalize → 
         assert.strictEqual(call.params.chunkIndex, 2);
         assert.strictEqual(call.params.source, 'mic');
         assert.strictEqual(call.params.chunkStartMs, 30_000);
-        assertWavSamples(call.wav, 96_000);
+        assertWavSamples(call.wav, 32_000);
 
         assert.strictEqual(h.fakeCloud.finalizeCalls.length, 1);
         assert.strictEqual(h.fakeCloud.finalizeCalls[0].recordingId, recordingId);
@@ -718,7 +720,7 @@ describe('RecoveryDrain (re-chunk retained WAV → resend tail → finalize → 
     })
   );
 
-  it.effect('kill -9 (un-patched WAV header) → recovers the sample range from the file size', () =>
+  it.effect('kill -9 recovery derives samples from file size and uploads at 16 kHz', () =>
     Effect.gen(function* () {
       const h = yield* setup;
       const recordingId = 'rec_kill9';
@@ -732,12 +734,16 @@ describe('RecoveryDrain (re-chunk retained WAV → resend tail → finalize → 
       assert.strictEqual(onDisk.length, 44 + 17 * RATE * 2, 'but the data is all on disk');
       fs.appendFileSync(path.join(dir, 'mic.wav'), Buffer.from([1])); // incomplete last sample
 
-      yield* h.insertRecovery({ recordingId, captureMode: 'mic', wavPath: dir });
+      yield* h.insertRecovery({
+        recordingId,
+        captureMode: 'mic',
+        wavPath: dir,
+      });
       yield* h.db.updateRecoveryOutbox(recordingId, { status: 'capturing' }); // never left 'capturing'
 
       const summary = yield* h.drain();
 
-      // Recovered 17 s → chunks 0 (720k) + 1 (96k) — NOT zero, despite the header.
+      // Recovered 17 s → uploads of 240k + 32k samples at 16 kHz despite the empty header.
       assert.strictEqual(
         h.fakeCloud.uploadCalls.length,
         2,
@@ -747,15 +753,22 @@ describe('RecoveryDrain (re-chunk retained WAV → resend tail → finalize → 
         h.fakeCloud.uploadCalls.map(c => c.params.chunkIndex),
         [0, 1]
       );
-      assertWavSamples(h.fakeCloud.uploadCalls[0].wav, 720_000);
-      assertWavSamples(h.fakeCloud.uploadCalls[1].wav, 96_000);
+      assertWavSamples(h.fakeCloud.uploadCalls[0].wav, 240_000);
+      assertWavSamples(h.fakeCloud.uploadCalls[1].wav, 32_000);
+      assert.strictEqual(Buffer.from(h.fakeCloud.uploadCalls[0].wav).readUInt32LE(24), 16_000);
       const recoveredPcm = Buffer.concat(
         h.fakeCloud.uploadCalls.map(call => Buffer.from(call.wav).subarray(44))
       );
-      assert.strictEqual(recoveredPcm.length, onDisk.length - 44);
+      assert.strictEqual(recoveredPcm.length * 3, onDisk.length - 44);
+      // Constant-amplitude fixture: filtering preserves values at the lower rate.
+      let maxError = 0;
       for (let offset = 0; offset < recoveredPcm.length; offset += 2) {
-        assert.closeTo(recoveredPcm.readInt16LE(offset), onDisk.readInt16LE(offset + 44), 1);
+        maxError = Math.max(
+          maxError,
+          Math.abs(recoveredPcm.readInt16LE(offset) - onDisk.readInt16LE(offset * 3 + 44))
+        );
       }
+      assert.isAtMost(maxError, 1);
 
       assert.strictEqual(summary.resolved, 1);
       assert.isNull(yield* h.db.getRecoveryOutbox(recordingId));

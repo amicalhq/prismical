@@ -1,15 +1,10 @@
 /**
- * CloudTranscriberLive — the cloud lane behind the
- * Transcriber seam: exactly what the two call sites did before the seam
- * existed, moved here so ONLY the cloud lane pays for a WAV. Encodes the
- * chunk's 48 kHz Float32 samples to the canonical mono PCM16 WAV (wav.ts) and
- * hands it to WorkspaceBackend.uploadTranscriptionChunk with the SAME
- * (recordingId, params, wav) triple — byte-identical on the wire, and the
- * server keeps minting the segments. In local mode the LocalBackend's stub
- * answers this call (it acks []), but the seam never routes 'cloud' there:
- * engine resolution coerces local mode to the local lane.
+ * Encode cloud uploads as 16 kHz mono PCM16 WAV after anti-aliased downsampling.
+ * Live and recovery use this same conversion. Native capture/recovery WAVs stay
+ * at 48 kHz; chunk indices, source offsets and returned segments stay unchanged.
  */
 import { Effect, Layer } from 'effect';
+import { downsample48To16 } from '../../infra/audio/downsample-48-to-16';
 import { encodeWavPcm16 } from '../recording/wav';
 import { WorkspaceBackend } from '../transport/service';
 import { CloudTranscriberLane, type TranscriberLaneApi } from './service';
@@ -25,7 +20,7 @@ export const CloudTranscriberLive: Layer.Layer<CloudTranscriberLane, never, Work
             coreClient.uploadTranscriptionChunk(
               recordingId,
               params,
-              encodeWavPcm16(audio.samples, audio.sampleRate)
+              encodeWavPcm16(downsample48To16(audio.samples), 16_000)
             )
           ),
       })
