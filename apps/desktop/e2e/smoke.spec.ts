@@ -1,3 +1,4 @@
+import { advanceToMode } from './helpers/onboarding';
 import { rm } from 'node:fs/promises';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -84,10 +85,10 @@ test.describe('smoke', () => {
 
     const chooser = page.getByTestId('mode-chooser');
     await expect(chooser).toBeVisible();
-    await expect(chooser).toHaveAttribute('data-state', 'choose');
+    await expect(chooser).toHaveAttribute('data-step', 'discovery');
     await expect(page.getByTestId('mode-chooser-brand')).toHaveText('Prismical');
-    await expect(page.getByTestId('mode-choose-local')).toBeVisible();
-    await expect(page.getByTestId('mode-choose-cloud')).toBeVisible();
+    await expect(page.getByTestId('onboarding-continue')).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'GitHub', exact: true })).toBeVisible();
     // No product shell, and the chooser OWNS the surface: the element under
     // its centre is the chooser's, not the gate's (which is mounted beneath —
     // a fresh install boots cloud by default — but must not be reachable).
@@ -103,6 +104,29 @@ test.describe('smoke', () => {
     await assertPosture(launched);
   });
 
+  test('discovery validates Other, resumes saved progress, and keeps a skipped answer empty', async () => {
+    launched = await launchPrismical({}, { seedMode: null });
+    const page = await firstWindow(launched.app);
+    await page.getByRole('button', { name: 'Other', exact: true }).click();
+    await expect(page.getByTestId('onboarding-continue')).toBeDisabled();
+    await page.getByRole('textbox').fill('A community newsletter');
+    await page.getByTestId('onboarding-continue').click();
+    await expect(page.getByTestId('mode-chooser')).toHaveAttribute('data-step', 'permissions');
+    await page.reload();
+    await expect(page.getByTestId('mode-chooser')).toHaveAttribute('data-step', 'permissions');
+    await page.getByRole('button', { name: 'Back', exact: true }).click();
+    await expect(page.getByRole('textbox')).toHaveValue('A community newsletter');
+    await page.getByRole('button', { name: 'Skip for now', exact: true }).click();
+    await page.getByTestId('onboarding-continue').click();
+    await expect(page.getByTestId('mode-chooser')).toHaveAttribute('data-step', 'mode');
+    const progress = await page.evaluate(
+      async () => (await window.desktop.settings.get()).onboarding
+    );
+    expect(progress).toEqual({ step: 'mode', discoverySource: null, discoveryDetails: '' });
+    await page.reload();
+    await expect(page.getByTestId('mode-chooser')).toHaveAttribute('data-step', 'mode');
+  });
+
   test('choosing the Prismical account starts sign-in directly, persists, and survives a reload', async () => {
     launched = await launchPrismical(
       { PRISMICAL_CLIENT_ID: 'desktop-e2e-client' },
@@ -111,6 +135,7 @@ test.describe('smoke', () => {
     const page = await firstWindow(launched.app);
     await expect(page.getByTestId('mode-chooser')).toBeVisible();
 
+    await advanceToMode(page);
     await page.getByTestId('mode-choose-cloud').click();
 
     // One click starts the PKCE flow and reveals the browser-pending surface.
@@ -140,6 +165,7 @@ test.describe('smoke', () => {
     launched = await launchPrismical({ PRISMICAL_CLIENT_ID: '' }, { seedMode: null });
     const page = await firstWindow(launched.app);
 
+    await advanceToMode(page);
     await page.getByTestId('mode-choose-cloud').click();
 
     await expect(page.getByTestId('mode-chooser')).toHaveCount(0);
@@ -157,6 +183,8 @@ test.describe('smoke', () => {
     launched = first;
     const page = await firstWindow(first.app);
     await expect(page.getByTestId('mode-chooser')).toBeVisible();
+
+    await advanceToMode(page);
 
     // Main persists the choice and (under isE2E) quits instead of relaunching.
     const exited = first.app.waitForEvent('close');

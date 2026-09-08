@@ -789,7 +789,8 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
     // warn + reject (the shape boundary, like the auth mutations). A persist DbError
     // folds to a logged failure: the renderer's set resolves regardless and the
     // settings:changed push below reflects the truth (the ref is left untouched on
-    // failure, so no phantom change is ever observed).
+    // failure, so no phantom change is ever observed). Onboarding writes reject
+    // on failure so the flow cannot advance past unsaved progress.
     yield* acquireHandle(CHANNELS.settingsSet, (event, payload) =>
       runPromise(
         validateMainSender(event).pipe(
@@ -812,7 +813,14 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
               yield* settings.set(parsed.data);
             }).pipe(
               Effect.catchTag('DbError', () =>
-                log.error('settings:set could not persist — change dropped')
+                log.error('settings:set could not persist — change dropped').pipe(
+                  // Onboarding must stay on the current step when progress cannot be saved.
+                  Effect.zipRight(
+                    parsed.data.onboarding !== undefined
+                      ? Effect.fail(new PayloadRejected('INTERNAL'))
+                      : Effect.void
+                  )
+                )
               )
             );
           })

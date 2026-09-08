@@ -125,6 +125,7 @@ const bootstrap = async (): Promise<void> => {
   // instance. Choosing the boot mode (cloud) in-process hands the surface to
   // the gate by lifting `inert` and starts browser sign-in from that same click.
   await mountAppShell(root, desktopEnv, applicationI18n, appModeState, {
+    onboarding: settings.onboarding,
     onModeChosen: () => {
       gate?.setInert(false);
       gate?.startSignIn();

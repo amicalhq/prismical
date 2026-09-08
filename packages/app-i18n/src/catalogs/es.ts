@@ -2641,6 +2641,47 @@ const es = {
       zoomIn: 'Ampliar',
       zoomOut: 'Reducir',
     },
+    onboarding: {
+      "progress": "Progreso de configuración",
+      "continue": "Continuar",
+      "skip": "Omitir por ahora",
+      "finish": "Empezar",
+      "steps": {
+        "discovery": "Descubrimiento",
+        "permissions": "Permisos",
+        "mode": "Modo",
+        "calendar": "Calendario (opcional)"
+      },
+      "discovery": {
+        "title": "¿Cómo nos conociste?",
+        "description": "Ayúdanos a entender cómo la gente encuentra Prismical. Es opcional.",
+        "sources": {
+          "searchEngine": "Buscador",
+          "reddit": "Reddit",
+          "xTwitter": "X / Twitter",
+          "socialMedia": "Redes sociales",
+          "aiAssistant": "Asistente de IA",
+          "wordOfMouth": "Amigo o colega",
+          "blogArticle": "Blog o artículo",
+          "github": "GitHub",
+          "other": "Otro"
+        },
+        "other": "¿Dónde encontraste Prismical?"
+      },
+      "permissions": {
+        "title": "Prepara la grabación",
+        "description": "Permite el acceso al micrófono y al audio del sistema para grabar ambos lados de una reunión. Puedes continuar y dar acceso más tarde en Ajustes."
+      },
+      "mode": {
+        "title": "¿Cómo quieres usar Prismical?",
+        "description": "Guarda tus notas en este equipo o inicia sesión para sincronizarlas con Prismical Cloud."
+      },
+      "calendar": {
+        "title": "Conecta tu calendario",
+        "description": "Consulta las próximas reuniones y vincúlalas a tus notas. Conecta un calendario u omite este paso.",
+        "later": "Puedes conectar un calendario más tarde en Ajustes."
+      }
+    },
     modeChooser: {
       cloud: {
         choose: 'Iniciar sesión con Prismical',
@@ -2652,7 +2693,7 @@ const es = {
         'Puedes cambiarlo más tarde en Ajustes › Avanzado. Cambiar de modo borra los datos de este dispositivo.',
       failed: 'No se pudo guardar la elección. Inténtalo de nuevo.',
       local: {
-        choose: 'Usar sin una cuenta',
+        choose: 'Continuar sin una cuenta',
         description:
           'No necesitas cuenta. Las notas, grabaciones y transcripciones se quedan en este equipo. Usa tu propia clave de IA o ejecuta Ollama.',
         title: 'En este dispositivo',

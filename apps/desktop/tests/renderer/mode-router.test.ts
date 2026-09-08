@@ -5,6 +5,38 @@ import { describe, expect, it } from 'vitest';
 import { resolveSurface } from '../../src/renderer/main/app/mode-router';
 
 describe('resolveSurface mode router', () => {
+  const onboarding = { step: 'calendar', discoverySource: 'github', discoveryDetails: '' } as const;
+
+  it('resumes calendar setup only after a first-run cloud sign-in', () => {
+    expect(
+      resolveSurface({ appMode: 'cloud', appModeChosen: true, hasActiveAccount: false, onboarding })
+    ).toBe('gate');
+    expect(
+      resolveSurface({ appMode: 'cloud', appModeChosen: true, hasActiveAccount: true, onboarding })
+    ).toBe('calendar');
+    expect(
+      resolveSurface({
+        appMode: 'cloud',
+        appModeChosen: false,
+        hasActiveAccount: false,
+        onboarding,
+      })
+    ).toBe('chooser');
+    expect(
+      resolveSurface({ appMode: 'local', appModeChosen: true, hasActiveAccount: false, onboarding })
+    ).toBe('shell');
+  });
+
+  it('completed onboarding does not return after sign-in', () => {
+    expect(
+      resolveSurface({
+        appMode: 'cloud',
+        appModeChosen: true,
+        hasActiveAccount: true,
+        onboarding: { ...onboarding, step: 'complete' },
+      })
+    ).toBe('shell');
+  });
   it('a mode that was never chosen shows the first-run chooser — whatever the session says', () => {
     expect(
       resolveSurface({ appMode: 'cloud', appModeChosen: false, hasActiveAccount: false })

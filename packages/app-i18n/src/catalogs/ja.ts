@@ -2573,6 +2573,47 @@ const ja = {
       zoomIn: '拡大',
       zoomOut: '縮小',
     },
+    onboarding: {
+      "progress": "セットアップの進行状況",
+      "continue": "続ける",
+      "skip": "今はスキップ",
+      "finish": "使い始める",
+      "steps": {
+        "discovery": "きっかけ",
+        "permissions": "アクセス権",
+        "mode": "モード",
+        "calendar": "カレンダー（任意）"
+      },
+      "discovery": {
+        "title": "Prismicalをどこで知りましたか？",
+        "description": "Prismicalを知ったきっかけを教えてください。回答は任意です。",
+        "sources": {
+          "searchEngine": "検索エンジン",
+          "reddit": "Reddit",
+          "xTwitter": "X / Twitter",
+          "socialMedia": "ソーシャルメディア",
+          "aiAssistant": "AIアシスタント",
+          "wordOfMouth": "友人・同僚",
+          "blogArticle": "ブログ・記事",
+          "github": "GitHub",
+          "other": "その他"
+        },
+        "other": "Prismicalをどこで見つけましたか？"
+      },
+      "permissions": {
+        "title": "録音の準備",
+        "description": "会議の双方の音声を録音するため、マイクとシステム音声へのアクセスを許可してください。今は続行し、後で設定から許可することもできます。"
+      },
+      "mode": {
+        "title": "Prismicalをどのように使いますか？",
+        "description": "このコンピューターにノートを保存するか、サインインしてPrismical Cloudと同期します。"
+      },
+      "calendar": {
+        "title": "カレンダーを接続",
+        "description": "今後の会議を表示し、ノートと関連付けます。カレンダーを接続するか、この手順をスキップしてください。",
+        "later": "カレンダーは後で設定から接続できます。"
+      }
+    },
     modeChooser: {
       cloud: {
         choose: 'Prismical でサインイン',
@@ -2584,7 +2625,7 @@ const ja = {
         'この設定は後から「設定 › 詳細設定」で変更できます。モードを切り替えると、このデバイス上のデータは消去されます。',
       failed: '選択を保存できませんでした。もう一度お試しください。',
       local: {
-        choose: 'アカウントなしで使う',
+        choose: 'アカウントなしで続ける',
         description:
           'アカウントは不要です。ノート、録音、文字起こしはこのコンピューターに保存されます。自分の AI キーを使うか、Ollama を実行してください。',
         title: 'このデバイス上',

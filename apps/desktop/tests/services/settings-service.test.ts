@@ -26,6 +26,31 @@ const drainUntil = (predicate: () => boolean) =>
   });
 
 describe('SettingsService', () => {
+  it.effect('saves onboarding progress and restores it on the next boot', () =>
+    Effect.gen(function* () {
+      const { layer, db } = build();
+      const scope = yield* Scope.make();
+      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const settings = Context.get(ctx, SettingsService);
+      const onboarding = {
+        step: 'calendar',
+        discoverySource: 'github',
+        discoveryDetails: '',
+      } as const;
+      yield* settings.set({ onboarding });
+      assert.deepStrictEqual((yield* settings.get).onboarding, onboarding);
+      const restored = SettingsServiceLive.pipe(
+        Layer.provide(db.layer),
+        Layer.provide(makeTestLogger().layer)
+      );
+      const next = yield* Layer.build(restored).pipe(Scope.extend(scope));
+      assert.deepStrictEqual(
+        (yield* Context.get(next, SettingsService).get).onboarding,
+        onboarding
+      );
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
   it.effect('boot seeds defaults from an empty DB', () =>
     Effect.gen(function* () {
       const { layer } = build();

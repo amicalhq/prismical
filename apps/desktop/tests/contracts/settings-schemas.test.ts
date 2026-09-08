@@ -34,6 +34,24 @@ const valid = {
 };
 
 describe('device-settings schemas', () => {
+  it('validates onboarding progress and bounds discovery details', () => {
+    const onboarding = { step: 'permissions', discoverySource: 'github', discoveryDetails: '' };
+    expect(parseDeviceSettingsPatch({ onboarding }).success).toBe(true);
+    expect(
+      parseDeviceSettingsPatch({ onboarding: { ...onboarding, step: 'invalid' } }).success
+    ).toBe(false);
+    expect(
+      parseDeviceSettingsPatch({ onboarding: { ...onboarding, discoverySource: 'invalid' } })
+        .success
+    ).toBe(false);
+    expect(
+      parseDeviceSettingsPatch({ onboarding: { ...onboarding, discoveryDetails: 'x'.repeat(201) } })
+        .success
+    ).toBe(false);
+    expect(
+      parseDeviceSettingsPatch({ onboarding: { ...onboarding, token: 'secret' } }).success
+    ).toBe(false);
+  });
   it('accepts a full valid DeviceSettings and the default constant', () => {
     expect(parseDeviceSettings(valid).success).toBe(true);
     expect(deviceSettingsSchema.safeParse(DEFAULT_DEVICE_SETTINGS).success).toBe(true);

@@ -1734,6 +1734,34 @@ describe('registerMainWindowHandlers', () => {
   // settings:* — device-local preferences over IPC
   // -------------------------------------------------------------------------
 
+  it.effect('onboarding persistence failure rejects without advancing progress', () =>
+    Effect.gen(function* () {
+      const { layer } = build();
+      const scope = yield* Scope.make();
+      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+      yield* Context.get(ctx, WindowRegistry).openMainWindow.pipe(Scope.extend(scope));
+      const sender = fake.__windowInstances().at(-1)?.webContents;
+      const operationalDb = Context.get(ctx, OperationalDb);
+      const write = vi.spyOn(operationalDb, 'setSetting');
+      write.mockReturnValueOnce(
+        Effect.fail(new DbError({ op: 'setSetting', cause: 'disk unavailable' }))
+      );
+      const onboarding = { step: 'permissions', discoverySource: 'github', discoveryDetails: '' } as const;
+      const failed = yield* Effect.exit(Effect.tryPromise(() => fake.ipcMain.invoke(
+        CHANNELS.settingsSet, { sender }, { onboarding }
+      )));
+      assert.isTrue(Exit.isFailure(failed));
+      const current = yield* Effect.promise(() => fake.ipcMain.invoke(CHANNELS.settingsGet, { sender }));
+      assert.isNull((current as DeviceSettings).onboarding);
+      yield* Effect.promise(() => fake.ipcMain.invoke(CHANNELS.settingsSet, { sender }, { onboarding }));
+      const saved = yield* Effect.promise(() => fake.ipcMain.invoke(CHANNELS.settingsGet, { sender }));
+      assert.deepStrictEqual((saved as DeviceSettings).onboarding, onboarding);
+      write.mockRestore();
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+
   it.effect(
     'settings:get serves the current settings; settings:set merges + persists, both sender-validated',
     () =>

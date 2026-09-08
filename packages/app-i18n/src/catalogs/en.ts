@@ -2626,6 +2626,47 @@ const en = {
       zoomIn: 'Zoom In',
       zoomOut: 'Zoom Out',
     },
+    onboarding: {
+      "progress": "Setup progress",
+      "continue": "Continue",
+      "skip": "Skip for now",
+      "finish": "Get started",
+      "steps": {
+        "discovery": "Discovery",
+        "permissions": "Permissions",
+        "mode": "Mode",
+        "calendar": "Calendar (optional)"
+      },
+      "discovery": {
+        "title": "How did you hear about us?",
+        "description": "Help us understand how people find Prismical. This is optional.",
+        "sources": {
+          "searchEngine": "Search engine",
+          "reddit": "Reddit",
+          "xTwitter": "X / Twitter",
+          "socialMedia": "Social media",
+          "aiAssistant": "AI assistant",
+          "wordOfMouth": "Friend or colleague",
+          "blogArticle": "Blog or article",
+          "github": "GitHub",
+          "other": "Other"
+        },
+        "other": "Where did you find Prismical?"
+      },
+      "permissions": {
+        "title": "Get ready to record",
+        "description": "Allow microphone and system audio access to capture both sides of a meeting. You can continue now and grant access later in Settings."
+      },
+      "mode": {
+        "title": "How do you want to use Prismical?",
+        "description": "Keep your notes on this computer, or sign in to sync them with Prismical Cloud."
+      },
+      "calendar": {
+        "title": "Connect your calendar",
+        "description": "See upcoming meetings and link them to your notes. Connect a calendar, or skip this step.",
+        "later": "You can connect a calendar later in Settings."
+      }
+    },
     modeChooser: {
       cloud: {
         choose: 'Sign in with Prismical',
@@ -2637,7 +2678,7 @@ const en = {
         'You can change this later in Settings › Advanced. Switching modes erases the data on this device.',
       failed: 'The choice could not be saved. Try again.',
       local: {
-        choose: 'Use without an account',
+        choose: 'Continue without an account',
         description:
           'No account needed. Notes, recordings and transcripts stay on this computer. Bring your own AI key.',
         title: 'On this device',

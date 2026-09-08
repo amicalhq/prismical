@@ -2492,6 +2492,47 @@ const zhTW = {
       zoomIn: '放大',
       zoomOut: '縮小',
     },
+    onboarding: {
+      "progress": "設定進度",
+      "continue": "繼續",
+      "skip": "暫時略過",
+      "finish": "開始使用",
+      "steps": {
+        "discovery": "認識管道",
+        "permissions": "權限",
+        "mode": "模式",
+        "calendar": "行事曆（選填）"
+      },
+      "discovery": {
+        "title": "您是如何得知我們的？",
+        "description": "協助我們了解大家如何找到 Prismical。此問題可略過。",
+        "sources": {
+          "searchEngine": "搜尋引擎",
+          "reddit": "Reddit",
+          "xTwitter": "X / Twitter",
+          "socialMedia": "社群媒體",
+          "aiAssistant": "AI 助理",
+          "wordOfMouth": "朋友或同事",
+          "blogArticle": "部落格或文章",
+          "github": "GitHub",
+          "other": "其他"
+        },
+        "other": "您在哪裡找到 Prismical？"
+      },
+      "permissions": {
+        "title": "準備錄音",
+        "description": "允許存取麥克風與系統音訊，以錄製會議雙方的聲音。您可以先繼續，稍後再於設定中授予權限。"
+      },
+      "mode": {
+        "title": "您想如何使用 Prismical？",
+        "description": "將筆記保存在這台電腦上，或登入以同步至 Prismical Cloud。"
+      },
+      "calendar": {
+        "title": "連接您的行事曆",
+        "description": "查看即將舉行的會議，並將其連結至筆記。您可以連接行事曆或略過此步驟。",
+        "later": "您可以稍後在設定中連接行事曆。"
+      }
+    },
     modeChooser: {
       cloud: {
         choose: '使用 Prismical 登入',
@@ -2501,7 +2542,7 @@ const zhTW = {
       description: '之後可以在「設定 › 進階」中變更。切換模式會清除此裝置上的資料。',
       failed: '無法儲存選擇，請再試一次。',
       local: {
-        choose: '不登入帳號使用',
+        choose: '不使用帳號繼續',
         description:
           '不需要帳號。筆記、錄音和轉錄稿都會留在這台電腦上。使用你自己的 AI 金鑰，或執行 Ollama。',
         title: '在此裝置上',

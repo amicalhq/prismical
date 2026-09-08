@@ -299,6 +299,14 @@ export interface DeviceSettings {
   readonly transcription: TranscriptionSetting;
   /** AI provider choice. Main resolves the model per request. */
   readonly ai: AiProviderSetting;
+  /** Null on installs that predate onboarding and before the first step is saved. */
+  readonly onboarding: {
+    readonly step: 'discovery' | 'permissions' | 'mode' | 'calendar' | 'complete';
+    readonly discoverySource:
+      | 'searchEngine' | 'reddit' | 'xTwitter' | 'socialMedia' | 'aiAssistant'
+      | 'wordOfMouth' | 'blogArticle' | 'github' | 'other' | null;
+    readonly discoveryDetails: string;
+  } | null;
 }
 
 /**
@@ -323,6 +331,7 @@ export const DEFAULT_DEVICE_SETTINGS: DeviceSettings = {
   telemetryOptOut: true,
   transcription: { engine: 'cloud', modelId: null, byokBaseUrl: null, byokModel: null },
   ai: { provider: 'openai', model: null, baseUrl: null },
+  onboarding: null,
 };
 
 export interface DesktopCapabilityPort {

@@ -19,6 +19,7 @@ import {
   dockAnchorsSchema,
   floatNoteBoundsSchema,
   aiProviderSettingSchema,
+  onboardingStateSchema,
   transcriptionSettingSchema,
   updateChannelSchema,
   widgetVisibilitySchema,
@@ -51,6 +52,7 @@ const FIELDS = [
   'transcription',
   // AI provider — one record row.
   'ai',
+  'onboarding',
 ] as const satisfies ReadonlyArray<keyof DeviceSettings>;
 
 const prefKey = (field: keyof DeviceSettings): string => `${PREF_PREFIX}${field}`;
@@ -92,6 +94,7 @@ const decodeSettings = (raw: Record<keyof DeviceSettings, string | null>): Devic
   const telemetryOptOut = decodeJson(raw.telemetryOptOut);
   const transcription = transcriptionSettingSchema.safeParse(decodeJson(raw.transcription));
   const ai = aiProviderSettingSchema.safeParse(decodeJson(raw.ai));
+  const onboarding = onboardingStateSchema.nullable().safeParse(decodeJson(raw.onboarding));
   return {
     launchAtLogin:
       typeof launchAtLogin === 'boolean' ? launchAtLogin : DEFAULT_DEVICE_SETTINGS.launchAtLogin,
@@ -135,6 +138,7 @@ const decodeSettings = (raw: Record<keyof DeviceSettings, string | null>): Devic
       ? transcription.data
       : DEFAULT_DEVICE_SETTINGS.transcription,
     ai: ai.success ? ai.data : DEFAULT_DEVICE_SETTINGS.ai,
+    onboarding: onboarding.success ? onboarding.data : DEFAULT_DEVICE_SETTINGS.onboarding,
   };
 };
 
@@ -179,6 +183,10 @@ const sanitizePatch = (patch: Partial<DeviceSettings>): Partial<DeviceSettings> 
   if (patch.ai !== undefined) {
     const ai = aiProviderSettingSchema.safeParse(patch.ai);
     if (ai.success) clean.ai = ai.data;
+  }
+  if (patch.onboarding !== undefined) {
+    const onboarding = onboardingStateSchema.nullable().safeParse(patch.onboarding);
+    if (onboarding.success) clean.onboarding = onboarding.data;
   }
   return clean;
 };

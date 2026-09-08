@@ -1,3 +1,4 @@
+import { advanceToMode } from './helpers/onboarding';
 import { readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect, type ElectronApplication, type Page } from '@playwright/test';
@@ -180,6 +181,7 @@ test.describe('authentication flow (fake OIDC server)', () => {
     const page = await launched.app.firstWindow({ timeout: 60_000 });
     assertNotStaleDevBundle(page.url());
 
+    await advanceToMode(page);
     await page.getByTestId('mode-choose-cloud').click();
     await expect(page.getByTestId('auth-gate')).toHaveAttribute('data-mode', 'pending');
     await expect(page.getByTestId('mode-chooser')).toHaveCount(0);
@@ -191,7 +193,15 @@ test.describe('authentication flow (fake OIDC server)', () => {
       `${REDIRECT_URI}?code=C1&state=${encodeURIComponent(state!)}`
     );
     await expect(page.getByTestId('auth-account-email')).toHaveText(server.email);
+    await expect(page.getByTestId('onboarding-calendar')).toBeVisible();
+    await expect(page.getByTestId('desktop-shell')).toHaveCount(0);
+    await page.reload();
+    await expect(page.getByTestId('onboarding-calendar')).toBeVisible();
+    await page.getByTestId('onboarding-finish').click();
     await expect(page.getByTestId('desktop-shell')).toBeVisible();
+    await page.reload();
+    await expect(page.getByTestId('desktop-shell')).toBeVisible();
+    await expect(page.getByTestId('onboarding-calendar')).toHaveCount(0);
     expect(server.exchangeRequests()).toHaveLength(1);
   });
 

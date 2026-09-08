@@ -2669,6 +2669,47 @@ const de = {
       zoomIn: 'Vergrößern',
       zoomOut: 'Verkleinern',
     },
+    onboarding: {
+      "progress": "Einrichtungsfortschritt",
+      "continue": "Weiter",
+      "skip": "Vorerst überspringen",
+      "finish": "Loslegen",
+      "steps": {
+        "discovery": "Entdeckung",
+        "permissions": "Berechtigungen",
+        "mode": "Modus",
+        "calendar": "Kalender (optional)"
+      },
+      "discovery": {
+        "title": "Wie hast du von uns erfahren?",
+        "description": "Hilf uns zu verstehen, wie Menschen Prismical finden. Diese Angabe ist freiwillig.",
+        "sources": {
+          "searchEngine": "Suchmaschine",
+          "reddit": "Reddit",
+          "xTwitter": "X / Twitter",
+          "socialMedia": "Soziale Medien",
+          "aiAssistant": "KI-Assistent",
+          "wordOfMouth": "Freunde oder Kollegen",
+          "blogArticle": "Blog oder Artikel",
+          "github": "GitHub",
+          "other": "Sonstiges"
+        },
+        "other": "Wo hast du Prismical gefunden?"
+      },
+      "permissions": {
+        "title": "Bereit für die Aufnahme",
+        "description": "Erlaube den Zugriff auf Mikrofon und Systemaudio, um beide Seiten eines Meetings aufzunehmen. Du kannst jetzt fortfahren und den Zugriff später in den Einstellungen erlauben."
+      },
+      "mode": {
+        "title": "Wie möchtest du Prismical nutzen?",
+        "description": "Speichere deine Notizen auf diesem Computer oder melde dich an, um sie mit Prismical Cloud zu synchronisieren."
+      },
+      "calendar": {
+        "title": "Verbinde deinen Kalender",
+        "description": "Sieh bevorstehende Meetings und verknüpfe sie mit deinen Notizen. Verbinde einen Kalender oder überspringe diesen Schritt.",
+        "later": "Du kannst später in den Einstellungen einen Kalender verbinden."
+      }
+    },
     modeChooser: {
       cloud: {
         choose: 'Mit Prismical anmelden',
@@ -2680,7 +2721,7 @@ const de = {
         'Du kannst das später unter Einstellungen › Erweitert ändern. Beim Moduswechsel werden die Daten auf diesem Gerät gelöscht.',
       failed: 'Die Auswahl konnte nicht gespeichert werden. Versuche es erneut.',
       local: {
-        choose: 'Ohne Konto verwenden',
+        choose: 'Ohne Konto fortfahren',
         description:
           'Kein Konto nötig. Notizen, Aufnahmen und Transkripte bleiben auf diesem Computer. Nutze deinen eigenen KI-Schlüssel oder Ollama.',
         title: 'Auf diesem Gerät',

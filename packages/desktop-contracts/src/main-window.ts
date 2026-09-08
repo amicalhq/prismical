@@ -891,6 +891,27 @@ export const DEFAULT_AI_PROVIDER_SETTING: AiProviderSetting = {
  * surface still stays sanitized. `widgetNormalizedY` is a bare number here; MAIN
  * clamps it to [0,1] before it is ever seeded/pushed (the wire trusts that).
  */
+export const onboardingStateSchema = z
+  .object({
+    step: z.enum(['discovery', 'permissions', 'mode', 'calendar', 'complete']),
+    discoverySource: z
+      .enum([
+        'searchEngine',
+        'reddit',
+        'xTwitter',
+        'socialMedia',
+        'aiAssistant',
+        'wordOfMouth',
+        'blogArticle',
+        'github',
+        'other',
+      ])
+      .nullable(),
+    discoveryDetails: z.string().max(200),
+  })
+  .strict();
+export type OnboardingState = z.infer<typeof onboardingStateSchema>;
+
 export const deviceSettingsSchema = z
   .object({
     launchAtLogin: z.boolean(),
@@ -921,6 +942,7 @@ export const deviceSettingsSchema = z
     transcription: transcriptionSettingSchema,
     /** AI provider choice — see aiProviderSettingSchema. */
     ai: aiProviderSettingSchema,
+    onboarding: onboardingStateSchema.nullable().default(null),
   })
   .strip();
 export type DeviceSettings = z.infer<typeof deviceSettingsSchema>;
@@ -949,6 +971,7 @@ export const deviceSettingsPatchSchema = z
     telemetryOptOut: z.boolean().optional(),
     transcription: transcriptionSettingSchema.optional(),
     ai: aiProviderSettingSchema.optional(),
+    onboarding: onboardingStateSchema.nullable().optional(),
   })
   .strict();
 export type DeviceSettingsPatch = z.infer<typeof deviceSettingsPatchSchema>;
@@ -971,6 +994,7 @@ export const DEFAULT_DEVICE_SETTINGS: DeviceSettings = {
   telemetryOptOut: true,
   transcription: DEFAULT_TRANSCRIPTION_SETTING,
   ai: DEFAULT_AI_PROVIDER_SETTING,
+  onboarding: null,
 };
 
 /** Non-secret logging configuration shared with the renderer adapter. */

@@ -29,14 +29,15 @@ import {
   useSessionView,
 } from '@prismical/app-client';
 import { ApplicationI18nProvider } from '@prismical/app-i18n';
-import type { UpdateStateView } from '@prismical/desktop-contracts';
+import type { UpdateStateView, OnboardingState } from '@prismical/desktop-contracts';
 import { Toaster, toast } from '@prismical/app-ui/ui/sonner';
 import { Button } from '@prismical/app-ui/ui/button';
 import { router } from './router';
 import { openNoteLog } from '../collab';
 import { createDesktopPorts } from './ports/desktop-ports';
 import { DesktopEnvProvider, useDesktopEnv } from './desktop-env';
-import { ModeChooser } from './mode-chooser';
+import { OnboardingFlow } from './onboarding/flow';
+import { CalendarOnboarding } from './onboarding/calendar';
 import { resolveSurface } from './mode-router';
 import {
   persistDesktopLocalePreference,
@@ -218,15 +219,30 @@ export const isFloatWindow = (): boolean => window.location.hash.startsWith('#/f
  * window is only summonable from a live shell, so its chooser/gate arms are
  * unreachable-transparent fallbacks.)
  */
-function DesktopApp({ onChosen }: { onChosen: () => void }) {
+function DesktopApp({
+  onChosen,
+  onboarding,
+  saveOnboarding,
+}: {
+  onChosen: () => void;
+  onboarding: OnboardingState | null;
+  saveOnboarding: (progress: OnboardingState) => Promise<void>;
+}) {
   const { appMode, appModeChosen } = useDesktopEnv();
   const session = useSessionView();
   const hasActiveAccount =
     session.activeSub !== undefined &&
     session.accounts.some(account => account.sub === session.activeSub);
-  const surface = resolveSurface({ appMode, appModeChosen, hasActiveAccount });
-  if (surface === 'chooser') return isFloatWindow() ? null : <ModeChooser onChosen={onChosen} />;
+  const surface = resolveSurface({ appMode, appModeChosen, hasActiveAccount, onboarding });
+  if (surface === 'chooser')
+    return isFloatWindow() ? null : (
+      <OnboardingFlow progress={onboarding} save={saveOnboarding} onChosen={onChosen} />
+    );
   if (surface === 'gate') return null;
+  if (surface === 'calendar' && onboarding)
+    return isFloatWindow() ? null : (
+      <CalendarOnboarding onComplete={() => saveOnboarding({ ...onboarding, step: 'complete' })} />
+    );
   return isFloatWindow() ? <FloatOverlay /> : <ShellOverlay />;
 }
 
@@ -241,17 +257,25 @@ function DesktopRoot({
   desktopEnv,
   appModeState,
   onModeChosen,
+  initialOnboarding,
 }: {
   desktopEnv: DesktopEnvDescriptor;
   appModeState: AppModeState;
   onModeChosen: () => void;
+  initialOnboarding: OnboardingState | null;
 }) {
   const [appModeChosen, setAppModeChosen] = useState(appModeState.chosen);
+  const [onboarding, setOnboarding] = useState(initialOnboarding);
   const env = useMemo(() => ({ ...desktopEnv, appModeChosen }), [desktopEnv, appModeChosen]);
   return (
     <DesktopEnvProvider value={env}>
       <ApiQueryProvider>
         <DesktopApp
+          onboarding={onboarding}
+          saveOnboarding={async progress => {
+            await window.desktop.settings.set({ onboarding: progress });
+            setOnboarding(progress);
+          }}
           onChosen={() => {
             setAppModeChosen(true);
             onModeChosen();
@@ -263,6 +287,7 @@ function DesktopRoot({
 }
 
 export interface MountAppShellOptions {
+  readonly onboarding?: OnboardingState | null;
   /** The first-run choice resolved in-process (cloud): the gate root takes the surface. */
   readonly onModeChosen?: () => void;
 }
@@ -309,6 +334,7 @@ export async function mountAppShell(
         <DesktopRoot
           desktopEnv={desktopEnv}
           appModeState={appModeState}
+          initialOnboarding={options.onboarding ?? null}
           onModeChosen={() => options.onModeChosen?.()}
         />
       </PortsProvider>
