@@ -257,6 +257,7 @@ export async function openLocalAskStream(
         'not-configured': AI_ERROR_CODES.MODEL_NOT_CONFIGURED,
         'unknown-instance': AI_ERROR_CODES.INSTANCE_NOT_FOUND,
         'model-required': AI_ERROR_CODES.MODEL_SELECTION_INVALID,
+        disabled: AI_ERROR_CODES.MODEL_SELECTION_INVALID,
       }[resolved.error.reason],
       { provider: resolved.error.provider ?? undefined, model: modelId, retryable: false }
     );

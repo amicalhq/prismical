@@ -1,11 +1,12 @@
 'use client';
 
+import { useFeatureFlags } from '@prismical/app-client';
 import { Plus } from 'lucide-react';
 
 import { Button } from '../../../../ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../../../ui/tooltip';
 import {
-  isHiddenProviderType,
+  isProviderVisible,
   isProviderType,
   PROVIDER_META,
   PROVIDER_TYPE_COMING_SOON,
@@ -21,7 +22,7 @@ interface AvailableTilesProps {
 }
 
 // Display order for the Available tiles. Two bands:
-//   1. Implemented cloud / compat / dev tiles
+//   1. Implemented cloud / dev tiles
 //   2. Coming-soon tiles (disabled, with tooltip)
 // Local Whisper uses the real on-device model manager through the desktop
 // model-manager port.
@@ -31,10 +32,10 @@ const TILE_ORDER: ProviderType[] = [
   PROVIDER_TYPES.openRouter,
   PROVIDER_TYPES.googleGemini,
   PROVIDER_TYPES.deepgram,
-  PROVIDER_TYPES.ollama,
-  PROVIDER_TYPES.openAICompatible,
   PROVIDER_TYPES.mock,
   // Coming soon
+  PROVIDER_TYPES.ollama,
+  PROVIDER_TYPES.openAICompatible,
   PROVIDER_TYPES.anthropic,
   PROVIDER_TYPES.groq,
   PROVIDER_TYPES.vercelAIGateway,
@@ -43,13 +44,14 @@ const TILE_ORDER: ProviderType[] = [
 ];
 
 // Slim icon + name + plus tiles. Implemented cloud types route the click to
-// InstanceFormDialog; coming-soon cloud types stay visible + disabled.
+// InstanceFormDialog; coming-soon types are visible only to enabled organizations/accounts.
 export default function AvailableTiles({ onAddCloud }: AvailableTilesProps) {
   const { t } = useTranslation();
+  const { isEnabled } = useFeatureFlags();
   const isDev = process.env.NODE_ENV !== 'production';
 
   const visibleTypes = TILE_ORDER.filter(type => {
-    if (isHiddenProviderType(type)) return false;
+    if (!isProviderVisible(type, isEnabled)) return false;
     if (type === PROVIDER_TYPES.mock) return isDev;
     return true;
   });
@@ -84,7 +86,9 @@ export default function AvailableTiles({ onAddCloud }: AvailableTilesProps) {
               className="h-auto w-full justify-between gap-2 px-3 py-2"
             >
               <div className="flex items-center gap-2 min-w-0">
-                <meta.Logo className={`size-4 shrink-0 ${meta.tint ?? ''}`} />
+                <span aria-hidden="true">
+                  <meta.Logo className={`size-4 shrink-0 ${meta.tint ?? ''}`} />
+                </span>
                 <span className="text-sm truncate">{meta.label}</span>
               </div>
               <Plus className="size-3.5 shrink-0 text-muted-foreground" />

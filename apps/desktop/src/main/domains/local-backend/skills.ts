@@ -10,7 +10,7 @@
  */
 import type { LogMetadata } from '../../infra/logging/service';
 import { and, desc, eq, isNotNull, isNull, max, sql } from 'drizzle-orm';
-import { describeAiError, SKILL_RUN_ERROR_CODES, type AiErrorDetails } from '@prismical/api-contracts';
+import { AI_ERROR_CODES, describeAiError, SKILL_RUN_ERROR_CODES, type AiErrorDetails } from '@prismical/api-contracts';
 import {
   AcceptSkillRunRequestSchema,
   ApplyTitleRunRequestSchema,
@@ -309,6 +309,19 @@ export async function runSkill(
         return apiError(404, 'INSTANCE_NOT_FOUND', 'Provider instance not found');
       case 'model-required':
         return apiError(422, 'MODEL_REQUIRED', 'Invalid model selection');
+      case 'disabled': {
+        const code = AI_ERROR_CODES.MODEL_SELECTION_INVALID;
+        const details: AiErrorDetails = {
+          lane: 'your-key',
+          provider: resolvedResult.error.provider ?? undefined,
+          model: req.modelId,
+          retryable: false,
+        };
+        return apiError(422, code, 'Invalid model selection', {
+          ...details,
+          user: describeAiError({ code, details, locale: deps.locale, surface: 'skill', cloudAvailable: false }),
+        });
+      }
     }
   }
   const resolved = resolvedResult.value;

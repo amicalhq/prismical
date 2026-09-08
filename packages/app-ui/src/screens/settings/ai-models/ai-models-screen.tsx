@@ -111,7 +111,7 @@ function AIModelsSettingsContent({ providerSettings }: { providerSettings?: Reac
           <InstanceFormDialog
             open={!!formMode}
             onOpenChange={open => {
-              if (!open) setFormMode(null);
+              if (!open) setFormMode(current => current === formMode ? null : current);
             }}
             mode={formMode}
           />

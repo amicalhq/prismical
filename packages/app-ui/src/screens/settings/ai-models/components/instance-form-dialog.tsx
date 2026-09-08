@@ -19,15 +19,18 @@ import { Label } from '../../../../ui/label';
 import type { InstanceConfig, UseCase } from '../../mock-data';
 import {
   CLOUD_CATALOG_PROVIDERS,
+  isProviderType,
+  isProviderVisible,
   PROVIDER_META,
   PROVIDER_TYPE_CONFIG_FIELDS,
   PROVIDER_TYPE_CAPABILITIES,
+  PROVIDER_TYPE_COMING_SOON,
   type InstanceConfigFieldName,
   type InstanceConfigFieldSpec,
   type ModelType,
   type ProviderType,
 } from '../../../../lib/providers';
-import { useCreateInstance, useUpdateInstance } from '@prismical/app-client';
+import { useCreateInstance, useFeatureFlags, useUpdateInstance } from '@prismical/app-client';
 import { useModelDefaults, useSetModelDefault } from '@prismical/app-client';
 
 import { useAIModels } from './ai-models-store';
@@ -78,15 +81,19 @@ function stepsForProvider(provider: ProviderType): WizardStep[] {
 }
 
 export default function InstanceFormDialog({ open, onOpenChange, mode }: InstanceFormDialogProps) {
-  const provider: ProviderType | null = useMemo(() => {
-    if (mode?.kind === 'create') return mode.provider;
-    return null;
-  }, [mode]);
+  const { getInstance } = useAIModels();
+  const { isEnabled } = useFeatureFlags();
+  const provider = mode?.kind === 'create' ? mode.provider : mode ? getInstance(mode.id)?.provider : null;
+  if (
+    !provider ||
+    !isProviderType(provider) ||
+    !isProviderVisible(provider, isEnabled) ||
+    PROVIDER_TYPE_COMING_SOON[provider]
+  ) return null;
 
   if (mode?.kind === 'edit') {
     return <EditInstanceDialog open={open} onOpenChange={onOpenChange} id={mode.id} />;
   }
-  if (!provider) return null;
   return (
     <CreateInstanceWizard
       key={open ? provider : 'closed'}

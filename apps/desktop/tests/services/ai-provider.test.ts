@@ -5,7 +5,8 @@
  */
 import { assert, describe, it } from '@effect/vitest';
 import { Context, Effect, Layer } from 'effect';
-import { expect } from 'vitest';
+import { afterEach, beforeEach, expect, vi } from 'vitest';
+import * as contracts from '@prismical/desktop-contracts';
 import {
   fetchModelListing,
   isOpenAiChatModel,
@@ -164,6 +165,9 @@ describe('local instance ids', () => {
 });
 
 describe('AiProviderLive', () => {
+  // Exercise the implemented adapters independently of their public rollout state.
+  beforeEach(() => vi.spyOn(contracts, 'isLocalAiProviderEnabled').mockReturnValue(true));
+  afterEach(() => vi.restoreAllMocks());
   it.effect('resolve fails not-configured until a key is stored, then builds the model', () =>
     Effect.gen(function* () {
       const { fetchFn } = makeFetch({});
@@ -370,4 +374,49 @@ describe('AiProviderLive', () => {
       assert.notInclude(JSON.stringify(logger.entries), SENTINEL);
     }).pipe(Effect.scoped)
   );
+});
+
+describe('local provider rollout', () => {
+  for (const provider of ['anthropic', 'ollama', 'openai-compatible'] as const) {
+    it.effect(`blocks saved and explicit ${provider} selections before any network request`, () =>
+      Effect.gen(function* () {
+        const { fetchFn, calls } = makeFetch({});
+        const { layer } = build(fetchFn);
+        const ctx = yield* Layer.build(layer);
+        const ai = Context.get(ctx, AiProvider);
+        const settings = Context.get(ctx, SettingsService);
+        const secrets = Context.get(ctx, SecureStore);
+        yield* secrets.setSecret(aiProviderSecretKey(provider), 'saved-key');
+        const saved = { provider, model: 'saved-model', baseUrl: 'http://provider.test/v1' };
+        yield* settings.set({ ai: saved });
+
+        assert.strictEqual((yield* Effect.flip(ai.resolve())).reason, 'disabled');
+        assert.strictEqual(
+          (yield* Effect.flip(
+            ai.resolve({ instanceId: localInstanceId(provider), modelId: 'model' })
+          )).reason,
+          'disabled'
+        );
+        assert.deepStrictEqual(yield* ai.listModels(provider, true), {
+          models: [],
+          error: 'not-configured',
+        });
+        assert.deepStrictEqual(yield* ai.instances, []);
+        assert.isNull(yield* ai.defaultSelection);
+        assert.isFalse(
+          yield* ai.setDefault({ instanceId: localInstanceId(provider), modelId: 'model' })
+        );
+        assert.deepStrictEqual((yield* settings.get).ai, saved);
+        assert.lengthOf(calls, 0);
+
+        // Choosing an enabled provider restores access without deleting old settings or keys.
+        yield* secrets.setSecret(aiProviderSecretKey('openai'), 'openai-key');
+        assert.isTrue(
+          yield* ai.setDefault({ instanceId: localInstanceId('openai'), modelId: 'gpt-5' })
+        );
+        assert.strictEqual((yield* ai.resolve()).provider, 'openai');
+        assert.strictEqual(yield* secrets.getSecret(aiProviderSecretKey(provider)), 'saved-key');
+      }).pipe(Effect.scoped)
+    );
+  }
 });

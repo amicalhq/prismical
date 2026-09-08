@@ -372,7 +372,7 @@ const createDesktopCapabilityPort = (appMode: 'local' | 'cloud'): DesktopCapabil
   },
   // The local feature-flag resolver: the local workspace has no
   // organization to ask, so useFeatureFlag reads this table synchronously —
-  // every cloud-only surface answers false, auto-pause answers true. Cloud mode
+  // cloud-only and tester-only surfaces answer false. Cloud mode
   // resolves flags from GET /me/organizations exactly as web does (null).
   featureFlags: appMode === 'local' ? LOCAL_FEATURE_FLAGS : null,
   settings: {

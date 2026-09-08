@@ -2,6 +2,7 @@ import { desktopFetch } from '../../infra/http/client';
 import { Clock, Effect, Layer, Ref } from 'effect';
 import type { LanguageModel } from 'ai';
 import type { AiModelListing, AiProviderKind, AiProviderSetting } from '@prismical/desktop-contracts';
+import { isLocalAiProviderEnabled } from '@prismical/desktop-contracts';
 import { AppConfig } from '../../infra/config/service';
 import { MainLogger } from '../../infra/logging/service';
 import { SecureStore } from '../../infra/secure-store/service';
@@ -102,6 +103,7 @@ export const makeAiProviderLive = (
 
       const listModels: AiProviderApi['listModels'] = (provider, force = false) =>
         Effect.gen(function* () {
+          if (!isLocalAiProviderEnabled(provider)) return { models: [], error: 'not-configured' };
           if (fakeModel !== undefined) return { models: [E2E_FAKE_MODEL_ID], error: null };
           const now = yield* Clock.currentTimeMillis;
           const cached = force ? undefined : (yield* Ref.get(catalogues)).get(provider);
@@ -157,6 +159,7 @@ export const makeAiProviderLive = (
         const setting = (yield* settings.get).ai;
         const rows: AiInstanceView[] = [];
         for (const provider of AI_PROVIDER_KINDS) {
+          if (!isLocalAiProviderEnabled(provider)) continue;
           const active = provider === setting.provider;
           if (!active && (fakeModel !== undefined || !(yield* configured(provider, setting)))) continue;
           const listing = yield* listModels(provider);
@@ -177,6 +180,7 @@ export const makeAiProviderLive = (
 
       const defaultSelection: AiProviderApi['defaultSelection'] = Effect.gen(function* () {
         const setting = (yield* settings.get).ai;
+        if (!isLocalAiProviderEnabled(setting.provider)) return null;
         const modelId =
           fakeModel !== undefined ? E2E_FAKE_MODEL_ID : yield* effectiveModel(setting.provider, setting);
         return modelId === null ? null : { instanceId: localInstanceId(setting.provider), modelId };
@@ -185,7 +189,7 @@ export const makeAiProviderLive = (
       const setDefault: AiProviderApi['setDefault'] = selection =>
         Effect.gen(function* () {
           const provider = providerOfInstanceId(selection.instanceId);
-          if (provider === null) return false;
+          if (provider === null || !isLocalAiProviderEnabled(provider)) return false;
           const current = (yield* settings.get).ai;
           yield* settings.set({
             ai: {
@@ -228,6 +232,9 @@ export const makeAiProviderLive = (
               );
             }
             provider = named;
+          }
+          if (!isLocalAiProviderEnabled(provider)) {
+            return yield* Effect.fail(new AiProviderError({ reason: 'disabled', provider }));
           }
           if (fakeModel !== undefined) {
             const modelId = selection.modelId ?? E2E_FAKE_MODEL_ID;

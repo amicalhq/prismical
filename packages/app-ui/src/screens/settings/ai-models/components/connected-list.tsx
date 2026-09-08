@@ -1,5 +1,6 @@
 'use client';
 
+import { useFeatureFlags } from '@prismical/app-client';
 import { useState } from 'react';
 import { MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 
@@ -23,7 +24,7 @@ import {
 } from '../../../../ui/alert-dialog';
 import type { Instance, InstanceConfig } from '../../mock-data';
 import {
-  isHiddenProviderType,
+  isProviderVisible,
   isProviderType,
   PROVIDER_META,
   PROVIDER_TYPE_COMING_SOON,
@@ -82,6 +83,7 @@ type RemoveTarget = { kind: 'cloud'; instance: Instance };
 
 export default function ConnectedList({ onEdit }: ConnectedListProps) {
   const { t } = useTranslation();
+  const { isEnabled } = useFeatureFlags();
   const { instances, loading, removeInstance } = useAIModels();
   const [removeTarget, setRemoveTarget] = useState<RemoveTarget | null>(null);
 
@@ -91,8 +93,7 @@ export default function ConnectedList({ onEdit }: ConnectedListProps) {
   // through the desktop model-manager port, never a stale server-side instance row.
   const visible = instances
     .filter(i => {
-      if (!isProviderType(i.provider)) return false;
-      if (isHiddenProviderType(i.provider)) return false;
+      if (!isProviderVisible(i.provider, isEnabled)) return false;
       if (i.provider === PROVIDER_TYPES.localWhisper) return false;
       if (i.provider === PROVIDER_TYPES.mock) return isDev;
       return true;

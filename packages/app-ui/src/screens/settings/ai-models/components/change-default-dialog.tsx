@@ -20,6 +20,7 @@ import type { CatalogEntry, Instance, UseCase } from '../../mock-data';
 import {
   CLOUD_CATALOG_PROVIDERS,
   isProviderType,
+  isProviderVisible,
   PROVIDER_META,
   PROVIDER_TYPE_CAPABILITIES,
   PROVIDER_TYPE_MULTI_INSTANCE,
@@ -28,7 +29,7 @@ import {
   type ProviderType,
 } from '../../../../lib/providers';
 import { TranscriptionCaveats } from './transcription-caveats';
-import { useInstanceModels } from '@prismical/app-client';
+import { useFeatureFlags, useInstanceModels } from '@prismical/app-client';
 import { AUTO_SELECTION, PRISMICAL_CLOUD_INSTANCE_ID } from '@prismical/app-client';
 
 import { useAIModels } from './ai-models-store';
@@ -51,7 +52,8 @@ interface ChangeDefaultDialogProps {
 //   Step 2 — pick a model from the chosen instance's catalog (searchable).
 export default function ChangeDefaultDialog({ open, onOpenChange, useCase }: ChangeDefaultDialogProps) {
   const { t } = useTranslation();
-  const { instances, defaults, getInstance, setDefault } = useAIModels();
+  const { instances, defaults, setDefault } = useAIModels();
+  const { isEnabled } = useFeatureFlags();
   const modelType = USE_CASE_TO_MODEL_TYPE[useCase];
 
   const [chosenInstanceId, setChosenInstanceId] = useState<string | null>(null);
@@ -74,13 +76,13 @@ export default function ChangeDefaultDialog({ open, onOpenChange, useCase }: Cha
   // so the picker never dead-ends at a catalog fetch the cloud can't satisfy.
   const eligibleInstances = useMemo<Instance[]>(() => {
     return instances.filter(i => {
-      if (!isProviderType(i.provider)) return false;
+      if (!isProviderType(i.provider) || !isProviderVisible(i.provider, isEnabled)) return false;
       const p = i.provider as ProviderType;
       return (
         CLOUD_CATALOG_PROVIDERS.includes(p) && PROVIDER_TYPE_CAPABILITIES[p].includes(modelType)
       );
     });
-  }, [instances, modelType]);
+  }, [instances, modelType, isEnabled]);
 
   // Pre-select the current model when entering step 2.
   useEffect(() => {
@@ -93,13 +95,13 @@ export default function ChangeDefaultDialog({ open, onOpenChange, useCase }: Cha
     }
   }, [chosenInstanceId, defaults, useCase]);
 
-  const chosenInstance = chosenInstanceId ? getInstance(chosenInstanceId) : undefined;
+  const chosenInstance = eligibleInstances.find(instance => instance.id === chosenInstanceId);
 
   // Cloud providers: fetch the LIVE catalog from the provider (GET /me/instances/:id/models).
   // Only runs on step 2. (Every eligible instance is a CLOUD_CATALOG_PROVIDERS member.)
   const liveModels = useInstanceModels(
-    chosenInstanceId ?? undefined,
-    open && Boolean(chosenInstanceId)
+    chosenInstance?.id,
+    open && Boolean(chosenInstance)
   );
 
   const filteredCatalog = useMemo<CatalogEntry[]>(() => {
@@ -139,9 +141,9 @@ export default function ChangeDefaultDialog({ open, onOpenChange, useCase }: Cha
   };
 
   const handleSave = () => {
-    if (!chosenInstanceId || !pendingModelId) return;
+    if (!chosenInstance || !pendingModelId) return;
     setDefault(useCase, {
-      instanceId: chosenInstanceId,
+      instanceId: chosenInstance.id,
       modelId: pendingModelId,
     });
     onOpenChange(false);
@@ -154,7 +156,7 @@ export default function ChangeDefaultDialog({ open, onOpenChange, useCase }: Cha
   );
 
   // Step 1 view
-  if (!chosenInstanceId) {
+  if (!chosenInstance) {
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-w-2xl sm:max-w-2xl">

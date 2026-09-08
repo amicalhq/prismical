@@ -2,13 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   CLOUD_CATALOG_PROVIDERS,
   HIDDEN_PROVIDER_TYPES,
+  PROVIDER_FEATURE_KEYS,
+  isProviderVisible,
   PROVIDER_TYPE_CAPABILITIES,
   PROVIDER_TYPE_COMING_SOON,
   PROVIDER_TYPES,
 } from "./providers";
 
 describe("AI provider availability", () => {
-  it("keeps every product provider visible", () => {
+  it("leaves global suppression empty so organization flags control visibility", () => {
     expect(HIDDEN_PROVIDER_TYPES.size).toBe(0);
   });
 
@@ -52,4 +54,12 @@ describe("AI provider availability", () => {
     expect(PROVIDER_TYPE_COMING_SOON[PROVIDER_TYPES.localWhisper]).toBe(false);
     expect(CLOUD_CATALOG_PROVIDERS).not.toContain(PROVIDER_TYPES.localWhisper);
   });
+});
+
+it('gates every provider independently and fails closed for unknown types', () => {
+  for (const provider of Object.values(PROVIDER_TYPES)) {
+    expect(isProviderVisible(provider, () => false)).toBe(false);
+    expect(isProviderVisible(provider, key => key === PROVIDER_FEATURE_KEYS[provider])).toBe(true);
+  }
+  expect(isProviderVisible('unknown-provider', () => true)).toBe(false);
 });

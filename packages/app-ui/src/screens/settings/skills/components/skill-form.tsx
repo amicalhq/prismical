@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { useTranslation } from 'react-i18next';
-import { useFeatureFlag, useNavigation } from '@prismical/app-client';
+import { useFeatureFlags, useNavigation } from '@prismical/app-client';
 import { MoreVertical } from 'lucide-react';
 import { Button } from '../../../../ui/button';
 import { Input } from '../../../../ui/input';
@@ -52,18 +52,13 @@ function toggleSet<T>(s: Set<T>, key: T, on: boolean): Set<T> {
   return next;
 }
 
-/**
- * Faithful port of the desktop `SkillForm`: one form for both creating and
- * editing a skill, with name/description/prompt, an Advanced-settings section
- * (mode, surfaces, default, mode-agnostic, enabled), an actions menu
- * (clone / export / delete) in edit mode, and a system read-only banner.
- * Wired to the in-memory skills store instead of tRPC.
- */
+/** Custom skill editor with experimental controls limited to opted-in accounts. */
 export function SkillForm({ mode, existing }: SkillFormProps) {
   const { t } = useTranslation();
   const router = useNavigation();
-  const { enabled: integrationsEnabled } = useFeatureFlag('integrations');
-  const { enabled: skillMcpToolsEnabled } = useFeatureFlag('skillMcpTools');
+  const { isEnabled } = useFeatureFlags();
+  const advancedEnabled = isEnabled('skillAdvancedSettings');
+  const toolsEnabled = isEnabled('integrations') && isEnabled('skillMcpTools');
   const { create, update, remove, clone } = useSkills();
 
   const [name, setName] = React.useState(existing?.name ?? '');
@@ -98,17 +93,34 @@ export function SkillForm({ mode, existing }: SkillFormProps) {
 
   const isReadOnly = mode === 'edit' && existing?.system === true;
 
+  const effectiveOutputTarget = advancedEnabled
+    ? outputTarget
+    : (existing?.config.outputTarget ?? 'note-body');
+  const restrictedMode =
+    !advancedEnabled &&
+    (effectiveOutputTarget === 'note-title' ||
+      existing?.config.editingOptions === 'inline-rewrite');
   const config = {
-    outputTarget,
-    inputs: { transcript: includeTranscript },
-    editingOptions,
-    surface:
-      outputTarget === 'note-title'
+    ...existing?.config,
+    outputTarget: effectiveOutputTarget,
+    inputs: { ...existing?.config.inputs, transcript: includeTranscript },
+    editingOptions: !advancedEnabled && (restrictedMode || editingOptions === 'inline-rewrite')
+      ? (existing?.config.editingOptions ?? 'append-section')
+      : editingOptions,
+    surface: !advancedEnabled
+      ? (existing?.config.surface ?? (['dock'] as SkillSurface[]))
+      : outputTarget === 'note-title'
         ? (['title', 'dock'] as SkillSurface[])
         : [...surfaces].filter(surface => surface !== 'title'),
-    defaultSkill: outputTarget === 'note-title' ? false : defaultSkill,
-    modeAgnosticPrompt,
-    askScope,
+    defaultSkill: !advancedEnabled
+      ? (existing?.config.defaultSkill ?? false)
+      : outputTarget === 'note-title'
+        ? false
+        : defaultSkill,
+    modeAgnosticPrompt: advancedEnabled
+      ? modeAgnosticPrompt
+      : (existing?.config.modeAgnosticPrompt ?? false),
+    askScope: advancedEnabled ? askScope : (existing?.config.askScope ?? 'multi-note'),
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -122,11 +134,17 @@ export function SkillForm({ mode, existing }: SkillFormProps) {
       setError(t('settings.skillLibrary.errors.promptRequired'));
       return;
     }
-    if (config.surface.length === 0) {
+    if (advancedEnabled && config.surface.length === 0) {
       setError(t('settings.skillLibrary.errors.surfaceRequired'));
       return;
     }
     setIsSaving(true);
+    let allowedToolsForSave = existing?.allowedTools ?? null;
+    if (advancedEnabled && effectiveOutputTarget === 'note-title') {
+      allowedToolsForSave = null;
+    } else if (toolsEnabled && effectiveOutputTarget !== 'note-title') {
+      allowedToolsForSave = allowedTools.length ? allowedTools : null;
+    }
     try {
       if (mode === 'new') {
         const created = await create({
@@ -135,8 +153,7 @@ export function SkillForm({ mode, existing }: SkillFormProps) {
           body,
           config,
           enabled,
-          allowedTools:
-            outputTarget === 'note-title' ? null : allowedTools.length ? allowedTools : null,
+          allowedTools: allowedToolsForSave,
         });
         router.push(`/settings/skills/${created.id}`);
       } else if (existing) {
@@ -146,8 +163,7 @@ export function SkillForm({ mode, existing }: SkillFormProps) {
           body,
           config,
           enabled,
-          allowedTools:
-            outputTarget === 'note-title' ? null : allowedTools.length ? allowedTools : null,
+          allowedTools: allowedToolsForSave,
         });
         router.push('/settings/skills');
       }
@@ -285,182 +301,208 @@ export function SkillForm({ mode, existing }: SkillFormProps) {
         />
       </div>
 
-      {!isReadOnly && integrationsEnabled && skillMcpToolsEnabled && (
+      {!isReadOnly && toolsEnabled && effectiveOutputTarget !== 'note-title' && (
         <div className="space-y-2">
           <Label>{t('settings.skillLibrary.form.toolsLabel')}</Label>
-          {outputTarget !== 'note-title' && (
-            <SkillToolsPicker value={allowedTools} onChange={setAllowedTools} />
-          )}
+          <SkillToolsPicker value={allowedTools} onChange={setAllowedTools} />
         </div>
       )}
 
-      <details className="rounded-lg border bg-card open:p-4 [&:not([open])]:p-3 [&:not([open])>summary]:m-0">
-        <summary className="cursor-pointer select-none text-sm font-medium text-muted-foreground">
-          {t('settings.skillLibrary.form.advanced')}
-        </summary>
-        <div className="mt-4 space-y-5">
+      <div className="flex items-center gap-2">
+        <Switch
+          id="transcript-input"
+          checked={includeTranscript}
+          disabled={isReadOnly}
+          onCheckedChange={setIncludeTranscript}
+        />
+        <div>
+          <Label htmlFor="transcript-input">{t('notes.includeTranscript')}</Label>
+          <p className="text-xs text-muted-foreground">
+            {t('settings.skillLibrary.form.transcriptDescription')}
+          </p>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label>{t('settings.skillLibrary.form.modeLabel')}</Label>
+        <RadioGroup
+          value={config.editingOptions}
+          onValueChange={v => setEditingOptions(v as ArtifactMode)}
+          disabled={isReadOnly || effectiveOutputTarget === 'note-title' || restrictedMode}
+        >
           <div className="flex items-center gap-2">
-            <Switch
-              id="title-output"
-              checked={outputTarget === 'note-title'}
-              disabled={isReadOnly}
-              onCheckedChange={value => setOutputTarget(value ? 'note-title' : 'note-body')}
-            />
-            <Label htmlFor="title-output">{t('notes.titleOutput')}</Label>
-          </div>
-          <div className="flex items-center gap-2">
-            <Switch
-              id="transcript-input"
-              checked={includeTranscript}
-              disabled={isReadOnly}
-              onCheckedChange={setIncludeTranscript}
-            />
-            <Label htmlFor="transcript-input">{t('notes.includeTranscript')}</Label>
-          </div>
-
-          <div className="space-y-2">
-            <Label>{t('settings.skillLibrary.form.modeLabel')}</Label>
-            <RadioGroup
-              value={editingOptions}
-              onValueChange={v => setEditingOptions(v as ArtifactMode)}
-              disabled={isReadOnly || outputTarget === 'note-title'}
-            >
-              <div className="flex items-center gap-2">
-                <RadioGroupItem value="append-section" id="m-as" />
-                <Label htmlFor="m-as" className="font-normal">
-                  {t('settings.skillLibrary.modes.appendSection')}
-                </Label>
-              </div>
-              <div className="flex items-center gap-2">
-                <RadioGroupItem value="replace-doc" id="m-rd" />
-                <Label htmlFor="m-rd" className="font-normal">
-                  {t('settings.skillLibrary.modes.replaceDocument')}
-                </Label>
-              </div>
-              <div className="flex items-center gap-2">
-                <RadioGroupItem value="inline-rewrite" id="m-ir" />
-                <Label htmlFor="m-ir" className="font-normal">
-                  {t('settings.skillLibrary.modes.inlineRewrite')}
-                </Label>
-              </div>
-            </RadioGroup>
-          </div>
-
-          <div className="space-y-2">
-            <Label>{t('settings.skillLibrary.form.surfacesLabel')}</Label>
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  id="s-dock"
-                  checked={outputTarget === 'note-title' || surfaces.has('dock')}
-                  onCheckedChange={c => setSurfaces(prev => toggleSet(prev, 'dock', c === true))}
-                  disabled={isReadOnly || outputTarget === 'note-title'}
-                />
-                <Label htmlFor="s-dock" className="font-normal">
-                  {t('settings.skillLibrary.surfaces.dock')}
-                </Label>
-              </div>
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  id="s-inline"
-                  checked={outputTarget !== 'note-title' && surfaces.has('inline')}
-                  onCheckedChange={c => setSurfaces(prev => toggleSet(prev, 'inline', c === true))}
-                  disabled={isReadOnly || outputTarget === 'note-title'}
-                />
-                <Label htmlFor="s-inline" className="font-normal">
-                  {t('settings.skillLibrary.surfaces.inline')}
-                </Label>
-              </div>
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  id="s-ask"
-                  checked={outputTarget !== 'note-title' && surfaces.has('ask')}
-                  onCheckedChange={c => setSurfaces(prev => toggleSet(prev, 'ask', c === true))}
-                  disabled={isReadOnly || outputTarget === 'note-title'}
-                />
-                <Label htmlFor="s-ask" className="font-normal">
-                  {t('settings.skillLibrary.surfaces.ask')}
-                </Label>
-              </div>
-            </div>
-          </div>
-
-          {/* Ask-AI scope — only relevant when the skill is offered on the Ask AI surface. */}
-          {outputTarget !== 'note-title' && surfaces.has('ask') && (
-            <div className="space-y-2">
-              <Label>{t('settings.skillLibrary.askScope.label')}</Label>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                {ASK_SCOPE_OPTIONS.map(scope => (
-                  <button
-                    key={scope}
-                    type="button"
-                    disabled={isReadOnly}
-                    aria-pressed={askScope === scope}
-                    onClick={() => setAskScope(scope)}
-                    className={cn(
-                      'rounded-lg border p-3 text-left transition-colors',
-                      askScope === scope
-                        ? 'border-primary bg-primary/5 ring-1 ring-primary'
-                        : 'border-border hover:bg-accent',
-                      isReadOnly && 'cursor-not-allowed opacity-60'
-                    )}
-                  >
-                    <div className="text-sm font-medium">
-                      {t(
-                        scope === 'single-note'
-                          ? 'settings.skillLibrary.askScope.singleTitle'
-                          : 'settings.skillLibrary.askScope.multiTitle'
-                      )}
-                    </div>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {t(
-                        scope === 'single-note'
-                          ? 'settings.skillLibrary.askScope.singleDescription'
-                          : 'settings.skillLibrary.askScope.multiDescription'
-                      )}
-                    </p>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="flex items-center justify-between">
-            <Label htmlFor="default">{t('settings.skillLibrary.form.defaultLabel')}</Label>
-            <Switch
-              id="default"
-              checked={outputTarget !== 'note-title' && defaultSkill}
-              onCheckedChange={setDefaultSkill}
-              disabled={isReadOnly || outputTarget === 'note-title'}
-            />
-          </div>
-
-          <div className="flex items-start gap-2">
-            <Checkbox
-              id="mode-agnostic"
-              checked={modeAgnosticPrompt}
-              onCheckedChange={c => setModeAgnosticPrompt(c === true)}
-              disabled={isReadOnly || outputTarget === 'note-title'}
-              className="mt-0.5"
-            />
+            <RadioGroupItem value="append-section" id="m-as" aria-describedby="m-as-description" />
             <div className="space-y-1">
-              <Label htmlFor="mode-agnostic" className="font-normal">
-                {t('settings.skillLibrary.form.modeAgnosticLabel')}
+              <Label htmlFor="m-as" className="font-normal">
+                {t('settings.skillLibrary.form.addSection')}
               </Label>
-              <p className="text-xs text-muted-foreground">
-                {t('settings.skillLibrary.form.modeAgnosticDescription')}
+              <p id="m-as-description" className="text-xs text-muted-foreground">
+                {t('settings.skillLibrary.form.addSectionDescription')}
               </p>
             </div>
           </div>
-
-          {mode === 'edit' && !existing?.system ? (
-            <div className="flex items-center justify-between">
-              <Label htmlFor="enabled">{t('settings.skillLibrary.form.enabled')}</Label>
-              <Switch id="enabled" checked={enabled} onCheckedChange={setEnabled} />
+          <div className="flex items-center gap-2">
+            <RadioGroupItem value="replace-doc" id="m-rd" aria-describedby="m-rd-description" />
+            <div className="space-y-1">
+              <Label htmlFor="m-rd" className="font-normal">
+                {t('settings.skillLibrary.form.rewriteNote')}
+              </Label>
+              <p id="m-rd-description" className="text-xs text-muted-foreground">
+                {t('settings.skillLibrary.form.rewriteNoteDescription')}
+              </p>
             </div>
-          ) : null}
-        </div>
-      </details>
+          </div>
+          {advancedEnabled && (
+            <div className="flex items-center gap-2">
+              <RadioGroupItem value="inline-rewrite" id="m-ir" />
+              <Label htmlFor="m-ir" className="font-normal">
+                {t('settings.skillLibrary.modes.inlineRewrite')}
+              </Label>
+            </div>
+          )}
+        </RadioGroup>
+        {restrictedMode && (
+          <p className="text-xs text-muted-foreground">
+            {t('settings.skillLibrary.form.preservedMode')}
+          </p>
+        )}
+      </div>
+
+      <div className="flex items-center justify-between">
+        <Label htmlFor="enabled">{t('settings.skillLibrary.form.enabled')}</Label>
+        <Switch id="enabled" checked={enabled} onCheckedChange={setEnabled} disabled={isReadOnly} />
+      </div>
+      {advancedEnabled && (
+        <details className="rounded-lg border bg-card open:p-4 [&:not([open])]:p-3 [&:not([open])>summary]:m-0">
+          <summary className="cursor-pointer select-none text-sm font-medium text-muted-foreground">
+            {t('settings.skillLibrary.form.advanced')}
+          </summary>
+          <div className="mt-4 space-y-5">
+            <div className="flex items-center gap-2">
+              <Switch
+                id="title-output"
+                checked={outputTarget === 'note-title'}
+                disabled={isReadOnly}
+                onCheckedChange={value => setOutputTarget(value ? 'note-title' : 'note-body')}
+              />
+              <div>
+                <Label htmlFor="title-output">{t('notes.titleOutput')}</Label>
+                <p className="text-xs text-muted-foreground">
+                  {t('settings.skillLibrary.form.titleDescription')}
+                </p>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>{t('settings.skillLibrary.form.surfacesLabel')}</Label>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="s-dock"
+                    checked={outputTarget === 'note-title' || surfaces.has('dock')}
+                    onCheckedChange={c => setSurfaces(prev => toggleSet(prev, 'dock', c === true))}
+                    disabled={isReadOnly || outputTarget === 'note-title'}
+                  />
+                  <Label htmlFor="s-dock" className="font-normal">
+                    {t('settings.skillLibrary.surfaces.dock')}
+                  </Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="s-inline"
+                    checked={outputTarget !== 'note-title' && surfaces.has('inline')}
+                    onCheckedChange={c =>
+                      setSurfaces(prev => toggleSet(prev, 'inline', c === true))
+                    }
+                    disabled={isReadOnly || outputTarget === 'note-title'}
+                  />
+                  <Label htmlFor="s-inline" className="font-normal">
+                    {t('settings.skillLibrary.surfaces.inline')}
+                  </Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="s-ask"
+                    checked={outputTarget !== 'note-title' && surfaces.has('ask')}
+                    onCheckedChange={c => setSurfaces(prev => toggleSet(prev, 'ask', c === true))}
+                    disabled={isReadOnly || outputTarget === 'note-title'}
+                  />
+                  <Label htmlFor="s-ask" className="font-normal">
+                    {t('settings.skillLibrary.surfaces.ask')}
+                  </Label>
+                </div>
+              </div>
+            </div>
+
+            {/* Ask-AI scope — only relevant when the skill is offered on the Ask AI surface. */}
+            {outputTarget !== 'note-title' && surfaces.has('ask') && (
+              <div className="space-y-2">
+                <Label>{t('settings.skillLibrary.askScope.label')}</Label>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {ASK_SCOPE_OPTIONS.map(scope => (
+                    <button
+                      key={scope}
+                      type="button"
+                      disabled={isReadOnly}
+                      aria-pressed={askScope === scope}
+                      onClick={() => setAskScope(scope)}
+                      className={cn(
+                        'rounded-lg border p-3 text-left transition-colors',
+                        askScope === scope
+                          ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                          : 'border-border hover:bg-accent',
+                        isReadOnly && 'cursor-not-allowed opacity-60'
+                      )}
+                    >
+                      <div className="text-sm font-medium">
+                        {t(
+                          scope === 'single-note'
+                            ? 'settings.skillLibrary.askScope.singleTitle'
+                            : 'settings.skillLibrary.askScope.multiTitle'
+                        )}
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {t(
+                          scope === 'single-note'
+                            ? 'settings.skillLibrary.askScope.singleDescription'
+                            : 'settings.skillLibrary.askScope.multiDescription'
+                        )}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between">
+              <Label htmlFor="default">{t('settings.skillLibrary.form.defaultLabel')}</Label>
+              <Switch
+                id="default"
+                checked={outputTarget !== 'note-title' && defaultSkill}
+                onCheckedChange={setDefaultSkill}
+                disabled={isReadOnly || outputTarget === 'note-title'}
+              />
+            </div>
+
+            <div className="flex items-start gap-2">
+              <Checkbox
+                id="mode-agnostic"
+                checked={modeAgnosticPrompt}
+                onCheckedChange={c => setModeAgnosticPrompt(c === true)}
+                disabled={isReadOnly || outputTarget === 'note-title'}
+                className="mt-0.5"
+              />
+              <div className="space-y-1">
+                <Label htmlFor="mode-agnostic" className="font-normal">
+                  {t('settings.skillLibrary.form.modeAgnosticLabel')}
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  {t('settings.skillLibrary.form.modeAgnosticDescription')}
+                </p>
+              </div>
+            </div>
+          </div>
+        </details>
+      )}
 
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
 

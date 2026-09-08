@@ -291,9 +291,7 @@ export function isProviderType(value: string): value is ProviderType {
   return (Object.values(PROVIDER_TYPES) as readonly string[]).includes(value)
 }
 
-// Provider types hidden from the AI-models UI entirely. Keep this for emergency
-// product/security suppression; normal unavailable states must remain visible as
-// either coming-soon cloud providers or desktop-only local providers.
+// Global emergency suppression, applied in addition to organization visibility flags.
 export const HIDDEN_PROVIDER_TYPES: ReadonlySet<ProviderType> = new Set<ProviderType>()
 
 /** Whether a provider type is hidden from the AI-models UI (see HIDDEN_PROVIDER_TYPES). */
@@ -385,4 +383,29 @@ export function getProviderMeta(type: string): ProviderMeta {
     Logo: Cloud,
     tint: "text-muted-foreground",
   }
+}
+
+/** Organization feature key for each provider, including device-only and development types. */
+export const PROVIDER_FEATURE_KEYS = {
+  [PROVIDER_TYPES.openai]: "openaiByok",
+  [PROVIDER_TYPES.anthropic]: "anthropicByok",
+  [PROVIDER_TYPES.groq]: "groqByok",
+  [PROVIDER_TYPES.openRouter]: "openRouterByok",
+  [PROVIDER_TYPES.ollama]: "ollamaByok",
+  [PROVIDER_TYPES.openAICompatible]: "openAICompatibleByok",
+  [PROVIDER_TYPES.localWhisper]: "localWhisperByok",
+  [PROVIDER_TYPES.mock]: "mockByok",
+  [PROVIDER_TYPES.googleGemini]: "googleGeminiByok",
+  [PROVIDER_TYPES.deepgram]: "deepgramByok",
+  [PROVIDER_TYPES.vercelAIGateway]: "vercelAIGatewayByok",
+  [PROVIDER_TYPES.cloudflareWorkersAI]: "cloudflareWorkersAIByok",
+  [PROVIDER_TYPES.cerebras]: "cerebrasByok",
+} as const satisfies Record<ProviderType, string>;
+
+export function isProviderVisible(provider: string, isEnabled: (key: string) => boolean): boolean {
+  return (
+    isProviderType(provider) &&
+    !isHiddenProviderType(provider) &&
+    isEnabled(PROVIDER_FEATURE_KEYS[provider])
+  );
 }
