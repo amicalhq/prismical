@@ -17,6 +17,7 @@ import { makeFakeOperationalDb } from '../helpers/fake-operational-db';
 import { ElectronAppLive } from '../../src/main/infra/electron/live';
 import { WIDGET_INDEX_URL } from '../../src/main/domains/windows/policy';
 import { WindowRegistry } from '../../src/main/domains/windows/service';
+import { AppModeService, makeAppMode } from '../../src/main/domains/app-mode/service';
 import { WindowRegistryLive } from '../../src/main/domains/windows/live';
 import { SettingsServiceLive } from '../../src/main/domains/settings/live';
 
@@ -37,6 +38,7 @@ const build = (
   return {
     logger,
     layer: WindowRegistryLive.pipe(
+      Layer.provide(Layer.effect(AppModeService, makeAppMode('cloud', true))),
       Layer.provide(testConfigLayer(overrides)),
       Layer.provide(ElectronAppLive.pipe(Layer.provide(logger.layer))),
       Layer.provide(settings),

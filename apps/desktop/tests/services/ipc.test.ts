@@ -259,6 +259,7 @@ const build = (
   const models = makeModelsStub();
   const secureStore = fakeSecureStoreLayer();
   const windowRegistry = WindowRegistryLive.pipe(
+    Layer.provide(appMode),
     Layer.provide(config),
     Layer.provide(electronApp),
     Layer.provide(settings),
@@ -716,7 +717,7 @@ describe('registerMainWindowHandlers', () => {
     Effect.gen(function* () {
       // The descriptor reads AppModeService.mode. A discriminating mode
       // must come through, so a re-hardcoded 'cloud' cannot pass this suite.
-      const { layer } = build({}, { appMode: 'local' });
+      const { layer } = build({ gleap: { key: 'test-key', cspNonce: 'test-nonce' } }, { appMode: 'local' });
       const scope = yield* Scope.make();
       const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
       yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
@@ -726,6 +727,7 @@ describe('registerMainWindowHandlers', () => {
       assert.isDefined(wc);
       const env = yield* Effect.promise(() => fake.ipcMain.invoke(CHANNELS.envGet, { sender: wc }));
       assert.strictEqual((env as { appMode: string }).appMode, 'local');
+      assert.isNull((env as { gleap: unknown }).gleap);
       yield* Scope.close(scope, Exit.void);
     })
   );
@@ -743,6 +745,7 @@ describe('registerMainWindowHandlers', () => {
 
       const env = yield* Effect.promise(() => fake.ipcMain.invoke(CHANNELS.envGet, { sender: wc }));
       assert.deepStrictEqual(env, {
+        gleap: null,
         noteWsUrl: 'wss://note.test/collaboration',
         webAppOrigin: 'https://app.test',
         analyticsKey: null,

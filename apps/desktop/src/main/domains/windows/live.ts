@@ -29,6 +29,7 @@ import { ElectronApp } from '../../infra/electron/service';
 import { MainLogger } from '../../infra/logging/service';
 import { mainWindowViteName } from '../../infra/electron/vite-constants';
 import { SettingsService } from '../settings/service';
+import { AppModeService } from '../app-mode/service';
 import {
   FLOAT_MIN_HEIGHT,
   FLOAT_MIN_WIDTH,
@@ -81,11 +82,12 @@ interface RegisteredWindow {
 export const WindowRegistryLive: Layer.Layer<
   WindowRegistry,
   WindowError,
-  AppConfig | ElectronApp | MainLogger | SettingsService
+  AppConfig | ElectronApp | MainLogger | SettingsService | AppModeService
 > = Layer.scoped(
   WindowRegistry,
   Effect.gen(function* () {
     const config = yield* AppConfig;
+    const appMode = yield* AppModeService;
     const electronApp = yield* ElectronApp;
     const logger = yield* MainLogger;
     // Device settings (boot-scoped): seeds the widget's initial vertical anchor
@@ -169,10 +171,17 @@ export const WindowRegistryLive: Layer.Layer<
       noteWsUrl: config.endpoints.noteWsUrl,
       analyticsKey: config.endpoints.analyticsKey,
       analyticsOrigin: config.endpoints.analyticsHost,
+      gleapNonce: appMode.mode === 'cloud' ? config.gleap?.cspNonce : undefined,
     });
     yield* Effect.acquireRelease(
       Effect.sync(() => {
         ses.webRequest.onHeadersReceived((details, callback) => {
+          // Remote widget documents own their policy. Applying our frame-ancestors
+          // 'none' to Gleap's response would prevent embedding its messenger.
+          if (!isAppNavigationUrl(details.url, config.rendererDevServerUrl)) {
+            callback({ responseHeaders: details.responseHeaders });
+            return;
+          }
           callback({
             responseHeaders: {
               ...details.responseHeaders,

@@ -26,6 +26,7 @@ import { useLocation, useParams, useSearch } from "@tanstack/react-router";
 import { usePorts, useSessionView } from "@prismical/app-client";
 import type { AppModeValue } from "@prismical/desktop-contracts";
 import { useDesktopEnv } from "./desktop-env";
+import { useGleapSupportAction } from "./support/gleap";
 import { FloatErrorFallback, FloatNoteView } from "./float-note-view";
 import { LocalWorkspaceFooter } from "./local-workspace-footer";
 import { AppModeSetting } from "./settings/app-mode-setting";
@@ -80,6 +81,7 @@ import {
 // session-view-only switcher, which existed only because the REST lane
 // wasn't real yet. `testIds` keeps this suite's `desktop-*` hooks unchanged.
 function RootLayout() {
+  const supportAction = useGleapSupportAction();
   // The floating note window rides the same router at
   // /float[/:noteId] but renders BARE — no AppShell (sidebar/header/cluster);
   // FloatNoteView carries its own chrome + recording dock.
@@ -91,6 +93,7 @@ function RootLayout() {
   if (pathname.startsWith("/float")) return <Outlet />;
   return (
     <AppShell
+      supportAction={supportAction}
       // Only the main window hosts the guide. Local accounts have no signup
       // timestamp, so they get manual replay without an automatic welcome.
       enableOnboarding

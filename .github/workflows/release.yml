@@ -228,6 +228,7 @@ jobs:
         env:
           PRISMICAL_CLIENT_ID: ${{ secrets.PRISMICAL_CLIENT_ID }}
           PRISMICAL_ANALYTICS_KEY: ${{ secrets.PRISMICAL_ANALYTICS_KEY }}
+          GLEAP_KEY: ${{ secrets.GLEAP_KEY }}
         run: |
           [ -n "$PRISMICAL_CLIENT_ID" ] || echo "::warning::PRISMICAL_CLIENT_ID is not set — cloud-mode sign-in will report NOT_CONFIGURED in this build"
           [ -n "$PRISMICAL_ANALYTICS_KEY" ] || echo "::warning::PRISMICAL_ANALYTICS_KEY is not set — telemetry is disabled in this build"
@@ -255,6 +256,7 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           PRISMICAL_CLIENT_ID: ${{ secrets.PRISMICAL_CLIENT_ID }}
           PRISMICAL_ANALYTICS_KEY: ${{ secrets.PRISMICAL_ANALYTICS_KEY }}
+          GLEAP_KEY: ${{ secrets.GLEAP_KEY }}
         # No --arch: forge builds for the host arch, which is arm64 on
         # macos-latest and x64 on macos-13 — matching matrix.arch (and the
         # zip/darwin/<arch> output path the upload globs read).
@@ -269,6 +271,7 @@ jobs:
           NODE_OPTIONS: --max-old-space-size=6144
           PRISMICAL_CLIENT_ID: ${{ secrets.PRISMICAL_CLIENT_ID }}
           PRISMICAL_ANALYTICS_KEY: ${{ secrets.PRISMICAL_ANALYTICS_KEY }}
+          GLEAP_KEY: ${{ secrets.GLEAP_KEY }}
         run: pnpm make
 
       # Signed path (Azure Trusted Signing): package first, sign
@@ -281,6 +284,7 @@ jobs:
           NODE_OPTIONS: --max-old-space-size=6144
           PRISMICAL_CLIENT_ID: ${{ secrets.PRISMICAL_CLIENT_ID }}
           PRISMICAL_ANALYTICS_KEY: ${{ secrets.PRISMICAL_ANALYTICS_KEY }}
+          GLEAP_KEY: ${{ secrets.GLEAP_KEY }}
         run: pnpm package
 
       - name: Build Windows package signing catalog

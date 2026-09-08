@@ -16,6 +16,7 @@ const ENV_KEYS = [
   'PRISMICAL_NOTE_WS_URL',
   'PRISMICAL_WEB_APP_ORIGIN',
   'PRISMICAL_ANALYTICS_KEY',
+  'GLEAP_KEY',
   'PRISMICAL_CLIENT_ID',
   'PRISMICAL_E2E',
   'PRISMICAL_E2E_FAKE_SECURE_STORE',
@@ -41,6 +42,16 @@ afterEach(() => {
 });
 
 describe('AppConfig auth block', () => {
+  it('enables support only with a nonempty client key and generates a fresh nonce', () => {
+    expect(makeAppConfig().gleap).toBeNull();
+    process.env.GLEAP_KEY = '  ';
+    expect(makeAppConfig().gleap).toBeNull();
+    process.env.GLEAP_KEY = 'support-test-key';
+    const gleap = makeAppConfig().gleap;
+    expect(gleap?.key).toBe('support-test-key');
+    expect(gleap?.cspNonce).toMatch(/^[A-Za-z0-9+/]{32}$/);
+    expect(makeAppConfig().gleap?.cspNonce).not.toBe(gleap?.cspNonce);
+  });
   it('derives all auth URLs from the development server origin when unpackaged', () => {
     const config = makeAppConfig();
     expect(config.auth).toEqual({

@@ -128,6 +128,8 @@ export function isPermissionAllowed(permission: string, senderKind: WindowKind |
 }
 
 export interface CspOptions {
+  /** Present only when cloud-mode support is configured. */
+  readonly gleapNonce?: string;
   readonly devServerUrl: string | null;
   readonly noteWsUrl: string;
   readonly analyticsKey: string | null;
@@ -152,6 +154,8 @@ const originOf = (url: string): string | null => {
  */
 export function buildCsp(options: CspOptions): string {
   const connect = ["'self'"];
+  const gleap = options.gleapNonce ? ' https://*.gleap.io' : '';
+  if (gleap) connect.push('https://*.gleap.io', 'wss://*.gleap.io');
   const noteOrigin = originOf(options.noteWsUrl);
   if (noteOrigin !== null) connect.push(noteOrigin);
   if (options.analyticsKey !== null && options.analyticsOrigin) {
@@ -167,13 +171,16 @@ export function buildCsp(options: CspOptions): string {
     // Dev only: @vitejs/plugin-react injects an inline react-refresh preamble
     // into index.html; without 'unsafe-inline' the preamble is CSP-blocked and
     // every transformed module throws ("can't detect preamble") — white screen.
-    // Packaged builds keep script-src 'self'-only.
-    options.devServerUrl !== null ? "script-src 'self' 'unsafe-inline'" : "script-src 'self'",
+    // Packaged builds permit inline scripts only with the configured support nonce.
+    (options.devServerUrl !== null
+      ? "script-src 'self' 'unsafe-inline'"
+      : `script-src 'self'${options.gleapNonce ? ` 'nonce-${options.gleapNonce}'` : ''}`) + gleap,
     // Inline styles: vite dev injects <style>, and the placeholder/app shells
-    // use style attributes. Scripts stay 'self'-only.
-    "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data:",
-    "font-src 'self' data:",
+    // use style attributes.
+    "style-src 'self' 'unsafe-inline'" + gleap,
+    "img-src 'self' data:" + (gleap ? `${gleap} blob:` : ''),
+    "font-src 'self' data:" + gleap,
+    ...(gleap ? [`frame-src 'self'${gleap}`, `media-src 'self'${gleap} blob:`] : []),
     `connect-src ${connect.join(' ')}`,
     // rrweb (session replay) may spawn a web worker from a blob: URL; allow it
     // only when analytics is configured (else default-src 'self' keeps blocking).

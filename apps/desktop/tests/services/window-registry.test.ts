@@ -12,6 +12,7 @@ import { APP_INDEX_URL } from '../../src/main/domains/windows/policy';
 import { WindowRegistry } from '../../src/main/domains/windows/service';
 import { WindowRegistryLive } from '../../src/main/domains/windows/live';
 import { SettingsServiceLive } from '../../src/main/domains/settings/live';
+import { AppModeService, makeAppMode } from '../../src/main/domains/app-mode/service';
 
 vi.mock('electron', async () => (await import('../helpers/fake-electron')).createFakeElectron());
 const fake = (await import('electron')) as unknown as FakeElectron;
@@ -25,6 +26,7 @@ const build = (overrides: Parameters<typeof testConfigLayer>[0] = {}) => {
   return {
     logger,
     layer: WindowRegistryLive.pipe(
+      Layer.provide(Layer.effect(AppModeService, makeAppMode('cloud', true))),
       Layer.provide(testConfigLayer(overrides)),
       Layer.provide(ElectronAppLive.pipe(Layer.provide(logger.layer))),
       Layer.provide(settings),
@@ -130,7 +132,7 @@ describe('WindowRegistry (session controls)', () => {
     })
   );
 
-  it.effect('CSP header lands on every response', () =>
+  it.effect('CSP covers app responses and preserves remote iframe policies', () =>
     Effect.gen(function* () {
       const { layer } = build();
       const scope = yield* Scope.make();
@@ -144,6 +146,11 @@ describe('WindowRegistry (session controls)', () => {
       assert.include(csp, "default-src 'self'");
       assert.include(csp, 'wss://note.test');
       assert.deepStrictEqual(received?.['X-Keep'], ['1']);
+      const remoteHeaders = { 'Content-Security-Policy': ["frame-ancestors *"] };
+      ses().headersReceivedHandler?.({ responseHeaders: remoteHeaders, url: 'https://messenger-app.gleap.io' }, response => {
+        received = response.responseHeaders;
+      });
+      assert.deepStrictEqual(received, remoteHeaders);
       yield* Scope.close(scope, Exit.void);
     })
   );

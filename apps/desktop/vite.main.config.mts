@@ -58,6 +58,7 @@ export default defineConfig({
     // PostHog ingestion key. Same policy: build
     // input, no committed default — an empty value disables telemetry.
     __PRISMICAL_ANALYTICS_KEY__: JSON.stringify(process.env.PRISMICAL_ANALYTICS_KEY ?? ''),
+    __GLEAP_KEY__: JSON.stringify(process.env.GLEAP_KEY ?? ''),
     // Packaged-build endpoint defaults. Public hostnames (not credentials), so
     // they keep committed defaults — but as ONE overridable build seam instead
     // of literals scattered through src. config/live.ts consumes them for

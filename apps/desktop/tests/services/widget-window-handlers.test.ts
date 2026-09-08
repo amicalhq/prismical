@@ -82,6 +82,7 @@ const setup = (): Effect.Effect<Harness> =>
       Layer.provide(logger.layer)
     );
     const windowRegistryLayer = WindowRegistryLive.pipe(
+      Layer.provide(Layer.effect(AppModeService, makeAppMode('cloud', true))),
       Layer.provide(testConfigLayer()),
       Layer.provide(ElectronAppLive.pipe(Layer.provide(logger.layer))),
       Layer.provide(settingsLayer),

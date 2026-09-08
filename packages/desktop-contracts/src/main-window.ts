@@ -279,6 +279,8 @@ export const COLLAB_PORT_WINDOW_MESSAGE = 'prismical:collab-port' as const;
  * backend by construction; transport goes through main.
  */
 export const envDescriptorSchema = z.object({
+  /** Cloud-only support configuration; null when the SDK key is absent. */
+  gleap: z.object({ key: z.string().min(1), cspNonce: z.string().min(1) }).nullable(),
   noteWsUrl: z.string().url(),
   webAppOrigin: z.string().url(),
   analyticsKey: z.string().nullable(),

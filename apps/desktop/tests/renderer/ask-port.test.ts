@@ -16,6 +16,7 @@ const env: EnvDescriptor = {
   appVersion: '1.2.3',
   noteWsUrl: 'wss://note.test',
   webAppOrigin: 'https://app.test',
+  gleap: null,
   analyticsKey: null,
   analyticsHost: null,
   applicationLocale: 'en',

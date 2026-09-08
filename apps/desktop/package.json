@@ -66,7 +66,8 @@
     "zod": "catalog:",
     "@posthog/core": "1.29.2",
     "node-machine-id": "^1.1.12",
-    "@desktop/logging": "workspace:*"
+    "@desktop/logging": "workspace:*",
+    "gleap": "17.0.1"
   },
   "devDependencies": {
     "@effect/vitest": "^0.29.0",

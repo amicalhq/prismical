@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { randomBytes } from 'node:crypto';
 import { app } from 'electron';
 import { Effect, Layer } from 'effect';
 import {
@@ -152,8 +153,12 @@ export const makeAppConfig = (): AppConfigService => {
   const recoveryDir = path.join(userDataDir, 'recovery');
 
   const endpoints = readEndpoints(isPackaged);
+  const gleapKey = (process.env.GLEAP_KEY ?? (
+    isPackaged && typeof __GLEAP_KEY__ !== 'undefined' ? __GLEAP_KEY__ : ''
+  )).trim();
 
   return {
+    gleap: gleapKey ? { key: gleapKey, cspNonce: randomBytes(24).toString('base64') } : null,
     isPackaged,
     isE2E,
     secureStoreMode,

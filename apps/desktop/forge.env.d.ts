@@ -22,6 +22,8 @@ declare const __PRISMICAL_CLIENT_ID__: string | undefined;
  * config/live.ts only.
  */
 declare const __PRISMICAL_ANALYTICS_KEY__: string | undefined;
+/** Public Gleap client SDK key; empty/undefined disables support chat. */
+declare const __GLEAP_KEY__: string | undefined;
 
 /**
  * Packaged-build endpoint defaults, baked at build time (vite.main.config.mts

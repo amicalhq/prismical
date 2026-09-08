@@ -13,6 +13,7 @@ import { MainLogger, LoggingTransport } from '../../src/main/infra/logging/servi
 import { makeLogger, makeFilter, type LogRecord } from '@desktop/logging';
 
 export const testConfig = (overrides: Partial<AppConfigService> = {}): AppConfigService => ({
+  gleap: null,
   // Recovery WAVs follow the (possibly overridden) profile dir, as in the real config.
   recoveryDir: path.join(overrides.userDataDir ?? '/fake/user-data', 'recovery'),
   isPackaged: false,

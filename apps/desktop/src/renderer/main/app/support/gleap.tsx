@@ -1,0 +1,113 @@
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { MessageSquare } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { useSessionView } from '@prismical/app-client';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@prismical/app-ui/ui/tooltip';
+import { useDesktopEnv } from '../desktop-env';
+
+type GleapSdk = typeof import('gleap').default;
+const SupportContext = createContext<GleapSdk | null>(null);
+
+/** One support session in the main renderer, including the cloud sign-in screen. */
+export function GleapProvider({ children }: { children: ReactNode }) {
+  const { gleap, appMode, appModeChosen, appVersion, platform, applicationLocale } = useDesktopEnv();
+  const session = useSessionView();
+  const account = session.accounts.find(account => account.sub === session.activeSub);
+  const [sdk, setSdk] = useState<GleapSdk | null>(null);
+  const [identifiedSub, setIdentifiedSub] = useState<string | null>();
+  const identityQueue = useRef(Promise.resolve());
+  const sub = account?.sub;
+  const name = account?.name;
+  const email = account?.email;
+  const enabled = appMode === 'cloud' && appModeChosen && !window.location.hash.startsWith('#/float');
+  const key = gleap?.key;
+  const nonce = gleap?.cspNonce;
+
+  useEffect(() => {
+    if (!enabled || !key || !nonce) return;
+    let disposed = false;
+    let loaded: GleapSdk | undefined;
+    // Import only inside the gate: importing the SDK itself installs browser hooks.
+    void import('gleap').then(({ default: Gleap }) => {
+      if (disposed) return;
+      loaded = Gleap;
+      Gleap.setCSPNonce(nonce);
+      Gleap.setDisablePageTracking(true);
+      Gleap.disableConsoleLogOverwrite();
+      Gleap.setMaxNetworkRequests(0);
+      Gleap.setNetworkLogsBlacklist(['']);
+      // Dashboard controls whether replays run. Keep app content out even if enabled there.
+      Gleap.setReplayOptions({ blockSelector: 'body', maskAllInputs: true, maskTextSelector: '*' });
+      Gleap.setLanguage(applicationLocale);
+      Gleap.setAppVersionCode(appVersion);
+      Gleap.attachCustomData({ appVersion, platform });
+      Gleap.setUrlHandler(url => window.open(url, '_blank', 'noopener,noreferrer'));
+      Gleap.showFeedbackButton(false);
+      Gleap.on('initialized', () => {
+        if (!disposed) setSdk(() => Gleap);
+      });
+      Gleap.initialize(key);
+    }).catch(() => {
+      // Support is optional; the sidebar retains its email link if loading fails.
+      loaded?.destroy();
+    });
+    return () => {
+      disposed = true;
+      loaded?.destroy();
+      setSdk(null);
+    };
+  }, [enabled, key, nonce, applicationLocale, appVersion, platform]);
+
+  useEffect(() => {
+    if (!sdk) return;
+    let disposed = false;
+    setIdentifiedSub(undefined);
+    sdk.close();
+    sdk.showFeedbackButton(false);
+    // The SDK does not cancel identify requests on logout. Serialize them so a
+    // late response cannot restore the previous account after the next one starts.
+    identityQueue.current = identityQueue.current.then(async () => {
+      if (disposed) return;
+      const previousId = sdk.getIdentity()?.userId;
+      if (previousId && previousId !== sub) sdk.clearIdentity();
+      // Gleap returns a Promise at runtime, although its types declare void.
+      if (sub) await Promise.resolve(sdk.identify(sub, { name, email }));
+      if (disposed) {
+        sdk.clearIdentity();
+        return;
+      }
+      setIdentifiedSub(sub ?? null);
+      // The sign-in screen has no sidebar, so it uses Gleap's own launcher.
+      sdk.showFeedbackButton(!sub);
+    }).catch(() => {
+      // Keep email support available when identification fails.
+      sdk.clearIdentity();
+    });
+    return () => { disposed = true; };
+  }, [sdk, sub, name, email]);
+
+  const readySdk = enabled && identifiedSub === (sub ?? null) ? sdk : null;
+  return <SupportContext.Provider value={readySdk}>{children}</SupportContext.Provider>;
+}
+
+/** Undefined leaves the shared sidebar's email fallback in place. */
+export function useGleapSupportAction(): ReactNode {
+  const sdk = useContext(SupportContext);
+  const { t } = useTranslation();
+  if (!sdk) return undefined;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          aria-label={t('navigation.secondary.sendFeedback')}
+          onClick={() => sdk.open()}
+          className="flex size-7 items-center justify-center rounded-md text-sidebar-foreground-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:outline-hidden"
+        >
+          <MessageSquare className="size-4" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="top">{t('navigation.secondary.feedback')}</TooltipContent>
+    </Tooltip>
+  );
+}

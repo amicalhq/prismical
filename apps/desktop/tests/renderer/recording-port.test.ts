@@ -13,6 +13,7 @@ afterEach(() => vi.unstubAllGlobals());
 const env: EnvDescriptor = {
   appMode: 'local', platform: 'darwin', appVersion: '0.0.0-test',
   noteWsUrl: 'wss://note.test', webAppOrigin: 'https://app.test',
+  gleap: null,
   analyticsKey: null, analyticsHost: null, applicationLocale: 'en', systemLocale: 'en',
 };
 

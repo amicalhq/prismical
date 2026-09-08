@@ -91,6 +91,8 @@ export async function launchPrismical(
     PRISMICAL_E2E_USER_DATA_DIR: userDataDir,
     // Runtime override — beats any bundled telemetry default.
     TELEMETRY_ENABLED: 'false',
+    // Only dedicated support tests explicitly enable the SDK.
+    GLEAP_KEY: '',
     ...extraEnv,
   };
 

@@ -61,6 +61,17 @@ describe('isPermissionAllowed', () => {
 });
 
 describe('buildCsp', () => {
+  it('allows Gleap resources with a nonce, without permitting arbitrary inline scripts', () => {
+    const csp = buildCsp({ devServerUrl: null, noteWsUrl: 'wss://note.test', analyticsKey: null, gleapNonce: 'test-nonce' });
+    expect(csp).toContain("script-src 'self' 'nonce-test-nonce' https://*.gleap.io;");
+    expect(csp).toContain("connect-src 'self' https://*.gleap.io wss://*.gleap.io");
+    expect(csp).toContain("frame-src 'self' https://*.gleap.io;");
+  });
+  it('keeps Vite inline scripts working when support is configured in development', () => {
+    const csp = buildCsp({ devServerUrl: 'http://localhost:5173', noteWsUrl: 'wss://note.test', analyticsKey: null, gleapNonce: 'test-nonce' });
+    expect(csp).toContain("script-src 'self' 'unsafe-inline' https://*.gleap.io;");
+    expect(csp).not.toContain('nonce-');
+  });
   it('packaged: self + note WSS only in connect-src, no analytics without a key', () => {
     const csp = buildCsp({
       devServerUrl: null,

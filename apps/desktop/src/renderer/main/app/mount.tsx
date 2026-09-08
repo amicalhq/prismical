@@ -36,6 +36,7 @@ import { router } from './router';
 import { openNoteLog } from '../collab';
 import { createDesktopPorts } from './ports/desktop-ports';
 import { DesktopEnvProvider, useDesktopEnv } from './desktop-env';
+import { GleapProvider } from './support/gleap';
 import { OnboardingFlow } from './onboarding/flow';
 import { CalendarOnboarding } from './onboarding/calendar';
 import { resolveSurface } from './mode-router';
@@ -164,22 +165,24 @@ function DesktopRoot({
   const env = useMemo(() => ({ ...desktopEnv, appModeChosen }), [desktopEnv, appModeChosen]);
   return (
     <DesktopEnvProvider value={env}>
-      <RequiredUpdateGate>
-        <ApiQueryProvider>
-          <DesktopApp
-            onboarding={onboarding}
-            saveOnboarding={async progress => {
-              await window.desktop.settings.set({ onboarding: progress });
-              setOnboarding(progress);
-            }}
-            onChosen={() => {
-              setAppModeChosen(true);
-              onModeChosen();
-            }}
-          />
-        </ApiQueryProvider>
-        {!isFloatWindow() && <UpdatePrompt />}
-      </RequiredUpdateGate>
+      <GleapProvider>
+        <RequiredUpdateGate>
+          <ApiQueryProvider>
+            <DesktopApp
+              onboarding={onboarding}
+              saveOnboarding={async progress => {
+                await window.desktop.settings.set({ onboarding: progress });
+                setOnboarding(progress);
+              }}
+              onChosen={() => {
+                setAppModeChosen(true);
+                onModeChosen();
+              }}
+            />
+          </ApiQueryProvider>
+          {!isFloatWindow() && <UpdatePrompt />}
+        </RequiredUpdateGate>
+      </GleapProvider>
     </DesktopEnvProvider>
   );
 }

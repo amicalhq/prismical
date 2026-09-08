@@ -35,6 +35,8 @@ export interface AuthDescriptor {
 }
 
 export interface AppConfigService {
+  /** Public support SDK key and a fresh process-scoped script nonce. */
+  readonly gleap: { readonly key: string; readonly cspNonce: string } | null;
   readonly isPackaged: boolean;
   /** PRISMICAL_E2E=1 — test kill-switch (no OS mutation, fake secure store, e2e IPC). */
   readonly isE2E: boolean;

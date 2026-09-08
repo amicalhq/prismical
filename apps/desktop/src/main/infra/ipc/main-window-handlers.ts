@@ -243,6 +243,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
     // Analytics config crosses to the renderer only OUTSIDE E2E (tests never emit
     // telemetry).
     const envDescriptor: EnvDescriptor = {
+      gleap: appMode.mode === 'cloud' ? config.gleap : null,
       noteWsUrl: config.endpoints.noteWsUrl,
       webAppOrigin: config.endpoints.webAppOrigin,
       analyticsKey: config.isE2E ? null : config.endpoints.analyticsKey,
