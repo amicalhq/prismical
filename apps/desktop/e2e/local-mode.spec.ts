@@ -313,76 +313,113 @@ test.describe('local mode (seeded app:mode profile, no servers)', () => {
     await expect(mainEditor).toContainText(floatLine);
   });
 
-  test('AI provider card round-trips settings + key custody with no server', async () => {
-    const profileDir = await createLocalModeProfile();
-    const opened = await openLocalApp(profileDir);
-    launched = opened.launch;
-    const page = opened.page;
+  for (const [provider, label] of [
+    ['openai', 'OpenAI'],
+    ['openrouter', 'OpenRouter'],
+  ] as const) {
+    test(`AI provider card round-trips settings + key custody with no server (${label})`, async () => {
+      const profileDir = await createLocalModeProfile();
+      const opened = await openLocalApp(profileDir);
+      launched = opened.launch;
+      const page = opened.page;
 
-    // The desktop-owned provider card renders through the
-    // shared AI-models screen's named slot; the stored default is OpenAI.
-    await page.evaluate(() => {
-      window.location.hash = '#/settings/ai-models';
+      // The desktop-owned provider card renders through the
+      // shared AI-models screen's named slot; the stored default is OpenAI.
+      await page.evaluate(() => {
+        window.location.hash = '#/settings/ai-models';
+      });
+      await expect(page.getByTestId('ai-provider')).toBeVisible();
+      await expect(page.getByRole('radio', { name: 'OpenAI', exact: true })).toBeChecked();
+
+      if (provider === 'openai') {
+        // Every supported local provider is selectable without an account or plan.
+        for (const [name, kind] of [
+          ['Anthropic', 'anthropic'],
+          ['OpenRouter', 'openrouter'],
+          ['OpenAI-compatible endpoint', 'openai-compatible'],
+          ['Ollama', 'ollama'],
+          ['OpenAI', 'openai'],
+        ]) {
+          const option = page.getByRole('radio', { name, exact: true });
+          await option.click();
+          await expect(option).toBeChecked();
+          await expect.poll(() => aiSetting(page)).toEqual({ provider: kind, model: null, baseUrl: null });
+          await expect(page.getByTestId('ai-provider-fields')).toBeVisible();
+        }
+      }
+      await page.getByRole('radio', { name: label, exact: true }).click();
+      await expect.poll(() => aiSetting(page)).toEqual({ provider, model: null, baseUrl: null });
+      await page.getByLabel('Model', { exact: true }).fill('test-model');
+      await page.getByLabel('Model', { exact: true }).press('Enter');
+      await expect
+        .poll(() => aiSetting(page))
+        .toEqual({ provider, model: 'test-model', baseUrl: null });
+
+      // The key rides the capability channel into the secure store: never
+      // pre-filled, never in device settings, `has` answers a boolean.
+      await expect(page.getByTestId('ai-provider-key-status')).toHaveAttribute('data-has-key', 'false');
+      await page.getByLabel('API key', { exact: true }).fill(AI_KEY);
+      await page.getByRole('button', { name: 'Save key' }).click();
+      await expect(page.getByTestId('ai-provider-key-status')).toHaveAttribute('data-has-key', 'true');
+      await expect(page.getByLabel('API key', { exact: true })).toHaveValue('');
+      expect(await deviceSettingsJson(page)).not.toContain(AI_KEY);
+      // Public catalogues may load with a bogus key; otherwise the card shows
+      // a reason. Either result must let the user save their configuration.
+      await expect(page.getByTestId('ai-provider-catalogue')).toHaveAttribute(
+        'data-state',
+        /^(ready|unauthorized|network)$/
+      );
+
+      // The synthetic instances lane lists the configured, enabled provider —
+      // what the Ask picker groups.
+      const instances = await transportGet(page, { path: '/apps/v1/me/instances' });
+      expect(instances).toMatchObject({ ok: true, status: 200 });
+      const providers = (
+        (instances as { bodyJson: { results: Array<{ provider: string }> } }).bodyJson.results
+      ).map(row => row.provider);
+      // A running local Ollama runtime can also appear in the picker.
+      expect(providers).toContain(provider);
+
+      const kept = profileDir;
+      keptProfile = kept;
+      await closePrismical(launched, { keepProfile: true });
+      launched = undefined;
+
+      // On disk, the raw key is absent from the operational DB and
+      // the main log, while the e2e-fake secure-store custody payload IS present.
+      const dbBytes = Buffer.concat(
+        await Promise.all([
+          readFile(path.join(kept, 'operational.db')),
+          readOptional(path.join(kept, 'operational.db-wal')),
+          readOptional(path.join(kept, 'operational.db-shm')),
+        ])
+      );
+      expect(dbBytes.length).toBeGreaterThan(0);
+      expect(dbBytes.includes(AI_KEY, 0, 'utf8')).toBe(false);
+      const custody = Buffer.from(`e2e:${AI_KEY}`, 'utf8').toString('base64');
+      expect(dbBytes.includes(custody, 0, 'utf8')).toBe(true);
+      const mainLog = await readFile(path.join(kept, 'logs', 'main.jsonl'), 'utf8');
+      expect(mainLog.length).toBeGreaterThan(0);
+      expect(mainLog).not.toContain(AI_KEY);
+
+      const reopened = await openLocalApp(kept);
+      launched = reopened.launch;
+      const page2 = reopened.page;
+      await page2.evaluate(() => {
+        window.location.hash = '#/settings/ai-models';
+      });
+      await expect(page2.getByRole('radio', { name: label, exact: true })).toBeChecked();
+      await expect.poll(() => aiSetting(page2)).toEqual({ provider, model: 'test-model', baseUrl: null });
+      await expect(page2.getByTestId('ai-provider-key-status')).toHaveAttribute('data-has-key', 'true');
+      await expect(page2.getByLabel('API key', { exact: true })).toHaveValue('');
+
+      // Each provider keeps a separate key slot after restart.
+      await page2.getByRole('radio', {
+        name: provider === 'openai' ? 'OpenRouter' : 'OpenAI', exact: true,
+      }).click();
+      await expect(page2.getByTestId('ai-provider-key-status')).toHaveAttribute('data-has-key', 'false');
     });
-    await expect(page.getByTestId('ai-provider')).toBeVisible();
-    await expect(page.getByRole('radio', { name: 'OpenAI', exact: true })).toBeChecked();
-
-    // Local policy exposes OpenAI; the model rides DeviceSettings.
-    await expect(page.getByRole('radio', { name: 'Anthropic' })).toHaveCount(0);
-    await expect(page.getByRole('radio', { name: 'Ollama' })).toHaveCount(0);
-    await expect.poll(() => aiSetting(page)).toEqual({ provider: 'openai', model: null, baseUrl: null });
-    await page.getByLabel('Model', { exact: true }).fill('test-model');
-    await page.getByLabel('Model', { exact: true }).press('Enter');
-    await expect
-      .poll(() => aiSetting(page))
-      .toEqual({ provider: 'openai', model: 'test-model', baseUrl: null });
-
-    // The key rides the capability channel into the secure store: never
-    // pre-filled, never in device settings, `has` answers a boolean.
-    await expect(page.getByTestId('ai-provider-key-status')).toHaveAttribute('data-has-key', 'false');
-    await page.getByLabel('API key', { exact: true }).fill(AI_KEY);
-    await page.getByRole('button', { name: 'Save key' }).click();
-    await expect(page.getByTestId('ai-provider-key-status')).toHaveAttribute('data-has-key', 'true');
-    await expect(page.getByLabel('API key', { exact: true })).toHaveValue('');
-    expect(await deviceSettingsJson(page)).not.toContain(AI_KEY);
-    // The catalogue is best-effort: a bogus key is refused (or the host is
-    // offline) — a reason on the card, never a crash or a blocked save.
-    await expect(page.getByTestId('ai-provider-catalogue')).toHaveAttribute(
-      'data-state',
-      /^(unauthorized|network)$/
-    );
-
-    // The synthetic instances lane lists the configured, enabled provider —
-    // what the Ask picker groups.
-    const instances = await transportGet(page, { path: '/apps/v1/me/instances' });
-    expect(instances).toMatchObject({ ok: true, status: 200 });
-    const providers = (
-      (instances as { bodyJson: { results: Array<{ provider: string }> } }).bodyJson.results
-    ).map(row => row.provider);
-    expect(providers).toEqual(['openai']);
-
-    const kept = profileDir;
-    keptProfile = kept;
-    await closePrismical(launched, { keepProfile: true });
-    launched = undefined;
-
-    // On disk, the raw key is absent from the operational DB and
-    // the main log, while the e2e-fake secure-store custody payload IS present.
-    const dbBytes = Buffer.concat(
-      await Promise.all([
-        readFile(path.join(kept, 'operational.db')),
-        readOptional(path.join(kept, 'operational.db-wal')),
-        readOptional(path.join(kept, 'operational.db-shm')),
-      ])
-    );
-    expect(dbBytes.length).toBeGreaterThan(0);
-    expect(dbBytes.includes(AI_KEY, 0, 'utf8')).toBe(false);
-    const custody = Buffer.from(`e2e:${AI_KEY}`, 'utf8').toString('base64');
-    expect(dbBytes.includes(custody, 0, 'utf8')).toBe(true);
-    const mainLog = await readFile(path.join(kept, 'logs', 'main.jsonl'), 'utf8');
-    expect(mainLog.length).toBeGreaterThan(0);
-    expect(mainLog).not.toContain(AI_KEY);
-  });
+  }
 
   test('Ask configuration errors show local recovery actions from the envelope', async () => {
     const profileDir = await createLocalModeProfile();

@@ -2520,6 +2520,10 @@ const ja = {
           description: '自分の OpenAI API キーを使います。',
           label: 'OpenAI',
         },
+        openrouter: {
+          description: '自分の OpenRouter API キーを使います。',
+          label: 'OpenRouter',
+        },
         'openai-compatible': {
           description: 'OpenAI チャット API 互換のサーバー（LM Studio、vLLM、プロキシなど）。',
           label: 'OpenAI 互換エンドポイント',

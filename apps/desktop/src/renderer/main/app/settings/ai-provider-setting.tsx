@@ -20,7 +20,6 @@ import type {
 } from '@prismical/app-contracts';
 import { useQueryClient } from '@tanstack/react-query';
 import { useDesktopCapabilities, useDeviceSettings } from '@prismical/app-client';
-import { isLocalAiProviderEnabled } from '@prismical/desktop-contracts';
 import { Button } from '@prismical/app-ui/ui/button';
 import {
   Card,
@@ -34,7 +33,13 @@ import { Label } from '@prismical/app-ui/ui/label';
 import { RadioGroup, RadioGroupItem } from '@prismical/app-ui/ui/radio-group';
 import { CommittedInput } from './committed-input';
 
-const PROVIDERS: readonly AiProviderKind[] = ['openai', 'anthropic', 'openai-compatible', 'ollama'];
+const PROVIDERS: readonly AiProviderKind[] = [
+  'openai',
+  'anthropic',
+  'openrouter',
+  'openai-compatible',
+  'ollama',
+];
 const isProvider = (value: string): value is AiProviderKind =>
   (PROVIDERS as readonly string[]).includes(value);
 
@@ -42,18 +47,21 @@ const isProvider = (value: string): value is AiProviderKind =>
 const HAS_KEY: Record<AiProviderKind, boolean> = {
   openai: true,
   anthropic: true,
+  openrouter: true,
   'openai-compatible': true,
   ollama: false,
 };
 const HAS_BASE_URL: Record<AiProviderKind, boolean> = {
   openai: false,
   anthropic: false,
+  openrouter: false,
   'openai-compatible': true,
   ollama: true,
 };
 const BASE_URL_PLACEHOLDER: Record<AiProviderKind, string> = {
   openai: '',
   anthropic: '',
+  openrouter: '',
   'openai-compatible': 'http://localhost:1234/v1',
   ollama: 'http://127.0.0.1:11434',
 };
@@ -176,10 +184,9 @@ export function AiProviderSetting() {
   const [listingVersion, setListingVersion] = React.useState(0);
   const forceRef = React.useRef(false);
   const enabled = caps.has('ai-provider');
-  const providerEnabled = isLocalAiProviderEnabled(ai.provider);
 
   React.useEffect(() => {
-    if (!enabled || !providerEnabled) return;
+    if (!enabled) return;
     let active = true;
     setListing(null);
     const force = forceRef.current;
@@ -191,7 +198,7 @@ export function AiProviderSetting() {
       active = false;
     };
     // The base URL is part of what is listed; a commit re-lists.
-  }, [caps, enabled, providerEnabled, ai.provider, ai.baseUrl, listingVersion]);
+  }, [caps, enabled, ai.provider, ai.baseUrl, listingVersion]);
 
   if (!enabled) return null;
 
@@ -220,15 +227,15 @@ export function AiProviderSetting() {
       </CardHeader>
       <CardContent className="space-y-6">
         <RadioGroup
-          value={providerEnabled ? ai.provider : ''}
+          value={ai.provider}
           onValueChange={value => {
-            if (isProvider(value) && isLocalAiProviderEnabled(value)) {
+            if (isProvider(value)) {
               patch({ provider: value, model: null, baseUrl: null });
             }
           }}
           aria-label={t('desktop.aiProvider.title')}
         >
-          {PROVIDERS.filter(isLocalAiProviderEnabled).map(provider => (
+          {PROVIDERS.map(provider => (
             <div key={provider} className="flex items-start gap-3">
               <RadioGroupItem value={provider} id={`ai-provider-${provider}`} className="mt-0.5" />
               <div className="space-y-1">
@@ -246,45 +253,43 @@ export function AiProviderSetting() {
           ))}
         </RadioGroup>
 
-        {providerEnabled ? (
-          <div
-            className="space-y-4 rounded-md border border-border p-4"
-            data-testid="ai-provider-fields"
-          >
-            {HAS_BASE_URL[ai.provider] ? (
-              <div className="space-y-1.5">
-                <Label htmlFor="ai-provider-base-url">{t('desktop.aiProvider.baseUrlLabel')}</Label>
-                <CommittedInput
-                  id="ai-provider-base-url"
-                  value={ai.baseUrl ?? ''}
-                  placeholder={BASE_URL_PLACEHOLDER[ai.provider]}
-                  onCommit={next => patch({ baseUrl: next.trim() || null })}
-                />
-              </div>
-            ) : null}
-            {HAS_KEY[ai.provider] ? (
-              // Keyed by provider: a typed-but-unsaved key must not outlive the
-              // provider it was typed for (it would be saved into the next slot).
-              <KeyField key={ai.provider} provider={ai.provider} onChanged={refresh} />
-            ) : null}
+        <div
+          className="space-y-4 rounded-md border border-border p-4"
+          data-testid="ai-provider-fields"
+        >
+          {HAS_BASE_URL[ai.provider] ? (
             <div className="space-y-1.5">
-              <Label htmlFor="ai-provider-model">{t('desktop.aiProvider.modelLabel')}</Label>
+              <Label htmlFor="ai-provider-base-url">{t('desktop.aiProvider.baseUrlLabel')}</Label>
               <CommittedInput
-                id="ai-provider-model"
-                value={ai.model ?? ''}
-                placeholder={t('desktop.aiProvider.modelPlaceholder')}
-                list={MODEL_LIST_ID}
-                onCommit={next => patch({ model: next.trim() || null })}
+                id="ai-provider-base-url"
+                value={ai.baseUrl ?? ''}
+                placeholder={BASE_URL_PLACEHOLDER[ai.provider]}
+                onCommit={next => patch({ baseUrl: next.trim() || null })}
               />
-              <datalist id={MODEL_LIST_ID}>
-                {(listing?.models ?? []).map(id => (
-                  <option key={id} value={id} />
-                ))}
-              </datalist>
-              <CatalogueStatus listing={listing} onRefresh={refresh} />
             </div>
+          ) : null}
+          {HAS_KEY[ai.provider] ? (
+            // Keyed by provider: a typed-but-unsaved key must not outlive the
+            // provider it was typed for (it would be saved into the next slot).
+            <KeyField key={ai.provider} provider={ai.provider} onChanged={refresh} />
+          ) : null}
+          <div className="space-y-1.5">
+            <Label htmlFor="ai-provider-model">{t('desktop.aiProvider.modelLabel')}</Label>
+            <CommittedInput
+              id="ai-provider-model"
+              value={ai.model ?? ''}
+              placeholder={t('desktop.aiProvider.modelPlaceholder')}
+              list={MODEL_LIST_ID}
+              onCommit={next => patch({ model: next.trim() || null })}
+            />
+            <datalist id={MODEL_LIST_ID}>
+              {(listing?.models ?? []).map(id => (
+                <option key={id} value={id} />
+              ))}
+            </datalist>
+            <CatalogueStatus listing={listing} onRefresh={refresh} />
           </div>
-        ) : null}
+        </div>
       </CardContent>
     </Card>
   );

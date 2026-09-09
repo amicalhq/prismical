@@ -2442,6 +2442,10 @@ const zhTW = {
           description: '使用你自己的 OpenAI API 金鑰。',
           label: 'OpenAI',
         },
+        openrouter: {
+          description: '使用你自己的 OpenRouter API 金鑰。',
+          label: 'OpenRouter',
+        },
         'openai-compatible': {
           description: '任何支援 OpenAI 聊天 API 的伺服器（LM Studio、vLLM、代理）。',
           label: 'OpenAI 相容端點',

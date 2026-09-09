@@ -12,6 +12,7 @@ const LOCAL_INSTANCE_PREFIX = 'inst_local_';
 export const AI_PROVIDER_KINDS: ReadonlyArray<AiProviderKind> = [
   'openai',
   'anthropic',
+  'openrouter',
   'openai-compatible',
   'ollama',
 ];
@@ -30,6 +31,7 @@ export const providerOfInstanceId = (instanceId: string): AiProviderKind | null 
 export const PROVIDER_LABELS: Record<AiProviderKind, string> = {
   openai: 'OpenAI',
   anthropic: 'Anthropic',
+  openrouter: 'OpenRouter',
   'openai-compatible': 'OpenAI-compatible',
   ollama: 'Ollama',
 };

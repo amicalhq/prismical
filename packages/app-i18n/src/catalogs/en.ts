@@ -2574,6 +2574,10 @@ const en = {
           description: 'Use your own OpenAI API key.',
           label: 'OpenAI',
         },
+        openrouter: {
+          description: 'Use your own OpenRouter API key.',
+          label: 'OpenRouter',
+        },
         'openai-compatible': {
           description: 'Any server that speaks the OpenAI chat API (LM Studio, vLLM, a proxy).',
           label: 'OpenAI-compatible endpoint',

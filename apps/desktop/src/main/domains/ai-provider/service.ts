@@ -18,7 +18,7 @@ export type { AiModelListing, AiProviderKind };
 export type ToolSupport = 'unknown' | 'native' | 'auto-only' | 'none';
 
 export class AiProviderError extends Data.TaggedError('AiProviderError')<{
-  readonly reason: 'not-configured' | 'unknown-instance' | 'model-required' | 'disabled';
+  readonly reason: 'not-configured' | 'unknown-instance' | 'model-required';
   readonly provider: AiProviderKind | null;
 }> {}
 
@@ -76,11 +76,11 @@ export interface AiProviderApi {
   readonly listModels: (provider: AiProviderKind, force?: boolean) => Effect.Effect<AiModelListing>;
   /** Drop everything remembered about a provider (its catalogue + tool memo) — a key or endpoint changed. */
   readonly forget: (provider: AiProviderKind) => Effect.Effect<void>;
-  /** Enabled, configured providers as synthetic instance rows (including the active enabled provider). */
+  /** Configured providers as synthetic instance rows (including the active provider). */
   readonly instances: Effect.Effect<ReadonlyArray<AiInstanceView>>;
   /** The device default as a (instanceId, modelId) pair — null when no model can be named yet. */
   readonly defaultSelection: Effect.Effect<AiModelSelection | null>;
-  /** Point the device default at a local instance + model; false = unknown or disabled provider. */
+  /** Point the device default at a local instance + model; false = unknown provider. */
   readonly setDefault: (selection: AiModelSelection) => Effect.Effect<boolean, DbError>;
   /** Record what a run learned about a (provider, model)'s tool calling. */
   readonly rememberToolSupport: (

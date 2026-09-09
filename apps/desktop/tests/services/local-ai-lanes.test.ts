@@ -34,7 +34,7 @@ import { WorkspaceBackend, type WorkspaceBackendApi } from '../../src/main/domai
 import { makeProductDbLayer } from '../../src/main/infra/product-db/live';
 import * as schema from '../../src/main/infra/product-db/schema';
 import { ProductDb, type ProductDbService } from '../../src/main/infra/product-db/service';
-import { AiProvider, AiProviderError, type AiProviderApi, type ToolSupport } from '../../src/main/domains/ai-provider/service';
+import { AiProvider, type AiProviderApi, type ToolSupport } from '../../src/main/domains/ai-provider/service';
 import { fakeAiProviderLayer } from '../helpers/fake-workspace-env';
 import { makeTestLogger, testConfigLayer, testI18nLayer } from '../helpers/test-layers';
 
@@ -1831,18 +1831,3 @@ describe('provider routes', () => {
     })
   );
 });
-
-it.effect('a disabled local skill provider offers localized model-selection recovery', () =>
-  Effect.gen(function* () {
-    const { api, ai, product, scope } = yield* buildWith(undefined, undefined, 'de');
-    vi.spyOn(ai, 'resolve').mockReturnValue(Effect.fail(new AiProviderError({ reason: 'disabled', provider: 'anthropic' })));
-    const noteId = yield* insertNote(product, { title: 'Full', markdown: 'Some text.' });
-    const response = expectOk(yield* post(api, `/apps/v1/me/skills/${CLEANUP_SKILL_ID}/run`, { noteId }), 422);
-    const error = response.bodyJson.error;
-    assert.strictEqual(error.code, 'MODEL_SELECTION_INVALID');
-    assert.isFalse(error.details.retryable);
-    assert.strictEqual(error.details.user.title, 'Das gewählte Modell kann hierfür nicht verwendet werden.');
-    assert.deepStrictEqual(error.details.user.actions.map((action: { kind: string }) => action.kind), ['choose-model']);
-    yield* Scope.close(scope, Exit.void);
-  })
-);

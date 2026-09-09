@@ -5,8 +5,8 @@
  */
 import { assert, describe, it } from '@effect/vitest';
 import { Context, Effect, Layer } from 'effect';
-import { afterEach, beforeEach, expect, vi } from 'vitest';
-import * as contracts from '@prismical/desktop-contracts';
+import { expect } from 'vitest';
+import { generateText } from 'ai';
 import {
   fetchModelListing,
   isOpenAiChatModel,
@@ -88,6 +88,8 @@ describe('catalogue rules', () => {
         json({ data: [{ id: 'claude-opus-5' }, { id: 'claude-sonnet-5' }] }),
       'localhost:11434/api/tags': () => json({ models: [{ name: 'llama3.2:3b' }] }),
       'compat.example/v1/models': () => json({ data: [{ id: 'local-model' }] }),
+      'openrouter.ai/api/v1/models': () =>
+        json({ data: [{ id: 'openai/gpt-5' }, { id: 'anthropic/claude-sonnet-5' }] }),
     });
     expect(
       await fetchModelListing({ provider: 'openai', baseUrl: null, apiKey: 'sk-1', fetchFn })
@@ -111,6 +113,9 @@ describe('catalogue rules', () => {
         fetchFn,
       })
     ).toEqual({ models: ['local-model'], error: null });
+    expect(
+      await fetchModelListing({ provider: 'openrouter', baseUrl: null, apiKey: 'sk-or', fetchFn })
+    ).toEqual({ models: ['anthropic/claude-sonnet-5', 'openai/gpt-5'], error: null });
 
     const headers = (i: number) => calls[i]!.init?.headers as Record<string, string>;
     expect(headers(0).Authorization).toBe('Bearer sk-1');
@@ -118,6 +123,8 @@ describe('catalogue rules', () => {
     expect(headers(1)['anthropic-version']).toBeTypeOf('string');
     expect(headers(2)).toEqual({});
     expect(headers(3)).toEqual({});
+    expect(headers(4).Authorization).toBe('Bearer sk-or');
+    expect(calls[4]!.url).toBe('https://openrouter.ai/api/v1/models');
   });
 
   it('folds failures to a reason: not-configured, unauthorized, network', async () => {
@@ -155,7 +162,7 @@ describe('catalogue rules', () => {
 
 describe('local instance ids', () => {
   it('round-trip every provider kind and reject foreign ids', () => {
-    for (const kind of ['openai', 'anthropic', 'openai-compatible', 'ollama'] as const) {
+    for (const kind of ['openai', 'anthropic', 'openrouter', 'openai-compatible', 'ollama'] as const) {
       expect(providerOfInstanceId(localInstanceId(kind))).toBe(kind);
     }
     expect(providerOfInstanceId('inst_abc123')).toBeNull();
@@ -165,9 +172,61 @@ describe('local instance ids', () => {
 });
 
 describe('AiProviderLive', () => {
-  // Exercise the implemented adapters independently of their public rollout state.
-  beforeEach(() => vi.spyOn(contracts, 'isLocalAiProviderEnabled').mockReturnValue(true));
-  afterEach(() => vi.restoreAllMocks());
+  it.effect('OpenRouter requires its own key and sends chat requests to its default endpoint', () =>
+    Effect.gen(function* () {
+      const { fetchFn, calls } = makeFetch({
+        'openrouter.ai/api/v1/chat/completions': () =>
+          json({
+            id: 'chat-openrouter',
+            model: 'openai/gpt-5',
+            created: 1,
+            choices: [{
+              index: 0,
+              message: { role: 'assistant', content: 'Hello' },
+              finish_reason: 'stop',
+            }],
+            usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+          }),
+      });
+      const { layer, logger } = build(fetchFn);
+      const ctx = yield* Layer.build(layer);
+      const ai = Context.get(ctx, AiProvider);
+      const settings = Context.get(ctx, SettingsService);
+      const secrets = Context.get(ctx, SecureStore);
+      yield* settings.set({ ai: { provider: 'openrouter', model: null, baseUrl: null } });
+      yield* secrets.setSecret(aiProviderSecretKey('openai'), 'openai-only-key');
+      yield* secrets.setSecret(aiProviderSecretKey('openai-compatible'), 'compatible-only-key');
+
+      assert.strictEqual((yield* Effect.flip(ai.resolve())).reason, 'not-configured');
+      assert.deepStrictEqual(yield* ai.listModels('openrouter'), {
+        models: [], error: 'not-configured',
+      });
+      assert.lengthOf(calls, 0);
+
+      yield* secrets.setSecret(aiProviderSecretKey('openrouter'), 'openrouter-only-key');
+      const resolved = yield* ai.resolve();
+      assert.strictEqual(resolved.provider, 'openrouter');
+      assert.strictEqual(resolved.modelId, 'openrouter/auto');
+      assert.deepStrictEqual(yield* ai.defaultSelection, {
+        instanceId: 'inst_local_openrouter',
+        modelId: 'openrouter/auto',
+      });
+      const response = yield* Effect.promise(() =>
+        generateText({ model: resolved.model, prompt: 'Hi' })
+      );
+      assert.strictEqual(response.text, 'Hello');
+      assert.lengthOf(calls, 1);
+      assert.strictEqual(calls[0]!.url, 'https://openrouter.ai/api/v1/chat/completions');
+      assert.strictEqual(calls[0]!.init?.method, 'POST');
+      assert.strictEqual(
+        new Headers(calls[0]!.init?.headers).get('authorization'),
+        'Bearer openrouter-only-key'
+      );
+      assert.strictEqual(JSON.parse(calls[0]!.init?.body as string).model, 'openrouter/auto');
+      assert.notInclude(JSON.stringify(logger.entries), 'openrouter-only-key');
+    }).pipe(Effect.scoped)
+  );
+
   it.effect('resolve fails not-configured until a key is stored, then builds the model', () =>
     Effect.gen(function* () {
       const { fetchFn } = makeFetch({});
@@ -278,6 +337,34 @@ describe('AiProviderLive', () => {
     }).pipe(Effect.scoped)
   );
 
+  for (const provider of ['openai-compatible', 'ollama'] as const) {
+    it.effect(`${provider} refreshes cached models and failures when the endpoint changes`, () =>
+      Effect.gen(function* () {
+        const { fetchFn, calls } = makeFetch({
+          'a.local': () => json({ data: [{ id: 'model-a' }], models: [{ name: 'model-a' }] }),
+          'b.local': () => json({}, 500),
+          'c.local': () => json({ data: [{ id: 'model-c' }], models: [{ name: 'model-c' }] }),
+        });
+        const { layer } = build(fetchFn);
+        const ctx = yield* Layer.build(layer);
+        const ai = Context.get(ctx, AiProvider);
+        const settings = Context.get(ctx, SettingsService);
+
+        yield* settings.set({ ai: { provider, model: null, baseUrl: 'http://a.local/v1' } });
+        assert.deepStrictEqual(yield* ai.listModels(provider), { models: ['model-a'], error: null });
+        yield* settings.set({ ai: { provider, model: null, baseUrl: 'http://b.local/v1' } });
+        assert.deepStrictEqual(yield* ai.listModels(provider), { models: [], error: 'network' });
+        yield* settings.set({ ai: { provider, model: null, baseUrl: 'http://c.local/v1' } });
+        assert.deepStrictEqual(yield* ai.listModels(provider), { models: ['model-c'], error: null });
+        assert.deepStrictEqual(yield* ai.defaultSelection, {
+          instanceId: localInstanceId(provider), modelId: 'model-c',
+        });
+        assert.strictEqual((yield* ai.resolve()).modelId, 'model-c');
+        assert.lengthOf(calls, 3);
+      }).pipe(Effect.scoped)
+    );
+  }
+
   it.effect('setDefault repoints the device setting; the tool-support memo persists', () =>
     Effect.gen(function* () {
       const { fetchFn } = makeFetch({});
@@ -376,11 +463,14 @@ describe('AiProviderLive', () => {
   );
 });
 
-describe('local provider rollout', () => {
-  for (const provider of ['anthropic', 'ollama', 'openai-compatible'] as const) {
-    it.effect(`blocks saved and explicit ${provider} selections before any network request`, () =>
+describe('local BYOK access', () => {
+  for (const provider of ['openai', 'anthropic', 'openrouter', 'ollama', 'openai-compatible'] as const) {
+    it.effect(`allows saved and explicit ${provider} selections without rollout access`, () =>
       Effect.gen(function* () {
-        const { fetchFn, calls } = makeFetch({});
+        const { fetchFn } = makeFetch({
+          '/models': () => json({ data: [{ id: 'gpt-5' }] }),
+          '/api/tags': () => json({ models: [{ name: 'gpt-5' }] }),
+        });
         const { layer } = build(fetchFn);
         const ctx = yield* Layer.build(layer);
         const ai = Context.get(ctx, AiProvider);
@@ -390,31 +480,25 @@ describe('local provider rollout', () => {
         const saved = { provider, model: 'saved-model', baseUrl: 'http://provider.test/v1' };
         yield* settings.set({ ai: saved });
 
-        assert.strictEqual((yield* Effect.flip(ai.resolve())).reason, 'disabled');
-        assert.strictEqual(
-          (yield* Effect.flip(
-            ai.resolve({ instanceId: localInstanceId(provider), modelId: 'model' })
-          )).reason,
-          'disabled'
-        );
+        const resolved = yield* ai.resolve();
+        assert.strictEqual(resolved.provider, provider);
+        assert.strictEqual(resolved.modelId, saved.model);
+        const explicit = yield* ai.resolve({ instanceId: localInstanceId(provider), modelId: 'model' });
+        assert.strictEqual(explicit.provider, provider);
+        assert.strictEqual(explicit.modelId, 'model');
         assert.deepStrictEqual(yield* ai.listModels(provider, true), {
-          models: [],
-          error: 'not-configured',
+          models: ['gpt-5'],
+          error: null,
         });
-        assert.deepStrictEqual(yield* ai.instances, []);
-        assert.isNull(yield* ai.defaultSelection);
-        assert.isFalse(
+        assert.include((yield* ai.instances).map(row => row.provider), provider);
+        assert.deepStrictEqual(yield* ai.defaultSelection, {
+          instanceId: localInstanceId(provider),
+          modelId: saved.model,
+        });
+        assert.isTrue(
           yield* ai.setDefault({ instanceId: localInstanceId(provider), modelId: 'model' })
         );
-        assert.deepStrictEqual((yield* settings.get).ai, saved);
-        assert.lengthOf(calls, 0);
-
-        // Choosing an enabled provider restores access without deleting old settings or keys.
-        yield* secrets.setSecret(aiProviderSecretKey('openai'), 'openai-key');
-        assert.isTrue(
-          yield* ai.setDefault({ instanceId: localInstanceId('openai'), modelId: 'gpt-5' })
-        );
-        assert.strictEqual((yield* ai.resolve()).provider, 'openai');
+        assert.deepStrictEqual((yield* settings.get).ai, { ...saved, model: 'model' });
         assert.strictEqual(yield* secrets.getSecret(aiProviderSecretKey(provider)), 'saved-key');
       }).pipe(Effect.scoped)
     );

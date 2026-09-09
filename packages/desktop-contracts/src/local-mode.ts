@@ -14,8 +14,6 @@
  * feed the sync partition database name, so changing them orphans a local
  * profile's IndexedDB partition.
  */
-import type { AiProviderKind } from './main-window';
-
 export const LOCAL_WORKSPACE = {
   sub: 'local-user',
   orgId: 'local-org',
@@ -38,8 +36,8 @@ export const LOCAL_WORKSPACE = {
  *
  * Every cloud-only surface is a flag here answering false; the keys mirror
  * app-client's CLOUD_FEATURE_DEFAULTS (which default the same keys to true
- * for a cloud org that does not emit them). Accountless local mode keeps
- * tester-only features off, matching the cloud registry's public defaults.
+ * for a cloud org that does not emit them). All supported local BYOK providers
+ * are available without an account or plan. Other tester-only features stay off.
  */
 export const LOCAL_FEATURE_FLAGS: Readonly<Record<string, boolean>> = {
   account: false,
@@ -52,11 +50,11 @@ export const LOCAL_FEATURE_FLAGS: Readonly<Record<string, boolean>> = {
   directory: false,
   eventkitCalendar: false,
   openaiByok: true,
-  anthropicByok: false,
+  anthropicByok: true,
   groqByok: false,
   openRouterByok: true,
-  ollamaByok: false,
-  openAICompatibleByok: false,
+  ollamaByok: true,
+  openAICompatibleByok: true,
   localWhisperByok: true,
   mockByok: true,
   googleGeminiByok: true,
@@ -71,14 +69,3 @@ export const LOCAL_FEATURE_FLAGS: Readonly<Record<string, boolean>> = {
   skillMcpTools: false,
   skillAdvancedSettings: false,
 };
-
-/** The subset of provider flags used by the device's local AI service and settings. */
-export const LOCAL_AI_PROVIDER_FEATURE_KEYS: Record<AiProviderKind, string> = {
-  openai: 'openaiByok',
-  anthropic: 'anthropicByok',
-  'openai-compatible': 'openAICompatibleByok',
-  ollama: 'ollamaByok',
-};
-
-export const isLocalAiProviderEnabled = (provider: AiProviderKind): boolean =>
-  LOCAL_FEATURE_FLAGS[LOCAL_AI_PROVIDER_FEATURE_KEYS[provider]] === true;

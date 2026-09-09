@@ -6,13 +6,10 @@
  */
 import { describe, expect, it } from 'vitest';
 import { CLOUD_FEATURE_DEFAULTS } from '@prismical/app-client';
-import { LOCAL_AI_PROVIDER_FEATURE_KEYS, LOCAL_FEATURE_FLAGS } from '@prismical/desktop-contracts';
+import { aiProviderKindSchema, LOCAL_FEATURE_FLAGS } from '@prismical/desktop-contracts';
 import { PROVIDER_FEATURE_KEYS } from '@prismical/app-ui/lib/providers';
 
 describe('LOCAL_FEATURE_FLAGS', () => {
-  it('uses the same provider keys as the cloud UI', () => {
-    expect(PROVIDER_FEATURE_KEYS).toMatchObject(LOCAL_AI_PROVIDER_FEATURE_KEYS);
-  });
   it('names every key CLOUD_FEATURE_DEFAULTS defaults for a cloud org', () => {
     const missing = Object.keys(CLOUD_FEATURE_DEFAULTS).filter(
       key => !(key in LOCAL_FEATURE_FLAGS)
@@ -29,10 +26,7 @@ describe('LOCAL_FEATURE_FLAGS', () => {
       'customMcpServers',
       'skillMcpTools',
       'skillAdvancedSettings',
-      'anthropicByok',
       'groqByok',
-      'ollamaByok',
-      'openAICompatibleByok',
       'vercelAIGatewayByok',
       'cloudflareWorkersAIByok',
       'cerebrasByok',
@@ -44,5 +38,12 @@ describe('LOCAL_FEATURE_FLAGS', () => {
     // The server-registered operational flags stay off locally too.
     expect(LOCAL_FEATURE_FLAGS.integrations).toBe(false);
     expect(LOCAL_FEATURE_FLAGS.eventkitCalendar).toBe(false);
+  });
+
+  it('enables every supported local AI provider without rollout access', () => {
+    for (const provider of aiProviderKindSchema.options) {
+      const key = PROVIDER_FEATURE_KEYS[provider];
+      expect(LOCAL_FEATURE_FLAGS[key], key).toBe(true);
+    }
   });
 });

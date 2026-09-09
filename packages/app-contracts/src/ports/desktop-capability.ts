@@ -84,10 +84,10 @@ export interface TranscriptionSetting {
 
 /**
  * The language-model provider the local Ask/Skills lanes run on: a BYO key
- * (OpenAI, Anthropic, any OpenAI-compatible
+ * (OpenAI, Anthropic, OpenRouter, any OpenAI-compatible
  * endpoint) or a local Ollama runtime.
  */
-export type AiProviderKind = 'openai' | 'anthropic' | 'openai-compatible' | 'ollama';
+export type AiProviderKind = 'openai' | 'anthropic' | 'openrouter' | 'openai-compatible' | 'ollama';
 
 /**
  * The AI-provider preference. ONE record so the knobs move

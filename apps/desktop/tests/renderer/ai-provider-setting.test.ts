@@ -49,24 +49,29 @@ afterEach(async () => {
   vi.clearAllMocks();
 });
 
-describe('device AI provider rollout', () => {
-  it('only offers publicly enabled providers', async () => {
+describe('device AI providers', () => {
+  it('offers all supported local providers without rollout access', async () => {
     await act(async () => root.render(createElement(AiProviderSetting)));
     expect([...container.querySelectorAll('[role="radio"]')].map(el => el.id)).toEqual([
       'ai-provider-openai',
+      'ai-provider-anthropic',
+      'ai-provider-openrouter',
+      'ai-provider-openai-compatible',
+      'ai-provider-ollama',
     ]);
     expect(container.querySelector('[data-testid="ai-provider-fields"]')).not.toBeNull();
     expect(mocks.listModels).toHaveBeenCalledWith('openai', false);
   });
 
-  it.each(['anthropic', 'ollama', 'openai-compatible'] as const)(
-    'hides saved %s controls and lets the user choose OpenAI',
+  it.each(['anthropic', 'openrouter', 'ollama', 'openai-compatible'] as const)(
+    'shows saved %s controls and lets the user choose OpenAI',
     async provider => {
       mocks.provider = provider;
       await act(async () => root.render(createElement(AiProviderSetting)));
-      expect(container.querySelector('[data-testid="ai-provider-fields"]')).toBeNull();
-      expect(mocks.listModels).not.toHaveBeenCalled();
-      expect(mocks.hasKey).not.toHaveBeenCalled();
+      expect(container.querySelector('[data-testid="ai-provider-fields"]')).not.toBeNull();
+      expect(mocks.listModels).toHaveBeenCalledWith(provider, false);
+      if (provider === 'ollama') expect(mocks.hasKey).not.toHaveBeenCalled();
+      else expect(mocks.hasKey).toHaveBeenCalledWith(provider);
       expect(mocks.set).not.toHaveBeenCalled();
       await act(async () =>
         container.querySelector<HTMLButtonElement>('#ai-provider-openai')!.click()
@@ -76,4 +81,19 @@ describe('device AI provider rollout', () => {
       });
     }
   );
+
+  it('selects OpenRouter with its own key field and no base URL field', async () => {
+    await act(async () => root.render(createElement(AiProviderSetting)));
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('#ai-provider-openrouter')!.click()
+    );
+    expect(mocks.set).toHaveBeenCalledWith({
+      ai: { provider: 'openrouter', model: null, baseUrl: null },
+    });
+    mocks.provider = 'openrouter';
+    await act(async () => root.render(createElement(AiProviderSetting)));
+    expect(container.querySelector('#ai-provider-api-key')).not.toBeNull();
+    expect(container.querySelector('#ai-provider-base-url')).toBeNull();
+    expect(mocks.hasKey).toHaveBeenCalledWith('openrouter');
+  });
 });

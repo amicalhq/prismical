@@ -2,7 +2,6 @@ import { desktopFetch } from '../../infra/http/client';
 import { Clock, Effect, Layer, Ref } from 'effect';
 import type { LanguageModel } from 'ai';
 import type { AiModelListing, AiProviderKind, AiProviderSetting } from '@prismical/desktop-contracts';
-import { isLocalAiProviderEnabled } from '@prismical/desktop-contracts';
 import { AppConfig } from '../../infra/config/service';
 import { MainLogger } from '../../infra/logging/service';
 import { SecureStore } from '../../infra/secure-store/service';
@@ -47,6 +46,7 @@ const TOOL_SUPPORT_TTL_MS = 30 * 60_000;
 
 interface CachedListing {
   readonly at: number;
+  readonly baseUrl: string | null;
   readonly listing: AiModelListing;
 }
 
@@ -103,16 +103,15 @@ export const makeAiProviderLive = (
 
       const listModels: AiProviderApi['listModels'] = (provider, force = false) =>
         Effect.gen(function* () {
-          if (!isLocalAiProviderEnabled(provider)) return { models: [], error: 'not-configured' };
           if (fakeModel !== undefined) return { models: [E2E_FAKE_MODEL_ID], error: null };
+          const setting = (yield* settings.get).ai;
+          const { baseUrl } = settingFor(provider, setting);
           const now = yield* Clock.currentTimeMillis;
           const cached = force ? undefined : (yield* Ref.get(catalogues)).get(provider);
-          if (cached !== undefined) {
+          if (cached !== undefined && cached.baseUrl === baseUrl) {
             const hold = cached.listing.error === null ? ttl : CATALOGUE_ERROR_TTL_MS;
             if (now - cached.at < hold) return cached.listing;
           }
-          const setting = (yield* settings.get).ai;
-          const { baseUrl } = settingFor(provider, setting);
           const apiKey = yield* readKey(provider);
           const listing = yield* Effect.promise(() =>
             fetchModelListing({ provider, baseUrl, apiKey, fetchFn })
@@ -121,7 +120,7 @@ export const makeAiProviderLive = (
           // key or base URL lands — never cache it (the settings card re-lists
           // right after a save).
           if (listing.error !== 'not-configured') {
-            yield* Ref.update(catalogues, map => new Map(map).set(provider, { at: now, listing }));
+            yield* Ref.update(catalogues, map => new Map(map).set(provider, { at: now, baseUrl, listing }));
           }
           if (listing.error !== null) {
             yield* log.info('model catalogue unavailable', { context: { provider }, error: listing.error });
@@ -159,7 +158,6 @@ export const makeAiProviderLive = (
         const setting = (yield* settings.get).ai;
         const rows: AiInstanceView[] = [];
         for (const provider of AI_PROVIDER_KINDS) {
-          if (!isLocalAiProviderEnabled(provider)) continue;
           const active = provider === setting.provider;
           if (!active && (fakeModel !== undefined || !(yield* configured(provider, setting)))) continue;
           const listing = yield* listModels(provider);
@@ -180,7 +178,6 @@ export const makeAiProviderLive = (
 
       const defaultSelection: AiProviderApi['defaultSelection'] = Effect.gen(function* () {
         const setting = (yield* settings.get).ai;
-        if (!isLocalAiProviderEnabled(setting.provider)) return null;
         const modelId =
           fakeModel !== undefined ? E2E_FAKE_MODEL_ID : yield* effectiveModel(setting.provider, setting);
         return modelId === null ? null : { instanceId: localInstanceId(setting.provider), modelId };
@@ -189,7 +186,7 @@ export const makeAiProviderLive = (
       const setDefault: AiProviderApi['setDefault'] = selection =>
         Effect.gen(function* () {
           const provider = providerOfInstanceId(selection.instanceId);
-          if (provider === null || !isLocalAiProviderEnabled(provider)) return false;
+          if (provider === null) return false;
           const current = (yield* settings.get).ai;
           yield* settings.set({
             ai: {
@@ -232,9 +229,6 @@ export const makeAiProviderLive = (
               );
             }
             provider = named;
-          }
-          if (!isLocalAiProviderEnabled(provider)) {
-            return yield* Effect.fail(new AiProviderError({ reason: 'disabled', provider }));
           }
           if (fakeModel !== undefined) {
             const modelId = selection.modelId ?? E2E_FAKE_MODEL_ID;

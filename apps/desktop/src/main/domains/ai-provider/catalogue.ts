@@ -21,6 +21,12 @@ export interface ProviderDefaults {
 export const PROVIDER_DEFAULTS: Record<AiProviderKind, ProviderDefaults> = {
   openai: { baseUrl: null, model: 'gpt-5', needsKey: true, needsBaseUrl: false },
   anthropic: { baseUrl: null, model: 'claude-opus-5', needsKey: true, needsBaseUrl: false },
+  openrouter: {
+    baseUrl: 'https://openrouter.ai/api/v1',
+    model: 'openrouter/auto',
+    needsKey: true,
+    needsBaseUrl: false,
+  },
   'openai-compatible': { baseUrl: null, model: null, needsKey: false, needsBaseUrl: true },
   ollama: { baseUrl: 'http://127.0.0.1:11434', model: null, needsKey: false, needsBaseUrl: false },
 };
@@ -94,8 +100,9 @@ export async function fetchModelListing(args: {
       url = `${normalizeBaseUrl(args.baseUrl ?? ANTHROPIC_API_URL)}/v1/models?limit=100`;
       headers = { 'x-api-key': apiKey ?? '', 'anthropic-version': ANTHROPIC_VERSION };
       break;
+    case 'openrouter':
     case 'openai-compatible':
-      url = `${normalizeBaseUrl(args.baseUrl ?? '')}/models`;
+      url = `${normalizeBaseUrl(args.baseUrl ?? defaults.baseUrl ?? '')}/models`;
       headers = apiKey ? { Authorization: `Bearer ${apiKey}` } : {};
       break;
     case 'ollama':

@@ -882,7 +882,7 @@ export const DEFAULT_TRANSCRIPTION_SETTING: TranscriptionSetting = {
 
 // ---------------------------------------------------------------------------
 // AI provider. The language-model provider used by the local Ask/Skills lanes:
-// a BYO key (OpenAI, Anthropic, any
+// a BYO key (OpenAI, Anthropic, OpenRouter, any
 // OpenAI-compatible endpoint) or a local Ollama runtime. ONE record, like the
 // transcription setting: `model` is the provider's model id (null = the
 // provider default), `baseUrl` the endpoint for openai-compatible / ollama
@@ -890,7 +890,13 @@ export const DEFAULT_TRANSCRIPTION_SETTING: TranscriptionSetting = {
 // SecureStore, one slot per provider kind, and never cross to the renderer.
 // ---------------------------------------------------------------------------
 
-export const aiProviderKindSchema = z.enum(['openai', 'anthropic', 'openai-compatible', 'ollama']);
+export const aiProviderKindSchema = z.enum([
+  'openai',
+  'anthropic',
+  'openrouter',
+  'openai-compatible',
+  'ollama',
+]);
 export type AiProviderKind = z.infer<typeof aiProviderKindSchema>;
 
 export const aiProviderSettingSchema = z

@@ -1,7 +1,7 @@
 /**
- * LanguageModel construction per provider. Each BYOK provider
- * goes through its official AI-SDK package; Ollama and any other
- * OpenAI-compatible server go through `@ai-sdk/openai-compatible` (Ollama
+ * LanguageModel construction per provider. OpenAI and Anthropic
+ * use their AI-SDK packages; OpenRouter, Ollama and other
+ * OpenAI-compatible servers use `@ai-sdk/openai-compatible` (Ollama
  * serves the OpenAI chat protocol, tools included, under `/v1`). The key is
  * handed to the SDK and nowhere else — never logged, never in an error.
  */
@@ -37,9 +37,10 @@ export function buildLanguageModel(args: BuildModelArgs): LanguageModel {
         ...(args.baseUrl ? { baseURL: normalizeBaseUrl(args.baseUrl) } : {}),
         fetch,
       })(args.modelId);
+    case 'openrouter':
     case 'openai-compatible':
       return createOpenAICompatible({
-        name: 'openai-compatible',
+        name: args.provider,
         baseURL: normalizeBaseUrl(args.baseUrl ?? ''),
         ...(args.apiKey ? { apiKey: args.apiKey } : {}),
         fetch,
