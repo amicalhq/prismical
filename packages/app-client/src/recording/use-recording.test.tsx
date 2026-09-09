@@ -67,6 +67,8 @@ const fakeNavigation: NavigationAdapter = {
 };
 
 const idle: NativeRecordingState = {
+  finalizingRecordingIds: [],
+  completedRecordings: [],
   recordingId: null,
   status: 'idle',
   captureMode: null,
@@ -343,6 +345,73 @@ beforeEach(() => {
 });
 
 describe('useRecording — native (desktop) branch', () => {
+  it('does not start an old note after the workspace changes during policy loading', async () => {
+    const fake = makeFakeControl();
+    const auth = mutableAuth(STABLE_SESSION);
+    const { result, qc } = renderWithPorts({ control: fake.control, uploadTranscriptionChunk: vi.fn() }, undefined, auth.auth);
+    let finishPolicy!: () => void;
+    vi.spyOn(qc, 'ensureQueryData').mockImplementation(() => new Promise(resolve => {
+      finishPolicy = () => resolve([]);
+    }));
+    let starting!: Promise<void>;
+    act(() => { starting = result.current.start('note_old', 'Old note'); });
+    auth.setView({ ...STABLE_SESSION, accounts: STABLE_SESSION.accounts.map(account => ({ ...account, activeOrgId: 'org_other' })) });
+    await act(async () => { finishPolicy(); await starting; });
+    expect(fake.startCalls).toEqual([]);
+  });
+
+  it('does not let a delayed busy response replace another window’s active capture', async () => {
+    const fake = makeFakeControl();
+    const { result } = renderRecording(fake.control);
+    let finishStart!: (value: NativeStartResult) => void;
+    vi.spyOn(fake.control, 'start').mockImplementation(() => new Promise(resolve => { finishStart = resolve; }));
+    let starting!: Promise<void>;
+    await act(async () => { starting = result.current.start('note_first', 'First'); });
+    fake.push({ ...idle, status: 'recording', noteId: 'note_second', recordingId: 'rec_second' });
+    await act(async () => { finishStart({ ok: false, reason: 'busy' }); await starting; });
+    expect(result.current.state).toBe('recording');
+    expect(result.current.recordingId).toBe('rec_second');
+    expect(result.current.noteId).toBe('note_second');
+    expect(result.current.error).toBeNull();
+  });
+
+  it('explains when another window has a pending suggestion for the note', async () => {
+    const fake = makeFakeControl();
+    fake.setStartResult({ ok: false, reason: 'suggestion-pending' });
+    const { result } = renderRecording(fake.control);
+    await act(() => result.current.start('note_pending', 'Note with a suggestion'));
+    expect(result.current.state).toBe('idle');
+    expect(result.current.error).toBe('recording.actions.reviewBeforeRecording');
+    expect(result.current.recordingId).toBeNull();
+  });
+
+  it('binds the new note while native start is still pending', async () => {
+    const fake = makeFakeControl();
+    const { result } = renderRecording(fake.control);
+    fake.push({ ...idle, noteId: 'old_note', recordingId: 'old_recording' });
+    await waitFor(() => expect(result.current.noteId).toBe('old_note'));
+    let finish!: (result: NativeStartResult) => void;
+    vi.spyOn(fake.control, 'start').mockImplementation(
+      () =>
+        new Promise(resolve => {
+          finish = resolve;
+        })
+    );
+    let starting!: Promise<void>;
+    await act(async () => {
+      starting = result.current.start('new_note', 'New recording');
+    });
+    expect(result.current.state).toBe('starting');
+    expect(result.current.noteId).toBe('new_note');
+    expect(result.current.recordingId).toBeNull();
+    expect(result.current.startedAt).toBeNull();
+    await act(async () => {
+      finish({ ok: true, recordingId: 'new_recording' });
+      await starting;
+    });
+    expect(result.current.recordingId).toBe('new_recording');
+  });
+
   it('routes start to control.start and mirrors the pushed recording state into live segments', async () => {
     const fake = makeFakeControl();
     const { result } = renderRecording(fake.control);
@@ -407,6 +476,7 @@ describe('useRecording — native (desktop) branch', () => {
       status: 'idle',
       recordingId: 'rec_native',
       noteId: 'note_owner',
+      completedRecordings: [{ recordingId: 'rec_native', noteId: 'note_owner', segments: 0 }],
       segments: [],
     });
     await waitFor(() =>
@@ -422,6 +492,27 @@ describe('useRecording — native (desktop) branch', () => {
     expect(fake.control.claimCompletion).toHaveBeenCalledWith('rec_native');
   });
 
+  it('claims a previous recording while another note captures without changing the active transcript', async () => {
+    const fake = makeFakeControl();
+    const { result } = renderRecording(fake.control);
+    fake.push({ ...idle, recordingId: 'rec_first', noteId: 'note_first', finalizingRecordingIds: ['rec_first'] });
+    expect(result.current.isFinalizing).toBe(true);
+    const second = {
+      ...idle, recordingId: 'rec_second', noteId: 'note_second', status: 'recording' as const,
+      segments: [{ id: 'seg_second', recordingId: 'rec_second', text: 'Second note', source: 'mic', speaker: 'you', startTimeMs: 0, endTimeMs: 1000, segmentOrder: 0 }],
+      completedRecordings: [{ recordingId: 'rec_first', noteId: 'note_first', segments: 3 }],
+    };
+    fake.push(second);
+    await waitFor(() => expect(result.current.completedRecording).toMatchObject({ recordingId: 'rec_first', noteId: 'note_first', segments: 3 }));
+    fake.push(second);
+    expect(result.current.state).toBe('recording');
+    expect(result.current.noteId).toBe('note_second');
+    expect(result.current.liveSegments).toEqual(second.segments);
+    expect(result.current.isFinalizing).toBe(false);
+    expect(fake.control.claimCompletion).toHaveBeenCalledTimes(1);
+    expect(useAutoEnhanceStore.getState().requests).toHaveLength(1);
+  });
+
   it.each([
     ['note_owner', 0],
     ['another_note', 1],
@@ -434,7 +525,7 @@ describe('useRecording — native (desktop) branch', () => {
       true,
       tourNoteId
     );
-    fake.push({ ...idle, status: 'idle', recordingId: 'rec_native', noteId: 'note_owner' });
+    fake.push({ ...idle, status: 'idle', recordingId: 'rec_native', noteId: 'note_owner', completedRecordings: [{ recordingId: 'rec_native', noteId: 'note_owner', segments: 0 }] });
     await waitFor(() => expect(result.current.completedRecording?.recordingId).toBe('rec_native'));
     expect(useAutoEnhanceStore.getState().requests).toHaveLength(expected);
   });
@@ -447,7 +538,7 @@ describe('useRecording — native (desktop) branch', () => {
       undefined,
       false
     );
-    fake.push({ ...idle, status: 'idle', recordingId: 'rec_native', noteId: 'note_owner' });
+    fake.push({ ...idle, status: 'idle', recordingId: 'rec_native', noteId: 'note_owner', completedRecordings: [{ recordingId: 'rec_native', noteId: 'note_owner', segments: 0 }] });
     await act(async () => {});
     expect(fake.control.claimCompletion).not.toHaveBeenCalled();
     expect(result.current.completedRecording).toBeNull();
@@ -457,7 +548,7 @@ describe('useRecording — native (desktop) branch', () => {
     const fake = makeFakeControl();
     vi.mocked(fake.control.claimCompletion).mockResolvedValue(false);
     const { result } = renderRecording(fake.control);
-    fake.push({ ...idle, status: 'error', recordingId: 'rec_native', noteId: 'note_owner' });
+    fake.push({ ...idle, status: 'error', recordingId: 'rec_native', noteId: 'note_owner', completedRecordings: [{ recordingId: 'rec_native', noteId: 'note_owner', segments: 0 }] });
     await act(async () => {});
     expect(fake.control.claimCompletion).toHaveBeenCalledWith('rec_native');
     expect(result.current.completedRecording).toBeNull();
@@ -474,7 +565,7 @@ describe('useRecording — native (desktop) branch', () => {
         })
     );
     const { unmount } = renderRecording(fake.control);
-    fake.push({ ...idle, recordingId: 'rec_native', noteId: 'note_owner' });
+    fake.push({ ...idle, recordingId: 'rec_native', noteId: 'note_owner', completedRecordings: [{ recordingId: 'rec_native', noteId: 'note_owner', segments: 0 }] });
     unmount();
     await act(async () => {
       grant(true);
@@ -1025,6 +1116,82 @@ describe('useRecording — web branch pause/resume', () => {
     expect(finalizeRecording).toHaveBeenCalledOnce();
   });
 
+  it('releases capture while old uploads drain without leaking them into the next note', async () => {
+    let completeUpload!: (
+      segments: Array<{
+        text: string;
+        startTimeMs: number;
+        endTimeMs: number;
+        segmentOrder: number;
+      }>
+    ) => void;
+    upload.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          completeUpload = resolve;
+        })
+    );
+    const { result } = renderWeb();
+    await act(async () => {
+      await result.current.start('note_old', 'Old');
+    });
+    pushFrame(16000);
+    let stopped!: Promise<{ segments: number }>;
+    act(() => {
+      stopped = result.current.stop();
+    });
+    await waitFor(() => expect(result.current.state).toBe('idle'));
+    expect(result.current.isFinalizing).toBe(true);
+    expect(finalizeRecording).not.toHaveBeenCalled();
+    expect(useAutoEnhanceStore.getState().requests).toEqual([]);
+    vi.mocked(createRecording).mockResolvedValueOnce({
+      id: 'rec_new',
+      startedAt: '2026-07-18T00:00:00.000Z',
+    } as Awaited<ReturnType<typeof createRecording>>);
+    await act(async () => {
+      await result.current.start('note_new', 'New');
+    });
+    expect(result.current.state).toBe('recording');
+    await act(async () => {
+      completeUpload([
+        { text: 'Old note words', startTimeMs: 0, endTimeMs: 1000, segmentOrder: 0 },
+      ]);
+      await stopped;
+    });
+    expect(result.current.noteId).toBe('note_new');
+    expect(result.current.state).toBe('recording');
+    expect(result.current.isFinalizing).toBe(false);
+    expect(result.current.liveSegments).toEqual([]);
+    expect(result.current.completedRecording).toEqual(
+      expect.objectContaining({ noteId: 'note_old', segments: 1 })
+    );
+  });
+
+  it('does not expose the previous transcript when the next microphone start fails', async () => {
+    upload.mockResolvedValue([
+      { text: 'Old transcript', startTimeMs: 0, endTimeMs: 1000, segmentOrder: 0 },
+    ]);
+    const { result } = renderWeb();
+    await act(async () => {
+      await result.current.start('note_old', 'Old');
+    });
+    pushFrame(16000);
+    await act(async () => {
+      await result.current.stop();
+    });
+    expect(result.current.liveSegments).toHaveLength(1);
+    vi.mocked(navigator.mediaDevices.getUserMedia).mockRejectedValue(
+      new DOMException('Denied', 'NotAllowedError')
+    );
+    await act(async () => {
+      await result.current.start('note_new', 'New');
+    });
+    expect(result.current.state).toBe('idle');
+    expect(result.current.noteId).toBe('note_new');
+    expect(result.current.liveSegments).toEqual([]);
+    expect(result.current.recordingId).toBeNull();
+  });
+
   it('waits for another tab to release its recording recovery lock', async () => {
     const lockName = 'prismical-recording-recovery:rec_locked';
     locks.held.add(lockName);
@@ -1275,7 +1442,7 @@ describe('useRecording — web branch pause/resume', () => {
       activeSub: 'user_1',
       activeSessionKey: 'support_session_1',
     });
-    pushFrame(16000);
+    pushFrame(64000);
     await act(async () => {});
 
     expect(result.current.state).toBe('recording');
@@ -1441,9 +1608,9 @@ describe('useRecording — web branch pause/resume', () => {
     });
     expect(result.current.state).toBe('recording');
 
-    // 1s of silence = exactly the first warm-up chunk → chunk 0 cuts at 0ms.
-    pushFrame(16000);
-    // 0.5s more sits buffered (below the 2s warm-up minimum for chunk 1).
+    // 4s of silence = exactly the first chunk → chunk 0 cuts at 0ms.
+    pushFrame(64000);
+    // 0.5s more sits buffered (below the 4s minimum for chunk 1).
     pushFrame(8000);
 
     await act(async () => {
@@ -1457,7 +1624,7 @@ describe('useRecording — web branch pause/resume', () => {
     expect(FakeAudioContext.last?.suspend).toHaveBeenCalled();
     expect(upload.mock.calls.map(c => c[2])).toEqual([
       { chunkIndex: 0, chunkStartMs: 0, authToken: 'tok', activeOrgId: 'org_1' },
-      { chunkIndex: 1, chunkStartMs: 1000, authToken: 'tok', activeOrgId: 'org_1' },
+      { chunkIndex: 1, chunkStartMs: 4000, authToken: 'tok', activeOrgId: 'org_1' },
     ]);
 
     await act(async () => {
@@ -1466,13 +1633,13 @@ describe('useRecording — web branch pause/resume', () => {
     expect(result.current.state).toBe('recording');
     expect(FakeAudioContext.last?.resume).toHaveBeenCalled();
 
-    // 3s of silence = the next (steady-min) chunk: the index continues at 2 and the
-    // media timeline continues at 1500ms — the paused gap is compressed out.
-    pushFrame(48000);
+    // 4s of silence = the next (steady-min) chunk: the index continues at 2 and the
+    // media timeline continues at 4500ms — the paused gap is compressed out.
+    pushFrame(64000);
     await act(async () => {}); // let the upload lane's microtask run
     expect(upload.mock.calls.map(c => c[2])).toContainEqual({
       chunkIndex: 2,
-      chunkStartMs: 1500,
+      chunkStartMs: 4500,
       authToken: 'tok',
       activeOrgId: 'org_1',
     });
@@ -1497,7 +1664,7 @@ describe('useRecording — web branch pause/resume', () => {
       await result.current.start('note_1', 'Standup');
     });
 
-    pushFrame(16000); // chunk 0 → 422
+    pushFrame(64000); // chunk 0 → 422
     await act(async () => {});
     await waitFor(() =>
       expect(result.current.error).toBe('recording.errors.someAudioNotTranscribed')
@@ -1505,7 +1672,7 @@ describe('useRecording — web branch pause/resume', () => {
     expect(result.current.errorUser).toEqual(user);
     // Every later chunk would fail the same way: nothing more goes on the wire, the session
     // itself keeps recording.
-    pushFrame(48000);
+    pushFrame(64000);
     await act(async () => {});
     expect(upload).toHaveBeenCalledTimes(1);
     expect(result.current.state).toBe('recording');
@@ -1521,7 +1688,7 @@ describe('useRecording — web branch pause/resume', () => {
     await act(async () => {
       await result.current.start('note_1', 'Standup');
     });
-    pushFrame(16000);
+    pushFrame(64000);
     await waitFor(
       () => expect(result.current.error).toBe('recording.errors.someAudioNotTranscribed'),
       {
@@ -1530,7 +1697,7 @@ describe('useRecording — web branch pause/resume', () => {
     );
     expect(result.current.errorUser).toBeNull();
     // A 5xx never halts the session: the next chunk is still attempted.
-    pushFrame(48000);
+    pushFrame(64000);
     await act(async () => {});
     expect(upload.mock.calls.length).toBeGreaterThan(3);
   });

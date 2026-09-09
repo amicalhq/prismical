@@ -139,6 +139,7 @@ export const CHANNELS = {
   telemetryGetState: 'telemetry:getState',
   telemetryStateChanged: 'telemetry:stateChanged',
   telemetryCapture: 'telemetry:capture',
+  telemetryIdentifyPlan: 'telemetry:identifyPlan',
   telemetryCaptureException: 'telemetry:captureException',
   /**
    * Local whisper model manager. Device state shared by both
@@ -679,6 +680,7 @@ export const startRecordingResultSchema = z.discriminatedUnion('ok', [
         'no-session',
         'model-missing',
         'storage-unavailable',
+        'suggestion-pending',
         'update-required',
       ]),
     })
@@ -724,6 +726,12 @@ export type RecordingSegmentView = z.infer<typeof recordingSegmentSchema>;
 export const recordingStateViewSchema = z
   .object({
     recordingId: z.string().nullable(),
+    finalizingRecordingIds: z.array(z.string()),
+    completedRecordings: z.array(z.object({
+      recordingId: z.string(),
+      noteId: z.string().nullable(),
+      segments: z.number().int().nonnegative(),
+    }).strict()),
     status: z.enum(['idle', 'starting', 'recording', 'paused', 'stopping', 'error']),
     captureMode: captureModeSchema.nullable(),
     requestedCaptureMode: captureModeSchema.nullable(),
@@ -1050,6 +1058,15 @@ export const telemetryCaptureRequestSchema = z
   })
   .strict();
 export type TelemetryCaptureRequest = z.infer<typeof telemetryCaptureRequestSchema>;
+
+/** Plan facts are scoped to the renderer's account, organization and telemetry generation. */
+export const telemetryPlanIdentityRequestSchema = z.object({
+  revision: z.number().int().nonnegative(),
+  accountId: z.string().min(1).max(400),
+  orgId: z.string().min(1).max(400),
+  planExternalId: z.string().min(1).max(200).nullable(),
+}).strict();
+export type TelemetryPlanIdentityRequest = z.infer<typeof telemetryPlanIdentityRequestSchema>;
 
 export const telemetryStackFrameSchema = z
   .object({
@@ -1540,6 +1557,7 @@ export interface MainWindowTelemetryApi {
   readonly getState: () => Promise<TelemetryState>;
   readonly onChanged: (listener: (state: TelemetryState) => void) => () => void;
   readonly capture: (request: TelemetryCaptureRequest) => Promise<void>;
+  readonly identifyPlan: (request: TelemetryPlanIdentityRequest) => Promise<void>;
   readonly captureException: (request: TelemetryExceptionRequest) => Promise<void>;
 }
 

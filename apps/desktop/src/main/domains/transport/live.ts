@@ -450,7 +450,11 @@ export const makeFinalizeRecording =
           durationMs: input.durationMs,
         }),
       }),
-      bodyJson => parseRecordingId(bodyJson, recordingId)
+      bodyJson => {
+        const result = (bodyJson as { result?: { status?: unknown } } | null)?.result;
+        if (result?.status !== 'completed') throw new Error('Invalid recording completion');
+        return parseRecordingId(bodyJson, recordingId);
+      }
     );
 
 export interface CloudBackendLiveOptions {

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { I18nextProvider } from 'react-i18next';
 import { createApplicationI18nSync } from '@prismical/app-i18n';
 import type { Editor } from '@tiptap/react';
+import { useSkillDiffStore } from '../../../app-client/src/notes/diff/skill-diff-store';
 import { WalkthroughContext } from './context';
 import { TooltipProvider } from '../ui/tooltip';
 const m = vi.hoisted(() => ({
@@ -16,39 +17,43 @@ const m = vi.hoisted(() => ({
 vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({ invalidateQueries: vi.fn() }),
 }));
-vi.mock('@prismical/app-client', () => ({
-  useSkillDiffStore: (selector: (s: unknown) => unknown) =>
-    selector({
-      candidatesByNote: new Map([
-        [
-          'note',
-          {
-            mode: m.mode,
-            recordingId: 'recording',
-            skillId: 'enhance',
-            skillName: 'Enhance',
-            content: [],
-          },
-        ],
-      ]),
-      clear: vi.fn(),
-    }),
-  useAcceptArtifact: () => ({ mutateAsync: m.accept }),
-  useRunSkill: () => ({ run: vi.fn(), cancel: vi.fn(), running: false }),
-  useSkillRunActivityStore: { getState: () => ({ resolveStaged: vi.fn() }) },
-  clearDiffDecorations: vi.fn(),
-  resolveVerifiedRange: vi.fn(),
-  restoreLastSkillRun: vi.fn().mockResolvedValue(undefined),
-  useAutoEnhanceStore: { getState: () => ({ markFailed: vi.fn() }) },
-  enhancedRecordingsKey: () => [],
-}));
+vi.mock('@prismical/app-client', async () => {
+  const { ApiError } = await import('../../../app-client/src/api/client');
+  const { useSkillDiffStore } = await import('../../../app-client/src/notes/diff/skill-diff-store');
+  return {
+    ApiError,
+    useSkillDiffStore,
+    useAcceptArtifact: () => ({ mutateAsync: m.accept }),
+    useRunSkill: () => ({ run: vi.fn(), cancel: vi.fn(), running: false }),
+    useSkillRunActivityStore: { getState: () => ({ resolveStaged: vi.fn() }) },
+    clearDiffDecorations: vi.fn(),
+    resolveVerifiedRange: vi.fn(),
+    restoreLastSkillRun: vi.fn().mockResolvedValue(undefined),
+    useAutoEnhanceStore: { getState: () => ({ markFailed: vi.fn() }) },
+    enhancedRecordingsKey: () => [],
+  };
+});
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 const { SkillDiffDockBar } = await import('../components/skill-diff-dock-bar');
 function mount() {
+  useSkillDiffStore.getState().stage({
+    noteId: 'note',
+    mode: m.mode as 'append-section' | 'replace-doc',
+    recordingId: 'recording',
+    skillId: 'enhance',
+    skillName: 'Enhance',
+    modelId: 'model',
+    rawMarkdown: 'Output',
+    content: [],
+    reasoning: null,
+    refineInstruction: null,
+    selectionText: null,
+  });
   const editor = {
     getJSON: () => ({}),
     commands: { insertArtifactBlock: m.apply, setContent: m.apply },
-    isDestroyed: true,
+    isDestroyed: false,
+    view: { dom: document.createElement('div') },
   } as unknown as Editor;
   render(
     <I18nextProvider i18n={createApplicationI18nSync()}>

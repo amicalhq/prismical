@@ -1,5 +1,5 @@
 import { Context, type Effect, type SubscriptionRef } from 'effect';
-import type { TelemetryState } from '@prismical/desktop-contracts';
+import type { TelemetryPlanIdentityRequest, TelemetryState } from '@prismical/desktop-contracts';
 
 /** Persisted UUID fallback when the hashed OS machine ID is unavailable. */
 export const DEVICE_ID_KEY = 'telemetry:deviceId';
@@ -12,6 +12,7 @@ export interface TelemetryServiceApi {
   readonly getState: Effect.Effect<TelemetryState>;
   /** Resolve the shared machine/install ID for update rollouts without enabling telemetry. */
   readonly getDeviceId: Effect.Effect<string>;
+  readonly identifyPlan: (request: TelemetryPlanIdentityRequest) => Effect.Effect<void>;
   readonly capture: (
     event: string,
     properties?: TelemetryEventProperties,

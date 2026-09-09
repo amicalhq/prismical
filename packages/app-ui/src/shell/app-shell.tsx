@@ -98,18 +98,18 @@ export function AppShell({
               so the header doesn't paint over them. */}
                 <SidebarInset className="overflow-hidden">
                   <SiteHeader />
-                  <div
-                    className="relative flex min-h-0 flex-1 flex-col"
-                    // Keep the scroll viewport above the floating dock so native
-                    // focus/click scrolling cannot leave controls hidden behind it.
-                    style={{ paddingBottom: 'var(--dock-clearance)' }}
-                  >
-                    <div className="flex-1 overflow-y-auto">
+                  <div className="relative flex min-h-0 flex-1 flex-col">
+                    <div
+                      className="flex-1 overflow-y-auto"
+                      style={{ scrollPaddingBottom: 'var(--dock-clearance)' }}
+                    >
                       <div
-                        className="mx-auto flex w-full flex-col gap-4 py-6 md:gap-6"
+                        className="mx-auto flex w-full flex-col gap-4 pt-6 md:gap-6"
                         style={{
                           maxWidth: 'var(--content-max-width)',
                           paddingInline: 'var(--content-padding)',
+                          // Scroll beneath the dock, with room to bring the last item above it.
+                          paddingBottom: 'var(--dock-clearance)',
                         }}
                       >
                         {/* Subtle per-route fade/rise; skipped under reduced motion. */}

@@ -76,7 +76,7 @@ const readOptional = (file: string): Promise<Buffer> =>
   readFile(file).catch(() => Buffer.alloc(0));
 
 /** A key that could only be in the DB/log because THIS test put it there. */
-const AI_KEY = 'sk-ant-e2e-local-sentinel-7b2e41';
+const AI_KEY = 'sk-e2e-local-sentinel-7b2e41';
 
 /** Launch into a seeded local profile and wait for the shell to own the surface. */
 const openLocalApp = async (
@@ -327,15 +327,15 @@ test.describe('local mode (seeded app:mode profile, no servers)', () => {
     await expect(page.getByTestId('ai-provider')).toBeVisible();
     await expect(page.getByRole('radio', { name: 'OpenAI', exact: true })).toBeChecked();
 
-    // Switching the provider resets the record; the model rides DeviceSettings.
-    await page.getByRole('radio', { name: 'Anthropic' }).click();
-    await expect(page.getByRole('radio', { name: 'Anthropic' })).toBeChecked();
-    await expect.poll(() => aiSetting(page)).toEqual({ provider: 'anthropic', model: null, baseUrl: null });
-    await page.getByLabel('Model', { exact: true }).fill('claude-opus-5');
+    // Local policy exposes OpenAI; the model rides DeviceSettings.
+    await expect(page.getByRole('radio', { name: 'Anthropic' })).toHaveCount(0);
+    await expect(page.getByRole('radio', { name: 'Ollama' })).toHaveCount(0);
+    await expect.poll(() => aiSetting(page)).toEqual({ provider: 'openai', model: null, baseUrl: null });
+    await page.getByLabel('Model', { exact: true }).fill('test-model');
     await page.getByLabel('Model', { exact: true }).press('Enter');
     await expect
       .poll(() => aiSetting(page))
-      .toEqual({ provider: 'anthropic', model: 'claude-opus-5', baseUrl: null });
+      .toEqual({ provider: 'openai', model: 'test-model', baseUrl: null });
 
     // The key rides the capability channel into the secure store: never
     // pre-filled, never in device settings, `has` answers a boolean.
@@ -352,23 +352,14 @@ test.describe('local mode (seeded app:mode profile, no servers)', () => {
       /^(unauthorized|network)$/
     );
 
-    // Ollama: a base URL, no key; an unroutable host reads as a network reason.
-    await page.getByRole('radio', { name: 'Ollama' }).click();
-    await page.getByLabel('Base URL', { exact: true }).fill('http://127.0.0.1:1');
-    await page.getByLabel('Base URL', { exact: true }).press('Enter');
-    await expect
-      .poll(() => aiSetting(page))
-      .toEqual({ provider: 'ollama', model: null, baseUrl: 'http://127.0.0.1:1' });
-    await expect(page.getByTestId('ai-provider-catalogue')).toHaveAttribute('data-state', 'network');
-
-    // The synthetic instances lane lists the active provider plus every
-    // configured one (Anthropic now has a key) — what the Ask picker groups.
+    // The synthetic instances lane lists the configured, enabled provider —
+    // what the Ask picker groups.
     const instances = await transportGet(page, { path: '/apps/v1/me/instances' });
     expect(instances).toMatchObject({ ok: true, status: 200 });
     const providers = (
       (instances as { bodyJson: { results: Array<{ provider: string }> } }).bodyJson.results
     ).map(row => row.provider);
-    expect(providers).toEqual(['anthropic', 'ollama']);
+    expect(providers).toEqual(['openai']);
 
     const kept = profileDir;
     keptProfile = kept;
@@ -575,11 +566,10 @@ test.describe('local mode (seeded app:mode profile, no servers)', () => {
       window.location.hash = '#/settings/ai-models';
     });
     await expect(page.getByTestId('ai-provider')).toBeVisible();
-    await page.getByRole('radio', { name: 'Anthropic' }).click();
-    // The provider write round-trips through main and remounts the key field
-    // (keyed by provider) — let it land before typing, as the provider-card test does.
-    await expect(page.getByRole('radio', { name: 'Anthropic' })).toBeChecked();
-    await expect.poll(() => aiSetting(page)).toMatchObject({ provider: 'anthropic' });
+    await expect(page.getByRole('radio', { name: 'OpenAI', exact: true })).toBeChecked();
+    await page.getByLabel('Model', { exact: true }).fill('test-model');
+    await page.getByLabel('Model', { exact: true }).press('Enter');
+    await expect.poll(() => aiSetting(page)).toMatchObject({ provider: 'openai', model: 'test-model' });
     await expect(page.getByTestId('ai-provider-key-status')).toHaveAttribute('data-has-key', 'false');
     await page.getByLabel('API key', { exact: true }).fill(AI_KEY);
     await page.getByRole('button', { name: 'Save key' }).click();
@@ -619,7 +609,7 @@ test.describe('local mode (seeded app:mode profile, no servers)', () => {
     const afterSwitch = readRows();
     expect(afterSwitch['app:mode']).toBe('cloud');
     expect(Object.keys(afterSwitch).some(key => key.startsWith('pref:'))).toBe(false);
-    expect(afterSwitch['secure:ai.anthropic.apiKey']).toBeUndefined();
+    expect(afterSwitch['secure:ai.openai.apiKey']).toBeUndefined();
     const marker = JSON.parse(afterSwitch['app:pendingPurge'] ?? 'null') as {
       v: number;
       paths: string[];

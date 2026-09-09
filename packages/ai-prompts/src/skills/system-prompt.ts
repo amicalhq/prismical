@@ -23,48 +23,6 @@ const MARKDOWN_RULES = [
 ].join('\n');
 
 /**
- * The Enhance lane replaces the DB skill body outright: the stored
- * body asks for a self-contained summary CHUNK, which directly contradicts the lane's replace-doc
- * guidance ("rewrite the ENTIRE note") — with both in the prompt, which one wins was model
- * roulette. The lane also carries the voice-note vs meeting judgement: web mic-only capture labels
- * every line "you" even when a whole room was recorded, so the TRANSCRIPT CONTENT (plus the
- * `# Context` signals) is the reliable classifier, not the speaker labels.
- */
-const ENHANCE_LANE_PREAMBLE = [
-  'You turn recordings and rough notes into clean, structured notes.',
-  '',
-  'First judge the recording type from the transcript and the `# Context` signals: a multi-person',
-  'MEETING (dialogue, multiple voices, decisions between people) or a solo VOICE NOTE (one person',
-  'thinking out loud - a brainstorm, dictation, or running todo list). Speaker labels can lie: a',
-  'single microphone records a whole room as "you", so trust the content over the labels. Shape',
-  'the output accordingly:',
-  '- Meeting -> lead with "## Summary", then "## Action items" (name owners when the transcript',
-  '  identifies them). Add "## Decisions" only when real decisions were made.',
-  '- Voice note -> organize the thinking, do not write minutes: "## Key points" grouped by theme,',
-  '  then "## Action items" or "## Open questions" only when genuinely present. Keep the author\'s',
-  '  voice and intent - it is their thinking, cleaned up, not a report about it.',
-  '',
-  'Rules: be terse, no preamble; never invent facts - every point must be grounded in the note or',
-  'transcript; drop filler, repetition, and transcription noise; skip any section that would be',
-  'empty or trivial.',
-].join('\n');
-
-const ENHANCE_SOURCE_FIDELITY = [
-  '# Source fidelity',
-  '- Organize the sources without creating relationships between them. A standalone fragment or',
-  '  label is not evidence of project scope, a decision, a requirement, or a commitment. Keep',
-  '  unrelated material separate unless the sources explicitly connect it.',
-  '- Preserve attribution, disagreement, and uncertainty. Proposed is not approved, a concern is',
-  '  not an established fact, and a planned action is not completed. Do not infer missing owners,',
-  '  dates, currencies, or other details from context labels or nearby text.',
-  '- Action items require a request or commitment in the allowed source. Do not invent useful',
-  '  next steps or assign an existing note owner to an unrelated recording action.',
-  '- Treat a previous generated draft as a draft to correct, not as evidence. Before submitting,',
-  '  check each claim against the sources allowed by the active mode and remove unsupported claims.',
-  '  Do this silently; do not add a verification section to the note.',
-].join('\n');
-
-/**
  * Compose the system prompt sent to the model. The skill author's body is the star; everything else
  * is structured context.
  *
@@ -98,16 +56,11 @@ export function buildSkillSystemPrompt(args: {
     !enhanceLane && skill.config.modeAgnosticPrompt === true && mode !== 'inline-rewrite';
 
   const out: string[] = [];
-  out.push(enhanceLane ? ENHANCE_LANE_PREAMBLE : skill.body.trim());
+  out.push(skill.body.trim());
   out.push('');
   if (!skipModeBlock) {
     out.push(`# Active mode: ${mode}`);
     out.push(enhanceLane ? enhanceModeGuidance(mode) : modeGuidance(mode));
-  }
-
-  if (enhanceLane) {
-    out.push('');
-    out.push(ENHANCE_SOURCE_FIDELITY);
   }
 
   if (mode !== 'inline-rewrite') {
@@ -243,13 +196,14 @@ function enhanceModeGuidance(mode: ArtifactMode): string {
   switch (mode) {
     case 'replace-doc':
       return [
-        'Rewrite the ENTIRE note as one clean, well-structured Markdown document.',
+        'Rewrite the ENTIRE note as one clean Markdown note, as short as its content warrants.',
         'Integrate the user\'s own written notes (under "# Note") with the recording transcript',
         '(under "# Recording transcript"): keep every distinct fact, constraint, and unresolved point',
         'the user wrote and add what the recording establishes. Preserve exact identifiers, reference',
         'codes, URLs, names, and the precision of dates and amounts. Unfamiliar labels and identifiers',
         'are not filler. Keep standalone fragments with their identifiers in a separate notes section',
-        'when their relationship to the recording is unclear; do not invent a connecting explanation.',
+        'when their relationship to the recording is unclear; use a separate line rather than a heading',
+        'for a short note. Do not invent a connecting explanation.',
         'Drop only filler, true repetition, and transcription noise without losing unique information.',
         "Do NOT discard the user's notes. Do NOT invent facts that are not present in the note or the",
         'transcript. Before submitting, check that every distinct original detail still appears in',
@@ -259,8 +213,10 @@ function enhanceModeGuidance(mode: ArtifactMode): string {
       return [
         'The note already contains earlier content the user has kept — do NOT regenerate, restate, or',
         'reorder it. Produce ONLY a new self-contained section for THIS recording (under',
-        '"# Recording transcript"), to be appended to the end of the note. Start with a short ##',
-        'heading. Capture what this recording adds; do not repeat points already in the note. Do NOT',
+        '"# Recording transcript"), to be appended to the end of the note. For a quick note or thin-content',
+        'result, return a short sentence or compact list without a heading. Use a short ## heading only',
+        'when the new content needs a section. Capture what this recording adds; do not repeat points',
+        'already in the note. If there is no new note content, say so briefly. Do NOT',
         'invent facts that are not in the transcript. Use the existing note only to avoid duplication',
         'and resolve explicit references; do not import its unrelated facts, owners, or commitments',
         'into this recording. Preserve exact identifiers and uncertainty in the new material.',

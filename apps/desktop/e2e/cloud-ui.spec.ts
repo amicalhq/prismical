@@ -45,7 +45,7 @@ test.describe('cloud desktop controls', () => {
                   role: 'owner',
                   allowPublicSharing: false,
                   memberCount: 1,
-                  features: {},
+                  features: { deepgramByok: true, googleGeminiByok: true },
                   entitlements: {
                     planExternalId: null,
                     aiModelTier: 'pro',
@@ -224,6 +224,7 @@ test.describe('cloud desktop controls', () => {
           }),
         {
           recordingId,
+          finalizingRecordingIds: [], completedRecordings: [],
           status: 'recording',
           captureMode: 'mic',
           requestedCaptureMode: 'mic',
@@ -266,6 +267,7 @@ test.describe('cloud desktop controls', () => {
         kind: 'push',
         view: {
           recordingId: 'rec_restored',
+          finalizingRecordingIds: [], completedRecordings: [],
           status: 'paused',
           captureMode: 'mic',
           requestedCaptureMode: 'mic',

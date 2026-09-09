@@ -65,7 +65,7 @@ test.describe('main-window preload contract', () => {
       'theme',
       'transport',
     ]);
-    expect(shape.telemetry).toEqual(['capture', 'captureException', 'getState', 'onChanged']);
+    expect(shape.telemetry).toEqual(['capture', 'captureException', 'getState', 'identifyPlan', 'onChanged']);
     expect(shape.float).toEqual(['collapse', 'dockBack', 'onState', 'open']);
     expect(shape.env).toEqual(['get']);
     expect(shape.transport).toEqual(['openStream', 'request']);
@@ -100,12 +100,16 @@ test.describe('main-window preload contract', () => {
       'getAppModeState',
       'getAppleCalendarStatus',
       'getPermissionStatus',
+      'getUpdateAccess',
       'getUpdateState',
       'hasAiProviderKey',
       'hasTranscriptionByokKey',
       'listAiModels',
+      'onUpdateAccess',
       'onUpdateState',
       'openSystemSettings',
+      'openUpdateDownload',
+      'quitApp',
       'refreshAppleCalendar',
       'requestPermission',
       'resetApp',
@@ -137,6 +141,7 @@ test.describe('main-window preload contract', () => {
       'appMode',
       'appVersion',
       'applicationLocale',
+      'gleap',
       'noteWsUrl',
       'platform',
       'systemLocale',
@@ -147,6 +152,7 @@ test.describe('main-window preload contract', () => {
       webAppOrigin: string;
       analyticsKey: string | null;
       analyticsHost: string | null;
+      gleap: { key: string; cspNonce: string } | null;
       platform: string;
       appVersion: string;
       applicationLocale: string;
@@ -159,6 +165,8 @@ test.describe('main-window preload contract', () => {
     // Analytics config is gated off under E2E (no telemetry from tests).
     expect(typed.analyticsKey).toBeNull();
     expect(typed.analyticsHost).toBeNull();
+    // The launch harness leaves support disabled except in dedicated SDK tests.
+    expect(typed.gleap).toBeNull();
     expect(typed.platform).toBe(process.platform);
     expect(typed.appVersion).toMatch(/^\d+\.\d+\.\d+/);
     // The renderer never learns core's address.

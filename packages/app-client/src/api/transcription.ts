@@ -96,9 +96,15 @@ export function finalizeRecording(
         endedAt: opts?.endedAt ?? Date.now(),
         durationMs: Math.round(durationMs),
       },
-      { activeOrgId: opts?.activeOrgId, authToken: opts?.authToken }
+      { activeOrgId: opts?.activeOrgId, authToken: opts?.authToken, signal: AbortSignal.timeout(30_000) }
     )
-    .then(response => response.result);
+    .then(response => {
+      const recording = response?.result;
+      if (recording?.id !== recordingId || recording.status !== 'completed') {
+        throw new Error('Invalid recording completion acknowledgement');
+      }
+      return recording;
+    });
 }
 
 export function listNoteRecordings(noteId: string): Promise<CoreRecording[]> {

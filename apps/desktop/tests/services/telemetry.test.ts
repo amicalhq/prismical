@@ -13,6 +13,7 @@ import type {
   PostHogSink,
   SinkCapture,
   SinkIdentify,
+  SinkGroupIdentify,
 } from '../../src/main/domains/telemetry/posthog-sink';
 
 const signedIn = (sub = 'user_1', orgId?: string): AuthState => ({
@@ -45,6 +46,7 @@ const enabledConfig = {
 interface FakeSink extends PostHogSink {
   captures: SinkCapture[];
   identifies: SinkIdentify[];
+  groups: SinkGroupIdentify[];
   exceptions: Array<{ error: unknown; distinctId: string; properties?: Record<string, unknown> }>;
   discarded: boolean;
   shutdownCalls: number;
@@ -82,6 +84,7 @@ const setup = (
         const sink: FakeSink = {
           captures: [],
           identifies: [],
+          groups: [],
           exceptions: [],
           discarded: false,
           shutdownCalls: 0,
@@ -91,6 +94,9 @@ const setup = (
           },
           identify: event => {
             sink.identifies.push(event);
+          },
+          groupIdentify: event => {
+            sink.groups.push(event);
           },
           captureException: (error, distinctId, properties) => {
             sink.exceptions.push({ error, distinctId, properties });
@@ -144,6 +150,80 @@ const setup = (
   });
 
 describe('TelemetryService policy and identity', () => {
+  it.effect('publishes plan facts on the org and only a sticky AppSumo flag on the person', () =>
+    Effect.scoped(Effect.gen(function* () {
+      const { telemetry, sinks } = yield* setup({ initial: signedIn('user_1', 'org_1') });
+      const revision = (yield* telemetry.getState).revision;
+      const request = { revision, accountId: 'user_1', orgId: 'org_1', planExternalId: 'plan_appsumo_tier_2' };
+      yield* telemetry.identifyPlan({ ...request, planExternalId: null });
+      assert.lengthOf(sinks[0]!.groups, 0);
+      yield* telemetry.identifyPlan(request);
+      yield* telemetry.identifyPlan(request);
+      assert.deepStrictEqual(sinks[0]!.groups, [{
+        groupType: 'organization', groupKey: 'org_1', distinctId: 'user_1',
+        properties: { plan_external_id: 'plan_appsumo_tier_2', is_appsumo: true, appsumo_tier: 2 },
+      }]);
+      assert.deepStrictEqual(sinks[0]!.identifies[1], {
+        distinctId: 'user_1', properties: { $set_once: { has_appsumo_org: true } },
+      });
+      yield* telemetry.identifyPlan({ ...request, planExternalId: 'plan_free' });
+      assert.deepStrictEqual(sinks[0]!.groups[1]!.properties, {
+        plan_external_id: 'plan_free', is_appsumo: false, appsumo_tier: null,
+      });
+      assert.lengthOf(sinks[0]!.identifies, 2);
+      yield* telemetry.identifyPlan({ ...request, planExternalId: null });
+      assert.lengthOf(sinks[0]!.groups, 2);
+    }))
+  );
+
+  it.effect('rejects plans from stale accounts, orgs and telemetry generations', () =>
+    Effect.scoped(Effect.gen(function* () {
+      const f = yield* setup({ initial: signedIn('user_1', 'org_1') });
+      const request = {
+        revision: (yield* f.telemetry.getState).revision,
+        accountId: 'user_1', orgId: 'org_1', planExternalId: 'plan_appsumo_tier_1',
+      };
+      yield* f.telemetry.identifyPlan({ ...request, accountId: 'user_2' });
+      yield* f.telemetry.identifyPlan({ ...request, orgId: 'org_2' });
+      assert.lengthOf(f.sinks[0]!.groups, 0);
+      yield* f.telemetry.identifyPlan(request);
+      yield* SubscriptionRef.set(f.sessionState, signedIn('user_1', 'org_2'));
+      yield* f.telemetry.identifyPlan(request);
+      const orgRevision = (yield* f.telemetry.getState).revision;
+      yield* f.telemetry.identifyPlan({ ...request, revision: orgRevision });
+      yield* f.telemetry.identifyPlan({ ...request, orgId: 'org_2' });
+      assert.isTrue(f.sinks[0]!.discarded);
+      assert.isFalse(f.sinks[0]!.isAllowed());
+      assert.lengthOf(f.sinks.at(-1)!.groups, 0);
+      yield* f.telemetry.identifyPlan({ ...request, revision: orgRevision, orgId: 'org_2', planExternalId: 'plan_free' });
+      assert.strictEqual(f.sinks.at(-1)!.groups[0]!.groupKey, 'org_2');
+      yield* SubscriptionRef.set(f.sessionState, signedIn('user_2', 'org_2'));
+      const accountRevision = (yield* f.telemetry.getState).revision;
+      yield* f.telemetry.identifyPlan({ ...request, revision: accountRevision, orgId: 'org_2' });
+      assert.lengthOf(f.sinks.at(-1)!.groups, 0);
+    }))
+  );
+
+  for (const options of [
+    { mode: 'local' as const, initial: signedIn('user_1', 'org_1'), preference: true },
+    { initial: initialAuthState, preference: true },
+    { initial: initialAuthState, preference: false },
+    { initial: signedIn('user_1', 'org_1'), chosen: false },
+    { initial: signedIn('user_1', 'org_1'), config: {} },
+  ]) {
+    it.effect(`does not publish account plans outside an enabled cloud identity: ${JSON.stringify(options)}`, () =>
+      Effect.scoped(Effect.gen(function* () {
+        const { telemetry, sinks } = yield* setup(options);
+        yield* telemetry.identifyPlan({
+          revision: (yield* telemetry.getState).revision,
+          accountId: 'user_1', orgId: 'org_1', planExternalId: 'plan_appsumo_tier_1',
+        });
+        assert.deepStrictEqual(sinks.flatMap(sink => sink.groups), []);
+        assert.isFalse(sinks.flatMap(sink => sink.identifies).some(event => event.properties?.$set_once));
+      }))
+    );
+  }
+
   it.effect('fresh signed-out state constructs no SDK and drops events', () =>
     Effect.scoped(
       Effect.gen(function* () {

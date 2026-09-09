@@ -94,3 +94,4 @@ export { useSyncStore } from "./sync/provider";
 
 export { setTitleDraftDirty } from "./notes/title-drafts";
 export * from "./errors/ai-user-error";
+export { useRecoverSkillResult } from "./notes/use-recover-skill-result";

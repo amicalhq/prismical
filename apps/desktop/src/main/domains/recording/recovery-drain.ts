@@ -207,8 +207,10 @@ export const drainRecoveries = (
         const attempt = row.attemptCount + 1;
         const now = yield* Clock.currentTimeMillis;
         const retryAfterMs =
-          failure?.kind === 'http' ? recordingRetryAfterMs(failure.retryAfterMs) ?? 0 : 0;
-        const nextAttemptAt = new Date(now + Math.max(backoffMsFor(attempt), retryAfterMs)).toISOString();
+          failure?.kind === 'http' ? (recordingRetryAfterMs(failure.retryAfterMs) ?? 0) : 0;
+        const nextAttemptAt = new Date(
+          now + Math.max(backoffMsFor(attempt), retryAfterMs)
+        ).toISOString();
         yield* db
           .updateRecoveryOutbox(row.recordingId, {
             attemptCount: attempt,
@@ -376,7 +378,11 @@ export const drainRecoveries = (
                   );
                   if (!mirrored.ok)
                     return yield* mirrored.retryable
-                      ? park(row, `segment-mirror:${failureLabel(mirrored.failure)}`, mirrored.failure)
+                      ? park(
+                          row,
+                          `segment-mirror:${failureLabel(mirrored.failure)}`,
+                          mirrored.failure
+                        )
                       : fail(row, `segment-mirror:${failureLabel(mirrored.failure)}`);
                 }
               }
@@ -479,10 +485,12 @@ export const runRecoveryWorker = (
       const owner = yield* WorkspaceIdentity;
       const wakeups = yield* Queue.sliding<void>(1);
       const activeId = SubscriptionRef.get(state).pipe(
-        Effect.map(value =>
-          value.status === 'idle' || value.status === 'error'
-            ? null
-            : (value.recordingId ?? 'starting')
+        Effect.map(
+          value =>
+            value.finalizingRecordingIds[0] ??
+            (value.status === 'idle' || value.status === 'error'
+              ? null
+              : (value.recordingId ?? 'starting'))
         )
       );
       yield* Stream.runForEach(state.changes, value =>

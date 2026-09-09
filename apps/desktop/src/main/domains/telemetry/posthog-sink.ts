@@ -12,6 +12,12 @@ export interface SinkIdentify {
   readonly distinctId: string;
   readonly properties?: Record<string, unknown>;
 }
+export interface SinkGroupIdentify {
+  readonly groupType: string;
+  readonly groupKey: string;
+  readonly distinctId: string;
+  readonly properties: Record<string, unknown>;
+}
 export interface PostHogSink {
   capture(args: SinkCapture): void;
   captureException(
@@ -20,6 +26,7 @@ export interface PostHogSink {
     properties?: Record<string, unknown>
   ): void;
   identify(args: SinkIdentify): void;
+  groupIdentify(args: SinkGroupIdentify): void;
   /** Invalidate pending work and abort in-flight requests on policy/identity change. */
   discard(): void;
   shutdown(timeoutMs?: number): Promise<void>;
@@ -84,6 +91,9 @@ export const makePostHogNodeSink: MakePostHogSink = (apiKey, host, isAllowed, on
     },
     identify: args => {
       if (allowed()) posthog.identify(args);
+    },
+    groupIdentify: args => {
+      if (allowed()) posthog.groupIdentify(args);
     },
     discard: () => {
       discarded = true;

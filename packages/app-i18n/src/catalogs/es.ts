@@ -664,6 +664,7 @@ const es = {
       stop: 'Detener grabación',
       viewInLog: 'Ver en el registro',
       pastRecordings: 'Grabaciones anteriores',
+      reviewBeforeRecording: 'Conserva o deshaz los cambios sugeridos antes de grabar.',
     },
     autoPause: {
       description: 'No se oye nada desde hace un tiempo; se pausará para ahorrar minutos.',
@@ -674,6 +675,7 @@ const es = {
       title: '¿Sigues ahí?',
     },
     away: {
+      stopped: 'Grabación detenida',
       goToNote: 'Ir a la nota',
       goToRecording: 'Ir a la nota que se está grabando: {{title}}',
       paused: 'En pausa',
@@ -742,6 +744,7 @@ const es = {
       latestEnhanced: 'Última grabación mejorada ✓',
       enhanceChip: 'Mejorar esta grabación',
       listening: 'Escuchando y transcribiendo…',
+      listeningInitial: 'Escuchando… Tu transcripción aparecerá en breve.',
       liveExpectation:
         'Transcripción en directo: los hablantes se identifican al detener la grabación',
       log: 'Registro de transcripción',
@@ -798,6 +801,7 @@ const es = {
       running: 'Ejecutando {{name}}…',
       stop: 'Detener {{name}}',
       staged: '{{name}} redactó una sugerencia',
+      review: 'Revisar',
       reviewInNote: 'Revisar en la nota',
       kept: 'Aplicado',
       undone: 'Descartado',
@@ -2359,6 +2363,18 @@ const es = {
         openingPrismical: 'Abriendo Prismical…',
         processingLogin: 'Procesando el inicio de sesión…',
         signingIn: 'Iniciando sesión',
+      },
+      selectAccount: {
+        title: 'Elige una cuenta',
+        checkingSession: 'Comprobando tu sesión…',
+        sessionFailed: 'No se pudo comprobar tu sesión. Vuelve a cargar esta página.',
+        accountChanged: 'Tu cuenta activa ha cambiado. Confirma la cuenta que se muestra.',
+        continueFailed: 'No se pudo continuar. Inténtalo de nuevo.',
+        signOutFailed: 'No se pudo cerrar la sesión. Inténtalo de nuevo.',
+        continuing: 'Continuando…',
+        continueAs: 'Continuar como {{account}}',
+        signingOut: 'Cerrando sesión…',
+        useDifferentAccount: 'Usar otra cuenta',
       },
       consent: {
         abilities: 'Podrá',

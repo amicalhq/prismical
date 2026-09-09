@@ -25,7 +25,7 @@ export class RecordingBusyError extends Data.TaggedError('RecordingBusyError')<{
 }> {}
 
 export class RecordingStartError extends Data.TaggedError('RecordingStartError')<{
-  readonly reason: 'model-missing' | 'storage-unavailable';
+  readonly reason: 'model-missing' | 'storage-unavailable' | 'suggestion-pending';
 }> {}
 
 export type RecordingStatus = 'idle' | 'starting' | 'recording' | 'paused' | 'stopping' | 'error';
@@ -39,6 +39,14 @@ export type RecordingStatus = 'idle' | 'starting' | 'recording' | 'paused' | 'st
  */
 export interface RecordingState {
   readonly recordingId: string | null;
+  /** Live processing jobs still own their recovery audio after capture closes. */
+  readonly finalizingRecordingIds: readonly string[];
+  /** Completed work stays visible to late subscribers until one window claims it. */
+  readonly completedRecordings: readonly {
+    readonly recordingId: string;
+    readonly noteId: string | null;
+    readonly segments: number;
+  }[];
   readonly status: RecordingStatus;
   /** The mode actually capturing — may be a degraded `requestedCaptureMode`. */
   readonly captureMode: MeetingCaptureMode | null;
@@ -86,6 +94,8 @@ export interface RecordingState {
 
 export const idleRecordingState: RecordingState = {
   recordingId: null,
+  finalizingRecordingIds: [],
+  completedRecordings: [],
   status: 'idle',
   captureMode: null,
   requestedCaptureMode: null,

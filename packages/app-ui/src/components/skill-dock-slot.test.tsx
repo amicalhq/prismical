@@ -31,6 +31,7 @@ vi.mock('@prismical/app-client', async () => {
     activeOrgIdOf: () => harness.orgId,
     useSkillsList: () => ({ data: [{ id: ENHANCE_SKILL_ID, enabled: true }] }),
     useRunSkill: () => ({ run: harness.run }),
+    useRecoverSkillResult: vi.fn(),
     useSkillDiffStore: (select: (value: unknown) => unknown) =>
       select({ candidatesByNote: new Map() }),
     useInlineRunStore: (select: (value: unknown) => unknown) => select(inert),

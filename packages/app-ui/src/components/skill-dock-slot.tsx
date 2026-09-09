@@ -7,12 +7,12 @@ import type { Editor } from '@tiptap/react';
 import { useSkillsList } from '@prismical/app-client';
 import { useCurrentNote } from '../shell/current-note-context';
 import { useCurrentNoteEditor } from '../shell/current-editor-context';
-import { useRunSkill } from '@prismical/app-client';
+import { useRunSkill, useRecoverSkillResult } from '@prismical/app-client';
 import { useSkillDiffStore } from '@prismical/app-client';
 import { useAutoEnhanceStore, useSessionView, activeOrgIdOf } from '@prismical/app-client';
 import { useInlineRunStore } from '@prismical/app-client';
 import { useAskSkillRunStore } from '@prismical/app-client';
-import { SkillDiffDockBar, SkillDiffPendingBar } from './skill-diff-dock-bar';
+import { SkillDiffDockBar } from './skill-diff-dock-bar';
 import { ENHANCE_SKILL_ID } from '@prismical/app-contracts';
 import { useTranslation } from 'react-i18next';
 import { skillDisplayName } from '../lib/skill-presentation';
@@ -69,11 +69,7 @@ export function SkillDockSlot({ compact = false }: { compact?: boolean } = {}) {
           against yet, so the holding face stands in rather than the slot going empty - the
           suggestion is still in the store, and silence here reads as the work being thrown away. */}
       {candidate ? (
-        editorForNote ? (
-          <SkillDiffDockBar editor={editorForNote} noteId={noteId} compact={compact} />
-        ) : (
-          <SkillDiffPendingBar noteId={noteId} skillName={candidate.skillName} compact={compact} />
-        )
+        <SkillDiffDockBar key={noteId} editor={editorForNote} noteId={noteId} compact={compact} />
       ) : null}
     </>
   );
@@ -95,6 +91,7 @@ function SkillRunBridge({
   const { t } = useTranslation();
   const { data: allSkills = [] } = useSkillsList();
   const { run } = useRunSkill(noteId, editor);
+  useRecoverSkillResult(noteId, editor);
 
   // Auto-enhance-on-Stop + the transcript wand: run Enhance scoped to that recording.
   // We send the live editor markdown (the freshest body) to dodge the debounced-snapshot staleness.

@@ -266,6 +266,7 @@ const api: MainWindowDesktopApi = {
     getState: () => ipcRenderer.invoke(CHANNELS.telemetryGetState),
     onChanged: telemetryBuffer.onState,
     capture: request => ipcRenderer.invoke(CHANNELS.telemetryCapture, request),
+    identifyPlan: request => ipcRenderer.invoke(CHANNELS.telemetryIdentifyPlan, request),
     captureException: request => ipcRenderer.invoke(CHANNELS.telemetryCaptureException, request),
   },
   settings: {

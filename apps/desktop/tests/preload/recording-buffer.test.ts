@@ -3,6 +3,7 @@ import type { RecordingStateView } from '@prismical/desktop-contracts';
 import { makeRecordingBuffer, type RecordingBufferIpc } from '../../src/preload/recording-buffer';
 
 const idle: RecordingStateView = {
+  finalizingRecordingIds: [], completedRecordings: [],
   recordingId: null,
   status: 'idle',
   captureMode: null,
@@ -13,6 +14,7 @@ const idle: RecordingStateView = {
   elapsedMs: 0,
 };
 const recording: RecordingStateView = {
+  finalizingRecordingIds: [], completedRecordings: [],
   recordingId: 'rec_1',
   status: 'recording',
   captureMode: 'mic',

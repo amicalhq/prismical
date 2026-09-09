@@ -567,12 +567,27 @@ describe('makeUploadTranscriptionChunk', () => {
 // ---------------------------------------------------------------------------
 
 describe('makeFinalizeRecording', () => {
+  it.effect('retains retryable work when the acknowledgement is not the completed recording', () =>
+    Effect.gen(function* () {
+      for (const result of [
+        { id: 'rec_1' },
+        { id: 'rec_1', status: 'recording' },
+        { id: 'rec_other', status: 'completed' },
+      ]) {
+        const { fetchFn } = recordingFetch(() => Promise.resolve(jsonResponse({ result, applied: true })));
+        assert.deepStrictEqual(yield* makeFinalizeRecording(makeDeps({ fetchFn }))('rec_1', FINALIZE_INPUT), {
+          ok: false, retryable: true, failure: { kind: 'invalid-response' },
+        });
+      }
+    })
+  );
+
   it.effect(
     'PUTs status:completed + endedAt + durationMs; stamps Bearer + org; returns the id',
     () =>
       Effect.gen(function* () {
         const { calls, fetchFn } = recordingFetch(() =>
-          Promise.resolve(jsonResponse({ result: { id: 'rec_1' }, applied: true }))
+          Promise.resolve(jsonResponse({ result: { id: 'rec_1', status: 'completed' }, applied: true }))
         );
         const res = yield* makeFinalizeRecording(makeDeps({ fetchFn }))('rec_1', FINALIZE_INPUT);
 

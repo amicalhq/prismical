@@ -13,10 +13,14 @@ import { and, desc, eq, isNotNull, isNull, max, sql } from 'drizzle-orm';
 import { AI_ERROR_CODES, describeAiError, SKILL_RUN_ERROR_CODES, type AiErrorDetails } from '@prismical/api-contracts';
 import {
   AcceptSkillRunRequestSchema,
+  AcceptSkillRunResultSchema,
   ApplyTitleRunRequestSchema,
   EnhancedRecordingsQuerySchema,
   RestoreSkillRunRequestSchema,
   RunSkillRequestSchema,
+  RunSkillResultSchema,
+  type RunSkillRequest,
+  type RunSkillResult,
   SyncSkillCreateRequestSchema,
   SyncSkillUpdateRequestSchema,
 } from '@prismical/api-contracts/apps/v1';
@@ -49,6 +53,7 @@ import type { LocalAiPort } from './ai-port';
 import { loadNoteInput, selectNoteRow, skillInputIsEmpty, transcriptBlocker } from './note-input';
 import { bumpUpdatedAt, defaultTitle } from './notes';
 import { runTerminalTool, type RunUsage, type TerminalToolSpec } from './skill-run';
+import { findRecoverableResult, saveRecoverableResult, SuggestionChanged, suggestionChanged } from './skill-recovery';
 import type { LocalEntityConfig } from './sync-entities';
 import {
   apiError,
@@ -132,6 +137,7 @@ export interface SkillRunDeps {
   readonly ai: LocalAiPort;
   readonly locale: string;
   readonly log: (message: string, data?: LogMetadata['context']) => void;
+  readonly recoverableRuns: Map<string, Promise<RouteResult>>;
 }
 
 /** Stable messages for skill-run failure codes. */
@@ -237,22 +243,78 @@ export async function runSkill(
   skillId: string,
   body: unknown
 ): Promise<RouteResult> {
-  const { db, ai } = deps;
   const parsed = RunSkillRequestSchema.safeParse(body);
   if (!parsed.success) return invalidRequest('Invalid request');
   const req = parsed.data;
+  if (!req.recoverable || !req.recordingId || req.refineInstruction || req.mode === 'inline-rewrite')
+    return executeSkillRun(deps, skillId, req);
+  const key = JSON.stringify([req.noteId, req.recordingId, skillId]);
+  const pending = deps.recoverableRuns.get(key);
+  if (pending) return pending;
+  const running = executeSkillRun(deps, skillId, req);
+  deps.recoverableRuns.set(key, running);
+  try {
+    return await running;
+  } finally {
+    deps.recoverableRuns.delete(key);
+  }
+}
+
+async function executeSkillRun(
+  deps: SkillRunDeps,
+  skillId: string,
+  req: RunSkillRequest
+): Promise<RouteResult> {
+  const { db, ai } = deps;
 
   const skill = await loadRunnableSkill(db, skillId);
   if (skill === null) return apiError(404, 'NOT_FOUND', 'Skill not found');
 
   const titleTarget = skill.config.outputTarget === 'note-title';
+  const noteBase = await selectNoteRow(db, req.noteId);
+  if (noteBase === undefined || noteBase.trashedAt !== null) {
+    return apiError(404, 'NOT_FOUND', 'Note not found');
+  }
+  let recovery: { id: string; result: RunSkillResult } | undefined;
+  if (req.recoveryResultId) {
+    const saved = db
+      .select()
+      .from(schema.noteSkillResult)
+      .where(
+        and(
+          eq(schema.noteSkillResult.id, req.recoveryResultId),
+          eq(schema.noteSkillResult.noteId, req.noteId)
+        )
+      )
+      .get();
+    const original = saved ? RunSkillResultSchema.parse(saved.result) : null;
+    if (
+      !original ||
+      !req.refineInstruction ||
+      titleTarget ||
+      req.mode === 'inline-rewrite' ||
+      original.skillId !== skillId ||
+      original.recordingId !== req.recordingId
+    ) {
+      return apiError(404, 'NOT_FOUND', 'Suggestion not found');
+    }
+    if (saved?.resolvedAt || original.rawMarkdown !== req.previousOutput) return suggestionChanged();
+    recovery = { id: req.recoveryResultId, result: original };
+  }
+  if (
+    req.recoverable &&
+    req.recordingId &&
+    !req.refineInstruction &&
+    !titleTarget &&
+    req.mode !== 'inline-rewrite'
+  ) {
+    const recovered = findRecoverableResult(db, req.noteId, req.recordingId, skillId);
+    if (recovered) return ok(recovered);
+  }
   if (titleTarget && Array.isArray(skill.allowedTools) && skill.allowedTools.length > 0) {
     return apiError(403, 'TITLE_SKILL_UNAVAILABLE', MESSAGES.TITLE_SKILL_UNAVAILABLE);
   }
-  const titleBase = titleTarget ? await selectNoteRow(db, req.noteId) : undefined;
-  if (titleTarget && (titleBase === undefined || titleBase.trashedAt !== null)) {
-    return apiError(404, 'NOT_FOUND', 'Note not found');
-  }
+  const titleBase = titleTarget ? noteBase : undefined;
 
   const includesTranscript = skill.config.inputs?.transcript === true;
   if (includesTranscript) {
@@ -460,8 +522,23 @@ export async function runSkill(
       runResult.title = title;
       runResult.titleRunId = runId;
     }
+    if (
+      ((req.recoverable && req.recordingId) || req.recoveryResultId) &&
+      !titleTarget &&
+      mode !== 'inline-rewrite'
+    ) {
+      if (req.refineInstruction) runResult.refineInstruction = req.refineInstruction;
+      runResult.resultId = saveRecoverableResult(
+        db,
+        req.noteId,
+        RunSkillResultSchema.parse(runResult),
+        recovery
+      );
+    }
+
     return ok(runResult);
   } catch (error) {
+    if (error instanceof SuggestionChanged) return suggestionChanged();
     if (deadline.aborted) {
       deps.log('skill run timed out', { skillId: skill.id, titleTarget });
       return titleTarget
@@ -480,48 +557,102 @@ export async function acceptSkillRun(db: LocalDb, body: unknown): Promise<RouteR
   const parsed = AcceptSkillRunRequestSchema.safeParse(body);
   if (!parsed.success) return invalidRequest('Invalid request');
   const data = parsed.data;
-  const note = await selectNoteRow(db, data.noteId);
-  if (note === undefined) return apiError(404, 'NOT_FOUND', 'Note not found');
-
-  let version = 1;
-  if (data.mode === 'append-section') {
-    const rows = await db
-      .select({ version: max(schema.artifact.version) })
-      .from(schema.artifact)
+  // The synchronous SQLite transaction makes artifact creation and resolution indivisible,
+  // including when a lost response causes two windows to deliver the same Keep again.
+  return db.transaction(tx => {
+    const note = tx
+      .select({ id: schema.note.id })
+      .from(schema.note)
       .where(
         and(
-          eq(schema.artifact.noteId, data.noteId),
-          eq(schema.artifact.skillId, data.skillId),
-          eq(schema.artifact.mode, data.mode)
+          eq(schema.note.id, data.noteId),
+          isNull(schema.note.deletedAt),
+          isNull(schema.note.trashedAt)
         )
-      );
-    version = (rows[0]?.version ?? 0) + 1;
-  }
-  const now = new Date().toISOString();
-  const id = createId('artifact');
-  await db.insert(schema.artifact).values({
-    id,
-    noteId: data.noteId,
-    skillId: data.skillId,
-    recordingId: data.recordingId ?? null,
-    mode: data.mode,
-    version,
-    content: data.content,
-    prevContent: data.prevContent ?? null,
-    meta: {
-      generator: 'ai',
-      modelId: data.modelId ?? null,
-      refineInstruction: data.refineInstruction ?? null,
-      selectionText: data.selectionText ?? null,
-      reasoning: data.reasoning ?? null,
-      usage: data.usage ?? null,
-      costUsd: data.costUsd ?? null,
-    },
-    createdAt: now,
-    updatedAt: now,
-    deletedAt: null,
+      )
+      .get();
+    if (!note) return apiError(404, 'NOT_FOUND', 'Note not found');
+    if (data.resultId) {
+      const saved = tx
+        .select()
+        .from(schema.noteSkillResult)
+        .where(
+          and(
+            eq(schema.noteSkillResult.id, data.resultId),
+            eq(schema.noteSkillResult.noteId, data.noteId)
+          )
+        )
+        .get();
+      if (!saved) return apiError(404, 'NOT_FOUND', 'Suggestion not found');
+      const original = RunSkillResultSchema.parse(saved.result);
+      if (
+        (saved.resolvedAt && !saved.acceptedResult) ||
+        original.rawMarkdown !== data.rawMarkdown ||
+        original.skillId !== data.skillId ||
+        original.mode !== data.mode ||
+        original.recordingId !== (data.recordingId ?? undefined)
+      ) {
+        return suggestionChanged();
+      }
+      if (saved.acceptedResult) {
+        const accepted = AcceptSkillRunResultSchema.parse(saved.acceptedResult);
+        const liveArtifact = tx.select({ id: schema.artifact.id }).from(schema.artifact).where(and(
+          eq(schema.artifact.id, accepted.artifactId),
+          eq(schema.artifact.noteId, data.noteId),
+          isNull(schema.artifact.deletedAt)
+        )).get();
+        return liveArtifact ? ok(accepted) : suggestionChanged();
+      }
+    }
+    let version = 1;
+    if (data.mode === 'append-section') {
+      const row = tx
+        .select({ version: max(schema.artifact.version) })
+        .from(schema.artifact)
+        .where(
+          and(
+            eq(schema.artifact.noteId, data.noteId),
+            eq(schema.artifact.skillId, data.skillId),
+            eq(schema.artifact.mode, data.mode)
+          )
+        )
+        .get();
+      version = (row?.version ?? 0) + 1;
+    }
+    const now = new Date().toISOString();
+    const id = createId('artifact');
+    tx.insert(schema.artifact)
+      .values({
+        id,
+        noteId: data.noteId,
+        skillId: data.skillId,
+        recordingId: data.recordingId ?? null,
+        mode: data.mode,
+        version,
+        content: data.content,
+        prevContent: data.prevContent ?? null,
+        meta: {
+          generator: 'ai',
+          modelId: data.modelId ?? null,
+          refineInstruction: data.refineInstruction ?? null,
+          selectionText: data.selectionText ?? null,
+          reasoning: data.reasoning ?? null,
+          usage: data.usage ?? null,
+          costUsd: data.costUsd ?? null,
+        },
+        createdAt: now,
+        updatedAt: now,
+        deletedAt: null,
+      })
+      .run();
+    const result = { artifactId: id, version, generatedAt: now };
+    if (data.resultId)
+      tx.update(schema.noteSkillResult)
+        .set({ resolvedAt: now, acceptedResult: result })
+        .where(eq(schema.noteSkillResult.id, data.resultId))
+        .run();
+    return ok(result);
   });
-  return ok({ artifactId: id, version, generatedAt: now });
 }
 
 /** POST /me/skill-runs/restore — undo the LATEST accept if it kept a snapshot. */

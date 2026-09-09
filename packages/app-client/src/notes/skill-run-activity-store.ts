@@ -45,6 +45,8 @@ export interface SkillRunRecord {
   instruction?: string;
   source: SkillRunSource;
   status: SkillRunStatus;
+  /** Server readiness waits are distinct from an active generation request. */
+  phase?: "running" | "waiting-transcript";
   /** Human-readable terminal note for `skipped` / `error` (already translated by the producer). */
   detail?: string;
   /** A second line under `detail` (the server's `user.body`), when there is one. */
@@ -79,6 +81,7 @@ interface SkillRunActivityState {
   begin: (
     record: Omit<SkillRunRecord, "id" | "status" | "startedAt" | "endedAt" | "anchor">,
   ) => string;
+  setPhase: (id: string, phase: NonNullable<SkillRunRecord["phase"]>) => void;
   /** Close a feed record with its terminal status (idempotent; a second call is ignored). */
   finish: (
     id: string,
@@ -153,6 +156,14 @@ export const useSkillRunActivityStore = create<SkillRunActivityState>((set) => (
     });
     return id;
   },
+
+  setPhase: (id, phase) =>
+    set((s) => {
+      const next = updateRecord(s.runsByNote, id, (r) =>
+        r.status === "running" && r.phase !== phase ? { ...r, phase } : null,
+      );
+      return next ? { runsByNote: next } : s;
+    }),
 
   finish: (id, status, detail, extra) =>
     set((s) => {

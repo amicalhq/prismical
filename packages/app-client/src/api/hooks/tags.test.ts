@@ -6,7 +6,7 @@
  * guaranteed-409 create.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { renderHook, waitFor } from "@testing-library/react";
+import { renderHook, waitFor, act } from "@testing-library/react";
 
 vi.mock("../../sync/api", () => ({
   restList: vi.fn(async () => []),
@@ -26,6 +26,9 @@ import * as api from "../../sync/api";
 import { useSyncStore } from "../../sync/provider";
 import { createSyncStore, type SyncStore } from "../../sync/store";
 import { useTags, useCreateTag, useUpdateTag, useDeleteTag } from "./tags";
+
+import { useAllNoteTags, useAddNoteTag } from "./note-tags";
+import { ApiError } from "../client";
 
 const mockedApi = vi.mocked(api);
 const mockedUseStore = vi.mocked(useSyncStore);
@@ -107,5 +110,46 @@ describe("useUpdateTag + useDeleteTag", () => {
     const { result: update } = renderHook(() => useUpdateTag());
     update.current.mutate({ id: "tag_y", patch: { name: "new name!" } });
     await waitFor(() => expect(tags.current.data![0]!.name).toBe("newname"));
+  });
+});
+
+
+describe("tag creation edge cases", () => {
+  it("does not reuse a legacy punctuation name for a distinct clean name", async () => {
+    mockedApi.restList.mockResolvedValueOnce([
+      { id: "tag_legacy", name: "follow-up", color: "#1", createdAt: "2030-01-01T00:00:00Z", updatedAt: "2030-01-01T00:00:00Z" },
+    ]);
+    const { result: tags } = renderHook(() => useTags());
+    await waitFor(() => expect(tags.current.data).toHaveLength(1));
+    const { result: create } = renderHook(() => useCreateTag());
+    let createdId = "";
+    await act(async () => { createdId = (await create.current.mutateAsync("followup")).id; });
+    expect(createdId).not.toBe("tag_legacy");
+    await waitFor(() => expect(mockedApi.restCreate).toHaveBeenCalledTimes(1));
+    expect(tags.current.data?.map(tag => tag.name)).toEqual(expect.arrayContaining(["follow-up", "followup"]));
+  });
+
+  it("rolls back rejected tag and attachment without breaking subscribed lists or later creates", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    mockedApi.restCreate.mockRejectedValueOnce(new ApiError("CONFLICT", "collision", 409));
+    mockedApi.restNoteTagCreate.mockRejectedValueOnce(new ApiError("NOT_FOUND", "missing tag", 404));
+    const { result: tags } = renderHook(() => useTags());
+    const { result: links } = renderHook(() => useAllNoteTags());
+    await waitFor(() => expect(tags.current.isSuccess && links.current.isSuccess).toBe(true));
+    const { result: create } = renderHook(() => useCreateTag());
+    const { result: add } = renderHook(() => useAddNoteTag("note_existing"));
+    await act(async () => {
+      const tag = await create.current.mutateAsync("Rejected");
+      add.current.mutate(tag.id);
+    });
+    await waitFor(() => expect(mockedApi.restNoteTagCreate).toHaveBeenCalledTimes(1));
+    await waitFor(() => {
+      expect(tags.current.data).toEqual([]);
+      expect(links.current.data).toEqual([]);
+    });
+    expect(errors.mock.calls.flat().map(String).join(" ")).not.toContain("failed to revert");
+    await act(async () => { await create.current.mutateAsync("Next"); });
+    await waitFor(() => expect(tags.current.data?.map(tag => tag.name)).toEqual(["Next"]));
+    errors.mockRestore();
   });
 });

@@ -6,6 +6,29 @@ import { projectTelemetryException } from '../../src/shared/telemetry-exception'
 afterEach(() => vi.unstubAllGlobals());
 
 describe('PostHog SDK transport boundary', () => {
+  it('writes org properties and a set-once person flag through the existing SDK queue', async () => {
+    const transport = vi.fn(async () => new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', transport);
+    const sink = makePostHogNodeSink('phc_test', 'https://telemetry.test', () => true, () => {});
+    sink.groupIdentify({
+      distinctId: 'account-a', groupType: 'organization', groupKey: 'org-a',
+      properties: { plan_external_id: 'plan_appsumo_tier_3', is_appsumo: true, appsumo_tier: 3 },
+    });
+    sink.identify({ distinctId: 'account-a', properties: { $set_once: { has_appsumo_org: true } } });
+    await sink.shutdown(2_000);
+    const options = (transport.mock.calls[0] as unknown as [string, RequestInit])[1];
+    const body = JSON.parse(gunzipSync(Buffer.from(await new Response(options.body).arrayBuffer())).toString());
+    expect(body.batch).toEqual(expect.arrayContaining([
+      expect.objectContaining({ event: '$groupidentify', distinct_id: 'account-a', properties: expect.objectContaining({
+        $group_type: 'organization', $group_key: 'org-a',
+        $group_set: { plan_external_id: 'plan_appsumo_tier_3', is_appsumo: true, appsumo_tier: 3 },
+      }) }),
+      expect.objectContaining({ event: '$identify', distinct_id: 'account-a', properties: expect.objectContaining({
+        $set: {}, $set_once: { has_appsumo_org: true },
+      }) }),
+    ]));
+  });
+
   it('sends safe exception frames with their originating renderer chunk IDs', async () => {
     const transport = vi.fn(async () => new Response('{}', { status: 200 }));
     vi.stubGlobal('fetch', transport);

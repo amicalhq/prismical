@@ -48,6 +48,8 @@ interface SegmentView {
 }
 
 interface RecordingStateView {
+  finalizingRecordingIds: string[];
+  completedRecordings: { recordingId: string; noteId: string | null; segments: number }[];
   recordingId: string | null;
   status: string;
   captureMode: string | null;
@@ -225,6 +227,8 @@ test.describe('recording IPC + transcript push', () => {
     // Inject a recording state: one transcript segment + a dual → mic degrade.
     // The full valid segment shape (strict schema on the main side).
     const recordingView: RecordingStateView = {
+      finalizingRecordingIds: [],
+      completedRecordings: [],
       recordingId: 'rec_e2e',
       status: 'recording',
       captureMode: 'mic',
@@ -294,6 +298,8 @@ test.describe('recording IPC + transcript push', () => {
     // Idle push resets the surface.
     await injectRecordingPush(page, {
       recordingId: null,
+      finalizingRecordingIds: [],
+      completedRecordings: [],
       status: 'idle',
       captureMode: null,
       requestedCaptureMode: null,

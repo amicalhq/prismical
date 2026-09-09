@@ -33,6 +33,8 @@ beforeEach(() => {
 
 const recording = (spendsCloudQuota: NativeRecordingState['spendsCloudQuota']): NativeRecordingState => ({
   recordingId: 'rec_1',
+  finalizingRecordingIds: [],
+  completedRecordings: [],
   status: 'recording',
   captureMode: 'mic',
   requestedCaptureMode: 'mic',

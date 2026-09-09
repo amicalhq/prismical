@@ -42,7 +42,7 @@ export interface SidebarNavItem {
 
 // Primary (app) navigation shown in the sidebar header. The trailing item —
 // Settings (→ Preferences) — is split out by the sidebar so it sits below the
-// command search + Home/Notes/Skills.
+// command search + Home/Notes.
 interface SidebarNavDefinition extends Omit<SidebarNavItem, 'title' | 'description'> {
   titleKey: string;
   descriptionKey?: string;
@@ -51,7 +51,6 @@ interface SidebarNavDefinition extends Omit<SidebarNavItem, 'title' | 'descripti
 const HOME_NAV_DEFINITIONS: SidebarNavDefinition[] = [
   { titleKey: 'navigation.pages.home', url: '/home', icon: House, shortcut: 'go-home' },
   { titleKey: 'navigation.pages.notes', url: '/notes', icon: NotebookText },
-  { titleKey: 'navigation.pages.skills', url: '/settings/skills', icon: Wand2 },
   {
     titleKey: 'navigation.pages.settings',
     url: '/settings/preferences',

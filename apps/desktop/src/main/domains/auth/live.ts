@@ -207,6 +207,9 @@ export const makeAuthLive = (
       // only single-flights CONCURRENT invokes across the launch window.
       const attemptRef = yield* Ref.make<AuthAttempt>(idleAttempt);
       const signInInFlightRef = yield* Ref.make(false);
+      // Serialize credential commits with sign-out, without holding a lock over OAuth I/O.
+      const signInCommitLock = yield* Effect.makeSemaphore(1);
+      let signOutGeneration = 0;
       const tokensRef = yield* Ref.make<ReadonlyMap<string, TokenSet>>(new Map());
       const inflightRef = yield* Ref.make<
         ReadonlyMap<string, Deferred.Deferred<string, RefreshError>>
@@ -368,9 +371,10 @@ export const makeAuthLive = (
 
       const completeExchange = (
         code: string,
-        verifier: string
+        verifier: string,
+        generation: number
       ): Effect.Effect<
-        void,
+        boolean,
         TokenExchangeError | TokenVerificationError | SecureStoreError | DbError
       > =>
         Effect.gen(function* () {
@@ -384,32 +388,44 @@ export const makeAuthLive = (
                 : revokeToken(tokens.refreshToken).pipe(Effect.ignore)
             )
           );
-          if (tokens.refreshToken !== null) {
-            const refreshToken = tokens.refreshToken;
-            yield* secureStore.setSecret(refreshTokenKey(identity.sub), refreshToken).pipe(
-              // Same custody rule as the verify tap above: a mint we cannot
-              // take custody of must not linger live server-side.
-              Effect.tapError(() => revokeToken(refreshToken).pipe(Effect.ignore))
-            );
-          } else {
-            yield* log.warn('exchange response had no refresh_token — session will not survive restart', { context: {
-              sub: subPrefix(identity.sub),
-            } });
-          }
-          yield* Ref.update(tokensRef, map =>
-            new Map(map).set(identity.sub, {
-              idToken: tokens.idToken,
-              accessToken: tokens.accessToken,
-              expiresAt: tokens.expiresAt,
+          const committed = yield* signInCommitLock.withPermits(1)(
+            Effect.gen(function* () {
+              if (generation !== signOutGeneration) return false;
+              if (tokens.refreshToken !== null) {
+                yield* secureStore.setSecret(refreshTokenKey(identity.sub), tokens.refreshToken);
+              } else {
+                yield* log.warn('exchange response had no refresh_token — session will not survive restart', { context: {
+                  sub: subPrefix(identity.sub),
+                } });
+              }
+              yield* Ref.update(tokensRef, map =>
+                new Map(map).set(identity.sub, {
+                  idToken: tokens.idToken,
+                  accessToken: tokens.accessToken,
+                  expiresAt: tokens.expiresAt,
+                })
+              );
+              yield* SubscriptionRef.update(sessionState, state => applySignIn(state, identity));
+              // Sign-in is committed (secret + state) — an index write failure must
+              // not fail a succeeded sign-in into 'exchange-failed'; it degrades to
+              // a logged error and self-heals on the next persist (refresh,
+              // account/org switch, sign-out).
+              yield* persistIndexLogged;
+              yield* log.info('sign-in complete', { context: { sub: subPrefix(identity.sub) } });
+              return true;
             })
+          ).pipe(
+            // Revoke a grant we could not store after releasing the local commit lock,
+            // so network cleanup cannot delay sign-out.
+            Effect.tapError(() => tokens.refreshToken === null
+              ? Effect.void
+              : revokeToken(tokens.refreshToken).pipe(Effect.ignore))
           );
-          yield* SubscriptionRef.update(sessionState, state => applySignIn(state, identity));
-          // Sign-in is committed (secret + state) — an index write failure must
-          // not fail a succeeded sign-in into 'exchange-failed'; it degrades to
-          // a logged error and self-heals on the next persist (refresh,
-          // account/org switch, sign-out).
-          yield* persistIndexLogged;
-          yield* log.info('sign-in complete', { context: { sub: subPrefix(identity.sub) } });
+          // The provider may mint credentials after the user has signed out. Never keep that grant.
+          if (!committed && tokens.refreshToken !== null) {
+            yield* revokeToken(tokens.refreshToken).pipe(Effect.ignore);
+          }
+          return committed;
         });
 
       // ----- refresh (single-flight; rotation has ZERO grace) -----------------
@@ -775,6 +791,7 @@ export const makeAuthLive = (
         readonly promptLogin?: boolean;
       }): Effect.Effect<void, AuthFlowError> =>
         Effect.gen(function* () {
+          const generation = signOutGeneration;
           const now = yield* Clock.currentTimeMillis;
           const pkce = makePkceMaterial(random);
           // Replace-don't-block: a user-driven signIn replaces any
@@ -811,6 +828,10 @@ export const makeAuthLive = (
               try: () => shell.openExternal(url),
               catch: cause => new AuthFlowError({ reason: 'browser-launch-failed', cause }),
             }).pipe(Effect.tapError(() => Ref.set(attemptRef, idleAttempt)));
+          }
+          if (generation !== signOutGeneration) {
+            yield* Ref.set(attemptRef, idleAttempt);
+            return;
           }
           yield* SubscriptionRef.update(sessionState, state =>
             state.gate === 'signed-out' || state.gate === 'offline'
@@ -892,6 +913,7 @@ export const makeAuthLive = (
             return 'rejected' as const;
           }
 
+          const generation = signOutGeneration;
           const match = yield* Ref.modify(
             attemptRef,
             (attempt): readonly [AttemptMatch, AuthAttempt] => {
@@ -903,11 +925,12 @@ export const makeAuthLive = (
           );
           switch (match._tag) {
             case 'Consume':
-              return yield* completeExchange(entry.code, match.verifier).pipe(
-                Effect.as('exchanged' as const),
+              return yield* completeExchange(entry.code, match.verifier, generation).pipe(
+                Effect.map(committed => committed ? 'exchanged' as const : 'rejected' as const),
                 Effect.catchAll(error =>
                   Effect.gen(function* () {
-                    yield* revertSigningInGate;
+                    // Cleanup from a cancelled exchange cannot roll back a newer login.
+                    if (generation === signOutGeneration) yield* revertSigningInGate;
                     if (error._tag === 'SecureStoreError' || error._tag === 'DbError') {
                       // Exchange + verify SUCCEEDED — only the local commit
                       // failed (the minted refresh token was revoked
@@ -1029,38 +1052,66 @@ export const makeAuthLive = (
 
       const signOut: AuthApi['signOut'] = sub =>
         Effect.gen(function* () {
-          const state = yield* SubscriptionRef.get(sessionState);
-          const target = sub ?? state.activeSub;
-          if (target === undefined || state.accounts[target] === undefined) return;
-          // Leave live state FIRST so an in-flight refresh cannot resurrect the
-          // account or re-persist a rotated secret (guards in runRefresh).
-          yield* SubscriptionRef.update(sessionState, current => dropAccount(current, target));
-          yield* Ref.update(tokensRef, map => {
-            const next = new Map(map);
-            next.delete(target);
-            return next;
-          });
-          yield* Ref.update(retryRef, map => {
-            const next = new Map(map);
-            next.delete(target);
-            return next;
-          });
-          // Rewrite the persisted index NEXT — it is what resurrects accounts
-          // on boot, so it must not wait behind fallible revoke/wipe steps.
-          // Bounded retry, then degrade loudly: post-revoke, a one-boot
-          // resurrection self-heals (the eager restore refresh 401s → drop).
-          yield* persistIndex.pipe(
-            Effect.retry({ times: 2 }),
-            Effect.catchAll(cause =>
-              log.error('sign-out could not rewrite the account index — may resurrect once', { error: cause })
-            )
+          const detached = yield* signInCommitLock.withPermits(1)(
+            Effect.gen(function* () {
+              const state = yield* SubscriptionRef.get(sessionState);
+              const target = sub ?? state.activeSub;
+              if (sub === undefined || target === state.activeSub) {
+                signOutGeneration += 1;
+                yield* Ref.set(attemptRef, idleAttempt);
+                // Sign-out also cancels a first login whose callback has not arrived yet.
+                if (state.activeSub === undefined) {
+                  yield* SubscriptionRef.update(sessionState, current => ({ ...current, gate: 'signed-out' as const }));
+                }
+              }
+              if (target === undefined || state.accounts[target] === undefined) return undefined;
+              // Leave live state FIRST so an in-flight refresh cannot resurrect the
+              // account or re-persist a rotated secret (guards in runRefresh).
+              yield* SubscriptionRef.update(sessionState, current => dropAccount(current, target));
+              yield* Ref.update(tokensRef, map => {
+                const next = new Map(map);
+                next.delete(target);
+                return next;
+              });
+              yield* Ref.update(retryRef, map => {
+                const next = new Map(map);
+                next.delete(target);
+                return next;
+              });
+              // Rewrite the persisted index NEXT — it is what resurrects accounts
+              // on boot, so it must not wait behind fallible revoke/wipe steps.
+              // Bounded retry, then degrade loudly: post-revoke, a one-boot
+              // resurrection self-heals (the eager restore refresh 401s → drop).
+              yield* persistIndex.pipe(
+                Effect.retry({ times: 2 }),
+                Effect.catchAll(cause =>
+                  log.error('sign-out could not rewrite the account index — may resurrect once', { error: cause })
+                )
+              );
+              const secret = yield* secureStore
+                .getSecret(refreshTokenKey(target))
+                .pipe(Effect.catchAll(() => Effect.succeed(null)));
+              // Detach the old grant before another login can store its successor.
+              // Network revocation below uses only this captured token.
+              yield* secureStore.deleteSecret(refreshTokenKey(target)).pipe(
+                Effect.retry({ times: 2 }),
+                Effect.catchAll(cause =>
+                  // Index-less (removed above), so it can never resurrect an
+                  // account — but encrypted ciphertext lingers on disk. Loud and
+                  // greppable; the invoke still resolves (state is already gone,
+                  // and a rejected invoke would offer a retry that must no-op
+                  // against the idempotency guard).
+                  log.error('sign-out left an orphaned refresh-token secret on disk', { context: { key: refreshTokenKey(target) }, error: cause })
+                )
+              );
+              return { target, secret };
+            })
           );
+          if (detached === undefined) return;
+          const { target, secret } = detached;
           // Server-side revocation kills the refresh token and its
           // child opaque access tokens; JWTs run out their ≤10 h exp. Best-effort
           // and bounded — local sign-out never hangs on the network.
-          const secret = yield* secureStore
-            .getSecret(refreshTokenKey(target))
-            .pipe(Effect.catchAll(() => Effect.succeed(null)));
           if (secret !== null) {
             yield* revokeToken(secret).pipe(
               Effect.catchAll(error =>
@@ -1074,17 +1125,6 @@ export const makeAuthLive = (
           // Deliberately NOT calling POST /api/auth/sign-out: the SSO cookie
           // lives in the system browser, so a cookie-less main-process fetch is
           // misleading noise — an accepted limitation.
-          yield* secureStore.deleteSecret(refreshTokenKey(target)).pipe(
-            Effect.retry({ times: 2 }),
-            Effect.catchAll(cause =>
-              // Index-less (removed above), so it can never resurrect an
-              // account — but encrypted ciphertext lingers on disk. Loud and
-              // greppable; the invoke still resolves (state is already gone,
-              // and a rejected invoke would offer a retry that must no-op
-              // against the idempotency guard).
-              log.error('sign-out left an orphaned refresh-token secret on disk', { context: { key: refreshTokenKey(target) }, error: cause })
-            )
-          );
           yield* log.info('signed out', { context: { sub: subPrefix(target) } });
         });
 

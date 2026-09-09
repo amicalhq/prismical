@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildSkillSystemPrompt } from './system-prompt.js';
 import { SUBMIT_OUTPUT_TOOL } from './types.js';
+import { ENHANCE_SKILL } from '../system-skills.js';
 import type { RunnableSkill } from './skill.js';
 import type { SkillNoteInput } from './note-input.js';
 
@@ -187,13 +188,13 @@ describe('buildSkillSystemPrompt', () => {
         transcript: 'Speaker 1: The timeline looks tight.\nSpeaker 2: I will adjust the plan.',
       });
       const replacement = buildSkillSystemPrompt({
-        skill: skill(),
+        skill: { ...ENHANCE_SKILL, allowedTools: null },
         mode: 'replace-doc',
         input,
         enhanceLane: true,
       });
       const addition = buildSkillSystemPrompt({
-        skill: skill(),
+        skill: { ...ENHANCE_SKILL, allowedTools: null },
         mode: 'append-section',
         input,
         enhanceLane: true,
@@ -213,7 +214,7 @@ describe('buildSkillSystemPrompt', () => {
 
     it('keeps source fidelity when refining a draft with unsupported claims', () => {
       const prompt = buildSkillSystemPrompt({
-        skill: skill(),
+        skill: { ...ENHANCE_SKILL, allowedTools: null },
         mode: 'replace-doc',
         input: note({ transcript: 'Speaker 1: A proposal.' }),
         enhanceLane: true,
@@ -236,18 +237,27 @@ describe('buildSkillSystemPrompt', () => {
       expect(prompt).toContain('You are a helpful enhancer.');
     });
 
-    it("REPLACES the skill body with the lane preamble (the stored body's self-contained-chunk contract contradicts the lane)", () => {
-      const p = buildSkillSystemPrompt({
-        skill: skill(),
-        mode: 'replace-doc',
-        input: note({ transcript: 'you: shipped it' }),
-        enhanceLane: true,
-      });
-      expect(p).not.toContain('You are a helpful enhancer.');
-      expect(p).toContain('MEETING');
-      expect(p).toContain('VOICE NOTE');
-      expect(p).toContain('trust the content over the labels');
-    });
+    it.each(['replace-doc', 'append-section'] as const)(
+      'uses the loaded body in %s, so stored prompt edits reach recording runs',
+      mode => {
+        const loaded = {
+          ...ENHANCE_SKILL,
+          body: 'Use my updated stored instructions.',
+          allowedTools: null,
+        };
+        const prompt = buildSkillSystemPrompt({
+          skill: loaded,
+          mode,
+          input: note(),
+          enhanceLane: true,
+        });
+        expect(prompt.startsWith(loaded.body)).toBe(true);
+        expect(prompt).not.toContain('QUICK NOTE');
+        expect(prompt).not.toContain('# Source fidelity');
+        expect(prompt).toContain(`# Active mode: ${mode}`);
+        expect(prompt).toContain(SUBMIT_OUTPUT_TOOL);
+      }
+    );
 
     it('replace-doc: compiles the whole note + recording into one document (preserve the notes)', () => {
       const p = buildSkillSystemPrompt({
@@ -271,6 +281,46 @@ describe('buildSkillSystemPrompt', () => {
       expect(p).toContain('# Active mode: append-section');
       expect(p).toContain('do NOT regenerate, restate, or');
       expect(p).toContain('new self-contained section for THIS recording');
+    });
+
+    it('uses the same quick-note and thin-content policy in scoped and canonical note-only Enhance', () => {
+      const input = note({ noteText: 'Keep reference Q3-71.', transcript: 'You: Hello.' });
+      const scoped = buildSkillSystemPrompt({
+        skill: { ...ENHANCE_SKILL, allowedTools: null },
+        mode: 'replace-doc',
+        input,
+        enhanceLane: true,
+      });
+      const noteOnly = buildSkillSystemPrompt({
+        skill: { ...ENHANCE_SKILL, allowedTools: null },
+        mode: 'replace-doc',
+        input: { ...input, transcript: undefined },
+      });
+      for (const prompt of [scoped, noteOnly]) {
+        expect(prompt).toContain('QUICK NOTE');
+        expect(prompt).toContain('Never return empty or whitespace-only markdown.');
+        expect(prompt).toContain('Keep reference Q3-71.');
+      }
+      expect(noteOnly).not.toContain('# Recording transcript');
+      expect(scoped.startsWith(ENHANCE_SKILL.body)).toBe(true);
+      expect(noteOnly.startsWith(ENHANCE_SKILL.body)).toBe(true);
+      expect(noteOnly).toContain('# Source fidelity');
+      expect(scoped).not.toContain('The output is a self-contained note.');
+    });
+
+    it('does not force a heading in the scoped append mode after requesting a quick note', () => {
+      const prompt = buildSkillSystemPrompt({
+        skill: skill(),
+        mode: 'append-section',
+        input: note({ transcript: 'You: Buy rice.' }),
+        enhanceLane: true,
+      });
+      const modeBlock = prompt
+        .split('# Active mode: append-section')[1]!
+        .split('# Markdown rules')[0]!;
+      expect(modeBlock).toContain('without a heading');
+      expect(modeBlock).not.toContain('Start with');
+      expect(modeBlock).toContain('do not import its unrelated facts');
     });
 
     it('forces the mode block even when the skill is mode-agnostic (Enhance output differs by mode)', () => {

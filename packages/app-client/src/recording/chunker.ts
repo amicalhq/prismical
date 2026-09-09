@@ -2,26 +2,23 @@
 // minimum, cut at the first quiet window after it (so we don't slice mid-word), hard cut at
 // the chunk's maximum. Plain RMS threshold — deliberately no ML VAD in this implementation.
 //
-// Warm-up ramp: the minimum sets how soon a chunk's transcript can
-// appear, and batching dominates perceived latency. So the
-// first chunks cut early — ~1s, ~2s — ramping to the steady-state minimum within the warm-up
-// window. Users see the first line in ~2s ("it's working"), and once trust is established the
-// steady cadence (3s min) is fine. Warm-up chunks also get a tighter hard cap so continuous
-// speech can't defer the first line to the 15s force-cut.
+// Give isolated transcription requests enough speech context before the first result.
+// The first chunk has a tighter cap to bound initial latency; subsequent chunks
+// keep the same minimum and wait longer for a natural pause.
 
 export interface ChunkerProfile {
-  /** Seconds from recording start during which the ramp applies. */
+  /** Maximum recording age at which the first-chunk timing applies. */
   warmupWindowS: number;
-  /** Minimum length of the FIRST chunk; doubles per chunk until it reaches steadyMinS. */
+  /** Minimum length of the first chunk. */
   warmupMinS: number;
-  /** Minimum chunk length after the ramp. */
+  /** Minimum chunk length after the first chunk. */
   steadyMinS: number;
-  /** Hard cut for steady-state chunks (warm-up chunks cap at their min + 2s). */
+  /** Hard cut for steady-state chunks (the first chunk caps at its min + 2s). */
   maxS: number;
 }
 
 const envNumber = (raw: string | undefined, fallback: number): number => {
-  const n = raw === undefined || raw === "" ? NaN : Number(raw);
+  const n = raw === undefined || raw === '' ? NaN : Number(raw);
   return Number.isFinite(n) && n > 0 ? n : fallback;
 };
 
@@ -29,11 +26,14 @@ const envNumber = (raw: string | undefined, fallback: number): number => {
 // (the browser client transpiles app-client from source). The typeof guard keeps non-Next hosts
 // (desktop renderer) on the code defaults. Changing these on web = rebuild + redeploy.
 export function defaultChunkerProfile(): ChunkerProfile {
-  const env = typeof process !== "undefined";
+  const env = typeof process !== 'undefined';
   return {
-    warmupWindowS: envNumber(env ? process.env.NEXT_PUBLIC_TRANSCRIBE_WARMUP_WINDOW_S : undefined, 10),
-    warmupMinS: envNumber(env ? process.env.NEXT_PUBLIC_TRANSCRIBE_WARMUP_MIN_S : undefined, 1),
-    steadyMinS: envNumber(env ? process.env.NEXT_PUBLIC_TRANSCRIBE_MIN_S : undefined, 3),
+    warmupWindowS: envNumber(
+      env ? process.env.NEXT_PUBLIC_TRANSCRIBE_WARMUP_WINDOW_S : undefined,
+      10
+    ),
+    warmupMinS: envNumber(env ? process.env.NEXT_PUBLIC_TRANSCRIBE_WARMUP_MIN_S : undefined, 4),
+    steadyMinS: envNumber(env ? process.env.NEXT_PUBLIC_TRANSCRIBE_MIN_S : undefined, 4),
     maxS: envNumber(env ? process.env.NEXT_PUBLIC_TRANSCRIBE_MAX_S : undefined, 15),
   };
 }
@@ -71,12 +71,12 @@ export class ChunkBoundaryPicker {
     return this.samples > 0 ? this.take() : null;
   }
 
-  /** [min, max] seconds for the chunk being accumulated: 1s, 2s, … doubling up to steady. */
+  /** Only the first chunk gets the shorter latency cap. */
   private bounds(): [number, number] {
     const { warmupWindowS, warmupMinS, steadyMinS, maxS } = this.profile;
     const elapsedS = this.totalSamples / this.sampleRate;
-    const warm = elapsedS < warmupWindowS;
-    const minS = warm ? Math.min(steadyMinS, warmupMinS * 2 ** this.chunkOrdinal) : steadyMinS;
+    const warm = this.chunkOrdinal === 0 && elapsedS < warmupWindowS;
+    const minS = warm ? Math.min(steadyMinS, warmupMinS) : steadyMinS;
     return [minS, warm ? Math.min(minS + 2, maxS) : maxS];
   }
 

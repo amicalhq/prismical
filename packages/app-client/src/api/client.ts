@@ -199,9 +199,10 @@ export const apiClient = {
       activeOrgId: opts?.activeOrgId,
       authToken: opts?.authToken,
     }),
-  put: async <T>(path: string, body: unknown, opts?: OrgOpt): Promise<T> =>
+  put: async <T>(path: string, body: unknown, opts?: OrgOpt & { signal?: AbortSignal }): Promise<T> =>
     request<T>("PUT", path, {
       body,
+      signal: opts?.signal,
       activeOrgId: opts?.activeOrgId,
       authToken: opts?.authToken,
     }),
@@ -224,9 +225,14 @@ export const apiClient = {
       authToken: opts?.authToken,
     }),
   /** GET with session cookies for routes that support cookie authentication. */
-  getRaw: <T>(path: string, query?: QueryParams, opts?: OrgOpt): Promise<T> =>
+  getRaw: <T>(
+    path: string,
+    query?: QueryParams,
+    opts?: OrgOpt & { signal?: AbortSignal },
+  ): Promise<T> =>
     request<T>("GET", path, {
       query,
+      signal: opts?.signal,
       credentials: true,
       activeOrgId: opts?.activeOrgId,
       authToken: opts?.authToken,

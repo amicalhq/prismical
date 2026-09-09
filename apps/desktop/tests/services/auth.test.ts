@@ -1065,6 +1065,117 @@ describe('AuthService', () => {
     })
   );
 
+  it.effect('signOut stays signed out when a pending browser launch completes', () =>
+    Effect.scoped(Effect.gen(function* () {
+      const { layer } = build(makeFetchStub(happyHandler()));
+      const auth = Context.get(yield* Layer.build(layer), AuthService);
+      let release!: () => void;
+      const browser = vi.spyOn(fake.shell, 'openExternal').mockImplementationOnce(() =>
+        new Promise<void>(resolve => { release = resolve; })
+      );
+      try {
+        const launch = yield* Effect.fork(auth.signIn());
+        yield* awaitCallCount(() => browser.mock.calls, 1, 'browser launch is pending');
+        yield* auth.signOut();
+        release();
+        yield* Fiber.join(launch);
+        assert.isNull(yield* auth.pendingAttemptState);
+        assert.strictEqual((yield* SubscriptionRef.get(auth.sessionState)).gate, 'signed-out');
+      } finally {
+        browser.mockRestore();
+      }
+    }))
+  );
+
+  it.effect('signOut cancels a parked first login and a fresh explicit login still works', () =>
+    Effect.scoped(Effect.gen(function* () {
+      const stub = makeFetchStub(happyHandler());
+      const { layer } = build(stub);
+      const ctx = yield* Layer.build(layer);
+      const auth = Context.get(ctx, AuthService);
+      yield* auth.signIn();
+      yield* auth.signOut();
+      assert.isNull(yield* auth.pendingAttemptState);
+      assert.strictEqual((yield* SubscriptionRef.get(auth.sessionState)).gate, 'signed-out');
+      const callback = { _tag: 'OAuthCallback' as const, code: 'code-1', state: expectedState, receivedAt: Date.now() };
+      assert.strictEqual(yield* auth.consumePendingEntry(callback), 'rejected');
+      assert.lengthOf(stub.exchangeCalls(), 0);
+      yield* auth.signIn();
+      assert.strictEqual(yield* auth.consumePendingEntry(callback), 'exchanged');
+      assert.strictEqual((yield* SubscriptionRef.get(auth.sessionState)).gate, 'signed-in');
+    }))
+  );
+
+  for (const alreadySignedIn of [false, true]) {
+    it.effect(`signOut rejects and revokes a late OAuth exchange (existing account: ${alreadySignedIn})`, () =>
+      Effect.scoped(Effect.gen(function* () {
+        const stub = makeFetchStub(happyHandler());
+        const { layer } = build(stub);
+        const ctx = yield* Layer.build(layer);
+        const auth = Context.get(ctx, AuthService);
+        const store = Context.get(ctx, SecureStore);
+        const callback = { _tag: 'OAuthCallback' as const, code: 'code-1', state: expectedState, receivedAt: Date.now() };
+        if (alreadySignedIn) {
+          yield* auth.signIn();
+          assert.strictEqual(yield* auth.consumePendingEntry(callback), 'exchanged');
+        }
+        let release!: () => void;
+        const responseGate = new Promise<void>(resolve => { release = resolve; });
+        stub.handler = async (url, body) => {
+          if (body['grant_type'] === 'authorization_code') {
+            await responseGate;
+            return jsonResponse(await tokenBody({ refreshToken: SENTINEL_REFRESH_2 }));
+          }
+          return happyHandler()(url, body);
+        };
+        yield* auth.signIn();
+        const exchange = yield* Effect.fork(auth.consumePendingEntry(callback));
+        yield* awaitCallCount(stub.exchangeCalls, alreadySignedIn ? 2 : 1, 'code exchange is in flight');
+        yield* auth.signOut();
+        release();
+        assert.strictEqual(yield* Fiber.join(exchange), 'rejected');
+        assert.deepStrictEqual((yield* SubscriptionRef.get(auth.sessionState)).accounts, {});
+        assert.strictEqual((yield* SubscriptionRef.get(auth.sessionState)).gate, 'signed-out');
+        assert.isNull(yield* store.getSecret('auth.refreshToken.user_1'));
+        assert.deepStrictEqual(stub.revokeCalls().map(call => call.body['token']),
+          alreadySignedIn ? [SENTINEL_REFRESH_1, SENTINEL_REFRESH_2] : [SENTINEL_REFRESH_2]);
+      }))
+    );
+  }
+
+  it.effect('signOut cannot delete a fresh same-account login while its old revoke is pending', () =>
+    Effect.scoped(Effect.gen(function* () {
+      const stub = makeFetchStub(happyHandler());
+      const { layer } = build(stub);
+      const ctx = yield* Layer.build(layer);
+      const auth = Context.get(ctx, AuthService);
+      const store = Context.get(ctx, SecureStore);
+      const callback = { _tag: 'OAuthCallback' as const, code: 'code-1', state: expectedState, receivedAt: Date.now() };
+      yield* auth.signIn();
+      assert.strictEqual(yield* auth.consumePendingEntry(callback), 'exchanged');
+
+      let release!: () => void;
+      const blockedRevoke = new Promise<void>(resolve => { release = resolve; });
+      stub.handler = async (url, body) => {
+        if (url === AUTH.revokeUrl) await blockedRevoke;
+        return happyHandler({ exchange: { refreshToken: SENTINEL_REFRESH_2 } })(url, body);
+      };
+      const logout = yield* Effect.fork(auth.signOut());
+      yield* awaitCallCount(stub.revokeCalls, 1, 'old token revocation is pending');
+      try {
+        yield* auth.signIn();
+        assert.strictEqual(yield* auth.consumePendingEntry(callback), 'exchanged');
+        assert.strictEqual(yield* store.getSecret('auth.refreshToken.user_1'), SENTINEL_REFRESH_2);
+      } finally {
+        release();
+      }
+      yield* Fiber.join(logout);
+      assert.strictEqual(yield* store.getSecret('auth.refreshToken.user_1'), SENTINEL_REFRESH_2);
+      assert.strictEqual((yield* SubscriptionRef.get(auth.sessionState)).gate, 'signed-in');
+      assert.deepStrictEqual(stub.revokeCalls().map(call => call.body['token']), [SENTINEL_REFRESH_1]);
+    }))
+  );
+
   // Regression: the earlier logout did not revoke the token server-side.
   it.effect('signOut revokes server-side, wipes the secret, and drops the account', () =>
     Effect.gen(function* () {
@@ -1912,6 +2023,43 @@ describe('AuthService', () => {
   // ---------------------------------------------------------------------------
   // completeExchange post-mint local failures.
   // ---------------------------------------------------------------------------
+
+  it.effect('failed credential storage cannot hold sign-out behind token revocation', () =>
+    Effect.scoped(Effect.gen(function* () {
+      let release!: () => void;
+      const blockedRevoke = new Promise<void>(resolve => { release = resolve; });
+      const stub = makeFetchStub(async (url, body) => {
+        if (url === AUTH.revokeUrl) await blockedRevoke;
+        return happyHandler()(url, body);
+      });
+      const { layer } = build(stub, {}, {
+        decorateSecureStore: real => ({
+          ...real,
+          setSecret: () => Effect.fail(new SecureStoreError({ reason: 'unavailable' })),
+        }),
+      });
+      const auth = Context.get(yield* Layer.build(layer), AuthService);
+      yield* auth.signIn();
+      const exchange = yield* Effect.fork(auth.consumePendingEntry({
+        _tag: 'OAuthCallback', code: 'code-1', state: expectedState, receivedAt: Date.now(),
+      }));
+      yield* awaitCallCount(stub.revokeCalls, 1, 'compensation revoke is in flight');
+      const logout = yield* Effect.fork(auth.signOut());
+      try {
+        yield* flush;
+        assert.strictEqual((yield* SubscriptionRef.get(auth.sessionState)).gate, 'signed-out');
+        assert.isTrue(Option.isSome(yield* Fiber.poll(logout)), 'sign-out completed before revoke');
+        yield* auth.signIn();
+      } finally {
+        release();
+      }
+      assert.strictEqual(yield* Fiber.join(exchange), 'persist-failed');
+      yield* Fiber.join(logout);
+      assert.strictEqual((yield* SubscriptionRef.get(auth.sessionState)).gate, 'signing-in');
+      assert.strictEqual(yield* auth.pendingAttemptState, expectedState);
+      assert.lengthOf(stub.revokeCalls(), 1);
+    }))
+  );
 
   it.effect('exchange setSecret failure revokes the minted refresh token and reports persist-failed', () =>
     Effect.gen(function* () {

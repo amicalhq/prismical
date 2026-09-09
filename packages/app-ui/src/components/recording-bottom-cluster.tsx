@@ -38,6 +38,7 @@ import { useRecordingDocumentTitle } from '../hooks/use-recording-document-title
 import { useRecordingElapsed } from '../hooks/use-recording-elapsed';
 import { AnimatedWidth } from './animated-width';
 import { TranscriptPanel, type RecordingLog } from './transcript-panel';
+import { RecordingSkillStatus } from './recording-skill-status';
 import { AskPillFace, ASK_PILL_WIDTH } from './ask/ask-dock-pill';
 import type { ComposerSkill } from './ask/ask-composer';
 import { useAskSkillRunStore } from '@prismical/app-client';
@@ -123,7 +124,8 @@ export function RecordingBottomCluster({
   const rec = useRecording({ handleCompletion: true, skipAutoEnhanceForNote: tour?.noteId });
   const walkthroughEvent = useWalkthroughEvent();
   React.useEffect(() => {
-    if (rec.error) walkthroughEvent({ type: 'error', noteId: currentNote?.noteId, code: 'recording_failed' });
+    if (rec.error)
+      walkthroughEvent({ type: 'error', noteId: currentNote?.noteId, code: 'recording_failed' });
   }, [rec.error, currentNote?.noteId, walkthroughEvent]);
   React.useEffect(() => {
     if (rec.isRecording && rec.noteId && rec.recordingId)
@@ -153,6 +155,8 @@ export function RecordingBottomCluster({
   // parked (no partial-data refetch mid-stop) and the live lines keep showing.
   const liveActive = sessionActive || rec.state === 'stopping';
   const noteId = currentNote?.noteId ?? null;
+  const captureActive = liveActive || rec.state === 'starting';
+  const recordingAway = captureActive && !!rec.noteId && rec.noteId !== noteId;
 
   // Dead-mic capture (micSilent): the OS is feeding the browser pure silence — usually a
   // revoked/wedged system-level mic permission, which getUserMedia does NOT error on (the
@@ -368,7 +372,7 @@ export function RecordingBottomCluster({
   // flip is invisible (staleTime 30s, no focus refetch) and the lifecycle would never start.
   const anyIdentifying = recs.some(r => recordingIsProcessing(finalizePhase(r)));
   const [settleUntil, setSettleUntil] = React.useState<number | null>(null);
-  const finishedRecordingId = rec.recordingId;
+  const finishedRecordingId = rec.noteId === noteId ? rec.recordingId : null;
   // The just-finished session, WITH a timestamp: rec.recordingId survives for the
   // whole SPA session, but the panel's Saved→Ready bar sequence must only run for
   // a recording that stopped moments ago — not re-play hours later when the user
@@ -554,31 +558,20 @@ export function RecordingBottomCluster({
 
   const toggleTranscription = () => setExpandedUnit(p => (p === 'rec' ? null : 'rec'));
 
-  // Reset transient, note-scoped panel state whenever the note in view changes (incl. leaving a
-  // note entirely — noteId becomes null). The transcript gives up the slot; Ask keeps it.
-  const stopRef = React.useRef(rec.stop);
-  stopRef.current = rec.stop;
-  // The note the live session is bound to — a retained snapshot (id + title). A recording is bound to
-  // the note it started on, but it must SURVIVE navigating off that note to a non-note page (Settings,
-  // Home, People, …): it keeps capturing in the background, and the dock shows a "Recording · <title>"
-  // pill with FULL controls (pause·wave·timer·stop) that can also expand its panel. Only switching to a *different* note stops it;
-  // noteId→null (off-note) and returning to the same note do not. Seeded when the session goes live,
-  // kept fresh while on the recording's own note (title edits), cleared when it ends. `sessionNoteIdRef`
-  // mirrors the id for the synchronous stop-gate below (a ref avoids a stale-closure read on noteId change).
+  // Retain the capture owner across navigation, including while the microphone opens.
+  // Only the active session owns the global recording dock; stopped transcripts and
+  // skill review remain scoped to the note in view.
   const [recordingNote, setRecordingNote] = React.useState<{
     noteId: string;
     title: string;
   } | null>(null);
-  const sessionNoteIdRef = React.useRef<string | null>(null);
   /** Set right before the stop-triggered navigation back to the recording's note. */
   const autoNavNoteIdRef = React.useRef<string | null>(null);
   React.useEffect(() => {
-    if (!liveActive && rec.state !== 'starting') {
-      sessionNoteIdRef.current = null;
+    if (!captureActive) {
       setRecordingNote(null);
       return;
     }
-    sessionNoteIdRef.current = rec.noteId;
     if (rec.noteId && currentNote?.noteId !== rec.noteId) {
       setRecordingNote(previous =>
         previous?.noteId === rec.noteId
@@ -589,10 +582,10 @@ export function RecordingBottomCluster({
             }
       );
     }
-    if (currentNote && currentNote.noteId === sessionNoteIdRef.current) {
+    if (currentNote && currentNote.noteId === rec.noteId) {
       setRecordingNote({ noteId: currentNote.noteId, title: currentNote.title });
     }
-  }, [liveActive, currentNote, rec.noteId, rec.state, t]);
+  }, [captureActive, currentNote, rec.noteId, t]);
 
   // The tab title carries the session for anyone who has tabbed away. Reads
   // off `recordingNote` rather than `currentNote` so it keeps naming the RECORDING's note after
@@ -618,23 +611,16 @@ export function RecordingBottomCluster({
     }
     setRecMaxi(false);
     setRecentlyFinished(null);
+    setSettleUntil(null);
     setExpandedUnit(p => (p === 'rec' ? null : p));
-    // Stop only when moving to a DIFFERENT note mid-session — never when leaving to a non-note page
-    // (noteId null) or returning to the recording's own note, so background recording persists.
-    if (
-      sessionNoteIdRef.current !== null &&
-      noteId !== null &&
-      noteId !== sessionNoteIdRef.current
-    ) {
-      void stopRef.current();
-    }
     // Ask gestures belong to the page being left. Recording enhancement keeps
     // its immutable owner and waits until that note editor is available.
     useAskSkillRunStore.getState().clear();
   }, [noteId]);
 
   // Live session lines while recording (the rolling log takes over once stopped).
-  const liveLines = rec.liveSegments.map(s =>
+  const sessionVisible = captureActive || rec.noteId === noteId;
+  const liveLines = (sessionVisible ? rec.liveSegments : []).map(s =>
     segmentToLine(s, rec.startedAt, undefined, transcriptPresentation)
   );
 
@@ -652,11 +638,13 @@ export function RecordingBottomCluster({
   // back to the persisted log + idle bar rather than pinning "Finishing up…"
   // forever — the bar is now the only Start affordance.
   const showLiveTranscript =
-    liveActive ||
-    (!!finishedId && liveLines.length > 0 && !persistedHasFinished && settleUntil !== null);
+    sessionVisible &&
+    (liveActive ||
+      (!!finishedId && liveLines.length > 0 && !persistedHasFinished && settleUntil !== null));
   // True once the session has ended but we're still bridging on live lines (finalize + refetch in
   // flight) — the footer says "Finishing up…" rather than a misleading "Listening…".
-  const isFinishing = showLiveTranscript && !sessionActive;
+  const isFinishing =
+    sessionVisible && (rec.isFinalizing || (showLiveTranscript && !sessionActive));
 
   // Web-only auto-start. Wait for the optimistic note's server echo before
   // creating its recording, or the recording can race the note foreign key.
@@ -670,7 +658,10 @@ export function RecordingBottomCluster({
   // pill/banner instead of dying in the float view's separate hook instance.
   React.useEffect(() => {
     if (!autoStartNoteId || !currentNote || currentNote.noteId !== autoStartNoteId) return;
-    if (rec.state !== 'idle') {
+    if (
+      rec.state !== 'idle' ||
+      useSkillDiffStore.getState().candidatesByNote.has(currentNote.noteId)
+    ) {
       onAutoStartConsumed?.();
       return;
     }
@@ -704,6 +695,7 @@ export function RecordingBottomCluster({
         if (
           cancelled ||
           note?.noteId !== noteId ||
+          useSkillDiffStore.getState().candidatesByNote.has(noteId) ||
           !getRecordingPreferences().autoTranscribeNewNotes
         ) {
           return;
@@ -729,7 +721,12 @@ export function RecordingBottomCluster({
   }, [noteId, rec.state, recording.control, syncStore, t]);
 
   const onStart = () => {
-    if (!currentNote) return;
+    if (
+      rec.state !== 'idle' ||
+      !currentNote ||
+      useSkillDiffStore.getState().candidatesByNote.has(currentNote.noteId)
+    )
+      return;
     void rec.start(currentNote.noteId, currentNote.title || t('recording.untitledRecording'));
     setExpandedUnit('rec');
     analytics.capture(EVENTS.RECORDING_STARTED, { note_id: currentNote.noteId });
@@ -737,37 +734,36 @@ export function RecordingBottomCluster({
   // Both captures gate on the resolved outcome: a guard-rejected double-click or a failed
   // resume must not inflate the pause/resume counts.
   const onPause = () => {
-    const props = { note_id: currentNote?.noteId ?? null, recording_id: rec.recordingId };
+    const props = { note_id: rec.noteId, recording_id: rec.recordingId };
     void rec.pause().then(ok => {
       if (ok) analytics.capture(EVENTS.RECORDING_PAUSED, props);
     });
   };
   const onResume = () => {
-    const props = { note_id: currentNote?.noteId ?? null, recording_id: rec.recordingId };
+    const props = { note_id: rec.noteId, recording_id: rec.recordingId };
     void rec.resume().then(ok => {
       if (ok) analytics.capture(EVENTS.RECORDING_RESUMED, props);
     });
   };
-  const returnToAfterStopRef = React.useRef<{ recordingId: string; noteId: string } | null>(null);
-  const completedIdsRef = React.useRef(new Set<string>());
-  React.useEffect(() => {
-    const finished = rec.completedRecording;
-    if (!finished || completedIdsRef.current.has(finished.recordingId)) return;
-    completedIdsRef.current.add(finished.recordingId);
-    const targetNoteId = finished.noteId;
-    const returnTo = returnToAfterStopRef.current;
-    if (returnTo?.recordingId === finished.recordingId) {
-      returnToAfterStopRef.current = null;
+  const onStop = (opts?: { returnToNote?: boolean }) => {
+    if (!sessionActive) return;
+    const targetNoteId = rec.noteId;
+    const away = !!targetNoteId && targetNoteId !== noteId;
+    void rec.stop();
+    if (!away) return;
+    if (opts?.returnToNote ?? true) {
+      // Navigate on the gesture, never on a delayed upload/completion event.
       autoNavNoteIdRef.current = targetNoteId;
       router.push(`/notes/${targetNoteId}`);
+    } else {
+      toast.info(t('recording.away.stopped'), {
+        description: recordingNote?.title,
+        action: {
+          label: t('recording.away.goToNote'),
+          onClick: () => router.push(`/notes/${targetNoteId}`),
+        },
+      });
     }
-  }, [rec.completedRecording, router]);
-
-  const onStop = (opts?: { returnToNote?: boolean }) => {
-    if ((opts?.returnToNote ?? true) && !currentNote && rec.recordingId && rec.noteId) {
-      returnToAfterStopRef.current = { recordingId: rec.recordingId, noteId: rec.noteId };
-    }
-    void rec.stop();
   };
 
   // Auto-stop: the hook detects the deadline, but the stop runs through the SAME
@@ -843,10 +839,10 @@ export function RecordingBottomCluster({
         <RecordingNoticeCard
           title={
             session
-              // Keyed on the MARK, not on live seconds: the card is raised once and sonner
-              // renders the JSX captured here, so a live figure would freeze at whatever it was
-              // when the card went up and read as a stopped clock for the next ten minutes.
-              ? t('recording.errors.limitSoon', {
+              ? // Keyed on the MARK, not on live seconds: the card is raised once and sonner
+                // renders the JSX captured here, so a live figure would freeze at whatever it was
+                // when the card went up and read as a stopped clock for the next ten minutes.
+                t('recording.errors.limitSoon', {
                   minutes: Math.round(warning.thresholdSeconds / 60),
                 })
               : t('recording.budget.quotaSoon', {
@@ -868,7 +864,7 @@ export function RecordingBottomCluster({
             session
               ? {
                   label: t('recording.budget.stopNow'),
-                  onClick: () => onStopRef.current({ returnToNote: false }),
+                  onClick: () => onStopRef.current(),
                   emphasis: true,
                 }
               : {
@@ -970,6 +966,7 @@ export function RecordingBottomCluster({
           panel's height. transition-[opacity,translate]: Tailwind v4's
           translate-y-* is the NATIVE translate property. */}
       <div
+        data-toast-obstacle={showErrorPill ? '' : undefined}
         role={showErrorPill ? 'alert' : undefined}
         aria-hidden={!showErrorPill}
         // inset-x + mx-auto + w-fit, NOT left-1/2/-translate-x-1/2: an abs-pos
@@ -1033,14 +1030,13 @@ export function RecordingBottomCluster({
             of snapping it — the skill slot rides INSIDE that wrapper so the
             page morph slides the combined width rather than popping the skill pill. */}
         <div
+          data-toast-obstacle=""
           className={`pointer-events-auto relative flex items-end ${compact ? 'gap-1.5' : 'gap-2'}`}
         >
           <AnimatedWidth
-            contentKey={
-              currentNote ? 'note' : liveActive && recordingNote ? 'recording-away' : 'list'
-            }
+            contentKey={recordingAway ? 'recording-away' : currentNote ? 'note' : 'list'}
           >
-            {currentNote ? (
+            {currentNote && !recordingAway ? (
               <div
                 className="flex items-end gap-2"
                 style={
@@ -1058,6 +1054,11 @@ export function RecordingBottomCluster({
                   panelHeight={panelHeight(recMaxi, 'rec')}
                   pill={
                     <RecordingPillFace
+                      startBlockedReason={
+                        hasStagedCandidate
+                          ? t('recording.actions.reviewBeforeRecording')
+                          : undefined
+                      }
                       recState={rec.state}
                       canPause={rec.canPause}
                       isPanelOpen={isTranscriptionOpen}
@@ -1076,15 +1077,31 @@ export function RecordingBottomCluster({
                       pauseReason={rec.pauseReason}
                       isFinishing={isFinishing}
                       liveLines={liveLines}
+                      activeRecordingId={sessionVisible ? rec.recordingId : null}
+                      skillStatus={(fallback, hideCompleted) => (
+                        <RecordingSkillStatus
+                          hideCompleted={hideCompleted}
+                          noteId={currentNote.noteId}
+                          onReviewInNote={() => setExpandedUnit(null)}
+                        >
+                          {fallback}
+                        </RecordingSkillStatus>
+                      )}
                       recordings={recordingLogs}
                       onEnhanceRecording={onEnhanceRecording}
                       onRenameSpeaker={onRenameSpeaker}
                       isExpanded={recMaxi}
                       onToggleExpanded={() => setRecMaxi(v => !v)}
                       onClose={() => setExpandedUnit(null)}
+                      startBlockedReason={
+                        hasStagedCandidate
+                          ? t('recording.actions.reviewBeforeRecording')
+                          : undefined
+                      }
                       recState={rec.state}
                       canPause={rec.canPause}
                       elapsedSeconds={elapsedSeconds}
+                      hideStartRecording={!!activeRun && !hasStagedCandidate}
                       onStartRecording={onStart}
                       onStopRecording={onStop}
                       onPauseRecording={onPause}
@@ -1137,7 +1154,7 @@ export function RecordingBottomCluster({
                   </DockRowmate>
                 }
               </div>
-            ) : liveActive && recordingNote ? (
+            ) : captureActive && recordingNote ? (
               // Off the recording's note: the SAME live pill with full
               // controls — pause · wave · timer · stop — and the panel still
               // expands on the live transcript, with a "Go to note" jump in its
@@ -1164,11 +1181,13 @@ export function RecordingBottomCluster({
                 panel={
                   <TranscriptPanel
                     key={`away-${recordingNote.noteId}`}
+                    recordingNoteTitle={recordingNote.title}
                     isRecording={showLiveTranscript}
                     isPaused={rec.isPaused}
                     pauseReason={rec.pauseReason}
                     isFinishing={isFinishing}
                     liveLines={liveLines}
+                    activeRecordingId={sessionVisible ? rec.recordingId : null}
                     recordings={[]}
                     onEnhanceRecording={() => {}}
                     isExpanded={recMaxi}

@@ -95,6 +95,7 @@ export const LocalBackendLive: Layer.Layer<
       locale,
       log: (message, data) => unsafeLog.info(message, { context: data }),
       titleLock: makeSerialLock(),
+      recoverableRuns: new Map(),
     };
 
     // System skills: idempotent, never fatal — see the header.

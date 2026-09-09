@@ -218,6 +218,7 @@ const makeModelsStub = () => {
 
 const makeTelemetryStub = () => {
   const captures: Array<Parameters<TelemetryServiceApi['capture']>> = [];
+  const plans: Array<Parameters<TelemetryServiceApi['identifyPlan']>> = [];
   const exceptions: Array<Parameters<TelemetryServiceApi['captureException']>> = [];
   const layer = Layer.effect(TelemetryService, Effect.gen(function* () {
     const state = yield* SubscriptionRef.make<TelemetryState>({
@@ -227,11 +228,12 @@ const makeTelemetryStub = () => {
       state,
       getState: SubscriptionRef.get(state),
       getDeviceId: Effect.succeed('test-device-id'),
+      identifyPlan: (...args: Parameters<TelemetryServiceApi['identifyPlan']>) => Effect.sync(() => { plans.push(args); }),
       capture: (...args: Parameters<TelemetryServiceApi['capture']>) => Effect.sync(() => { captures.push(args); }),
       captureException: (...args: Parameters<TelemetryServiceApi['captureException']>) => Effect.sync(() => { exceptions.push(args); }),
     };
   }));
-  return { layer, captures, exceptions };
+  return { layer, captures, exceptions, plans };
 };
 
 const build = (
@@ -350,6 +352,7 @@ const ALL_HANDLER_CHANNELS = [
   CHANNELS.loggingWrite,
   CHANNELS.telemetryGetState,
   CHANNELS.telemetryCapture,
+  CHANNELS.telemetryIdentifyPlan,
   CHANNELS.telemetryCaptureException,
   CHANNELS.settingsGet,
   CHANNELS.settingsSet,
@@ -539,6 +542,17 @@ describe('registerMainWindowHandlers', () => {
       }));
       assert.deepStrictEqual(telemetry.captures, [['recording_completed', { recording_id: 'rec_1' }, 'renderer', 0]]);
       assert.deepStrictEqual(telemetry.exceptions, [[{ name: 'Error', message: 'renderer failed', stack: 'safe-stack' }, { window_type: 'main' }, 'renderer', 0]]);
+      const plan = { revision: 0, accountId: 'user_1', orgId: 'org_1', planExternalId: 'plan_appsumo_tier_2' };
+      yield* Effect.promise(() => fake.ipcMain.invoke(CHANNELS.telemetryIdentifyPlan, { sender }, plan));
+      assert.deepStrictEqual(telemetry.plans, [[plan]]);
+      const extraPlanFields = yield* Effect.exit(Effect.tryPromise(() => fake.ipcMain.invoke(
+        CHANNELS.telemetryIdentifyPlan, { sender }, { ...plan, is_appsumo: true },
+      )));
+      const oversizedPlan = yield* Effect.exit(Effect.tryPromise(() => fake.ipcMain.invoke(
+        CHANNELS.telemetryIdentifyPlan, { sender }, { ...plan, planExternalId: 'x'.repeat(201) },
+      )));
+      assert.isTrue(Exit.isFailure(extraPlanFields));
+      assert.isTrue(Exit.isFailure(oversizedPlan));
       const foreign = yield* Effect.exit(Effect.tryPromise(() => fake.ipcMain.invoke(
         CHANNELS.telemetryCapture, { sender: { id: 9999 } }, { event: 'foreign', revision: 0 },
       )));
@@ -568,6 +582,11 @@ describe('registerMainWindowHandlers', () => {
         CHANNELS.telemetryCapture, { sender: widget.webContents }, { revision: 0, event: 'widget_spoof' },
       )));
       assert.isTrue(Exit.isFailure(widgetEvent));
+      const widgetPlan = yield* Effect.exit(Effect.tryPromise(() => fake.ipcMain.invoke(
+        CHANNELS.telemetryIdentifyPlan, { sender: widget.webContents }, plan,
+      )));
+      assert.isTrue(Exit.isFailure(widgetPlan));
+      assert.lengthOf(telemetry.plans, 1);
       assert.strictEqual(telemetry.captures.length, 1);
       yield* Scope.close(scope, Exit.void);
     })
@@ -1658,6 +1677,7 @@ describe('registerMainWindowHandlers', () => {
 
         // A recording state with a segment + a system/dual → mic degrade.
         const recordingState: RecordingState = {
+          finalizingRecordingIds: [], completedRecordings: [],
           recordingId: 'rec_1',
           status: 'recording',
           captureMode: 'mic',

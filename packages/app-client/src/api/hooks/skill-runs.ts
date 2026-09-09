@@ -2,6 +2,7 @@
 
 import { useMutation } from "@tanstack/react-query";
 import {
+  PendingSkillResultsSchema,
   TitleRunResultSchema,
   AcceptSkillRunResponseSchema,
   EnhancedRecordingsResponseSchema,
@@ -70,4 +71,13 @@ export function mutateTitleRun(action: "apply" | "undo", runId: string) {
   return apiClient
     .post<unknown>(`${ME_PREFIX}/title-runs/${action}`, { runId })
     .then((result) => TitleRunResultSchema.parse(result));
+}
+
+export async function listPendingSkillResults(noteId: string, signal?: AbortSignal) {
+  return PendingSkillResultsSchema.parse(
+    await apiClient.getRaw<unknown>(`${ME_PREFIX}/skill-runs/pending`, { noteId }, { signal }),
+  ).results;
+}
+export async function resolvePendingSkillResult(noteId: string, resultId: string, rawMarkdown: string) {
+  await apiClient.postRaw(`${ME_PREFIX}/skill-runs/resolve`, { noteId, resultId, rawMarkdown });
 }

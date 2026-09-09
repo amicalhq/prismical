@@ -1,4 +1,5 @@
 'use client';
+import { ApiError, resolvePendingSkillResult } from '@prismical/app-client';
 import { useWalkthroughEvent } from '../onboarding/context';
 
 import * as React from 'react';
@@ -25,8 +26,44 @@ const PREV_CONTENT_MAX = 2_000_000;
 const REVIEW_BTN =
   'flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-[12.5px] font-medium text-dock-ink-2 transition-colors hover:bg-dock-hover hover:text-dock-ink active:scale-95 disabled:cursor-not-allowed disabled:opacity-60';
 
+function useDiscardSkillCandidate(noteId: string, editor?: Editor) {
+  const { t } = useTranslation();
+  const walkthroughEvent = useWalkthroughEvent();
+  const [discarding, setDiscarding] = React.useState(false);
+  const discard = async () => {
+    const candidate = useSkillDiffStore.getState().getCandidate(noteId);
+    if (discarding || !candidate) return;
+    setDiscarding(true);
+    try {
+      if (candidate.resultId)
+        await resolvePendingSkillResult(noteId, candidate.resultId, candidate.rawMarkdown);
+      // Navigation, ownership changes, or another run can replace the candidate during the save.
+      if (useSkillDiffStore.getState().getCandidate(noteId) !== candidate) return;
+      if (editor && !editor.isDestroyed) clearDiffDecorations(editor);
+      useSkillDiffStore.getState().clear(noteId);
+      useSkillRunActivityStore.getState().resolveStaged(noteId, 'undone');
+      if (candidate.recordingId)
+        walkthroughEvent({ type: 'rejected', noteId, recordingId: candidate.recordingId });
+    } catch (err) {
+      if (
+        err instanceof ApiError &&
+        err.code === 'SUGGESTION_CHANGED' &&
+        useSkillDiffStore.getState().getCandidate(noteId) === candidate
+      ) {
+        if (editor && !editor.isDestroyed) clearDiffDecorations(editor);
+        useSkillDiffStore.getState().clear(noteId);
+        useSkillRunActivityStore.getState().resolveStaged(noteId, 'superseded');
+      }
+      toast.error(t('skills.diff.couldNotSave', { name: candidate.skillName }));
+    } finally {
+      setDiscarding(false);
+    }
+  };
+  return { discard, discarding };
+}
+
 interface Props {
-  editor: Editor;
+  editor: Editor | null;
   noteId: string;
   /** Use two review rows in the floating note window, reserving room for the
    * recording control. The web layout also adapts to the available pane width. */
@@ -49,6 +86,14 @@ export function SkillDiffDockBar({ editor, noteId, compact = false }: Props) {
   const accept = useAcceptArtifact();
   const qc = useQueryClient();
   const { run, cancel, running: refining } = useRunSkill(noteId, editor);
+  const { discard, discarding } = useDiscardSkillCandidate(noteId, editor ?? undefined);
+  const currentEditor = React.useRef<Editor | null>(null);
+  React.useLayoutEffect(() => {
+    currentEditor.current = editor;
+    return () => {
+      currentEditor.current = null;
+    };
+  }, [editor]);
 
   // An accept/restore changes which recordings are folded — refresh the picker's wand/"in note" state.
   const refreshFolded = () =>
@@ -57,6 +102,15 @@ export function SkillDiffDockBar({ editor, noteId, compact = false }: Props) {
   const [refineText, setRefineText] = React.useState('');
 
   if (!candidate) return null;
+  if (!editor)
+    return (
+      <SkillDiffPendingBar
+        skillName={candidate.skillName}
+        compact={compact}
+        discard={discard}
+        discarding={discarding || accept.isPending || refining}
+      />
+    );
 
   // Roll the note body back to before the last accepted run. Apply the pre-accept SNAPSHOT the accept
   // captured (passed in) FIRST, THEN ask the server to soft-delete the artifact — never the reverse.
@@ -135,6 +189,7 @@ export function SkillDiffDockBar({ editor, noteId, compact = false }: Props) {
   };
 
   const onAccept = async () => {
+    if (discarding || accept.isPending || refining) return;
     // Inline-rewrite: verify the target still exists BEFORE persisting the artifact, so a vanished
     // selection (deleted by a collaborator while staged) costs nothing server-side. This is the one
     // place a candidate is discarded on purpose: the user is looking at a loaded document and the
@@ -167,6 +222,7 @@ export function SkillDiffDockBar({ editor, noteId, compact = false }: Props) {
     let meta: { artifactId: string; version: number; generatedAt: string };
     try {
       meta = await accept.mutateAsync({
+        resultId: candidate.resultId,
         noteId,
         skillId: candidate.skillId,
         recordingId: candidate.recordingId,
@@ -181,13 +237,30 @@ export function SkillDiffDockBar({ editor, noteId, compact = false }: Props) {
         usage: candidate.usage,
       });
     } catch (err) {
-      // Keep the candidate AND its overlay: the save is retryable, and stripping the diff would
-      // leave a review bar reviewing nothing (the decoration hook won't rebuild for the same key).
+      // Conflicts retire only this stale draft so recovery can load its replacement.
+      // Other failures retain the candidate and overlay for retry.
+      if (
+        err instanceof ApiError &&
+        err.code === 'SUGGESTION_CHANGED' &&
+        useSkillDiffStore.getState().getCandidate(noteId) === candidate
+      ) {
+        if (!editor.isDestroyed) clearDiffDecorations(editor);
+        clear(noteId);
+        useSkillRunActivityStore.getState().resolveStaged(noteId, 'superseded');
+      }
       walkthroughEvent({ type: 'error', noteId, code: 'accept_failed' });
       console.warn('skill accept: save failed', err);
       toast.error(t('skills.diff.couldNotSave', { name: candidate.skillName }));
       return;
     }
+
+    // A Keep response belongs to the candidate and editor that initiated it.
+    if (
+      currentEditor.current !== editor ||
+      editor.isDestroyed ||
+      useSkillDiffStore.getState().getCandidate(noteId) !== candidate
+    )
+      return;
 
     // Release the editor lock BEFORE dispatching the accept's command (the lock filters mutating
     // txns while a candidate is staged; clearing first lets insertArtifactBlock / setContent land).
@@ -277,15 +350,8 @@ export function SkillDiffDockBar({ editor, noteId, compact = false }: Props) {
     refreshFolded(); // an Enhance accept just folded a recording in
   };
 
-  const reject = () => {
-    clearDiffDecorations(editor);
-    clear(noteId);
-    useSkillRunActivityStore.getState().resolveStaged(noteId, 'undone');
-    if (candidate.recordingId)
-      walkthroughEvent({ type: 'rejected', noteId, recordingId: candidate.recordingId });
-  };
-
   const submitRefine = () => {
+    if (discarding || accept.isPending || refining) return;
     const instruction = refineText.trim();
     if (!instruction) return;
     void run({
@@ -348,6 +414,7 @@ export function SkillDiffDockBar({ editor, noteId, compact = false }: Props) {
             type="text"
             placeholder={t('skills.diff.describeEdits')}
             value={refineText}
+            disabled={discarding || accept.isPending}
             onChange={e => setRefineText(e.target.value)}
             onKeyDown={e => {
               if (e.key === 'Enter') submitRefine();
@@ -363,6 +430,7 @@ export function SkillDiffDockBar({ editor, noteId, compact = false }: Props) {
               <button
                 type="button"
                 onClick={submitRefine}
+                disabled={discarding || accept.isPending}
                 className={DOCK_CTL_PRIMARY}
                 aria-label={t('skills.diff.submitRefinement')}
               >
@@ -379,7 +447,12 @@ export function SkillDiffDockBar({ editor, noteId, compact = false }: Props) {
       {/* Undo = discard the suggestion (the note never changed); Keep = accept. */}
       <Tooltip>
         <TooltipTrigger asChild>
-          <button type="button" onClick={reject} disabled={accept.isPending} className={REVIEW_BTN}>
+          <button
+            type="button"
+            onClick={discard}
+            disabled={discarding || accept.isPending || refining}
+            className={REVIEW_BTN}
+          >
             <Undo2 className="size-3.5" />
             {t('skills.diff.undo')}
           </button>
@@ -391,7 +464,7 @@ export function SkillDiffDockBar({ editor, noteId, compact = false }: Props) {
           <button
             type="button"
             onClick={onAccept}
-            disabled={accept.isPending || refining}
+            disabled={discarding || accept.isPending || refining}
             className={`${REVIEW_BTN} text-success hover:text-success`}
           >
             <Check className="size-3.5" />
@@ -413,24 +486,21 @@ export function SkillDiffDockBar({ editor, noteId, compact = false }: Props) {
  * deleted while it was still safely in the store, which reads as data loss. Show it instead, and
  * swap to the real bar the moment the document arrives.
  */
-export function SkillDiffPendingBar({
-  noteId,
+function SkillDiffPendingBar({
   skillName,
   compact = false,
+  discard,
+  discarding,
 }: {
-  noteId: string;
   skillName: string;
   compact?: boolean;
+  discard: () => Promise<void>;
+  discarding: boolean;
 }) {
   const { t } = useTranslation();
-  const clear = useSkillDiffStore(s => s.clear);
   // Undo needs no editor, and it must be here: when the note fails to open outright the editor
   // never returns, and this bar is the only skill surface left (the Ask unit is collapsed while a
   // candidate is staged). Without it the dock would sit on "waiting" until a reload.
-  const discard = () => {
-    clear(noteId);
-    useSkillRunActivityStore.getState().resolveStaged(noteId, 'undone');
-  };
   return (
     <div
       data-onboarding="review-controls"
@@ -449,7 +519,7 @@ export function SkillDiffPendingBar({
       </span>
       <Tooltip>
         <TooltipTrigger asChild>
-          <button type="button" onClick={discard} className={REVIEW_BTN}>
+          <button type="button" onClick={discard} disabled={discarding} className={REVIEW_BTN}>
             <Undo2 className="size-3.5" />
             {t('skills.diff.undo')}
           </button>

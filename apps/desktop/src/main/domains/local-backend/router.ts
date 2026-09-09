@@ -38,6 +38,7 @@ import { askConversations } from './ask';
 import { createNoteTag, deleteNoteTag, listNoteTags } from './junctions';
 import { createNote, listNotes, removeNote, updateNote } from './notes';
 import { handleSearch } from './search';
+import { pendingSkillResults, resolveSkillResult } from './skill-recovery';
 import {
   acceptSkillRun,
   enhancedRecordings,
@@ -68,6 +69,7 @@ export interface LocalRouteContext {
    * note's titleRevision. One process, one lock — the lanes cannot interleave.
    */
   readonly titleLock: <T>(work: () => Promise<T>) => Promise<T>;
+  readonly recoverableRuns: Map<string, Promise<RouteResult>>;
 }
 
 /** Cloud-only/deferred lanes served as permanently-empty lists in local mode. */
@@ -162,12 +164,14 @@ export const handleLocalRequest = async (
   }
   if (route === 'skills' && rest.length === 2 && rest[1] === 'run') {
     return method === 'POST'
-      ? runSkill({ db, ai, locale: ctx.locale, log: ctx.log }, rest[0]!, req.body)
+      ? runSkill({ db, ai, locale: ctx.locale, log: ctx.log, recoverableRuns: ctx.recoverableRuns }, rest[0]!, req.body)
       : notFound();
   }
-  if (route === 'skill-runs' && rest.length === 1 && method === 'POST') {
-    if (rest[0] === 'accept') return acceptSkillRun(db, req.body);
-    if (rest[0] === 'restore') return restoreSkillRun(db, req.body);
+  if (route === 'skill-runs' && rest.length === 1) {
+    if (method === 'GET' && rest[0] === 'pending') return pendingSkillResults(db, query);
+    if (method === 'POST' && rest[0] === 'resolve') return resolveSkillResult(db, req.body);
+    if (method === 'POST' && rest[0] === 'accept') return acceptSkillRun(db, req.body);
+    if (method === 'POST' && rest[0] === 'restore') return restoreSkillRun(db, req.body);
     return notFound();
   }
   if (route === 'enhanced-recordings') {

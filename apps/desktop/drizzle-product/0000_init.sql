@@ -14,6 +14,16 @@ CREATE TABLE `artifact` (
 );
 --> statement-breakpoint
 CREATE INDEX `artifact_note_id_idx` ON `artifact` (`note_id`);--> statement-breakpoint
+CREATE TABLE `note_skill_result` (
+	`id` text PRIMARY KEY NOT NULL,
+	`note_id` text NOT NULL,
+	`result` text NOT NULL,
+	`accepted_result` text,
+	`created_at` text NOT NULL,
+	`resolved_at` text
+);
+--> statement-breakpoint
+CREATE INDEX `note_skill_result_note_id_idx` ON `note_skill_result` (`note_id`);--> statement-breakpoint
 CREATE TABLE `ask_conversation` (
 	`id` text PRIMARY KEY NOT NULL,
 	`title` text,

@@ -1,10 +1,11 @@
+import { ENHANCE_NOTE_GUIDANCE, ENHANCE_SOURCE_FIDELITY } from './skills/enhance-guidance.js';
 /**
  * Canonical definitions for the three built-in system skills (Cleanup, Enhance, Name note).
  * The ids are fixed and stable across environments: seeders upsert by these ids, so they must
- * never be regenerated. This file is authoritative for the prompt bodies used by local runs.
+ * never be regenerated. These definitions seed the database and supply offline defaults.
  *
- * Note the recording-scoped Enhance lane replaces the body with a mode-aware preamble at run time
- * (skills/system-prompt.ts); this body drives the legacy no-recording run.
+ * Cloud runs always use the stored skill body. Runtime wrappers add input scope, context, and
+ * output contracts; they do not replace the skill instructions. Re-seeding updates stored defaults.
  */
 
 import { CLEANUP_SKILL_ID, ENHANCE_SKILL_ID } from './skills/types.js';
@@ -79,39 +80,26 @@ export const CLEANUP_SKILL: SystemSkill = {
 };
 
 /**
- * Enhance summarizes and structures the note and its transcript. It pins
- * heading constructs (## sections) and applies a meeting-versus-voice-note
+ * Enhance summarizes and structures the note and its transcript. It chooses
+ * a format proportional to the content, from one-line personal notes to meetings, with a
  * judgement that does not trust speaker labels. Web mic-only capture can label
  * a whole room "you", so transcript content and `# Context` are the reliable
- * signals. Kept consistent with the runtime Enhance-lane preamble.
+ * signals. The same stored body drives recording-scoped and note-only runs.
  */
 export const ENHANCE_SKILL_BODY = [
-  "Produce a clean, structured summary of the note's content. First judge what the transcript is",
-  '- from its content and the `# Context` signals, not the speaker labels (a single microphone',
-  'records a whole room as "you"):',
+  ENHANCE_NOTE_GUIDANCE,
   '',
-  '- Multi-person MEETING (dialogue, multiple voices, decisions between people) -> "## Summary"',
-  '  then "## Action items". Name each action item\'s owner when the transcript identifies one.',
-  '- Solo VOICE NOTE (one person thinking out loud - brainstorm, dictation, todo list) ->',
-  '  "## Key points" grouped by theme, then "## Action items" or "## Open questions" only when',
-  "  genuinely present. Organize the thinking, don't write minutes; keep the author's voice.",
-  '- No transcript -> work from the note alone. Use "## Summary" and/or "## Action items",',
-  '  whichever fits.',
+  ENHANCE_SOURCE_FIDELITY,
   '',
-  'Rules:',
-  '- Be terse. No filler, no preamble.',
-  '- Skip any section that would be empty or trivial.',
-  '- Do not invent items. Every point must be grounded in what is actually in the note or',
-  '  transcript.',
-  '- The output is a self-contained chunk. After running, the user picks whether to append it to',
-  '  the note or use it as the new note body - write content that stands on its own in either',
-  '  case.',
+  'Follow the active mode when present: it determines which sources to use and what to return.',
+  'When there is no active mode, work from the note and transcript together, or the note alone',
+  'when there is no transcript. Return a self-contained note the user can append or use as a replacement.',
 ].join('\n');
 
 // Dock-only: the old ['dock','inline'] surface was a trap — inline-rewrite
-// demands a single paragraph while this body demands multi-section output, so every inline Enhance
+// demands a single paragraph while the old body demanded multi-section output, so every inline Enhance
 // run was a billable no-op). modeAgnosticPrompt: a legacy non-recording run yields a self-contained
-// chunk the diff bar positions; the recording-scoped lane overrides at run time.
+// chunk the diff bar positions; recording-scoped runs always add their source-scoping mode block.
 export const ENHANCE_SKILL_CONFIG: SystemSkillConfig = {
   editingOptions: 'append-section',
   surface: ['dock'],
@@ -123,7 +111,8 @@ export const ENHANCE_SKILL_CONFIG: SystemSkillConfig = {
 export const ENHANCE_SKILL: SystemSkill = {
   id: ENHANCE_SKILL_ID,
   name: 'Enhance',
-  description: 'Turn the recording and your rough notes into a clean, structured summary.',
+  description:
+    'Turn recordings and rough notes into clear notes, from quick reminders to meetings.',
   body: ENHANCE_SKILL_BODY,
   config: ENHANCE_SKILL_CONFIG,
 };
@@ -145,4 +134,8 @@ export const NAME_NOTE_SKILL: SystemSkill = {
 };
 
 /** Every system skill, in seed order. */
-export const SYSTEM_SKILLS: ReadonlyArray<SystemSkill> = [CLEANUP_SKILL, ENHANCE_SKILL, NAME_NOTE_SKILL];
+export const SYSTEM_SKILLS: ReadonlyArray<SystemSkill> = [
+  CLEANUP_SKILL,
+  ENHANCE_SKILL,
+  NAME_NOTE_SKILL,
+];

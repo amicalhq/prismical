@@ -74,6 +74,7 @@ const withHooks = (
             state,
             getState: Effect.succeed(policy),
             getDeviceId: Effect.succeed('test-device-id'),
+            identifyPlan: () => Effect.void,
             capture: () => Effect.void,
             captureException: (error, properties, source, revision) =>
               Effect.sync(() => {

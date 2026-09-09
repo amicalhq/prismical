@@ -16,6 +16,7 @@ export const testTelemetryLayer = Layer.effect(
       state,
       getState: SubscriptionRef.get(state),
       getDeviceId: Effect.succeed('test-device-id'),
+      identifyPlan: () => Effect.void,
       capture: () => Effect.void,
       captureException: () => Effect.void,
     };

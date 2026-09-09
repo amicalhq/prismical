@@ -613,3 +613,30 @@ ul[data-type="taskList"] li[data-checked="true"] > div {
     --skill-review-input-flex: 1;
   }
 }
+
+/* Tall actionable notifications stay reachable above an expanded dock. */
+[data-dock-aware-toaster] [data-sonner-toaster][data-y-position='bottom'] [data-sonner-toast] {
+  max-height: max(
+    48px,
+    calc(
+      100dvh - max(var(--toast-dock-bottom, 16px), env(safe-area-inset-bottom, 0px)) -
+        max(16px, env(safe-area-inset-top, 0px))
+    )
+  );
+  overflow-y: auto;
+  /* Center short messages; start-align overflowing content so its beginning stays reachable. */
+  align-items: safe center;
+  touch-action: pan-y;
+  overscroll-behavior-y: contain;
+}
+
+/* Keep dismiss controls inside the scrollable notification instead of clipping them. */
+[data-dock-aware-toaster] [data-sonner-toast]:has([data-close-button]) {
+  padding-right: 40px;
+}
+[data-dock-aware-toaster] [data-sonner-toaster] [data-sonner-toast] [data-close-button] {
+  top: 8px;
+  right: 8px;
+  left: auto;
+  transform: none;
+}

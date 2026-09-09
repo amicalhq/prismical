@@ -49,16 +49,80 @@ export function AskSkillRunTurn({
   );
 }
 
-function SkillRunStatus({
+export function SkillRunStatus({
   run,
   onReviewInNote,
   t,
+  compact = false,
 }: {
   run: SkillRunRecord;
   onReviewInNote?: () => void;
   t: ReturnType<typeof useTranslation>['t'];
+  compact?: boolean;
 }) {
   const name = run.skillName;
+  if (compact) {
+    const running = run.status === 'running';
+    const ready = run.status === 'staged';
+    const failed = run.status === 'error';
+    const stopped = run.status === 'stopped';
+    const action = run.actions?.find(item => item.kind === 'retry') ?? run.actions?.[0];
+    const detail = running
+      ? run.phase === 'waiting-transcript'
+        ? `${name} · ${t('recording.panel.waitingForTranscription')}`
+        : t('ask.skillRun.running', { name })
+      : (run.detail ?? (ready ? t('ask.skillRun.staged', { name }) : `${name} · ${run.status}`));
+    return (
+      <div
+        role="status"
+        title={detail}
+        aria-label={detail}
+        className="flex h-7 min-w-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-dock-line px-2 text-xs text-dock-ink-2"
+      >
+        <span className="shrink-0" aria-hidden="true">
+          {running ? (
+            <Loader size={13} />
+          ) : failed ? (
+            <TriangleAlert className="size-3.5 text-destructive" />
+          ) : run.status === 'skipped' ? (
+            <Info className="size-3.5" />
+          ) : stopped || run.status === 'undone' ? (
+            <CircleSlash className="size-3.5" />
+          ) : (
+            <Check className="size-3.5 text-success" />
+          )}
+        </span>
+        <span className="min-w-0 max-w-[80px] truncate">{name}</span>
+        {running && run.cancel ? (
+          <button
+            type="button"
+            onClick={run.cancel}
+            aria-label={t('ask.skillRun.stop', { name })}
+            className={`${STATUS_LINK} shrink-0`}
+          >
+            {t('ask.composer.stop')}
+          </button>
+        ) : ready && onReviewInNote ? (
+          <button
+            type="button"
+            onClick={onReviewInNote}
+            aria-label={t('ask.skillRun.reviewInNote')}
+            className={`${STATUS_LINK} shrink-0`}
+          >
+            {t('ask.skillRun.review')}
+          </button>
+        ) : action ? (
+          <button
+            type="button"
+            onClick={action.onClick}
+            className={`${STATUS_LINK} max-w-[90px] truncate`}
+          >
+            {action.label}
+          </button>
+        ) : null}
+      </div>
+    );
+  }
   switch (run.status) {
     case 'running':
       return (
@@ -68,7 +132,9 @@ function SkillRunStatus({
           </MarkerIcon>
           <MarkerContent>
             <span className="shimmer shimmer-duration-1400">
-              {t('ask.skillRun.running', { name })}
+              {run.phase === 'waiting-transcript'
+                ? `${name} · ${t('recording.panel.waitingForTranscription')}`
+                : t('ask.skillRun.running', { name })}
             </span>
             {/* Every run can be stopped from its turn — including lanes the composer does not
                 own (wand, auto-enhance, inline, refine). */}

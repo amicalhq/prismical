@@ -49,7 +49,7 @@ export function useCreateTag(): SyncMutationResult<string, Tag> {
     const existing = store.findTagByName(name);
     if (existing) return tagFromRow(existing);
     const rows = Object.values((store.tags$.peek() ?? {}) as Record<string, TagRow>);
-    const color = nextAutoColor(rows.map((t) => t.color));
+    const color = nextAutoColor(rows.filter((row) => row != null).map((t) => t.color));
     const id = store.createTag(name, color);
     if (!id) throw new Error("tag name is empty after sanitization");
     return tagFromRow(store.tags$[id]!.peek() as TagRow);

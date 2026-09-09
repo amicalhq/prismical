@@ -8,6 +8,8 @@ export const RunSkillParamsSchema = z.object({ skillId: z.string().min(1) });
 export const RunSkillRequestSchema = z.object({
   noteId: z.string().min(1),
   recordingId: z.string().min(1).max(64).optional(),
+  recoverable: z.boolean().optional(),
+  recoveryResultId: z.string().min(1).optional(),
   noteMarkdown: z.string().max(1_000_000).optional(),
   mode: ArtifactModeSchema.optional(),
   refineInstruction: z.string().min(1).max(2_000).optional(),
@@ -31,6 +33,8 @@ export type RunUsage = z.output<typeof RunUsageSchema>;
 export const RunSkillResultSchema = z
   .object({
     outputTarget: z.enum(['note-body', 'note-title']).optional(),
+    resultId: z.string().optional(),
+    refineInstruction: z.string().optional(),
     titleRunId: z.string().optional(),
     title: z.string().optional(),
     mode: ArtifactModeSchema,
@@ -52,6 +56,7 @@ export type RunSkillResult = z.output<typeof RunSkillResultSchema>;
 export const RunSkillResponseSchema = RunSkillResultSchema;
 
 export const AcceptSkillRunRequestSchema = z.object({
+  resultId: z.string().min(1).optional(),
   noteId: z.string().min(1),
   skillId: z.string().min(1),
   recordingId: z.string().min(1).max(64).nullish(),
@@ -105,3 +110,10 @@ export const TitleRunResultSchema = z.object({
 });
 export const TitleRunResponseSchema = TitleRunResultSchema;
 export type TitleRunResult = z.output<typeof TitleRunResultSchema>;
+
+export const PendingSkillResultsSchema = z.object({ results: z.array(RunSkillResultSchema) });
+export const ResolveSkillResultSchema = z.object({
+  noteId: z.string().min(1),
+  resultId: z.string().min(1),
+  rawMarkdown: z.string().min(1),
+});

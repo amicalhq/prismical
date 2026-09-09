@@ -44,6 +44,14 @@ describe('skill run feed (useSkillRunActivityStore)', () => {
     expect(runs()[0]!.detail).toBeUndefined();
   });
 
+  it('does not let a late readiness phase reopen a stopped run', () => {
+    const id = begin();
+    useSkillRunActivityStore.getState().setPhase(id, 'waiting-transcript');
+    useSkillRunActivityStore.getState().finish(id, 'stopped');
+    useSkillRunActivityStore.getState().setPhase(id, 'running');
+    expect(runs()[0]).toMatchObject({ status: 'stopped', phase: 'waiting-transcript' });
+  });
+
   it('drops the cancel handle once the run settles', () => {
     const cancel = vi.fn();
     const id = begin({ cancel });

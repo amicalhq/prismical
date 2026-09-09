@@ -54,6 +54,12 @@ export type NativeRecordingStatus =
  */
 export interface NativeRecordingState {
   readonly recordingId: string | null;
+  readonly finalizingRecordingIds: readonly string[];
+  readonly completedRecordings: readonly {
+    readonly recordingId: string;
+    readonly noteId: string | null;
+    readonly segments: number;
+  }[];
   readonly status: NativeRecordingStatus;
   readonly captureMode: NativeCaptureMode | null;
   readonly requestedCaptureMode: NativeCaptureMode | null;
@@ -92,7 +98,7 @@ export interface NativeRecordingState {
  */
 export type NativeStartResult =
   | { readonly ok: true; readonly recordingId: string }
-  | { readonly ok: false; readonly reason: 'permission-denied' | 'busy' | 'no-session' | 'model-missing' | 'storage-unavailable' | 'update-required' };
+  | { readonly ok: false; readonly reason: 'permission-denied' | 'busy' | 'no-session' | 'model-missing' | 'storage-unavailable' | 'suggestion-pending' | 'update-required' };
 
 export interface NativeRecordingControl {
   /**

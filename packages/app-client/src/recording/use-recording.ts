@@ -51,8 +51,8 @@ const MAX_UPLOAD_ATTEMPTS = 3;
 // only be a dead stream (or a hardware-muted mic, which deserves the same warning).
 const SILENT_MIC_PEAK = 1e-6;
 const SILENT_MIC_SECONDS = 4;
-// Chunks upload over N parallel lanes so warm-up's ~1s chunks (and managed round-trips)
-// overlap instead of queueing; core serializes the DB writes per recording anyway.
+// Chunks upload over N parallel lanes so managed round-trips can overlap
+// instead of queueing; core serializes the DB writes per recording anyway.
 const UPLOAD_CONCURRENCY = 3;
 // Auto-pause never fires in the opening seconds of a session: pausing right
 // after the user pressed record reads as "the button is broken", and the chunker's warm-up window
@@ -239,6 +239,7 @@ interface RecordingSession {
   recordingId: string | null;
   chunkIndex: number;
   sentSamples: number;
+  segmentCount: number;
   /** Round-robin upload lanes: each lane serializes, so ≤UPLOAD_CONCURRENCY in flight. */
   uploadLanes: Promise<void>[];
   /** Identity frozen with the session so a later account/org switch cannot claim its recovery. */
@@ -356,6 +357,8 @@ export interface UseRecording {
   /** The immutable note owner, including while starting or after completion. */
   noteId: string | null;
   completedRecording: RecordingCompletion | null;
+  /** Capture is closed, but this recording still has uploads/completion pending. */
+  isFinalizing: boolean;
   /** When the active session started (ISO), anchoring the live lines' wall-clock times. */
   startedAt: string | null;
   /** Main's pause-aware media clock; null for browser capture. */
@@ -407,6 +410,7 @@ export function useRecording({
   const [state, setState] = React.useState<RecState>('idle');
   const [recordingId, setRecordingId] = React.useState<string | null>(null);
   const [noteId, setNoteId] = React.useState<string | null>(null);
+  const [finalizingIds, setFinalizingIds] = React.useState<Set<string>>(() => new Set());
   const [completedRecording, setCompletedRecording] =
     React.useState<UseRecording['completedRecording']>(null);
   const openingRef = React.useRef<object | null>(null);
@@ -519,11 +523,13 @@ export function useRecording({
   // Segments produced this session, counted synchronously as chunks land (not derived from the
   // debounced React state) so stop() can report a race-free "had speech" signal. Reset on start.
   const segmentCountRef = React.useRef(0);
-  const nativeOwnerRef = React.useRef<{
-    recordingId: string;
+  const nativeOwnersRef = React.useRef(new Map<string, {
     sessionKey: string | null;
     orgId: string | null;
-  } | null>(null);
+    segments: number;
+  }>());
+  const nativeClaimsRef = React.useRef(new Set<string>());
+  const nativeCaptureRef = React.useRef<NativeRecordingState | null>(null);
 
   // Native bridge (desktop): mirror main's pushed RecordingState into the SAME
   // dock/transcript state the web path drives, so the shared components can't
@@ -532,16 +538,28 @@ export function useRecording({
   React.useEffect(() => {
     if (!control) return;
     return control.subscribe(s => {
-      if (s.recordingId !== nativeOwnerRef.current?.recordingId) {
-        const view = auth.getSession();
-        nativeOwnerRef.current = s.recordingId
-          ? {
-              recordingId: s.recordingId,
-              sessionKey: exactSessionKey(view),
-              orgId: activeOrgIdOf(view),
-            }
-          : null;
+      nativeCaptureRef.current = s;
+      const ids = new Set([
+        ...(s.recordingId ? [s.recordingId] : []),
+        ...s.finalizingRecordingIds,
+        ...s.completedRecordings.map(result => result.recordingId),
+      ]);
+      const view = auth.getSession();
+      for (const id of ids) {
+        if (!nativeOwnersRef.current.has(id)) nativeOwnersRef.current.set(id, {
+          sessionKey: exactSessionKey(view),
+          orgId: activeOrgIdOf(view),
+          segments: 0,
+        });
       }
+      for (const id of nativeOwnersRef.current.keys()) {
+        if (!ids.has(id)) {
+          nativeOwnersRef.current.delete(id);
+          nativeClaimsRef.current.delete(id);
+        }
+      }
+      if (s.recordingId) nativeOwnersRef.current.get(s.recordingId)!.segments = s.segments.length;
+      setFinalizingIds(new Set(s.finalizingRecordingIds));
       segmentCountRef.current = s.segments.length;
       const next = nativeStatusToRecState(s.status);
       // Desktop's card is rendered by main from its OWN state; this only decides the in-app copy.
@@ -567,30 +585,31 @@ export function useRecording({
       );
       setRecordingId(s.recordingId);
       setNoteId(s.noteId);
-      if (
-        handleCompletion &&
-        (s.status === 'idle' || s.status === 'error') &&
-        s.recordingId &&
-        s.noteId
-      ) {
-        const owner = nativeOwnerRef.current?.sessionKey;
-        const ownerOrgId = nativeOwnerRef.current?.orgId;
+      for (const result of s.completedRecordings) {
+        const ownership = nativeOwnersRef.current.get(result.recordingId)!;
+        ownership.segments = result.segments;
+        if (!handleCompletion || !result.noteId || nativeClaimsRef.current.has(result.recordingId))
+          continue;
+        const owner = ownership.sessionKey;
+        const ownerOrgId = ownership.orgId;
         if (owner && ownerOrgId && ownsActiveContext(auth, owner)) {
           const finished = {
-            recordingId: s.recordingId,
-            noteId: s.noteId,
-            segments: s.segments.length,
+            recordingId: result.recordingId,
+            noteId: result.noteId,
+            segments: result.segments,
             ownerSessionKey: owner,
             ownerOrgId,
           };
+          nativeClaimsRef.current.add(result.recordingId);
           void control
-            .claimCompletion(s.recordingId)
+            .claimCompletion(result.recordingId)
             .then(claimed => {
               if (claimed && exactSessionKey(auth.getSession()) === owner) {
                 finishRecording(finished);
               }
+              if (!claimed) nativeClaimsRef.current.delete(result.recordingId);
             })
-            .catch(() => {});
+            .catch(() => nativeClaimsRef.current.delete(result.recordingId));
         }
       }
       setStartedAt(
@@ -787,7 +806,8 @@ export function useRecording({
               activeOrgId: s.ownerOrgId,
             });
             if (s.cancelled || !ownsActiveContext(auth, s.ownerSessionKey)) return;
-            if (segs.length) {
+            s.segmentCount += segs.length;
+            if (segs.length && session.current === s && !openingRef.current) {
               // The ASR heard words in this chunk (the two-signal rule): a
               // production model on the real audio outranks our energy gate, so cancel any
               // countdown even if the levels still read as silence. This is what makes it safe to
@@ -820,8 +840,10 @@ export function useRecording({
               // each. The recording itself continues.
               const user = aiUserErrorOf(err);
               if (uploadRetryDelayMs(err, 1) === null) s.uploadsHalted = true;
-              setServerError(user ? { key, user } : null);
-              setError(key);
+              if (session.current === s && !openingRef.current) {
+                setServerError(user ? { key, user } : null);
+                setError(key);
+              }
               return;
             }
             await new Promise(r => setTimeout(r, delay));
@@ -841,51 +863,76 @@ export function useRecording({
       // upload). The recording → live-segments transitions arrive via the state
       // push above; here we only reflect start intent + a failed start's reason.
       if (control) {
-        if (state !== 'idle') return;
+        if (state !== 'idle' || openingRef.current || !mountedRef.current) return;
+        const opening = {};
+        openingRef.current = opening;
+        const owner = auth.getSession();
+        const ownerSessionKey = exactSessionKey(owner);
+        const ownerOrgId = activeOrgIdOf(owner);
+        const stillOwned = () => openingRef.current === opening && mountedRef.current &&
+          exactSessionKey(auth.getSession()) === ownerSessionKey &&
+          activeOrgIdOf(auth.getSession()) === ownerOrgId;
         setError(null);
+        // Bind the starting UI before awaiting policy or the native recorder.
+        setNoteId(noteId);
+        setRecordingId(null);
+        setStartedAt(null);
+        setCompletedRecording(null);
         setState('starting');
         setLiveSegments([]);
         segmentCountRef.current = 0;
-        // Desktop runs the same machine in main — it only needs the policy.
-        const policy = await ensureAutoPausePolicy(qc, activeOrgIdOf(auth.getSession()));
-        // Main keeps this pre-capture estimate for every window. A later usage response
-        // already includes this recording's chunks and cannot serve as its starting allowance.
-        const usage = qc.getQueryData<Usage>(usageKey(activeOrgIdOf(auth.getSession())));
-        const quota = usage?.quota?.cloudTranscription;
-        const quotaRemainingAtStartSeconds =
-          quota?.limitSeconds != null ? Math.max(0, quota.limitSeconds - quota.usedSeconds) : null;
-        const result = await control.start({
-          noteId,
-          title,
-          ...(quotaRemainingAtStartSeconds !== null ? { quotaRemainingAtStartSeconds } : {}),
-          ...(policy.enabled
-            ? {
-                autoPause: {
-                  silenceSeconds: policy.silenceSeconds,
-                  graceSeconds: policy.graceSeconds,
-                  autoStopAfterPausedMinutes: policy.autoStopAfterPausedMinutes,
-                },
-              }
-            : {}),
-        });
-        if (!result.ok) {
-          setState('idle');
-          setError(
-            result.reason === 'permission-denied'
-              ? 'recording.errors.microphoneDenied'
-              : result.reason === 'busy'
-                ? 'recording.errors.alreadyInProgress'
-                : result.reason === 'model-missing'
-                  ? 'recording.errors.modelMissing'
-                  : result.reason === 'storage-unavailable'
-                    ? 'recording.errors.storageUnavailable'
-                    : 'recording.errors.couldNotStart'
-          );
-          return;
+        try {
+          // Desktop runs the same machine in main — it only needs the policy.
+          const policy = await ensureAutoPausePolicy(qc, ownerOrgId);
+          if (!stillOwned()) return;
+          // Main keeps this pre-capture estimate for every window. A later usage response
+          // already includes this recording's chunks and cannot serve as its starting allowance.
+          const usage = qc.getQueryData<Usage>(usageKey(ownerOrgId));
+          const quota = usage?.quota?.cloudTranscription;
+          const quotaRemainingAtStartSeconds =
+            quota?.limitSeconds != null ? Math.max(0, quota.limitSeconds - quota.usedSeconds) : null;
+          const result = await control.start({
+            noteId,
+            title,
+            ...(quotaRemainingAtStartSeconds !== null ? { quotaRemainingAtStartSeconds } : {}),
+            ...(policy.enabled
+              ? {
+                  autoPause: {
+                    silenceSeconds: policy.silenceSeconds,
+                    graceSeconds: policy.graceSeconds,
+                    autoStopAfterPausedMinutes: policy.autoStopAfterPausedMinutes,
+                  },
+                }
+              : {}),
+          });
+          if (!stillOwned()) return;
+          const pushed = nativeCaptureRef.current;
+          const captureInProgress = pushed && pushed.status !== 'idle' && pushed.status !== 'error';
+          if (captureInProgress && (!result.ok || pushed.recordingId !== result.recordingId)) return;
+          if (!result.ok) {
+            setState('idle');
+            setError(
+              result.reason === 'permission-denied'
+                ? 'recording.errors.microphoneDenied'
+                : result.reason === 'busy'
+                  ? 'recording.errors.alreadyInProgress'
+                  : result.reason === 'model-missing'
+                    ? 'recording.errors.modelMissing'
+                    : result.reason === 'storage-unavailable'
+                      ? 'recording.errors.storageUnavailable'
+                      : result.reason === 'suggestion-pending'
+                        ? 'recording.actions.reviewBeforeRecording'
+                        : 'recording.errors.couldNotStart'
+            );
+            return;
+          }
+          setRecordingId(result.recordingId);
+        } finally {
+          if (openingRef.current === opening) openingRef.current = null;
         }
-        setRecordingId(result.recordingId);
         return;
       }
+      if (session.current?.phase === 'stopping' && !session.current.ctx) session.current = null;
       if (session.current || openingRef.current || !mountedRef.current) return;
       const opening = {};
       openingRef.current = opening;
@@ -894,6 +941,10 @@ export function useRecording({
           throw new RecordingSessionChangedError();
       };
       setNoteId(noteId);
+      setRecordingId(null);
+      setStartedAt(null);
+      setLiveSegments([]);
+      segmentCountRef.current = 0;
       setCompletedRecording(null);
       setError(null);
       setMicSilent(false);
@@ -991,6 +1042,7 @@ export function useRecording({
           recordingId: rec.id,
           chunkIndex: 0,
           sentSamples: 0,
+          segmentCount: 0,
           uploadLanes: Array.from({ length: UPLOAD_CONCURRENCY }, () => Promise.resolve()),
           ownerSub,
           ownerOrgId,
@@ -1179,8 +1231,9 @@ export function useRecording({
         /* Diagnostics must not prevent Stop. */
       }
       setState('stopping');
+      const ownership = nativeOwnersRef.current.get(id);
       await control.stop(id);
-      return { segments: segmentCountRef.current };
+      return { segments: ownership?.segments ?? 0 };
     }
     const s = session.current;
     if (!s) {
@@ -1203,6 +1256,7 @@ export function useRecording({
       /* Diagnostics must not prevent Stop. */
     }
     s.phase = 'stopping';
+    if (s.recordingId) setFinalizingIds(ids => new Set(ids).add(s.recordingId!));
     setState('stopping');
     let retryAfterStop = false;
     const stopOwnedSession = async () => {
@@ -1238,6 +1292,13 @@ export function useRecording({
         // The lock prevents another tab from finalizing while our chunk uploads drain.
         // Without Web Locks, publish only after draining; mid-drain reload recovery is unavailable.
         if (navigator.locks) recoveryItem = persistIntent();
+        // Capture is closed. Uploads retain this session and its recovery lock,
+        // but no longer prevent the user from recording another note.
+        setState('idle');
+        setGracePrompt(null);
+        setPauseReason(null);
+        setAutoStopRequested(false);
+        applyAutoPauseEffects(machineRef.current?.noteStopped());
         await Promise.all(s.uploadLanes);
         recoveryItem ??= persistIntent();
         if (s.cancelled || !ownsActiveContext(auth, s.ownerSessionKey))
@@ -1254,7 +1315,7 @@ export function useRecording({
         finishRecording({
           recordingId: intent.recordingId,
           noteId: s.noteId,
-          segments: segmentCountRef.current,
+          segments: s.segmentCount,
           ownerSessionKey: s.ownerSessionKey,
           ownerOrgId: s.ownerOrgId,
         });
@@ -1264,10 +1325,16 @@ export function useRecording({
           if (s.recordingId) await finishRecordingCompletion(s.recordingId);
         } else {
           console.warn('finalize recording failed', err);
-          setError(recoveryItem ? COMPLETION_RECOVERY_ERROR : 'recording.errors.savedWithErrors');
+          if (session.current === s && !openingRef.current)
+            setError(recoveryItem ? COMPLETION_RECOVERY_ERROR : 'recording.errors.savedWithErrors');
           retryAfterStop = recoveryItem !== null;
         }
       } finally {
+        setFinalizingIds(ids => {
+          const next = new Set(ids);
+          if (s.recordingId) next.delete(s.recordingId);
+          return next;
+        });
         if (s.recordingId) activeRecordingCompletions.delete(s.recordingId);
         if (session.current === s) {
           teardownAudio();
@@ -1279,7 +1346,7 @@ export function useRecording({
           applyAutoPauseEffects(machineRef.current?.noteStopped());
         }
       }
-      return { segments: segmentCountRef.current };
+      return { segments: s.segmentCount };
     };
     const stopping =
       navigator.locks && s.recordingId
@@ -1359,6 +1426,7 @@ export function useRecording({
     recordingId,
     noteId,
     completedRecording,
+    isFinalizing: state === 'stopping' || (recordingId !== null && finalizingIds.has(recordingId)),
     startedAt,
     nativeElapsed,
     liveSegments,

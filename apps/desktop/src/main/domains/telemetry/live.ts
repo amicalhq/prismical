@@ -9,6 +9,7 @@ import { MainLogger } from '../../infra/logging/service';
 import { OperationalDb } from '../../infra/operational-db/service';
 import { sanitizeTelemetryProperties } from '../../../shared/telemetry-payload';
 import { projectTelemetryException } from '../../../shared/telemetry-exception';
+import { planAttributes } from '../../../shared/plan-attributes';
 import { readMachineId, resolveDeviceId } from './device-id';
 import { makeExceptionLimiter } from './exception-limiter';
 import { telemetryIdentity, telemetryPolicy } from './policy';
@@ -92,6 +93,7 @@ export const makeTelemetryServiceLive = (
             preference: boolean;
             chosen: boolean;
             sink: PostHogSink;
+            planExternalId?: string | null;
           }
         | undefined;
       let closed = false;
@@ -205,6 +207,30 @@ export const makeTelemetryServiceLive = (
             })
           )
         );
+      const identifyPlan: TelemetryServiceApi['identifyPlan'] = request =>
+        send('renderer', request.revision, (sink, current) => {
+          if (
+            mode !== 'cloud' || !current.policy.signedIn ||
+            request.accountId !== current.distinctId || request.orgId !== current.orgId ||
+            !active || active.planExternalId === request.planExternalId
+          ) return;
+          const plan = request.planExternalId === null ? null : planAttributes(request.planExternalId);
+          if (plan) {
+            sink.groupIdentify({
+              groupType: 'organization',
+              groupKey: request.orgId,
+              distinctId: current.distinctId,
+              properties: { ...plan, appsumo_tier: plan.appsumo_tier ?? null },
+            });
+            if (plan.is_appsumo) {
+              sink.identify({
+                distinctId: current.distinctId,
+                properties: { $set_once: { has_appsumo_org: true } },
+              });
+            }
+          }
+          active.planExternalId = request.planExternalId;
+        });
       const capture: TelemetryServiceApi['capture'] = (
         event,
         properties,
@@ -338,6 +364,6 @@ export const makeTelemetryServiceLive = (
           )
         )
       );
-      return { state, getState, getDeviceId, capture, captureException } satisfies TelemetryServiceApi;
+      return { state, getState, getDeviceId, identifyPlan, capture, captureException } satisfies TelemetryServiceApi;
     })
   );

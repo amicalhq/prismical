@@ -14,7 +14,7 @@ import { assert, describe, it } from '@effect/vitest';
 import { APICallError, type LanguageModel } from 'ai';
 import { MockLanguageModelV4, simulateReadableStream } from 'ai/test';
 import { eq } from 'drizzle-orm';
-import { Context, Effect, Exit, Layer, Scope } from 'effect';
+import { Context, Deferred, Effect, Exit, Layer, Scope } from 'effect';
 import {
   CLEANUP_SKILL_ID,
   ENHANCE_SKILL_ID,
@@ -158,13 +158,14 @@ interface Harness {
 const buildWith = (
   model: LanguageModel | undefined,
   toolSupport?: ToolSupport,
-  locale: SupportedLocale = 'en'
+  locale: SupportedLocale = 'en',
+  localDbPath?: string
 ) =>
   Effect.gen(function* () {
     dbSeq += 1;
     const logger = makeTestLogger();
     const env = Layer.mergeAll(
-      testConfigLayer({ localDbPath: path.join(tempDir, `lanes-${dbSeq}.db`) }),
+      testConfigLayer({ localDbPath: localDbPath ?? path.join(tempDir, `lanes-${dbSeq}.db`) }),
       logger.layer,
       testI18nLayer(locale),
       WorkspaceTransportLive,
@@ -1032,6 +1033,438 @@ describe('skill-run gates', () => {
         403
       );
       assert.strictEqual(upsert.bodyJson.error.code, 'FORBIDDEN');
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+});
+
+describe('completed recording suggestion recovery', () => {
+  const runPath = `/apps/v1/me/skills/${ENHANCE_SKILL_ID}/run`;
+  const pendingPath = '/apps/v1/me/skill-runs/pending';
+  const resolvePath = '/apps/v1/me/skill-runs/resolve';
+  const acceptPath = '/apps/v1/me/skill-runs/accept';
+  const acceptBody = (noteId: string, result: Any) => ({
+    ...result,
+    noteId,
+    content: '[{"type":"paragraph","content":[{"type":"text","text":"Saved"}]}]',
+  });
+
+  it.effect('shares concurrent fresh delivery within one workspace without duplicating generation', () =>
+    Effect.gen(function* () {
+      const model = toolCallingModel();
+      const { api, product, scope } = yield* build(model);
+      const noteId = yield* insertNote(product, { title: 'Recorded note' });
+      const recordingId = yield* insertRecording(product, { noteId, segments: ['A thought.'] });
+      const other = yield* build(toolCallingModel(undefined, { markdown: 'Other workspace output.', reasoning: null }));
+      yield* insertNote(other.product, { id: noteId, title: 'Same ID, different workspace' });
+      other.product.db.insert(schema.recording).values(product.db.select().from(schema.recording).all()).run();
+      other.product.db.insert(schema.transcriptSegment).values(product.db.select().from(schema.transcriptSegment).all()).run();
+      const entered = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      const generate = model.doGenerate.bind(model);
+      const calls = vi.spyOn(model, 'doGenerate').mockImplementation(async options => {
+        await Effect.runPromise(Deferred.succeed(entered, undefined));
+        await Effect.runPromise(Deferred.await(release));
+        return generate(options);
+      });
+      const request = { noteId, recordingId, recoverable: true };
+      const first = Effect.runPromise(post(api, runPath, request));
+      yield* Deferred.await(entered);
+      const second = Effect.runPromise(post(api, runPath, request));
+      const foreign = Effect.runPromise(post(other.api, runPath, request));
+      yield* Effect.promise(() => new Promise<void>(resolve => setImmediate(resolve)));
+      yield* Deferred.succeed(release, undefined);
+      const responses = yield* Effect.promise(() => Promise.all([first, second]));
+      assert.strictEqual(calls.mock.calls.length, 1);
+      assert.deepStrictEqual(expectOk(responses[0]!, 200), expectOk(responses[1]!, 200));
+      assert.lengthOf(product.db.select().from(schema.noteSkillResult).all(), 1);
+      assert.strictEqual(expectOk(yield* Effect.promise(() => foreign), 200).bodyJson.rawMarkdown, 'Other workspace output.');
+      yield* Scope.close(scope, Exit.void);
+      yield* Scope.close(other.scope, Exit.void);
+    })
+  );
+
+  it.effect('a stale discard or refinement cannot replace the latest pending output', () =>
+    Effect.gen(function* () {
+      const output = { markdown: 'Original output.', reasoning: null };
+      const model = toolCallingModel(undefined, output);
+      const { api, product, scope } = yield* build(model);
+      const noteId = yield* insertNote(product, { title: 'Recorded note' });
+      const recordingId = yield* insertRecording(product, { noteId, segments: ['A thought.'] });
+      const original = expectOk(yield* post(api, runPath, { noteId, recordingId, recoverable: true }), 200).bodyJson;
+      output.markdown = 'The revised output.';
+      const refine = {
+        noteId, recordingId, recoveryResultId: original.resultId,
+        refineInstruction: 'Clarify', previousOutput: original.rawMarkdown,
+      };
+      const revised = expectOk(yield* post(api, runPath, refine), 200).bodyJson;
+      const discarded = expectOk(yield* post(api, resolvePath, {
+        noteId, resultId: original.resultId, rawMarkdown: original.rawMarkdown,
+      }), 409);
+      assert.strictEqual(discarded.bodyJson.error.code, 'SUGGESTION_CHANGED');
+      assert.strictEqual(expectOk(yield* post(api, runPath, refine), 409).bodyJson.error.code, 'SUGGESTION_CHANGED');
+      assert.lengthOf(model.doGenerateCalls, 2);
+      assert.deepStrictEqual(expectOk(yield* get(api, pendingPath, { noteId }), 200).bodyJson.results, [revised]);
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+
+  it.effect('a slower refinement cannot overwrite a newer completed refinement', () =>
+    Effect.gen(function* () {
+      const model = toolCallingModel();
+      const { api, product, scope } = yield* build(model);
+      const noteId = yield* insertNote(product, { title: 'Recorded note' });
+      const recordingId = yield* insertRecording(product, { noteId, segments: ['A thought.'] });
+      const original = expectOk(yield* post(api, runPath, { noteId, recordingId, recoverable: true }), 200).bodyJson;
+      const entered = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      vi.spyOn(model, 'doGenerate').mockImplementationOnce(async options => {
+        await Effect.runPromise(Deferred.succeed(entered, undefined));
+        await Effect.runPromise(Deferred.await(release));
+        return toolCallingModel(undefined, { markdown: 'Older refinement.', reasoning: null }).doGenerate(options);
+      }).mockImplementationOnce(options =>
+        toolCallingModel(undefined, { markdown: 'Newer refinement.', reasoning: null }).doGenerate(options)
+      );
+      const request = {
+        noteId, recordingId, recoveryResultId: original.resultId,
+        refineInstruction: 'Clarify', previousOutput: original.rawMarkdown,
+      };
+      const older = Effect.runPromise(post(api, runPath, request));
+      yield* Deferred.await(entered);
+      const newer = expectOk(yield* post(api, runPath, { ...request, refineInstruction: 'Simplify' }), 200).bodyJson;
+      yield* Deferred.succeed(release, undefined);
+      assert.strictEqual(expectOk(yield* Effect.promise(() => older), 409).bodyJson.error.code, 'SUGGESTION_CHANGED');
+      assert.deepStrictEqual(expectOk(yield* get(api, pendingPath, { noteId }), 200).bodyJson.results, [newer]);
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+
+  it.effect('a stale Keep cannot reuse the artifact retired by Undo', () =>
+    Effect.gen(function* () {
+      const { api, product, scope } = yield* build(toolCallingModel());
+      const noteId = yield* insertNote(product, { title: 'Recorded note' });
+      const recordingId = yield* insertRecording(product, { noteId, segments: ['A thought.'] });
+      const original = expectOk(yield* post(api, runPath, { noteId, recordingId, recoverable: true }), 200).bodyJson;
+      const body = { ...acceptBody(noteId, original), prevContent: '{"type":"doc","content":[]}' };
+      expectOk(yield* post(api, acceptPath, body), 200);
+      assert.isTrue(expectOk(yield* post(api, '/apps/v1/me/skill-runs/restore', { noteId }), 200).bodyJson.restored);
+      assert.strictEqual(expectOk(yield* post(api, acceptPath, body), 409).bodyJson.error.code, 'SUGGESTION_CHANGED');
+      assert.lengthOf(product.db.select().from(schema.artifact).all(), 1);
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+
+  it.effect(
+    'recovers the exact completed output after restart and redelivers it without a provider',
+    () =>
+      Effect.gen(function* () {
+        const model = toolCallingModel();
+        const first = yield* build(model);
+        const noteId = yield* insertNote(first.product, { title: 'Recorded note' });
+        const recordingId = yield* insertRecording(first.product, {
+          noteId,
+          segments: ['A completed thought.'],
+        });
+        const request = { noteId, recordingId, recoverable: true };
+        const completed = expectOk(yield* post(first.api, runPath, request), 200).bodyJson;
+        assert.isString(completed.resultId);
+        assert.lengthOf(model.doGenerateCalls, 1);
+        const dbPath = first.product.client.name;
+        yield* Scope.close(first.scope, Exit.void);
+
+        // The new workspace has no configured provider. Both recovery routes must use saved output.
+        const second = yield* buildWith(undefined, undefined, 'en', dbPath);
+        assert.deepStrictEqual(
+          expectOk(yield* get(second.api, pendingPath, { noteId }), 200).bodyJson.results,
+          [completed]
+        );
+        assert.deepStrictEqual(
+          expectOk(yield* post(second.api, runPath, request), 200).bodyJson,
+          completed
+        );
+        yield* Scope.close(second.scope, Exit.void);
+      })
+  );
+
+  it.effect(
+    'refines the same result, refuses stale Keep, and commits repeated Keep to one artifact',
+    () =>
+      Effect.gen(function* () {
+        const output = { markdown: MARKDOWN, reasoning: null as string | null };
+        const model = toolCallingModel(undefined, output);
+        const { api, product, scope } = yield* build(model);
+        const noteId = yield* insertNote(product, { title: 'Recorded note' });
+        const recordingId = yield* insertRecording(product, {
+          noteId,
+          segments: ['A completed thought.'],
+        });
+        const request = { noteId, recordingId, recoverable: true };
+        const original = expectOk(yield* post(api, runPath, request), 200).bodyJson;
+        output.markdown = 'A shorter result.';
+        output.reasoning = 'Kept the detail.';
+        const refined = expectOk(
+          yield* post(api, runPath, {
+            ...request,
+            recoveryResultId: original.resultId,
+            refineInstruction: 'Make it shorter',
+            previousOutput: original.rawMarkdown,
+          }),
+          200
+        ).bodyJson;
+        assert.strictEqual(refined.resultId, original.resultId);
+        assert.strictEqual(refined.rawMarkdown, output.markdown);
+        assert.deepStrictEqual(
+          expectOk(yield* get(api, pendingPath, { noteId }), 200).bodyJson.results,
+          [refined]
+        );
+        assert.strictEqual(
+          expectOk(yield* post(api, acceptPath, acceptBody(noteId, original)), 409).bodyJson.error
+            .code,
+          'SUGGESTION_CHANGED'
+        );
+
+        const [kept, repeated] = yield* Effect.all(
+          [
+            post(api, acceptPath, acceptBody(noteId, refined)),
+            post(api, acceptPath, acceptBody(noteId, refined)),
+          ],
+          { concurrency: 'unbounded' }
+        );
+        assert.deepStrictEqual(expectOk(repeated, 200).bodyJson, expectOk(kept, 200).bodyJson);
+        assert.strictEqual(
+          expectOk(yield* post(api, acceptPath, acceptBody(noteId, original)), 409).bodyJson.error
+            .code,
+          'SUGGESTION_CHANGED'
+        );
+        assert.lengthOf(product.db.select().from(schema.artifact).all(), 1);
+        assert.isEmpty(expectOk(yield* get(api, pendingPath, { noteId }), 200).bodyJson.results);
+        assert.lengthOf(model.doGenerateCalls, 2);
+        yield* Scope.close(scope, Exit.void);
+      })
+  );
+
+  it.effect('discard is durable and repeated discard cannot make a result available again', () =>
+    Effect.gen(function* () {
+      const model = toolCallingModel();
+      const { api, product, scope } = yield* build(model);
+      const noteId = yield* insertNote(product, { title: 'Recorded note' });
+      const recordingId = yield* insertRecording(product, {
+        noteId,
+        segments: ['A completed thought.'],
+      });
+      const completed = expectOk(
+        yield* post(api, runPath, { noteId, recordingId, recoverable: true }),
+        200
+      ).bodyJson;
+      const resolution = { noteId, resultId: completed.resultId, rawMarkdown: completed.rawMarkdown };
+      expectOk(yield* post(api, resolvePath, { noteId, resultId: completed.resultId }), 400);
+      expectOk(yield* post(api, resolvePath, resolution), 200);
+      expectOk(yield* post(api, resolvePath, resolution), 200);
+      assert.isEmpty(expectOk(yield* get(api, pendingPath, { noteId }), 200).bodyJson.results);
+      expectOk(yield* post(api, acceptPath, acceptBody(noteId, completed)), 409);
+      expectOk(
+        yield* post(api, runPath, {
+          noteId,
+          recordingId,
+          recoveryResultId: completed.resultId,
+          refineInstruction: 'Shorten',
+          previousOutput: completed.rawMarkdown,
+        }),
+        409
+      );
+      assert.lengthOf(model.doGenerateCalls, 1);
+      assert.isEmpty(product.db.select().from(schema.artifact).all());
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+
+  it.effect('rolls back the artifact when persisting its result resolution fails', () =>
+    Effect.gen(function* () {
+      const { api, product, scope } = yield* build(toolCallingModel());
+      const noteId = yield* insertNote(product, { title: 'Recorded note' });
+      const recordingId = yield* insertRecording(product, {
+        noteId,
+        segments: ['A completed thought.'],
+      });
+      const completed = expectOk(
+        yield* post(api, runPath, { noteId, recordingId, recoverable: true }),
+        200
+      ).bodyJson;
+      product.client.exec(
+        "CREATE TRIGGER fail_result_resolution BEFORE UPDATE ON note_skill_result BEGIN SELECT RAISE(ABORT, 'test write failure'); END"
+      );
+      assert.deepStrictEqual(yield* post(api, acceptPath, acceptBody(noteId, completed)), {
+        error: { code: 'INTERNAL' },
+      });
+      assert.isEmpty(product.db.select().from(schema.artifact).all());
+      assert.deepStrictEqual(
+        expectOk(yield* get(api, pendingPath, { noteId }), 200).bodyJson.results,
+        [completed]
+      );
+      product.client.exec('DROP TRIGGER fail_result_resolution');
+      expectOk(yield* post(api, acceptPath, acceptBody(noteId, completed)), 200);
+      assert.lengthOf(product.db.select().from(schema.artifact).all(), 1);
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+
+  it.effect('isolates results by note and by the workspace/member database', () =>
+    Effect.gen(function* () {
+      const model = toolCallingModel();
+      const first = yield* build(model);
+      const second = yield* build();
+      const noteId = yield* insertNote(first.product, { title: 'First owner' });
+      const otherNoteId = yield* insertNote(first.product, { title: 'Other note' });
+      yield* insertNote(second.product, { id: noteId, title: 'Different owner, same note ID' });
+      const recordingId = yield* insertRecording(first.product, {
+        noteId,
+        segments: ['A completed thought.'],
+      });
+      const completed = expectOk(
+        yield* post(first.api, runPath, { noteId, recordingId, recoverable: true }),
+        200
+      ).bodyJson;
+      for (const target of [
+        { api: first.api, noteId: otherNoteId },
+        { api: second.api, noteId },
+      ]) {
+        assert.isEmpty(
+          expectOk(yield* get(target.api, pendingPath, { noteId: target.noteId }), 200).bodyJson
+            .results
+        );
+        expectOk(
+          yield* post(target.api, resolvePath, {
+            noteId: target.noteId,
+            resultId: completed.resultId,
+            rawMarkdown: completed.rawMarkdown,
+          }),
+          403
+        );
+        expectOk(yield* post(target.api, acceptPath, acceptBody(target.noteId, completed)), 404);
+        expectOk(
+          yield* post(target.api, runPath, {
+            noteId: target.noteId,
+            recordingId,
+            recoveryResultId: completed.resultId,
+            refineInstruction: 'Shorten',
+          }),
+          404
+        );
+      }
+      expectOk(
+        yield* post(first.api, `/apps/v1/me/skills/${CLEANUP_SKILL_ID}/run`, {
+          noteId,
+          recordingId,
+          recoveryResultId: completed.resultId,
+          refineInstruction: 'Change skill',
+        }),
+        404
+      );
+      assert.lengthOf(model.doGenerateCalls, 1);
+      yield* Scope.close(first.scope, Exit.void);
+      yield* Scope.close(second.scope, Exit.void);
+    })
+  );
+
+  it.effect('does not recover title, inline, or ordinary manual results', () =>
+    Effect.gen(function* () {
+      const { api, product, scope } = yield* build(toolCallingModel());
+      const noteId = yield* insertNote(product, {
+        title: 'Recorded note',
+        markdown: 'A note to rewrite.',
+      });
+      const recordingId = yield* insertRecording(product, {
+        noteId,
+        segments: ['A completed thought.'],
+      });
+      for (const request of [
+        { path: runPath, body: { noteId, recordingId } },
+        {
+          path: `/apps/v1/me/skills/${NAME_NOTE_SKILL_ID}/run`,
+          body: { noteId, recordingId, recoverable: true },
+        },
+        {
+          path: runPath,
+          body: {
+            noteId,
+            recordingId,
+            recoverable: true,
+            mode: 'inline-rewrite',
+            selectionText: 'A note',
+          },
+        },
+      ]) {
+        const result = expectOk(yield* post(api, request.path, request.body), 200).bodyJson;
+        assert.isUndefined(result.resultId);
+      }
+      assert.isEmpty(expectOk(yield* get(api, pendingPath, { noteId }), 200).bodyJson.results);
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+
+  it.effect('does not expose, rerun, or accept results from trashed or deleted notes', () =>
+    Effect.gen(function* () {
+      const model = toolCallingModel();
+      const { api, product, scope } = yield* build(model);
+      for (const hidden of ['trashedAt', 'deletedAt'] as const) {
+        const noteId = yield* insertNote(product, { title: 'Recorded note' });
+        const recordingId = yield* insertRecording(product, {
+          noteId,
+          segments: ['A completed thought.'],
+        });
+        const request = { noteId, recordingId, recoverable: true };
+        const result = expectOk(yield* post(api, runPath, request), 200).bodyJson;
+        product.db
+          .update(schema.note)
+          .set({ [hidden]: NOW })
+          .where(eq(schema.note.id, noteId))
+          .run();
+        expectOk(yield* get(api, pendingPath, { noteId }), 403);
+        expectOk(yield* post(api, runPath, request), 404);
+        expectOk(yield* post(api, acceptPath, acceptBody(noteId, result)), 404);
+        expectOk(yield* post(api, resolvePath, { noteId, resultId: result.resultId, rawMarkdown: result.rawMarkdown }), 403);
+      }
+      assert.lengthOf(model.doGenerateCalls, 2);
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+
+  it.effect('a result discarded while refinement runs stays resolved', () =>
+    Effect.gen(function* () {
+      const model = toolCallingModel();
+      const { api, product, scope } = yield* build(model);
+      const noteId = yield* insertNote(product, { title: 'Recorded note' });
+      const recordingId = yield* insertRecording(product, {
+        noteId,
+        segments: ['A completed thought.'],
+      });
+      const original = expectOk(
+        yield* post(api, runPath, { noteId, recordingId, recoverable: true }),
+        200
+      ).bodyJson;
+      const generated = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      const generate = model.doGenerate.bind(model);
+      vi.spyOn(model, 'doGenerate').mockImplementationOnce(async options => {
+        await Effect.runPromise(Deferred.succeed(generated, undefined));
+        await Effect.runPromise(Deferred.await(release));
+        return generate(options);
+      });
+      const refinement = Effect.runPromise(
+        post(api, runPath, {
+          noteId,
+          recordingId,
+          recoveryResultId: original.resultId,
+          refineInstruction: 'Shorten',
+          previousOutput: original.rawMarkdown,
+        })
+      );
+      yield* Deferred.await(generated);
+      expectOk(yield* post(api, resolvePath, { noteId, resultId: original.resultId, rawMarkdown: original.rawMarkdown }), 200);
+      yield* Deferred.succeed(release, undefined);
+      expectOk(yield* Effect.promise(() => refinement), 409);
+      assert.isEmpty(expectOk(yield* get(api, pendingPath, { noteId }), 200).bodyJson.results);
+      assert.lengthOf(product.db.select().from(schema.noteSkillResult).all(), 1);
       yield* Scope.close(scope, Exit.void);
     })
   );

@@ -8,6 +8,9 @@ import type { SelectionAnchors } from "./selection-anchors";
 // string id. Inline-rewrite anchors the target range with Yjs relative positions (NOT the
 // desktop's raw {from,to} — see selection-anchors.ts for why).
 export interface SkillDiffCandidate {
+  resultId?: string;
+  /** Preserved when a restored or freshly generated suggestion is refined. */
+  owner?: { sessionKey: string | null; orgId: string | null };
   noteId: string;
   skillId: string;
   skillName: string;

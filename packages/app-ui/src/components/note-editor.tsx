@@ -1,6 +1,8 @@
 'use client';
 
 import { useState } from 'react';
+import { tiptapJsonToMarkdown } from '@prismical/editor-markdown';
+import { toast } from 'sonner';
 import {
   useDesktopCapabilities,
   useEntitlements,
@@ -38,6 +40,7 @@ import { NoteFolderChip } from './note-folder-chip';
 import { NoteTagEditor } from './note-tag-editor';
 import { NoteEventChips } from './note-event-chips';
 import { useRegisterCurrentNote } from '../shell/current-note-context';
+import { useCurrentNoteEditor } from '../shell/current-editor-context';
 import type { Note } from '@prismical/app-contracts';
 import { copyToClipboard } from '../lib/clipboard';
 import { useUpdateNote, useDeleteNote } from '@prismical/app-client';
@@ -98,6 +101,8 @@ export function NoteEditor({ note }: NoteEditorProps) {
   const { enabled: sharingEnabled } = useFeatureFlag('sharing');
   const update = useUpdateNote(note.id);
   const del = useDeleteNote();
+  const { editor, editorNoteId } = useCurrentNoteEditor();
+  const canCopyMarkdown = editor !== null && !editor.isDestroyed && editorNoteId === note.id;
 
   // Publish this note to the layout-level recording cluster, which renders the
   // dock + transcription panel for it (the transcript lives there, not inline).
@@ -109,9 +114,17 @@ export function NoteEditor({ note }: NoteEditorProps) {
   });
 
   const copyAsMarkdown = async () => {
-    // Best-effort: copyToClipboard already swallows failures and falls back to
-    // execCommand, so there's nothing more to handle here.
-    await copyToClipboard(`# ${title}\n\n${note.body}`);
+    if (!canCopyMarkdown || !editor) return;
+    try {
+      // The metadata body can lag behind collaborative edits. Serialize the loaded
+      // editor at click time so both local and remote edits are included.
+      const body = tiptapJsonToMarkdown(editor.getJSON());
+      const copied = await copyToClipboard(`# ${title}\n\n${body}`);
+      if (copied) toast.success(t('settings.apiMcp.clipboard.copiedText'));
+      else toast.error(t('settings.apiMcp.clipboard.textError'));
+    } catch {
+      toast.error(t('settings.apiMcp.clipboard.textError'));
+    }
   };
 
   return (
@@ -232,7 +245,11 @@ export function NoteEditor({ note }: NoteEditorProps) {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem className="gap-2" onSelect={copyAsMarkdown}>
+            <DropdownMenuItem
+              className="gap-2"
+              disabled={!canCopyMarkdown}
+              onSelect={copyAsMarkdown}
+            >
               <ClipboardCopy className="h-4 w-4" />
               {t('notes.actions.copyMarkdown')}
             </DropdownMenuItem>

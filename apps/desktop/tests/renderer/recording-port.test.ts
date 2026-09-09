@@ -51,6 +51,7 @@ describe('desktop recording port', () => {
     const seen: NativeRecordingState[] = [];
     const detach = createDesktopPorts(env).appPorts.recording.control!.subscribe(state => seen.push(state));
     const paused: RecordingStateView = {
+      finalizingRecordingIds: [], completedRecordings: [],
       recordingId: 'rec_1', noteId: 'note_1', status: 'paused', captureMode: 'dual',
       requestedCaptureMode: 'dual', micSource: 'system-default', segments: [], elapsedMs: 30_000,
       spendsCloudQuota: false,

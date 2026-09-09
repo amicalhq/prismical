@@ -57,6 +57,7 @@ import {
   parseTransportRequest,
   parseUpdateStateView,
   telemetryCaptureRequestSchema,
+  telemetryPlanIdentityRequestSchema,
   telemetryExceptionRequestSchema,
   telemetryStateSchema,
   type AiModelListing,
@@ -734,6 +735,20 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
               'renderer',
               parsed.data.revision
             );
+          })
+        )
+      )
+    );
+    yield* acquireHandle(CHANNELS.telemetryIdentifyPlan, (event, payload) =>
+      runPromise(
+        windows.identityForWebContents(event.sender.id).pipe(
+          Effect.flatMap((identity): Effect.Effect<void, SenderRejected | PayloadRejected> => {
+            // Only the main renderer owns the active organization's plan publication.
+            if (Option.isNone(identity) || identity.value.kind !== 'main')
+              return Effect.fail(new SenderRejected('UNKNOWN_SENDER'));
+            const parsed = telemetryPlanIdentityRequestSchema.safeParse(payload);
+            if (!parsed.success) return Effect.fail(new PayloadRejected('INVALID_REQUEST'));
+            return telemetry.identifyPlan(parsed.data);
           })
         )
       )
@@ -1716,7 +1731,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
               }
               return parsed.data.kind === 'push'
                 ? windows
-                    .sendToMainWindow(CHANNELS.recordingStateChanged, parsed.data.view)
+                    .sendToAppWindows(CHANNELS.recordingStateChanged, parsed.data.view)
                     .pipe(Effect.asVoid)
                 : Ref.set(startOverrideRef, Option.some(parsed.data.result));
             })

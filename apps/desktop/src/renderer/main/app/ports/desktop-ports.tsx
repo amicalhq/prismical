@@ -61,6 +61,11 @@ const log = (message: string, detail?: unknown): void => {
 // shared shell (/notes?folder=x, /people/abc) navigate uniformly.
 const navigationActions: NavigationActions = {
   push: href => {
+    const noteId = /^\/notes\/([^/?#]+)$/.exec(href)?.[1];
+    if (noteId && router.state.location.pathname.startsWith('/float')) {
+      window.desktop.float.open(noteId);
+      return;
+    }
     router.history.push(href);
   },
   replace: href => {
@@ -261,6 +266,8 @@ const DESKTOP_CAPTURE_MODE = 'dual' as const;
 // shared useRecording consumes. Structurally identical; mapped for clarity.
 const toNativeState = (view: RecordingStateView): NativeRecordingState => ({
   recordingId: view.recordingId,
+  finalizingRecordingIds: view.finalizingRecordingIds,
+  completedRecordings: view.completedRecordings,
   status: view.status,
   captureMode: view.captureMode,
   requestedCaptureMode: view.requestedCaptureMode,

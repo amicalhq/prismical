@@ -10,6 +10,7 @@ import { useTranslation } from 'react-i18next';
 
 type RecordingPillFaceProps = {
   recState: RecState;
+  startBlockedReason?: string;
   /** Pause/resume is available for this capture path when supported.
    * False hides the pause button entirely — the pill keeps its two-control layout. */
   canPause?: boolean;
@@ -55,6 +56,7 @@ export function formatSessionTimer(totalSeconds: number): string {
  */
 export function RecordingPillFace({
   recState,
+  startBlockedReason,
   canPause = false,
   isPanelOpen,
   onTogglePanel,
@@ -82,6 +84,11 @@ export function RecordingPillFace({
   // at `idle` it is precisely the post-stop fading ghost (at rest the layer is
   // invisible/inert, so what it renders is moot).
   const showSaving = recState === 'stopping' || !engaged;
+  const idlePanelLabel = isPanelOpen
+    ? t('recording.actions.hideTranscription')
+    : startBlockedReason
+      ? t('recording.actions.showTranscription')
+      : t('recording.actions.start');
 
   return (
     <TooltipProvider>
@@ -104,25 +111,16 @@ export function RecordingPillFace({
               <button
                 type="button"
                 data-onboarding="record-open"
+                // Reviewing a suggestion must not block access to its source transcript.
+                // The panel's capture action enforces the recording gate.
                 onClick={onTogglePanel}
                 className="flex h-full w-full cursor-pointer items-center justify-center text-dock-ink-2 transition-[background-color,color] hover:bg-dock-hover hover:text-dock-ink active:scale-95"
-                // Labelled by INTENT: the pill's job is starting a recording
-                // (the panel it opens leads with Start) — "Show transcription"
-                // described the mechanism, not the goal (user feedback).
-                aria-label={
-                  isPanelOpen
-                    ? t('recording.actions.hideTranscription')
-                    : t('recording.actions.start')
-                }
+                aria-label={idlePanelLabel}
               >
                 <AudioLines className="size-[18px]" />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="top">
-              {isPanelOpen
-                ? t('recording.actions.hideTranscription')
-                : t('recording.actions.start')}
-            </TooltipContent>
+            <TooltipContent side="top">{idlePanelLabel}</TooltipContent>
           </Tooltip>
         </div>
 
@@ -170,22 +168,24 @@ export function RecordingPillFace({
           <button
             type="button"
             onClick={onTogglePanel}
-            className="flex h-7 min-w-0 flex-1 cursor-pointer items-center justify-center gap-[3px] rounded-lg transition-colors hover:bg-dock-hover"
+            className="flex h-full min-w-0 flex-1 cursor-pointer flex-col items-center justify-center rounded-lg transition-colors hover:bg-dock-hover"
             aria-label={
               isPanelOpen
                 ? t('recording.actions.hideTranscription')
                 : t('recording.actions.showTranscription')
             }
           >
-            <Waveform
-              active={live}
-              pending={pending}
-              className={`w-[34px] shrink-0 transition-colors ${
-                paused ? 'text-rec/45' : 'text-rec'
-              }`}
-            />
-            <span className="min-w-[34px] text-center text-xs font-medium tabular-nums text-dock-ink-2">
-              {formatSessionTimer(elapsedSeconds)}
+            <span className="flex items-center justify-center gap-[3px]">
+              <Waveform
+                active={live}
+                pending={pending}
+                className={`w-[34px] shrink-0 transition-colors ${
+                  paused ? 'text-rec/45' : 'text-rec'
+                }`}
+              />
+              <span className="min-w-[34px] text-center text-xs font-medium tabular-nums text-dock-ink-2">
+                {formatSessionTimer(elapsedSeconds)}
+              </span>
             </span>
           </button>
           <Tooltip>

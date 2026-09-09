@@ -89,6 +89,10 @@ type TranscriptPanelProps = {
   isFinishing?: boolean;
   /** Live lines for the in-progress recording. */
   liveLines: TranscriptLine[];
+  /** Identifies the live recording so its persisted row is not rendered twice. */
+  activeRecordingId?: string | null;
+  /** Note-scoped skill activity, separate from capture/finalization controls. */
+  skillStatus?: (fallback: React.ReactNode, hideCompleted: boolean) => React.ReactNode;
   /** All of the note's recordings, NEWEST first. */
   recordings: RecordingLog[];
   /** Enhance THAT recording into the note. */
@@ -105,6 +109,8 @@ type TranscriptPanelProps = {
   /** Cluster-owned session seconds (timestamp-derived; survives stop for "Saved · t"). */
   elapsedSeconds: number;
   onStartRecording: () => void;
+  startBlockedReason?: string;
+  hideStartRecording?: boolean;
   onStopRecording: () => void;
   onPauseRecording?: () => void;
   onResumeRecording?: () => void;
@@ -119,6 +125,7 @@ type TranscriptPanelProps = {
   onDismissError?: () => void;
   /** Off the recording's note, the live bar offers a jump back. */
   onOpenNote?: () => void;
+  recordingNoteTitle?: string;
   /** The just-finished session's recording id — drives the Saved → Transcribing →
    * Identifying → Ready bar sequence after a stop. */
   finishedRecordingId?: string | null;
@@ -153,6 +160,8 @@ function TranscriptPanelContent({
   pauseReason = null,
   isFinishing = false,
   liveLines,
+  activeRecordingId = null,
+  skillStatus,
   recordings,
   onEnhanceRecording,
   onRenameSpeaker,
@@ -163,6 +172,8 @@ function TranscriptPanelContent({
   canPause = false,
   elapsedSeconds,
   onStartRecording,
+  startBlockedReason,
+  hideStartRecording = false,
   onStopRecording,
   onPauseRecording,
   onResumeRecording,
@@ -171,6 +182,7 @@ function TranscriptPanelContent({
   errorAction = null,
   onDismissError,
   onOpenNote,
+  recordingNoteTitle,
   finishedRecordingId = null,
 }: TranscriptPanelProps) {
   const { t } = useTranslation();
@@ -286,7 +298,10 @@ function TranscriptPanelContent({
     onEnhanceRecording(finished.id, { auto: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fire once on the settle transition
   }, [enhanceWaiting, doneReady]);
-  const doneMode = !isRecording && recState === 'idle' && !!finished && !doneDismissed;
+  const settledEmpty = doneReady && !!finished?.linesLoaded && finished.lines.length === 0 &&
+    finished.finalizeStatus !== 'failed' && finished.finalizeStatus !== 'stalled';
+  const doneMode = !isRecording && recState === 'idle' && !!finished && !doneDismissed &&
+    !settledEmpty && !startBlockedReason;
 
   // The refetch gap right after a stop with no live-line bridge (short/silent
   // recordings): the finished recording isn't in `recordings` yet, so without
@@ -317,6 +332,27 @@ function TranscriptPanelContent({
       .toLowerCase()
       .includes(q);
   });
+
+  // Background transcript/skill work must not take away the next capture action.
+  const enhanceAction =
+    doneMode && finished ? (
+      doneReady && !finished.folded && finished.lines.length > 0 ? (
+        <button
+          type="button"
+          data-onboarding="enhance"
+          onClick={() => {
+            setDoneDismissed(true);
+            onEnhanceRecording(finished.id);
+          }}
+          className="flex h-7 items-center gap-1.5 rounded-lg bg-dock-field px-2 pl-1 text-xs font-medium text-dock-ink transition-colors hover:bg-dock-hover"
+        >
+          <span className="flex size-[18px] items-center justify-center rounded-[5px] bg-dock-surface text-[11px] font-semibold text-dock-ink-2">
+            /
+          </span>
+          {t('recording.panel.enhanceChip')}
+        </button>
+      ) : null
+    ) : null;
 
   return (
     <div data-onboarding="transcript" className="relative flex h-full w-full flex-col">
@@ -429,40 +465,9 @@ function TranscriptPanelContent({
       <MessageScroller className="min-h-0 flex-1">
         <MessageScrollerViewport aria-label={t('recording.panel.log')}>
           <MessageScrollerContent className="gap-0">
-            {isRecording ? (
-              <MessageScrollerItem className="p-3.5" messageId="live-recording">
-                <TranscriptBubbles lines={liveLines} viewer={viewer} live />
-                {!isFinishing && !isPaused ? (
-                  <Marker className="mt-2 w-auto" role="status">
-                    <MarkerIcon>
-                      <Loader2 className="animate-spin" />
-                    </MarkerIcon>
-                    <MarkerContent className="shimmer shimmer-duration-1400 text-dock-ink-3 font-medium">
-                      {t('recording.panel.listening')}
-                    </MarkerContent>
-                  </Marker>
-                ) : null}
-                {isPaused ? (
-                  <Marker className="mt-2 w-auto" role="status">
-                    <MarkerIcon>
-                      <Pause />
-                    </MarkerIcon>
-                    <MarkerContent className="font-medium">
-                      {pauseReason === 'silence'
-                        ? t('recording.panel.pausedNoSound')
-                        : t('recording.panel.paused')}
-                    </MarkerContent>
-                  </Marker>
-                ) : null}
-              </MessageScrollerItem>
-            ) : !hasAnyPersisted ? (
-              <MessageScrollerItem className="flex min-h-full flex-1">
-                <div className="flex flex-1 items-center justify-center p-8 text-center text-sm text-dock-ink-3">
-                  {t('recording.panel.empty')}
-                </div>
-              </MessageScrollerItem>
-            ) : (
-              chronological.map(rec => (
+            {chronological
+              .filter(rec => !isRecording || rec.id !== activeRecordingId)
+              .map(rec => (
                 <MessageScrollerItem
                   key={rec.id}
                   className="px-3.5 pb-3.5 first:pt-2"
@@ -500,8 +505,73 @@ function TranscriptPanelContent({
                     onRenameSpeaker={onRenameSpeaker}
                   />
                 </MessageScrollerItem>
-              ))
-            )}
+              ))}
+            {isRecording ? (
+              <MessageScrollerItem className="p-3.5" messageId="live-recording">
+                <div className="mb-3 mt-1 flex items-center gap-2">
+                  <span className="flex-1 border-t border-dock-line" />
+                  <span
+                    className="min-w-0 truncate text-2xs font-semibold uppercase tracking-wide text-dock-ink-3"
+                    title={recordingNoteTitle}
+                  >
+                    {onOpenNote
+                      ? (recordingNoteTitle ?? t('recording.panel.title'))
+                      : t('recording.panel.recordingNumber', {
+                          number:
+                            recordings.find(rec => rec.id === activeRecordingId)?.number ??
+                            Math.max(0, ...recordings.map(rec => rec.number)) + 1,
+                        })}
+                  </span>
+                  <span className="flex-1 border-t border-dock-line" />
+                </div>
+                <TranscriptBubbles lines={liveLines} viewer={viewer} live />
+                {isFinishing || !isPaused ? (
+                  <Marker className="mt-2 w-auto" role="status">
+                    <MarkerIcon>
+                      <Loader2 className="animate-spin" />
+                    </MarkerIcon>
+                    <MarkerContent className="shimmer shimmer-duration-1400 text-dock-ink-3 font-medium">
+                      {t(
+                        isFinishing
+                          ? 'recording.panel.finishing'
+                          : liveLines.length === 0
+                            ? 'recording.panel.listeningInitial'
+                            : 'recording.panel.listening'
+                      )}
+                    </MarkerContent>
+                  </Marker>
+                ) : null}
+                {isPaused && !isFinishing ? (
+                  <Marker className="mt-2 w-auto" role="status">
+                    <MarkerIcon>
+                      <Pause />
+                    </MarkerIcon>
+                    <MarkerContent className="font-medium">
+                      {pauseReason === 'silence'
+                        ? t('recording.panel.pausedNoSound')
+                        : t('recording.panel.paused')}
+                    </MarkerContent>
+                  </Marker>
+                ) : null}
+              </MessageScrollerItem>
+            ) : recState === 'stopping' || isFinishing || settling ? (
+              <MessageScrollerItem className="p-3.5" messageId="finishing-recording">
+                <Marker className="w-auto" role="status">
+                  <MarkerIcon>
+                    <Loader2 className="animate-spin" />
+                  </MarkerIcon>
+                  <MarkerContent className="shimmer shimmer-duration-1400 text-dock-ink-3 font-medium">
+                    {t('recording.panel.finishing')}
+                  </MarkerContent>
+                </Marker>
+              </MessageScrollerItem>
+            ) : !hasAnyPersisted && !recordings.some(rec => rec.processing) ? (
+              <MessageScrollerItem className="flex min-h-full flex-1">
+                <div className="flex flex-1 items-center justify-center p-8 text-center text-sm text-dock-ink-3">
+                  {t('recording.panel.empty')}
+                </div>
+              </MessageScrollerItem>
+            ) : null}
           </MessageScrollerContent>
         </MessageScrollerViewport>
         {/* Dock-token styling and right alignment; the app default is centered
@@ -555,154 +625,160 @@ function TranscriptPanelContent({
 
       {/* Bottom bar — the panel's full recording controls; 42px rhythm. */}
       <div className="flex min-h-[41px] shrink-0 items-center gap-2 border-t border-dock-line p-1.5">
-        {engaged && recState !== 'stopping' ? (
-          <>
-            {canPause ? (
-              <button
-                type="button"
-                disabled={!live && !isPaused}
-                onClick={() => (isPaused ? onResumeRecording : onPauseRecording)?.()}
-                className={DOCK_CTL}
-                aria-label={isPaused ? t('recording.actions.resume') : t('recording.actions.pause')}
-              >
-                {isPaused ? (
-                  <Play className="size-[15px] fill-current" />
-                ) : (
-                  <Pause className="size-[15px] fill-current" />
-                )}
-              </button>
-            ) : null}
-            <Waveform
-              wide
-              active={live}
-              pending={recState === 'starting'}
-              className={`w-[60px] shrink-0 ${isPaused ? 'text-rec/45' : 'text-rec'}`}
-            />
-            <span className="min-w-[38px] text-center text-xs font-medium tabular-nums text-dock-ink-2">
-              {formatSessionTimer(elapsedSeconds)}
-            </span>
-            <button
-              type="button"
-              disabled={!live && !isPaused}
-              data-onboarding="record-stop"
-              onClick={onStopRecording}
-              className="flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-lg bg-rec-soft px-2.5 text-[12.5px] font-medium text-rec transition-[filter,scale] hover:brightness-105 active:scale-[0.96] disabled:opacity-50"
-              aria-label={t('recording.actions.stop')}
-            >
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 24 24"
-                fill="currentColor"
-                aria-hidden="true"
-              >
-                <rect width="14" height="14" x="5" y="5" rx="3" />
-              </svg>
-              {t('recording.actions.stop')}
-            </button>
-            <span className="flex-1" />
-            {onOpenNote ? (
-              <button
-                type="button"
-                onClick={onOpenNote}
-                className="flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-dock-ink-2 transition-colors hover:bg-dock-hover hover:text-dock-ink"
-              >
-                <FileText className="size-3" />
-                {t('recording.away.goToNote')}
-              </button>
-            ) : null}
-            <DockMicMenu />
-          </>
-        ) : recState === 'stopping' || isFinishing || settling ? (
-          <>
-            <span className="flex pl-1.5 text-dock-ink-2">
-              <PxOrbitLoader />
-            </span>
-            <span className="shimmer shimmer-duration-1400 text-dock-ink-3 text-[12.5px]">
-              {t('recording.panel.finishing')}
-            </span>
-            <span className="flex-1" />
-          </>
-        ) : doneMode && finished ? (
-          <>
-            <span className="flex items-center gap-1.5 px-1 text-[12.5px] text-dock-ink-2">
-              <Check className="size-3.5 text-success" />
-              {t('recording.panel.saved')} · {savedDuration}
-            </span>
-            {!doneReady ? (
-              <>
-                <span className="flex text-dock-ink-2">
-                  <PxOrbitLoader />
-                </span>
-                <span className="shimmer shimmer-duration-1400 text-dock-ink-3 text-[12.5px]">
-                  {enhanceWaiting
-                    ? t('recording.panel.waitingForTranscription')
-                    : finished.lines.length === 0
-                      ? t('recording.panel.transcribing')
-                      : t('recording.panel.identifyingSpeakers')}
-                </span>
-              </>
-            ) : (
-              <span
-                className={`text-[12.5px] font-medium ${doneOutcome === 'ready' ? 'text-success' : 'text-warning'}`}
-              >
-                {doneOutcome === 'noTranscript'
-                  ? t('recording.panel.transcriptionFailed')
-                  : doneOutcome === 'noSpeakers'
-                    ? t('recording.panel.speakerLabelsUnavailable')
-                    : t('recording.panel.transcriptReady')}
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          {engaged && recState !== 'stopping' ? (
+            <>
+              {canPause ? (
+                <button
+                  type="button"
+                  disabled={!live && !isPaused}
+                  onClick={() => (isPaused ? onResumeRecording : onPauseRecording)?.()}
+                  className={DOCK_CTL}
+                  aria-label={
+                    isPaused ? t('recording.actions.resume') : t('recording.actions.pause')
+                  }
+                >
+                  {isPaused ? (
+                    <Play className="size-[15px] fill-current" />
+                  ) : (
+                    <Pause className="size-[15px] fill-current" />
+                  )}
+                </button>
+              ) : null}
+              <Waveform
+                wide
+                active={live}
+                pending={recState === 'starting'}
+                className={`${onOpenNote ? 'w-[34px] sm:w-[60px]' : 'w-[60px]'} shrink-0 ${isPaused ? 'text-rec/45' : 'text-rec'}`}
+              />
+              <span className="min-w-[38px] text-center text-xs font-medium tabular-nums text-dock-ink-2">
+                {formatSessionTimer(elapsedSeconds)}
               </span>
-            )}
-            <span className="flex-1" />
-            {/* Right-aligned, opposite "Saved · t". */}
-            {doneReady && !finished.folded && finished.lines.length > 0 ? (
-              <button
-                type="button"
-                data-onboarding="enhance"
-                onClick={() => {
-                  setDoneDismissed(true);
-                  onEnhanceRecording(finished.id);
-                }}
-                className="flex h-7 items-center gap-1.5 rounded-lg bg-dock-field px-2 pl-1 text-xs font-medium text-dock-ink transition-colors hover:bg-dock-hover"
-              >
-                <span className="flex size-[18px] items-center justify-center rounded-[5px] bg-dock-surface text-[11px] font-semibold text-dock-ink-2">
-                  /
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    disabled={!live && !isPaused}
+                    data-onboarding="record-stop"
+                    onClick={onStopRecording}
+                    className="flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-rec-soft text-rec transition-[filter,scale] hover:brightness-105 active:scale-[0.96] disabled:opacity-50"
+                    aria-label={t('recording.actions.stop')}
+                  >
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                      aria-hidden="true"
+                    >
+                      <rect width="14" height="14" x="5" y="5" rx="3" />
+                    </svg>
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top">{t('recording.actions.stop')}</TooltipContent>
+              </Tooltip>
+              <span className="flex-1" />
+              {onOpenNote ? (
+                <button
+                  type="button"
+                  onClick={onOpenNote}
+                  aria-label={t('recording.away.goToNote')}
+                  title={recordingNoteTitle ?? t('recording.away.goToNote')}
+                  className="flex h-7 min-w-0 max-w-[160px] cursor-pointer items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-dock-ink-2 transition-colors hover:bg-dock-hover hover:text-dock-ink"
+                >
+                  <FileText className="size-3 shrink-0" />
+                  <span className="truncate">{recordingNoteTitle ?? t('recording.away.goToNote')}</span>
+                </button>
+              ) : null}
+              <DockMicMenu />
+            </>
+          ) : recState === 'stopping' || isFinishing || settling ? (
+            <>
+              <span className="flex pl-1.5 text-dock-ink-2">
+                <PxOrbitLoader />
+              </span>
+              <span className="shimmer shimmer-duration-1400 min-w-0 truncate text-dock-ink-3 text-[12.5px]">
+                {t('recording.panel.finishing')}
+              </span>
+              <span className="flex-1" />
+            </>
+          ) : doneMode && finished ? (
+            <>
+              <span className="flex shrink-0 items-center gap-1.5 px-1 text-[12.5px] text-dock-ink-2">
+                <Check className="size-3.5 text-success" />
+                {t('recording.panel.saved')} · {savedDuration}
+              </span>
+              {!doneReady ? (
+                <>
+                  <span className="flex text-dock-ink-2">
+                    <PxOrbitLoader />
+                  </span>
+                  <span className="shimmer shimmer-duration-1400 min-w-0 truncate text-dock-ink-3 text-[12.5px]">
+                    {enhanceWaiting
+                      ? t('recording.panel.waitingForTranscription')
+                      : finished.lines.length === 0
+                        ? t('recording.panel.transcribing')
+                        : t('recording.panel.identifyingSpeakers')}
+                  </span>
+                </>
+              ) : (
+                <span
+                  className={`min-w-0 truncate text-[12.5px] font-medium ${doneOutcome === 'ready' ? 'text-success' : 'text-warning'}`}
+                >
+                  {doneOutcome === 'noTranscript'
+                    ? t('recording.panel.transcriptionFailed')
+                    : doneOutcome === 'noSpeakers'
+                      ? t('recording.panel.speakerLabelsUnavailable')
+                      : t('recording.panel.transcriptReady')}
                 </span>
-                {t('recording.panel.enhanceChip')}
-              </button>
-            ) : null}
-            {/* Only while a failed run is holding the bar open: the timer is suppressed then, so
+              )}
+              <span className="flex-1" />
+              {/* Only while a failed run is holding the bar open: the timer is suppressed then, so
                 this is the one way to close an error the user does not want to retry. */}
-            {holdOpen ? (
-              <button
-                type="button"
-                onClick={() => {
-                  clearFailedRecording(finished.id);
-                  clearWaitingRecording(finished.id);
-                  setDoneDismissed(true);
-                }}
-                aria-label={t('common.actions.close')}
-                className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-dock-ink-3 opacity-70 transition-opacity hover:opacity-100"
-              >
-                <X className="size-3.5" />
-              </button>
-            ) : null}
-          </>
-        ) : (
-          <>
-            <button
-              type="button"
-              data-onboarding="record-start"
-              onClick={onStartRecording}
-              className="flex h-7 cursor-pointer items-center gap-2 rounded-lg px-2.5 text-[12.5px] font-medium text-dock-ink transition-[background-color,scale] hover:bg-dock-hover active:scale-[0.97]"
-            >
-              <span className="size-2 shrink-0 rounded-full bg-rec" />
-              {t('recording.actions.start')}
-            </button>
-            <span className="flex-1" />
-            <DockMicMenu />
-          </>
-        )}
+              {holdOpen ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    clearFailedRecording(finished.id);
+                    clearWaitingRecording(finished.id);
+                    setDoneDismissed(true);
+                  }}
+                  aria-label={t('common.actions.close')}
+                  className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-dock-ink-3 opacity-70 transition-opacity hover:opacity-100"
+                >
+                  <X className="size-3.5" />
+                </button>
+              ) : null}
+            </>
+          ) : (
+            <>
+              {!hideStartRecording ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      data-onboarding="record-start"
+                      aria-disabled={!!startBlockedReason}
+                      onClick={startBlockedReason ? undefined : onStartRecording}
+                      className="group flex h-7 cursor-pointer aria-disabled:cursor-not-allowed aria-disabled:text-dock-ink-3 items-center gap-2 rounded-lg px-2.5 text-[12.5px] font-medium text-dock-ink transition-[background-color,scale] hover:bg-dock-hover active:scale-[0.97]"
+                    >
+                      <span className="size-2 shrink-0 rounded-full bg-rec group-aria-disabled:bg-dock-ink-3" />
+                      {t('recording.actions.start')}
+                    </button>
+                  </TooltipTrigger>
+                  {startBlockedReason ? (
+                    <TooltipContent side="top">{startBlockedReason}</TooltipContent>
+                  ) : null}
+                </Tooltip>
+              ) : null}
+              <span className="flex-1" />
+              <DockMicMenu />
+            </>
+          )}
+        </div>
+        <div className="ml-auto min-w-0 max-w-[50%] shrink-0">
+          {skillStatus ? skillStatus(enhanceAction, engaged || isFinishing || settling || (!!finished && !doneReady) || settledEmpty) : enhanceAction}
+        </div>
       </div>
     </div>
   );

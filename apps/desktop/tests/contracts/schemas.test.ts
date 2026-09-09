@@ -31,6 +31,7 @@ import {
   parseTransportRequest,
   streamPortChannel,
   updateStatusSchema,
+  telemetryPlanIdentityRequestSchema,
   type ModelsStateView,
 } from '@prismical/desktop-contracts';
 import type { LocalModelsState } from '@prismical/app-contracts';
@@ -59,6 +60,17 @@ describe('transport path allowlist', () => {
 });
 
 describe('schema parse helpers', () => {
+  it('requires a bounded, account-and-org-scoped plan identity with a telemetry revision', () => {
+    const plan = { accountId: 'user_1', orgId: 'org_1', planExternalId: 'plan_free', revision: 1 };
+    expect(telemetryPlanIdentityRequestSchema.safeParse(plan).success).toBe(true);
+    expect(telemetryPlanIdentityRequestSchema.safeParse({ ...plan, planExternalId: null }).success).toBe(true);
+    expect(telemetryPlanIdentityRequestSchema.safeParse({ ...plan, accountId: '' }).success).toBe(false);
+    expect(telemetryPlanIdentityRequestSchema.safeParse({ ...plan, orgId: '' }).success).toBe(false);
+    expect(telemetryPlanIdentityRequestSchema.safeParse({ ...plan, revision: -1 }).success).toBe(false);
+    expect(telemetryPlanIdentityRequestSchema.safeParse({ ...plan, planExternalId: 'x'.repeat(201) }).success).toBe(false);
+    expect(telemetryPlanIdentityRequestSchema.safeParse({ ...plan, has_appsumo_org: true }).success).toBe(false);
+  });
+
   it('parses a valid transport request', () => {
     const result = parseTransportRequest({ method: 'GET', path: '/apps/v1/me' });
     expect(result.success).toBe(true);
@@ -267,6 +279,8 @@ describe('recording schemas', () => {
   };
   const state = {
     recordingId: 'rec_1',
+    finalizingRecordingIds: [],
+    completedRecordings: [],
     status: 'recording',
     captureMode: 'mic',
     requestedCaptureMode: 'dual',
@@ -319,6 +333,8 @@ describe('recording schemas', () => {
     expect(
       parseRecordingStateView({
         recordingId: null,
+        finalizingRecordingIds: [],
+        completedRecordings: [],
         status: 'idle',
         captureMode: null,
         requestedCaptureMode: null,
@@ -588,6 +604,7 @@ describe('channel names', () => {
       telemetryGetState: 'telemetry:getState',
       telemetryStateChanged: 'telemetry:stateChanged',
       telemetryCapture: 'telemetry:capture',
+      telemetryIdentifyPlan: 'telemetry:identifyPlan',
       telemetryCaptureException: 'telemetry:captureException',
       modelsGetState: 'models:getState',
       modelsDownload: 'models:download',

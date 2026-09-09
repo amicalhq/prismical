@@ -723,11 +723,12 @@ export function createSyncStore(options: SyncStoreOptions): SyncStore {
       tags$[id]!.delete();
     },
     findTagByName: (name) => {
+      // Normalize new input, but preserve distinct legacy names when comparing stored rows.
       const target = sanitizeTagNameInput(name).toLowerCase();
       if (!target) return undefined;
       const rows = tags$.peek() as Record<string, TagRow> | undefined;
       return Object.values(rows ?? {}).find(
-        (row) => row && !row.deletedAt && sanitizeTagNameInput(row.name).toLowerCase() === target,
+        (row) => row && !row.deletedAt && row.name.toLowerCase() === target,
       );
     },
 

@@ -37,6 +37,7 @@ export type StartRecordingOutcome =
         | 'no-session'
         | 'model-missing'
         | 'storage-unavailable'
+        | 'suggestion-pending'
         | 'update-required';
     };
 

@@ -38,6 +38,7 @@ import { openNoteLog } from '../collab';
 import { createDesktopPorts } from './ports/desktop-ports';
 import { DesktopEnvProvider, useDesktopEnv } from './desktop-env';
 import { GleapProvider } from './support/gleap';
+import { PlanIdentityBridge } from './analytics/plan-identity-bridge';
 import { OnboardingFlow } from './onboarding/flow';
 import { CalendarOnboarding } from './onboarding/calendar';
 import { resolveSurface } from './mode-router';
@@ -94,8 +95,8 @@ function ShellOverlay() {
 
 // The float-note window mounts the same providers + router
 // but skips the opaque shell overlay chrome: the page stays transparent (the
-// FloatNoteView draws its own rounded surface), and Toaster/UpdatePrompt
-// stay main-window-only. The nav drain still runs — main retargets the float
+// FloatNoteView draws its own rounded surface). Its Toaster shows recording
+// feedback; UpdatePrompt stays main-window-only. The nav drain still runs — main retargets the float
 // via nav pushes (float:open on a live window).
 function FloatOverlay() {
   const { appMode } = useDesktopEnv();
@@ -106,7 +107,12 @@ function FloatOverlay() {
       }),
     []
   );
-  return <RouterProvider router={router} context={{ appMode }} />;
+  return (
+    <>
+      <RouterProvider router={router} context={{ appMode }} />
+      <Toaster />
+    </>
+  );
 }
 
 /** True when this renderer is the float-note window (hash set before load). */
@@ -175,6 +181,7 @@ function DesktopRoot({
       <GleapProvider>
         <RequiredUpdateGate>
           <ApiQueryProvider>
+            <PlanIdentityBridge />
             <DesktopApp
               onboarding={onboarding}
               saveOnboarding={async progress => {

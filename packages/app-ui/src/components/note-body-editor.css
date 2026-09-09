@@ -93,7 +93,8 @@
 .note-prose ul[data-type="taskList"] li > label {
   margin-top: 0.15rem;
 }
-.note-prose .is-editor-empty:first-child::before {
+/* Proposed insertions are decorations, so the underlying document can still be empty. */
+.note-prose:not(:has(.prismical-diff-insert)) .is-editor-empty:first-child::before {
   content: attr(data-placeholder);
   color: var(--muted-foreground);
   float: left;

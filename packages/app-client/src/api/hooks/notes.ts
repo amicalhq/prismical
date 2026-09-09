@@ -82,7 +82,8 @@ export function listResult<TRow extends { id: string; updatedAt: string | Date }
       refetch: () => {},
     };
   }
-  const all = Object.values(rows ?? {});
+  // Reverting an optimistic create can leave an undefined value in the collection.
+  const all = Object.values(rows ?? {}).filter((row): row is TRow => row != null);
   // Persisted/optimistic rows render even before (or without) a live pull —
   // the warm-boot/offline paint. Empty + not-loaded = still loading; a failed
   // first load surfaces as the error card exactly like the old query hooks.

@@ -237,6 +237,20 @@ export const artifact = sqliteTable(
   t => [index('artifact_note_id_idx').on(t.noteId)]
 );
 
+/** Completed recording suggestions survive renderer and app restarts until reviewed. */
+export const noteSkillResult = sqliteTable(
+  'note_skill_result',
+  {
+    id: text('id').primaryKey(),
+    noteId: text('note_id').notNull(),
+    result: text('result', { mode: 'json' }).$type<Record<string, unknown>>().notNull(),
+    acceptedResult: text('accepted_result', { mode: 'json' }).$type<Record<string, unknown>>(),
+    createdAt: text('created_at').notNull(),
+    resolvedAt: text('resolved_at'),
+  },
+  t => [index('note_skill_result_note_id_idx').on(t.noteId)]
+);
+
 /**
  * One AI title-generation run over a note (audit + undo). The columns mirror
  * core's revision CAS: apply succeeds only on `baseRevision`, undo only on

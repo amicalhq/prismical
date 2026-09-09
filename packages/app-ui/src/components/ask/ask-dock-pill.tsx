@@ -1,6 +1,6 @@
 'use client';
 
-import { Sparkles, X } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 import {
   useEntitlements,
   useSkillsList,
@@ -9,7 +9,7 @@ import {
 } from '@prismical/app-client';
 import { CLEANUP_SKILL_ID } from '@prismical/app-contracts';
 import { skillDisplayDescription, skillDisplayName } from '../../lib/skill-presentation';
-import { Loader } from '../ai-elements/loader';
+import { SkillRunStatus } from './ask-skill-run-turn';
 import type { ComposerSkill } from './ask-composer';
 import { useTranslation } from 'react-i18next';
 
@@ -72,27 +72,16 @@ export function AskPillFace({
   if (activeRun) {
     return (
       <div className="flex h-full w-full items-center gap-1 pl-2 pr-1.5" data-skill-run="running">
+        <div className="min-w-0 flex-1 [&_[data-slot=marker]]:text-xs">
+          <SkillRunStatus compact run={activeRun} t={t} onReviewInNote={onClick} />
+        </div>
         <button
           type="button"
           onClick={onClick}
           aria-label={t('ask.title')}
-          className="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
+          className="shrink-0 rounded-lg p-2 text-dock-ink-2 hover:bg-dock-hover"
         >
-          <Loader size={15} className="shrink-0 text-dock-ink-2" />
-          {/* No live region here: ARIA flattens button descendants, and the thread's turn already
-              announces the same run. */}
-          <span className="shimmer shimmer-duration-1400 min-w-0 flex-1 truncate text-[13px] text-dock-ink">
-            {t('ask.skillRun.running', { name: activeRun.skillName })}
-          </span>
-        </button>
-        <button
-          type="button"
-          onClick={activeRun.cancel}
-          aria-label={t('ask.skillRun.stop', { name: activeRun.skillName })}
-          title={t('ask.skillRun.stop', { name: activeRun.skillName })}
-          className="flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-lg text-dock-ink-2 transition-colors hover:bg-dock-hover hover:text-dock-ink active:scale-95"
-        >
-          <X className="size-4" />
+          <Sparkles className="size-4" />
         </button>
       </div>
     );

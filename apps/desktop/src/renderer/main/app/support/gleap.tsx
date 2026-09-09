@@ -1,9 +1,11 @@
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { MessageCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSessionView } from '@prismical/app-client';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@prismical/app-ui/ui/tooltip';
 import { useDesktopEnv } from '../desktop-env';
+import { getPlanIdentity, subscribePlanIdentity } from '../analytics/plan-identity';
+import { chatOwnerKey, createChatIdentitySync } from './gleap-identity';
 
 type GleapSdk = typeof import('gleap').default;
 const SupportContext = createContext<GleapSdk | null>(null);
@@ -14,11 +16,16 @@ export function GleapProvider({ children }: { children: ReactNode }) {
   const session = useSessionView();
   const account = session.accounts.find(account => account.sub === session.activeSub);
   const [sdk, setSdk] = useState<GleapSdk | null>(null);
-  const [identifiedSub, setIdentifiedSub] = useState<string | null>();
-  const identityQueue = useRef(Promise.resolve());
+  const [identifiedIdentity, setIdentifiedIdentity] = useState<string>();
+  const identitySync = useRef<ReturnType<typeof createChatIdentitySync> | null>(null);
   const sub = account?.sub;
   const name = account?.name;
   const email = account?.email;
+  const orgId = account?.activeOrgId;
+  const planIdentity = useSyncExternalStore(subscribePlanIdentity, getPlanIdentity);
+  const planExternalId = planIdentity && planIdentity.accountId === sub && planIdentity.orgId === orgId
+    ? planIdentity.planExternalId : null;
+  const identityKey = chatOwnerKey(sub ? { userId: sub, orgId, planExternalId } : null);
   const enabled = appMode === 'cloud' && appModeChosen && !window.location.hash.startsWith('#/float');
   const key = gleap?.key;
   const nonce = gleap?.cspNonce;
@@ -62,33 +69,31 @@ export function GleapProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!sdk) return;
-    let disposed = false;
-    setIdentifiedSub(undefined);
     sdk.close();
     sdk.showFeedbackButton(false);
-    // The SDK does not cancel identify requests on logout. Serialize them so a
-    // late response cannot restore the previous account after the next one starts.
-    identityQueue.current = identityQueue.current.then(async () => {
-      if (disposed) return;
-      const previousId = sdk.getIdentity()?.userId;
-      if (previousId && previousId !== sub) sdk.clearIdentity();
-      // Gleap returns a Promise at runtime, although its types declare void.
-      if (sub) await Promise.resolve(sdk.identify(sub, { name, email }));
-      if (disposed) {
-        sdk.clearIdentity();
-        return;
-      }
-      setIdentifiedSub(sub ?? null);
-      // The sign-in screen has no sidebar, so it uses Gleap's own launcher.
-      sdk.showFeedbackButton(!sub);
-    }).catch(() => {
-      // Keep email support available when identification fails.
-      sdk.clearIdentity();
-    });
-    return () => { disposed = true; };
-  }, [sdk, sub, name, email]);
+  }, [sdk, identityKey]);
 
-  const readySdk = enabled && identifiedSub === (sub ?? null) ? sdk : null;
+  useEffect(() => {
+    if (!sdk) {
+      identitySync.current?.suspend();
+      return;
+    }
+    // Keep the serializer across SDK reinitialization so a late request cannot
+    // overwrite the identity applied by the next lifecycle.
+    const sync = identitySync.current ??= createChatIdentitySync(sdk, setIdentifiedIdentity);
+    const reconcile = () => sync.setIdentity(sub ? { userId: sub, orgId, name, email, planExternalId } : null);
+    reconcile();
+    window.addEventListener('online', reconcile);
+    return () => window.removeEventListener('online', reconcile);
+  }, [sdk, sub, orgId, name, email, planExternalId]);
+  useEffect(() => () => identitySync.current?.suspend(), []);
+
+  useEffect(() => {
+    // The sign-in screen has no sidebar, so it uses Gleap's own launcher.
+    sdk?.showFeedbackButton(identifiedIdentity === identityKey && !sub);
+  }, [sdk, identifiedIdentity, identityKey, sub]);
+
+  const readySdk = enabled && identifiedIdentity === identityKey ? sdk : null;
   return <SupportContext.Provider value={readySdk}>{children}</SupportContext.Provider>;
 }
 

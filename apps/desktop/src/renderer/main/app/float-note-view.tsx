@@ -377,7 +377,7 @@ function FloatNoteBody({ noteId }: { noteId: string }) {
       ) : null}
 
       {/* ── Body: the real note (same TipTap/Yjs doc as the app) ──────────── */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-24 pt-12">
+      <div className="min-h-0 flex-1 scroll-pb-24 overflow-y-auto px-4 pb-24 pt-12">
         <NoteBodyEditor noteId={noteId} writable={note.data?.writable ?? true} />
       </div>
 

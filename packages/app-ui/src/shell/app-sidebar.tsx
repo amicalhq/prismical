@@ -161,7 +161,7 @@ export function AppSidebar({
               <CommandPaletteTrigger />
             </SidebarMenuItem>
 
-            {/* Primary nav: Home, Notes, Skills */}
+            {/* Primary nav: Home, Notes */}
             {primaryNavItems.map(item => (
               <SidebarMenuItem key={item.url}>
                 <SidebarMenuButton
