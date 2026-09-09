@@ -31,6 +31,7 @@ import {
   type PermissionRequest,
   type RecordingStateView,
   type RecordingControlRequest,
+  type RecordingSkillWorkflowRequest,
   type SessionView,
   type SignOutRequest,
   type StartRecordingRequest,
@@ -249,6 +250,8 @@ const api: MainWindowDesktopApi = {
     stop: (request: StopRecordingRequest) => ipcRenderer.invoke(CHANNELS.recordingStop, request),
     claimCompletion: (request: RecordingControlRequest) =>
       ipcRenderer.invoke(CHANNELS.recordingClaimCompletion, request),
+    setSkillWorkflow: (request: RecordingSkillWorkflowRequest) =>
+      ipcRenderer.invoke(CHANNELS.recordingSetSkillWorkflow, request),
     pause: (request: RecordingControlRequest) =>
       ipcRenderer.invoke(CHANNELS.recordingPause, request),
     resume: (request: RecordingControlRequest) =>

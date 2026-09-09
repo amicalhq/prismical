@@ -17,6 +17,7 @@ import type {
   NoteLogConfig,
   TransportPort,
 } from "@prismical/app-contracts";
+import { configureClientDiagnostics, type ClientDiagnostics } from "./diagnostics";
 import type { ObservablePersistPlugin } from "@legendapp/state/sync";
 import type { SyncPartition } from "./sync/partition";
 
@@ -63,12 +64,14 @@ let noteLog: NoteLogConfig | null = null;
  */
 export function configureAppClient(config: {
   env: EnvPort;
+  diagnostics?: ClientDiagnostics;
   transport?: TransportPort;
   askFetch?: AskFetch;
   syncPersistence?: SyncPersistenceFactory;
   noteLog?: NoteLogConfig;
 }): void {
   envPort = config.env;
+  configureClientDiagnostics(config.diagnostics);
   transportPort = config.transport ?? null;
   askFetch = config.askFetch ?? null;
   syncPersistence = config.syncPersistence ?? null;

@@ -1,5 +1,7 @@
 'use client';
 
+import { useCtaRecordingGuard } from '../shell/cta';
+
 import { useWalkthroughEvent, useWalkthroughStage } from '../onboarding/context';
 
 import * as React from 'react';
@@ -46,10 +48,11 @@ import { useActiveSkillRun, type SkillRunSource } from '@prismical/app-client';
 import { useNavigation, bindAiErrorActions } from '@prismical/app-client';
 import { AskPanel } from './ask/ask-panel';
 import { recordingFinalizePhase, recordingIsProcessing } from '../lib/recording-finalize-phase';
-import { useRecording } from '@prismical/app-client';
+import { canAsk, useRecording, useWorkflowRecording, useWorkflowSnapshot, type UseRecording, type RecordingSessionClient } from '@prismical/app-client';
 import { EVENTS, usePorts, activeOrgIdOf } from '@prismical/app-client';
 import { listTranscriptSegments } from '@prismical/app-client';
 import {
+  useNote,
   useNoteRecordings,
   useEnhancedRecordings,
   segmentToLine,
@@ -78,7 +81,33 @@ import {
 // One panel slot above the dock is SHARED between the transcription view and Ask AI: opening one
 // collapses the other (they never stack). Both slots animate open/closed. Ask is available on every
 // page; the transcript only on a note.
-export function RecordingBottomCluster({
+type ClusterProps = {
+  compact?: boolean;
+  autoStartNoteId?: string | null;
+  onAutoStartConsumed?: () => void;
+};
+
+export function RecordingBottomCluster(props: ClusterProps) {
+  const { recordingSession } = usePorts();
+  return recordingSession
+    ? <WorkflowRecordingCluster {...props} client={recordingSession} />
+    : <LegacyRecordingCluster {...props} />;
+}
+
+function WorkflowRecordingCluster({ client, ...props }: ClusterProps & { client: RecordingSessionClient }) {
+  const tour = useWalkthroughStage();
+  const rec = useWorkflowRecording(client, tour?.noteId);
+  return <RecordingBottomClusterView {...props} rec={rec} />;
+}
+
+function LegacyRecordingCluster(props: ClusterProps) {
+  const tour = useWalkthroughStage();
+  const rec = useRecording({ handleCompletion: true, skipAutoEnhanceForNote: tour?.noteId });
+  return <RecordingBottomClusterView {...props} rec={rec} />;
+}
+
+function RecordingBottomClusterView({
+  rec,
   compact = false,
   autoStartNoteId = null,
   onAutoStartConsumed,
@@ -91,6 +120,7 @@ export function RecordingBottomCluster({
    * while a recording is engaged — it is inert then anyway, and it would
    * overflow the window. Default false keeps the web/app layout unchanged.
    */
+  rec: UseRecording & { retryAvailable?: boolean; retry?: () => Promise<void>; abandon?: () => Promise<void> };
   compact?: boolean;
   /**
    * Desktop-float autostart intent (the widget's Record): when it names the
@@ -108,7 +138,7 @@ export function RecordingBottomCluster({
   const { currentNote } = useCurrentNote();
   const qc = useQueryClient();
   // Product analytics via the injected AnalyticsPort.
-  const { analytics, recording, env, auth } = usePorts();
+  const { analytics, recording, env, auth, workflow } = usePorts();
   const router = useNavigation();
   const syncStore = useSyncStore();
 
@@ -121,7 +151,7 @@ export function RecordingBottomCluster({
   const [askMaxi, setAskMaxi] = React.useState(false);
 
   const tour = useWalkthroughStage();
-  const rec = useRecording({ handleCompletion: true, skipAutoEnhanceForNote: tour?.noteId });
+  const workflowState = useWorkflowSnapshot();
   const walkthroughEvent = useWalkthroughEvent();
   React.useEffect(() => {
     if (rec.error)
@@ -156,7 +186,17 @@ export function RecordingBottomCluster({
   const liveActive = sessionActive || rec.state === 'stopping';
   const noteId = currentNote?.noteId ?? null;
   const captureActive = liveActive || rec.state === 'starting';
-  const recordingAway = captureActive && !!rec.noteId && rec.noteId !== noteId;
+  useCtaRecordingGuard(captureActive || rec.isFinalizing || workflowState.kind !== 'idle');
+  const transcriptNoteId = workflowState.kind !== 'idle' ? workflowState.noteId
+    : captureActive ? rec.noteId : noteId;
+  const recordingAway = !!transcriptNoteId && transcriptNoteId !== noteId;
+  const recPillWidth = recordingPillWidth(rec.state, rec.canPause, compact);
+  const { data: transcriptNote } = useNote(transcriptNoteId ?? '');
+  const noteName = transcriptNote?.title.trim();
+  const customNoteName = transcriptNote?.titleSource !== 'placeholder' &&
+    noteName && noteName !== t('notes.emptyTitle') ? noteName : undefined;
+  const openNoteLabel = customNoteName
+    ? t('workflow.openNamedNote', { name: customNoteName }) : t('workflow.openNote');
 
   // Dead-mic capture (micSilent): the OS is feeding the browser pure silence — usually a
   // revoked/wedged system-level mic permission, which getUserMedia does NOT error on (the
@@ -297,8 +337,8 @@ export function RecordingBottomCluster({
   // the "N recordings" picker, and each row's wand vs "in note" state. The noteId stays in the
   // query key during a live recording (only fetching pauses) so the cached logs survive the
   // start/stop flips — nulling the key used to empty the panel and flash it back after finalize.
-  const recordings = useNoteRecordings(noteId, { enabled: !liveActive });
-  const folded = useEnhancedRecordings(noteId, { enabled: !liveActive });
+  const recordings = useNoteRecordings(transcriptNoteId, { enabled: !liveActive });
+  const folded = useEnhancedRecordings(transcriptNoteId, { enabled: !liveActive });
   const recs = recordings.data ?? [];
 
   const transcriptPresentation = React.useMemo<TranscriptPresentationOptions>(
@@ -372,7 +412,7 @@ export function RecordingBottomCluster({
   // flip is invisible (staleTime 30s, no focus refetch) and the lifecycle would never start.
   const anyIdentifying = recs.some(r => recordingIsProcessing(finalizePhase(r)));
   const [settleUntil, setSettleUntil] = React.useState<number | null>(null);
-  const finishedRecordingId = rec.noteId === noteId ? rec.recordingId : null;
+  const finishedRecordingId = rec.noteId === transcriptNoteId ? rec.recordingId : null;
   // The just-finished session, WITH a timestamp: rec.recordingId survives for the
   // whole SPA session, but the panel's Saved→Ready bar sequence must only run for
   // a recording that stopped moments ago — not re-play hours later when the user
@@ -391,12 +431,12 @@ export function RecordingBottomCluster({
   // fetch, and a stale closure would skip recordings that became 'identifying' later.
   const recsRef = React.useRef(recs);
   recsRef.current = recs;
-  const shouldPoll = (anyIdentifying || settleUntil !== null) && !!noteId && !liveActive;
+  const shouldPoll = (anyIdentifying || settleUntil !== null) && !!transcriptNoteId && !liveActive;
   React.useEffect(() => {
-    if (!shouldPoll || !noteId) return;
+    if (!shouldPoll || !transcriptNoteId) return;
     const interval = setInterval(() => {
       if (settleUntil !== null && Date.now() > settleUntil) setSettleUntil(null);
-      void qc.invalidateQueries({ queryKey: noteRecordingsKey(noteId) });
+      void qc.invalidateQueries({ queryKey: noteRecordingsKey(transcriptNoteId) });
       for (const r of recsRef.current) {
         if (recordingIsProcessing(finalizePhase(r))) {
           void qc.invalidateQueries({ queryKey: transcriptKey(r.id) });
@@ -406,7 +446,7 @@ export function RecordingBottomCluster({
     }, 4000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fresh recs come via recsRef; keying on the flags + note is the intent
-  }, [shouldPoll, settleUntil, noteId]);
+  }, [shouldPoll, settleUntil, transcriptNoteId]);
 
   // The settle only becomes visible when the TURN queries refetch, and the poll above skips them
   // once a recording is no longer 'identifying'. Keying the refresh to the phase TRANSITION
@@ -445,10 +485,14 @@ export function RecordingBottomCluster({
   // `auto` = the transcript bar re-firing a PARKED auto-enhance once the transcript settled: it
   // keeps the on-stop lane's source and, like that lane, stays on the collapsed pill.
   const onEnhanceRecording = (recordingId: string, opts?: { auto?: boolean }) => {
-    if (!noteId) return;
+    if (!transcriptNoteId) return;
+    if (workflow && workflow.getSnapshot().kind !== 'idle') {
+      toast.info(t('workflow.busy', { defaultValue: 'Finish the current recording or skill first.' }));
+      return;
+    }
     // Don't queue onto an unreviewed suggestion (the engine holds one candidate per note; the
     // request would linger and fire at a confusing moment).
-    if (useSkillDiffStore.getState().candidatesByNote.has(noteId)) {
+    if (useSkillDiffStore.getState().candidatesByNote.has(transcriptNoteId)) {
       toast.info(t('recording.errors.currentSuggestion'));
       return;
     }
@@ -458,7 +502,7 @@ export function RecordingBottomCluster({
     if (!ownerSessionKey || !ownerOrgId) return;
     requestAutoEnhance(
       {
-        noteId,
+        noteId: transcriptNoteId,
         recordingId,
         source: opts?.auto ? 'auto-enhance' : 'wand',
         ownerSessionKey,
@@ -475,23 +519,31 @@ export function RecordingBottomCluster({
     if (tour && ['result', 'review'].includes(tour.step)) setExpandedUnit(null);
   }, [tour, noteId]);
 
-  const isAskOpen = expandedUnit === 'ask';
-  const isTranscriptionOpen = expandedUnit === 'rec';
-
   // A staged skill diff lives in the ROW (the diff bar / review surface), and the
   // note body underneath is what's being reviewed — collapse whichever panel is
   // open so both are actually visible. Also covers auto-enhance right after a
   // stop, which stages while the record panel is still expanded.
+  const reviewNoteId = workflowState.kind === 'skill' ? workflowState.noteId : noteId;
   const hasStagedCandidate = useSkillDiffStore(s =>
-    noteId ? s.candidatesByNote.has(noteId) : false
+    reviewNoteId ? s.candidatesByNote.has(reviewNoteId) : false
   );
+  const askBlocked = hasStagedCandidate || !canAsk(workflowState);
+  const isAskOpen = expandedUnit === 'ask' && !askBlocked;
+  const isTranscriptionOpen = expandedUnit === 'rec';
   // The note-body run in flight on this note (any lane: chip, composer slash,
   // wand, auto-enhance, inline, refine). Shown on the collapsed Ask pill (with
   // Stop) and as a turn in the Ask thread — never as a third pill.
   const activeRun = useActiveSkillRun(noteId);
+  const recordingStartBlockedReason = hasStagedCandidate
+    ? t('recording.actions.reviewBeforeRecording')
+    : workflowState.kind === 'skill' || activeRun ? t('workflow.busy') : undefined;
+  const workflowRun = useActiveSkillRun(workflowState.kind === 'skill' ? workflowState.noteId : null);
+  const canRetryRecording = rec.retryAvailable || (rec.state === 'stopping' && !!rec.error);
+  const enhancementPending = workflowState.kind === 'skill' && workflowState.phase === 'running' &&
+    !!workflowState.recordingId && !workflowRun;
   React.useEffect(() => {
-    if (hasStagedCandidate) setExpandedUnit(null);
-  }, [hasStagedCandidate]);
+    if (askBlocked) setExpandedUnit(null);
+  }, [askBlocked]);
 
   // Escape collapses whichever unit is expanded. The global keydown handler and
   // the composer's Escape-when-menus-closed both land here. Layered
@@ -531,6 +583,10 @@ export function RecordingBottomCluster({
       instruction: string,
       source: Extract<SkillRunSource, 'chip' | 'composer'> = 'composer'
     ) => {
+      if (workflow && workflow.getSnapshot().kind !== 'idle') {
+        toast.info(t('workflow.busy', { defaultValue: 'Finish the current recording or skill first.' }));
+        return;
+      }
       if (useSkillDiffStore.getState().candidatesByNote.has(targetNoteId)) {
         toast.info(t('recording.errors.currentSuggestion'));
         return;
@@ -547,7 +603,7 @@ export function RecordingBottomCluster({
       );
       setExpandedUnit('ask');
     };
-  }, [currentNote, t]);
+  }, [currentNote, t, workflow]);
 
   // The collapsed pill's suggested-skill chip is ONE CLICK — it runs the skill
   // immediately with no guidance and expands Ask onto the run's turn.
@@ -558,9 +614,7 @@ export function RecordingBottomCluster({
 
   const toggleTranscription = () => setExpandedUnit(p => (p === 'rec' ? null : 'rec'));
 
-  // Retain the capture owner across navigation, including while the microphone opens.
-  // Only the active session owns the global recording dock; stopped transcripts and
-  // skill review remain scoped to the note in view.
+  // Keep the dock's original note through recording, enhancement and review.
   const [recordingNote, setRecordingNote] = React.useState<{
     noteId: string;
     title: string;
@@ -568,24 +622,24 @@ export function RecordingBottomCluster({
   /** Set right before the stop-triggered navigation back to the recording's note. */
   const autoNavNoteIdRef = React.useRef<string | null>(null);
   React.useEffect(() => {
-    if (!captureActive) {
+    if (!transcriptNoteId) {
       setRecordingNote(null);
       return;
     }
-    if (rec.noteId && currentNote?.noteId !== rec.noteId) {
+    if (currentNote?.noteId !== transcriptNoteId) {
       setRecordingNote(previous =>
-        previous?.noteId === rec.noteId
+        previous?.noteId === transcriptNoteId
           ? previous
           : {
-              noteId: rec.noteId!,
+              noteId: transcriptNoteId,
               title: t('recording.untitledRecording'),
             }
       );
     }
-    if (currentNote && currentNote.noteId === rec.noteId) {
+    if (currentNote && currentNote.noteId === transcriptNoteId) {
       setRecordingNote({ noteId: currentNote.noteId, title: currentNote.title });
     }
-  }, [captureActive, currentNote, rec.noteId, t]);
+  }, [transcriptNoteId, currentNote, t]);
 
   // The tab title carries the session for anyone who has tabbed away. Reads
   // off `recordingNote` rather than `currentNote` so it keeps naming the RECORDING's note after
@@ -619,7 +673,7 @@ export function RecordingBottomCluster({
   }, [noteId]);
 
   // Live session lines while recording (the rolling log takes over once stopped).
-  const sessionVisible = captureActive || rec.noteId === noteId;
+  const sessionVisible = captureActive || rec.noteId === transcriptNoteId;
   const liveLines = (sessionVisible ? rec.liveSegments : []).map(s =>
     segmentToLine(s, rec.startedAt, undefined, transcriptPresentation)
   );
@@ -723,6 +777,7 @@ export function RecordingBottomCluster({
   const onStart = () => {
     if (
       rec.state !== 'idle' ||
+      workflowState.kind !== 'idle' ||
       !currentNote ||
       useSkillDiffStore.getState().candidatesByNote.has(currentNote.noteId)
     )
@@ -956,6 +1011,37 @@ export function RecordingBottomCluster({
     return first ?? null;
   }, [rec.errorUser, router]);
 
+  const workflowPhaseLabel = workflowState.kind === 'recording'
+    ? workflowState.phase === 'draining'
+      ? t('workflow.draining')
+      : workflowState.phase === 'finalizing' ? t('workflow.finalizing')
+      : workflowState.phase === 'paused'
+        ? !customNoteName && recordingAway
+          ? t('workflow.pausedAway') : t('recording.panel.paused')
+      : !customNoteName && recordingAway
+        ? t('workflow.recordingAway') : t('workflow.recording')
+    : workflowState.kind === 'skill'
+      ? workflowState.phase === 'review'
+        ? t('workflow.review')
+        : workflowState.phase === 'applying' ? t('workflow.applying') : t('workflow.skill')
+      : '';
+  const workflowLabel = customNoteName
+    ? workflowState.kind === 'skill' && workflowState.phase === 'review'
+      ? t('workflow.reviewNamed', { name: customNoteName })
+      : `${workflowPhaseLabel} · ${customNoteName}`
+    : workflowPhaseLabel;
+
+  const recoveryActions = canRetryRecording ? (
+    <>
+      {rec.retryAvailable && <button type="button" className="underline underline-offset-2" onClick={() => void rec.retry?.()}>
+        {t('workflow.retry', { defaultValue: 'Retry' })}
+      </button>}
+      <button type="button" className="underline underline-offset-2" onClick={() => void rec.abandon?.()}>
+        {t('workflow.end', { defaultValue: 'End workflow' })}
+      </button>
+    </>
+  ) : null;
+
   return (
     <div
       className={`dock-narrow-panels pointer-events-none absolute inset-x-0 z-40 ${compact ? 'bottom-[10px]' : 'bottom-4'}`}
@@ -1021,44 +1107,46 @@ export function RecordingBottomCluster({
       <div
         className={`mx-auto flex w-full max-w-4xl flex-col items-center ${compact ? 'px-[10px]' : 'px-6'}`}
       >
+        {!isTranscriptionOpen && workflowState.kind !== 'idle' &&
+          (workflowState.noteId !== noteId || canRetryRecording) && (
+          <div role="status" className="pointer-events-auto relative mb-2 flex max-w-full items-center gap-3 rounded-xl bg-dock-surface px-4 py-2 text-sm text-dock-ink">
+            {workflowState.noteId !== noteId && (
+              <button type="button" className="absolute inset-0 cursor-pointer rounded-xl transition-colors hover:bg-dock-hover focus-visible:outline-2 focus-visible:outline-ring"
+                aria-label={openNoteLabel} title={openNoteLabel}
+                onClick={() => router.push(`/notes/${workflowState.noteId}`)} />
+            )}
+            <span className="pointer-events-none relative min-w-0 truncate">{workflowLabel}</span>
+            {recoveryActions && <div className="relative flex shrink-0 items-center gap-3">{recoveryActions}</div>}
+          </div>
+        )}
         {/* Dock row (v3): two morphing units — Record and Ask — that expand IN PLACE into
             their panels (the sibling collapses out of the row), plus the transient skill
             slot. items-end so an expanding unit grows upward off the shared baseline; the
             row sits bottom-anchored, so panel growth pushes up, never down. The left slot
             still morphs per page (recording unit on a note, away/new-note pill elsewhere)
             inside an AnimatedWidth so navigation slides the dock to its new size instead
-            of snapping it — the skill slot rides INSIDE that wrapper so the
-            page morph slides the combined width rather than popping the skill pill. */}
+            of snapping it. The skill slot stays mounted outside that page morph so
+            navigating does not replace the active proposal's controls. */}
         <div
           data-toast-obstacle=""
           className={`pointer-events-auto relative flex items-end ${compact ? 'gap-1.5' : 'gap-2'}`}
+          style={{ '--skill-review-neighbor-width': `${recPillWidth}px` } as React.CSSProperties}
         >
           <AnimatedWidth
             contentKey={recordingAway ? 'recording-away' : currentNote ? 'note' : 'list'}
           >
             {currentNote && !recordingAway ? (
-              <div
-                className="flex items-end gap-2"
-                style={
-                  {
-                    '--skill-review-neighbor-width': `${recordingPillWidth(rec.state, rec.canPause, compact)}px`,
-                  } as React.CSSProperties
-                }
-              >
+              <div className="flex items-end gap-2">
                 <DockUnit
                   compact={compact}
                   expanded={isTranscriptionOpen}
                   collapsed={isAskOpen}
-                  pillWidth={recordingPillWidth(rec.state, rec.canPause, compact)}
+                  pillWidth={recPillWidth}
                   panelWidth={recPanelWidth}
                   panelHeight={panelHeight(recMaxi, 'rec')}
                   pill={
                     <RecordingPillFace
-                      startBlockedReason={
-                        hasStagedCandidate
-                          ? t('recording.actions.reviewBeforeRecording')
-                          : undefined
-                      }
+                      startBlockedReason={recordingStartBlockedReason}
                       recState={rec.state}
                       canPause={rec.canPause}
                       isPanelOpen={isTranscriptionOpen}
@@ -1080,6 +1168,7 @@ export function RecordingBottomCluster({
                       activeRecordingId={sessionVisible ? rec.recordingId : null}
                       skillStatus={(fallback, hideCompleted) => (
                         <RecordingSkillStatus
+                          pending={enhancementPending}
                           hideCompleted={hideCompleted}
                           noteId={currentNote.noteId}
                           onReviewInNote={() => setExpandedUnit(null)}
@@ -1093,15 +1182,10 @@ export function RecordingBottomCluster({
                       isExpanded={recMaxi}
                       onToggleExpanded={() => setRecMaxi(v => !v)}
                       onClose={() => setExpandedUnit(null)}
-                      startBlockedReason={
-                        hasStagedCandidate
-                          ? t('recording.actions.reviewBeforeRecording')
-                          : undefined
-                      }
+                      startBlockedReason={recordingStartBlockedReason}
                       recState={rec.state}
                       canPause={rec.canPause}
                       elapsedSeconds={elapsedSeconds}
-                      hideStartRecording={!!activeRun && !hasStagedCandidate}
                       onStartRecording={onStart}
                       onStopRecording={onStop}
                       onPauseRecording={onPause}
@@ -1110,6 +1194,7 @@ export function RecordingBottomCluster({
                       errorHint={isTranscriptionOpen ? recErrorBody : null}
                       errorAction={isTranscriptionOpen ? recErrorAction : null}
                       onDismissError={rec.clearError}
+                      recoveryActions={isTranscriptionOpen ? recoveryActions : null}
                       finishedRecordingId={
                         tour?.noteId === noteId && tour.recordingId && !sessionActive
                           ? tour.recordingId
@@ -1127,48 +1212,21 @@ export function RecordingBottomCluster({
                     />
                   }
                 />
-                {/* Skill slot — the dock has exactly TWO units; skills live inside
-                    Ask (slash tokens + the suggested chip, runs as thread turns). The slot
-                    stays MOUNTED (it hosts the run bridge consuming the auto-enhance /
-                    ask-slash / inline requests) but only ENTERS the row while a candidate
-                    is staged: the Keep/Undo review pill, which replaces the collapsed Ask
-                    pill during review. A run in flight never adds a pill here — it shows on
-                    the Ask pill and in the thread. */}
-                {
-                  <DockRowmate
-                    collapsed={
-                      expandedUnit !== null ||
-                      !hasStagedCandidate ||
-                      // Float (380px): the compact review pill is full-window-width, so next to
-                      // the live Record pill it overflows; it is inert while recording anyway.
-                      (compact && rec.state !== 'idle')
-                    }
-                  >
-                    <div
-                      className={rec.state !== 'idle' ? 'dock-slot-dimmed pointer-events-none' : ''}
-                      {...(rec.state !== 'idle' ? { inert: true } : {})}
-                      aria-hidden={rec.state !== 'idle'}
-                    >
-                      <SkillDockSlot compact={compact} />
-                    </div>
-                  </DockRowmate>
-                }
               </div>
-            ) : captureActive && recordingNote ? (
-              // Off the recording's note: the SAME live pill with full
-              // controls — pause · wave · timer · stop — and the panel still
-              // expands on the live transcript, with a "Go to note" jump in its
-              // bar. Only the note-scoped extras (history, enhance) are absent.
+            ) : recordingAway && recordingNote ? (
+              // Both faces stay attached to the original note through processing
+              // and review, including after capture controls return to idle.
               <DockUnit
                 compact={compact}
                 expanded={isTranscriptionOpen}
                 collapsed={isAskOpen}
-                pillWidth={recordingPillWidth(rec.state, rec.canPause, compact)}
+                pillWidth={recPillWidth}
                 panelWidth={recPanelWidth}
                 panelHeight={panelHeight(recMaxi, 'rec')}
                 pill={
                   <RecordingPillFace
                     recState={rec.state}
+                    startBlockedReason={recordingStartBlockedReason}
                     canPause={rec.canPause}
                     isPanelOpen={isTranscriptionOpen}
                     onTogglePanel={toggleTranscription}
@@ -1180,20 +1238,23 @@ export function RecordingBottomCluster({
                 }
                 panel={
                   <TranscriptPanel
-                    key={`away-${recordingNote.noteId}`}
+                    key={`away-${transcriptNoteId}`}
                     recordingNoteTitle={recordingNote.title}
+                    openNoteLabel={openNoteLabel}
                     isRecording={showLiveTranscript}
                     isPaused={rec.isPaused}
                     pauseReason={rec.pauseReason}
                     isFinishing={isFinishing}
                     liveLines={liveLines}
                     activeRecordingId={sessionVisible ? rec.recordingId : null}
-                    recordings={[]}
-                    onEnhanceRecording={() => {}}
+                    recordings={recordingLogs}
+                    onEnhanceRecording={onEnhanceRecording}
+                    onRenameSpeaker={onRenameSpeaker}
                     isExpanded={recMaxi}
                     onToggleExpanded={() => setRecMaxi(v => !v)}
                     onClose={() => setExpandedUnit(null)}
                     recState={rec.state}
+                    startBlockedReason={recordingStartBlockedReason}
                     canPause={rec.canPause}
                     elapsedSeconds={elapsedSeconds}
                     onStartRecording={() => {}}
@@ -1204,7 +1265,8 @@ export function RecordingBottomCluster({
                     errorHint={isTranscriptionOpen ? recErrorBody : null}
                     errorAction={isTranscriptionOpen ? recErrorAction : null}
                     onDismissError={rec.clearError}
-                    onOpenNote={() => router.push(`/notes/${recordingNote.noteId}`)}
+                    recoveryActions={isTranscriptionOpen ? recoveryActions : null}
+                    onOpenNote={() => router.push(`/notes/${transcriptNoteId}`)}
                   />
                 }
               />
@@ -1214,27 +1276,39 @@ export function RecordingBottomCluster({
               </DockRowmate>
             )}
           </AnimatedWidth>
+          {/* Review replaces Ask and stays tied to its target across navigation.
+              Keep the slot mounted: it also hosts the skill request bridge. */}
+          <DockRowmate
+            collapsed={expandedUnit !== null || !hasStagedCandidate || (compact && rec.state !== 'idle')}
+          >
+            <div
+              className={rec.state !== 'idle' ? 'dock-slot-dimmed pointer-events-none' : ''}
+              {...(rec.state !== 'idle' ? { inert: true } : {})}
+              aria-hidden={rec.state !== 'idle'}
+            >
+              <SkillDockSlot compact={compact} />
+            </div>
+          </DockRowmate>
           <DockUnit
             compact={compact}
             expanded={isAskOpen}
-            // A staged skill diff hands the Ask slot to the review pill (the
-            // diff bar in the skill slot): the Ask pill becomes the
-            // review pill while an edit is under review.
-            collapsed={isTranscriptionOpen || hasStagedCandidate}
+            // Review replaces Ask in the dock and blocks it across notes until
+            // the proposal is resolved, including refinement and applying.
+            collapsed={isTranscriptionOpen || askBlocked}
             // Compact (the floating note window, 380px): the pill takes whatever the
             // Record pill leaves — it stays in the row while recording too, so the Ask unit,
             // its chip and the run state keep working mid-session. 26 = the row's
             // horizontal padding (2×10) + the unit gap (6).
             pillWidth={
               compact
-                ? `min(300px, calc(100vw - ${recordingPillWidth(rec.state, rec.canPause, true) + 26}px))`
-                : `min(${ASK_PILL_WIDTH}px, calc(100vw - 106px))`
+                ? `min(300px, calc(100vw - ${recPillWidth + 26}px))`
+                : `min(${ASK_PILL_WIDTH}px, calc(100vw - ${recordingAway ? recPillWidth + 56 : 106}px))`
             }
             panelWidth={askPanelWidth}
             panelHeight={panelHeight(askMaxi, 'ask')}
             pill={
               <AskPillFace
-                onClick={() => setExpandedUnit('ask')}
+                onClick={() => { if (!askBlocked) setExpandedUnit('ask'); }}
                 onPickSkill={onPickSuggestedSkill}
                 noteId={noteId}
                 activeRun={activeRun}

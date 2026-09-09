@@ -22,7 +22,7 @@ import { Message, MessageContent } from '../../ui/message';
 import { MessageResponse } from '../ai-elements/message';
 import { copyToClipboard } from '../../lib/clipboard';
 import { useNotes } from '@prismical/app-client';
-import { parseAskAnswer, uiMessageText } from '@prismical/app-client';
+import { parseAskAnswer, uiMessageText, askMessageScope } from '@prismical/app-client';
 import { useTranslation } from 'react-i18next';
 
 /**
@@ -349,6 +349,28 @@ function Followups({
   );
 }
 
+/** Attachments sent with a question, distinct from sources cited by its answer. */
+function AskContextReceipt({ message }: { message: UIMessage }) {
+  const { t } = useTranslation();
+  const { data: notes = [] } = useNotes();
+  const ids = askMessageScope(message)?.noteIds ?? [];
+  if (ids.length === 0) return null;
+  const titles = new Map(notes.map(note => [note.id, note.title]));
+  return (
+    <div className="flex max-w-full flex-wrap justify-end gap-1">
+      {[...new Set(ids)].map(id => (
+        <Link
+          key={id}
+          href={`/notes/${encodeURIComponent(id)}`}
+          className="max-w-full truncate rounded-md border border-dock-line bg-dock-field px-1.5 text-xs leading-5 text-dock-ink-2 hover:bg-dock-hover"
+        >
+          @{titles.get(id) || t('ask.sources.note')}
+        </Link>
+      ))}
+    </div>
+  );
+}
+
 export function AskMessage({
   message,
   approval,
@@ -378,6 +400,7 @@ export function AskMessage({
           <Bubble align="end">
             <BubbleContent>{text}</BubbleContent>
           </Bubble>
+          <AskContextReceipt message={message} />
         </MessageContent>
       </Message>
     );
@@ -407,7 +430,7 @@ export function AskMessage({
         {body.trim() !== '' && (
           <Bubble variant="ghost">
             <BubbleContent>
-              <MessageResponse>{body}</MessageResponse>
+              <MessageResponse className="ask-markdown">{body}</MessageResponse>
             </BubbleContent>
           </Bubble>
         )}

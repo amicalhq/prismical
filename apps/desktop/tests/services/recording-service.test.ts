@@ -2395,7 +2395,7 @@ describe('RecordingService — lifecycle ownership and durability', () => {
   );
 
   it.effect(
-    'records another note while a stopped recording uploads and claims its completion once',
+    'blocks another recording until stopped audio finishes processing and claims completion once',
     () =>
       Effect.gen(function* () {
         const entered = yield* Deferred.make<void>();
@@ -2447,35 +2447,16 @@ describe('RecordingService — lifecycle ownership and durability', () => {
         assert.isTrue(firstCapture.released);
         assert.isTrue(Option.isNone(yield* Fiber.poll(stopping)));
 
-        const second = yield* h.service.start({
-          captureMode: 'mic',
-          noteId: 'note_second',
-          quotaRemainingAtStartSeconds: 600,
-        });
-        yield* poll(
-          SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')),
-          'second capture'
+        assert.deepStrictEqual(
+          yield* Effect.either(h.service.start({ captureMode: 'mic', noteId: 'note_second' })),
+          Either.left(new RecordingBusyError({ activeRecordingId: first }))
         );
-        yield* Queue.offer(h.fakeCapture.current().frames, fakeFrame('mic_raw', seconds(15)));
-        yield* poll(
-          SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.segments.length === 1)),
-          'second transcript'
-        );
-        const secondState = yield* SubscriptionRef.get(h.service.state);
-        const secondLevel = yield* SubscriptionRef.get(h.service.level);
+        assert.strictEqual(h.fakeCapture.sessions.length, 1);
         yield* TestClock.adjust(Duration.minutes(2));
-        assert.strictEqual(yield* SubscriptionRef.get(h.service.level), secondLevel);
         assert.deepStrictEqual((yield* h.db.getRecoveryOutbox(first))?.pauseCutPoints, []);
         yield* Deferred.succeed(release, undefined);
         yield* Fiber.join(stopping);
         const state = yield* SubscriptionRef.get(h.service.state);
-        assert.strictEqual(state.recordingId, second);
-        assert.strictEqual(state.noteId, 'note_second');
-        assert.strictEqual(state.status, 'recording');
-        assert.deepStrictEqual(state.segments, secondState.segments);
-        assert.strictEqual(state.elapsedMs, secondState.elapsedMs);
-        assert.strictEqual(state.quotaRemainingAtStartSeconds, 600);
-        assert.strictEqual(yield* SubscriptionRef.get(h.service.level), secondLevel);
         assert.deepStrictEqual(state.finalizingRecordingIds, []);
         assert.deepStrictEqual(state.completedRecordings, [
           { recordingId: first, noteId: 'note_first', segments: 2 },
@@ -2490,14 +2471,14 @@ describe('RecordingService — lifecycle ownership and durability', () => {
           []
         );
         assert.strictEqual((yield* productSegments(h, first)).length, 2);
-        assert.strictEqual((yield* productSegments(h, second)).length, 1);
+        const second = yield* h.service.start({ captureMode: 'mic', noteId: 'note_second' });
         yield* h.service.stop(second);
         yield* Scope.close(h.sessionScope, Exit.void);
       })
   );
 
   it.effect(
-    'completion waits for recovery and preserves claims while another recording starts',
+    'blocks capture until recovery completes and preserves completion claims',
     () =>
       Effect.gen(function* () {
         const h = yield* setup();
@@ -2510,19 +2491,22 @@ describe('RecordingService — lifecycle ownership and durability', () => {
         ]);
         yield* settle;
         for (const claim of claims) assert.isTrue(Option.isNone(yield* Fiber.poll(claim)));
-        const second = yield* h.service.start({ captureMode: 'mic' });
-        yield* h.service.stop(second);
-        const secondClaim = yield* Effect.fork(h.service.claimCompletion(second));
-        yield* settle;
-        assert.isTrue(Option.isNone(yield* Fiber.poll(secondClaim)));
+        assert.deepStrictEqual((yield* SubscriptionRef.get(h.service.state)).finalizingRecordingIds, [first]);
+        assert.deepStrictEqual(
+          yield* Effect.either(h.service.start({ captureMode: 'mic' })),
+          Either.left(new RecordingBusyError({ activeRecordingId: first }))
+        );
         h.fakeCloud.setCreateResponder(input => ({
           ok: true,
           value: { recordingId: input.recordingId },
         }));
         yield* h.drain;
         const results = yield* Effect.forEach(claims, Fiber.join);
+        assert.deepStrictEqual((yield* SubscriptionRef.get(h.service.state)).finalizingRecordingIds, []);
         assert.strictEqual(results.filter(Boolean).length, 1);
-        assert.isTrue(yield* Fiber.join(secondClaim));
+        const second = yield* h.service.start({ captureMode: 'mic' });
+        yield* h.service.stop(second);
+        assert.isTrue(yield* h.service.claimCompletion(second));
         assert.strictEqual(h.fakeCloud.finalizeCalls.length, 2);
         assert.isFalse(yield* h.service.claimCompletion(first));
         yield* Scope.close(h.sessionScope, Exit.void);
@@ -2596,6 +2580,7 @@ describe('RecordingService — lifecycle ownership and durability', () => {
         'storage failure published'
       );
       yield* h.service.stop(id);
+      assert.deepStrictEqual((yield* SubscriptionRef.get(h.service.state)).finalizingRecordingIds, [id]);
       assert.strictEqual(h.fakeCapture.sessions.length, 0);
       assert.strictEqual(h.fakeCloud.uploadCalls.length, 0);
       assert.strictEqual(h.fakeCloud.finalizeCalls.length, 0);

@@ -63,12 +63,25 @@ describe('schema parse helpers', () => {
   it('requires a bounded, account-and-org-scoped plan identity with a telemetry revision', () => {
     const plan = { accountId: 'user_1', orgId: 'org_1', planExternalId: 'plan_free', revision: 1 };
     expect(telemetryPlanIdentityRequestSchema.safeParse(plan).success).toBe(true);
-    expect(telemetryPlanIdentityRequestSchema.safeParse({ ...plan, planExternalId: null }).success).toBe(true);
-    expect(telemetryPlanIdentityRequestSchema.safeParse({ ...plan, accountId: '' }).success).toBe(false);
-    expect(telemetryPlanIdentityRequestSchema.safeParse({ ...plan, orgId: '' }).success).toBe(false);
-    expect(telemetryPlanIdentityRequestSchema.safeParse({ ...plan, revision: -1 }).success).toBe(false);
-    expect(telemetryPlanIdentityRequestSchema.safeParse({ ...plan, planExternalId: 'x'.repeat(201) }).success).toBe(false);
-    expect(telemetryPlanIdentityRequestSchema.safeParse({ ...plan, has_appsumo_org: true }).success).toBe(false);
+    expect(
+      telemetryPlanIdentityRequestSchema.safeParse({ ...plan, planExternalId: null }).success
+    ).toBe(true);
+    expect(telemetryPlanIdentityRequestSchema.safeParse({ ...plan, accountId: '' }).success).toBe(
+      false
+    );
+    expect(telemetryPlanIdentityRequestSchema.safeParse({ ...plan, orgId: '' }).success).toBe(
+      false
+    );
+    expect(telemetryPlanIdentityRequestSchema.safeParse({ ...plan, revision: -1 }).success).toBe(
+      false
+    );
+    expect(
+      telemetryPlanIdentityRequestSchema.safeParse({ ...plan, planExternalId: 'x'.repeat(201) })
+        .success
+    ).toBe(false);
+    expect(
+      telemetryPlanIdentityRequestSchema.safeParse({ ...plan, has_appsumo_org: true }).success
+    ).toBe(false);
   });
 
   it('parses a valid transport request', () => {
@@ -134,24 +147,31 @@ describe('schema parse helpers', () => {
     expect(parseCollabOpenRequest({ openId: id, noteId: 'nt_1', extra: 1 }).success).toBe(false);
   });
 
-  it('inbound collab messages: update/flush/compact with binary payloads, nothing else', () => {
+  it('inbound collab messages: update/flush/compact and persistence barriers', () => {
     const bytes = Uint8Array.from([1, 2]);
     expect(parseInboundCollabMessage({ type: 'update', data: bytes }).success).toBe(true);
     expect(parseInboundCollabMessage({ type: 'update', data: 'text' }).success).toBe(false);
     expect(
-      parseInboundCollabMessage({ type: 'flush', text: 'a', markdown: null, firstLine: 'a' }).success
+      parseInboundCollabMessage({ type: 'flush', text: 'a', markdown: null, firstLine: 'a' })
+        .success
     ).toBe(true);
     expect(
       parseInboundCollabMessage({ type: 'flush', text: 'a', markdown: '# a', firstLine: 'a' })
         .success
     ).toBe(true);
     expect(parseInboundCollabMessage({ type: 'flush', text: 'a' }).success).toBe(false);
-    expect(parseInboundCollabMessage({ type: 'compact', upTo: 3, state: bytes }).success).toBe(true);
+    expect(parseInboundCollabMessage({ type: 'compact', upTo: 3, state: bytes }).success).toBe(
+      true
+    );
     expect(parseInboundCollabMessage({ type: 'compact', upTo: -1, state: bytes }).success).toBe(
       false
     );
     expect(parseInboundCollabMessage({ type: 'abort' }).success).toBe(false);
     expect(parseInboundCollabMessage('update').success).toBe(false);
+    expect(parseInboundCollabMessage({ type: 'barrier', requestId: 'barrier_1' }).success).toBe(
+      true
+    );
+    expect(parseInboundCollabMessage({ type: 'barrier', requestId: '' }).success).toBe(false);
   });
 
   it('outbound collab messages: update blobs + the hydrated marker + resync', () => {
@@ -164,12 +184,21 @@ describe('schema parse helpers', () => {
       false
     );
     expect(parseOutboundCollabMessage({ type: 'done' }).success).toBe(false);
+    expect(
+      parseOutboundCollabMessage({ type: 'barrier', requestId: 'barrier_1', ok: true }).success
+    ).toBe(true);
+    expect(parseOutboundCollabMessage({ type: 'barrier', requestId: 'barrier_1' }).success).toBe(
+      false
+    );
   });
 
   it('nav push payloads', () => {
     expect(parseNavPush({ path: '/notes' }).success).toBe(true);
-    expect(parseNavPush({ path: '/settings/billing', notice: 'floating-mode-unavailable' })).toEqual({
-      success: true, data: { path: '/settings/billing', notice: 'floating-mode-unavailable' },
+    expect(
+      parseNavPush({ path: '/settings/billing', notice: 'floating-mode-unavailable' })
+    ).toEqual({
+      success: true,
+      data: { path: '/settings/billing', notice: 'floating-mode-unavailable' },
     });
     expect(parseNavPush({ path: '/settings/billing', notice: 'unknown' }).success).toBe(false);
     expect(parseNavPush({ path: '' }).success).toBe(false);
@@ -310,16 +339,25 @@ describe('recording schemas', () => {
 
   it('quota baseline crosses Start and state only as a finite, nonnegative value or null', () => {
     for (const quotaRemainingAtStartSeconds of [undefined, null, 0, 600.5]) {
-      const request = parseStartRecordingRequest({ captureMode: 'dual', quotaRemainingAtStartSeconds });
+      const request = parseStartRecordingRequest({
+        captureMode: 'dual',
+        quotaRemainingAtStartSeconds,
+      });
       const view = parseRecordingStateView({ ...state, quotaRemainingAtStartSeconds });
       expect(request.success).toBe(true);
       expect(view.success).toBe(true);
-      if (request.success) expect(request.data.quotaRemainingAtStartSeconds).toBe(quotaRemainingAtStartSeconds);
-      if (view.success) expect(view.data.quotaRemainingAtStartSeconds).toBe(quotaRemainingAtStartSeconds);
+      if (request.success)
+        expect(request.data.quotaRemainingAtStartSeconds).toBe(quotaRemainingAtStartSeconds);
+      if (view.success)
+        expect(view.data.quotaRemainingAtStartSeconds).toBe(quotaRemainingAtStartSeconds);
     }
     for (const quotaRemainingAtStartSeconds of [-1, Infinity, NaN, '600']) {
-      expect(parseStartRecordingRequest({ captureMode: 'dual', quotaRemainingAtStartSeconds }).success).toBe(false);
-      expect(parseRecordingStateView({ ...state, quotaRemainingAtStartSeconds }).success).toBe(false);
+      expect(
+        parseStartRecordingRequest({ captureMode: 'dual', quotaRemainingAtStartSeconds }).success
+      ).toBe(false);
+      expect(parseRecordingStateView({ ...state, quotaRemainingAtStartSeconds }).success).toBe(
+        false
+      );
     }
   });
 
@@ -352,9 +390,7 @@ describe('recording schemas', () => {
       expect(projected.success).toBe(true);
       if (projected.success) expect(projected.data.spendsCloudQuota).toBe(spendsCloudQuota);
     }
-    expect(
-      parseRecordingStateView({ ...state, spendsCloudQuota: 'cloud' }).success
-    ).toBe(false);
+    expect(parseRecordingStateView({ ...state, spendsCloudQuota: 'cloud' }).success).toBe(false);
     expect(parseRecordingStateView({ ...state, captureMode: 'both' }).success).toBe(false);
     expect(parseRecordingStateView({ ...state, micSource: 'unknown' }).success).toBe(false);
     expect(parseRecordingStateView({ ...state, micSource: undefined }).success).toBe(false);
@@ -471,7 +507,12 @@ describe('local models', () => {
       models: [
         {
           ...model,
-          download: { status: 'error', bytesDownloaded: 0, totalBytes: 100, error: 'checksum-mismatch' },
+          download: {
+            status: 'error',
+            bytesDownloaded: 0,
+            totalBytes: 100,
+            error: 'checksum-mismatch',
+          },
         },
       ],
       modelsDir: '/models',
@@ -486,7 +527,10 @@ describe('local models', () => {
     expect(
       parseModelsStateView({
         models: [
-          { ...model, download: { status: 'error', bytesDownloaded: 0, totalBytes: 1, error: 'boom' } },
+          {
+            ...model,
+            download: { status: 'error', bytesDownloaded: 0, totalBytes: 1, error: 'boom' },
+          },
         ],
         modelsDir: '/m',
       }).success
@@ -525,7 +569,9 @@ describe('transcription BYOK key request', () => {
     expect(parseTranscriptionByokKeyRequest({ key: '', baseUrl }).success).toBe(false);
     expect(parseTranscriptionByokKeyRequest({ key: 'sk-test' }).success).toBe(false);
     expect(parseTranscriptionByokKeyRequest({ key: 'sk-test', baseUrl: ' ' }).success).toBe(false);
-    expect(parseTranscriptionByokKeyRequest({ key: 'sk-test', baseUrl, extra: 1 }).success).toBe(false);
+    expect(parseTranscriptionByokKeyRequest({ key: 'sk-test', baseUrl, extra: 1 }).success).toBe(
+      false
+    );
     expect(parseTranscriptionByokKeyRequest({}).success).toBe(false);
     expect(parseTranscriptionByokKeyRequest('sk-test').success).toBe(false);
   });
@@ -593,6 +639,7 @@ describe('channel names', () => {
       recordingStart: 'recording:start',
       recordingStop: 'recording:stop',
       recordingClaimCompletion: 'recording:claimCompletion',
+      recordingSetSkillWorkflow: 'recording:setSkillWorkflow',
       recordingPause: 'recording:pause',
       recordingResume: 'recording:resume',
       recordingStateChanged: 'recording:stateChanged',

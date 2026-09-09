@@ -62,7 +62,7 @@ describe('desktop recording port', () => {
     push!({ ...paused, status: 'idle', autoStopRequested: false, autoPausePrompt: null,
       quotaRemainingAtStartSeconds: undefined });
     expect(seen.map(state => state.autoStopRequested)).toEqual([true, false]);
-    expect(seen[0].autoPausePrompt).toBeUndefined();
+    expect(seen[0].autoPausePrompt).toEqual(paused.autoPausePrompt);
     expect(seen[0].spendsCloudQuota).toBe(false);
     expect(seen.map(state => state.quotaRemainingAtStartSeconds)).toEqual([600, null]);
     detach();

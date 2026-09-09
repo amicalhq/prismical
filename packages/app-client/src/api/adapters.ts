@@ -20,6 +20,7 @@ export interface CoreNote {
   starred?: boolean;
   folderId?: string | null;
   eventId?: string | null;
+  createdAt?: string;
   updatedAt: string;
   contentText?: string | null; // body; markdown with ?includeBody=1, else absent
   excerpt?: string | null; // plaintext body preview (first 100 chars), always present on the list
@@ -110,6 +111,7 @@ export function toNote(c: CoreNote, tagIds: string[] = []): Note {
     starred: Boolean(c.starred),
     folderId: c.folderId ?? undefined,
     tagIds,
+    createdAt: c.createdAt,
     updatedAt: c.updatedAt,
     preview: previewFrom(c.excerpt ?? body),
     body,

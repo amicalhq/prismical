@@ -78,6 +78,6 @@ export async function listPendingSkillResults(noteId: string, signal?: AbortSign
     await apiClient.getRaw<unknown>(`${ME_PREFIX}/skill-runs/pending`, { noteId }, { signal }),
   ).results;
 }
-export async function resolvePendingSkillResult(noteId: string, resultId: string, rawMarkdown: string) {
-  await apiClient.postRaw(`${ME_PREFIX}/skill-runs/resolve`, { noteId, resultId, rawMarkdown });
+export async function resolvePendingSkillResult(noteId: string, resultId: string, options?: { discardAccepted?: boolean }) {
+  await apiClient.postRaw(`${ME_PREFIX}/skill-runs/resolve`, { noteId, resultId, ...options });
 }

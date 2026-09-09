@@ -5,18 +5,15 @@ import type { Editor } from "@tiptap/react";
 import { useRecoverSkillResult } from "./use-recover-skill-result";
 import { useSkillDiffStore } from "./diff/skill-diff-store";
 import { useSkillRunActivityStore } from "./skill-run-activity-store";
+import { createWorkflowRuntime, type WorkflowRuntime } from "@prismical/app-workflow";
 const mock = vi.hoisted(() => {
-  const state = { list: vi.fn(), session: "session-a", org: "org-a", listeners: new Set<() => void>() };
+  const state = { list: vi.fn(), session: "session-a", org: "org-a", native: false, workflow: undefined as WorkflowRuntime | undefined };
   return Object.assign(state, {
     auth: {
       getSession: () => ({
         activeSessionKey: state.session,
         accounts: [{ activeOrgId: state.org }],
       }),
-      onSessionChanged: (listener: () => void) => {
-        state.listeners.add(listener);
-        return () => { state.listeners.delete(listener); };
-      },
     },
   });
 });
@@ -24,7 +21,7 @@ vi.mock("../api/hooks/skill-runs", () => ({ listPendingSkillResults: mock.list }
 vi.mock("../ports-context", () => ({
   useActiveSessionKey: () => mock.session,
   useActiveOrgId: () => mock.org,
-  usePorts: () => ({ auth: mock.auth }),
+  usePorts: () => ({ auth: mock.auth, workflow: mock.workflow, recording: { control: mock.native ? {} : undefined } }),
   activeOrgIdOf: (view: { accounts: Array<{ activeOrgId: string }> }) =>
     view.accounts[0]?.activeOrgId,
 }));
@@ -38,81 +35,54 @@ const result = {
   reasoning: null,
   recordingId: "recording",
 };
-const editor = { isDestroyed: false } as Editor;
+const editor = { isDestroyed: false, getJSON: () => ({ type: "doc", content: [] }) } as unknown as Editor;
 beforeEach(() => {
   mock.list.mockReset().mockResolvedValue([result]);
   mock.session = "session-a";
   mock.org = "org-a";
-  mock.listeners.clear();
+  mock.workflow = undefined;
+  mock.native = false;
   useSkillDiffStore.setState({ candidatesByNote: new Map() });
   useSkillRunActivityStore.setState({ runningByNote: new Map(), runsByNote: new Map() });
 });
 afterEach(() => vi.restoreAllMocks());
 describe("completed suggestion recovery", () => {
-  it("keeps ownership when a refinement replaces the restored candidate", async () => {
+  it("does not restore pending suggestions in a page workflow", () => {
+    mock.workflow = createWorkflowRuntime();
     const hook = renderHook(() => useRecoverSkillResult("note-a", editor));
-    await waitFor(() => expect(useSkillDiffStore.getState().getCandidate("note-a")).toBeDefined());
-    const refined = { ...useSkillDiffStore.getState().getCandidate("note-a")!, rawMarkdown: "Refined output" };
-    act(() => useSkillDiffStore.getState().stage(refined));
-    act(() => {
-      mock.org = "org-b";
-      for (const listener of mock.listeners) listener();
-    });
+    window.dispatchEvent(new Event("focus"));
+    window.dispatchEvent(new Event("online"));
+    expect(mock.list).not.toHaveBeenCalled();
     expect(useSkillDiffStore.getState().getCandidate("note-a")).toBeUndefined();
     hook.unmount();
   });
-
-  it.each(["session", "org"] as const)("clears a staged recovered result on a %s change before React rerenders", async field => {
+  it("restores a native suggestion into workflow review and blocks competing work", async () => {
+    mock.native = true;
+    mock.workflow = createWorkflowRuntime();
     const hook = renderHook(() => useRecoverSkillResult("note-a", editor));
-    await waitFor(() => expect(useSkillDiffStore.getState().getCandidate("note-a")).toBeDefined());
-    const replacement = { ...result, resultId: "new-owner-result", rawMarkdown: "New owner output" };
-    mock.list.mockResolvedValue([replacement]);
-    act(() => {
-      mock[field] = `${field}-b`;
-      for (const listener of mock.listeners) listener();
-    });
+    await waitFor(() => expect(mock.workflow!.getSnapshot()).toMatchObject({
+      kind: "skill", phase: "review", noteId: "note-a",
+    }));
+    const candidate = useSkillDiffStore.getState().getCandidate("note-a")!;
+    expect(candidate.workflowId).toBe(mock.workflow.getSnapshot().kind === "skill"
+      ? (mock.workflow.getSnapshot() as { workflowId: string }).workflowId : undefined);
+    expect(candidate.proposalId).toBeTruthy();
+    expect(candidate.baseContent).toBe(JSON.stringify(editor.getJSON()));
+    expect(mock.workflow.dispatch({ type: "startRecording", workflowId: "next", noteId: "note-b" }).accepted).toBe(false);
+    hook.unmount();
+  });
+  it("does not restore native output over work admitted while the read was pending", async () => {
+    mock.native = true;
+    mock.workflow = createWorkflowRuntime();
+    let release!: (value: unknown) => void;
+    mock.list.mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
+    const hook = renderHook(() => useRecoverSkillResult("note-a", editor));
+    mock.workflow.dispatch({ type: "startRecording", workflowId: "new-recording", noteId: "note-b" });
+    await act(async () => release([result]));
     expect(useSkillDiffStore.getState().getCandidate("note-a")).toBeUndefined();
-    hook.rerender();
-    await waitFor(() => expect(useSkillDiffStore.getState().getCandidate("note-a")?.resultId).toBe(replacement.resultId));
-    hook.unmount();
-    expect(mock.listeners.size).toBe(0);
-  });
-
-  it("preserves a recovered result across same-owner navigation", async () => {
-    const first = renderHook(() => useRecoverSkillResult("note-a", editor));
-    await waitFor(() => expect(useSkillDiffStore.getState().getCandidate("note-a")).toBeDefined());
-    const candidate = useSkillDiffStore.getState().getCandidate("note-a");
-    first.unmount();
-    const second = renderHook(() => useRecoverSkillResult("note-a", editor));
-    expect(useSkillDiffStore.getState().getCandidate("note-a")).toBe(candidate);
-    expect(mock.list).toHaveBeenCalledTimes(1);
-    second.unmount();
-  });
-
-  it("replaces an old owner's recovered result when revisiting the note after an unmounted ownership change", async () => {
-    const first = renderHook(() => useRecoverSkillResult("note-a", editor));
-    await waitFor(() => expect(useSkillDiffStore.getState().getCandidate("note-a")).toBeDefined());
-    first.unmount();
-    mock.session = "session-b";
-    mock.list.mockResolvedValue([{ ...result, resultId: "new-owner-result" }]);
-    const second = renderHook(() => useRecoverSkillResult("note-a", editor));
-    await waitFor(() => expect(useSkillDiffStore.getState().getCandidate("note-a")?.resultId).toBe("new-owner-result"));
-    second.unmount();
-  });
-
-  it("leaves a manually replaced candidate untouched on ownership changes", async () => {
-    const hook = renderHook(() => useRecoverSkillResult("note-a", editor));
-    await waitFor(() => expect(useSkillDiffStore.getState().getCandidate("note-a")).toBeDefined());
-    const candidate = { ...useSkillDiffStore.getState().getCandidate("note-a")!, owner: undefined, resultId: undefined, rawMarkdown: "Manual result" };
-    act(() => useSkillDiffStore.getState().stage(candidate));
-    act(() => {
-      mock.session = "session-b";
-      for (const listener of mock.listeners) listener();
-    });
-    expect(useSkillDiffStore.getState().getCandidate("note-a")).toBe(candidate);
+    expect(mock.workflow.getSnapshot()).toMatchObject({ kind: "recording", noteId: "note-b" });
     hook.unmount();
   });
-
   it("stages the exact stored output after mounting with no frontend candidate", async () => {
     const hook = renderHook(() => useRecoverSkillResult("note-a", editor));
     await waitFor(() =>
@@ -121,7 +91,7 @@ describe("completed suggestion recovery", () => {
       ),
     );
     expect(mock.list).toHaveBeenCalledExactlyOnceWith("note-a", expect.any(AbortSignal));
-    expect(useSkillDiffStore.getState().getCandidate("note-a")?.resultId).toBe(result.resultId);
+    expect(useSkillDiffStore.getState().getCandidate("note-a")).toMatchObject({ resultId: result.resultId, recoverable: true });
     expect(useSkillRunActivityStore.getState().runsByNote.get("note-a")?.[0]?.status).toBe(
       "staged",
     );

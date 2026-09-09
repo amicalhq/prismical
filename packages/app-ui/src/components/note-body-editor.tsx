@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useEditor, EditorContent, type Editor } from '@tiptap/react';
 import { Lock } from 'lucide-react';
 import type * as Y from 'yjs';
 import { useNoteCollab } from '@prismical/app-client';
+import { startLoadingTiming } from '@prismical/app-client';
 import { buildWebEditorExtensions } from '@prismical/app-client';
 import { useRegisterNoteEditor } from '../shell/current-editor-context';
 import { useSkillDiffDecorations } from '@prismical/app-client';
@@ -54,7 +55,7 @@ function Loading() {
 
 export function NoteBodyEditor({ noteId, writable }: NoteBodyEditorProps) {
   const { t } = useTranslation();
-  const { doc, status, synced, scope, error } = useNoteCollab(noteId);
+  const { doc, status, synced, scope, error, loadingAttemptId } = useNoteCollab(noteId);
 
   if (error) {
     return (
@@ -82,6 +83,7 @@ export function NoteBodyEditor({ noteId, writable }: NoteBodyEditorProps) {
       status={status}
       synced={synced}
       writable={canEdit}
+      loadingAttemptId={loadingAttemptId}
     />
   );
 }
@@ -92,18 +94,43 @@ interface InnerProps {
   status: 'connecting' | 'connected' | 'disconnected';
   synced: boolean;
   writable: boolean;
+  loadingAttemptId?: string;
 }
 
-function NoteBodyEditorInner({ doc, noteId, status, synced, writable }: InnerProps) {
+function NoteBodyEditorInner({
+  doc,
+  noteId,
+  status,
+  synced,
+  writable,
+  loadingAttemptId,
+}: InnerProps) {
   const { t } = useTranslation();
   const placeholder = t('notes.editor.placeholder');
+  const loading = useRef<ReturnType<typeof startLoadingTiming> | null>(null);
+  useEffect(() => {
+    // Passive browser diagnostics only; this does not add analytics traffic or
+    // publish the editor before document sync. The parent id distinguishes a
+    // replacement collaboration document from the prior note mount.
+    const timing = startLoadingTiming(
+      undefined,
+      'note_editor',
+      noteId,
+      undefined,
+      loadingAttemptId
+    );
+    loading.current = timing;
+    return () => {
+      timing.finish('abandoned');
+    };
+  }, [doc, noteId, loadingAttemptId]);
   const editor: Editor | null = useEditor(
     {
       extensions: buildWebEditorExtensions(doc, noteId, placeholder),
       editable: false, // toggled below once writable/synced are known
       immediatelyRender: false, // Next.js SSR: avoid a hydration mismatch
       editorProps: {
-        attributes: { class: 'note-prose max-w-2xl text-note-foreground' },
+        attributes: { class: 'note-prose w-full text-note-foreground' },
       },
     },
     [doc, noteId, placeholder]
@@ -133,12 +160,27 @@ function NoteBodyEditorInner({ doc, noteId, status, synced, writable }: InnerPro
   // resyncs on reconnect (no data loss).
   useEffect(() => {
     editor?.setEditable(writable && synced);
+    try {
+      if (editor) loading.current?.mark('editor_created');
+      if (editor && writable && synced && !editor.isDestroyed) {
+        loading.current?.mark('editor_editability_set');
+        if (editor.view.dom.isConnected) {
+          loading.current?.mark('editor_dom_mounted');
+          if (editor.view.dom.getAttribute('contenteditable') === 'true') {
+            loading.current?.mark('editor_editable');
+            loading.current?.finish('ready');
+          }
+        }
+      }
+    } catch {
+      // A detached editor view leaves the diagnostic phase unknown.
+    }
   }, [editor, writable, synced]);
 
   if (!editor || !synced) return <Loading />;
 
   return (
-    <div className="max-w-2xl">
+    <div className="w-full">
       {!writable && (
         <p className="mb-2 rounded-md bg-muted px-3 py-1.5 text-xs text-muted-foreground">
           {t('notes.editor.readOnly')}

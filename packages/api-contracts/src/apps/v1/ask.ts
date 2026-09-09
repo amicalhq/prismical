@@ -32,8 +32,20 @@ export const AskRequestSchema = z.object({
 });
 export type AskRequest = z.input<typeof AskRequestSchema>;
 
+/** Stable turn identity is app-only; public Ask requests retain their existing contract. */
+export const AskAppRequestSchema = AskRequestSchema.extend({
+  turnId: z.string().min(1).max(128).optional(),
+});
+
 export const AskStoredMessageSchema = z
-  .object({ role: z.enum(['user', 'assistant']), content: z.string() })
+  .object({
+    role: z.enum(['user', 'assistant']),
+    content: z.string(),
+    turnId: z.string().max(128).optional(),
+    // Absent on legacy history; an empty object explicitly records no attachments.
+    scope: AskScopeSchema.optional(),
+    followups: z.array(z.string().max(500)).max(3).optional(),
+  })
   .strip();
 export type AskStoredMessage = z.output<typeof AskStoredMessageSchema>;
 

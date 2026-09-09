@@ -27,7 +27,13 @@ import { useLatestConversation } from '@prismical/app-client';
 import { useActiveOrgId, useActiveSessionKey } from '@prismical/app-client';
 import { askHeadersForPlatform, createAskTransport } from '@prismical/app-client';
 import { mintConversationId, toUiMessages, type AskStoredMessage } from '@prismical/app-client';
-import { contextToScope, uiMessageText, type AskContextItem } from '@prismical/app-client';
+import {
+  contextToScope,
+  uiMessageText,
+  askOriginScope,
+  askContinuationMessage,
+  type AskScope,
+} from '@prismical/app-client';
 import { useDesktopCapabilities, useEntitlements, useInstances } from '@prismical/app-client';
 import {
   AUTO_SELECTION,
@@ -37,9 +43,16 @@ import {
   saveModelPref,
   type AskModelSelection,
 } from '@prismical/app-client';
-import { EVENTS, usePorts, useNavigation } from '@prismical/app-client';
+import {
+  EVENTS,
+  usePorts,
+  useNavigation,
+  canAsk,
+  useWorkflowSnapshot,
+} from '@prismical/app-client';
 import {
   AskSessionChangedError,
+  reportAskError,
   askNoticeOf,
   askStreamFailureOf,
   bindAiErrorActions,
@@ -51,6 +64,8 @@ import { Info, TriangleAlert } from 'lucide-react';
 import { toast } from 'sonner';
 import { STATUS_LINK } from './ask-skill-run-turn-styles';
 import { useTranslation } from 'react-i18next';
+import { useCurrentNote } from '../../shell/current-note-context';
+import { useAskNoteContext, type AskNoteContext } from './use-ask-note-context';
 
 /**
  * The Ask AI chat panel. Loads the caller's latest persisted conversation and resumes
@@ -177,6 +192,13 @@ export function AskPanel({
   const { data: latest, isLoading } = useLatestConversation();
   const activeOrgId = useActiveOrgId();
   const activeSessionKey = useActiveSessionKey();
+  const { currentNote } = useCurrentNote();
+  const backgroundNote = currentNote ? { id: currentNote.noteId, title: currentNote.title } : null;
+  // Lives above the keyed chat so New chat does not undo removal on the same note.
+  const noteContext = useAskNoteContext(
+    backgroundNote,
+    `${activeSessionKey ?? ''}:${activeOrgId ?? ''}`
+  );
 
   // The active conversation: id + the messages to seed the chat with. Null until the latest thread
   // resolves (or we mint a fresh id for a first-time user).
@@ -287,6 +309,8 @@ export function AskPanel({
           ownerOrgId={activeOrgId}
           onRunSkill={onRunSkill}
           noteId={noteId}
+          backgroundNote={backgroundNote}
+          noteContext={noteContext}
           onReviewInNote={onClose}
           compact={compact}
         />
@@ -325,8 +349,12 @@ function AskChat({
   noteId = null,
   onReviewInNote,
   compact = false,
+  backgroundNote,
+  noteContext,
 }: {
   conversationId: string;
+  backgroundNote: AskNoteContext | null;
+  noteContext: ReturnType<typeof useAskNoteContext>;
   initialMessages: AskStoredMessage[];
   ownerSessionKey: string;
   ownerOrgId: string | null;
@@ -339,16 +367,17 @@ function AskChat({
   compact?: boolean;
 }) {
   const { t } = useTranslation();
-  // Per-send scope: @note tokens in the composer become the request's
-  // scope. CONSUMED where it is read: the AI SDK invokes the transport's
-  // prepare hook a couple of async boundaries after sendMessage returns, so a
-  // clear-after-send in the submit handler would empty the ref before the
-  // request ever read it — the getter takes the pending scope and resets it,
-  // so it applies to exactly one request and never leaks into the next turn.
-  const contextRef = React.useRef<AskContextItem[]>([]);
   // Product analytics via the injected AnalyticsPort.
-  const { analytics, auth, env } = usePorts();
+  const { analytics, auth, env, workflow } = usePorts();
   const platform = env.getEnv().platform;
+  const workflowAllowsAsk = canAsk(useWorkflowSnapshot());
+  const isAskAdmitted = React.useCallback(
+    () => !workflow || canAsk(workflow.getSnapshot()),
+    [workflow]
+  );
+  const assertAskAdmitted = React.useCallback(() => {
+    if (!isAskAdmitted()) throw new DOMException('Ask paused for proposal review', 'AbortError');
+  }, [isAskAdmitted]);
 
   // Model selection: groups built from the user's instances (Prismical Cloud → Auto + each
   // BYOK instance's curated models). The chosen pick is remembered in localStorage and validated
@@ -397,23 +426,19 @@ function AskChat({
     });
   }, [instances.length, model, activeModel, t, navigation]);
 
-  // The transport reads `contextRef`/`activeModelRef` at send time (freshest scope + model) and carries
-  // the fixed conversation id.
+  // Scope travels with the question metadata; model selection is read at request time.
   const transport = React.useMemo(
     () =>
       createAskTransport(
-        () => {
-          const scope = contextToScope(contextRef.current);
-          contextRef.current = [];
-          return scope;
-        },
+        () => undefined,
         conversationId,
         // Held for the whole `regenerate()` (which may chain a tool-approval resume request):
         // the flag is cleared when that settles, not on the first read.
         () => (cloudOnceRef.current ? AUTO_SELECTION : activeModelRef.current),
-        () => askHeadersForPlatform(platform, auth, ownerSessionKey, ownerOrgId)
+        () => askHeadersForPlatform(platform, auth, ownerSessionKey, ownerOrgId),
+        assertAskAdmitted
       ),
-    [auth, conversationId, ownerOrgId, ownerSessionKey, platform]
+    [auth, conversationId, ownerOrgId, ownerSessionKey, platform, assertAskAdmitted]
   );
   // Seed the resumed thread. Stable per conversation id (the parent remounts us when it changes).
   const initial = React.useMemo(
@@ -425,9 +450,11 @@ function AskChat({
       id: conversationId,
       messages: initial,
       transport,
+      onError: reportAskError,
       // Tool-approval resume: once every pending approval on the last assistant turn
       // has a response, auto-POST so the server re-runs and executes/denies the gated tools.
-      sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
+      sendAutomaticallyWhen: options =>
+        isAskAdmitted() && lastAssistantMessageIsCompleteWithApprovalResponses(options),
     });
 
   // Abort the stream and any scheduled approval resume when the exact login
@@ -440,6 +467,14 @@ function AskChat({
     },
     []
   );
+  React.useEffect(() => {
+    const stopForReview = () => {
+      if (!isAskAdmitted()) void stopRef.current();
+    };
+    const unsubscribe = workflow?.subscribe(stopForReview);
+    stopForReview();
+    return unsubscribe;
+  }, [workflow, isAskAdmitted]);
 
   // Per-conversation auto-approve set (the "don't ask again for this tool" checkbox) + a hard
   // budget so unattended approve→resume chains can't loop forever (a human re-enters the loop
@@ -451,10 +486,10 @@ function AskChat({
   );
   const autoApproveBudget = React.useRef(20);
   const takeAutoApproval = React.useCallback(() => {
-    if (autoApproveBudget.current <= 0) return false;
+    if (!isAskAdmitted() || autoApproveBudget.current <= 0) return false;
     autoApproveBudget.current -= 1;
     return true;
-  }, []);
+  }, [isAskAdmitted]);
 
   const busy = status === 'submitted' || status === 'streaming';
 
@@ -494,10 +529,16 @@ function AskChat({
 
   const failureHandlers = React.useMemo<Partial<Record<string, () => void>>>(
     () => ({
-      retry: () => void regenerate().catch(() => {}),
-      continue: () => void sendMessage({ text: t('ask.errors.continueMessage') }).catch(() => {}),
+      retry: () => {
+        if (isAskAdmitted()) void regenerate().catch(() => {});
+      },
+      continue: () => {
+        if (isAskAdmitted())
+          void sendMessage(askContinuationMessage(messages, t('ask.errors.continueMessage'))).catch(() => {});
+      },
       // One-off: this turn on Prismical Cloud. The remembered pick is untouched.
       'use-cloud': () => {
+        if (!isAskAdmitted()) return;
         cloudOnceRef.current = true;
         // Every request `regenerate()` makes (including an approval resume) runs on Cloud; the
         // flag is dropped when it settles so it never leaks into the next question.
@@ -511,7 +552,7 @@ function AskChat({
       'open-ai-models': () => navigation.push('/settings/ai-models'),
       'open-billing': () => navigation.push('/settings/billing'),
     }),
-    [regenerate, sendMessage, t, navigation]
+    [regenerate, sendMessage, t, navigation, messages, isAskAdmitted]
   );
   const failure = React.useMemo(
     () => (failed ? describeAskFailure(error, emptyAnswer, t, failureHandlers) : null),
@@ -593,34 +634,44 @@ function AskChat({
   const askAllowed = useEntitlements().entitlements.features.askAi;
 
   const onComposerSend = (text: string, notes: { id: string; title: string }[]) => {
-    if (!text || busy) return;
-    contextRef.current = notes.map(n => ({ kind: 'note' as const, id: n.id, label: n.title }));
-    sendMessage({ text });
+    if (!text || busy || !isAskAdmitted()) return;
+    const effectiveNotes = noteContext.resolveNotes(notes);
+    const scope =
+      contextToScope(
+        effectiveNotes.map(n => ({
+          kind: 'note' as const,
+          id: n.id,
+          label: n.title,
+        }))
+      ) ?? {};
+    sendMessage({ text, metadata: { scope } });
     analytics.capture(EVENTS.ASK_AI_MESSAGE_SENT, {
       conversation_id: conversationId,
-      has_context: notes.length > 0,
+      has_context: effectiveNotes.length > 0,
     });
   };
 
   // Suggestion sends: empty-state starter questions and per-answer follow-up chips both
-  // send immediately, optionally scoped to notes (a starter about "this note"
-  // attaches the open note the same way an @-token would).
+  // send immediately. Starters share the composer's automatic context; follow-up
+  // context inheritance is handled separately from the current-note selection.
   const sendSuggested = React.useCallback(
-    (
-      text: string,
-      opts: { source: 'starter' | 'followup'; notes?: { id: string; title: string }[] }
-    ) => {
-      if (!text || busy) return;
-      const notes = opts.notes ?? [];
-      contextRef.current = notes.map(n => ({ kind: 'note' as const, id: n.id, label: n.title }));
-      void sendMessage({ text });
+    (text: string, opts: { source: 'starter' | 'followup'; scope?: AskScope }) => {
+      if (!text || busy || !isAskAdmitted()) return;
+      const notes = opts.source === 'starter' ? noteContext.resolveNotes() : [];
+      const scope =
+        opts.source === 'followup'
+          ? (opts.scope ?? {})
+          : (contextToScope(
+              notes.map(n => ({ kind: 'note' as const, id: n.id, label: n.title }))
+            ) ?? {});
+      void sendMessage({ text, metadata: { scope } });
       analytics.capture(EVENTS.ASK_AI_MESSAGE_SENT, {
         conversation_id: conversationId,
-        has_context: notes.length > 0,
+        has_context: Object.values(scope).some(ids => ids.length > 0),
         suggestion_source: opts.source,
       });
     },
-    [busy, sendMessage, analytics, conversationId]
+    [busy, sendMessage, analytics, conversationId, noteContext, isAskAdmitted]
   );
 
   // The scroller only treats wheel/touch/scroll-keys as user intent, so a scrollbar drag would
@@ -656,22 +707,23 @@ function AskChat({
                       where the composer sits — title, then starter-question chips (send
                       immediately) over skill chips (stage a token / fill the composer). */}
                   <div className="flex flex-1 flex-col items-start justify-end gap-2 pb-1">
-                    {askAllowed ? (
+                    {askAllowed && workflowAllowsAsk ? (
                       <p className="text-[13.5px] font-semibold text-dock-ink">{t('ask.empty')}</p>
                     ) : null}
-                    <AskSuggestions
-                      canRunSkills={Boolean(onRunSkill)}
-                      onAsk={(question, notes) =>
-                        sendSuggested(question, { source: 'starter', notes })
-                      }
-                      onPickPrompt={prompt => {
-                        composerRef.current?.setText(prompt);
-                        composerRef.current?.focus();
-                      }}
-                      onInsertSkill={skill => {
-                        composerRef.current?.insertSkill(skill);
-                      }}
-                    />
+                    {workflowAllowsAsk && (
+                      <AskSuggestions
+                        canRunSkills={Boolean(onRunSkill)}
+                        focusNote={noteContext.focusNote}
+                        onAsk={question => sendSuggested(question, { source: 'starter' })}
+                        onPickPrompt={prompt => {
+                          composerRef.current?.setText(prompt);
+                          composerRef.current?.focus();
+                        }}
+                        onInsertSkill={skill => {
+                          composerRef.current?.insertSkill(skill);
+                        }}
+                      />
+                    )}
                   </div>
                 </AskScrollerItem>
               ) : (
@@ -685,15 +737,20 @@ function AskChat({
                           streaming={busy && m === last}
                           isLast={m === last}
                           busy={busy}
-                          onRegenerate={() => regenerate()}
-                          // No notes attached — deliberate: scope is per-send everywhere (a composer
-                          // send only scopes its own @-tokens too), and the prior turn's content is
-                          // already in the conversation the model sees.
+                          onRegenerate={() => (isAskAdmitted() ? regenerate() : Promise.resolve())}
                           onFollowup={
-                            askAllowed ? q => sendSuggested(q, { source: 'followup' }) : undefined
+                            askAllowed && workflowAllowsAsk
+                              ? q =>
+                                  sendSuggested(q, {
+                                    source: 'followup',
+                                    scope: askOriginScope(messages, m.id),
+                                  })
+                              : undefined
                           }
                           approval={{
-                            respond: addToolApprovalResponse,
+                            respond: response => {
+                              if (isAskAdmitted()) return addToolApprovalResponse(response);
+                            },
                             autoApproved,
                             addAutoApproved,
                             takeAutoApproval,
@@ -768,18 +825,25 @@ function AskChat({
         </MessageScroller>
       </MessageScrollerProvider>
 
-      <AskComposer
-        ref={composerRef}
-        compact={compact}
-        busy={busy || activeRun !== null}
-        onSend={onComposerSend}
-        onRunSkill={onRunSkill}
-        // A chat stream and a composer-started run can overlap; Stop settles the stream first.
-        onStop={() => (busy ? void stop() : activeRun?.cancel?.())}
-        modelGroups={groups}
-        modelValue={activeModel}
-        onModelChange={chooseModel}
-      />
+      <div hidden={!workflowAllowsAsk} className={workflowAllowsAsk ? 'contents' : undefined}>
+        <AskComposer
+          ref={composerRef}
+          currentNote={backgroundNote}
+          focusNote={noteContext.focusNote}
+          onRemoveCurrentNote={noteContext.remove}
+          onRestoreCurrentNote={noteContext.restore}
+          compact={compact}
+          busy={busy || activeRun !== null}
+          onSend={onComposerSend}
+          canSubmit={isAskAdmitted}
+          onRunSkill={onRunSkill}
+          // A chat stream and a composer-started run can overlap; Stop settles the stream first.
+          onStop={() => (busy ? void stop() : activeRun?.cancel?.())}
+          modelGroups={groups}
+          modelValue={activeModel}
+          onModelChange={chooseModel}
+        />
+      </div>
     </>
   );
 }

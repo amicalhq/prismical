@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import * as React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { createApplicationI18nSync } from '@prismical/app-i18n';
 import type { Note } from '@prismical/app-contracts';
 import { I18nextProvider } from 'react-i18next';
@@ -9,11 +9,13 @@ import { CurrentEditorProvider } from '../shell/current-editor-context';
 
 const mocks = vi.hoisted(() => ({
   update: vi.fn(),
+  freeze: vi.fn(),
   run: vi.fn(),
   dirty: vi.fn(),
   transcript: false,
 }));
 vi.mock('@prismical/app-client', () => ({
+  useFreezeNoteTitle: () => mocks.freeze,
   useUpdateNote: () => ({ mutate: mocks.update }),
   useSkillsList: () => ({
     data: [
@@ -49,13 +51,52 @@ function field(note: Note = base, compact = false) {
   );
 }
 
-afterEach(cleanup);
+afterEach(async () => {
+  cleanup();
+  await act(async () => {});
+});
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.transcript = false;
 });
 
 describe('NoteTitleField', () => {
+  it('settles the latest first line when leaving, but not on effect replay', async () => {
+    const view = render(
+      <React.StrictMode>{field({ ...base, body: 'First draft' })}</React.StrictMode>
+    );
+    await act(async () => {});
+    expect(mocks.freeze).not.toHaveBeenCalled();
+    view.rerender(
+      <React.StrictMode>{field({ ...base, body: 'Finished title' })}</React.StrictMode>
+    );
+    expect(mocks.freeze).not.toHaveBeenCalled();
+    view.unmount();
+    await act(async () => {});
+    expect(mocks.freeze).toHaveBeenCalledExactlyOnceWith('Finished title');
+  });
+  it('preserves a settled title when reopening and prepending content', async () => {
+    const note = {
+      ...base,
+      title: 'Original title',
+      titleSource: 'first-line-fixed',
+      body: 'Original title',
+    };
+    const view = render(field(note));
+    view.rerender(field({ ...note, body: 'New introduction\n\nOriginal title' }));
+    expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('Original title');
+    view.unmount();
+    await act(async () => {});
+    expect(mocks.freeze).not.toHaveBeenCalled();
+  });
+  it('settles on page departure and leaves empty notes provisional', () => {
+    const view = render(field());
+    fireEvent(window, new Event('pagehide'));
+    expect(mocks.freeze).not.toHaveBeenCalled();
+    view.rerender(field({ ...base, body: 'A title' }));
+    fireEvent(window, new Event('pagehide'));
+    expect(mocks.freeze).toHaveBeenCalledWith('A title');
+  });
   it('shows a placeholder and disables AI until content exists', () => {
     render(field());
     expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('Untitled note');

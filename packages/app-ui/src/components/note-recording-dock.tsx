@@ -28,8 +28,7 @@ export function recordingPillWidth(recState: RecState, canPause: boolean, compac
   const engaged = recState !== 'idle';
   // Compact = the floating note window's smaller dock scale. Only the IDLE
   // pill shrinks; the live pill must fit its 28px control atoms.
-  if (!engaged) return compact ? 44 : 52; // single expand control (start lives in the panel)
-  return canPause ? 152 : 120; // [pause] wave timer stop
+  return engaged ? (canPause ? 152 : 120) : compact ? 44 : 52;
 }
 
 /** m:ss, h:mm:ss past the hour. */
@@ -127,6 +126,7 @@ export function RecordingPillFace({
         {/* Engaged: [pause] · waveform · timer · stop. The waveform+timer strip is the
             expand target (the panel is where the live transcript lives). */}
         <div
+          data-onboarding={recState === 'starting' ? 'record-pending' : undefined}
           className={`absolute inset-0 flex items-center justify-center gap-[3px] px-[5px] transition-opacity ${
             engaged
               ? 'opacity-100 delay-75 duration-100'
@@ -140,7 +140,6 @@ export function RecordingPillFace({
               <TooltipTrigger asChild>
                 <button
                   type="button"
-                  data-onboarding="record-stop"
                   disabled={!live && !paused}
                   onClick={e => {
                     e.preventDefault();
@@ -167,6 +166,7 @@ export function RecordingPillFace({
               The pending→idle bar snap lands inside the fade-out — imperceptible. */}
           <button
             type="button"
+            data-onboarding="record-live-open"
             onClick={onTogglePanel}
             className="flex h-full min-w-0 flex-1 cursor-pointer flex-col items-center justify-center rounded-lg transition-colors hover:bg-dock-hover"
             aria-label={

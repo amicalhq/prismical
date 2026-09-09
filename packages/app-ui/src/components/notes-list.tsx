@@ -40,8 +40,9 @@ function sortNotes(
   const collator = new Intl.Collator(locale);
   return [...list].sort((a, b) => {
     if (sortBy === 'title') return collator.compare(a.title, b.title) * dir;
-    // `createdAt` falls back to `updatedAt` (the mock model has no separate field).
-    return (new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime()) * dir;
+    const aDate = sortBy === 'createdAt' ? a.createdAt ?? a.updatedAt : a.updatedAt;
+    const bDate = sortBy === 'createdAt' ? b.createdAt ?? b.updatedAt : b.updatedAt;
+    return (new Date(aDate).getTime() - new Date(bDate).getTime()) * dir;
   });
 }
 
@@ -72,14 +73,21 @@ export function NotesList({
   const { resolvedLocale } = useApplicationLocale();
   const notesQuery = useNotes();
   const { data: liveNotes = [], isLoading } = notesQuery;
-  const { data: noteTags = [] } = useAllNoteTags();
+  const noteTagsQuery = useAllNoteTags();
+  const { data: noteTags = [] } = noteTagsQuery;
+  const filteringTags = Boolean(tagIds?.length);
 
-  if (isLoading) {
+  if (isLoading || (filteringTags && noteTagsQuery.isLoading)) {
     return groupByDate ? <NoteGroupsSkeleton /> : <NoteListSkeleton />;
   }
   if (notesQuery.error) {
     return (
       <DataError message={t('notes.list.loadError')} onRetry={() => void notesQuery.refetch()} />
+    );
+  }
+  if (filteringTags && noteTagsQuery.error) {
+    return (
+      <DataError message={t('notes.list.loadError')} onRetry={() => void noteTagsQuery.refetch()} />
     );
   }
 

@@ -19,6 +19,9 @@
  * getCollabToken addition is reflected there (auth key enumeration).
  */
 import * as React from 'react';
+import { createWorkflowRuntime } from '@prismical/app-workflow';
+import { createNativeRecordingController } from './native-recording-controller';
+import { reserveNativeSkillWorkflow } from './native-skill-reservation';
 import { useLocation, useParams } from '@tanstack/react-router';
 import type {
   AppSearchParams,
@@ -281,6 +284,7 @@ const toNativeState = (view: RecordingStateView): NativeRecordingState => ({
   pausedAccumMs: view.pausedAccumMs ?? 0,
   startedAt: view.startedAt ?? null,
   autoStopRequested: view.autoStopRequested ?? false,
+  autoPausePrompt: view.autoPausePrompt ?? null,
 });
 
 // The record button routes to main's NATIVE capture + transcription pipeline
@@ -641,19 +645,30 @@ export interface DesktopPorts {
   readonly env: EnvPort;
   readonly transport: TransportPort;
   readonly askFetch: AskFetch;
+  dispose(): void;
 }
 
 export function createDesktopPorts(desktopEnv: DesktopEnvDescriptor): DesktopPorts {
   const env = createEnvPort(desktopEnv);
+  const auth = desktopEnv.appMode === 'local' ? createLocalAuthPort() : createAuthPort();
+  const workflow = createWorkflowRuntime();
+  const releaseSkillWorkflow = reserveNativeSkillWorkflow(auth, workflow);
+  const recordingSession = createNativeRecordingController({ auth, control: recordingPort.control!, workflow });
   const appPorts: AppPorts = {
     navigation: navigationAdapter,
     env,
-    auth: desktopEnv.appMode === 'local' ? createLocalAuthPort() : createAuthPort(),
+    auth,
     assets: assetPort,
     external: createExternalPort(desktopEnv),
     desktopCapabilities: createDesktopCapabilityPort(desktopEnv.appMode),
     analytics: desktopAnalyticsPort,
     recording: recordingPort,
+    workflow,
+    recordingSession,
   };
-  return { appPorts, env, transport: transportPort, askFetch };
+  return { appPorts, env, transport: transportPort, askFetch, dispose() {
+    releaseSkillWorkflow();
+    recordingSession.dispose();
+    workflow.dispose();
+  } };
 }

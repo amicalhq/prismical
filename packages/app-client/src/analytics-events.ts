@@ -4,6 +4,10 @@
 // port implementation on each platform owns the actual transport.
 
 export const EVENTS = {
+  CTA_SHOWN: "cta_shown",
+  CTA_OPENED: "cta_opened",
+  CTA_CLICKED: "cta_clicked",
+  CTA_DISMISSED: "cta_dismissed",
   USER_SIGNED_IN: "user_signed_in",
   USER_SIGNED_OUT: "user_signed_out",
   ACCOUNT_DELETED: "account_deleted",

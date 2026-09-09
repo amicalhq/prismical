@@ -10,15 +10,19 @@ export function RecordingSkillStatus({
   onReviewInNote,
   children,
   hideCompleted = false,
+  pending = false,
 }: {
   children?: React.ReactNode;
   hideCompleted?: boolean;
+  pending?: boolean;
   noteId: string;
   onReviewInNote: () => void;
 }) {
   const { t } = useTranslation();
   const runs = useSkillRuns(noteId);
-  const run = [...runs].reverse().find(item => item.status === 'running') ?? runs.at(-1);
+  const run = [...runs].reverse().find(item => item.status === 'running') ?? (pending
+    ? { skillName: t('settings.skillLibrary.systemSkills.enhanceName'), status: 'running' as const }
+    : runs.at(-1));
   const actionable = run && ['running', 'staged', 'error'].includes(run.status);
   if (!actionable || (hideCompleted && run.status !== 'running')) return children ?? null;
   return (

@@ -68,7 +68,7 @@ export const ASK_SEARCH_NOTES_SPEC = {
 export const ASK_GET_NOTE_SPEC = {
   name: ASK_GET_NOTE_TOOL,
   description:
-    'Fetch the full plain text of one note by its noteId. Use after search when a snippet is not enough.',
+    'Fetch the full available content of one note by its noteId. Use when a search snippet or truncated focus excerpt is not enough. Content may include a separately labelled recording transcript.',
   inputSchema: askGetNoteInputSchema,
 } as const satisfies AskToolSpec<typeof askGetNoteInputSchema>;
 

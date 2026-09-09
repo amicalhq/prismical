@@ -117,6 +117,8 @@ export const CHANNELS = {
   recordingStop: 'recording:stop',
   /** Claim completion once across main and floating windows. */
   recordingClaimCompletion: 'recording:claimCompletion',
+  /** Reserve native recording admission while an app window owns skill work. */
+  recordingSetSkillWorkflow: 'recording:setSkillWorkflow',
   /** invoke(RecordingControlRequest) → boolean. Flush and pause without finalizing. */
   recordingPause: 'recording:pause',
   /** invoke(RecordingControlRequest) → boolean. Resume the same recording timeline. */
@@ -424,6 +426,7 @@ export type CollabOpenResponse = z.infer<typeof collabOpenResponseSchema>;
 
 /** Messages the RENDERER may send on the collab port (Yjs blobs stay opaque to main). */
 export const inboundCollabMessageSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('barrier'), requestId: z.string().min(1) }).strict(),
   z.object({ type: z.literal('update'), data: z.instanceof(Uint8Array) }).strict(),
   z
     .object({
@@ -445,6 +448,7 @@ export type InboundCollabMessage = z.infer<typeof inboundCollabMessageSchema>;
 
 /** Messages the MAIN side emits on the collab port (log replay, then the hydrated marker). */
 export const outboundCollabMessageSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('barrier'), requestId: z.string().min(1), ok: z.boolean() }).strict(),
   z.object({ type: z.literal('update'), data: z.instanceof(Uint8Array) }).strict(),
   z
     .object({
@@ -692,6 +696,12 @@ export const stopRecordingRequestSchema = z.object({ recordingId: z.string().min
 export type StopRecordingRequest = z.infer<typeof stopRecordingRequestSchema>;
 export const recordingControlRequestSchema = stopRecordingRequestSchema;
 export type RecordingControlRequest = z.infer<typeof recordingControlRequestSchema>;
+export const recordingSkillWorkflowRequestSchema = z.object({
+  active: z.boolean(),
+  ownerSessionKey: z.string().min(1),
+  ownerOrgId: z.string().min(1),
+}).strict();
+export type RecordingSkillWorkflowRequest = z.infer<typeof recordingSkillWorkflowRequestSchema>;
 
 /**
  * One transcript segment as the renderer sees it — only these display fields
@@ -1548,6 +1558,7 @@ export interface MainWindowRecordingApi {
   readonly start: (request: StartRecordingRequest) => Promise<StartRecordingResult>;
   readonly stop: (request: StopRecordingRequest) => Promise<void>;
   readonly claimCompletion: (request: RecordingControlRequest) => Promise<boolean>;
+  readonly setSkillWorkflow: (request: RecordingSkillWorkflowRequest) => Promise<boolean>;
   readonly pause: (request: RecordingControlRequest) => Promise<boolean>;
   readonly resume: (request: RecordingControlRequest) => Promise<boolean>;
   readonly onStateChanged: (listener: (state: RecordingStateView) => void) => () => void;

@@ -108,6 +108,12 @@ export default function AvailableTiles({ onAddCloud }: AvailableTilesProps) {
             </Tooltip>
           );
         })}
+        <Button asChild variant="outline" className="h-auto w-full justify-between gap-2 border-dashed px-3 py-2 text-muted-foreground">
+          <a href="mailto:help@prismical.ai?subject=Request%20a%20Provider">
+            <span className="text-sm truncate">{t('settings.aiModels.available.requestProvider')}</span>
+            <Plus aria-hidden="true" className="size-3.5 shrink-0" />
+          </a>
+        </Button>
       </div>
     </TooltipProvider>
   );

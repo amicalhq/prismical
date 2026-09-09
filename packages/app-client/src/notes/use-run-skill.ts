@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Editor } from "@tiptap/react";
 import { toast } from "sonner";
@@ -10,7 +10,7 @@ import { onChangeRemote } from "@legendapp/state/sync";
 import { useSyncStore } from "../sync/provider";
 import type { NoteRow } from "../sync/store";
 import { hasDirtyTitleDraft } from "./title-drafts";
-import { runSkillRequest, mutateTitleRun } from "../api/hooks/skill-runs";
+import { runSkillRequest, mutateTitleRun, resolvePendingSkillResult } from "../api/hooks/skill-runs";
 import { ensureModelDefault } from "../api/hooks/model-defaults";
 import {
   markdownToChildren,
@@ -21,7 +21,7 @@ import { useSkillDiffStore } from "./diff/skill-diff-store";
 import { useSkillRunActivityStore, type SkillRunSource } from "./skill-run-activity-store";
 import { startSkillRunTiming } from "./skill-run-timing";
 import { EVENTS } from "../analytics-events";
-import { usePorts, activeOrgIdOf } from "../ports-context";
+import { usePorts } from "../ports-context";
 import type { SelectionAnchors } from "./diff/selection-anchors";
 import { ENHANCE_SKILL_ID, type ArtifactMode } from "@prismical/app-contracts";
 import { retryTranscriptFinalizing } from "./skill-run-retry";
@@ -33,6 +33,7 @@ import {
   isNetworkFailure,
 } from "../errors/ai-user-error";
 import { useNavigation } from "../ports-context";
+import type { WorkflowAcknowledgment, WorkflowScope } from "@prismical/app-workflow";
 
 type TitleState = Pick<NoteRow, "title" | "titleSource" | "titleRevision">;
 function sameTitleIntent(before: TitleState | undefined, current: TitleState | undefined) {
@@ -49,6 +50,10 @@ function sameTitleIntent(before: TitleState | undefined, current: TitleState | u
 }
 
 export interface RunSkillArgs {
+  /** Reserved recording-to-enhancement continuation; never a new admission. */
+  workflowId?: string;
+  /** The exact proposal being refined. */
+  proposalId?: string;
   requestedAt?: number;
   attemptId?: string;
   outputTarget?: "note-body" | "note-title";
@@ -56,8 +61,8 @@ export interface RunSkillArgs {
   skillName: string; // for the error/cancel toast
   /** Scope the transcript to a single recording: auto-enhance-on-stop or a picker wand. */
   recordingId?: string;
-  /** Live editor markdown to send as the note body, for runs fired right
-   * after typing. Omitted ⇒ the server reads its debounced snapshot. */
+  /** Requests fresh editor markdown for legacy callers. Workflow-owned body runs always
+   * serialize the editor and fail if its current body cannot be sent. */
   noteMarkdown?: string;
   /** Override the skill's default mode (the picker's mode submenu / the inline popover). */
   mode?: ArtifactMode;
@@ -65,9 +70,8 @@ export interface RunSkillArgs {
    * (where accept replaces). Both required for an inline run; captured by the popover. */
   selectionText?: string;
   selectionAnchors?: SelectionAnchors;
-  /** Fresh composer guidance or the review's refinement instruction. */
+  /** Refine flow: re-run with an instruction + the previous output. */
   refineInstruction?: string;
-  /** Review refinement only: the candidate being revised. */
   previousOutput?: string;
   /** Where the run was started from (dock v3 run feed + analytics). Defaults to "dock". */
   source?: SkillRunSource;
@@ -91,35 +95,46 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
   const stage = useSkillDiffStore((s) => s.stage);
   // The user's Text-generation (formatting) default drives which model skills run on.
   const qc = useQueryClient();
-  const { analytics, auth } = usePorts();
+  const { analytics, workflow, recording } = usePorts();
   const navigation = useNavigation();
   const [running, setRunning] = useState(false);
   const acRef = useRef<AbortController | null>(null);
-  // Recovery actions use the latest callback only while their original context still owns it.
+  const mountedRef = useRef(true);
+  const currentNoteRef = useRef(noteId);
+  currentNoteRef.current = noteId;
+  // `run` is referenced by the recovery actions it hands out (Try again, Use Prismical Cloud,
+  // Append instead) — through a ref so the callbacks never capture a stale instance.
   const runRef = useRef<(args: RunSkillArgs) => Promise<void>>(async () => {});
-  const lifetimeRef = useRef<object | null>(null);
-  const editorLifetimeRef = useRef<object | null>(null);
 
-  // Title generation can start before the editor registers, so its lifetime is the note's.
-  useLayoutEffect(() => {
-    lifetimeRef.current = {};
-    return () => {
-      lifetimeRef.current = null;
-      acRef.current?.abort("unmounted");
-    };
-  }, [noteId]);
-  useLayoutEffect(() => {
-    editorLifetimeRef.current = {};
-    return () => {
-      editorLifetimeRef.current = null;
-    };
-  }, [editor]);
+  // Transcript readiness can keep a run parked across several retries. Leaving the note/unmounting
+  // must cancel that wait so its eventual result cannot stage into a stale editor.
+  useEffect(
+    () => {
+      mountedRef.current = true;
+      return () => {
+        mountedRef.current = false;
+        acRef.current?.abort("unmounted");
+      };
+    },
+    [noteId],
+  );
 
   const run = useCallback(
     async (args: RunSkillArgs) => {
-      const lifetime = lifetimeRef.current;
-      const editorLifetime = editorLifetimeRef.current;
-      if (!lifetime) return;
+      const releaseReservedContinuation = () => {
+        if (!workflow || !args.workflowId) return;
+        const current = workflow.getSnapshot();
+        if (current.kind === "skill" && current.phase === "running" &&
+            current.workflowId === args.workflowId && current.noteId === noteId &&
+            current.skillId === args.skillId && current.recordingId === args.recordingId &&
+            !useSkillRunActivityStore.getState().runningByNote.has(noteId)) {
+          workflow.dispatch({ type: "skillFailed", workflowId: current.workflowId, attempt: current.attempt });
+        }
+      };
+      if (workflow && (!mountedRef.current || editor?.isDestroyed)) {
+        releaseReservedContinuation();
+        return;
+      }
       const timing = startSkillRunTiming(
         analytics,
         {
@@ -133,32 +148,64 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
         args.requestedAt,
         args.attemptId,
       );
-      if ((!editor || editor.isDestroyed) && args.outputTarget !== "note-title") {
+      if (!editor && args.outputTarget !== "note-title") {
         timing.finish("skipped", "EDITOR_UNAVAILABLE");
+        releaseReservedContinuation();
         return;
       }
       if (args.outputTarget === "note-title" && hasDirtyTitleDraft(noteId)) {
         timing.finish("skipped", "TITLE_CHANGED");
         toast.error(t("notes.titleConflict"));
+        releaseReservedContinuation();
         return;
       }
-      const bodyRun = args.outputTarget !== "note-title";
-      const candidateAtStart = useSkillDiffStore.getState().getCandidate(noteId);
-      const refinementCandidate = args.source === "refine" ? candidateAtStart : undefined;
-      if (
-        bodyRun &&
-        (args.source === "refine"
-          ? !refinementCandidate ||
-            refinementCandidate.skillId !== args.skillId ||
-            refinementCandidate.rawMarkdown !== args.previousOutput
-          : candidateAtStart)
-      ) {
-        timing.finish("skipped", "SUGGESTION_CHANGED");
-        toast.info(t("recording.errors.currentSuggestion"));
-        return;
+      let workflowScope: WorkflowScope | undefined;
+      if (workflow) {
+        const current = workflow.getSnapshot();
+        const candidate = useSkillDiffStore.getState().getCandidate(noteId);
+        let admitted: WorkflowAcknowledgment;
+        if (args.workflowId) {
+          admitted = {
+            accepted:
+              current.kind === "skill" && current.phase === "running" &&
+              current.workflowId === args.workflowId && current.noteId === noteId &&
+              current.skillId === args.skillId && current.recordingId === args.recordingId &&
+              !useSkillRunActivityStore.getState().runningByNote.has(noteId),
+            state: current,
+          };
+        } else if (args.source === "refine") {
+          admitted = current.kind === "skill" && current.noteId === noteId && current.skillId === args.skillId &&
+            !candidate?.acceptance &&
+            candidate?.workflowId === current.workflowId && candidate.proposalId &&
+            candidate.proposalId === current.proposalId && args.proposalId === candidate.proposalId
+              ? workflow.dispatch({ type: "refineSkill", workflowId: current.workflowId, proposalId: candidate.proposalId })
+              : { accepted: false, state: current };
+        } else {
+          admitted = workflow.dispatch({
+            type: "runSkill", workflowId: crypto.randomUUID(), noteId, skillId: args.skillId,
+          });
+        }
+        if (!admitted.accepted || admitted.state.kind !== "skill") {
+          timing.finish("skipped", "WORKFLOW_BUSY");
+          toast.info(t("workflow.busy", { defaultValue: "Finish the current recording or skill first." }));
+          return;
+        }
+        workflowScope = {
+          workflowId: admitted.state.workflowId,
+          attempt: admitted.state.attempt,
+        };
       }
-      const candidateStillCurrent = () =>
-        !bodyRun || useSkillDiffStore.getState().getCandidate(noteId) === candidateAtStart;
+      const previousCandidate = args.source === "refine"
+        ? useSkillDiffStore.getState().getCandidate(noteId)
+        : undefined;
+      let workflowOutcome: "skillNoChange" | "skillFailed" = "skillFailed";
+      let baseContent: string | undefined;
+      const retryRun = (overrides: Partial<RunSkillArgs> = {}) => {
+        if (workflow && (!mountedRef.current || currentNoteRef.current !== noteId)) return;
+        void runRef.current({
+          ...args, ...overrides, workflowId: undefined, requestedAt: undefined, attemptId: undefined,
+        });
+      };
       let errorCode: string | undefined;
       const onAbort = () =>
         timing.finish(
@@ -174,31 +221,6 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
       const ac = new AbortController();
       acRef.current = ac;
       ac.signal.addEventListener("abort", onAbort, { once: true });
-      const session = auth.getSession();
-      const owner = {
-        sessionKey: session.activeSessionKey ?? session.activeSub ?? null,
-        orgId: activeOrgIdOf(session),
-      };
-      const stillOwned = () => {
-        const current = auth.getSession();
-        return (
-          lifetimeRef.current === lifetime &&
-          (!bodyRun ||
-            (editorLifetimeRef.current === editorLifetime && !editor?.isDestroyed)) &&
-          (current.activeSessionKey ?? current.activeSub ?? null) === owner.sessionKey &&
-          activeOrgIdOf(current) === owner.orgId
-        );
-      };
-      const assertOwner = () => {
-        if (!stillOwned()) {
-          ac.abort("unmounted");
-          throw new DOMException("Skill owner changed", "AbortError");
-        }
-      };
-      const retry = (overrides: Partial<RunSkillArgs> = {}) => {
-        if (!stillOwned() || !candidateStillCurrent()) return;
-        void runRef.current({ ...args, requestedAt: undefined, attemptId: undefined, ...overrides });
-      };
       // Only a FRESH recording-scoped run is what the transcript bar's Enhance chip re-runs, so
       // only those participate in its failure marker. Refining an already-staged diff also carries
       // a recordingId, but re-showing that bar mid-review would offer a chip that can do nothing
@@ -217,6 +239,10 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
       const activity = useSkillRunActivityStore.getState();
       activity.start(noteId);
       const source = args.source ?? "dock";
+      const recoverable = (!workflow || !!recording.control) && (
+        source === "auto-enhance" || source === "wand" ||
+        (source === "refine" && !!previousCandidate?.recoverable)
+      );
       // Note-body runs also open a run-feed record: the Ask thread renders it as a turn
       // and the collapsed Ask pill shows it with a Stop. Title runs stay out of the feed (see the
       // store's header comment).
@@ -244,15 +270,9 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
         detail?: string,
         extra?: Parameters<typeof activity.finish>[3],
       ) => {
+        if (status === "applied" || status === "skipped") workflowOutcome = "skillNoChange";
         timing.finish(status, errorCode);
         if (feedId) activity.finish(feedId, status, detail, extra);
-      };
-      const assertCandidate = () => {
-        if (!candidateStillCurrent()) {
-          finish("superseded");
-          ac.abort("superseded");
-          throw new DOMException("Skill suggestion changed", "AbortError");
-        }
       };
       try {
         // Resolve the Text-generation default (loads it if the query hasn't settled) so a BYOK
@@ -260,17 +280,20 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
         // Cloud" recovery action) sends no instance at all, which the server resolves to Auto.
         const modelParams = args.forceCloud ? {} : await ensureModelDefault(qc, "formatting");
         const result = await retryTranscriptFinalizing(async () => {
-          assertOwner();
-          assertCandidate();
           // A readiness wait may last long enough for the user to keep editing. Re-serialize on
           // every attempt so the first request the server accepts carries the current note, not
           // the snapshot captured before diarization began.
           let noteMarkdown: string | undefined;
-          if (editor && (args.noteMarkdown !== undefined || args.outputTarget === "note-title")) {
+          if (editor && (workflow || args.noteMarkdown !== undefined || args.outputTarget === "note-title")) {
             try {
-              const current = tiptapJsonToMarkdown(editor.getJSON());
+              const content = editor.getJSON();
+              if (workflow) baseContent = JSON.stringify(content);
+              const current = tiptapJsonToMarkdown(content);
+              if (workflow && current.length > 1_000_000)
+                throw new Error("The current note exceeds the skill input limit.");
               noteMarkdown = current.length <= 1_000_000 ? current : undefined;
             } catch (err) {
+              if (workflow) throw err;
               console.warn(
                 "live markdown serialization failed; falling back to server snapshot",
                 err,
@@ -285,8 +308,13 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
               {
                 noteId,
                 recordingId: args.recordingId,
-                recoverable: source === "auto-enhance" || source === "wand",
-                recoveryResultId: refinementCandidate?.resultId,
+                // Retain the server result identity for idempotent acceptance.
+                // Native recording suggestions also remain available after an app restart.
+                retainResult: workflow ? true : undefined,
+                recoverable,
+                recoveryResultId: !workflow && args.refineInstruction
+                  ? (previousCandidate?.acceptance ? undefined : useSkillDiffStore.getState().getCandidate(noteId)?.resultId)
+                  : undefined,
                 noteMarkdown,
                 mode: args.mode,
                 selectionText: args.selectionText,
@@ -306,8 +334,12 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
           }
         }, ac.signal);
         if (ac.signal.aborted) return;
-        assertOwner();
-        assertCandidate();
+        if (workflowScope) {
+          const current = workflow!.getSnapshot();
+          if (current.kind !== "skill" || current.phase !== "running" ||
+              current.workflowId !== workflowScope.workflowId || current.attempt !== workflowScope.attempt)
+            return;
+        }
         timing.model(result.modelId);
         timing.transition("staging");
         if (result.outputTarget === "note-title") {
@@ -331,6 +363,7 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
             );
           };
           const applied = await mutateTitleRun("apply", runId);
+          if (workflow && ac.signal.aborted) return;
           if (
             !hasDirtyTitleDraft(noteId) &&
             sameTitleIntent(titleAtStart, store?.notes$[noteId]?.peek())
@@ -340,8 +373,16 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
             action: {
               label: t("notes.undoTitle"),
               onClick: () => {
+                if (workflow && (!mountedRef.current || currentNoteRef.current !== noteId)) return;
                 if (hasDirtyTitleDraft(noteId)) {
                   toast.error(t("notes.titleConflict"));
+                  return;
+                }
+                const undo = workflow?.dispatch({
+                  type: "runSkill", workflowId: crypto.randomUUID(), noteId, skillId: args.skillId,
+                });
+                if (undo && (!undo.accepted || undo.state.kind !== "skill")) {
+                  toast.info(t("workflow.busy", { defaultValue: "Finish the current recording or skill first." }));
                   return;
                 }
                 const titleBeforeUndo = { ...store?.notes$[noteId]?.peek() };
@@ -353,7 +394,11 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
                     )
                       merge(value);
                   })
-                  .catch(() => toast.error(t("notes.titleConflict")));
+                  .catch(() => toast.error(t("notes.titleConflict")))
+                  .finally(() => {
+                    if (undo?.accepted && undo.state.kind === "skill")
+                      workflow?.dispatch({ type: "skillNoChange", workflowId: undo.state.workflowId, attempt: undo.state.attempt });
+                  });
               },
             },
           });
@@ -383,9 +428,16 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
           finish("error", msg);
           return;
         }
+        const proposalId = workflowScope ? crypto.randomUUID() : undefined;
+        if (workflow && workflowScope && !workflow.dispatch({
+          type: "proposalReady", ...workflowScope, proposalId: proposalId!,
+        }).accepted) return;
         stage({
+          workflowId: workflowScope?.workflowId,
+          proposalId,
+          baseContent: result.mode === "replace-doc" ? baseContent : undefined,
           resultId: result.resultId,
-          owner,
+          recoverable: recoverable && !!result.recordingId,
           noteId,
           skillId: result.skillId,
           skillName: result.skillName,
@@ -404,6 +456,19 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
           content,
           rawMarkdown: result.rawMarkdown,
         });
+        const previousResultId = previousCandidate?.resultId;
+        if (workflow && previousResultId) {
+          const retire = async () => {
+            try {
+              await resolvePendingSkillResult(noteId, previousResultId, { discardAccepted: true });
+            } catch {
+              toast.error(t("skills.diff.couldNotSave", { name: args.skillName }), {
+                action: { label: t("common.actions.retry"), onClick: () => void retire() },
+              });
+            }
+          };
+          void retire();
+        }
         finish("staged");
         // The run succeeded but the server has something the user should know (it fell back to
         // Prismical Cloud because their chosen model is gone). Server-rendered, like the errors.
@@ -436,23 +501,6 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
               : "CLIENT_ERROR";
         // User-initiated cancellation (abort) is not a failure — show no toast.
         if (ac.signal.aborted) return;
-        if (!stillOwned()) {
-          ac.abort("unmounted");
-          return;
-        }
-        if (!candidateStillCurrent()) {
-          finish("superseded");
-          return;
-        }
-        if (
-          err instanceof ApiError &&
-          err.code === "SUGGESTION_CHANGED" &&
-          refinementCandidate &&
-          useSkillDiffStore.getState().getCandidate(noteId) === refinementCandidate
-        ) {
-          useSkillDiffStore.getState().clear(noteId);
-          activity.resolveStaged(noteId, "superseded");
-        }
         // Whatever the toast below says, republish the outcome before returning down any of these
         // branches: the transcript bar's Enhance chip is that recording's only retry affordance and
         // it sits on a dismiss timer. A run that ran out its transcript-readiness budget is PARKED,
@@ -483,9 +531,9 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
         const user = aiUserErrorOf(err);
         if (user) {
           const actions = bindAiErrorActions(user.actions, {
-            retry: () => retry(),
-            "use-cloud": () => retry({ forceCloud: true }),
-            "append-instead": () => retry({ mode: "append-section" }),
+            retry: () => retryRun(),
+            "use-cloud": () => retryRun({ forceCloud: true }),
+            "append-instead": () => retryRun({ mode: "append-section" }),
             "open-ai-models": () => navigation.push("/settings/ai-models"),
             "choose-model": () => navigation.push("/settings/ai-models"),
             "open-billing": () => navigation.push("/settings/billing"),
@@ -513,7 +561,7 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
             description: t("skills.run.offlineBody"),
             action: {
               label: t("common.actions.retry"),
-              onClick: () => retry(),
+              onClick: () => retryRun(),
             },
           });
           finish("error", msg, {
@@ -522,7 +570,7 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
               {
                 kind: "retry",
                 label: t("common.actions.retry"),
-                onClick: () => retry(),
+                onClick: () => retryRun(),
               },
             ],
           });
@@ -568,6 +616,12 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
         toast.error(msg);
         finish("error", msg);
       } finally {
+        // Once staged, only review actions can release ownership. A failed refine
+        // returns to its previous proposal instead of freeing the workflow.
+        if (workflowScope) workflow?.dispatch({
+          type: ac.signal.aborted ? "skillCancelled" : workflowOutcome,
+          ...workflowScope,
+        });
         // Catch-all so a record can never stay "running": an abort is the user's Stop; any other
         // early return (no editor, a silent bail) reads as a failure with no detail.
         finish(ac.signal.aborted ? "stopped" : "error");
@@ -579,7 +633,7 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
         }
       }
     },
-    [noteId, editor, stage, qc, analytics, auth, t, store, navigation],
+    [noteId, editor, stage, qc, analytics, t, store, navigation, workflow, recording.control],
   );
   runRef.current = run;
 

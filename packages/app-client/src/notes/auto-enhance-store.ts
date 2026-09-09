@@ -9,6 +9,8 @@ import type { SkillRunSource } from "./skill-run-activity-store";
 // Ask thread / on the Ask pill via the run feed. Requests retain their owner context
 // and recording identity until the matching note editor can run them.
 export interface AutoEnhanceRequest {
+  /** Existing workflow ownership transferred from recording finalization. */
+  workflowId?: string;
   /** Monotonic timestamp of the gesture, retained while the editor is unavailable. */
   requestedAt?: number;
   attemptId?: string;

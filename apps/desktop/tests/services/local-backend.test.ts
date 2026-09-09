@@ -370,6 +370,37 @@ describe('LocalBackendLive', () => {
     })
   );
 
+  it.effect('freezes provisional titles once and ignores departures with a stale revision', () =>
+    Effect.gen(function* () {
+      const { api, product, scope } = yield* buildBackend;
+      const id = createId('note');
+      expectOk(yield* api.request({ method: 'POST', path: '/apps/v1/me/notes', body: { id } }), 201);
+      const freeze = { id, title: 'First line', titleIntent: 'freeze', titleExpectedRevision: 0 };
+      const frozen = expectOk(yield* api.request({ method: 'POST', path: '/apps/v1/me/notes', body: freeze }), 200).bodyJson.result;
+      assert.strictEqual(frozen.title, 'First line');
+      assert.strictEqual(frozen.titleSource, 'first-line-fixed');
+      assert.strictEqual(frozen.titleRevision, 1);
+      const retry = expectOk(yield* api.request({ method: 'POST', path: '/apps/v1/me/notes', body: freeze }), 200).bodyJson.result;
+      assert.strictEqual(retry.titleRevision, 1);
+      const renamed = expectOk(yield* api.request({ method: 'PUT', path: `/apps/v1/me/notes/${id}`, body: { title: 'Manual' } }), 200).bodyJson.result;
+      const stale = expectOk(yield* api.request({ method: 'POST', path: '/apps/v1/me/notes', body: freeze }), 200).bodyJson.result;
+      assert.strictEqual(stale.title, 'Manual');
+      assert.strictEqual(stale.titleRevision, renamed.titleRevision);
+      product.db.update(schema.note).set({ title: 'Stored first line', titleSource: 'first-line', titleRevision: 7 }).where(eq(schema.note.id, id)).run();
+      const staleDefault = expectOk(yield* api.request({ method: 'POST', path: '/apps/v1/me/notes', body: freeze }), 200).bodyJson.result;
+      assert.strictEqual(staleDefault.title, 'Stored first line');
+      assert.strictEqual(staleDefault.titleSource, 'first-line');
+      assert.strictEqual(staleDefault.titleRevision, 7);
+      const blank = expectOk(yield* api.request({ method: 'POST', path: '/apps/v1/me/notes', body: { id, title: ' ', titleIntent: 'freeze', titleExpectedRevision: 7 } }), 200).bodyJson.result;
+      assert.strictEqual(blank.titleSource, 'first-line');
+      const partial = expectOk(yield* api.request({ method: 'POST', path: '/apps/v1/me/notes', body: { id, titleIntent: 'freeze', titleExpectedRevision: 7 } }), 200).bodyJson.result;
+      assert.strictEqual(partial.title, 'Stored first line');
+      assert.strictEqual(partial.titleSource, 'first-line-fixed');
+      assert.strictEqual(partial.titleRevision, 8);
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+
   it.effect('empty-string title resets to the default, following the body firstLine', () =>
     Effect.gen(function* () {
       const { api, product, scope } = yield* buildBackend;

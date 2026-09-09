@@ -1,4 +1,22 @@
 const en = {
+  workflow: {
+    noteChanged: "The note changed after this suggestion was generated. Decline it and run the skill again.",
+      "busy": "Finish the current recording or skill first.",
+      "draining": "Sending remaining audio…",
+      "finalizing": "Finalizing recording…",
+      "recording": "Recording in progress",
+      "recordingAway": "Recording in another note",
+      "pausedAway": "Recording paused in another note",
+      "review": "Reviewing changes in another note",
+      "reviewNamed": "Reviewing changes in {{name}}",
+      "applying": "Applying changes…",
+      "skill": "Skill in progress…",
+      "openNote": "Open note",
+      "openNamedNote": "Open {{name}}",
+      "retry": "Retry",
+      "end": "End workflow"
+  },
+
   onboarding: {
   "helpDocs": "Need a hand? Read the docs",
   "continueToNote": "Continue to my note",
@@ -42,6 +60,22 @@ const en = {
     "record": {
       "title": "Start recording",
       "body": "Click the microphone in the dock, then Start recording. Allow microphone access when asked."
+    },
+    "waiting": {
+      "title": "Preparing your transcript",
+      "body": "Your recording is being saved and processed. Wait for the transcript before continuing."
+    },
+    "retry": {
+      "title": "Continue with a recording",
+      "body": "Open the recording panel and start a new recording to continue. You can also exit this walkthrough."
+    },
+    "generating": {
+      "title": "Follow your draft",
+      "body": "Your draft and its progress appear here. If the run fails or stops, use the available recovery actions or return to the recording panel to try again."
+    },
+    "starting": {
+      "title": "Preparing microphone",
+      "body": "Allow microphone access if asked. Wait for recording to begin before speaking."
     },
     "speak": {
       "title": "Say a few words",
@@ -629,6 +663,10 @@ const en = {
     joinMeeting: 'Join meeting',
     newNote: 'New note',
     pickEmoji: 'Pick an emoji',
+    emojiPicker: {
+      search: 'Search emojis…',
+      empty: 'No emojis found.',
+    },
     tags: {
       add: 'Add tag',
       create: 'Create “{{name}}”',
@@ -957,6 +995,8 @@ const en = {
       targetMissing: 'The text this rewrite targeted no longer exists. Re-select and run it again.',
       undo: 'Undo',
       waitingForDocument: 'Waiting for the note to load…',
+      deliveryPending: 'Some accepted changes have not synced yet.',
+      endWorkflowWarning: 'Unsent changes may be lost.',
     },
     inline: {
       captureError: 'Couldn’t capture the selection — try re-selecting the text.',
@@ -977,8 +1017,16 @@ const en = {
   },
   settings: {
     aiModels: {
+      planGate: {
+        title: 'Bring your own key',
+        availability: 'Available in Pro',
+        description: 'Bring Your Own Key is not included in your current plan. Upgrade to Pro to connect your own AI providers and choose the models you use.',
+        upgrade: 'Upgrade to Pro',
+        back: 'Back to settings',
+      },
       addProvider: 'Add a provider',
       available: {
+        requestProvider: 'Request Provider',
         comingSoon: 'Coming soon',
         getDesktop: 'Get the desktop app',
         localDesktop: 'Local models are available in the desktop app',
@@ -1069,6 +1117,7 @@ const en = {
           'Choose which models appear in the Ask AI model picker. Leave all unchecked to keep this instance out of the picker.',
         empty: 'No language models found for this key.',
         loadError: 'Couldn’t load models — check the API key, then retry.',
+        retired: 'No longer offered — uncheck to remove',
         title: 'Models in Ask',
       },
       modelPicker: {
@@ -1933,15 +1982,6 @@ const en = {
         unsupportedFile: 'Unsupported file type “.{{extension}}” — choose a .json or .md file.',
       },
       form: {
-        advanced: 'Advanced settings',
-        defaultLabel: 'Set as default sparkle target',
-        descriptionLabel: 'Description',
-        descriptionPlaceholder: 'One short line shown on the skill card',
-        enabled: 'Enabled',
-        modeAgnosticDescription:
-          'Don’t tell the model which mode is active — the body alone describes the output. This lets the user switch between append and replace after the run without regenerating. Inline rewrite is always mode-tuned regardless of this setting.',
-        modeAgnosticLabel: 'Mode-agnostic prompt',
-        modeLabel: 'Mode',
         addSection: 'Add a section',
         addSectionDescription: 'Add the result as a new section, keeping the existing note.',
         rewriteNote: 'Rewrite entire note',
@@ -1949,6 +1989,15 @@ const en = {
         transcriptDescription: 'Include recording transcripts from this note as context for the skill.',
         titleDescription: 'Generate a new note title instead of editing the note body.',
         preservedMode: 'This skill uses an experimental output setting. Saving keeps it unchanged.',
+
+        advanced: 'Advanced settings',
+        defaultLabel: 'Set as default sparkle target',
+        descriptionLabel: 'Description',
+        descriptionPlaceholder: 'One short line shown on the skill card',
+        enabled: 'Enabled',
+        modeAgnosticDescription: 'Let the prompt define the output without append or rewrite instructions. Inline rewrites and recording Enhance still use mode-specific instructions.',
+        modeAgnosticLabel: 'Mode-agnostic prompt',
+        modeLabel: 'Mode',
         nameLabel: 'Name',
         newTitle: 'New skill',
         promptLabel: 'Prompt',

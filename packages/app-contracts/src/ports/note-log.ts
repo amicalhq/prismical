@@ -45,6 +45,8 @@ export interface NoteLogHandle {
   readonly sendUpdate: (update: Uint8Array) => void;
   /** Project the derived read-model onto the note row (never bumps updatedAt). */
   readonly flush: (content: NoteLogFlush) => void;
+  /** Wait until preceding updates and flushes are durable; reject a failed write or closed port. */
+  readonly waitForPendingChanges: () => Promise<void>;
   /** Replace the log prefix seq<=upTo with one merged state row at seq=upTo. */
   readonly compact: (upTo: number, state: Uint8Array) => void;
   readonly close: () => void;

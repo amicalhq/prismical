@@ -15,6 +15,7 @@ const state = vi.hoisted(() => ({
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../src/renderer/telemetry', () => ({ captureRendererException: vi.fn() }));
 vi.mock('@prismical/app-client', () => ({
+  startLoadingTiming: () => ({ mark: vi.fn(), finish: vi.fn() }),
   useDeviceSettings: () => ({ has: () => false }),
   useCreateNote: () => ({ isPending: false, mutate: vi.fn() }),
   useNote: (noteId: string) => ({ data: { id: noteId, title: noteId } }),

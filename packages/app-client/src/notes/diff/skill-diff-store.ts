@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { JSONContent } from "@tiptap/core";
 import type { ArtifactMode } from "@prismical/app-contracts";
+import type { AcceptSkillRunResult } from "@prismical/api-contracts/apps/v1";
 import type { SelectionAnchors } from "./selection-anchors";
 
 // A staged skill-run result awaiting Accept/Refine/Reject. Mirrors the desktop SkillDiffCandidate,
@@ -8,9 +9,16 @@ import type { SelectionAnchors } from "./selection-anchors";
 // string id. Inline-rewrite anchors the target range with Yjs relative positions (NOT the
 // desktop's raw {from,to} — see selection-anchors.ts for why).
 export interface SkillDiffCandidate {
+  /** Page-session workflow and proposal identities used by review commands. */
+  workflowId?: string;
+  proposalId?: string;
+  /** Original body for a replace-doc proposal; applying must reject newer edits. */
+  baseContent?: string;
   resultId?: string;
-  /** Preserved when a restored or freshly generated suggestion is refined. */
-  owner?: { sessionKey: string | null; orgId: string | null };
+  /** Native recording output that can be recovered after an app restart. */
+  recoverable?: boolean;
+  /** Reuse a saved artifact when its editor application needs a same-session retry. */
+  acceptance?: { result: AcceptSkillRunResult; prevContent?: string; applied?: true };
   noteId: string;
   skillId: string;
   skillName: string;

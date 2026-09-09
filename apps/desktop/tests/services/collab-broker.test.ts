@@ -13,9 +13,17 @@ import type { FakeElectron, FakeMessagePortMain } from '../helpers/fake-electron
 import { FakeWebContents } from '../helpers/fake-electron';
 import { makeTestLogger } from '../helpers/test-layers';
 import { CollabBrokerLive } from '../../src/main/domains/collab/live';
-import { CollabBroker, CollabError, type CollabPortSender } from '../../src/main/domains/collab/service';
+import {
+  CollabBroker,
+  CollabError,
+  type CollabPortSender,
+} from '../../src/main/domains/collab/service';
 import { CollabBridgeLive } from '../../src/main/domains/collab/store-live';
-import { CollabBridge, type NoteBodyFlush, type NoteBodyStoreApi } from '../../src/main/domains/collab/store';
+import {
+  CollabBridge,
+  type NoteBodyFlush,
+  type NoteBodyStoreApi,
+} from '../../src/main/domains/collab/store';
 import { ProductDbError } from '../../src/main/infra/product-db/service';
 
 vi.mock('electron', async () => (await import('../helpers/fake-electron')).createFakeElectron());
@@ -37,7 +45,7 @@ const makeFakeStore = () => {
   const flushes: Array<{ noteId: string; content: NoteBodyFlush }> = [];
   const compacts: Array<{ noteId: string; upTo: number; state: Uint8Array }> = [];
   /** Flip to reject every append (a disk-full blip). */
-  const flags = { failAppends: false };
+  const flags = { failAppends: false, failFlushes: false };
   const api: NoteBodyStoreApi = {
     listUpdates: noteId => Effect.sync(() => logs.get(noteId) ?? []),
     appendUpdate: (noteId, update) =>
@@ -55,9 +63,11 @@ const makeFakeStore = () => {
         compacts.push({ noteId, upTo, state });
       }),
     applyFlush: (noteId, content) =>
-      Effect.sync(() => {
-        flushes.push({ noteId, content });
-      }),
+      flags.failFlushes
+        ? Effect.fail(new ProductDbError({ op: 'note-body-flush', cause: 'disk full' }))
+        : Effect.sync(() => {
+            flushes.push({ noteId, content });
+          }),
   };
   return { api, logs, flushes, compacts, flags };
 };
@@ -255,6 +265,89 @@ describe('CollabBroker note-body log lane', () => {
     })
   );
 
+  it.effect('a persistence barrier waits for the preceding flush to finish', () =>
+    Effect.gen(function* () {
+      const logger = makeTestLogger();
+      const scope = yield* Scope.make();
+      const { broker, bridge } = yield* buildBroker(logger, scope);
+      const store = makeFakeStore();
+      let release!: () => void;
+      const held = new Promise<void>(resolve => {
+        release = resolve;
+      });
+      yield* bridge
+        .register({
+          ...store.api,
+          applyFlush: (noteId, content) =>
+            Effect.promise(() => held).pipe(Effect.zipRight(store.api.applyFlush(noteId, content))),
+        })
+        .pipe(Scope.extend(scope));
+      const harness = makeHarness();
+      yield* broker.open({ openId: ID_A, noteId: 'nt_a', sender: asSender(harness) });
+      const port = harness.rendererPort(ID_A);
+      yield* settle;
+      port.postMessage({ type: 'flush', text: 'Kept', markdown: 'Kept', firstLine: 'Kept' });
+      port.postMessage({ type: 'barrier', requestId: 'wait_1' });
+      yield* settle;
+      assert.deepStrictEqual(harness.received(ID_A), [{ type: 'hydrated', seq: 0, count: 0 }]);
+      release();
+      yield* settle;
+      assert.lengthOf(store.flushes, 1);
+      assert.deepStrictEqual(harness.received(ID_A).at(-1), {
+        type: 'barrier',
+        requestId: 'wait_1',
+        ok: true,
+      });
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+
+  it.effect(
+    'barriers reject failed writes and recover after a snapshot repair and successful flush',
+    () =>
+      Effect.gen(function* () {
+        const logger = makeTestLogger();
+        const scope = yield* Scope.make();
+        const { broker, bridge } = yield* buildBroker(logger, scope);
+        const store = makeFakeStore();
+        yield* bridge.register(store.api).pipe(Scope.extend(scope));
+        const harness = makeHarness();
+        yield* broker.open({ openId: ID_A, noteId: 'nt_a', sender: asSender(harness) });
+        const port = harness.rendererPort(ID_A);
+        yield* settle;
+        store.flags.failAppends = true;
+        port.postMessage({ type: 'update', data: blob(1) });
+        port.postMessage({ type: 'barrier', requestId: 'failed_append' });
+        yield* settle;
+        assert.deepStrictEqual(harness.received(ID_A).at(-1), {
+          type: 'barrier',
+          requestId: 'failed_append',
+          ok: false,
+        });
+        store.flags.failAppends = false;
+        store.flags.failFlushes = true;
+        port.postMessage({ type: 'compact', upTo: 0, state: blob(1) });
+        port.postMessage({ type: 'flush', text: 'Kept', markdown: 'Kept', firstLine: 'Kept' });
+        port.postMessage({ type: 'barrier', requestId: 'failed_flush' });
+        yield* settle;
+        assert.deepStrictEqual(harness.received(ID_A).at(-1), {
+          type: 'barrier',
+          requestId: 'failed_flush',
+          ok: false,
+        });
+        store.flags.failFlushes = false;
+        port.postMessage({ type: 'flush', text: 'Kept', markdown: 'Kept', firstLine: 'Kept' });
+        port.postMessage({ type: 'barrier', requestId: 'recovered' });
+        yield* settle;
+        assert.deepStrictEqual(harness.received(ID_A).at(-1), {
+          type: 'barrier',
+          requestId: 'recovered',
+          ok: true,
+        });
+        yield* Scope.close(scope, Exit.void);
+      })
+  );
+
   it.effect('invalid inbound messages are warn-logged and dropped — nothing appended', () =>
     Effect.gen(function* () {
       const logger = makeTestLogger();
@@ -346,34 +439,38 @@ describe('CollabBroker note-body log lane', () => {
     })
   );
 
-  it.effect('a workspace swap (bridge → None) degrades appends to warn+drop and keeps relaying', () =>
-    Effect.gen(function* () {
-      const logger = makeTestLogger();
-      const scope = yield* Scope.make();
-      const { broker, bridge } = yield* buildBroker(logger, scope);
-      const store = makeFakeStore();
-      const storeScope = yield* Scope.make();
-      yield* bridge.register(store.api).pipe(Scope.extend(storeScope));
-      const harness = makeHarness();
+  it.effect(
+    'a workspace swap (bridge → None) degrades appends to warn+drop and keeps relaying',
+    () =>
+      Effect.gen(function* () {
+        const logger = makeTestLogger();
+        const scope = yield* Scope.make();
+        const { broker, bridge } = yield* buildBroker(logger, scope);
+        const store = makeFakeStore();
+        const storeScope = yield* Scope.make();
+        yield* bridge.register(store.api).pipe(Scope.extend(storeScope));
+        const harness = makeHarness();
 
-      yield* broker.open({ openId: ID_A, noteId: 'nt_a', sender: asSender(harness) });
-      yield* broker.open({ openId: ID_B, noteId: 'nt_a', sender: asSender(harness) });
-      const portA = harness.rendererPort(ID_A);
-      harness.rendererPort(ID_B);
-      yield* settle;
+        yield* broker.open({ openId: ID_A, noteId: 'nt_a', sender: asSender(harness) });
+        yield* broker.open({ openId: ID_B, noteId: 'nt_a', sender: asSender(harness) });
+        const portA = harness.rendererPort(ID_A);
+        harness.rendererPort(ID_B);
+        yield* settle;
 
-      // The workspace closes under the live ports.
-      yield* Scope.close(storeScope, Exit.void);
+        // The workspace closes under the live ports.
+        yield* Scope.close(storeScope, Exit.void);
 
-      portA.postMessage({ type: 'update', data: blob(3) });
-      yield* settle;
+        portA.postMessage({ type: 'update', data: blob(3) });
+        yield* settle;
 
-      assert.isUndefined(store.logs.get('nt_a'), 'nothing appended after the swap');
-      assert.isDefined(logger.find(e => e.message === 'collab update append dropped — no workspace'));
-      // Live windows still converge: the blob relayed to B verbatim.
-      assert.deepStrictEqual(harness.received(ID_B).at(-1), { type: 'update', data: blob(3) });
-      yield* Scope.close(scope, Exit.void);
-    })
+        assert.isUndefined(store.logs.get('nt_a'), 'nothing appended after the swap');
+        assert.isDefined(
+          logger.find(e => e.message === 'collab update append dropped — no workspace')
+        );
+        // Live windows still converge: the blob relayed to B verbatim.
+        assert.deepStrictEqual(harness.received(ID_B).at(-1), { type: 'update', data: blob(3) });
+        yield* Scope.close(scope, Exit.void);
+      })
   );
 
   it.effect('layer-scope close interrupts every open and closes its ports', () =>

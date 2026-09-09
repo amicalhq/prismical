@@ -9,6 +9,7 @@ import { coreApiBaseUrl, getAskFetch, getClientEnv } from '../runtime';
 import { getAuthHeaders, getAuthHeadersForToken } from '../api/auth';
 import { ME_PREFIX } from '../api/client';
 import { uiMessageText, type AskScope } from './scope';
+import { askMessageScope } from './conversation';
 import { isAuto, type AskModelSelection } from './models';
 import type { AuthPort, SessionView } from '@prismical/app-contracts';
 
@@ -135,12 +136,15 @@ export function buildAskRequest(input: AskRequestInput): { body: object; headers
   const body: {
     messages: { role: string; content: string }[];
     scope?: AskScope;
+    turnId?: string;
     conversationId?: string;
     instanceId?: string;
     modelId?: string;
     suggestFollowups?: boolean;
     helpContext?: AskRequestInput['helpContext'];
   } = { messages, suggestFollowups: true };
+  const lastUser = input.messages.filter(message => message.role === 'user').at(-1);
+  if (lastUser) body.turnId = lastUser.id;
   if (input.helpContext) body.helpContext = input.helpContext;
   if (input.scope) body.scope = input.scope;
   // The conversation this thread persists into; omitted ⇒ stateless ask.
@@ -155,15 +159,17 @@ export function buildAskRequest(input: AskRequestInput): { body: object; headers
 }
 
 /**
- * Build the Ask AI chat transport. `getScope` is read fresh on every send so the latest context
- * chips drive `scope`; `conversationId` is fixed per chat instance (server persists the turn into it).
+ * Build the Ask transport. Question metadata owns scope across retries and reloads.
+ * `getScope` supports older callers without metadata; conversationId is fixed per chat.
  * Auth headers are resolved per request from the shared seam.
  */
 export function createAskTransport(
   getScope: () => AskScope | undefined,
   conversationId: string | undefined,
   getModel?: () => AskModelSelection | undefined,
-  getHeaders: () => Record<string, string> | Promise<Record<string, string>> = getAuthHeaders
+  getHeaders: () => Record<string, string> | Promise<Record<string, string>> = getAuthHeaders,
+  /** App-owned admission, checked again after authentication and at the request boundary. */
+  assertCanSend?: () => void
 ) {
   // Desktop injects an AskFetch shim over the MessagePort stream lane so
   // the renderer never reaches the server — the `api` becomes a relative marker
@@ -175,21 +181,29 @@ export function createAskTransport(
   let scope: AskScope | undefined;
   return new AskChatTransport({
     api: askFetch ? `${ME_PREFIX}/ask` : `${coreApiBaseUrl()}${ME_PREFIX}/ask`,
-    ...(askFetch ? { fetch: askFetch as typeof fetch } : {}),
+    fetch: (input, init) => {
+      assertCanSend?.();
+      return (askFetch ?? globalThis.fetch)(input, init);
+    },
     prepareSendMessagesRequest: async ({ messages }) => {
-      const userMessageId = messages.filter(message => message.role === 'user').at(-1)?.id;
-      // Retrying/approving a turn must retain its attachment after the composer consumed it.
-      // A new user turn reads fresh context, including an explicitly unscoped question.
+      assertCanSend?.();
+      const userMessage = messages.filter(message => message.role === 'user').at(-1);
+      const userMessageId = userMessage?.id;
+      // Restored metadata wins over current UI state, including an explicitly empty scope.
+      // Legacy callers retain the cached scope for retry and approval continuation.
       if (userMessageId !== scopeMessageId) {
         scopeMessageId = userMessageId;
-        scope = getScope();
+        scope = askMessageScope(userMessage) ?? getScope();
       }
+      const model = getModel?.();
+      const headers = await getHeaders();
+      assertCanSend?.();
       return buildAskRequest({
         messages,
         scope,
         conversationId,
-        model: getModel?.(),
-        headers: await getHeaders(),
+        model,
+        headers,
         helpContext: askHelpContext(getClientEnv()),
       });
     },

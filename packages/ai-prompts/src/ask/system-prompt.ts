@@ -68,11 +68,13 @@ export function buildAskSystemPrompt(opts: {
           'You have NO tools in this session: the focus notes below are the only notes you can see.',
         ]),
     'Guidelines:',
+    '- Format all answers as Markdown. Start with the answer and use short paragraphs, emphasis, and simple lists where helpful. Use headings, tables, and fenced code blocks only when the question benefits from them or the user requests them. Do not wrap the whole answer in a code fence unless the user asks for raw Markdown.',
     ...(toolsAvailable
       ? [
           '- For questions about the user’s notes, if the focus note(s) below already answer the question, answer directly WITHOUT calling a note tool.',
           '- Call `search_notes` when the question needs information FROM THE USER’S NOTES beyond the focus note(s). For requests to list or browse notes, pass an empty query.',
           '- Call `get_note` when a search snippet is not enough to answer accurately.',
+          '- If a focus excerpt is truncated and the answer may depend on omitted content, call `get_note` before answering. Separately labelled completed recording transcripts are source material too; distinguish what was said in a recording from what is written in the note body.',
         ]
       : [
           '- Answer from the focus note(s) below. If they do not contain the answer, say so plainly and suggest the user open the relevant note.',

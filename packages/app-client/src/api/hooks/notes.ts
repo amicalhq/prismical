@@ -101,7 +101,11 @@ export function listResult<TRow extends { id: string; updatedAt: string | Date }
 function noteFromRow(row: NoteRow, primaryEvents?: Map<string, string | null>): Note {
   // NoteRow is the CoreNote wire shape (+ resident contentText); timestamps may
   // be Date post-echo (SyncTimestamp) — normalize for the contract type.
-  const note = toNote({ ...row, updatedAt: String(row.updatedAt) } as CoreNote);
+  const note = toNote({
+    ...row,
+    createdAt: row.createdAt == null ? undefined : String(row.createdAt),
+    updatedAt: String(row.updatedAt),
+  } as CoreNote);
   // `eventId` is MY event row for the note's primary link. The row's own column is the LINKER's
   // row (transitional dual-write): right for the creator's first paint before the link row
   // arrives, meaningless to a collaborator — so the link wins whenever one exists.
@@ -238,5 +242,20 @@ export function useDeleteNote(): SyncMutationResult<string, void> {
     },
     mutateAsync: async (id) => remove(id),
     isPending: false,
+  };
+}
+
+/** Settle a provisional title through the same durable queue as manual renames. */
+export function useFreezeNoteTitle(id: string) {
+  const store = useSyncStore();
+  return (title: string) => {
+    const row = store?.notes$[id]?.peek();
+    if (!row || row.canWrite === false || !title.trim()) return;
+    if (row.titleSource !== 'placeholder' && row.titleSource !== 'first-line') return;
+    store!.updateNote(id, {
+      title: title.trim(),
+      titleIntent: 'freeze',
+      titleExpectedRevision: row.titleRevision ?? 0,
+    });
   };
 }

@@ -1,19 +1,23 @@
 // @vitest-environment jsdom
 import * as React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, render } from '@testing-library/react';
+import { act, cleanup, render, screen, fireEvent } from '@testing-library/react';
 
 const state = vi.hoisted(() => ({
   note: { noteId: 'note_old', title: 'Old' } as { noteId: string; title: string } | null,
+  queriedNote: undefined as { title: string; titleSource?: string } | undefined,
   rec: {} as Record<string, unknown>,
   panel: {} as Record<string, unknown>,
+  askPanel: {} as Record<string, unknown>,
   candidates: new Map<string, unknown>(),
   activeRun: null as unknown,
+  workflow: { kind: 'idle' } as { kind: string; phase?: string; workflowId?: string; noteId?: string; attempt?: number; proposalId?: string },
+  shared: false,
   noop: vi.fn(),
   stop: vi.fn(),
   push: vi.fn(),
   toast: vi.fn(),
-  t: (key: string) => key,
+  t: (key: string, params?: { name?: string }) => params?.name ? `${key}:${params.name}` : key,
 }));
 vi.mock('sonner', () => ({ toast: { info: state.toast, warning: state.toast } }));
 vi.mock('../shell/current-note-context', () => ({
@@ -30,16 +34,20 @@ vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({ invalidateQueries: state.noop }),
   useQueries: () => [],
 }));
-vi.mock('@prismical/app-client', () => {
+vi.mock('@prismical/app-client', async () => {
+  const { canAsk } = await import('@prismical/app-workflow');
   const store = Object.assign(
     (select: (s: unknown) => unknown) =>
       select({ waitingRecordingId: null, requestAutoEnhance: state.noop }),
     { getState: () => ({ clear: state.noop }) }
   );
   return {
+    canAsk,
+    useWorkflowSnapshot: () => state.workflow,
     useRecording: () => state.rec,
     usePorts: () => ({
       analytics: { capture: state.noop },
+      workflow: state.shared ? { getSnapshot: () => state.workflow } : undefined,
       recording: {},
       env: { getEnv: () => ({ platform: 'web' }) },
       auth: {},
@@ -55,6 +63,7 @@ vi.mock('@prismical/app-client', () => {
     useActiveSkillRun: () => state.activeRun,
     useEntitlements: () => ({ entitlements: { limits: { maxRecordingSeconds: null } } }),
     useRecordingBudgetWarning: () => ({ warning: null, dismiss: state.noop }),
+    useNote: () => ({ data: state.queriedNote }),
     useNoteRecordings: () => ({ data: [] }),
     useEnhancedRecordings: () => ({ data: new Set() }),
     segmentToLine: (s: unknown) => s,
@@ -69,11 +78,11 @@ vi.mock('./transcript-panel', () => ({
   },
 }));
 vi.mock('./dock-unit', () => ({
-  DockUnit: ({ pill, panel }: { pill: React.ReactNode; panel: React.ReactNode }) => (
-    <>
+  DockUnit: ({ pill, panel, collapsed }: { pill: React.ReactNode; panel: React.ReactNode; collapsed?: boolean }) => (
+    <div hidden={collapsed}>
       {pill}
       {panel}
-    </>
+    </div>
   ),
   DockRowmate: ({ children }: { children: React.ReactNode }) => children,
 }));
@@ -88,17 +97,23 @@ vi.mock('./skill-dock-slot', () => ({ SkillDockSlot: () => null }));
 vi.mock('./new-note-dock', () => ({ NewNoteDock: () => null }));
 vi.mock('./auto-pause-prompt', () => ({ AutoPausePrompt: () => null }));
 vi.mock('./recording-notice-card', () => ({ RecordingNoticeCard: () => null }));
-vi.mock('./ask/ask-dock-pill', () => ({ AskPillFace: () => null, ASK_PILL_WIDTH: 100 }));
-vi.mock('./ask/ask-panel', () => ({ AskPanel: () => null }));
+vi.mock('./ask/ask-dock-pill', () => ({ AskPillFace: ({ onClick }: { onClick: () => void }) => <button onClick={onClick}>Ask AI</button>, ASK_PILL_WIDTH: 100 }));
+vi.mock('./ask/ask-panel', () => ({ AskPanel: (props: Record<string, unknown>) => {
+  state.askPanel = props;
+  return null;
+} }));
 
 const { RecordingBottomCluster } = await import('./recording-bottom-cluster');
 afterEach(cleanup);
 beforeEach(() => {
+  state.queriedNote = undefined;
   state.noop.mockClear();
   state.stop.mockReset();
   state.push.mockReset();
   state.toast.mockReset();
   state.activeRun = null;
+  state.shared = false;
+  state.workflow = { kind: 'idle' };
   state.note = { noteId: 'note_old', title: 'Old' };
   state.candidates = new Map([['note_old', { skillName: 'Enhance' }]]);
   state.rec = {
@@ -114,26 +129,26 @@ beforeEach(() => {
   };
 });
 describe('recording dock note ownership', () => {
-  it('hides the footer Start control during a skill run', () => {
+  it('disables the footer Start control during a skill run', () => {
     state.candidates.clear();
     state.activeRun = { status: 'running', skillName: 'Enhance' };
     const view = render(<RecordingBottomCluster />);
-    expect(state.panel.hideStartRecording).toBe(true);
+    expect(state.panel.startBlockedReason).toBe('workflow.busy');
     state.activeRun = null;
     view.rerender(<RecordingBottomCluster />);
-    expect(state.panel.hideStartRecording).toBe(false);
+    expect(state.panel.hideStartRecording).toBeUndefined();
   });
   it('blocks same-note starts until the candidate is kept or undone', () => {
     const view = render(<RecordingBottomCluster />);
     expect(state.panel.startBlockedReason).toBe('recording.actions.reviewBeforeRecording');
-    expect(state.panel.hideStartRecording).toBe(false);
+    expect(state.panel.hideStartRecording).toBeUndefined();
     state.noop.mockClear();
     (state.panel.onStartRecording as () => void)();
     expect(state.noop).not.toHaveBeenCalled();
     state.candidates.delete('note_old');
     view.rerender(<RecordingBottomCluster />);
     expect(state.panel.startBlockedReason).toBeUndefined();
-    expect(state.panel.hideStartRecording).toBe(false);
+    expect(state.panel.hideStartRecording).toBeUndefined();
     (state.panel.onStartRecording as () => void)();
     expect(state.noop).toHaveBeenCalledWith('note_old', 'Old');
   });
@@ -147,7 +162,7 @@ describe('recording dock note ownership', () => {
     expect(state.panel.finishedRecordingId).toBeNull();
     expect(state.panel.recState).toBe('idle');
     expect(state.panel.startBlockedReason).toBeUndefined();
-    expect(state.panel.hideStartRecording).toBe(false);
+    expect(state.panel.hideStartRecording).toBeUndefined();
     expect(state.candidates.has('note_old')).toBe(true);
   });
   it('ignores an old recording that stops after navigation has already reset the dock', () => {
@@ -230,5 +245,92 @@ describe('recording across navigation', () => {
     );
     state.toast.mock.calls[0]![1].action.onClick();
     expect(state.push).toHaveBeenCalledWith('/notes/note_old');
+  });
+});
+
+
+describe('shared workflow dock admission', () => {
+  it('names the original note in review and routes its status action there', () => {
+    state.shared = true;
+    state.queriedNote = { title: '  Project notes  ', titleSource: 'manual' };
+    state.workflow = { kind: 'skill', phase: 'review', workflowId: 'active', noteId: 'note_other', attempt: 1 };
+    render(<RecordingBottomCluster />);
+    expect(screen.getByRole('status').textContent).toContain('workflow.reviewNamed:Project notes');
+    fireEvent.click(screen.getByRole('button', { name: 'workflow.openNamedNote:Project notes' }));
+    expect(state.push).toHaveBeenCalledWith('/notes/note_other');
+    expect(state.panel.openNoteLabel).toBe('workflow.openNamedNote:Project notes');
+  });
+
+  it('uses the generic open action for placeholder titles', () => {
+    state.shared = true;
+    state.queriedNote = { title: 'Untitled note', titleSource: 'placeholder' };
+    state.workflow = { kind: 'recording', phase: 'finalizing', workflowId: 'active', noteId: 'note_other', attempt: 1 };
+    render(<RecordingBottomCluster />);
+    expect(screen.getByRole('button', { name: 'workflow.openNote' })).toBeTruthy();
+    expect(state.panel.onOpenNote).toBeTypeOf('function');
+    expect(state.panel.openNoteLabel).toBe('workflow.openNote');
+  });
+
+  it.each(['running', 'review', 'applying'])('blocks recording while another note has skill %s', phase => {
+    state.shared = true;
+    state.candidates.clear();
+    state.workflow = { kind: 'skill', phase, workflowId: 'active', noteId: 'note_other', attempt: 1 };
+    render(<RecordingBottomCluster />);
+    state.noop.mockClear();
+    (state.panel.onStartRecording as () => void)();
+    expect(state.noop).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'workflow.openNote' }));
+    expect(state.push).toHaveBeenCalledWith('/notes/note_other');
+  });
+
+  it.each(['review', 'applying', 'running'])('replaces Ask with the proposal controls during %s', phase => {
+    state.shared = true;
+    state.workflow = { kind: 'skill', phase, proposalId: 'proposal', workflowId: 'active', noteId: 'note_old', attempt: 1 };
+    const view = render(<RecordingBottomCluster />);
+    expect(screen.queryByRole('button', { name: 'Ask AI' })).toBeNull();
+    (state.panel.onStartRecording as () => void)();
+    expect(state.noop).not.toHaveBeenCalledWith('note_old', 'Old');
+
+    state.candidates.clear();
+    state.workflow = { kind: 'idle' };
+    view.rerender(<RecordingBottomCluster />);
+    expect(screen.getByRole('button', { name: 'Ask AI' })).toBeTruthy();
+  });
+
+  it('keeps Ask blocked when leaving a note with a pending review', () => {
+    state.shared = true;
+    state.workflow = { kind: 'skill', phase: 'review', workflowId: 'active', noteId: 'note_old', attempt: 1 };
+    const view = render(<RecordingBottomCluster />);
+    state.note = { noteId: 'note_new', title: 'New' };
+    view.rerender(<RecordingBottomCluster />);
+    expect(screen.queryByRole('button', { name: 'Ask AI' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'workflow.openNote' }));
+    expect(state.push).toHaveBeenCalledWith('/notes/note_old');
+
+    state.note = null;
+    view.rerender(<RecordingBottomCluster />);
+    expect(screen.queryByRole('button', { name: 'Ask AI' })).toBeNull();
+  });
+
+  it('closes an open Ask panel when another note enters review', () => {
+    state.shared = true;
+    state.candidates.clear();
+    const view = render(<RecordingBottomCluster />);
+    fireEvent.click(screen.getByRole('button', { name: 'Ask AI' }));
+    expect(state.askPanel.open).toBe(true);
+
+    state.workflow = { kind: 'skill', phase: 'review', workflowId: 'active', noteId: 'note_other', attempt: 1 };
+    view.rerender(<RecordingBottomCluster />);
+    expect(state.askPanel.open).toBe(false);
+    expect(screen.queryByRole('button', { name: 'Ask AI' })).toBeNull();
+  });
+
+  it.each(['capturing', 'paused', 'draining', 'finalizing'])('keeps Ask available while recording is %s', phase => {
+    state.shared = true;
+    state.candidates.clear();
+    state.workflow = { kind: 'recording', phase, workflowId: 'active', noteId: 'note_old', attempt: 1 };
+    render(<RecordingBottomCluster />);
+    fireEvent.click(screen.getByRole('button', { name: 'Ask AI' }));
+    expect(state.askPanel.open).toBe(true);
   });
 });

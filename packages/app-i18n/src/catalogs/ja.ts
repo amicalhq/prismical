@@ -2,6 +2,24 @@ import type { TranslationShape } from '../catalog-shape';
 import type en from './en';
 
 const ja = {
+  workflow: {
+    noteChanged: "この提案の生成後にノートが変更されました。提案を破棄してスキルを再実行してください。",
+      "busy": "現在の録音またはスキルを先に完了してください。",
+      "draining": "残りの音声を送信中…",
+      "finalizing": "録音を完了処理中…",
+      "recording": "録音中",
+      "recordingAway": "別のノートで録音中",
+      "pausedAway": "別のノートで録音を一時停止中",
+      "review": "別のノートの変更を確認中",
+      "reviewNamed": "{{name}} の変更を確認中",
+      "applying": "変更を適用中…",
+      "skill": "スキルを実行中…",
+      "openNote": "ノートを開く",
+      "openNamedNote": "{{name}} を開く",
+      "retry": "再試行",
+      "end": "処理を終了"
+  },
+
   onboarding: {
   "helpDocs": "お困りですか？ドキュメントを読む",
   "continueToNote": "ノートに戻る",
@@ -45,6 +63,22 @@ const ja = {
     "record": {
       "title": "録音を開始",
       "body": "ドックのマイクをクリックし、録音開始を押します。求められたらマイクへのアクセスを許可してください。"
+    },
+    "waiting": {
+      "title": "文字起こしを準備しています",
+      "body": "録音を保存して処理しています。文字起こしが完了するまでお待ちください。"
+    },
+    "retry": {
+      "title": "録音して続ける",
+      "body": "録音パネルを開いて新しい録音を開始すると続行できます。このガイドを終了することもできます。"
+    },
+    "generating": {
+      "title": "下書きの進行を確認",
+      "body": "下書きと進行状況がここに表示されます。失敗または停止した場合は、利用可能な操作を使うか、録音パネルに戻って再試行してください。"
+    },
+    "starting": {
+      "title": "マイクを準備しています",
+      "body": "確認が表示されたらマイクへのアクセスを許可してください。録音が始まるまで話さずにお待ちください。"
     },
     "speak": {
       "title": "少し話してみましょう",
@@ -580,6 +614,10 @@ const ja = {
     joinMeeting: '会議に参加',
     newNote: '新しいノート',
     pickEmoji: '絵文字を選択',
+    emojiPicker: {
+      search: '絵文字を検索…',
+      empty: '絵文字が見つかりません。',
+    },
     tags: {
       add: 'タグを追加',
       create: '「{{name}}」を作成',
@@ -898,6 +936,8 @@ const ja = {
       targetMissing: '書き換え対象のテキストはもう存在しません。選択し直して再度実行してください。',
       undo: '元に戻す',
       waitingForDocument: 'ノートの読み込みを待っています…',
+      deliveryPending: '適用した変更の一部がまだ同期されていません。',
+      endWorkflowWarning: '未送信の変更が失われる場合があります。',
     },
     inline: { captureError: '選択範囲を取得できませんでした。テキストを選択し直してください。' },
     run: {
@@ -917,8 +957,16 @@ const ja = {
   },
   settings: {
     aiModels: {
+      planGate: {
+        title: '自分のAPIキーを使用',
+        availability: 'Proで利用可能',
+        description: '現在のプランでは自分のAPIキーを使用できません。Proにアップグレードすると、独自のAIプロバイダーを接続し、使用するモデルを選択できます。',
+        upgrade: 'Proにアップグレード',
+        back: '設定に戻る',
+      },
       addProvider: 'プロバイダーを追加',
       available: {
+        requestProvider: 'プロバイダーをリクエスト',
         comingSoon: '近日公開',
         getDesktop: 'デスクトップアプリを入手',
         localDesktop: 'ローカルモデルはデスクトップアプリで利用できます',
@@ -1011,6 +1059,7 @@ const ja = {
           'Ask AI のモデル選択に表示するモデルを選びます。すべて未選択にすると、このインスタンスは選択に表示されません。',
         empty: 'このキーで利用できる言語モデルが見つかりません。',
         loadError: 'モデルを読み込めませんでした。API キーを確認して、もう一度お試しください。',
+        retired: '提供終了 — チェックを外すと削除されます',
         title: 'Ask AI のモデル',
       },
       modelPicker: {
@@ -1880,15 +1929,6 @@ const ja = {
           'ファイル形式「.{{extension}}」には対応していません。.jsonまたは.mdファイルを選択してください。',
       },
       form: {
-        advanced: '詳細設定',
-        defaultLabel: '既定のきらめきボタンに設定',
-        descriptionLabel: '説明',
-        descriptionPlaceholder: 'スキルカードに表示する短い説明',
-        enabled: '有効',
-        modeAgnosticDescription:
-          'どのモードが有効かをモデルに伝えず、本文だけで出力を説明します。実行後に再生成せず、追記と置換を切り替えられます。インライン書き換えは、この設定にかかわらず常にモードに最適化されます。',
-        modeAgnosticLabel: 'モードに依存しないプロンプト',
-        modeLabel: 'モード',
         addSection: 'セクションを追加',
         addSectionDescription: '既存のノートを残し、結果を新しいセクションとして追加します。',
         rewriteNote: 'ノート全体を書き直す',
@@ -1896,6 +1936,15 @@ const ja = {
         transcriptDescription: 'このノートの録音の文字起こしをスキルのコンテキストに含めます。',
         titleDescription: 'ノート本文を編集する代わりに、新しいタイトルを生成します。',
         preservedMode: 'このスキルは実験的な出力設定を使用しています。保存しても設定は変わりません。',
+
+        advanced: '詳細設定',
+        defaultLabel: '既定のきらめきボタンに設定',
+        descriptionLabel: '説明',
+        descriptionPlaceholder: 'スキルカードに表示する短い説明',
+        enabled: '有効',
+        modeAgnosticDescription: '追加や書き換えの指示を加えず、プロンプトで出力を定義します。選択範囲の書き換えと録音のEnhanceでは、モード別の指示を引き続き使用します。',
+        modeAgnosticLabel: 'モードに依存しないプロンプト',
+        modeLabel: 'モード',
         nameLabel: '名前',
         newTitle: '新しいスキル',
         promptLabel: 'プロンプト',

@@ -32,3 +32,41 @@ it.each([
   fireEvent.click(button);
   expect(toggle).toHaveBeenCalledOnce();
 });
+
+it('keeps a pending anchor on the collapsed dock until startup settles', () => {
+  const props = {
+    isPanelOpen: false,
+    onTogglePanel: vi.fn(),
+    onStopRecording: vi.fn(),
+    elapsedSeconds: 0,
+  };
+  const view = render(<RecordingPillFace {...props} recState="starting" />);
+  const pending = view.container.querySelector('[data-onboarding="record-pending"]');
+  expect(pending).not.toBeNull();
+  expect(pending?.closest('[inert], [aria-hidden="true"]')).toBeNull();
+  view.rerender(<RecordingPillFace {...props} recState="recording" />);
+  expect(view.container.querySelector('[data-onboarding="record-pending"]')).toBeNull();
+  view.rerender(<RecordingPillFace {...props} recState="idle" />);
+  expect(screen.getByRole('button', { name: 'recording.actions.start' }).dataset.onboarding).toBe(
+    'record-open'
+  );
+});
+
+it('anchors Stop to Stop rather than Pause in the collapsed recording controls', () => {
+  const stop = vi.fn();
+  render(
+    <RecordingPillFace
+      recState="recording"
+      canPause
+      isPanelOpen={false}
+      onTogglePanel={vi.fn()}
+      onStopRecording={stop}
+      onPauseRecording={vi.fn()}
+      elapsedSeconds={5}
+    />
+  );
+  const target = document.querySelector('[data-onboarding="record-stop"]');
+  expect(target).toBe(screen.getByRole('button', { name: 'recording.actions.stop' }));
+  fireEvent.click(target!);
+  expect(stop).toHaveBeenCalledOnce();
+});

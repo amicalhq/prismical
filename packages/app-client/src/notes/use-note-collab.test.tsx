@@ -18,11 +18,40 @@ interface CapturedConfig {
 }
 let lastConfig: CapturedConfig | null = null;
 const destroy = vi.fn();
+interface FakeProvider {
+  synced: boolean;
+  hasUnsyncedChanges: boolean;
+  isAuthenticated: boolean;
+  authorizedScope: string;
+  listeners: Map<string, Set<() => void>>;
+  on: (event: string, callback: () => void) => void;
+  off: (event: string, callback: () => void) => void;
+  emit: (event: string) => void;
+  destroy: () => void;
+}
+let lastProvider: FakeProvider | null = null;
 
 vi.mock('@hocuspocus/provider', () => ({
   HocuspocusProvider: vi.fn((config: CapturedConfig) => {
     lastConfig = config;
-    return { destroy };
+    const listeners = new Map<string, Set<() => void>>();
+    const provider: FakeProvider = {
+      synced: false,
+      hasUnsyncedChanges: false,
+      isAuthenticated: false,
+      authorizedScope: 'read-write',
+      listeners,
+      on(event, callback) {
+        const callbacks = listeners.get(event) ?? new Set<() => void>();
+        callbacks.add(callback);
+        listeners.set(event, callbacks);
+      },
+      off(event, callback) { listeners.get(event)?.delete(callback); },
+      emit(event) { for (const callback of [...listeners.get(event) ?? []]) callback(); },
+      destroy() { destroy(); provider.emit('destroy'); },
+    };
+    lastProvider = provider;
+    return provider;
   }),
 }));
 
@@ -155,6 +184,7 @@ function render(noteId: string) {
 
 beforeEach(() => {
   lastConfig = null;
+  lastProvider = null;
   session = { state: 'signed-in', accounts: [], activeSub: undefined };
   destroy.mockClear();
   // Reset the injected runtime config — web-shaped (no noteLog) by default, so
@@ -267,6 +297,103 @@ describe('useNoteCollab', () => {
 });
 
 
+describe('temporary document delivery', () => {
+  it('waits for both document sync and acknowledgement of local changes', async () => {
+    const { result } = render('note_1');
+    const connection = lastProvider!;
+    connection.hasUnsyncedChanges = true;
+    const delivered = vi.fn();
+    const pending = result.current.waitForPendingChanges().then(delivered);
+    connection.synced = true;
+    connection.emit('synced');
+    await Promise.resolve();
+    expect(delivered).not.toHaveBeenCalled();
+    connection.hasUnsyncedChanges = false;
+    connection.emit('unsyncedChanges');
+    await pending;
+    expect(delivered).toHaveBeenCalledOnce();
+    expect([...connection.listeners.values()].every(callbacks => callbacks.size === 0)).toBe(true);
+  });
+
+  it('immediately accepts a synced document without pending changes', async () => {
+    const { result } = render('note_1');
+    lastProvider!.synced = true;
+    await expect(result.current.waitForPendingChanges()).resolves.toBeUndefined();
+    expect(lastProvider!.listeners.size).toBe(0);
+  });
+
+  it('times out without losing the same connection needed for a delivery retry', async () => {
+    vi.useFakeTimers();
+    try {
+      const { result } = render('note_1');
+      const connection = lastProvider!;
+      connection.synced = true;
+      connection.hasUnsyncedChanges = true;
+      const failed = expect(result.current.waitForPendingChanges()).rejects.toThrow('not synced yet');
+      await vi.advanceTimersByTimeAsync(15_000);
+      await failed;
+      expect([...connection.listeners.values()].every(callbacks => callbacks.size === 0)).toBe(true);
+      expect(destroy).not.toHaveBeenCalled();
+      const retry = result.current.waitForPendingChanges();
+      connection.hasUnsyncedChanges = false;
+      connection.emit('unsyncedChanges');
+      await expect(retry).resolves.toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('rejects delivery on host closure and refuses later access', async () => {
+    const { result, unmount } = render('note_1');
+    const access = result.current;
+    lastProvider!.isAuthenticated = true;
+    expect(access.hasWriteAccess()).toBe(true);
+    const pending = expect(access.waitForPendingChanges()).rejects.toThrow('connection closed');
+    unmount();
+    await pending;
+    expect(access.hasWriteAccess()).toBe(false);
+    await expect(access.waitForPendingChanges()).rejects.toThrow('unavailable');
+  });
+
+  it('reads live authentication and permission changes before React callbacks render', () => {
+    const { result } = render('note_1');
+    const connection = lastProvider!;
+    expect(result.current.hasWriteAccess()).toBe(false);
+    connection.isAuthenticated = true;
+    expect(result.current.hasWriteAccess()).toBe(true);
+    connection.authorizedScope = 'readonly';
+    expect(result.current.hasWriteAccess()).toBe(false);
+    connection.authorizedScope = 'read-write';
+    connection.isAuthenticated = false;
+    expect(result.current.hasWriteAccess()).toBe(false);
+  });
+
+  it('retires the old delivery wait on a note change and retries against the new provider', async () => {
+    const view = renderHook(({ noteId }) => useNoteCollab(noteId), {
+      initialProps: { noteId: 'note_1' }, wrapper,
+    });
+    const old = lastProvider!;
+    old.isAuthenticated = true;
+    const failed = expect(view.result.current.waitForPendingChanges()).rejects.toThrow('connection closed');
+    view.rerender({ noteId: 'note_2' });
+    await failed;
+    const current = lastProvider!;
+    expect(current).not.toBe(old);
+    expect(view.result.current.hasWriteAccess()).toBe(false);
+    const delivered = vi.fn();
+    const retry = view.result.current.waitForPendingChanges().then(delivered);
+    old.synced = true;
+    old.emit('synced');
+    await Promise.resolve();
+    expect(delivered).not.toHaveBeenCalled();
+    current.synced = true;
+    current.emit('synced');
+    await retry;
+    expect(delivered).toHaveBeenCalledOnce();
+  });
+});
+
+
 // ---------------------------------------------------------------------------
 // Desktop note-body log lane (noteLog configured via the runtime)
 // ---------------------------------------------------------------------------
@@ -291,9 +418,11 @@ const makeFakeNoteLog = () => {
     closed: false,
     openCalls: [] as string[],
   };
+  const waitForPendingChanges = vi.fn().mockResolvedValue(undefined);
   const handle: NoteLogHandle = {
     opened,
     hydrated,
+    waitForPendingChanges,
     onUpdate: (cb) => {
       updateCb = cb;
     },
@@ -379,10 +508,43 @@ describe('useNoteCollab with a desktop note log', () => {
     expect(result.current.synced).toBe(true);
     expect(result.current.scope).toBe('read-write');
     expect(result.current.error).toBeNull();
+    expect(result.current.hasWriteAccess()).toBe(true);
     // No HocuspocusProvider was constructed (local mode has no server).
     expect(lastConfig).toBeNull();
     // Small log — no compaction.
     expect(fake.state.compacts).toHaveLength(0);
+  });
+
+  it('local mode: flushes and awaits durable delivery before releasing a proposal editor', async () => {
+    const fake = makeFakeNoteLog();
+    configureNoteLog(fake, false);
+    const { result, unmount } = render('nt_1');
+    expect(result.current.hasWriteAccess()).toBe(false);
+    await expect(result.current.waitForPendingChanges()).rejects.toThrow('unavailable');
+    await act(async () => {
+      fake.resolveOpened({ ok: true });
+      fake.resolveHydrated({ seq: 0, count: 0 });
+    });
+    act(() => typeParagraph(result.current.doc!, 'Kept proposal'));
+    let delivered!: () => void;
+    vi.mocked(fake.handle.waitForPendingChanges).mockImplementationOnce(() =>
+      new Promise<void>(resolve => { delivered = resolve; }));
+    const settled = vi.fn();
+    const waiting = result.current.waitForPendingChanges().then(settled);
+    expect(fake.state.flushes).toEqual([
+      { text: 'Kept proposal', markdown: 'Kept proposal', firstLine: 'Kept proposal' },
+    ]);
+    await flushMicrotasks();
+    expect(settled).not.toHaveBeenCalled();
+    delivered();
+    await waiting;
+    expect(settled).toHaveBeenCalledOnce();
+    vi.mocked(fake.handle.waitForPendingChanges).mockRejectedValueOnce(new Error('Disk full'));
+    await expect(result.current.waitForPendingChanges()).rejects.toThrow('Disk full');
+    const access = result.current;
+    unmount();
+    expect(access.hasWriteAccess()).toBe(false);
+    await expect(access.waitForPendingChanges()).rejects.toThrow('unavailable');
   });
 
   it('forwards local edits to the log and schedules the debounced flush', async () => {
@@ -464,6 +626,8 @@ describe('useNoteCollab with a desktop note log', () => {
     expect(result.current.status).toBe('disconnected');
     expect(result.current.synced).toBe(false);
     expect(result.current.error).toBeTruthy();
+    expect(result.current.hasWriteAccess()).toBe(false);
+    await expect(result.current.waitForPendingChanges()).rejects.toThrow('unavailable');
   });
 
   it('local mode: a REJECTED open also surfaces the error without a provider', async () => {

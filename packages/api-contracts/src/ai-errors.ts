@@ -61,7 +61,7 @@ export const AI_ERROR_CODES = {
   // ── Plan entitlements (decided before any provider call; see core `usage/entitlements.ts`) ──
   /** Ask AI is not included in the organization's plan. */
   ASK_NOT_IN_PLAN: 'ASK_NOT_IN_PLAN',
-  /** This period's AI credits (managed Ask turns + managed skill runs) are used up. */
+  /** This period's AI credits (successful managed skill runs) are used up. */
   AI_CREDITS_EXHAUSTED: 'AI_CREDITS_EXHAUSTED',
   /**
    * A BYOK instance was chosen but the plan does not include BYOK. On a run this is a NOTICE (the

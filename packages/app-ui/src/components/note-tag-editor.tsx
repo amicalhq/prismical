@@ -164,11 +164,10 @@ export function NoteTagEditor({ noteId, selected }: { noteId: string; selected: 
                     </CommandItem>
                   );
                 })}
-                {showCreate && (
-                  // `forceMount` keeps this row visible regardless of cmdk's fuzzy
-                  // filter, so it shows alongside partial matches for a non-matching
-                  // query. The value is namespaced so it can't collide with a real
-                  // tag literally named after the typed text.
+              </CommandGroup>
+              {showCreate && (
+                <CommandGroup forceMount>
+                  {/* Keep the create group visible even when no existing tag matches. */}
                   <CommandItem
                     key="__create-tag__"
                     value={`create:${query}`}
@@ -182,8 +181,8 @@ export function NoteTagEditor({ noteId, selected }: { noteId: string; selected: 
                       {t('notes.tags.create', { name: query })}
                     </span>
                   </CommandItem>
-                )}
-              </CommandGroup>
+                </CommandGroup>
+              )}
             </CommandList>
           </Command>
         </PopoverContent>

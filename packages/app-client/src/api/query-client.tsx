@@ -1,8 +1,11 @@
 'use client';
 
+import { reportClientError } from "../diagnostics";
+
 import * as React from 'react';
 import {
   MutationCache,
+  QueryCache,
   QueryClient,
   QueryClientProvider,
   useQueryClient,
@@ -44,8 +47,12 @@ export function ApiQueryProvider({ children }: { children: React.ReactNode }) {
         defaultOptions: {
           queries: { retry: false, refetchOnWindowFocus: false, staleTime: 30_000 },
         },
+        queryCache: new QueryCache({
+          onError: (error) => reportClientError(error, { operation: "query" }),
+        }),
         mutationCache: new MutationCache({
           onError: (_error, _vars, _ctx, mutation) => {
+            reportClientError(_error, { operation: "mutation" });
             if (mutation.meta?.suppressErrorToast) return;
             toast.error(
               mutationErrorMessage(translationRef.current, mutation.meta?.errorMessageKey)

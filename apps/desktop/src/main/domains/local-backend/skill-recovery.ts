@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import {
+  AcceptSkillRunResultSchema,
   EnhancedRecordingsQuerySchema,
   ResolveSkillResultSchema,
   RunSkillResultSchema,
@@ -32,7 +33,8 @@ export function pendingSkillResults(db: LocalDb, query: Record<string, string>):
     .where(
       and(
         eq(schema.noteSkillResult.noteId, input.data.noteId),
-        isNull(schema.noteSkillResult.resolvedAt)
+        isNull(schema.noteSkillResult.resolvedAt),
+        sql`json_extract(${schema.noteSkillResult.result}, '$._receiptOnly') is not 1`
       )
     )
     .orderBy(asc(schema.noteSkillResult.createdAt), asc(schema.noteSkillResult.id))
@@ -48,25 +50,26 @@ export function resolveSkillResult(db: LocalDb, body: unknown): RouteResult {
   if (!input.success) return invalidRequest('Invalid result');
   if (!db.select({ id: schema.note.id }).from(schema.note).where(liveNote(input.data.noteId)).get())
     return forbidden();
-  const row = db
-    .update(schema.noteSkillResult)
-    .set({ resolvedAt: new Date().toISOString() })
-    .where(
-      and(
-        eq(schema.noteSkillResult.id, input.data.resultId),
-        eq(schema.noteSkillResult.noteId, input.data.noteId),
-        sql`json_extract(${schema.noteSkillResult.result}, '$.rawMarkdown') = ${input.data.rawMarkdown}`,
-        isNull(schema.noteSkillResult.acceptedResult)
-      )
-    )
-    .returning({ id: schema.noteSkillResult.id })
-    .get();
-  if (row) return ok({ resolved: true });
-  const owned = db.select({ id: schema.noteSkillResult.id }).from(schema.noteSkillResult).where(and(
-    eq(schema.noteSkillResult.id, input.data.resultId),
-    eq(schema.noteSkillResult.noteId, input.data.noteId)
-  )).get();
-  return owned ? suggestionChanged() : forbidden();
+  return db.transaction(tx => {
+    const saved = tx.select().from(schema.noteSkillResult).where(and(
+      eq(schema.noteSkillResult.id, input.data.resultId),
+      eq(schema.noteSkillResult.noteId, input.data.noteId)
+    )).get();
+    if (!saved) return forbidden();
+    const now = new Date().toISOString();
+    if (input.data.discardAccepted && saved.acceptedResult) {
+      const accepted = AcceptSkillRunResultSchema.parse(saved.acceptedResult);
+      tx.update(schema.artifact).set({ deletedAt: now, updatedAt: now }).where(and(
+        eq(schema.artifact.id, accepted.artifactId),
+        eq(schema.artifact.noteId, input.data.noteId)
+      )).run();
+    }
+    tx.update(schema.noteSkillResult).set({
+      resolvedAt: now,
+      ...(input.data.discardAccepted ? { acceptedResult: null } : {}),
+    }).where(eq(schema.noteSkillResult.id, saved.id)).run();
+    return ok({ resolved: true });
+  });
 }
 
 export function findRecoverableResult(
@@ -82,6 +85,7 @@ export function findRecoverableResult(
       and(
         eq(schema.noteSkillResult.noteId, noteId),
         isNull(schema.noteSkillResult.resolvedAt),
+        sql`json_extract(${schema.noteSkillResult.result}, '$._receiptOnly') is not 1`,
         sql`json_extract(${schema.noteSkillResult.result}, '$.recordingId') = ${recordingId}`,
         sql`json_extract(${schema.noteSkillResult.result}, '$.skillId') = ${skillId}`
       )
@@ -96,15 +100,17 @@ export function saveRecoverableResult(
   db: LocalDb,
   noteId: string,
   result: RunSkillResult,
-  recovery?: { id: string; result: RunSkillResult }
+  recovery?: { id: string; result: RunSkillResult },
+  retainOnly?: boolean
 ): string {
+  const storedResult = { ...result, ...(retainOnly ? { _receiptOnly: true } : {}) };
   return db.transaction(tx => {
     if (!tx.select({ id: schema.note.id }).from(schema.note).where(liveNote(noteId)).get())
       throw new Error('Note is unavailable');
     if (recovery) {
       const updated = tx
         .update(schema.noteSkillResult)
-        .set({ result })
+        .set({ result: storedResult })
         .where(
           and(
             eq(schema.noteSkillResult.id, recovery.id),
@@ -120,7 +126,7 @@ export function saveRecoverableResult(
     }
     const id = `nsr_${randomUUID().replace(/-/g, '')}`;
     tx.insert(schema.noteSkillResult)
-      .values({ id, noteId, result, createdAt: new Date().toISOString() })
+      .values({ id, noteId, result: storedResult, createdAt: new Date().toISOString() })
       .run();
     return id;
   });

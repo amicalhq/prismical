@@ -8,17 +8,28 @@ import type { TourStep } from './state';
 export type AnchorStep = 'create' | TourStep;
 const anchors: Record<AnchorStep, string[]> = {
   create: ['new-note'],
-  record: ['record-start', 'record-open'],
-  speak: ['transcript'],
-  stop: ['record-stop'],
-  transcript: ['transcript'],
-  enhance: ['enhance'],
+  record: ['record-pending', 'record-start', 'record-open'],
+  speak: [
+    'record-pending',
+    'record-saving',
+    'record-retry',
+    'transcript',
+    'record-live-open',
+    'record-open',
+  ],
+  stop: ['record-pending', 'record-saving', 'record-retry', 'record-stop', 'record-open'],
+  transcript: ['transcript-wait', 'record-retry', 'transcript', 'record-open'],
+  enhance: ['enhance', 'skill-status', 'transcript-wait', 'record-retry', 'record-open'],
   result: ['note-body'],
   review: ['review-controls'],
 };
 export function findTourAnchor(step: AnchorStep): HTMLElement | undefined {
   for (const name of anchors[step]) {
-    const elements = document.querySelectorAll<HTMLElement>(`[data-onboarding="${name}"]`);
+    const elements = Array.from(
+      document.querySelectorAll<HTMLElement>(`[data-onboarding="${name}"]`)
+    );
+    // Retry turns append to Ask; guide the newest status, never a previous failed attempt.
+    if (name === 'skill-status') elements.reverse();
     for (const element of elements) {
       if (
         !element.closest('[inert], [aria-hidden="true"]') &&
@@ -53,7 +64,9 @@ export function AnchoredTour({
     let timer: ReturnType<typeof setInterval> | undefined;
     let last: HTMLElement | undefined;
     let shown = false;
-    let missingSince = Date.now();
+    let lastBounds = '';
+    let lastAnchor: string | undefined;
+    let missingSince: number | undefined = Date.now();
     void import('driver.js')
       .then(({ driver }) => {
         if (stopped) return;
@@ -74,20 +87,43 @@ export function AnchoredTour({
         const render = () => {
           if (stopped) return;
           const element = findTourAnchor(step);
-          if (shown && element === last) return;
+          // Measure continuous absence, not time since the target was first highlighted.
+          // A reader may spend minutes on a step before opening the next dock face.
+          if (element) missingSince = undefined;
+          else missingSince ??= Date.now();
+          const name = element?.dataset.onboarding;
+          const rect = element?.getBoundingClientRect();
+          const bounds = rect ? `${rect.x}:${rect.y}:${rect.width}:${rect.height}` : '';
+          if (shown && element === last && name === lastAnchor) {
+            // Dock morphs and async editor content move a target without a window resize.
+            if (bounds !== lastBounds) instance?.refresh();
+            lastBounds = bounds;
+            return;
+          }
+          lastBounds = bounds;
           // Give route changes, editor sync and dock expansion time to mount the real target.
-          if (!element && Date.now() - missingSince < 1800) return;
-          if (element) missingSince = Date.now();
+          if (!element && Date.now() - missingSince! < 1800) return;
           if (!element) actions.current.onError?.('target_unavailable');
           last = element;
+          lastAnchor = name;
           shown = true;
-          const explanatory = step === 'transcript' || step === 'result';
+          const presentation =
+            name === 'record-pending'
+              ? 'starting'
+              : name === 'record-saving' || name === 'transcript-wait'
+                ? 'waiting'
+                : name === 'record-retry' || (name === 'record-open' && step !== 'record')
+                  ? 'retry'
+                  : name === 'skill-status'
+                    ? 'generating'
+                    : step;
+          const explanatory = presentation === 'transcript' || presentation === 'result';
           instance?.highlight({
             element,
             popover: {
-              title: t(`onboarding.tour.${step}.title`),
+              title: t(`onboarding.tour.${presentation}.title`),
               description: element
-                ? t(`onboarding.tour.${step}.body`)
+                ? t(`onboarding.tour.${presentation}.body`)
                 : t('onboarding.unavailable'),
               side: step === 'result' ? 'bottom' : 'top',
               align: 'center',

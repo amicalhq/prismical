@@ -29,6 +29,22 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('recording panel skill status', () => {
+  it('keeps the enhancement spinner through the pending-to-running handoff', () => {
+    const old = begin();
+    useSkillRunActivityStore.getState().finish(old, 'staged');
+    const view = render(<I18nextProvider i18n={i18n}>
+      <RecordingSkillStatus noteId="note_1" onReviewInNote={review} pending hideCompleted />
+    </I18nextProvider>);
+    const status = screen.getByRole('status', { name: 'Running Enhance…' });
+    expect(screen.queryByRole('button')).toBeNull();
+    const cancel = vi.fn();
+    act(() => { begin('Enhance', cancel); });
+    view.rerender(panel());
+    expect(screen.getByRole('status', { name: 'Running Enhance…' })).toBe(status);
+    fireEvent.click(screen.getByRole('button', { name: 'Stop Enhance' }));
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
   it('shows the readiness wait and stops the existing run through its abort handle', () => {
     const cancel = vi.fn(() => useSkillRunActivityStore.getState().finish(id, 'stopped'));
     const id = begin('Enhance', cancel);

@@ -1,3 +1,4 @@
+import { diagnosticHeaders } from "../diagnostics";
 // The single auth seam. The AuthProvider keeps liveToken in sync via
 // setAuthToken; getAuthHeaders prefers it, falling back to the dev env token.
 
@@ -47,7 +48,7 @@ export function setRequestLocale(locale: string | null): void {
 
 function withLocale(headers: Record<string, string>): Record<string, string> {
   if (requestLocale) headers["x-prismical-locale"] = requestLocale;
-  return headers;
+  return { ...diagnosticHeaders(), ...headers };
 }
 
 /**

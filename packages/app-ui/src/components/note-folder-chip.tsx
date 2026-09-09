@@ -90,8 +90,8 @@ export function NoteFolderChip({
               {folders.map(folder => (
                 <CommandItem
                   key={folder.id}
-                  value={folderPath(folders, folder.id)}
-                  keywords={[folder.name]}
+                  value={folder.id}
+                  keywords={[folderPath(folders, folder.id)]}
                   onSelect={() => select(folder.id)}
                   className="flex items-center gap-2"
                 >

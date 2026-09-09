@@ -78,7 +78,8 @@ export type SyncTimestamp = string | Date;
 
 export interface NoteRow {
   id: string;
-  titleIntent?: "default";
+  titleIntent?: "default" | "freeze" | null;
+  titleExpectedRevision?: number;
   titleSource?: string;
   titleRevision?: number;
   title?: string | null;
@@ -248,7 +249,9 @@ export interface SyncStore {
   updateNote(
     id: string,
     patch: Partial<
-      Pick<NoteRow, "title" | "folderId" | "eventId" | "iconUrl" | "starred" | "meta">
+      Pick<NoteRow,
+        "title" | "titleIntent" | "titleExpectedRevision" | "folderId" | "eventId" | "iconUrl" | "starred" | "meta"
+      >
     >,
   ): void;
   deleteNote(id: string): void;
@@ -664,7 +667,10 @@ export function createSyncStore(options: SyncStoreOptions): SyncStore {
         ...patch,
         ...(patch.title !== undefined
           ? {
-              titleSource: patch.title?.trim() ? "manual" : "placeholder",
+              titleIntent: patch.titleIntent ?? null,
+              titleSource: patch.titleIntent === "freeze"
+                ? "first-line-fixed"
+                : patch.title?.trim() ? "manual" : "placeholder",
               // Protect a local title edit (including reset) before its server echo arrives.
               // The server ignores this optimistic revision and assigns its own under lock.
               titleRevision: (notes$[id]!.peek()?.titleRevision ?? 0) + 1,

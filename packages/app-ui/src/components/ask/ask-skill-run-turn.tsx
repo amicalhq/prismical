@@ -33,7 +33,7 @@ export function AskSkillRunTurn({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="flex flex-col gap-[18px]" data-skill-run={run.status}>
+    <div className="flex flex-col gap-[18px]" data-skill-run={run.status} data-onboarding="skill-status">
       <Message align="end">
         <MessageContent>
           <Bubble align="end">
@@ -55,7 +55,7 @@ export function SkillRunStatus({
   t,
   compact = false,
 }: {
-  run: SkillRunRecord;
+  run: Pick<SkillRunRecord, 'skillName' | 'status' | 'phase' | 'detail' | 'body' | 'actions' | 'cancel'>;
   onReviewInNote?: () => void;
   t: ReturnType<typeof useTranslation>['t'];
   compact?: boolean;
@@ -75,6 +75,7 @@ export function SkillRunStatus({
     return (
       <div
         role="status"
+        data-onboarding="skill-status"
         title={detail}
         aria-label={detail}
         className="flex h-7 min-w-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-dock-line px-2 text-xs text-dock-ink-2"
@@ -250,7 +251,7 @@ export function SkillRunStatus({
  * actions, bound by the client): "Update it in Settings, or use Prismical Cloud for now. ·
  * Open AI models · Use Prismical Cloud".
  */
-function Followup({ run }: { run: SkillRunRecord }) {
+function Followup({ run }: { run: Pick<SkillRunRecord, 'body' | 'actions'> }) {
   const actions = run.actions ?? [];
   if (!run.body && actions.length === 0) return null;
   return (

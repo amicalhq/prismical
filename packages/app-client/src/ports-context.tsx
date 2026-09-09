@@ -8,6 +8,8 @@
 // hooks from here.
 
 import * as React from "react";
+import type { WorkflowRuntime } from "@prismical/app-workflow";
+import type { RecordingSessionClient } from "./workflow/recording-session";
 import type {
   AnalyticsPort,
   AppLinkProps,
@@ -57,6 +59,9 @@ export interface AppPorts {
   // desktop's record button routes to main's native pipeline (RecordingPort
   // unimplemented there). Consumed by lib/recording's useRecording.
   readonly recording: RecordingPort;
+  /** Optional until each platform adopts the shared workflow owner. */
+  readonly workflow?: WorkflowRuntime;
+  readonly recordingSession?: RecordingSessionClient;
 }
 
 const PortsContext = React.createContext<AppPorts | null>(null);

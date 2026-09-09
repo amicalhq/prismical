@@ -46,7 +46,11 @@ beforeEach(() => {
   context.sessionKey = 'session_a';
   context.platform = 'web';
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  delete (window as Window & { __PRISMICAL_LOADING_PHASES__?: boolean })
+    .__PRISMICAL_LOADING_PHASES__;
+});
 
 it('withholds a web store until the workspace is selected', async () => {
   const { result, rerender } = renderHook(useSyncStore, { wrapper });
@@ -132,21 +136,40 @@ it('preserves desktop local-workspace startup without an explicit organization',
   expect(context.auth.getTokenForSession).not.toHaveBeenCalled();
 });
 
-
-it('reports a stalled collection without publishing early or losing the eventual store', async () => {
-  context.orgId = 'org_a';
-  let release!: (rows: never[]) => void;
-  mocked.restNoteTagList.mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
-  const { result } = renderHook(useSyncStore, { wrapper });
-  await act(async () => {});
-  expect(result.current).toBeNull();
-  expect(context.analytics.capture).toHaveBeenCalledWith('loading_timing', expect.objectContaining({
-    kind: 'sync_bootstrap', status: 'started',
-  }));
-  await act(async () => release([]));
-  await waitFor(() => expect(result.current).not.toBeNull());
-  expect(context.analytics.capture).toHaveBeenCalledWith('loading_timing', expect.objectContaining({
-    status: 'published', notes_loaded_ms: expect.any(Number), folders_loaded_ms: expect.any(Number),
-    tags_loaded_ms: expect.any(Number), note_tags_loaded_ms: expect.any(Number),
-  }));
-});
+it.each([false, true])(
+  'reports a stalled collection without publishing early with recorder=%s',
+  async enabled => {
+    (window as Window & { __PRISMICAL_LOADING_PHASES__?: boolean }).__PRISMICAL_LOADING_PHASES__ =
+      enabled;
+    context.orgId = 'org_a';
+    let release!: (rows: never[]) => void;
+    mocked.restNoteTagList.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          release = resolve;
+        })
+    );
+    const { result } = renderHook(useSyncStore, { wrapper });
+    await act(async () => {});
+    expect(result.current).toBeNull();
+    expect(context.analytics.capture).toHaveBeenCalledWith(
+      'loading_timing',
+      expect.objectContaining({
+        kind: 'sync_bootstrap',
+        status: 'started',
+      })
+    );
+    await act(async () => release([]));
+    await waitFor(() => expect(result.current).not.toBeNull());
+    expect(context.analytics.capture).toHaveBeenCalledWith(
+      'loading_timing',
+      expect.objectContaining({
+        status: 'published',
+        notes_loaded_ms: expect.any(Number),
+        folders_loaded_ms: expect.any(Number),
+        tags_loaded_ms: expect.any(Number),
+        note_tags_loaded_ms: expect.any(Number),
+      })
+    );
+  }
+);

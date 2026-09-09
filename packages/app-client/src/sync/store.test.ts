@@ -211,6 +211,50 @@ describe('full snapshot overlapping a note create', () => {
 });
 
 describe("write routing", () => {
+  it('queues a settled title and clears its intent for a subsequent manual rename', async () => {
+    mocked.restList.mockResolvedValueOnce([
+      {
+        id: 'nt_title',
+        title: 'First line',
+        titleSource: 'first-line',
+        titleRevision: 4,
+        createdAt: '2020-01-01T00:00:00.000Z',
+        updatedAt: '2020-01-01T00:00:00.000Z',
+      },
+    ]);
+    await activate(store.notes$);
+    mocked.restUpdate.mockReturnValue(new Promise(() => {}));
+    store.updateNote('nt_title', {
+      title: 'Finished title',
+      titleIntent: 'freeze',
+      titleExpectedRevision: 4,
+    });
+    expect(store.notes$['nt_title']!.peek()).toMatchObject({
+      title: 'Finished title',
+      titleSource: 'first-line-fixed',
+      titleRevision: 5,
+    });
+    await vi.waitFor(() =>
+      expect(mocked.restUpdate).toHaveBeenCalledWith(
+        'notes',
+        'nt_title',
+        expect.objectContaining({
+          title: 'Finished title',
+          titleIntent: 'freeze',
+          titleExpectedRevision: 4,
+        })
+      )
+    );
+    store.updateNote('nt_title', { title: 'Manual name' });
+    expect(store.notes$['nt_title']!.peek()).toMatchObject({
+      title: 'Manual name',
+      titleIntent: null,
+      titleSource: 'manual',
+      titleRevision: 6,
+    });
+  });
+
+
   it("advances the local naming revision before a manual rename or reset is acknowledged", async () => {
     mocked.restList.mockResolvedValueOnce([{
       id: "nt_title", title: "First line", titleSource: "first-line", titleRevision: 4,

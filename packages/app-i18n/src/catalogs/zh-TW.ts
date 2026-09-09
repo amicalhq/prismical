@@ -2,6 +2,24 @@ import type { TranslationShape } from '../catalog-shape';
 import type en from './en';
 
 const zhTW = {
+  workflow: {
+    noteChanged: "產生此建議後，筆記已有變更。請捨棄建議並重新執行技能。",
+      "busy": "請先完成目前的錄音或技能。",
+      "draining": "正在傳送剩餘音訊…",
+      "finalizing": "正在完成錄音…",
+      "recording": "錄音進行中",
+      "recordingAway": "正在另一則筆記中錄音",
+      "pausedAway": "另一則筆記中的錄音已暫停",
+      "review": "正在檢閱另一則筆記的變更",
+      "reviewNamed": "正在檢閱 {{name}} 的變更",
+      "applying": "正在套用變更…",
+      "skill": "技能執行中…",
+      "openNote": "開啟筆記",
+      "openNamedNote": "開啟 {{name}}",
+      "retry": "重試",
+      "end": "結束流程"
+  },
+
   onboarding: {
   "helpDocs": "需要協助嗎？閱讀使用文件",
   "continueToNote": "繼續查看我的筆記",
@@ -45,6 +63,22 @@ const zhTW = {
     "record": {
       "title": "開始錄音",
       "body": "點擊 Dock 的麥克風，再按開始錄音。出現提示時請允許存取麥克風。"
+    },
+    "waiting": {
+      "title": "正在準備逐字稿",
+      "body": "正在儲存並處理錄音。請等逐字稿完成後再繼續。"
+    },
+    "retry": {
+      "title": "錄音以繼續",
+      "body": "開啟錄音面板並開始新的錄音以繼續。你也可以退出此導覽。"
+    },
+    "generating": {
+      "title": "查看草稿進度",
+      "body": "草稿及其進度會顯示在這裡。如果執行失敗或停止，請使用可用的復原操作，或返回錄音面板重試。"
+    },
+    "starting": {
+      "title": "正在準備麥克風",
+      "body": "如有提示，請允許存取麥克風。請等錄音開始後再說話。"
     },
     "speak": {
       "title": "說幾句話",
@@ -558,6 +592,10 @@ const zhTW = {
     joinMeeting: '加入會議',
     newNote: '新增筆記',
     pickEmoji: '選擇表情符號',
+    emojiPicker: {
+      search: '搜尋表情符號…',
+      empty: '找不到表情符號。',
+    },
     tags: {
       add: '新增標籤',
       create: '建立「{{name}}」',
@@ -874,6 +912,8 @@ const zhTW = {
       targetMissing: '這次改寫的目標文字已不存在。請重新選取後再執行一次。',
       undo: '復原',
       waitingForDocument: '正在等待筆記載入…',
+      deliveryPending: '部分已接受的變更尚未同步。',
+      endWorkflowWarning: '尚未傳送的變更可能會遺失。',
     },
     inline: { captureError: '無法擷取選取內容，請重新選取文字。' },
     run: {
@@ -889,8 +929,16 @@ const zhTW = {
   },
   settings: {
     aiModels: {
+      planGate: {
+        title: '使用自己的 API 金鑰',
+        availability: 'Pro 方案提供',
+        description: '你目前的方案不包含自備金鑰功能。升級至 Pro，即可連接自己的 AI 供應商並選擇要使用的模型。',
+        upgrade: '升級至 Pro',
+        back: '返回設定',
+      },
       addProvider: '新增供應商',
       available: {
+        requestProvider: '申請新增供應商',
         comingSoon: '即將推出',
         getDesktop: '取得桌面應用程式',
         localDesktop: '本機模型可在桌面應用程式中使用',
@@ -977,6 +1025,7 @@ const zhTW = {
           '選擇要在 Ask AI 模型選擇器中顯示的模型。全部不勾選即可將此執行個體排除在選擇器之外。',
         empty: '找不到此金鑰可用的語言模型。',
         loadError: '無法載入模型，請檢查 API 金鑰後再試一次。',
+        retired: '已停止提供 — 取消勾選即可移除',
         title: 'Ask AI 中的模型',
       },
       modelPicker: {
@@ -1819,15 +1868,6 @@ const zhTW = {
         unsupportedFile: '不支援檔案類型「.{{extension}}」；請選擇 .json 或 .md 檔案。',
       },
       form: {
-        advanced: '進階設定',
-        defaultLabel: '設為預設閃光按鈕目標',
-        descriptionLabel: '說明',
-        descriptionPlaceholder: '顯示在技能卡片上的簡短說明',
-        enabled: '已啟用',
-        modeAgnosticDescription:
-          '不告訴模型目前使用的模式，只由內文描述輸出。如此一來，執行後可在附加與取代之間切換，不必重新產生。無論此設定為何，行內改寫都會依模式調整。',
-        modeAgnosticLabel: '不受模式限制的提示',
-        modeLabel: '模式',
         addSection: '新增章節',
         addSectionDescription: '將結果新增為一個章節，保留現有筆記。',
         rewriteNote: '重寫整篇筆記',
@@ -1835,6 +1875,15 @@ const zhTW = {
         transcriptDescription: '將這篇筆記的錄音逐字稿納入技能的參考內容。',
         titleDescription: '產生新的筆記標題，而非編輯筆記內文。',
         preservedMode: '此技能使用實驗性輸出設定。儲存時會保留原設定。',
+
+        advanced: '進階設定',
+        defaultLabel: '設為預設閃光按鈕目標',
+        descriptionLabel: '說明',
+        descriptionPlaceholder: '顯示在技能卡片上的簡短說明',
+        enabled: '已啟用',
+        modeAgnosticDescription: '由提示詞定義輸出，不加入新增或重寫指示。選取文字的改寫與錄音 Enhance 仍使用模式專屬指示。',
+        modeAgnosticLabel: '不受模式限制的提示',
+        modeLabel: '模式',
         nameLabel: '名稱',
         newTitle: '新增技能',
         promptLabel: '提示',

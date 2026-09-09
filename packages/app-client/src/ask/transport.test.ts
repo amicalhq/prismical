@@ -11,12 +11,153 @@ import {
 } from './transport';
 import type { UIMessage } from 'ai';
 import type { AuthPort, SessionView } from '@prismical/app-contracts';
+import { askContinuationMessage, toUiMessages } from './conversation';
+import { getClientEnv } from '../runtime';
+
+it.each([
+  { noteIds: ['nt_original'], folderIds: ['fld_original'], tagIds: ['tag_original'] },
+  {},
+  undefined,
+])(
+  'continues a restored answer with its own scope, ignoring background context: %j',
+  async scope => {
+    const history = toUiMessages(
+      [
+        { role: 'user', content: 'Original question', scope },
+        { role: 'assistant', content: 'Partial answer' },
+      ],
+      'conversation'
+    );
+    const continuation = askContinuationMessage(history, 'Continue');
+    const bodies: Array<{ scope?: object }> = [];
+    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+      bodies.push(JSON.parse(init!.body as string));
+      return new Response('data: {"type":"error","errorText":"interrupted"}\n\n');
+    });
+    const background = vi.fn(() => ({ noteIds: ['nt_background'] }));
+    const transport = createAskTransport(background, 'conversation', undefined, () => ({}));
+    try {
+      const stream = await transport.sendMessages({
+        chatId: 'conversation',
+        trigger: 'submit-message',
+        messageId: undefined,
+        abortSignal: undefined,
+        messages: [
+          ...history,
+          {
+            id: 'continuation',
+            role: 'user',
+            metadata: continuation.metadata,
+            parts: [{ type: 'text', text: continuation.text }],
+          },
+        ],
+      });
+      await stream.cancel();
+      expect(bodies[0]?.scope).toEqual(scope ?? {});
+      expect(background).not.toHaveBeenCalled();
+    } finally {
+      fetch.mockRestore();
+    }
+  }
+);
 
 vi.mock('../runtime', () => ({
   getAskFetch: () => null,
   coreApiBaseUrl: () => 'https://core.test',
-  getClientEnv: () => ({ platform: 'web', appVersion: null }),
+  getClientEnv: vi.fn(() => ({ platform: 'web', appVersion: null })),
 }));
+
+describe('Ask request admission', () => {
+  const request = {
+    chatId: 'conversation',
+    messages: [
+      { id: 'question', role: 'user', parts: [{ type: 'text', text: 'Question' }] },
+    ] as UIMessage[],
+    messageId: undefined,
+    abortSignal: undefined,
+  };
+
+  it.each(['submit-message', 'regenerate-message'] as const)(
+    'blocks %s before authentication and transport',
+    async trigger => {
+      const headers = vi.fn(() => ({}));
+      const network = vi.spyOn(globalThis, 'fetch');
+      const transport = createAskTransport(
+        () => undefined,
+        'conversation',
+        undefined,
+        headers,
+        () => {
+          throw new DOMException('Review pending', 'AbortError');
+        }
+      );
+      try {
+        await expect(transport.sendMessages({ ...request, trigger })).rejects.toMatchObject({
+          name: 'AbortError',
+        });
+        expect(headers).not.toHaveBeenCalled();
+        expect(network).not.toHaveBeenCalled();
+      } finally {
+        network.mockRestore();
+      }
+    }
+  );
+
+  it('rechecks admission when review starts during awaited authentication', async () => {
+    let admitted = true;
+    let release!: (headers: Record<string, string>) => void;
+    const headers = new Promise<Record<string, string>>(resolve => {
+      release = resolve;
+    });
+    const network = vi.spyOn(globalThis, 'fetch');
+    const transport = createAskTransport(
+      () => undefined,
+      'conversation',
+      undefined,
+      () => headers,
+      () => {
+        if (!admitted) throw new DOMException('Review pending', 'AbortError');
+      }
+    );
+    try {
+      const pending = transport.sendMessages({ ...request, trigger: 'submit-message' });
+      admitted = false;
+      release({});
+      await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+      expect(network).not.toHaveBeenCalled();
+    } finally {
+      network.mockRestore();
+    }
+  });
+
+  it('checks admission at fetch even when review starts after request preparation', async () => {
+    const network = vi.spyOn(globalThis, 'fetch');
+    let admitted = true;
+    vi.mocked(getClientEnv).mockImplementationOnce(() => {
+      queueMicrotask(() => {
+        admitted = false;
+      });
+      return { platform: 'web', appVersion: null } as ReturnType<typeof getClientEnv>;
+    });
+    const transport = createAskTransport(
+      () => undefined,
+      'conversation',
+      undefined,
+      () => ({}),
+      () => {
+        if (!admitted) throw new DOMException('Review pending', 'AbortError');
+      }
+    );
+    try {
+      await expect(
+        transport.sendMessages({ ...request, trigger: 'submit-message' })
+      ).rejects.toMatchObject({ name: 'AbortError' });
+      expect(network).not.toHaveBeenCalled();
+    } finally {
+      network.mockRestore();
+    }
+  });
+});
 
 it('retains the attached scope for retry, then clears it for a new unscoped question', async () => {
   const bodies: Array<{ scope?: object }> = [];
@@ -156,6 +297,7 @@ describe('buildAskRequest', () => {
         },
       ],
       scope: { noteIds: ['nt_1'] },
+      turnId: 'm1',
       suggestFollowups: true,
     });
     expect(out.headers).toEqual({ Authorization: 'Bearer abc' });
@@ -171,6 +313,7 @@ describe('buildAskRequest', () => {
     expect(out.body).toEqual({
       messages: [{ role: 'user', content: 'q', parts: [{ type: 'text', text: 'q' }] }],
       // The app clients ALWAYS opt in to follow-up chips; /v1 consumers never send it.
+      turnId: 'm1',
       suggestFollowups: true,
     });
     expect('scope' in (out.body as object)).toBe(false);
@@ -186,6 +329,7 @@ describe('buildAskRequest', () => {
     expect(withId.body).toEqual({
       messages: [{ role: 'user', content: 'q', parts: [{ type: 'text', text: 'q' }] }],
       conversationId: 'cnv_abc',
+      turnId: 'm1',
       suggestFollowups: true,
     });
     const without = buildAskRequest({
@@ -217,6 +361,7 @@ describe('buildAskRequest', () => {
         },
         { role: 'user', content: 'real', parts: [{ type: 'text', text: 'real' }] },
       ],
+      turnId: 'm1',
       suggestFollowups: true,
     });
   });
@@ -255,6 +400,7 @@ describe('buildAskRequest', () => {
     });
     expect(out.body).toEqual({
       messages: [{ role: 'user', content: 'q', parts: [{ type: 'text', text: 'q' }] }],
+      turnId: 'm1',
       suggestFollowups: true,
     });
   });
@@ -411,4 +557,51 @@ describe('exactSessionAskHeaders', () => {
     expect(tokenReads).not.toHaveBeenCalled();
     expect(exactTokenReads).not.toHaveBeenCalled();
   });
+});
+
+it('uses persisted question scope on a fresh transport for retry and approval continuation', async () => {
+  const bodies: Array<{ scope?: object }> = [];
+  const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+    bodies.push(JSON.parse(init!.body as string));
+    return new Response('data: {"type":"error","errorText":"interrupted"}\n\n');
+  });
+  const fallback = vi.fn(() => ({ noteIds: ['wrong_background_note'] }));
+  const transport = createAskTransport(fallback, 'conversation', undefined, () => ({}));
+  const question: UIMessage = {
+    id: 'saved-question',
+    role: 'user',
+    metadata: { scope: { noteIds: ['original_note'] } },
+    parts: [{ type: 'text', text: 'question' }],
+  };
+  try {
+    for (const messages of [
+      [question],
+      [
+        question,
+        {
+          id: 'answer',
+          role: 'assistant' as const,
+          parts: [{ type: 'text' as const, text: 'paused' }],
+        },
+      ],
+      [{ ...question, id: 'global-question', metadata: { scope: {} } }],
+    ]) {
+      const stream = await transport.sendMessages({
+        chatId: 'conversation',
+        messages,
+        trigger: 'regenerate-message',
+        messageId: undefined,
+        abortSignal: undefined,
+      });
+      await stream.cancel();
+    }
+    expect(bodies.map(body => body.scope)).toEqual([
+      { noteIds: ['original_note'] },
+      { noteIds: ['original_note'] },
+      {},
+    ]);
+    expect(fallback).not.toHaveBeenCalled();
+  } finally {
+    fetch.mockRestore();
+  }
 });

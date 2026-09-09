@@ -8,6 +8,7 @@ import {
   useRunSkill,
   useSkillsList,
   useUpdateNote,
+  useFreezeNoteTitle,
   setTitleDraftDirty,
   useTitleTranscriptAvailable,
 } from '@prismical/app-client';
@@ -56,6 +57,30 @@ export function NoteTitleField({
       editor?.off('update', read);
     };
   }, [editor, note.body]);
+  const freeze = useFreezeNoteTitle(note.id);
+  const visit = React.useMemo(() => ({ noteId: note.id, active: false, settle: () => {} }), [note.id]);
+  React.useEffect(() => {
+    visit.settle = () => {
+      if (note.writable === false) return;
+      if (note.titleSource !== 'placeholder' && note.titleSource !== 'first-line') return;
+      // Read the editor at departure; the body metadata may still be awaiting autosave.
+      const title = editor && !editor.isDestroyed ? firstNoteLine(editor.getJSON()) : firstLine;
+      if (title) freeze(title);
+    };
+  }, [visit, freeze, note.writable, note.titleSource, editor, firstLine]);
+  React.useEffect(() => {
+    visit.active = true;
+    const settle = () => visit.settle();
+    window.addEventListener('pagehide', settle);
+    return () => {
+      window.removeEventListener('pagehide', settle);
+      visit.active = false;
+      // Strict Mode replays effects without leaving the note. Settle only a real departure.
+      queueMicrotask(() => {
+        if (!visit.active) visit.settle();
+      });
+    };
+  }, [visit]);
   const follows = note.titleSource === 'placeholder' || note.titleSource === 'first-line';
   const resolvedTitle = follows ? firstLine || t('notes.emptyTitle') : note.title;
   const [draft, setDraft] = React.useState(resolvedTitle);

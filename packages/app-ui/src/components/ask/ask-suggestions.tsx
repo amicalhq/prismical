@@ -7,6 +7,7 @@ import { useCurrentNote } from '../../shell/current-note-context';
 import { askSkills } from '@prismical/app-client';
 import { skillDisplayDescription, skillDisplayName } from '../../lib/skill-presentation';
 import type { ComposerSkill } from './ask-composer';
+import type { AskNoteContext } from './use-ask-note-context';
 
 /** Cap the empty-state skill row at three chips. */
 const MAX_SKILL_CHIPS = 3;
@@ -18,8 +19,9 @@ const CHIP_CLASS =
  * Empty-state suggestions for the Ask panel: a row of starter QUESTION
  * chips over a row of skill chips.
  *
- * Questions are fixed, context-aware starters (note open → about that note, and tapping one sends
- * IMMEDIATELY with the note attached as scope; off-note → about the whole workspace) — static
+ * Questions are fixed, context-aware starters (automatic note selected → about that note;
+ * otherwise → about the whole workspace). Tapping one sends IMMEDIATELY through the parent's
+ * effective-context resolver — static
  * because nothing has been asked yet for a model to riff on; per-answer follow-ups are the
  * generated lane.
  *
@@ -35,14 +37,17 @@ const CHIP_CLASS =
  */
 export function AskSuggestions({
   canRunSkills,
+  focusNote,
   onAsk,
   onPickPrompt,
   onInsertSkill,
 }: {
   /** A note is open and the skill-run lane exists — offer dock skills as `/` tokens. */
   canRunSkills: boolean;
-  /** Send a starter question immediately, scoped to the given notes. */
-  onAsk: (question: string, notes: { id: string; title: string }[]) => void;
+  /** Effective automatic note context; null after removal, even with a note open. */
+  focusNote: AskNoteContext | null;
+  /** Send through the same effective-context resolver as the composer. */
+  onAsk: (question: string) => void;
   /** Fill the composer with an ask-surface skill's saved prompt (user edits, then sends). */
   onPickPrompt: (prompt: string) => void;
   /** Insert a dock skill's `/skill` token into the composer. */
@@ -53,10 +58,9 @@ export function AskSuggestions({
   const { currentNote } = useCurrentNote();
   const askAllowed = useEntitlements().entitlements.features.askAi;
 
-  const questions = currentNote
+  const questions = focusNote
     ? [t('ask.suggestions.noteSummary'), t('ask.suggestions.noteActions')]
     : [t('ask.suggestions.recentNotes'), t('ask.suggestions.openActions')];
-  const questionNotes = currentNote ? [{ id: currentNote.noteId, title: currentNote.title }] : [];
 
   const dockSkills = canRunSkills
     ? skills
@@ -76,12 +80,7 @@ export function AskSuggestions({
       {askAllowed ? (
         <div className="flex flex-wrap gap-1.5">
           {questions.map(q => (
-            <button
-              key={q}
-              type="button"
-              onClick={() => onAsk(q, questionNotes)}
-              className={CHIP_CLASS}
-            >
+            <button key={q} type="button" onClick={() => onAsk(q)} className={CHIP_CLASS}>
               <MessageCircle className="size-3 shrink-0 text-dock-ink-3" />
               <span className="max-w-[260px]">{q}</span>
             </button>

@@ -211,7 +211,8 @@ export const SyncFolderUpdateRequestSchema = SyncUpdateBaseSchema.extend({
 });
 
 export const SyncNoteCreateRequestSchema = SyncCreateBaseSchema.extend({
-  titleIntent: z.literal('default').optional(),
+  titleIntent: z.enum(['default', 'freeze']).nullable().optional(),
+  titleExpectedRevision: z.number().int().nonnegative().optional(),
   title: z.string().optional(),
   timezone: z.string().optional(),
   folderId: z.string().nullable().optional(),
@@ -221,6 +222,8 @@ export const SyncNoteCreateRequestSchema = SyncCreateBaseSchema.extend({
   meta: SyncJsonObjectSchema.nullable().optional(),
 });
 export const SyncNoteUpdateRequestSchema = SyncUpdateBaseSchema.extend({
+  titleIntent: z.enum(['default', 'freeze']).nullable().optional(),
+  titleExpectedRevision: z.number().int().nonnegative().optional(),
   title: z.string().optional(),
   folderId: z.string().nullable().optional(),
   eventId: z.string().nullable().optional(),

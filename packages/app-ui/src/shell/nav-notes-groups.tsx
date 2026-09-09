@@ -56,6 +56,7 @@ import { FolderNameDialog } from './folder-name-dialog';
 import { DeleteFolderDialog } from './delete-folder-dialog';
 import { DeleteNoteDialog } from './delete-note-dialog';
 import { useTranslation } from 'react-i18next';
+import { withoutNotesFilter } from '../lib/notes-filter-url';
 
 function NoteLeadingIcon({ icon }: { icon?: string }) {
   if (icon) return <span className="text-base leading-none">{icon}</span>;
@@ -546,6 +547,9 @@ export function NavNotesGroups() {
         onCancel={() => setDeleteFolder(null)}
         onConfirm={() => {
           if (!deleteFolder) return;
+          if (isFolderActive(deleteFolder.id)) {
+            router.replace(withoutNotesFilter(searchParams, 'folder', deleteFolder.id));
+          }
           deleteFolderMut.mutate(deleteFolder.id, { onSuccess: () => setDeleteFolder(null) });
         }}
       />

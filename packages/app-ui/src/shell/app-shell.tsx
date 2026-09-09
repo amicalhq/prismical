@@ -10,6 +10,7 @@ import {
 } from '@prismical/app-client';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../ui/button';
+import { CtaProvider } from './cta';
 import { AppSidebar } from './app-sidebar';
 import { DesktopChromeStrip } from './desktop-chrome-strip';
 import { SiteHeader } from './site-header';
@@ -73,76 +74,81 @@ export function AppShell({
       <CurrentNoteProvider>
         <CurrentEditorProvider>
           <FirstNoteWalkthroughProvider enabled={enableOnboarding}>
-            {/* Standard shadcn "inset" sidebar layout: the provider owns the flex
+            <CtaProvider>
+              {/* Standard shadcn "inset" sidebar layout: the provider owns the flex
           shell, capped to the viewport (h-svh) so the inset panel sizes
           correctly and the content area scrolls internally — header and the
           recording dock stay put. */}
-            <SidebarProvider
-              enableKeyboardShortcut={shortcutsSupported}
-              className="h-svh overflow-hidden"
-              style={
-                {
-                  '--header-height': 'calc(var(--spacing) * 12)',
-                } as React.CSSProperties
-              }
-            >
-              {/* useSearchParams() in the sidebar + notes page needs a Suspense
+              <SidebarProvider
+                enableKeyboardShortcut={shortcutsSupported}
+                className="h-svh overflow-hidden"
+                style={
+                  {
+                    '--header-height': 'calc(var(--spacing) * 12)',
+                  } as React.CSSProperties
+                }
+              >
+                {/* useSearchParams() in the sidebar + notes page needs a Suspense
             boundary so statically-prerendered routes don't bail out. */}
-              <React.Suspense fallback={null}>
-                <AppSidebar
-                  variant="inset"
-                  accountSwitcher={accountSwitcher}
-                  supportAction={supportAction}
-                />
-                {/* overflow-hidden clips children to the inset's rounded-xl corners
+                <React.Suspense fallback={null}>
+                  <AppSidebar
+                    variant="inset"
+                    accountSwitcher={accountSwitcher}
+                    supportAction={supportAction}
+                  />
+                  {/* overflow-hidden clips children to the inset's rounded-xl corners
               so the header doesn't paint over them. */}
-                <SidebarInset className="overflow-hidden">
-                  <SiteHeader />
-                  <div className="relative flex min-h-0 flex-1 flex-col">
-                    <div
-                      className="flex-1 overflow-y-auto"
-                      style={{ scrollPaddingBottom: 'var(--dock-clearance)' }}
-                    >
+                  <SidebarInset className="overflow-hidden">
+                    <SiteHeader />
+                    <div className="relative flex min-h-0 flex-1 flex-col">
                       <div
-                        className="mx-auto flex w-full flex-col gap-4 pt-6 md:gap-6"
-                        style={{
-                          maxWidth: 'var(--content-max-width)',
-                          paddingInline: 'var(--content-padding)',
-                          // Scroll beneath the dock, with room to bring the last item above it.
-                          paddingBottom: 'var(--dock-clearance)',
-                        }}
+                        className="flex-1 overflow-y-auto"
+                        style={{ scrollPaddingBottom: 'var(--dock-clearance)' }}
                       >
-                        {/* Subtle per-route fade/rise; skipped under reduced motion. */}
                         <div
-                          key={pathname}
-                          className="motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-bottom-1 motion-safe:duration-200 motion-safe:ease-out"
+                          className="mx-auto flex w-full flex-col gap-4 pt-6 md:gap-6"
+                          style={{
+                            maxWidth: 'var(--content-max-width)',
+                            paddingInline: 'var(--content-padding)',
+                            // Scroll beneath the dock, with room to bring the last item above it.
+                            paddingBottom: 'var(--dock-clearance)',
+                          }}
                         >
-                          {workspaceUnavailable ? (
-                            <div
-                              role="alert"
-                              className="mb-4 flex items-center justify-between gap-3 rounded-lg border p-3 text-sm"
-                            >
-                              <span>{t('common.errors.couldNotLoad')}</span>
-                              <Button variant="outline" onClick={() => void organization.refetch()}>
-                                {t('common.actions.retry')}
-                              </Button>
-                            </div>
-                          ) : null}
-                          {children}
+                          {/* Subtle per-route fade/rise; skipped under reduced motion. */}
+                          <div
+                            key={pathname}
+                            className="motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-bottom-1 motion-safe:duration-200 motion-safe:ease-out"
+                          >
+                            {workspaceUnavailable ? (
+                              <div
+                                role="alert"
+                                className="mb-4 flex items-center justify-between gap-3 rounded-lg border p-3 text-sm"
+                              >
+                                <span>{t('common.errors.couldNotLoad')}</span>
+                                <Button
+                                  variant="outline"
+                                  onClick={() => void organization.refetch()}
+                                >
+                                  {t('common.actions.retry')}
+                                </Button>
+                              </div>
+                            ) : null}
+                            {children}
+                          </div>
                         </div>
                       </div>
+                      <RecordingBottomCluster />
                     </div>
-                    <RecordingBottomCluster />
-                  </div>
-                </SidebarInset>
-                {/* LAST in the shell on purpose: Chromium resolves overlapping
+                  </SidebarInset>
+                  {/* LAST in the shell on purpose: Chromium resolves overlapping
               app-region rects by DOM paint order (last wins, z-blind), so the
               strip's no-drag toggle must paint after every other drag rect. */}
-                <DesktopChromeStrip />
-                <NavShortcuts />
-              </React.Suspense>
-              <CommandPalette />
-            </SidebarProvider>
+                  <DesktopChromeStrip />
+                  <NavShortcuts />
+                </React.Suspense>
+                <CommandPalette />
+              </SidebarProvider>
+            </CtaProvider>
           </FirstNoteWalkthroughProvider>
         </CurrentEditorProvider>
       </CurrentNoteProvider>

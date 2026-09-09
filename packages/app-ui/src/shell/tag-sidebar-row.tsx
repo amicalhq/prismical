@@ -2,7 +2,8 @@
 
 import * as React from 'react';
 import { AppLink as Link } from './app-link';
-import { usePathname, useSearchParams } from '@prismical/app-client';
+import { usePathname, useSearchParams, useNavigation } from '@prismical/app-client';
+import { withoutNotesFilter } from '../lib/notes-filter-url';
 import { MoreHorizontal, Pencil, Star, Trash2 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -28,6 +29,7 @@ export function TagSidebarRow({ tag, noteCount }: TagSidebarRowProps) {
   const { t } = useTranslation();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const router = useNavigation();
   const isActive = pathname === '/notes' && searchParams.getAll('tags').includes(tag.id);
 
   const [editOpen, setEditOpen] = React.useState(false);
@@ -98,7 +100,12 @@ export function TagSidebarRow({ tag, noteCount }: TagSidebarRowProps) {
         tag={deleteOpen ? { id: tag.id, name: tag.name } : null}
         pending={deleteTag.isPending}
         onCancel={() => setDeleteOpen(false)}
-        onConfirm={() => deleteTag.mutate(tag.id, { onSuccess: () => setDeleteOpen(false) })}
+        onConfirm={() => {
+          // The optimistic delete unmounts this row, so update navigation immediately.
+          if (isActive) router.replace(withoutNotesFilter(searchParams, 'tags', tag.id));
+          setDeleteOpen(false);
+          deleteTag.mutate(tag.id);
+        }}
       />
     </SidebarMenuItem>
   );

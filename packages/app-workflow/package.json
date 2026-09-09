@@ -1,0 +1,23 @@
+{
+  "name": "@prismical/app-workflow",
+  "version": "0.1.0",
+  "license": "MIT",
+  "description": "Portable recording, skill, and proposal workflow.",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "lint": "eslint src/ --max-warnings 0",
+    "type:check": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@prismical/eslint-config": "workspace:*",
+    "@prismical/typescript-config": "workspace:*",
+    "eslint": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

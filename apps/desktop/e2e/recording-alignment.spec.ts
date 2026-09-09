@@ -16,9 +16,9 @@ async function createNote(page: Page) {
   return page.evaluate(() => window.location.hash.replace('#/notes/', ''));
 }
 
-function recordingView(noteId: string): RecordingStateView {
+function recordingView(noteId: string, recordingId = 'rec_alignment'): RecordingStateView {
   return {
-    recordingId: 'rec_alignment',
+    recordingId,
     noteId,
     status: 'recording',
     captureMode: 'mic',
@@ -32,7 +32,7 @@ function recordingView(noteId: string): RecordingStateView {
     segments: [
       {
         id: 'tsg_alignment',
-        recordingId: 'rec_alignment',
+        recordingId,
         source: 'mic',
         speaker: 'you',
         text: 'Transcript from the recording owner.',
@@ -84,6 +84,65 @@ test.describe('recording dock alignment', () => {
     );
     await page.getByRole('button', { name: 'Stop recording', exact: true }).click();
     await expect.poll(() => page.evaluate(() => window.location.hash)).toBe(`#/notes/${owner}`);
+  });
+
+  test('keeps paused and finishing workflows on their owner while Ask stays available', async () => {
+    const owner = await createNote(page);
+    const other = await createNote(page);
+    const view = recordingView(owner);
+    await page.evaluate(
+      state => window.desktop.e2e!.recording({ kind: 'push', view: state }),
+      view
+    );
+    await expect(page.getByRole('button', { name: 'Pause recording', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Open note', exact: true })).toBeVisible();
+
+    await page.evaluate(state => window.desktop.e2e!.recording({ kind: 'push', view: state }), {
+      ...view,
+      status: 'paused' as const,
+      elapsedMs: 65_000,
+      elapsedAt: Date.now(),
+    });
+    await expect(page.getByRole('status')).toContainText('Recording paused in another note');
+    await expect(page.getByRole('button', { name: 'Resume recording', exact: true })).toBeEnabled();
+    await expect(
+      page.getByRole('button', { name: 'Show transcription', exact: true })
+    ).toContainText('1:05');
+    await page.getByRole('button', { name: 'Ask AI', exact: true }).click();
+    await expect(page.getByLabel('Ask anything — / for skills, @ to tag notes')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'Show transcription', exact: true }).click();
+    await expect(
+      page.getByText('Transcript from the recording owner.', { exact: true })
+    ).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Resume recording', exact: true })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Start recording', exact: true })).toHaveCount(0);
+    await page.keyboard.press('Escape');
+
+    await page.evaluate(state => window.desktop.e2e!.recording({ kind: 'push', view: state }), {
+      ...view,
+      status: 'stopping' as const,
+      elapsedMs: 65_000,
+      elapsedAt: Date.now(),
+      finalizingRecordingIds: [view.recordingId!],
+    });
+    await expect(page.getByRole('button', { name: 'Stop recording', exact: true })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Start recording', exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Ask AI', exact: true }).click();
+    await expect(page.getByLabel('Ask anything — / for skills, @ to tag notes')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'Show transcription', exact: true }).click();
+    await expect(page.getByText('Finishing up…', { exact: true }).last()).toBeVisible();
+    await expect(
+      page.getByText('Transcript from the recording owner.', { exact: true })
+    ).toBeVisible();
+    await expect(page.locator('.note-prose')).not.toContainText(
+      'Transcript from the recording owner.'
+    );
+    await expect.poll(() => page.evaluate(() => window.location.hash)).toBe(`#/notes/${other}`);
+    await page.getByRole('button', { name: 'Open note', exact: true }).click();
+    await expect.poll(() => page.evaluate(() => window.location.hash)).toBe(`#/notes/${owner}`);
+    await expect(page.getByRole('button', { name: 'Start recording', exact: true })).toHaveCount(0);
   });
 
   test('scrolls the last note line above the dock in main and compact windows', async () => {
@@ -173,10 +232,21 @@ test.describe('recording dock alignment', () => {
     await expect(floating.getByRole('button', { name: 'Dock back into app' })).toBeVisible();
     await expect(floating.getByTestId('desktop-shell')).toHaveCount(0);
 
+    // The injected capture has no native worker to publish its completion.
+    // Finish it before starting the separate auto-stop session.
+    await page.evaluate(view => window.desktop.e2e!.recording({ kind: 'push', view }), {
+      ...recordingView(owner),
+      status: 'idle' as const,
+      completedRecordings: [{ recordingId: 'rec_alignment', noteId: owner, segments: 1 }],
+    });
+    await expect(
+      floating.getByRole('button', { name: 'Start recording', exact: true })
+    ).toBeEnabled();
+
     await page.evaluate(id => window.desktop.float.open(id), other);
     await expect.poll(() => floating.evaluate(() => window.location.hash)).toBe(`#/float/${other}`);
     await page.evaluate(view => window.desktop.e2e!.recording({ kind: 'push', view }), {
-      ...recordingView(owner),
+      ...recordingView(owner, 'rec_alignment_auto_stop'),
       status: 'paused' as const,
       autoStopRequested: true,
     });
@@ -211,6 +281,8 @@ test.describe('recording dock alignment', () => {
 
   for (const action of ['Keep', 'Undo'] as const) {
     test(`recovers completed local output after restart and remembers ${action}`, async () => {
+      const otherId = await createNote(page);
+      await page.locator('.note-prose').fill('Another note stays unchanged.');
       const noteId = await createNote(page);
       // The editor never receives this generation response: it has been left before
       // the completed result is created through the real local transport/backend.
@@ -278,8 +350,33 @@ test.describe('recording dock alignment', () => {
         page.getByRole('button', { name: 'Start recording', exact: true })
       ).toBeDisabled();
       await page.getByRole('button', { name: 'Hide transcription', exact: true }).click();
+      await page.evaluate(id => {
+        window.location.hash = `#/notes/${id}`;
+      }, otherId);
+      await expect(page.locator('.note-prose')).toHaveText('Another note stays unchanged.');
+      await expect(page.getByRole('button', { name: 'Keep', exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Ask AI', exact: true })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'Open note', exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'Show transcription', exact: true }).click();
+      await expect(
+        page.getByRole('button', { name: 'Start recording', exact: true })
+      ).toBeDisabled();
+      await page.keyboard.press('Escape');
       await page.getByRole('button', { name: action, exact: true }).click();
       await expect(page.getByRole('button', { name: 'Keep', exact: true })).toHaveCount(0);
+      await expect(page.locator('.note-prose')).toHaveText('Another note stays unchanged.');
+      await expect.poll(() => page.evaluate(() => window.location.hash)).toBe(`#/notes/${otherId}`);
+      await expect(page.getByRole('button', { name: 'Ask AI', exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'Start recording', exact: true }).click();
+      await expect(
+        page.getByRole('button', { name: 'Start recording', exact: true })
+      ).toBeEnabled();
+      await expect(
+        page.getByText('Prepare the launch plan for Friday.', { exact: true })
+      ).toHaveCount(0);
+      await page.evaluate(id => {
+        window.location.hash = `#/notes/${id}`;
+      }, noteId);
       expect(
         await request(page, {
           method: 'GET',

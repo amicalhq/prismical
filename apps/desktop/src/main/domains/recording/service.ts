@@ -19,7 +19,7 @@ import type { MicSource } from './mic-alignment';
  * with no artifact loss beyond policy" guarantee.
  */
 
-/** A second `start` while a recording is active — Semaphore(1) rejects it. */
+/** A second `start` while capture, finalization, or recovery still owns a recording. */
 export class RecordingBusyError extends Data.TaggedError('RecordingBusyError')<{
   readonly activeRecordingId: string;
 }> {}

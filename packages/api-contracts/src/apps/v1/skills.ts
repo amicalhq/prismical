@@ -9,6 +9,8 @@ export const RunSkillRequestSchema = z.object({
   noteId: z.string().min(1),
   recordingId: z.string().min(1).max(64).optional(),
   recoverable: z.boolean().optional(),
+  /** Save a result identity for acceptance retries without replaying a previous run. */
+  retainResult: z.boolean().optional(),
   recoveryResultId: z.string().min(1).optional(),
   noteMarkdown: z.string().max(1_000_000).optional(),
   mode: ArtifactModeSchema.optional(),
@@ -115,5 +117,6 @@ export const PendingSkillResultsSchema = z.object({ results: z.array(RunSkillRes
 export const ResolveSkillResultSchema = z.object({
   noteId: z.string().min(1),
   resultId: z.string().min(1),
-  rawMarkdown: z.string().min(1),
+  /** Discard only the artifact accepted from this result, including a lost response. */
+  discardAccepted: z.boolean().optional(),
 });

@@ -2,6 +2,24 @@ import type { TranslationShape } from '../catalog-shape';
 import type en from './en';
 
 const de = {
+  workflow: {
+    noteChanged: "Die Notiz wurde nach diesem Vorschlag geändert. Verwirf ihn und führe die Aktion erneut aus.",
+      "busy": "Beende zuerst die aktuelle Aufnahme oder Aktion.",
+      "draining": "Verbleibendes Audio wird gesendet…",
+      "finalizing": "Aufnahme wird abgeschlossen…",
+      "recording": "Aufnahme läuft",
+      "recordingAway": "Aufnahme in einer anderen Notiz läuft",
+      "pausedAway": "Aufnahme in einer anderen Notiz pausiert",
+      "review": "Änderungen in einer anderen Notiz prüfen",
+      "reviewNamed": "Änderungen in {{name}} prüfen",
+      "applying": "Änderungen werden angewendet…",
+      "skill": "Aktion läuft…",
+      "openNote": "Notiz öffnen",
+      "openNamedNote": "{{name}} öffnen",
+      "retry": "Erneut versuchen",
+      "end": "Vorgang beenden"
+  },
+
   onboarding: {
   "helpDocs": "Brauchst du Hilfe? Lies die Dokumentation",
   "continueToNote": "Weiter zu meiner Notiz",
@@ -45,6 +63,22 @@ const de = {
     "record": {
       "title": "Aufnahme starten",
       "body": "Klicke im Dock auf das Mikrofon und dann auf Aufnahme starten. Erlaube den Mikrofonzugriff, wenn du gefragt wirst."
+    },
+    "waiting": {
+      "title": "Transkript wird vorbereitet",
+      "body": "Deine Aufnahme wird gespeichert und verarbeitet. Warte auf das Transkript, bevor du fortfährst."
+    },
+    "retry": {
+      "title": "Mit einer Aufnahme fortfahren",
+      "body": "Öffne das Aufnahmefeld und starte eine neue Aufnahme, um fortzufahren. Du kannst diese Einführung auch verlassen."
+    },
+    "generating": {
+      "title": "Deinen Entwurf verfolgen",
+      "body": "Hier erscheinen dein Entwurf und der Fortschritt. Wenn der Vorgang fehlschlägt oder stoppt, nutze die verfügbaren Aktionen oder kehre zum Aufnahmefeld zurück, um es erneut zu versuchen."
+    },
+    "starting": {
+      "title": "Mikrofon wird vorbereitet",
+      "body": "Erlaube den Mikrofonzugriff, wenn du dazu aufgefordert wirst. Warte, bis die Aufnahme beginnt, bevor du sprichst."
     },
     "speak": {
       "title": "Sprich ein paar Worte",
@@ -614,6 +648,10 @@ const de = {
     joinMeeting: 'An Besprechung teilnehmen',
     newNote: 'Neue Notiz',
     pickEmoji: 'Emoji auswählen',
+    emojiPicker: {
+      search: 'Emojis suchen…',
+      empty: 'Keine Emojis gefunden.',
+    },
     tags: {
       add: 'Tag hinzufügen',
       create: '„{{name}}“ erstellen',
@@ -942,6 +980,8 @@ const de = {
         'Der Text für diese Überarbeitung ist nicht mehr vorhanden. Wähle ihn erneut aus und starte sie noch einmal.',
       undo: 'Rückgängig',
       waitingForDocument: 'Warte auf das Laden der Notiz…',
+      deliveryPending: 'Einige übernommene Änderungen wurden noch nicht synchronisiert.',
+      endWorkflowWarning: 'Nicht gesendete Änderungen können verloren gehen.',
     },
     inline: {
       captureError: 'Die Auswahl konnte nicht erfasst werden — wähle den Text erneut aus.',
@@ -963,8 +1003,16 @@ const de = {
   },
   settings: {
     aiModels: {
+      planGate: {
+        title: 'Eigenen API-Schlüssel verwenden',
+        availability: 'In Pro verfügbar',
+        description: 'Bring Your Own Key ist in deinem aktuellen Plan nicht enthalten. Mit Pro kannst du eigene KI-Anbieter verbinden und deine Modelle auswählen.',
+        upgrade: 'Auf Pro upgraden',
+        back: 'Zurück zu den Einstellungen',
+      },
       addProvider: 'Anbieter hinzufügen',
       available: {
+        requestProvider: 'Anbieter anfragen',
         comingSoon: 'Demnächst verfügbar',
         getDesktop: 'Desktop-App herunterladen',
         localDesktop: 'Lokale Modelle sind in der Desktop-App verfügbar',
@@ -1058,6 +1106,7 @@ const de = {
         empty: 'Keine Sprachmodelle für diesen Schlüssel gefunden.',
         loadError:
           'Modelle konnten nicht geladen werden — prüfe den API-Schlüssel und versuche es erneut.',
+        retired: 'Nicht mehr verfügbar — zum Entfernen abwählen',
         title: 'Modelle in Ask AI',
       },
       modelPicker: {
@@ -1958,15 +2007,6 @@ const de = {
           'Der Dateityp „.{{extension}}“ wird nicht unterstützt — wähle eine .json- oder .md-Datei.',
       },
       form: {
-        advanced: 'Erweiterte Einstellungen',
-        defaultLabel: 'Als Standardziel für das Funkeln festlegen',
-        descriptionLabel: 'Beschreibung',
-        descriptionPlaceholder: 'Eine kurze Zeile für die Skill-Karte',
-        enabled: 'Aktiviert',
-        modeAgnosticDescription:
-          'Teile dem Modell nicht mit, welcher Modus aktiv ist — der Inhalt allein beschreibt die Ausgabe. So kann nach der Ausführung zwischen Anhängen und Ersetzen gewechselt werden, ohne neu zu generieren. Inline-Umschreiben bleibt unabhängig davon auf seinen Modus abgestimmt.',
-        modeAgnosticLabel: 'Modusunabhängiger Prompt',
-        modeLabel: 'Modus',
         addSection: 'Abschnitt hinzufügen',
         addSectionDescription: 'Das Ergebnis als neuen Abschnitt hinzufügen und die vorhandene Notiz behalten.',
         rewriteNote: 'Gesamte Notiz umschreiben',
@@ -1974,6 +2014,15 @@ const de = {
         transcriptDescription: 'Aufnahmetranskripte dieser Notiz als Kontext für den Skill verwenden.',
         titleDescription: 'Einen neuen Notiztitel erstellen, statt den Notizinhalt zu bearbeiten.',
         preservedMode: 'Dieser Skill verwendet eine experimentelle Ausgabeeinstellung. Sie bleibt beim Speichern unverändert.',
+
+        advanced: 'Erweiterte Einstellungen',
+        defaultLabel: 'Als Standardziel für das Funkeln festlegen',
+        descriptionLabel: 'Beschreibung',
+        descriptionPlaceholder: 'Eine kurze Zeile für die Skill-Karte',
+        enabled: 'Aktiviert',
+        modeAgnosticDescription: 'Der Prompt bestimmt die Ausgabe ohne Anweisungen zum Anhängen oder Umschreiben. Inline-Änderungen und Enhance für Aufnahmen verwenden weiterhin modusspezifische Anweisungen.',
+        modeAgnosticLabel: 'Modusunabhängiger Prompt',
+        modeLabel: 'Modus',
         nameLabel: 'Name',
         newTitle: 'Neuer Skill',
         promptLabel: 'Prompt',

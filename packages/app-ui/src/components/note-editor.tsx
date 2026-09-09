@@ -11,7 +11,6 @@ import {
 } from '@prismical/app-client';
 import {
   Star,
-  FileText,
   MoreHorizontal,
   ClipboardCopy,
   PictureInPicture2,
@@ -19,7 +18,7 @@ import {
   UserPlus,
 } from 'lucide-react';
 import { Button } from '../ui/button';
-import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
+import { NoteEmojiPicker } from './note-emoji-picker';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -48,35 +47,6 @@ import { NoteTitleField } from './note-title-field';
 import { NoteBodyEditor } from './note-body-editor';
 import { ShareDialog } from '../shell/share-dialog';
 import { useTranslation } from 'react-i18next';
-
-// ─── Static emoji picker ──────────────────────────────────────────────────────
-
-const QUICK_EMOJIS = [
-  '📝',
-  '📋',
-  '📌',
-  '🗒️',
-  '🗓️',
-  '💡',
-  '🔍',
-  '✅',
-  '🌅',
-  '🗺️',
-  '📚',
-  '🖥️',
-  '🌿',
-  '🔬',
-  '💡',
-  '💬',
-  '📋',
-  '🎨',
-  '⭐',
-  '🚀',
-  '💼',
-  '🏆',
-  '📊',
-  '🔧',
-];
 
 // ─── NoteEditor ───────────────────────────────────────────────────────────────
 
@@ -128,59 +98,17 @@ export function NoteEditor({ note }: NoteEditorProps) {
   };
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-4 pb-32 pt-2 md:px-6">
+    <div className="mx-auto w-full max-w-[45rem] px-4 pb-32 pt-2 md:px-6">
       {/* ── Header: emoji + title + star + actions ───────────────────── */}
       <div className="mb-2 flex items-start gap-1">
-        {/* Emoji button */}
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="mt-1 h-10 w-10 shrink-0 p-0 hover:bg-accent"
-              aria-label={t('notes.actions.changeEmoji')}
-            >
-              {emoji ? (
-                <span className="text-2xl leading-none">{emoji}</span>
-              ) : (
-                <FileText className="h-5 w-5 text-muted-foreground" />
-              )}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-72 p-2" align="start">
-            <div className="mb-2 flex items-center justify-between px-1">
-              <p className="text-xs text-muted-foreground">{t('notes.pickEmoji')}</p>
-              {emoji ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEmoji(undefined);
-                    update.mutate({ emoji: undefined });
-                  }}
-                  className="text-xs text-muted-foreground hover:text-foreground"
-                >
-                  {t('common.actions.remove')}
-                </button>
-              ) : null}
-            </div>
-            <div className="grid grid-cols-8 gap-0.5">
-              {QUICK_EMOJIS.map((em, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  onClick={() => {
-                    setEmoji(em);
-                    update.mutate({ emoji: em });
-                  }}
-                  className="flex h-8 w-8 items-center justify-center rounded text-lg hover:bg-accent"
-                  aria-label={em}
-                >
-                  {em}
-                </button>
-              ))}
-            </div>
-          </PopoverContent>
-        </Popover>
+        <NoteEmojiPicker
+          value={emoji}
+          disabled={note.writable === false}
+          onChange={value => {
+            setEmoji(value);
+            update.mutate({ emoji: value });
+          }}
+        />
 
         <NoteTitleField key={note.id} note={note} onTitleChange={setTitle} />
 
@@ -265,7 +193,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
       </div>
 
       {/* ── Metadata row: folder + tags + meetings ──────────────────── */}
-      <div className="mb-3 flex flex-wrap items-center gap-1.5 pl-11">
+      <div className="mb-3 flex flex-wrap items-center gap-1.5 px-1">
         <NoteFolderChip
           value={folderId}
           onChange={id => {
@@ -281,7 +209,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
       {/* ph-mask-content: masks the note body text in PostHog session
           recordings while the surrounding chrome stays visible. */}
       {/* mt-4 stands in for the removed divider's breathing room. */}
-      <div data-onboarding="note-body" className="ph-mask-content mt-8">
+      <div data-onboarding="note-body" className="ph-mask-content mt-8 px-1">
         <NoteBodyEditor noteId={note.id} writable={note.writable ?? true} />
       </div>
 

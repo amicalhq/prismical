@@ -235,12 +235,21 @@ export const RecordingServiceLive: Layer.Layer<
         } else {
           completions.delete(recordingId);
         }
+        yield* SubscriptionRef.update(state, current => ({
+          ...current,
+          finalizingRecordingIds: current.finalizingRecordingIds.filter(id => id !== recordingId),
+        }));
         yield* Deferred.succeed(completion.ready, ready);
       });
     const captureStopped = (recordingId: string) =>
-      Effect.sync(() => {
+      Effect.gen(function* () {
         const completion = completions.get(recordingId);
-        if (completion) completion.stopped = true;
+        if (!completion) return;
+        completion.stopped = true;
+        if (yield* Deferred.isDone(completion.ready)) return;
+        yield* SubscriptionRef.update(state, current => current.finalizingRecordingIds.includes(recordingId)
+          ? current
+          : { ...current, finalizingRecordingIds: [...current.finalizingRecordingIds, recordingId] });
       });
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
@@ -1183,8 +1192,8 @@ export const RecordingServiceLive: Layer.Layer<
             })
           )
         );
-        // Capture is closed and its audio is durable. Processing retains this
-        // job, while Start may acquire the microphone for another note.
+        // Capture is closed and its audio is durable. Processing retains the
+        // workflow until finalization or recovery reports completion.
         yield* captureStopped(recordingId);
         yield* semaphore.withPermits(1)(
           SubscriptionRef.update(state, current => ({
@@ -1196,7 +1205,6 @@ export const RecordingServiceLive: Layer.Layer<
                   autoStopRequested: false,
                 }
               : {}),
-            finalizingRecordingIds: [...current.finalizingRecordingIds, recordingId],
           })).pipe(
             Effect.zipRight(
               Ref.update(activeRef, current =>
@@ -1342,6 +1350,13 @@ export const RecordingServiceLive: Layer.Layer<
             return yield* Effect.fail(
               new RecordingBusyError({ activeRecordingId: current.value.recordingId })
             );
+          }
+
+          // Finalization and recovery still own the recording workflow after native
+          // capture closes. Tray/widget starts must obey the same admission as the app.
+          for (const [recordingId, completion] of completions) {
+            if (!(yield* Deferred.isDone(completion.ready)))
+              return yield* Effect.fail(new RecordingBusyError({ activeRecordingId: recordingId }));
           }
 
           // A different window may hold the pending suggestion, or this window
@@ -1494,14 +1509,6 @@ export const RecordingServiceLive: Layer.Layer<
               Ref.update(activeRef, cur =>
                 Option.exists(cur, a => a.recordingId === recordingId) ? Option.none() : cur
               ).pipe(
-                Effect.zipRight(
-                  SubscriptionRef.update(state, current => ({
-                    ...current,
-                    finalizingRecordingIds: current.finalizingRecordingIds.filter(
-                      id => id !== recordingId
-                    ),
-                  }))
-                ),
                 Effect.zipRight(Deferred.succeed(done, undefined))
               )
             )

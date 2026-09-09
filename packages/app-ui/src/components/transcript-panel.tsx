@@ -110,7 +110,6 @@ type TranscriptPanelProps = {
   elapsedSeconds: number;
   onStartRecording: () => void;
   startBlockedReason?: string;
-  hideStartRecording?: boolean;
   onStopRecording: () => void;
   onPauseRecording?: () => void;
   onResumeRecording?: () => void;
@@ -123,8 +122,10 @@ type TranscriptPanelProps = {
   errorAction?: { label: string; onClick: () => void } | null;
   /** Dismiss the surfaced error (the banner's X). */
   onDismissError?: () => void;
+  recoveryActions?: React.ReactNode;
   /** Off the recording's note, the live bar offers a jump back. */
   onOpenNote?: () => void;
+  openNoteLabel?: string;
   recordingNoteTitle?: string;
   /** The just-finished session's recording id — drives the Saved → Transcribing →
    * Identifying → Ready bar sequence after a stop. */
@@ -173,7 +174,6 @@ function TranscriptPanelContent({
   elapsedSeconds,
   onStartRecording,
   startBlockedReason,
-  hideStartRecording = false,
   onStopRecording,
   onPauseRecording,
   onResumeRecording,
@@ -181,7 +181,9 @@ function TranscriptPanelContent({
   errorHint = null,
   errorAction = null,
   onDismissError,
+  recoveryActions,
   onOpenNote,
+  openNoteLabel,
   recordingNoteTitle,
   finishedRecordingId = null,
 }: TranscriptPanelProps) {
@@ -318,6 +320,7 @@ function TranscriptPanelContent({
     !isRecording && recState === 'idle' && !!finishedRecordingId && !finished && !settleExpired;
 
   const engaged = recState !== 'idle';
+  const showBlockedStart = !engaged && !!startBlockedReason;
   const live = recState === 'recording';
   // Always use the timer format (for example, "Saved · 42:18"); the prose duration
   // ("42 minutes") clashed with the m:ss timers everywhere else in the bar.
@@ -486,7 +489,7 @@ function TranscriptPanelContent({
                     </span>
                     <span className="flex-1 border-t border-dock-line" />
                   </div>
-                  {rec.processing ? (
+                  {rec.processing && !(isFinishing && rec.id === activeRecordingId) ? (
                     <Marker className="mb-3 w-auto" role="status">
                       <MarkerIcon>
                         <Loader2 className="animate-spin" />
@@ -525,18 +528,16 @@ function TranscriptPanelContent({
                   <span className="flex-1 border-t border-dock-line" />
                 </div>
                 <TranscriptBubbles lines={liveLines} viewer={viewer} live />
-                {isFinishing || !isPaused ? (
+                {!isFinishing && !isPaused ? (
                   <Marker className="mt-2 w-auto" role="status">
                     <MarkerIcon>
                       <Loader2 className="animate-spin" />
                     </MarkerIcon>
                     <MarkerContent className="shimmer shimmer-duration-1400 text-dock-ink-3 font-medium">
                       {t(
-                        isFinishing
-                          ? 'recording.panel.finishing'
-                          : liveLines.length === 0
-                            ? 'recording.panel.listeningInitial'
-                            : 'recording.panel.listening'
+                        liveLines.length === 0
+                          ? 'recording.panel.listeningInitial'
+                          : 'recording.panel.listening'
                       )}
                     </MarkerContent>
                   </Marker>
@@ -554,18 +555,8 @@ function TranscriptPanelContent({
                   </Marker>
                 ) : null}
               </MessageScrollerItem>
-            ) : recState === 'stopping' || isFinishing || settling ? (
-              <MessageScrollerItem className="p-3.5" messageId="finishing-recording">
-                <Marker className="w-auto" role="status">
-                  <MarkerIcon>
-                    <Loader2 className="animate-spin" />
-                  </MarkerIcon>
-                  <MarkerContent className="shimmer shimmer-duration-1400 text-dock-ink-3 font-medium">
-                    {t('recording.panel.finishing')}
-                  </MarkerContent>
-                </Marker>
-              </MessageScrollerItem>
-            ) : !hasAnyPersisted && !recordings.some(rec => rec.processing) ? (
+            ) : recState === 'stopping' || isFinishing || settling ? null
+            : !hasAnyPersisted && !recordings.some(rec => rec.processing) ? (
               <MessageScrollerItem className="flex min-h-full flex-1">
                 <div className="flex flex-1 items-center justify-center p-8 text-center text-sm text-dock-ink-3">
                   {t('recording.panel.empty')}
@@ -623,8 +614,22 @@ function TranscriptPanelContent({
         </div>
       ) : null}
 
+      {recoveryActions ? (
+        <div className="flex shrink-0 flex-wrap items-center gap-3 border-t border-dock-line px-3 py-2 text-xs text-dock-ink-2">
+          {recoveryActions}
+        </div>
+      ) : null}
       {/* Bottom bar — the panel's full recording controls; 42px rhythm. */}
-      <div className="flex min-h-[41px] shrink-0 items-center gap-2 border-t border-dock-line p-1.5">
+      <div
+        data-onboarding={
+          recState === 'starting' ? 'record-pending'
+            : recState === 'stopping' || isFinishing ? 'record-saving'
+            : settling || (finished && !doneReady) ? 'transcript-wait'
+            : recState === 'idle' && (settledEmpty || (tour && ['speak', 'stop'].includes(tour.step))) ? 'record-retry'
+            : undefined
+        }
+        className="flex min-h-[41px] shrink-0 items-center gap-2 border-t border-dock-line p-1.5"
+      >
         <div className="flex min-w-0 flex-1 items-center gap-2">
           {engaged && recState !== 'stopping' ? (
             <>
@@ -678,21 +683,9 @@ function TranscriptPanelContent({
                 <TooltipContent side="top">{t('recording.actions.stop')}</TooltipContent>
               </Tooltip>
               <span className="flex-1" />
-              {onOpenNote ? (
-                <button
-                  type="button"
-                  onClick={onOpenNote}
-                  aria-label={t('recording.away.goToNote')}
-                  title={recordingNoteTitle ?? t('recording.away.goToNote')}
-                  className="flex h-7 min-w-0 max-w-[160px] cursor-pointer items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-dock-ink-2 transition-colors hover:bg-dock-hover hover:text-dock-ink"
-                >
-                  <FileText className="size-3 shrink-0" />
-                  <span className="truncate">{recordingNoteTitle ?? t('recording.away.goToNote')}</span>
-                </button>
-              ) : null}
               <DockMicMenu />
             </>
-          ) : recState === 'stopping' || isFinishing || settling ? (
+          ) : !showBlockedStart && (recState === 'stopping' || isFinishing || settling) ? (
             <>
               <span className="flex pl-1.5 text-dock-ink-2">
                 <PxOrbitLoader />
@@ -702,7 +695,7 @@ function TranscriptPanelContent({
               </span>
               <span className="flex-1" />
             </>
-          ) : doneMode && finished ? (
+          ) : !showBlockedStart && doneMode && finished ? (
             <>
               <span className="flex shrink-0 items-center gap-1.5 px-1 text-[12.5px] text-dock-ink-2">
                 <Check className="size-3.5 text-success" />
@@ -752,32 +745,45 @@ function TranscriptPanelContent({
             </>
           ) : (
             <>
-              {!hideStartRecording ? (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      data-onboarding="record-start"
-                      aria-disabled={!!startBlockedReason}
-                      onClick={startBlockedReason ? undefined : onStartRecording}
-                      className="group flex h-7 cursor-pointer aria-disabled:cursor-not-allowed aria-disabled:text-dock-ink-3 items-center gap-2 rounded-lg px-2.5 text-[12.5px] font-medium text-dock-ink transition-[background-color,scale] hover:bg-dock-hover active:scale-[0.97]"
-                    >
-                      <span className="size-2 shrink-0 rounded-full bg-rec group-aria-disabled:bg-dock-ink-3" />
-                      {t('recording.actions.start')}
-                    </button>
-                  </TooltipTrigger>
-                  {startBlockedReason ? (
-                    <TooltipContent side="top">{startBlockedReason}</TooltipContent>
-                  ) : null}
-                </Tooltip>
-              ) : null}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    data-onboarding="record-start"
+                    aria-disabled={!!startBlockedReason}
+                    onClick={startBlockedReason ? undefined : onStartRecording}
+                    className="group flex h-7 cursor-pointer aria-disabled:cursor-not-allowed aria-disabled:text-dock-ink-3 items-center gap-2 rounded-lg px-2.5 text-[12.5px] font-medium text-dock-ink transition-[background-color,scale] hover:bg-dock-hover active:scale-[0.97]"
+                  >
+                    <span className="size-2 shrink-0 rounded-full bg-rec group-aria-disabled:bg-dock-ink-3" />
+                    {t('recording.actions.start')}
+                  </button>
+                </TooltipTrigger>
+                {startBlockedReason ? (
+                  <TooltipContent side="top">{startBlockedReason}</TooltipContent>
+                ) : null}
+              </Tooltip>
               <span className="flex-1" />
               <DockMicMenu />
             </>
           )}
         </div>
         <div className="ml-auto min-w-0 max-w-[50%] shrink-0">
-          {skillStatus ? skillStatus(enhanceAction, engaged || isFinishing || settling || (!!finished && !doneReady) || settledEmpty) : enhanceAction}
+          {onOpenNote ? (
+            <button
+              type="button"
+              onClick={onOpenNote}
+              title={openNoteLabel ?? t('workflow.openNote')}
+              aria-label={openNoteLabel ?? t('workflow.openNote')}
+              className="flex h-7 max-w-full cursor-pointer items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-dock-ink-2 transition-colors hover:bg-dock-hover hover:text-dock-ink"
+            >
+              <FileText className="size-3 shrink-0" />
+              <span className="truncate">{openNoteLabel ?? t('workflow.openNote')}</span>
+            </button>
+          ) : engaged
+            ? null
+            : isFinishing || settling || (!!finished && !doneReady)
+              ? skillStatus?.(null, true)
+            : skillStatus ? skillStatus(enhanceAction, settledEmpty) : enhanceAction}
         </div>
       </div>
     </div>

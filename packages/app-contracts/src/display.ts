@@ -111,6 +111,7 @@ export type Note = {
   starred: boolean;
   folderId?: string;
   tagIds: string[];
+  createdAt?: string;
   updatedAt: string;
   preview: string;
   body: string; // plain text or simple markdown for static render

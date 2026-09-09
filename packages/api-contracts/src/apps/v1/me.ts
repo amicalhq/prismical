@@ -1,3 +1,4 @@
+import { CtaSchema } from './cta.js';
 import { z } from 'zod';
 import { AppsV1IsoDateTimeSchema } from './common.js';
 import { PlanEntitlementsSchema, PlanSummarySchema } from './plan.js';
@@ -14,6 +15,7 @@ const MeMeterSchema = z
 /** Session bootstrap response for the caller's explicitly selected organization. */
 export const MeResponseSchema = z
   .object({
+    cta: CtaSchema.nullable().optional(),
     userId: z.string().min(1),
     orgUserId: z.string().min(1),
     orgId: z.string().min(1),

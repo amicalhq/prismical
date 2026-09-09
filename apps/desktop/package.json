@@ -41,6 +41,7 @@
     "@prismical/app-contracts": "workspace:*",
     "@prismical/app-i18n": "workspace:*",
     "@prismical/app-ui": "workspace:*",
+    "@prismical/app-workflow": "workspace:*",
     "@prismical/audio-capture": "workspace:*",
     "@prismical/desktop-contracts": "workspace:*",
     "@prismical/eventkit-helper": "workspace:*",

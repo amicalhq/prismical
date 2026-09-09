@@ -61,16 +61,16 @@ export function ShareDialog({
   const isNote = resourceType === 'note';
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle className="truncate">
+      <DialogContent className="max-h-[calc(100dvh-2rem)] grid-cols-[minmax(0,1fr)] overflow-y-auto sm:max-w-md">
+        <DialogHeader className="min-w-0 pr-6">
+          <DialogTitle className="truncate" title={resourceTitle}>
             {t('sharing.title', { title: resourceTitle })}
           </DialogTitle>
           <DialogDescription>
             {isNote ? t('sharing.accessDescriptionNote') : t('sharing.accessDescriptionFolder')}
           </DialogDescription>
         </DialogHeader>
-        <div className="mt-2">
+        <div className="mt-2 min-w-0">
           <PeoplePanel
             resourceType={resourceType}
             resourceId={resourceId}
@@ -157,8 +157,9 @@ function PeoplePanel({
     <div className="space-y-4">
       {canManage && (
         <div className="space-y-2">
-          <div className="flex gap-2">
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
             <Input
+              className="col-span-2 sm:col-span-1"
               placeholder={t('sharing.addByEmail')}
               value={value}
               onChange={e => setValue(e.target.value)}

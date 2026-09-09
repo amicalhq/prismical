@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { FileText, Plus } from 'lucide-react';
+import type { AskNoteContext } from './use-ask-note-context';
 import { useEntitlements, useNotes, useSkillsList } from '@prismical/app-client';
 import type { Skill } from '@prismical/app-contracts';
 import { DOCK_CTL, DOCK_CTL_PRIMARY } from '../dock-chrome';
@@ -10,6 +11,33 @@ import { AppLink as Link } from '../../shell/app-link';
 import type { AskModelGroup, AskModelSelection } from '@prismical/app-client';
 import { skillDisplayDescription, skillDisplayName } from '../../lib/skill-presentation';
 import { useTranslation } from 'react-i18next';
+
+/** Both selected notes and automatic context use the same inline token. */
+function createNoteToken(note: AskNoteContext, removeLabel: string) {
+  const token = document.createElement('span');
+  token.className =
+    'tok-note mr-1 inline-flex max-w-full select-none items-center whitespace-nowrap rounded-md border border-dock-line bg-dock-field px-1.5 text-xs font-medium leading-[18px] text-dock-ink align-baseline';
+  token.contentEditable = 'false';
+  token.dataset.noteId = note.id;
+  token.dataset.noteTitle = note.title;
+  const label = document.createElement('span');
+  label.className = 'min-w-0 truncate';
+  label.textContent = `@${note.title}`;
+  token.title = note.title;
+  token.appendChild(label);
+  const remove = document.createElement('button');
+  remove.type = 'button';
+  remove.dataset.removeNote = 'true';
+  remove.setAttribute('aria-label', removeLabel);
+  remove.className =
+    'ml-1 inline-flex size-4 shrink-0 items-center justify-center rounded hover:bg-dock-hover focus-visible:outline-2 focus-visible:outline-ring';
+  const icon = document.createElement('span');
+  icon.setAttribute('aria-hidden', 'true');
+  icon.textContent = '×';
+  remove.appendChild(icon);
+  token.appendChild(remove);
+  return token;
+}
 
 /** A skill referenced by a composer token. */
 export interface ComposerSkill {
@@ -45,6 +73,8 @@ export const AskComposer = React.forwardRef<
   {
     busy: boolean;
     onSend: (text: string, notes: { id: string; title: string }[]) => void;
+    /** Recheck app admission before consuming the current draft. */
+    canSubmit?: () => boolean;
     /** Absent on non-note pages — the slash lane needs a note to edit. */
     onRunSkill?: (skill: ComposerSkill, instruction: string) => void;
     onStop: () => void;
@@ -56,11 +86,17 @@ export const AskComposer = React.forwardRef<
     /** Narrow surface (float window): the short placeholder — the full one
      * wraps to two lines there. The aria-label keeps the full grammar. */
     compact?: boolean;
+    /** The background note and whether it participates in the next Ask send. */
+    currentNote?: AskNoteContext | null;
+    focusNote?: AskNoteContext | null;
+    onRemoveCurrentNote?: () => void;
+    onRestoreCurrentNote?: () => void;
   }
 >(function AskComposer(
   {
     busy,
     onSend,
+    canSubmit,
     onRunSkill,
     onStop,
     onEscape,
@@ -68,6 +104,10 @@ export const AskComposer = React.forwardRef<
     modelValue,
     onModelChange,
     compact = false,
+    currentNote = null,
+    focusNote = null,
+    onRemoveCurrentNote,
+    onRestoreCurrentNote,
   },
   ref
 ) {
@@ -81,9 +121,22 @@ export const AskComposer = React.forwardRef<
     return () => window.clearTimeout(timer);
   }, [refusedAt]);
   const inputRef = React.useRef<HTMLDivElement>(null);
+  const composerRef = React.useRef<HTMLDivElement>(null);
+  const plusRef = React.useRef<HTMLButtonElement>(null);
   const [menu, setMenu] = React.useState<null | { mode: 'skill' | 'note'; query: string }>(null);
   const [menuSel, setMenuSel] = React.useState(0);
   const [plusOpen, setPlusOpen] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!plusOpen) return;
+    const dismissOutside = (event: PointerEvent) => {
+      if (event.target instanceof Node && !composerRef.current?.contains(event.target)) {
+        setPlusOpen(false);
+      }
+    };
+    document.addEventListener('pointerdown', dismissOutside);
+    return () => document.removeEventListener('pointerdown', dismissOutside);
+  }, [plusOpen]);
 
   const { data: allSkills = [] } = useSkillsList();
   // The slash lane runs note-BODY skills — the dock-surface list minus title-target skills
@@ -102,7 +155,8 @@ export const AskComposer = React.forwardRef<
     [allSkills, onRunSkill]
   );
   const { data: notes = [] } = useNotes();
-  const recentNotes = React.useMemo(() => [...notes].reverse().slice(0, 12), [notes]);
+  // The synced list is oldest-updated first. Search every note before limiting results.
+  const recentNotes = React.useMemo(() => [...notes].reverse(), [notes]);
 
   const skillHits = React.useMemo(() => {
     if (menu?.mode !== 'skill') return [];
@@ -132,13 +186,40 @@ export const AskComposer = React.forwardRef<
     setMenuSel(0);
   }, []);
 
+  const focusId = askAllowed ? focusNote?.id : undefined;
+  const focusTitle = focusNote?.title || t('ask.context.untitled');
+  // Reconcile only the automatic token. The browser owns the rest of this
+  // contenteditable, including the draft, explicit mentions and caret.
+  const syncAutomaticToken = React.useCallback(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    const existing = el.querySelector<HTMLElement>('[data-auto-context]');
+    if (existing?.dataset.noteId === focusId && existing?.dataset.noteTitle === focusTitle) {
+      return;
+    }
+    existing?.remove();
+    if (!focusId) return;
+    const token = createNoteToken(
+      { id: focusId, title: focusTitle },
+      t('ask.context.remove', { label: focusTitle })
+    );
+    token.dataset.autoContext = 'true';
+    el.prepend(token);
+    if (el.childNodes.length === 1) el.appendChild(document.createTextNode(' '));
+  }, [focusId, focusTitle, t]);
+
+  React.useLayoutEffect(syncAutomaticToken, [syncAutomaticToken]);
+
   const insertSkillToken = React.useCallback(
     (skill: Skill | ComposerSkill) => {
       const el = inputRef.current;
       if (!el) return;
       const name = 'config' in skill ? skillDisplayName(skill as Skill, t) : skill.name;
       // Typing "/query" replaced the draft — the token supersedes it.
-      if (el.textContent?.startsWith('/')) el.innerHTML = '';
+      const draftClone = el.cloneNode(true) as HTMLElement;
+      draftClone.querySelector('[data-auto-context]')?.remove();
+      if (draftClone.textContent?.trimStart().startsWith('/')) el.innerHTML = '';
+      syncAutomaticToken();
       const tok = document.createElement('span');
       tok.className =
         'tok-skill mr-1 inline-flex select-none items-center gap-[3px] whitespace-nowrap rounded-md border border-dock-line bg-dock-field px-1.5 text-xs font-semibold leading-[18px] text-dock-ink align-baseline';
@@ -157,7 +238,7 @@ export const AskComposer = React.forwardRef<
       closeMenu();
       setPlusOpen(false);
     },
-    [closeMenu, t]
+    [closeMenu, t, syncAutomaticToken]
   );
 
   const insertNoteToken = React.useCallback(
@@ -171,21 +252,22 @@ export const AskComposer = React.forwardRef<
       if (opts?.stripTrigger && last && last.nodeType === Node.TEXT_NODE) {
         last.textContent = (last.textContent ?? '').replace(/(^|\s)@\S*\s*$/, '$1');
       }
-      const tok = document.createElement('span');
-      tok.className =
-        'tok-note mr-1 inline-flex select-none items-center whitespace-nowrap rounded-md border border-dock-line bg-dock-field px-1.5 text-xs font-medium leading-[18px] text-dock-ink align-baseline';
-      tok.contentEditable = 'false';
-      tok.dataset.noteId = note.id;
-      tok.dataset.noteTitle = note.title;
-      tok.textContent = `@${note.title}`;
-      el.appendChild(tok);
-      el.appendChild(document.createTextNode(' '));
+      if (note.id === currentNote?.id && askAllowed) {
+        onRestoreCurrentNote?.();
+      } else if (
+        !Array.from(el.querySelectorAll<HTMLElement>('.tok-note')).some(
+          token => token.dataset.noteId === note.id
+        )
+      ) {
+        el.appendChild(createNoteToken(note, t('ask.context.remove', { label: note.title })));
+        el.appendChild(document.createTextNode(' '));
+      }
       el.focus();
       placeCaretEnd();
       closeMenu();
       setPlusOpen(false);
     },
-    [closeMenu]
+    [closeMenu, currentNote?.id, askAllowed, onRestoreCurrentNote, t]
   );
 
   React.useImperativeHandle(
@@ -197,12 +279,13 @@ export const AskComposer = React.forwardRef<
         if (!el) return;
         el.innerHTML = '';
         el.appendChild(document.createTextNode(text));
+        syncAutomaticToken();
         el.focus();
         placeCaretEnd();
       },
       insertSkill: (skill: ComposerSkill) => insertSkillToken(skill),
     }),
-    [insertSkillToken]
+    [insertSkillToken, syncAutomaticToken]
   );
 
   // Re-derive the trigger menus from the draft after every edit.
@@ -212,14 +295,17 @@ export const AskComposer = React.forwardRef<
     // Deleting the last character leaves a stray <br> in a contenteditable,
     // which keeps :empty false and hides the placeholder — normalize it away.
     if (
-      (el.textContent ?? '') === '' &&
+      (el.textContent ?? '').trim() === '' &&
       el.firstChild &&
       !el.querySelector('.tok-skill, .tok-note')
     ) {
       el.innerHTML = '';
     }
-    const text = el.textContent ?? '';
-    const hasToken = !!el.querySelector('.tok-skill, .tok-note');
+    if (focusId && !el.querySelector('[data-auto-context]')) onRemoveCurrentNote?.();
+    const menuDraft = el.cloneNode(true) as HTMLElement;
+    menuDraft.querySelector('[data-auto-context]')?.remove();
+    const text = (menuDraft.textContent ?? '').trimStart();
+    const hasToken = !!menuDraft.querySelector('.tok-skill, .tok-note');
     // Explicit \u00a0 (contenteditable renders typed spaces as &nbsp;) - JS \s already covers it,
     // but the escape keeps that requirement visible where a literal nbsp tripped lint.
     const mention = /(?:^|[\s\u00a0])@([^@\s\u00a0]*)$/.exec(text);
@@ -233,15 +319,19 @@ export const AskComposer = React.forwardRef<
   };
 
   const collectAndSend = () => {
+    if (canSubmit && !canSubmit()) return;
     const el = inputRef.current;
     if (!el || busy) return;
     const skillTok = el.querySelector<HTMLElement>('.tok-skill');
-    const noteToks = Array.from(el.querySelectorAll<HTMLElement>('.tok-note'));
+    const noteToks = Array.from(
+      el.querySelectorAll<HTMLElement>('.tok-note:not([data-auto-context])')
+    );
     // Assemble from a CLONE with token spans replaced by their labels, then read
     // textContent — this keeps text living inside pasted markup (spans, per-line
     // divs) instead of silently dropping everything that isn't a top-level text
     // node.
     const clone = el.cloneNode(true) as HTMLElement;
+    clone.querySelector('[data-auto-context]')?.remove();
     clone.querySelectorAll<HTMLElement>('.tok-note').forEach(tk => {
       tk.replaceWith(document.createTextNode(` ${tk.dataset.noteTitle ?? tk.textContent ?? ''} `));
     });
@@ -252,6 +342,7 @@ export const AskComposer = React.forwardRef<
     const text = (clone.textContent ?? '').replace(/\s+/g, ' ').trim();
     if (skillTok && onRunSkill) {
       el.innerHTML = '';
+      syncAutomaticToken();
       onRunSkill(
         { id: skillTok.dataset.skillId ?? '', name: skillTok.dataset.skillName ?? '' },
         text
@@ -267,6 +358,8 @@ export const AskComposer = React.forwardRef<
       return;
     }
     el.innerHTML = '';
+    syncAutomaticToken();
+    if (document.activeElement === el) placeCaretEnd();
     closeMenu();
     onSend(
       text,
@@ -278,7 +371,7 @@ export const AskComposer = React.forwardRef<
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     const el = inputRef.current;
-    if (!el) return;
+    if (!el || e.target !== el) return;
     // Backspace at a token boundary deletes the whole token (contentEditable=false
     // spans otherwise trap the caret against them).
     if (e.key === 'Backspace') {
@@ -351,7 +444,21 @@ export const AskComposer = React.forwardRef<
         : 'ask.gate.unavailable';
 
   return (
-    <div className="relative shrink-0 border-t border-dock-line p-1.5">
+    <div
+      ref={composerRef}
+      className="relative shrink-0 border-t border-dock-line p-1.5"
+      onBlur={e => {
+        if (!e.currentTarget.contains(e.relatedTarget)) setPlusOpen(false);
+      }}
+      onKeyDownCapture={e => {
+        if (plusOpen && e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          setPlusOpen(false);
+          plusRef.current?.focus();
+        }
+      }}
+    >
       {/* Plan gate line: always present while gated (a live region, so the refusal swap is
           announced), so the state is explained before anyone types — the empty-state chips
           are gone after the first run, this is not. */}
@@ -397,10 +504,10 @@ export const AskComposer = React.forwardRef<
                 <button
                   key={n.id}
                   type="button"
-                  onMouseDown={e => {
-                    e.preventDefault();
-                    insertNoteToken({ id: n.id, title: n.title }, { stripTrigger: true });
-                  }}
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={() =>
+                    insertNoteToken({ id: n.id, title: n.title }, { stripTrigger: true })
+                  }
                   className={`flex h-9 w-full items-center gap-2.5 rounded-md px-2 text-left ${
                     i === sel ? 'bg-dock-hover' : 'hover:bg-dock-hover'
                   }`}
@@ -417,20 +524,31 @@ export const AskComposer = React.forwardRef<
         </div>
       ) : null}
 
-      {/* + context menu: recent notes + skill chips + the MCP teaser. */}
+      {/* + context menu: recent notes and skill chips. */}
       {plusOpen ? (
         <div className="absolute bottom-[calc(100%+2px)] left-1.5 z-30 min-w-[250px] rounded-[10px] bg-dock-surface p-1 shadow-(--dock-shadow-raised)">
           <div className="px-2 pb-0.5 pt-1.5 text-2xs font-semibold uppercase tracking-wide text-dock-ink-3">
             {t('ask.composer.recentNotes')}
           </div>
+          {askAllowed && currentNote && !focusNote ? (
+            <button
+              type="button"
+              onMouseDown={e => e.preventDefault()}
+              onClick={() => insertNoteToken(currentNote)}
+              className="flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-left hover:bg-dock-hover"
+            >
+              <FileText className="size-3.5 shrink-0 text-dock-ink-2" />
+              <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-dock-ink">
+                {`${t('ask.context.thisNote')}: ${currentNote.title || t('ask.context.untitled')}`}
+              </span>
+            </button>
+          ) : null}
           {recentNotes.slice(0, 3).map(n => (
             <button
               key={n.id}
               type="button"
-              onMouseDown={e => {
-                e.preventDefault();
-                insertNoteToken({ id: n.id, title: n.title });
-              }}
+              onMouseDown={e => e.preventDefault()}
+              onClick={() => insertNoteToken({ id: n.id, title: n.title })}
               className="flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-left hover:bg-dock-hover"
             >
               <FileText className="size-3.5 shrink-0 text-dock-ink-2" />
@@ -463,15 +581,13 @@ export const AskComposer = React.forwardRef<
               </div>
             </>
           ) : null}
-          <div className="mt-1 border-t border-dock-line px-2 pb-0.5 pt-1.5 text-2xs text-dock-ink-3">
-            {t('ask.composer.mcpSoon')}
-          </div>
         </div>
       ) : null}
 
       {/* Beautiful-UI prompt-bar grid: [+] [draft] [model] [send] */}
       <div className="grid grid-cols-[28px_minmax(0,1fr)_auto_28px] items-end gap-x-1 gap-y-1.5">
         <button
+          ref={plusRef}
           type="button"
           onClick={() => {
             closeMenu();
@@ -490,6 +606,22 @@ export const AskComposer = React.forwardRef<
           aria-multiline="true"
           aria-label={t(ariaKey)}
           data-placeholder={t(placeholderKey)}
+          onFocus={e => {
+            if (e.target !== e.currentTarget) return;
+            const clone = e.currentTarget.cloneNode(true) as HTMLElement;
+            clone.querySelector('[data-auto-context]')?.remove();
+            if (!clone.textContent?.trim()) placeCaretEnd();
+          }}
+          onMouseDown={e => {
+            if ((e.target as HTMLElement).closest('[data-remove-note]')) e.preventDefault();
+          }}
+          onClick={e => {
+            const button = (e.target as HTMLElement).closest('[data-remove-note]');
+            if (!button) return;
+            button.closest('.tok-note')?.remove();
+            syncMenusFromDraft();
+            inputRef.current?.focus();
+          }}
           onInput={syncMenusFromDraft}
           onKeyDown={onKeyDown}
           onPaste={e => {
@@ -500,7 +632,6 @@ export const AskComposer = React.forwardRef<
             if (textData) document.execCommand('insertText', false, textData);
             syncMenusFromDraft();
           }}
-          onBlur={() => setTimeout(() => setPlusOpen(false), 120)}
           className="ask-composer-input max-h-[120px] min-h-7 overflow-y-auto whitespace-pre-wrap px-1 py-[5px] text-[13px] leading-5 text-dock-ink outline-none [overflow-wrap:anywhere]"
         />
         <AskModelSelector

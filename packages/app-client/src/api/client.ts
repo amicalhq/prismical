@@ -1,3 +1,5 @@
+import { reportClientError } from "../diagnostics";
+import { clientRequestId, safeApiRoute } from "./request-diagnostics";
 import type { TransportMethod, TransportPort } from "@prismical/app-contracts";
 import {
   AppsV1ErrorResponseSchema,
@@ -135,12 +137,11 @@ async function requestViaTransport<T>(
   return (res.status === 204 ? undefined : res.bodyJson) as T;
 }
 
-async function request<T>(method: string, path: string, opts: RequestOptions = {}): Promise<T> {
-  const transport = getClientTransport();
-  if (transport) return requestViaTransport<T>(transport, method, path, opts);
+async function performRequest<T>(method: string, path: string, opts: RequestOptions = {}, correlationId?: string): Promise<T> {
   const res = await fetch(buildUrl(path, opts.query), {
     method,
     headers: {
+      ...(correlationId ? { "x-client-request-id": correlationId } : {}),
       ...(opts.body !== undefined ? { "Content-Type": "application/json" } : {}),
       ...(opts.authToken
         ? getAuthHeadersForToken(opts.authToken, opts.activeOrgId)
@@ -161,9 +162,26 @@ async function request<T>(method: string, path: string, opts: RequestOptions = {
 
   if (!res.ok) {
     if (res.status === 401) onUnauthorized();
-    throw toApiError(json, res.status, res.statusText);
+    const error = toApiError(json, res.status, res.statusText);
+    error.requestId ??= res.headers?.get("x-request-id") ?? undefined;
+    throw error;
   }
   return json as T;
+}
+
+async function request<T>(method: string, path: string, opts: RequestOptions = {}): Promise<T> {
+  const transport = getClientTransport();
+  const correlationId = transport ? undefined : clientRequestId();
+  try {
+    return await (transport
+      ? requestViaTransport<T>(transport, method, path, opts)
+      : performRequest<T>(method, path, opts, correlationId));
+  } catch (error) {
+    if (!opts.signal?.aborted) reportClientError(error, {
+      operation: "api", method, route: safeApiRoute(path), client_request_id: correlationId,
+    });
+    throw error;
+  }
 }
 
 interface ListEnvelope<T> {

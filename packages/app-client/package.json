@@ -21,6 +21,7 @@
     "@prismical/api-contracts": "workspace:*",
     "@prismical/app-contracts": "workspace:*",
     "@prismical/app-i18n": "workspace:*",
+    "@prismical/app-workflow": "workspace:*",
     "@prismical/editor-markdown": "workspace:*",
     "@prismical/editor-schema": "workspace:*",
     "@prismical/id": "workspace:*",

@@ -26,6 +26,7 @@ import { parseAskStreamError } from '@prismical/api-contracts';
 import type { SupportedLocale } from '@prismical/app-i18n';
 import { createId } from '@prismical/id';
 import { LocalBackendLive } from '../../src/main/domains/local-backend/live';
+import { getNoteForAsk } from '../../src/main/domains/local-backend/ask';
 import { toMatchExpression } from '../../src/main/domains/local-backend/search';
 import { extractJsonObject } from '../../src/main/domains/local-backend/skill-run';
 import { WorkspaceTransportLive } from '../../src/main/domains/transport/live';
@@ -1049,6 +1050,48 @@ describe('completed recording suggestion recovery', () => {
     content: '[{"type":"paragraph","content":[{"type":"text","text":"Saved"}]}]',
   });
 
+  it.effect('keeps native workflow refinements recoverable under fresh result identities', () =>
+    Effect.gen(function* () {
+      const output = { markdown: 'Original output.', reasoning: null };
+      const { api, product, scope } = yield* build(toolCallingModel(undefined, output));
+      const noteId = yield* insertNote(product, { title: 'Recorded note' });
+      const recordingId = yield* insertRecording(product, { noteId, segments: ['A thought.'] });
+      const request = { noteId, recordingId, retainResult: true, recoverable: true };
+      const original = expectOk(yield* post(api, runPath, request), 200).bodyJson;
+      output.markdown = 'Refined output.';
+      const refined = expectOk(yield* post(api, runPath, {
+        ...request, refineInstruction: 'Clarify', previousOutput: original.rawMarkdown,
+      }), 200).bodyJson;
+      assert.notStrictEqual(refined.resultId, original.resultId);
+      assert.lengthOf(expectOk(yield* get(api, pendingPath, { noteId }), 200).bodyJson.results, 2);
+      expectOk(yield* post(api, resolvePath, { noteId, resultId: original.resultId, discardAccepted: true }), 200);
+      assert.deepStrictEqual(expectOk(yield* get(api, pendingPath, { noteId }), 200).bodyJson.results, [refined]);
+      assert.deepStrictEqual(expectOk(yield* post(api, runPath, request), 200).bodyJson, refined);
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+
+  it.effect('retains manual results for acceptance retries and discards only their accepted artifact', () =>
+    Effect.gen(function* () {
+      const { api, product, scope } = yield* build(toolCallingModel());
+      const noteId = yield* insertNote(product, { title: 'Recorded note' });
+      const recordingId = yield* insertRecording(product, { noteId, segments: ['A thought.'] });
+      const receipt = expectOk(yield* post(api, runPath, { noteId, recordingId, retainResult: true }), 200).bodyJson;
+      assert.isString(receipt.resultId);
+      assert.deepStrictEqual(expectOk(yield* get(api, pendingPath, { noteId }), 200).bodyJson.results, []);
+      const accepted = expectOk(yield* post(api, acceptPath, acceptBody(noteId, receipt)), 200).bodyJson;
+      assert.deepStrictEqual(expectOk(yield* post(api, acceptPath, acceptBody(noteId, receipt)), 200).bodyJson, accepted);
+      const other = expectOk(yield* post(api, acceptPath, { ...acceptBody(noteId, receipt), resultId: undefined }), 200).bodyJson;
+      const discard = { noteId, resultId: receipt.resultId, discardAccepted: true };
+      expectOk(yield* post(api, resolvePath, discard), 200);
+      expectOk(yield* post(api, resolvePath, discard), 200);
+      assert.isString(product.db.select().from(schema.artifact).where(eq(schema.artifact.id, accepted.artifactId)).get()!.deletedAt);
+      assert.isNull(product.db.select().from(schema.artifact).where(eq(schema.artifact.id, other.artifactId)).get()!.deletedAt);
+      expectOk(yield* post(api, acceptPath, acceptBody(noteId, receipt)), 409);
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+
   it.effect('shares concurrent fresh delivery within one workspace without duplicating generation', () =>
     Effect.gen(function* () {
       const model = toolCallingModel();
@@ -1084,7 +1127,7 @@ describe('completed recording suggestion recovery', () => {
     })
   );
 
-  it.effect('a stale discard or refinement cannot replace the latest pending output', () =>
+  it.effect('a stale refinement cannot replace the latest pending output', () =>
     Effect.gen(function* () {
       const output = { markdown: 'Original output.', reasoning: null };
       const model = toolCallingModel(undefined, output);
@@ -1098,10 +1141,6 @@ describe('completed recording suggestion recovery', () => {
         refineInstruction: 'Clarify', previousOutput: original.rawMarkdown,
       };
       const revised = expectOk(yield* post(api, runPath, refine), 200).bodyJson;
-      const discarded = expectOk(yield* post(api, resolvePath, {
-        noteId, resultId: original.resultId, rawMarkdown: original.rawMarkdown,
-      }), 409);
-      assert.strictEqual(discarded.bodyJson.error.code, 'SUGGESTION_CHANGED');
       assert.strictEqual(expectOk(yield* post(api, runPath, refine), 409).bodyJson.error.code, 'SUGGESTION_CHANGED');
       assert.lengthOf(model.doGenerateCalls, 2);
       assert.deepStrictEqual(expectOk(yield* get(api, pendingPath, { noteId }), 200).bodyJson.results, [revised]);
@@ -1256,8 +1295,8 @@ describe('completed recording suggestion recovery', () => {
         yield* post(api, runPath, { noteId, recordingId, recoverable: true }),
         200
       ).bodyJson;
-      const resolution = { noteId, resultId: completed.resultId, rawMarkdown: completed.rawMarkdown };
-      expectOk(yield* post(api, resolvePath, { noteId, resultId: completed.resultId }), 400);
+      const resolution = { noteId, resultId: completed.resultId };
+      expectOk(yield* post(api, resolvePath, { noteId }), 400);
       expectOk(yield* post(api, resolvePath, resolution), 200);
       expectOk(yield* post(api, resolvePath, resolution), 200);
       assert.isEmpty(expectOk(yield* get(api, pendingPath, { noteId }), 200).bodyJson.results);
@@ -1614,10 +1653,62 @@ describe('Ask stream', () => {
       assert.deepStrictEqual(conv.bodyJson, {
         id: 'cnv_local_1',
         messages: [
-          { role: 'user', content: 'What is in my focus note?' },
+          { role: 'user', content: 'What is in my focus note?', scope: { noteIds: [noteId] } },
           { role: 'assistant', content: 'Hello from local.' },
         ],
       });
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+
+  it.effect('restores question attachments and follow-ups and replaces regenerated answers by turn identity', () =>
+    Effect.gen(function* () {
+      const model = streamingModel(['First.\nFollow-ups: Why? | Next?\nSources: nt_focus', 'Second.']);
+      const { api, scope } = yield* build(model);
+      const request = {
+        messages: [{ role: 'user' as const, content: 'Explain' }],
+        conversationId: 'cnv_retry', turnId: 'turn_1',
+        scope: { noteIds: ['nt_focus'] }, suggestFollowups: true,
+      };
+      yield* readAll(yield* api.openAskStream(request));
+      yield* Effect.promise(() => new Promise(resolve => setImmediate(resolve)));
+      const first = expectOk(yield* get(api, '/apps/v1/me/ask/conversations'), 200).bodyJson;
+      assert.deepStrictEqual(first.messages, [
+        { role: 'user', content: 'Explain', turnId: 'turn_1', scope: request.scope },
+        { role: 'assistant', content: 'First.\nSources: nt_focus', followups: ['Why?', 'Next?'] },
+      ]);
+      assert.include(JSON.stringify(model.doStreamCalls[0]!.prompt), 'Follow-ups:');
+      yield* readAll(yield* api.openAskStream({ ...request, scope: {} }));
+      yield* Effect.promise(() => new Promise(resolve => setImmediate(resolve)));
+      const retried = expectOk(yield* get(api, '/apps/v1/me/ask/conversations'), 200).bodyJson;
+      assert.deepStrictEqual(retried.messages, [first.messages[0], { role: 'assistant', content: 'Second.' }]);
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+
+  it.effect('includes final completed transcripts in focus and get_note while excluding unavailable evidence', () =>
+    Effect.gen(function* () {
+      const model = streamingModel(['ok']);
+      const { api, product, scope } = yield* build(model);
+      const noteId = yield* insertNote(product, { title: 'Focus', markdown: 'Written body' });
+      yield* insertRecording(product, { noteId, segments: ['First final', 'Second final', '   '] });
+      yield* insertRecording(product, { noteId, status: 'recording', segments: ['LIVE-SECRET'] });
+      const interim = yield* insertRecording(product, { noteId, segments: ['INTERIM-SECRET'] });
+      product.db.update(schema.transcriptSegment).set({ isFinal: false }).where(eq(schema.transcriptSegment.recordingId, interim)).run();
+      const deleted = yield* insertRecording(product, { noteId, segments: ['DELETED-SECRET'] });
+      product.db.update(schema.recording).set({ deletedAt: NOW }).where(eq(schema.recording.id, deleted)).run();
+      const removed = yield* insertRecording(product, { noteId, segments: ['REMOVED-SECRET'] });
+      product.db.update(schema.transcriptSegment).set({ deletedAt: NOW }).where(eq(schema.transcriptSegment.recordingId, removed)).run();
+      const note = yield* Effect.promise(() => getNoteForAsk(product.db, noteId));
+      assert.isTrue('content' in note);
+      const content = 'content' in note ? note.content : '';
+      assert.include(content, '## Note body\n\nWritten body');
+      assert.include(content, '## Completed recording transcripts');
+      assert.include(content, 'You: First final\nThem: Second final');
+      assert.notInclude(content, 'SECRET');
+      yield* readAll(yield* api.openAskStream({ messages: [{ role: 'user', content: 'What was said?' }], scope: { noteIds: [noteId] } }));
+      assert.include(JSON.stringify(model.doStreamCalls[0]!.prompt), 'First final');
+      assert.notInclude(JSON.stringify(model.doStreamCalls[0]!.prompt), 'SECRET');
       yield* Scope.close(scope, Exit.void);
     })
   );

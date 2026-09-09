@@ -2,7 +2,15 @@
 
 import * as React from 'react';
 import { ChunkBoundaryPicker } from './chunker';
-import { encodeWavPcm16 } from './wav-encode';
+import {
+  appendAudioFrame,
+  createAudioSession,
+  holdAudioCapture,
+  listAudioSessions,
+  queueAudioChunk,
+  stopAudioSession,
+} from './audio-outbox';
+import { drainAudioSession, type AudioDrainResult } from './audio-outbox-drain';
 import {
   createRecording,
   finalizeRecording,
@@ -11,7 +19,6 @@ import {
 import {
   listPendingRecordingCompletions,
   removePendingRecordingCompletion,
-  savePendingRecordingCompletion,
   type PendingRecordingCompletion,
 } from './recording-completion';
 import { AutoPauseMachine, SilenceWatcher, type AutoPauseEffect } from '@prismical/silence';
@@ -42,7 +49,6 @@ import {
 } from './recording-preferences';
 
 const SAMPLE_RATE = 16000; // mirrors desktop useAudioCapture
-const MAX_UPLOAD_ATTEMPTS = 3;
 // Dead-mic detection: a capture stream whose samples are exactly
 // zero is broken — most commonly macOS revoking the browser's mic permission (a Chrome
 // update can wedge it), where getUserMedia still "succeeds" and the tab shows recording
@@ -51,9 +57,6 @@ const MAX_UPLOAD_ATTEMPTS = 3;
 // only be a dead stream (or a hardware-muted mic, which deserves the same warning).
 const SILENT_MIC_PEAK = 1e-6;
 const SILENT_MIC_SECONDS = 4;
-// Chunks upload over N parallel lanes so managed round-trips can overlap
-// instead of queueing; core serializes the DB writes per recording anyway.
-const UPLOAD_CONCURRENCY = 3;
 // Auto-pause never fires in the opening seconds of a session: pausing right
 // after the user pressed record reads as "the button is broken", and the chunker's warm-up window
 // is where cadence is least representative anyway.
@@ -153,31 +156,6 @@ async function openWebMicrophone(deviceId: string): Promise<MediaStream> {
   }
 }
 
-/** Delay before retrying a failed live chunk, or null when the failure is permanent.
- * A quota/config 4xx fails identically and just delays the next chunks. */
-function uploadRetryDelayMs(err: unknown, attempt: number): number | null {
-  if (err instanceof ApiError) {
-    if (err.status === 429) {
-      // Prefer the provider's OWN wait when the server passed one through. The fixed ladder gives
-      // up at +5s and +10s, and the windows providers actually quote are 26.8s and 41.8s — so
-      // without this every chunk exhausts its attempts inside the window and is lost, which is the
-      // opposite of what a rate limit is asking for. Clamped: a chunk uploader is not a durable
-      // queue, and a wait longer than this means the recording is over anyway.
-      const hinted = (err.details as { retryAfterMs?: unknown } | undefined)?.retryAfterMs;
-      if (typeof hinted === 'number' && Number.isFinite(hinted) && hinted >= 250) {
-        return Math.min(hinted, 60_000);
-      }
-      return 5000 * attempt; // the server window is 1 min — back off for real
-    }
-    // 401 = mid-recording token expiry. The port's onUnauthorized() has already kicked the
-    // refresh, and every attempt obtains a fresh token only if the exact owner slot is still
-    // active. Dropping instead of retrying would lose the chunk's audio permanently.
-    if (err.status === 401 || err.status === 408 || err.status >= 500) return 500 * attempt;
-    return null; // other 4xx (402 quota, 422 config, …): the retry can't change the outcome
-  }
-  return 500 * attempt; // network hiccup / unknown: worth retrying
-}
-
 export type RecState = 'idle' | 'starting' | 'recording' | 'paused' | 'stopping';
 
 // --- Native (desktop) recording bridge helpers ------------------------------
@@ -209,7 +187,7 @@ const NATIVE_NOTICE_KEYS: ReadonlySet<RecordingErrorKey> = new Set<RecordingErro
   'recording.errors.systemAudioUnavailable',
 ]);
 
-function nativeNotice(state: NativeRecordingState): RecordingErrorKey | null {
+export function nativeNotice(state: NativeRecordingState): RecordingErrorKey | null {
   if (state.status === 'error') return 'recording.errors.endedUnexpectedly';
   if (state.micSource === 'unavailable') {
     return state.captureMode === 'dual'
@@ -237,37 +215,24 @@ interface RecordingSession {
   source: MediaStreamAudioSourceNode | null;
   picker: ChunkBoundaryPicker | null;
   recordingId: string | null;
-  chunkIndex: number;
-  sentSamples: number;
   segmentCount: number;
-  /** Round-robin upload lanes: each lane serializes, so ≤UPLOAD_CONCURRENCY in flight. */
-  uploadLanes: Promise<void>[];
+  /** Frames and chunk boundaries commit in capture order, before network delivery. */
+  writes: Promise<void>;
+  pendingSamples: number;
+  storageFailed: boolean;
+  releaseCapture: () => void;
   /** Identity frozen with the session so a later account/org switch cannot claim its recovery. */
   ownerSub: string;
   ownerOrgId: string;
   ownerSessionKey: string;
   /** Set before local teardown so queued async work cannot cross into a new login. */
   cancelled: boolean;
-  /** A user-fixable transcription failure (rejected key, quota) stopped the session's uploads:
-   * every later chunk would fail the same way, so they are skipped instead of retried. The
-   * recording itself continues. */
-  uploadsHalted: boolean;
 }
 
-const pendingEphemeralRecoveries = new Map<string, PendingRecordingCompletion>();
 const activeRecordingCompletions = new Set<string>();
-
-function rememberRecordingCompletion(item: PendingRecordingCompletion): void {
-  if (savePendingRecordingCompletion(item)) {
-    pendingEphemeralRecoveries.delete(item.recordingId);
-  } else {
-    pendingEphemeralRecoveries.set(item.recordingId, item);
-  }
-}
 
 async function finishRecordingCompletion(recordingId: string): Promise<void> {
   removePendingRecordingCompletion(recordingId);
-  pendingEphemeralRecoveries.delete(recordingId);
 }
 
 function recordingRecoveryLock(recordingId: string): string {
@@ -411,6 +376,10 @@ export function useRecording({
   const [recordingId, setRecordingId] = React.useState<string | null>(null);
   const [noteId, setNoteId] = React.useState<string | null>(null);
   const [finalizingIds, setFinalizingIds] = React.useState<Set<string>>(() => new Set());
+  const finalizingIdsRef = React.useRef(finalizingIds);
+  React.useEffect(() => {
+    finalizingIdsRef.current = finalizingIds;
+  }, [finalizingIds]);
   const [completedRecording, setCompletedRecording] =
     React.useState<UseRecording['completedRecording']>(null);
   const openingRef = React.useRef<object | null>(null);
@@ -640,62 +609,175 @@ export function useRecording({
     void ensureModelDefault(qc, 'transcription').catch(() => {});
   }, [control, qc]);
 
+  const receiveAudioDrain = React.useCallback(
+    (result: AudioDrainResult, source?: RecordingSession) => {
+      const current = session.current;
+      const visible =
+        !openingRef.current && (!current || current.recordingId === result.recordingId);
+      if (source) source.segmentCount += result.segments.length;
+      if (result.error && visible) {
+        const key: RecordingErrorKey =
+          result.error instanceof ApiError && result.error.code === 'TRANSCRIPTION_QUOTA_EXCEEDED'
+            ? 'recording.errors.quotaExceeded'
+            : 'recording.errors.someAudioNotTranscribed';
+        const user = aiUserErrorOf(result.error);
+        setServerError(user ? { key, user } : null);
+        setError(key);
+      }
+      if (result.segments.length) {
+        const s = session.current;
+        if (
+          s &&
+          result.segments[0]?.recordingId === s.recordingId &&
+          !s.cancelled &&
+          !openingRef.current
+        ) {
+          watcherRef.current?.noteTranscribedSpeech();
+          const effects = machineRef.current?.speechTranscribed();
+          if (effects?.some(effect => effect.kind === 'hide-grace')) setGracePrompt(null);
+          segmentCountRef.current += result.segments.length;
+          setLiveSegments(previous =>
+            [...previous, ...result.segments].sort(
+              (a, b) => a.startTimeMs - b.startTimeMs || a.segmentOrder - b.segmentOrder
+            )
+          );
+        }
+        void qc.invalidateQueries({ queryKey: transcriptKey(result.segments[0]!.recordingId) });
+      }
+      if (!result.pending)
+        setFinalizingIds(ids => {
+          const next = new Set(ids);
+          next.delete(result.recordingId);
+          return next;
+        });
+      if (result.completed) {
+        const row = result.completed;
+        // An opening failure may leave an empty durable intent. Settle it without
+        // announcing a recording or requesting enhancement for audio never captured.
+        if (row.capturedSamples === 0) return;
+        if (visible)
+          setError(previous =>
+            previous === COMPLETION_RECOVERY_ERROR ||
+            previous === 'recording.errors.someAudioNotTranscribed' ||
+            previous === 'recording.errors.quotaExceeded'
+              ? null
+              : previous
+          );
+        if (visible) setServerError(null);
+        finishRecording({
+          recordingId: row.recordingId,
+          noteId: row.noteId,
+          segments: source?.segmentCount ?? 0,
+          ownerSessionKey: row.ownerSessionKey,
+          ownerOrgId: row.ownerOrgId,
+        });
+      }
+    },
+    [finishRecording, qc]
+  );
+
   // Retry owned finalization and upload intents on launch, reconnection, focus,
   // and while unresolved work remains in this session.
   React.useEffect(() => {
     if (control) return;
     let cancelled = false;
     let retryTimer: number | null = null;
+    let draining = false;
     const drain = async () => {
-      if (retryTimer !== null) {
-        window.clearTimeout(retryTimer);
-        retryTimer = null;
-      }
-      let unresolved = false;
-      const view = auth.getSession();
-      const activeSub = view.activeSub ?? null;
-      const activeSessionKey = view.activeSessionKey ?? view.activeSub ?? null;
-      const activeOrgId = activeOrgIdOf(view);
-      const recoveries = new Map(
-        listPendingRecordingCompletions().map(item => [item.recordingId, item])
-      );
-      for (const item of pendingEphemeralRecoveries.values()) {
-        recoveries.set(item.recordingId, item);
-      }
-      for (const item of recoveries.values()) {
+      if (draining || cancelled) return;
+      draining = true;
+      try {
+        if (retryTimer !== null) {
+          window.clearTimeout(retryTimer);
+          retryTimer = null;
+        }
+        let unresolved = false;
+        let pendingAudio = false;
+        const view = auth.getSession();
+        const activeSub = view.activeSub ?? null;
+        const activeSessionKey = view.activeSessionKey ?? view.activeSub ?? null;
+        const activeOrgId = activeOrgIdOf(view);
+        // A sibling tab may finish delivery and delete the shared outbox intent without
+        // this hook receiving its drain result. Snapshot tracked IDs before the async read
+        // so this sweep cannot clear a recording that started stopping during that read.
+        const previouslyFinalizing = finalizingIdsRef.current;
+        const audio = await listAudioSessions();
         if (cancelled) return;
-        // Recovery credentials come from the active session. Leave another account/org's audio
-        // untouched until its owner becomes active again.
-        if (
-          item.ownerSub !== activeSub ||
-          item.ownerOrgId !== activeOrgId ||
-          item.ownerSessionKey !== activeSessionKey
-        )
-          continue;
-        if (
-          !(await recoverPendingCompletion(item, auth, () => {
-            if (item.noteId)
-              finishRecording({
-                recordingId: item.recordingId,
-                noteId: item.noteId,
-                segments: 0,
-                ownerSessionKey: item.ownerSessionKey,
-                ownerOrgId: item.ownerOrgId,
-              });
-          }))
-        )
-          unresolved = true;
-      }
-      if (cancelled) return;
-      setError(previous =>
-        unresolved
-          ? COMPLETION_RECOVERY_ERROR
-          : previous === COMPLETION_RECOVERY_ERROR
-            ? null
-            : previous
-      );
-      if (unresolved) {
-        retryTimer = window.setTimeout(() => void drain(), 5000);
+        const retainedIds = new Set(audio.map(item => item.recordingId));
+        const deliveredElsewhere = [...previouslyFinalizing].filter(
+          id => !retainedIds.has(id) && session.current?.recordingId !== id
+        );
+        if (deliveredElsewhere.length) {
+          setFinalizingIds(ids => {
+            const next = new Set(ids);
+            for (const id of deliveredElsewhere) next.delete(id);
+            return next;
+          });
+          for (const id of deliveredElsewhere)
+            void qc.invalidateQueries({ queryKey: transcriptKey(id) });
+          void qc.invalidateQueries({ queryKey: ['recordings'] });
+          void qc.invalidateQueries({ queryKey: ['note-recordings'] });
+          void qc.invalidateQueries({ queryKey: ['enhanced-recordings'] });
+          void qc.invalidateQueries({ queryKey: usageKeyPrefix });
+          // The delivering tab owns completion/auto-enhance; only refresh this observer.
+        }
+        for (const item of audio) {
+          if (cancelled) return;
+          if (item.ownerSub !== activeSub || item.ownerSessionKey !== activeSessionKey) continue;
+          const live = session.current?.recordingId === item.recordingId;
+          const source = live ? (session.current ?? undefined) : undefined;
+          const result = await drainAudioSession(item.recordingId, auth, recording, {
+            recoverInterrupted: !live,
+            isActive: () => !cancelled,
+          });
+          if (cancelled) return;
+          receiveAudioDrain(result, source);
+          if (result.pending) pendingAudio = true;
+          if (result.pending && item.stoppedAt !== undefined)
+            setFinalizingIds(ids => new Set(ids).add(item.recordingId));
+          if (result.pending && !live && (result.retrying || result.error)) unresolved = true;
+        }
+        const recoveries = new Map(
+          listPendingRecordingCompletions().map(item => [item.recordingId, item])
+        );
+        for (const item of recoveries.values()) {
+          if (cancelled) return;
+          // Recovery credentials come from the active session. Leave another account/org's audio
+          // untouched until its owner becomes active again.
+          if (
+            item.ownerSub !== activeSub ||
+            item.ownerOrgId !== activeOrgId ||
+            item.ownerSessionKey !== activeSessionKey
+          )
+            continue;
+          if (
+            !(await recoverPendingCompletion(item, auth, () => {
+              if (item.noteId)
+                finishRecording({
+                  recordingId: item.recordingId,
+                  noteId: item.noteId,
+                  segments: 0,
+                  ownerSessionKey: item.ownerSessionKey,
+                  ownerOrgId: item.ownerOrgId,
+                });
+            }))
+          )
+            unresolved = true;
+        }
+        if (cancelled) return;
+        if (!openingRef.current && (!session.current || session.current.phase === 'stopping'))
+          setError(previous =>
+            unresolved
+              ? COMPLETION_RECOVERY_ERROR
+              : previous === COMPLETION_RECOVERY_ERROR && !pendingAudio
+                ? null
+                : previous
+          );
+      } catch (error) {
+        console.warn('audio recovery unavailable', error);
+      } finally {
+        draining = false;
+        if (!cancelled) retryTimer = window.setTimeout(() => void drain(), 5000);
       }
     };
     const resume = () => void drain();
@@ -712,7 +794,7 @@ export function useRecording({
       unsubscribeSession();
       if (retryTimer !== null) window.clearTimeout(retryTimer);
     };
-  }, [auth, control, finishRecording]);
+  }, [auth, control, finishRecording, recording, receiveAudioDrain, qc]);
 
   /**
    * Apply whatever the machine emitted. Deliberately the ONLY place effects are interpreted, so
@@ -762,7 +844,7 @@ export function useRecording({
       pauseEpochRef.current += 1;
       teardownAudio();
       session.current = null;
-      if (s.recordingId) void finishRecordingCompletion(s.recordingId);
+      void s.writes.then(s.releaseCapture, s.releaseCapture);
       setState('idle');
       setRecordingId(null);
       setNoteId(null);
@@ -777,84 +859,24 @@ export function useRecording({
     });
   }, [auth, control, teardownAudio, applyAutoPauseEffects]);
 
-  /** Bounded-parallel chunk uploads with status-aware retry; failures surface but don't kill
-   * the session. Retrying the same chunkIndex is idempotent server-side, and lanes completing
-   * out of order is fine — the live view re-sorts by segmentOrder. */
   const enqueueChunk = React.useCallback(
     (samples: Float32Array) => {
       const s = session.current;
-      if (!s?.recordingId || samples.length === 0) return;
-      if (s.uploadsHalted) {
-        s.sentSamples += samples.length; // durationMs still derives from the samples captured
-        return;
-      }
-      const chunkIndex = s.chunkIndex++;
-      const chunkStartMs = (s.sentSamples / SAMPLE_RATE) * 1000;
-      s.sentSamples += samples.length;
-      const wav = encodeWavPcm16(samples, SAMPLE_RATE);
-      const recId = s.recordingId;
-
-      const upload = async () => {
-        for (let attempt = 1; attempt <= MAX_UPLOAD_ATTEMPTS; attempt++) {
-          if (s.cancelled) return;
-          try {
-            const authToken = await boundAuthToken(auth, s.ownerSessionKey);
-            const segs = await recording.uploadTranscriptionChunk(recId, wav, {
-              chunkIndex,
-              chunkStartMs,
-              authToken,
-              activeOrgId: s.ownerOrgId,
-            });
-            if (s.cancelled || !ownsActiveContext(auth, s.ownerSessionKey)) return;
-            s.segmentCount += segs.length;
-            if (segs.length && session.current === s && !openingRef.current) {
-              // The ASR heard words in this chunk (the two-signal rule): a
-              // production model on the real audio outranks our energy gate, so cancel any
-              // countdown even if the levels still read as silence. This is what makes it safe to
-              // sit at a 100s threshold without ever pausing a quiet speaker.
-              watcherRef.current?.noteTranscribedSpeech();
-              applyAutoPauseEffects(machineRef.current?.speechTranscribed());
-              segmentCountRef.current += segs.length;
-              setLiveSegments(prev =>
-                [...prev, ...segs].sort(
-                  (a, b) => a.startTimeMs - b.startTimeMs || a.segmentOrder - b.segmentOrder
-                )
-              );
-            }
-            return;
-          } catch (err) {
-            if (err instanceof RecordingSessionChangedError || s.cancelled) return;
-            const delay = attempt < MAX_UPLOAD_ATTEMPTS ? uploadRetryDelayMs(err, attempt) : null;
-            if (delay === null) {
-              // One gap is better than a dead session — warn and carry on.
-              console.warn(`transcription chunk ${chunkIndex} failed`, err);
-              const key: RecordingErrorKey =
-                err instanceof ApiError && err.code === 'TRANSCRIPTION_QUOTA_EXCEEDED'
-                  ? 'recording.errors.quotaExceeded'
-                  : 'recording.errors.someAudioNotTranscribed';
-              // Core describes the cause when it classified one (rejected key, out of credit,
-              // retired model, quota): the dock shows that instead of the generic line. A cause
-              // the retry policy already calls permanent (a config/quota/key 4xx, not a 401/408/
-              // 429 that merely ran out of attempts) fails identically for every later chunk, so
-              // stop uploading for the rest of the session instead of spending three attempts
-              // each. The recording itself continues.
-              const user = aiUserErrorOf(err);
-              if (uploadRetryDelayMs(err, 1) === null) s.uploadsHalted = true;
-              if (session.current === s && !openingRef.current) {
-                setServerError(user ? { key, user } : null);
-                setError(key);
-              }
-              return;
-            }
-            await new Promise(r => setTimeout(r, delay));
+      if (!s?.recordingId || samples.length === 0 || s.storageFailed) return;
+      const id = s.recordingId;
+      s.writes = s.writes.then(() => queueAudioChunk(id, samples.length));
+      void s.writes
+        .then(() => drainAudioSession(id, auth, recording))
+        .then(result => receiveAudioDrain(result, s))
+        .catch(() => {
+          s.storageFailed = true;
+          if (session.current === s && !openingRef.current) {
+            setError('recording.errors.storageUnavailable');
+            void stopRef.current();
           }
-        }
-      };
-
-      const lane = chunkIndex % s.uploadLanes.length;
-      s.uploadLanes[lane] = (s.uploadLanes[lane] ?? Promise.resolve()).then(upload);
+        });
     },
-    [recording, applyAutoPauseEffects, auth]
+    [auth, recording, receiveAudioDrain]
   );
 
   const start = React.useCallback(
@@ -953,6 +975,7 @@ export function useRecording({
       let openingStream: MediaStream | null = null;
       let openingContext: AudioContext | null = null;
       let openingNode: AudioWorkletNode | null = null;
+      let releaseCapture: (() => void) | undefined;
       try {
         const ownerView = auth.getSession();
         const ownerSub = ownerView.activeSub;
@@ -974,6 +997,15 @@ export function useRecording({
           { noteId, title, ...modelParams, language: transcriptionLanguageFor(preferences) },
           { activeOrgId: ownerOrgId, authToken }
         );
+        assertOpening();
+        releaseCapture = await holdAudioCapture(rec.id);
+        await createAudioSession({
+          recordingId: rec.id,
+          noteId,
+          ownerSub,
+          ownerOrgId,
+          ownerSessionKey,
+        });
         assertOpening();
         openingStream = await openWebMicrophone(
           await resolveWebMicrophone(preferences.microphonePriority)
@@ -1040,15 +1072,15 @@ export function useRecording({
           source,
           picker: new ChunkBoundaryPicker(SAMPLE_RATE),
           recordingId: rec.id,
-          chunkIndex: 0,
-          sentSamples: 0,
           segmentCount: 0,
-          uploadLanes: Array.from({ length: UPLOAD_CONCURRENCY }, () => Promise.resolve()),
+          writes: Promise.resolve(),
+          pendingSamples: 0,
+          storageFailed: false,
+          releaseCapture,
           ownerSub,
           ownerOrgId,
           ownerSessionKey,
           cancelled: false,
-          uploadsHalted: false,
         };
         const activeSession = session.current;
         openingNode.port.onmessage = (ev: MessageEvent) => {
@@ -1059,6 +1091,27 @@ export function useRecording({
           )
             return;
           const frame = ev.data.frame as Float32Array;
+          const capture = activeSession;
+          if (capture.storageFailed) return;
+          capture.pendingSamples += frame.length;
+          if (capture.pendingSamples > SAMPLE_RATE * 60) {
+            capture.storageFailed = true;
+            setError('recording.errors.storageUnavailable');
+            void stopRef.current();
+            return;
+          }
+          capture.writes = capture.writes.then(() => appendAudioFrame(rec.id, frame));
+          void capture.writes
+            .then(() => {
+              capture.pendingSamples -= frame.length;
+            })
+            .catch(() => {
+              capture.storageFailed = true;
+              if (session.current === capture && !openingRef.current) {
+                setError('recording.errors.storageUnavailable');
+                void stopRef.current();
+              }
+            });
           detectSilentMic(frame);
           const s = session.current;
           if (!s) return;
@@ -1093,6 +1146,7 @@ export function useRecording({
           onMicEnded();
         }
       } catch (err) {
+        releaseCapture?.();
         openingNode?.port.close();
         openingNode?.disconnect();
         openingStream?.getTracks().forEach(track => track.stop());
@@ -1119,7 +1173,7 @@ export function useRecording({
   // pause point; then the context suspends and no more frames flow. The mic track stays live
   // (the OS indicator stays on, like Zoom/Voice Memos) — tearing it down would mean a fresh
   // getUserMedia on resume. Session internals are untouched, so resume continues the same
-  // chunkIndex/sentSamples and the chunker doesn't re-run its warm-up burst.
+  // durable sample offsets and the chunker doesn't re-run its warm-up burst.
   const pause = React.useCallback(
     async (reason: PauseReason = 'user'): Promise<boolean> => {
       const s = session.current;
@@ -1258,84 +1312,43 @@ export function useRecording({
     s.phase = 'stopping';
     if (s.recordingId) setFinalizingIds(ids => new Set(ids).add(s.recordingId!));
     setState('stopping');
-    let retryAfterStop = false;
     const stopOwnedSession = async () => {
-      let recoveryItem: PendingRecordingCompletion | null = null;
       try {
         s.node?.port.postMessage({ type: 'flush' });
         await new Promise(resolve => setTimeout(resolve, 150));
-        if (s.cancelled || !ownsActiveContext(auth, s.ownerSessionKey))
-          throw new RecordingSessionChangedError();
-        const rest = s.picker?.flush();
-        if (rest) enqueueChunk(rest);
-        const durationMs = (s.sentSamples / SAMPLE_RATE) * 1000;
-        const endedAt = Date.now();
         teardownAudio();
-        if (!s.recordingId) return { segments: segmentCountRef.current };
-
-        const intent: PendingRecordingCompletion = {
-          version: 1,
-          recordingId: s.recordingId,
-          noteId: s.noteId,
-          durationMs,
-          endedAt,
-          createdAt: Date.now(),
-          ownerSub: s.ownerSub,
-          ownerOrgId: s.ownerOrgId,
-          ownerSessionKey: s.ownerSessionKey,
-        };
-        const persistIntent = (): PendingRecordingCompletion => {
-          rememberRecordingCompletion(intent);
-          return intent;
-        };
-        activeRecordingCompletions.add(intent.recordingId);
-        // The lock prevents another tab from finalizing while our chunk uploads drain.
-        // Without Web Locks, publish only after draining; mid-drain reload recovery is unavailable.
-        if (navigator.locks) recoveryItem = persistIntent();
-        // Capture is closed. Uploads retain this session and its recovery lock,
-        // but no longer prevent the user from recording another note.
+        // Capture is closed; retained writes/uploads must not block a new recording.
         setState('idle');
         setGracePrompt(null);
         setPauseReason(null);
         setAutoStopRequested(false);
         applyAutoPauseEffects(machineRef.current?.noteStopped());
-        await Promise.all(s.uploadLanes);
-        recoveryItem ??= persistIntent();
-        if (s.cancelled || !ownsActiveContext(auth, s.ownerSessionKey))
-          throw new RecordingSessionChangedError();
-        const authToken = await boundAuthToken(auth, s.ownerSessionKey);
-        await finalizeRecording(intent.recordingId, durationMs, {
-          endedAt,
-          activeOrgId: s.ownerOrgId,
-          authToken,
-        });
-        if (s.cancelled || !ownsActiveContext(auth, s.ownerSessionKey))
-          throw new RecordingSessionChangedError();
-        await finishRecordingCompletion(intent.recordingId);
-        finishRecording({
-          recordingId: intent.recordingId,
-          noteId: s.noteId,
-          segments: s.segmentCount,
-          ownerSessionKey: s.ownerSessionKey,
-          ownerOrgId: s.ownerOrgId,
-        });
-      } catch (err) {
-        if (s.recordingId) activeRecordingCompletions.delete(s.recordingId);
-        if (err instanceof RecordingSessionChangedError || s.cancelled) {
-          if (s.recordingId) await finishRecordingCompletion(s.recordingId);
-        } else {
-          console.warn('finalize recording failed', err);
-          if (session.current === s && !openingRef.current)
-            setError(recoveryItem ? COMPLETION_RECOVERY_ERROR : 'recording.errors.savedWithErrors');
-          retryAfterStop = recoveryItem !== null;
+        // Wait for every accepted frame and boundary to commit. On write failure the
+        // retained prefix remains recoverable; stopAudioSession uses its durable length.
+        await s.writes.catch(() => {});
+        if (!s.recordingId) return { segments: segmentCountRef.current };
+        await stopAudioSession(s.recordingId, Date.now());
+        s.releaseCapture();
+        if (!s.cancelled && ownsActiveContext(auth, s.ownerSessionKey)) {
+          const result = await drainAudioSession(s.recordingId, auth, recording);
+          receiveAudioDrain(result, s);
+          if (
+            result.pending &&
+            (result.retrying || result.error) &&
+            !s.storageFailed &&
+            session.current === s &&
+            !openingRef.current
+          )
+            setError(COMPLETION_RECOVERY_ERROR);
         }
+      } catch (error) {
+        console.warn('recording stop retained for recovery', error);
+        if (session.current === s && !openingRef.current)
+          setError(
+            s.storageFailed ? 'recording.errors.storageUnavailable' : COMPLETION_RECOVERY_ERROR
+          );
       } finally {
-        setFinalizingIds(ids => {
-          const next = new Set(ids);
-          if (s.recordingId) next.delete(s.recordingId);
-          return next;
-        });
-        if (s.recordingId) activeRecordingCompletions.delete(s.recordingId);
+        s.releaseCapture();
         if (session.current === s) {
           teardownAudio();
           session.current = null;
@@ -1345,28 +1358,22 @@ export function useRecording({
           setAutoStopRequested(false);
           applyAutoPauseEffects(machineRef.current?.noteStopped());
         }
+        window.dispatchEvent(new Event('recording-recovery-pending'));
       }
       return { segments: s.segmentCount };
     };
-    const stopping =
-      navigator.locks && s.recordingId
-        ? navigator.locks.request(recordingRecoveryLock(s.recordingId), stopOwnedSession)
-        : stopOwnedSession();
-    s.stopPromise = stopping.then(result => {
-      if (retryAfterStop) window.dispatchEvent(new Event('recording-recovery-pending'));
-      return result;
-    });
+    s.stopPromise = stopOwnedSession();
     return s.stopPromise;
   }, [
     control,
     recordingId,
     state,
-    enqueueChunk,
     teardownAudio,
     applyAutoPauseEffects,
     auth,
-    finishRecording,
     analytics,
+    recording,
+    receiveAudioDrain,
   ]);
 
   // `stop` for callbacks registered before it exists (the mic track's `ended` listener). Kept

@@ -34,6 +34,12 @@ describe('recording completion recovery', () => {
     expect(listPendingRecordingCompletions()).toEqual([]);
   });
 
+  it('continues recovery past a corrupt ledger entry', () => {
+    localStorage.setItem('prismical-recording-completion-v1:broken', '{');
+    expect(savePendingRecordingCompletion(completion)).toBe(true);
+    expect(listPendingRecordingCompletions()).toEqual([completion]);
+  });
+
   it('keeps a support session completion within its browser tab', () => {
     const support = { ...completion, ownerSessionKey: 'support_test' };
     expect(savePendingRecordingCompletion(support)).toBe(true);

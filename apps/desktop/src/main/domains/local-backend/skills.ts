@@ -289,6 +289,7 @@ async function executeSkillRun(
       .get();
     const original = saved ? RunSkillResultSchema.parse(saved.result) : null;
     if (
+      !saved ||
       !original ||
       !req.refineInstruction ||
       titleTarget ||
@@ -298,8 +299,8 @@ async function executeSkillRun(
     ) {
       return apiError(404, 'NOT_FOUND', 'Suggestion not found');
     }
-    if (saved?.resolvedAt || original.rawMarkdown !== req.previousOutput) return suggestionChanged();
-    recovery = { id: req.recoveryResultId, result: original };
+    if (saved.resolvedAt || original.rawMarkdown !== req.previousOutput) return suggestionChanged();
+    recovery = { id: req.recoveryResultId, result: { ...saved.result, ...original } };
   }
   if (
     req.recoverable &&
@@ -523,7 +524,7 @@ async function executeSkillRun(
       runResult.titleRunId = runId;
     }
     if (
-      ((req.recoverable && req.recordingId) || req.recoveryResultId) &&
+      ((req.recoverable && req.recordingId) || req.retainResult || req.recoveryResultId) &&
       !titleTarget &&
       mode !== 'inline-rewrite'
     ) {
@@ -532,7 +533,8 @@ async function executeSkillRun(
         db,
         req.noteId,
         RunSkillResultSchema.parse(runResult),
-        recovery
+        recovery,
+        req.retainResult && !req.recoverable
       );
     }
 

@@ -180,6 +180,44 @@ describe('openNoteLog renderer bridge', () => {
     });
   });
 
+  it('waits for a matching durability acknowledgment after queued writes and flushes', async () => {
+    const win = winWithOpen(Promise.resolve({ ok: true }));
+    const port = new FakePort();
+    await withWindow(win, async () => {
+      const handle = openNoteLog('nt_1');
+      win.dispatch('message', {
+        data: { type: COLLAB_PORT_WINDOW_MESSAGE, openId: 'oid' },
+        ports: [port],
+      });
+      handle.sendUpdate(Uint8Array.from([1]));
+      handle.flush({ text: 'Kept', markdown: 'Kept', firstLine: 'Kept' });
+      const settled = vi.fn();
+      const waiting = handle.waitForPendingChanges().then(settled);
+      await flushMicrotasks();
+      expect(port.posted).toEqual([
+        { type: 'update', data: Uint8Array.from([1]) },
+        { type: 'flush', text: 'Kept', markdown: 'Kept', firstLine: 'Kept' },
+        { type: 'barrier', requestId: expect.any(String) },
+      ]);
+      expect(settled).not.toHaveBeenCalled();
+      port.emit({ type: 'barrier', requestId: 'another_request', ok: true });
+      await flushMicrotasks();
+      expect(settled).not.toHaveBeenCalled();
+      port.emit({ ...(port.posted.at(-1) as object), ok: true });
+      await waiting;
+      expect(settled).toHaveBeenCalledOnce();
+
+      const failed = expect(handle.waitForPendingChanges()).rejects.toThrow('could not be saved');
+      await flushMicrotasks();
+      port.emit({ ...(port.posted.at(-1) as object), ok: false });
+      await failed;
+      const closed = expect(handle.waitForPendingChanges()).rejects.toThrow('connection closed');
+      handle.close();
+      await closed;
+      await expect(handle.waitForPendingChanges()).rejects.toThrow('connection closed');
+    });
+  });
+
   it('a flush posted immediately before close() is still delivered', async () => {
     const win = winWithOpen(Promise.resolve({ ok: true }));
     const port = new FakePort();

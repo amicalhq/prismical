@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { createApplicationI18nSync } from '@prismical/app-i18n';
 import { I18nextProvider } from 'react-i18next';
 
@@ -29,12 +29,19 @@ vi.mock('../../shell/current-note-context', () => ({
 const { AskSuggestions } = await import('./ask-suggestions');
 const i18n = createApplicationI18nSync('en');
 
-function suggestions(props: { canRunSkills: boolean }) {
+function suggestions(props: {
+  canRunSkills: boolean;
+  removed?: boolean;
+  onAsk?: (text: string) => void;
+}) {
   return (
     <I18nextProvider i18n={i18n}>
       <AskSuggestions
         canRunSkills={props.canRunSkills}
-        onAsk={() => {}}
+        focusNote={
+          props.canRunSkills && !props.removed ? { id: 'nt_1', title: 'Weekly sync' } : null
+        }
+        onAsk={props.onAsk ?? (() => {})}
         onPickPrompt={() => {}}
         onInsertSkill={() => {}}
       />
@@ -47,7 +54,16 @@ beforeEach(() => {
   mocks.askAi = true;
 });
 
-describe('AskSuggestions plan gate', () => {
+describe('AskSuggestions', () => {
+  it('switches to workspace starters after removal without disabling note-editing skills', () => {
+    const onAsk = vi.fn();
+    render(suggestions({ canRunSkills: true, removed: true, onAsk }));
+    expect(screen.queryByRole('button', { name: 'Summarize this note' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'What did I capture recently?' }));
+    expect(onAsk).toHaveBeenCalledWith('What did I capture recently?');
+    expect(screen.getByRole('button', { name: /Cleanup/ })).toBeTruthy();
+  });
+
   it('offers starter questions and skill chips when Ask is in the plan', () => {
     render(suggestions({ canRunSkills: true }));
     expect(screen.getByRole('button', { name: 'Summarize this note' })).toBeTruthy();

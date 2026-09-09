@@ -14,7 +14,7 @@ import {
   encodeAskStreamError,
   type AiErrorDetails,
 } from '@prismical/api-contracts';
-import { desc, eq, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
 import {
   APICallError,
   convertToModelMessages,
@@ -25,7 +25,7 @@ import {
   type UIMessage,
 } from 'ai';
 import {
-  AskRequestSchema,
+  AskAppRequestSchema,
   AskStoredMessageSchema,
   type AskStoredMessage,
 } from '@prismical/api-contracts/apps/v1';
@@ -38,6 +38,7 @@ import {
   ASK_SNIPPET_CHARS,
   askStepBudget,
   classifyProviderError,
+  stripFollowupsLine,
   buildAskSystemPrompt,
   type AskGetNoteResult,
   type AskSearchResult,
@@ -95,7 +96,8 @@ export async function appendTurn(
   db: LocalDb,
   conversationId: string,
   messages: ReadonlyArray<AskStoredMessage>,
-  assistantText: string
+  assistantText: string,
+  context: { scope?: AskStoredMessage['scope']; turnId?: string } = {}
 ): Promise<void> {
   const last = messages.at(-1);
   if (last === undefined || assistantText.trim() === '') return;
@@ -109,10 +111,25 @@ export async function appendTurn(
     .where(eq(schema.askConversation.id, conversationId))
     .limit(1);
   const prior = existing[0] === undefined ? [] : storedMessages(existing[0].messages);
-  const assistant: AskStoredMessage = { role: 'assistant', content: assistantText };
+  const lines = assistantText.trimEnd().split(/\r?\n/).filter(line => line.trim());
+  const trailer = /^Sources:/i.test(lines.at(-1)?.trim() ?? '') ? lines.at(-2) : lines.at(-1);
+  const match = /^Follow-ups?:\s*(.*)$/i.exec(trailer?.trim() ?? '');
+  const followups = [...new Set((match?.[1] ?? '').split('|').map(q => q.trim()).filter(Boolean))]
+    .slice(0, 3).map(q => q.slice(0, 500));
+  const assistant: AskStoredMessage = {
+    role: 'assistant', content: stripFollowupsLine(assistantText),
+    ...(followups.length ? { followups } : {}),
+  };
   let next: AskStoredMessage[];
   const previousUser = prior.at(-2);
-  if (
+  const turnIndex = context.turnId
+    ? prior.findIndex(message => message.role === 'user' && message.turnId === context.turnId)
+    : -1;
+  if (turnIndex >= 0 && prior[turnIndex + 1]?.role === 'assistant') {
+    next = [...prior];
+    next[turnIndex + 1] = assistant;
+  } else if (
+    !context.turnId &&
     isResume &&
     previousUser !== undefined &&
     previousUser.role === 'user' &&
@@ -121,7 +138,7 @@ export async function appendTurn(
   ) {
     next = [...prior.slice(0, -1), assistant];
   } else {
-    next = [...prior, { role: 'user', content: lastUser.content }, assistant];
+    next = [...prior, { role: 'user', content: lastUser.content, ...context }, assistant];
   }
   next = next.slice(-MAX_STORED_MESSAGES);
   const now = new Date().toISOString();
@@ -161,29 +178,13 @@ export const localAskRequestFailure = (locale: string): Response =>
   askErrorResponse(localErrorText(locale, AI_ERROR_CODES.ASK_REQUEST_FAILED, { retryable: true }));
 
 const loadFocusNotes = async (db: LocalDb, ids: ReadonlyArray<string>): Promise<FocusNote[]> => {
-  if (ids.length === 0) return [];
-  const rows = await db
-    .select({
-      id: schema.note.id,
-      title: schema.note.title,
-      contentMarkdown: schema.note.contentMarkdown,
-      contentText: schema.note.contentText,
-      trashedAt: schema.note.trashedAt,
-      deletedAt: schema.note.deletedAt,
-    })
-    .from(schema.note)
-    .where(inArray(schema.note.id, [...ids]));
-  const byId = new Map(rows.map(row => [row.id, row]));
-  // Preserve the request order; silently drop unreadable ids (core does too).
-  return ids.flatMap(id => {
-    const row = byId.get(id);
-    return row === undefined || row.trashedAt !== null || row.deletedAt !== null
-      ? []
-      : [{ noteId: row.id, title: row.title, contentText: row.contentMarkdown ?? row.contentText ?? '' }];
-  });
+  const notes = await Promise.all(ids.map(id => getNoteForAsk(db, id)));
+  return notes.flatMap(note => 'noteId' in note
+    ? [{ noteId: note.noteId, title: note.title, contentText: note.content }]
+    : []);
 };
 
-const getNoteForAsk = async (db: LocalDb, noteId: string): Promise<AskGetNoteResult> => {
+export const getNoteForAsk = async (db: LocalDb, noteId: string): Promise<AskGetNoteResult> => {
   const rows = await db
     .select({
       id: schema.note.id,
@@ -200,7 +201,39 @@ const getNoteForAsk = async (db: LocalDb, noteId: string): Promise<AskGetNoteRes
   if (row === undefined || row.trashedAt !== null || row.deletedAt !== null) {
     return ASK_GET_NOTE_NOT_FOUND;
   }
-  return { noteId: row.id, title: row.title, content: row.contentMarkdown ?? row.contentText ?? '' };
+  const segments = await db.select({
+    recordingId: schema.recording.id,
+    title: schema.recording.title,
+    speaker: schema.transcriptSegment.speaker,
+    text: schema.transcriptSegment.text,
+  }).from(schema.transcriptSegment)
+    .innerJoin(schema.recording, eq(schema.recording.id, schema.transcriptSegment.recordingId))
+    .innerJoin(schema.note, eq(schema.note.id, schema.recording.noteId))
+    .where(and(
+      eq(schema.note.id, noteId), isNull(schema.note.trashedAt), isNull(schema.note.deletedAt),
+      eq(schema.recording.status, 'completed'), isNull(schema.recording.deletedAt),
+      eq(schema.transcriptSegment.isFinal, true), isNull(schema.transcriptSegment.deletedAt),
+      sql`length(trim(${schema.transcriptSegment.text})) > 0`
+    ))
+    .orderBy(asc(schema.recording.createdAt), asc(schema.recording.id),
+      asc(schema.transcriptSegment.startTimeMs), asc(schema.transcriptSegment.segmentOrder),
+      asc(schema.transcriptSegment.id));
+  const body = row.contentMarkdown ?? row.contentText ?? '';
+  const transcript: string[] = [];
+  let previousRecording: string | undefined;
+  for (const segment of segments) {
+    if (segment.recordingId !== previousRecording) {
+      transcript.push(`\n### Recording: ${segment.title}`);
+      previousRecording = segment.recordingId;
+    }
+    transcript.push(`${segment.speaker === 'you' ? 'You' : 'Them'}: ${segment.text}`);
+  }
+  return {
+    noteId: row.id, title: row.title,
+    content: segments.length
+      ? ['## Note body', body, '## Completed recording transcripts', transcript.join('\n')].join('\n\n')
+      : body,
+  };
 };
 
 const buildAskTools = (deps: AskDeps, scope: SearchScope) => ({
@@ -244,10 +277,10 @@ export async function openLocalAskStream(
 ): Promise<Response> {
   const errorResponse = (code: string, details: AiErrorDetails = {}): Response =>
     askErrorResponse(localErrorText(deps.locale, code, details));
-  const parsed = AskRequestSchema.safeParse(body);
+  const parsed = AskAppRequestSchema.safeParse(body);
   if (!parsed.success)
     return errorResponse(AI_ERROR_CODES.ASK_REQUEST_FAILED, { retryable: false });
-  const { messages, scope, conversationId, instanceId, modelId } = parsed.data;
+  const { messages, scope, conversationId, instanceId, modelId, turnId, suggestFollowups } = parsed.data;
 
   const resolved = await deps.ai.resolve({ instanceId, modelId });
   if (!resolved.ok) {
@@ -275,7 +308,7 @@ export async function openLocalAskStream(
   // and promise a Sources line it cannot ground.
   const toolsAvailable = toolSupport !== 'none';
   const tools = toolsAvailable ? buildAskTools(deps, searchScope) : {};
-  const system = buildAskSystemPrompt({ focusNotes, hasScopeFilter, toolsAvailable });
+  const system = buildAskSystemPrompt({ focusNotes, hasScopeFilter, toolsAvailable, suggestFollowups });
 
   let modelMessages: ModelMessage[];
   const usesParts = messages.some(m => m.parts !== undefined);
@@ -308,7 +341,7 @@ export async function openLocalAskStream(
     onEnd: ({ text, steps }) => {
       const answer = steps.map(step => step.text).filter(Boolean).join('\n\n') || text;
       if (conversationId === undefined) return;
-      void appendTurn(deps.db, conversationId, messages, answer).catch((error: unknown) =>
+      void appendTurn(deps.db, conversationId, messages, answer, { scope, turnId }).catch((error: unknown) =>
         deps.log('ask: conversation persist failed', { cause: describeDbError(error) })
       );
     },

@@ -36,6 +36,7 @@ import { UpdatePrompt } from './updater/update-prompt';
 import { router } from './router';
 import { openNoteLog } from '../collab';
 import { createDesktopPorts } from './ports/desktop-ports';
+import { bindDesktopWorkflowLifecycle } from './ports/workflow-lifecycle';
 import { DesktopEnvProvider, useDesktopEnv } from './desktop-env';
 import { GleapProvider } from './support/gleap';
 import { PlanIdentityBridge } from './analytics/plan-identity-bridge';
@@ -218,6 +219,11 @@ export async function mountAppShell(
   root.append(container);
 
   const ports = createDesktopPorts(desktopEnv);
+  bindDesktopWorkflowLifecycle({
+    auth: ports.appPorts.auth,
+    workflow: ports.appPorts.workflow!,
+    dispose: ports.dispose,
+  });
   // Inject env + the transport lanes into the non-React data code (apiClient
   // REST, Ask streaming). React code reads env/ports through the context below.
   // Partition-scoped IndexedDB persistence for the Legend sync store —

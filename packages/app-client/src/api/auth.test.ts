@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
+import { configureClientDiagnostics } from "../diagnostics";
 import {
   getAuthHeaders,
   getAuthHeadersForToken,
@@ -9,7 +10,7 @@ import {
   onUnauthorized,
 } from "./auth";
 
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => { vi.unstubAllEnvs(); configureClientDiagnostics(); });
 
 describe("getAuthHeaders", () => {
   it("returns a bearer header when a dev token is present", () => {
@@ -69,5 +70,16 @@ describe("onUnauthorized", () => {
     setUnauthorizedHandler(fn);
     onUnauthorized();
     expect(fn).toHaveBeenCalledOnce();
+  });
+});
+
+
+it("attaches replay correlation without overriding the request owner credentials", () => {
+  configureClientDiagnostics({ captureException: vi.fn(), requestHeaders: () => ({
+    "x-client-session-id": "01900000-0000-7000-8000-000000000001", Authorization: "wrong",
+  }) });
+  expect(getAuthHeadersForToken("owner", "org_1")).toMatchObject({
+    Authorization: "Bearer owner", "x-active-org-id": "org_1",
+    "x-client-session-id": "01900000-0000-7000-8000-000000000001",
   });
 });

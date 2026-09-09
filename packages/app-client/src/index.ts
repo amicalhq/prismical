@@ -9,8 +9,14 @@ export const APP_CLIENT_CANARY = "app-client" as const;
 
 // Injection runtime + the ports React context.
 export * from "./runtime";
+export * from "./diagnostics";
 export * from "./ports-context";
+export * from "./workflow/recording-session";
+export * from "./workflow/use-workflow";
+export * from "./workflow/use-workflow-recording";
+export { canAsk } from "@prismical/app-workflow";
 export * from "./analytics-events";
+export { startLoadingTiming } from "./loading-timing";
 export * from "./event-time";
 export * from "./tags/tag-colors";
 
@@ -94,4 +100,9 @@ export { useSyncStore } from "./sync/provider";
 
 export { setTitleDraftDirty } from "./notes/title-drafts";
 export * from "./errors/ai-user-error";
+
+export { reportAskError } from './ask/diagnostics';
+
 export { useRecoverSkillResult } from "./notes/use-recover-skill-result";
+
+export * from "./api/hooks/cta";

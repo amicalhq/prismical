@@ -10,6 +10,8 @@ vi.mock("./auth", () => ({
   onUnauthorized: vi.fn(),
 }));
 
+import { configureClientDiagnostics } from "../diagnostics";
+
 import { apiClient, ApiError } from "./client";
 import { onUnauthorized } from "./auth";
 import { getClientTransport } from "../runtime";
@@ -22,9 +24,21 @@ function mockFetch(status: number, body: unknown) {
     json: async () => body,
   });
 }
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => { vi.restoreAllMocks(); configureClientDiagnostics(); });
 
 describe("apiClient", () => {
+  it("forwards PUT cancellation through to the HTTP request", async () => {
+    const controller = new AbortController();
+    vi.stubGlobal("fetch", vi.fn((_url, init: RequestInit) => {
+      expect(init.signal).toBe(controller.signal);
+      return new Promise((_resolve, reject) => {
+        init.signal!.addEventListener("abort", () => reject(new DOMException("Timed out", "TimeoutError")));
+        controller.abort();
+      });
+    }));
+    await expect(apiClient.put("/apps/v1/me/recordings/rec_test", {}, { signal: controller.signal })).rejects.toThrow("Timed out");
+  });
+
   it("exposes the server request ID without letting diagnostics change the response", async () => {
     vi.stubGlobal(
       "fetch",
@@ -188,4 +202,34 @@ describe("apiClient", () => {
     vi.stubGlobal("fetch", mockFetch(200, {}));
     expect(await apiClient.list("/me/tags")).toEqual([]);
   });
+});
+
+
+it("reports a failed request with its server identity and rethrows the original error", async () => {
+  const captureException = vi.fn((_error: unknown) => { throw new Error("reporting unavailable"); });
+  configureClientDiagnostics({ captureException });
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: "unavailable" }), {
+    status: 503, headers: { "x-request-id": "req_test" },
+  })));
+  const result = apiClient.get("/notes");
+  await expect(result).rejects.toMatchObject({ status: 503, requestId: "req_test" });
+  expect(captureException).toHaveBeenCalledOnce();
+  expect(captureException.mock.calls[0]?.[0]).toMatchObject({ status: 503, requestId: "req_test" });
+});
+
+it("correlates a rejected fetch without leaking resource IDs or query values", async () => {
+  const captureException = vi.fn();
+  configureClientDiagnostics({ captureException });
+  const original = new TypeError("NetworkError when attempting to fetch resource.");
+  const fetcher = vi.fn().mockRejectedValue(original);
+  vi.stubGlobal("fetch", fetcher);
+  await expect(apiClient.get("/apps/v1/me/notes/private-note?secret=hidden")).rejects.toBe(original);
+  const id = fetcher.mock.calls[0]![1].headers["x-client-request-id"];
+  expect(id).toMatch(/^[a-f0-9-]{36}$/);
+  expect(captureException).toHaveBeenCalledWith(original, {
+    operation: "api", method: "GET", route: "/apps/v1/me/notes/:redacted", client_request_id: id,
+  });
+  await expect(apiClient.get("/apps/v1/me/skill-runs/pending", { noteId: "private-note" })).rejects.toBe(original);
+  expect(fetcher.mock.calls[1]![1].headers["x-client-request-id"]).not.toBe(id);
+  expect(captureException.mock.calls[1]![1].route).toBe("/apps/v1/me/skill-runs/pending");
 });

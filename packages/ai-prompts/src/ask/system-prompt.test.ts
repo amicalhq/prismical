@@ -6,6 +6,20 @@ import {
 } from './system-prompt.js';
 
 describe('buildAskSystemPrompt', () => {
+  it.each([
+    { name: 'notes', options: {} },
+    { name: 'product help', options: { productHelp: { platform: 'web' } } },
+    { name: 'tool-less notes', options: { toolsAvailable: false } },
+  ])('applies the general Markdown policy to $name', ({ options }) => {
+    const prompt = buildAskSystemPrompt({
+      focusNotes: [],
+      hasScopeFilter: false,
+      ...options,
+    });
+    expect(prompt).toContain('Format all answers as Markdown');
+    expect(prompt).toContain('Do not wrap the whole answer in a code fence');
+  });
+
   it('routes product questions to docs while preserving note scope and source syntax', () => {
     const prompt = buildAskSystemPrompt({
       focusNotes: [],

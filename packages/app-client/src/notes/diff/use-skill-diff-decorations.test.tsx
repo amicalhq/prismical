@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { renderHook } from "@testing-library/react";
+import { act, renderHook } from "@testing-library/react";
 import { EditorState } from "@tiptap/pm/state";
 import type { Editor } from "@tiptap/core";
 import { getEditorSchema } from "@prismical/editor-schema";
 import type { SkillDiffCandidate } from "./skill-diff-store";
+import { skillDiffPluginKey } from "./diff-plugin";
 
 const toastError = vi.fn();
 vi.mock("sonner", () => ({ toast: { error: (...args: unknown[]) => toastError(...args) } }));
@@ -154,5 +155,22 @@ describe("useSkillDiffDecorations", () => {
     emitDocChange();
     expect(toastError).toHaveBeenCalledTimes(1);
     expect(useSkillDiffStore.getState().candidatesByNote.get(NOTE)).toBeDefined();
+  });
+
+  it("removes the proposal preview after local application while keeping its delivery receipt", () => {
+    const { editor, emitDocChange } = makeEditor();
+    buildCandidateTransaction.mockReturnValue({ steps: [], doc: editor.view.state.doc });
+    renderHook(() => useSkillDiffDecorations(editor, NOTE));
+    const applied: SkillDiffCandidate = { ...makeCandidate(), acceptance: {
+      result: { artifactId: "artifact_1", version: 1, generatedAt: "2026-09-09T00:00:00Z" },
+      applied: true,
+    } };
+    act(() => useSkillDiffStore.getState().stage(applied));
+    const dispatch = vi.mocked(editor.view.dispatch);
+    expect(dispatch.mock.lastCall?.[0].getMeta(skillDiffPluginKey)).toBe("clear");
+    buildCandidateTransaction.mockClear();
+    emitDocChange();
+    expect(buildCandidateTransaction).not.toHaveBeenCalled();
+    expect(useSkillDiffStore.getState().getCandidate(NOTE)).toBe(applied);
   });
 });

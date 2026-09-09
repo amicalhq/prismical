@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import * as Y from "yjs";
 import { HocuspocusProvider } from "@hocuspocus/provider";
 import type { NoteLogHandle } from "@prismical/app-contracts";
@@ -36,6 +36,12 @@ const NOTE_LOG_RESYNC_WINDOW_MS = 30000;
 const NOTE_LOG_RESYNC_MAX = 3;
 
 export interface NoteCollab {
+  /** Keep a temporary editor alive until its local changes reach the collaboration server. */
+  waitForPendingChanges: () => Promise<void>;
+  /** Read the live provider permission without waiting for React to publish its next render. */
+  hasWriteAccess: () => boolean;
+  /** Correlates passive editor phases with this document's collaboration mount. */
+  loadingAttemptId?: string;
   doc: Y.Doc | null;
   status: CollabStatus;
   synced: boolean;
@@ -70,6 +76,12 @@ export interface NoteCollab {
  * configures a note log and keeps this hook's original behavior exactly.
  */
 export function useNoteCollab(noteId: string): NoteCollab {
+  const waitForPendingChangesRef = useRef<() => Promise<void>>(() =>
+    Promise.reject(new Error('The note connection is unavailable.'))
+  );
+  const waitForPendingChanges = useCallback(() => waitForPendingChangesRef.current(), []);
+  const hasWriteAccessRef = useRef<() => boolean>(() => false);
+  const hasWriteAccess = useCallback(() => hasWriteAccessRef.current(), []);
   const activeOrgId = useActiveOrgId();
   const activeAccountId = useActiveAccountId();
   const activeSessionKey = useActiveSessionKey();
@@ -83,7 +95,7 @@ export function useNoteCollab(noteId: string): NoteCollab {
   const analyticsRef = useRef(analytics);
   analyticsRef.current = analytics;
   const syncStore = useSyncStore();
-  const [state, setState] = useState<NoteCollab>({
+  const [state, setState] = useState<Omit<NoteCollab, 'waitForPendingChanges' | 'hasWriteAccess'>>({
     doc: null,
     status: "connecting",
     synced: false,
@@ -94,7 +106,7 @@ export function useNoteCollab(noteId: string): NoteCollab {
   useEffect(() => {
     const timing = startLoadingTiming(analyticsRef.current, "note_collaboration", noteId);
     const doc = new Y.Doc();
-    setState({ doc, status: "connecting", synced: false, scope: "read-write", error: null });
+    setState({ doc, status: "connecting", synced: false, scope: "read-write", error: null, loadingAttemptId: timing.attemptId });
 
     // The active organization rides on the connection query string (the WS-transport
     // equivalent of `x-active-org-id`); the note server re-checks it against live
@@ -110,6 +122,36 @@ export function useNoteCollab(noteId: string): NoteCollab {
     // immediately; a stuck create is released by the store's 20s valve.
     let disposed = false;
     let provider: HocuspocusProvider | null = null;
+    const pendingWaits = new Set<() => void>();
+    hasWriteAccessRef.current = () => !disposed && !!provider?.isAuthenticated &&
+      provider.authorizedScope === 'read-write';
+    waitForPendingChangesRef.current = () => {
+      const connection = provider;
+      if (disposed || !connection) return Promise.reject(new Error('The note connection is unavailable.'));
+      const delivered = () => connection.synced && !connection.hasUnsyncedChanges;
+      if (delivered()) return Promise.resolve();
+      return new Promise<void>((resolve, reject) => {
+        const finish = (error?: Error) => {
+          clearTimeout(timer);
+          connection.off('unsyncedChanges', onChanges);
+          connection.off('synced', onChanges);
+          connection.off('destroy', onDisposed);
+          pendingWaits.delete(onDisposed);
+          if (error) reject(error);
+          else resolve();
+        };
+        const onChanges = () => {
+          if (delivered()) finish();
+        };
+        const onDisposed = () => finish(new Error('The note connection closed.'));
+        const timer = setTimeout(() => finish(new Error('The note changes have not synced yet.')), 15_000);
+        pendingWaits.add(onDisposed);
+        connection.on('unsyncedChanges', onChanges);
+        connection.on('synced', onChanges);
+        connection.on('destroy', onDisposed);
+        onChanges();
+      });
+    };
     // Rotation-aware auth-failure handling: the note server periodically
     // rotates collab sockets, so
     // re-authentication is now a routine mid-session event. The provider does
@@ -122,33 +164,43 @@ export function useNoteCollab(noteId: string): NoteCollab {
     let authRetries = 0;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     const MAX_AUTH_RETRIES = 3;
+    let connectionAttempt = 0;
+    let lastStatus = "connecting";
 
     const connect = () => {
       if (disposed) return;
       timing.mark("create_gate_released");
+      connectionAttempt++;
+      lastStatus = "connecting";
+      timing.mark("provider_constructing", connectionAttempt);
       provider = new HocuspocusProvider({
         url,
         name: noteId,
         token: async () => {
-          timing.mark("token_requested");
+          const tokenAttempt = connectionAttempt;
+          timing.mark("token_requested", tokenAttempt);
           const token = activeSessionKey
             ? (await auth.getTokenForSession(activeSessionKey, activeOrgId)) ?? ""
             : "";
-          timing.mark("token_resolved");
+          timing.mark("token_resolved", tokenAttempt);
+          if (!token) timing.mark("token_missing", tokenAttempt);
           return token;
         },
         document: doc,
         onStatus: ({ status }) => {
-          if (status === "connected") timing.mark("socket_connected");
+          if (status === "connecting" && lastStatus !== "connecting") connectionAttempt++;
+          lastStatus = String(status);
+          if (status === "connecting") timing.mark("socket_connecting", connectionAttempt);
+          if (status === "connected") timing.mark("socket_connected", connectionAttempt);
           setState((s) => ({ ...s, status: String(status) as CollabStatus }));
         },
         onAuthenticated: ({ scope }) => {
-          timing.mark("authenticated");
+          timing.mark("authenticated", connectionAttempt);
           setState((s) => ({ ...s, scope: scope as CollabScope }));
         },
         onSynced: ({ state: synced }) => {
           if (synced) {
-            timing.mark("document_synced");
+            timing.mark("document_synced", connectionAttempt);
             timing.finish("ready");
             hasSynced = true;
             authRetries = 0;
@@ -171,9 +223,11 @@ export function useNoteCollab(noteId: string): NoteCollab {
           setState((s) => ({ ...s, error: reason || "authentication failed" }));
         },
       });
+      timing.mark("provider_constructed", connectionAttempt);
     };
 
     const startProvider = () => {
+      timing.mark("create_gate_waiting");
       if (syncStore) void syncStore.whenNoteCreateAcked(noteId).then(connect);
       else connect();
     };
@@ -192,6 +246,8 @@ export function useNoteCollab(noteId: string): NoteCollab {
     if (noteLog) {
       const handle = noteLog.open(noteId);
       logHandle = handle;
+      let logHydrated = false;
+      let logFailed = false;
 
       const flushNow = () => {
         flushDirty = false;
@@ -213,6 +269,19 @@ export function useNoteCollab(noteId: string): NoteCollab {
         }
       };
       finalFlush = flushNow;
+      if (!noteLog.remote) {
+        const writable = () => !disposed && logHydrated && !logFailed;
+        hasWriteAccessRef.current = writable;
+        waitForPendingChangesRef.current = async () => {
+          if (!writable()) throw new Error('The note connection is unavailable.');
+          if (flushTimer) clearTimeout(flushTimer);
+          flushTimer = null;
+          // Retry the projection too: an earlier flush may have failed in main.
+          flushNow();
+          await handle.waitForPendingChanges();
+          if (!writable()) throw new Error('The note connection is unavailable.');
+        };
+      }
       const scheduleFlush = () => {
         const now = Date.now();
         if (!flushDirty) dirtySince = now;
@@ -273,6 +342,7 @@ export function useNoteCollab(noteId: string): NoteCollab {
           // provider, so a failing cache degrades quietly instead of replacing
           // a perfectly working editor with a lock card.
           if (!noteLog.remote) {
+            logFailed = true;
             setState((s) => ({ ...s, error: "note log writes failing" }));
           }
           return;
@@ -293,6 +363,7 @@ export function useNoteCollab(noteId: string): NoteCollab {
       // provider attached below and simply runs without the offline cache.
       const failOpen = (reason: string) => {
         if (disposed || noteLog.remote) return;
+        logFailed = true;
         timing.finish("error");
         setState((s) => ({ ...s, status: "disconnected", synced: false, error: reason }));
       };
@@ -308,6 +379,7 @@ export function useNoteCollab(noteId: string): NoteCollab {
             if (disposed) return;
             // Local mode has no server: hydration IS the sync point.
             if (!noteLog.remote) {
+              logHydrated = true;
               timing.mark("local_log_hydrated");
               timing.finish("ready");
               setState((s) => ({
@@ -333,6 +405,7 @@ export function useNoteCollab(noteId: string): NoteCollab {
 
     return () => {
       disposed = true;
+      for (const cancel of [...pendingWaits]) cancel();
       timing.finish("abandoned");
       if (flushTimer) clearTimeout(flushTimer);
       if (onPageHide) window.removeEventListener("pagehide", onPageHide);
@@ -361,5 +434,5 @@ export function useNoteCollab(noteId: string): NoteCollab {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [noteId, activeOrgId, activeAccountId, activeSessionKey, noteWsUrl, auth]);
 
-  return state;
+  return { ...state, waitForPendingChanges, hasWriteAccess };
 }

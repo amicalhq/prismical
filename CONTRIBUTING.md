@@ -17,7 +17,7 @@ request needs; the README covers setup.
   under `patches/` (applied by `preinstall`); bump the submodule pin and
   `WHISPER_CPP_VERSION` together.
 - The shared packages (`packages/{app-ui,app-client,app-i18n,api-contracts,app-contracts,
-silence,editor-markdown,editor-schema,id,note-derive,ai-prompts}`) — the screens, data layer,
+app-workflow,silence,editor-markdown,editor-schema,id,note-derive,ai-prompts}`) — the screens, data layer,
   i18n catalogues and contract packages shared with the Prismical web app. They are updated
   here in batches; a pull request that changes one of them is welcome, and the maintainers
   carry the change across to the web app. New user-visible strings in the desktop are checked

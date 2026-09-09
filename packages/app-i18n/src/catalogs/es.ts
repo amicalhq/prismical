@@ -2,6 +2,24 @@ import type { TranslationShape } from '../catalog-shape';
 import type en from './en';
 
 const es = {
+  workflow: {
+    noteChanged: "La nota cambió después de generar esta sugerencia. Descártala y ejecuta la acción de nuevo.",
+      "busy": "Finaliza primero la grabación o acción actual.",
+      "draining": "Enviando el audio restante…",
+      "finalizing": "Finalizando la grabación…",
+      "recording": "Grabación en curso",
+      "recordingAway": "Grabando en otra nota",
+      "pausedAway": "Grabación pausada en otra nota",
+      "review": "Revisando cambios en otra nota",
+      "reviewNamed": "Revisando cambios en {{name}}",
+      "applying": "Aplicando cambios…",
+      "skill": "Acción en curso…",
+      "openNote": "Abrir nota",
+      "openNamedNote": "Abrir {{name}}",
+      "retry": "Reintentar",
+      "end": "Finalizar proceso"
+  },
+
   onboarding: {
   "helpDocs": "¿Necesitas ayuda? Lee la documentación",
   "continueToNote": "Continuar a mi nota",
@@ -45,6 +63,22 @@ const es = {
     "record": {
       "title": "Empieza a grabar",
       "body": "Haz clic en el micrófono del dock y luego en Iniciar grabación. Permite el acceso al micrófono cuando se solicite."
+    },
+    "waiting": {
+      "title": "Preparando tu transcripción",
+      "body": "Tu grabación se está guardando y procesando. Espera a la transcripción antes de continuar."
+    },
+    "retry": {
+      "title": "Continuar con una grabación",
+      "body": "Abre el panel de grabación e inicia una nueva grabación para continuar. También puedes salir de este recorrido."
+    },
+    "generating": {
+      "title": "Sigue tu borrador",
+      "body": "Aquí aparecen tu borrador y su progreso. Si el proceso falla o se detiene, usa las acciones disponibles o vuelve al panel de grabación para intentarlo de nuevo."
+    },
+    "starting": {
+      "title": "Preparando el micrófono",
+      "body": "Permite el acceso al micrófono si se solicita. Espera a que comience la grabación antes de hablar."
     },
     "speak": {
       "title": "Di unas palabras",
@@ -608,6 +642,10 @@ const es = {
     joinMeeting: 'Unirse a la reunión',
     newNote: 'Nueva nota',
     pickEmoji: 'Elegir un emoji',
+    emojiPicker: {
+      search: 'Buscar emojis…',
+      empty: 'No se encontraron emojis.',
+    },
     tags: {
       add: 'Añadir etiqueta',
       create: 'Crear “{{name}}”',
@@ -936,6 +974,8 @@ const es = {
         'El texto al que se dirigía esta reescritura ya no existe. Vuelve a seleccionarlo y ejecútala otra vez.',
       undo: 'Deshacer',
       waitingForDocument: 'Esperando a que se cargue la nota…',
+      deliveryPending: 'Algunos cambios aceptados aún no se han sincronizado.',
+      endWorkflowWarning: 'Los cambios sin enviar pueden perderse.',
     },
     inline: { captureError: 'No se pudo capturar la selección; vuelve a seleccionar el texto.' },
     run: {
@@ -955,8 +995,16 @@ const es = {
   },
   settings: {
     aiModels: {
+      planGate: {
+        title: 'Usa tu propia clave',
+        availability: 'Disponible en Pro',
+        description: 'Tu plan actual no incluye el uso de claves propias. Mejora a Pro para conectar tus propios proveedores de IA y elegir los modelos que utilizas.',
+        upgrade: 'Mejorar a Pro',
+        back: 'Volver a ajustes',
+      },
       addProvider: 'Añadir proveedor',
       available: {
+        requestProvider: 'Solicitar proveedor',
         comingSoon: 'Próximamente',
         getDesktop: 'Obtener la aplicación de escritorio',
         localDesktop: 'Los modelos locales están disponibles en la aplicación de escritorio',
@@ -1050,6 +1098,7 @@ const es = {
         empty: 'No se encontraron modelos de lenguaje para esta clave.',
         loadError:
           'No se pudieron cargar los modelos; comprueba la clave de API e inténtalo de nuevo.',
+        retired: 'Ya no está disponible: desmárcalo para quitarlo',
         title: 'Modelos en Ask AI',
       },
       modelPicker: {
@@ -1939,15 +1988,6 @@ const es = {
           'El tipo de archivo «.{{extension}}» no es compatible; elige un archivo .json o .md.',
       },
       form: {
-        advanced: 'Ajustes avanzados',
-        defaultLabel: 'Establecer como destino brillante predeterminado',
-        descriptionLabel: 'Descripción',
-        descriptionPlaceholder: 'Una línea breve que aparece en la tarjeta de la habilidad',
-        enabled: 'Activada',
-        modeAgnosticDescription:
-          'No indiques al modelo qué modo está activo; el cuerpo describe por sí solo la salida. Así se puede cambiar entre añadir y reemplazar después de ejecutar sin volver a generar. La reescritura en línea siempre se adapta a su modo.',
-        modeAgnosticLabel: 'Indicación independiente del modo',
-        modeLabel: 'Modo',
         addSection: 'Añadir una sección',
         addSectionDescription: 'Añade el resultado como una nueva sección y conserva la nota existente.',
         rewriteNote: 'Reescribir toda la nota',
@@ -1955,6 +1995,15 @@ const es = {
         transcriptDescription: 'Incluye las transcripciones de las grabaciones de esta nota como contexto.',
         titleDescription: 'Genera un nuevo título en lugar de editar el contenido de la nota.',
         preservedMode: 'Esta habilidad usa un ajuste de salida experimental. Se conservará al guardar.',
+
+        advanced: 'Ajustes avanzados',
+        defaultLabel: 'Establecer como destino brillante predeterminado',
+        descriptionLabel: 'Descripción',
+        descriptionPlaceholder: 'Una línea breve que aparece en la tarjeta de la habilidad',
+        enabled: 'Activada',
+        modeAgnosticDescription: 'El prompt define la salida sin instrucciones para añadir o reescribir. La edición de selecciones y Enhance de grabaciones siguen usando instrucciones específicas del modo.',
+        modeAgnosticLabel: 'Indicación independiente del modo',
+        modeLabel: 'Modo',
         nameLabel: 'Nombre',
         newTitle: 'Nueva habilidad',
         promptLabel: 'Indicación',

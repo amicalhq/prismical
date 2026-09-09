@@ -26,6 +26,8 @@ import { randomUUID } from 'node:crypto';
 import { ipcMain, type IpcMainInvokeEvent } from 'electron';
 import {
   CHANNELS,
+  LOCAL_WORKSPACE,
+  recordingSkillWorkflowRequestSchema,
   DEFAULT_DEVICE_SETTINGS,
   isAllowedTransportPath,
   parseCollabOpenRequest,
@@ -637,6 +639,41 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
           )
         )
       );
+
+    const skillOwnerCleanups = new Map<number, () => void>();
+    yield* Effect.addFinalizer(() => Effect.sync(() => {
+      for (const cleanup of skillOwnerCleanups.values()) cleanup();
+    }));
+    yield* acquireHandle(CHANNELS.recordingSetSkillWorkflow, (event, payload) =>
+      runPromise(validateMainSender(event).pipe(Effect.flatMap(() => Effect.gen(function* () {
+        const parsed = recordingSkillWorkflowRequestSchema.safeParse(payload);
+        if (!parsed.success) return yield* Effect.fail(new PayloadRejected('INVALID_REQUEST'));
+        const ownsWorkspace = Effect.gen(function* () {
+          const view = toSessionView(yield* SubscriptionRef.get(auth.sessionState));
+          const activeKey = view.activeSub;
+          const account = view.accounts.find(row => row.sub === activeKey);
+          const ownerSessionKey = appMode.mode === 'local' ? LOCAL_WORKSPACE.sub : activeKey;
+          const ownerOrgId = appMode.mode === 'local' ? LOCAL_WORKSPACE.orgId : account?.activeOrgId;
+          return parsed.data.ownerSessionKey === ownerSessionKey && parsed.data.ownerOrgId === ownerOrgId;
+        });
+        const id = event.sender.id;
+        if (!skillOwnerCleanups.has(id)) {
+          const release = () => { void runPromise(recording.setSkillWorkflow(id, false)); };
+          const cleanup = () => {
+            event.sender.removeListener('destroyed', cleanup);
+            event.sender.removeListener('render-process-gone', release);
+            event.sender.removeListener('did-navigate', release);
+            skillOwnerCleanups.delete(id);
+            release();
+          };
+          event.sender.once('destroyed', cleanup);
+          event.sender.on('render-process-gone', release);
+          event.sender.on('did-navigate', release);
+          skillOwnerCleanups.set(id, cleanup);
+        }
+        return yield* recording.setSkillWorkflow(id, parsed.data.active, ownsWorkspace);
+      }))))
+    );
 
     yield* registerRecordingControl(CHANNELS.recordingClaimCompletion, 'claimCompletion');
     yield* registerRecordingControl(CHANNELS.recordingPause, 'pause');

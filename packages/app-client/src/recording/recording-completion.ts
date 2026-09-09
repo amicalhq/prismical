@@ -91,8 +91,12 @@ export function listPendingRecordingCompletions(): PendingRecordingCompletion[] 
         if (!key?.startsWith(RECOVERY_PREFIX)) continue;
         const raw = storage.getItem(key);
         if (!raw) continue;
-        const parsed = JSON.parse(raw) as unknown;
-        if (isPendingRecordingCompletion(parsed)) items.set(parsed.recordingId, parsed);
+        try {
+          const parsed = JSON.parse(raw) as unknown;
+          if (isPendingRecordingCompletion(parsed)) items.set(parsed.recordingId, parsed);
+        } catch {
+          // One damaged entry must not hide other recordings awaiting recovery.
+        }
       }
     } catch {
       // Return every row parsed before storage became unavailable.

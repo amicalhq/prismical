@@ -79,6 +79,7 @@ export function openNoteLog(noteId: string): NoteLogHandle {
   );
 
   let closed = false;
+  const barriers = new Map<string, (error?: Error) => void>();
   let updateCallback: ((update: Uint8Array) => void) | null = null;
   let resyncCallback: (() => void) | null = null;
   // Replay blobs can land before the consumer subscribes (the port is live the
@@ -95,7 +96,24 @@ export function openNoteLog(noteId: string): NoteLogHandle {
         if (closed) return;
         const data: unknown = event.data;
         if (typeof data === 'object' && data !== null) {
-          const message = data as { type?: unknown; data?: unknown; seq?: unknown; count?: unknown };
+          const message = data as {
+            type?: unknown;
+            data?: unknown;
+            seq?: unknown;
+            count?: unknown;
+            requestId?: unknown;
+            ok?: unknown;
+          };
+          if (
+            message.type === 'barrier' &&
+            typeof message.requestId === 'string' &&
+            typeof message.ok === 'boolean'
+          ) {
+            barriers.get(message.requestId)?.(
+              message.ok ? undefined : new Error('The note changes could not be saved.')
+            );
+            return;
+          }
           if (message.type === 'update' && message.data instanceof Uint8Array) {
             if (updateCallback) updateCallback(message.data);
             else pendingUpdates.push(message.data);
@@ -162,10 +180,30 @@ export function openNoteLog(noteId: string): NoteLogHandle {
         markdown: content.markdown,
         firstLine: content.firstLine,
       }),
+    waitForPendingChanges: () => {
+      if (closed) return Promise.reject(new Error('The note connection closed.'));
+      const requestId = crypto.randomUUID();
+      return new Promise<void>((resolve, reject) => {
+        const finish = (error?: Error) => {
+          clearTimeout(timer);
+          barriers.delete(requestId);
+          if (error) reject(error);
+          else resolve();
+        };
+        const timer = setTimeout(
+          () => finish(new Error('The note changes have not saved yet.')),
+          15_000
+        );
+        barriers.set(requestId, finish);
+        post({ type: 'barrier', requestId });
+        void portPromise.catch(error => finish(error));
+      });
+    },
     compact: (upTo, state) => post({ type: 'compact', upTo, state }),
     close: () => {
       if (closed) return;
       closed = true;
+      for (const finish of [...barriers.values()]) finish(new Error('The note connection closed.'));
       window.removeEventListener('message', onWindowMessage);
       // Behind the queued posts: the port stays open until they have drained.
       enqueue(port => {

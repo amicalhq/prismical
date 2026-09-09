@@ -4,6 +4,7 @@ import { makeWire } from '@desktop/logging';
 import { assert, describe, it } from '@effect/vitest';
 import {
   CHANNELS,
+  LOCAL_WORKSPACE,
   DEFAULT_DEVICE_SETTINGS,
   parseSessionView,
   collabPortChannel,
@@ -15,7 +16,7 @@ import {
   type TransportResponse,
   type TelemetryState,
 } from '@prismical/desktop-contracts';
-import { Context, Effect, Exit, Layer, Option, Queue, Scope, SubscriptionRef } from 'effect';
+import { Context, Deferred, Effect, Exit, Fiber, Layer, Option, Queue, Scope, SubscriptionRef } from 'effect';
 import { vi } from 'vitest';
 import { createApplicationI18nSync } from '@prismical/app-i18n';
 import type { FakeElectron } from '../helpers/fake-electron';
@@ -346,6 +347,7 @@ const ALL_HANDLER_CHANNELS = [
   CHANNELS.recordingStart,
   CHANNELS.recordingStop,
   CHANNELS.recordingClaimCompletion,
+  CHANNELS.recordingSetSkillWorkflow,
   CHANNELS.recordingPause,
   CHANNELS.recordingResume,
   CHANNELS.loggingGetConfig,
@@ -1653,6 +1655,87 @@ describe('registerMainWindowHandlers', () => {
         assert.isTrue(Exit.isFailure(rejected));
       }
       assert.deepStrictEqual(rec.claimCalls, ['rec_stale', 'rec_1', 'rec_1']);
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+
+  it.effect('native Start admission cannot race a skill reservation during a permission wait', () =>
+    Effect.gen(function* () {
+      const { layer } = build();
+      const scope = yield* Scope.make();
+      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const bridge = Context.get(ctx, RecordingBridge);
+      const rec = yield* makeFakeRecordingService();
+      yield* bridge.register(rec.api).pipe(Scope.extend(scope));
+      const entered = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      rec.setStart(Deferred.succeed(entered, undefined).pipe(
+        Effect.zipRight(Deferred.await(release)),
+        Effect.zipRight(SubscriptionRef.update(rec.state, state => ({ ...state, status: 'recording' as const }))),
+        Effect.as('rec_1')
+      ));
+      const starting = yield* Effect.fork(bridge.start({ captureMode: 'mic' }));
+      yield* Deferred.await(entered);
+      const reserving = yield* Effect.fork(bridge.setSkillWorkflow(123, true));
+      yield* Effect.yieldNow();
+      assert.isTrue(Option.isNone(yield* Fiber.poll(reserving)));
+      yield* Deferred.succeed(release, undefined);
+      assert.isTrue((yield* Fiber.join(starting)).ok);
+      assert.isFalse(yield* Fiber.join(reserving));
+      yield* SubscriptionRef.update(rec.state, state => ({ ...state, status: 'idle' as const, finalizingRecordingIds: ['rec_1'] }));
+      assert.isFalse(yield* bridge.setSkillWorkflow(123, true));
+      yield* SubscriptionRef.update(rec.state, state => ({ ...state, finalizingRecordingIds: [] }));
+      assert.isTrue(yield* bridge.setSkillWorkflow(123, true));
+      assert.deepStrictEqual(yield* bridge.start({ captureMode: 'mic' }), { ok: false, reason: 'suggestion-pending' });
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+
+  it.effect('skill reservations validate owners and block native starts until renderer or workspace release', () =>
+    Effect.gen(function* () {
+      const { layer } = build({}, { appMode: 'local' });
+      const scope = yield* Scope.make();
+      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+      yield* Context.get(ctx, WindowRegistry).openMainWindow.pipe(Scope.extend(scope));
+      const wc = fake.__windowInstances().at(-1)!.webContents;
+      const bridge = Context.get(ctx, RecordingBridge);
+      const rec = yield* makeFakeRecordingService();
+      const workspace = yield* Scope.make();
+      yield* bridge.register(rec.api).pipe(Scope.extend(workspace));
+      const payload = { active: true, ownerSessionKey: LOCAL_WORKSPACE.sub, ownerOrgId: LOCAL_WORKSPACE.orgId };
+      const reserve = (input: unknown = payload) => Effect.promise(() => fake.ipcMain.invoke(
+        CHANNELS.recordingSetSkillWorkflow, { sender: wc }, input
+      ));
+      assert.isFalse(yield* reserve({ ...payload, ownerOrgId: 'old_workspace' }));
+      assert.isTrue((yield* bridge.start({ captureMode: 'mic' })).ok);
+      assert.isTrue(yield* reserve());
+      assert.deepStrictEqual(yield* bridge.start({ captureMode: 'mic', noteId: 'another_note' }), {
+        ok: false, reason: 'suggestion-pending',
+      });
+      assert.isTrue(yield* reserve({ ...payload, active: false }));
+      assert.isTrue((yield* bridge.start({ captureMode: 'mic' })).ok);
+      yield* reserve();
+      wc.emit('render-process-gone');
+      yield* Effect.yieldNow();
+      assert.isTrue((yield* bridge.start({ captureMode: 'mic' })).ok);
+      yield* reserve();
+      wc.emit('did-navigate');
+      yield* Effect.yieldNow();
+      assert.isTrue((yield* bridge.start({ captureMode: 'mic' })).ok);
+      yield* reserve();
+      wc.emit('destroyed');
+      yield* Effect.yieldNow();
+      assert.isTrue((yield* bridge.start({ captureMode: 'mic' })).ok);
+      yield* reserve();
+      yield* Scope.close(workspace, Exit.void);
+      yield* bridge.register(rec.api).pipe(Scope.extend(scope));
+      assert.isTrue((yield* bridge.start({ captureMode: 'mic' })).ok);
+      for (const [sender, input] of [[wc, {}], [{ id: 9999 }, payload]]) {
+        assert.isTrue(Exit.isFailure(yield* Effect.exit(Effect.tryPromise(() => fake.ipcMain.invoke(
+          CHANNELS.recordingSetSkillWorkflow, { sender }, input
+        )))));
+      }
       yield* Scope.close(scope, Exit.void);
     })
   );

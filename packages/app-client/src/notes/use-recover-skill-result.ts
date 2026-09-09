@@ -4,32 +4,18 @@ import type { Editor } from "@tiptap/react";
 import { markdownToChildren } from "@prismical/editor-markdown";
 import { listPendingSkillResults } from "../api/hooks/skill-runs";
 import { useActiveSessionKey, useActiveOrgId, usePorts, activeOrgIdOf } from "../ports-context";
-import { useSkillDiffStore, type SkillDiffCandidate } from "./diff/skill-diff-store";
+import { useSkillDiffStore } from "./diff/skill-diff-store";
 
 import { useSkillRunActivityStore } from "./skill-run-activity-store";
 
 /** Recover only server-completed suggestions; never regenerate uncertain work. */
 export function useRecoverSkillResult(noteId: string, editor: Editor | null) {
-  const { auth } = usePorts();
+  const { auth, workflow, recording } = usePorts();
   const session = useActiveSessionKey();
   const org = useActiveOrgId();
   useEffect(() => {
-    const clearForeignRecovery = () => {
-      const candidate = useSkillDiffStore.getState().getCandidate(noteId);
-      const owner = candidate?.owner;
-      if (!owner) return;
-      const current = auth.getSession();
-      if (
-        (current.activeSessionKey ?? current.activeSub ?? null) !== owner.sessionKey ||
-        activeOrgIdOf(current) !== owner.orgId
-      ) {
-        useSkillDiffStore.getState().clear(noteId);
-        useSkillRunActivityStore.getState().resolveStaged(noteId, "undone");
-      }
-    };
-    clearForeignRecovery();
-    const unsubscribe = auth.onSessionChanged(clearForeignRecovery);
-    if (!editor || !session || !org) return unsubscribe;
+    // Native recording persists completed suggestions across application restarts.
+    if ((workflow && !recording.control) || !editor || !session || !org) return;
     let disposed = false;
     let busy = false;
     let currentRequest: AbortController | undefined;
@@ -45,6 +31,7 @@ export function useRecoverSkillResult(noteId: string, editor: Editor | null) {
     const recover = async () => {
       if (
         !stillOwned() ||
+        (workflow && workflow.getSnapshot().kind !== "idle") ||
         busy ||
         useSkillRunActivityStore.getState().runningByNote.has(noteId) ||
         useSkillDiffStore.getState().getCandidate(noteId)
@@ -71,6 +58,18 @@ export function useRecoverSkillResult(noteId: string, editor: Editor | null) {
         if (!result || result.mode === "inline-rewrite") return;
         const content = markdownToChildren(result.rawMarkdown);
         if (!content.length) return;
+        const baseContent = workflow && result.mode === "replace-doc"
+          ? JSON.stringify(editor.getJSON()) : undefined;
+        const admitted = workflow?.dispatch({
+          type: "runSkill", workflowId: crypto.randomUUID(), noteId, skillId: result.skillId,
+        });
+        if (admitted && (!admitted.accepted || admitted.state.kind !== "skill")) return;
+        const scope = admitted?.state.kind === "skill" ? admitted.state : undefined;
+        const proposalId = scope ? crypto.randomUUID() : undefined;
+        if (scope && !workflow!.dispatch({
+          type: "proposalReady", workflowId: scope.workflowId, attempt: scope.attempt,
+          proposalId: proposalId!,
+        }).accepted) return;
         const activity = useSkillRunActivityStore.getState();
         const feed = activity.begin({
           noteId,
@@ -79,17 +78,19 @@ export function useRecoverSkillResult(noteId: string, editor: Editor | null) {
           source: "auto-enhance",
         });
         activity.finish(feed, "staged");
-        const candidate: SkillDiffCandidate = {
+        useSkillDiffStore.getState().stage({
           ...result,
-          owner: { sessionKey: session, orgId: org },
+          recoverable: true,
+          baseContent,
+          workflowId: scope?.workflowId,
+          proposalId,
           noteId,
           content,
           refineInstruction: result.refineInstruction ?? null,
           selectionText: null,
-        };
-        useSkillDiffStore.getState().stage(candidate);
+        });
       } catch {
-        // A failed recovery request leaves the note editable; retry on the next poll/focus.
+        // Offline and older servers leave the note editable; retry on the next poll/focus.
       } finally {
         clearTimeout(timeout);
         busy = false;
@@ -104,11 +105,10 @@ export function useRecoverSkillResult(noteId: string, editor: Editor | null) {
     window.addEventListener("online", recover);
     return () => {
       disposed = true;
-      unsubscribe();
       currentRequest?.abort();
       clearInterval(timer);
       window.removeEventListener("focus", recover);
       window.removeEventListener("online", recover);
     };
-  }, [noteId, editor, session, org, auth]);
+  }, [noteId, editor, session, org, auth, workflow, recording.control]);
 }

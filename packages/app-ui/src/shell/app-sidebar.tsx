@@ -28,6 +28,7 @@ import { CommandPaletteTrigger } from './command-palette';
 import { NavNotesGroups } from './nav-notes-groups';
 import { NavSecondary } from './nav-secondary';
 import { FirstNoteWalkthroughReplay } from '../onboarding/first-note-walkthrough';
+import { CtaSidebarButton } from './cta';
 import { SidebarQuota } from './sidebar-quota';
 import { SidebarUpdate } from './sidebar-update';
 import { useHomeNavItems, useSettingsNavItems } from './sidebar-nav';
@@ -262,6 +263,7 @@ export function AppSidebar({
       </SidebarContent>
 
       <SidebarFooter className="gap-1 p-0">
+        <CtaSidebarButton />
         <NavSecondary supportAction={supportAction} />
         {/* App mode only: in settings the billing screen is one nav item away and shows the same
             figures in full, so a row linking to the page you may already be on is just noise. */}

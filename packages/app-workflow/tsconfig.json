@@ -1,0 +1,13 @@
+{
+  "extends": "@prismical/typescript-config/base.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022"],
+    "types": [],
+    "declaration": false,
+    "declarationMap": false,
+    "noEmit": true
+  },
+  "include": ["src/**/*"]
+}

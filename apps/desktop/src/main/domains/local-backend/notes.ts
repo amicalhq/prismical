@@ -69,7 +69,8 @@ export const defaultTitle = (
 interface TitleInputs {
   /** Route-prepared title: trimmed non-empty, '' (explicit reset), or undefined (untouched). */
   readonly title: string | undefined;
-  readonly titleIntent: 'default' | undefined;
+  readonly titleIntent: 'default' | 'freeze' | null | undefined;
+  readonly titleExpectedRevision?: number;
   /** Whether the client sent a title string at all (core's `raw.title`). */
   readonly rawTitleWasString: boolean;
   /** The eventId about to be written; undefined = untouched. */
@@ -82,6 +83,19 @@ const resolveNoteTitle = (
   inputs: TitleInputs,
   incomingMs: number
 ): { title?: string; titleSource?: string; titleRevision?: number } => {
+  if (inputs.titleIntent === 'freeze') {
+    const canFreeze =
+      (!previous || ['placeholder', 'first-line'].includes(previous.titleSource)) &&
+      inputs.titleExpectedRevision === (previous?.titleRevision ?? 0);
+    const title = inputs.title === undefined ? previous?.title : inputs.title;
+    return canFreeze && title?.trim()
+      ? {
+          title: title.trim(),
+          titleSource: 'first-line-fixed',
+          titleRevision: (previous?.titleRevision ?? 0) + 1,
+        }
+      : {};
+  }
   let title = inputs.title;
   // A retried create can arrive after a body save or a rename. Its placeholder
   // is not an explicit rename and must not turn a derived title into a manual one.
@@ -186,7 +200,7 @@ export const listNotes = async (
 export const createNote = async (db: LocalDb, body: unknown): Promise<RouteResult> => {
   const parsed = SyncNoteCreateRequestSchema.safeParse(body);
   if (!parsed.success) return invalidRequest(issueSummary(parsed.error.issues, body));
-  const { id, updatedAt, title, titleIntent, timezone: _timezone, ...fields } = parsed.data;
+  const { id, updatedAt, title, titleIntent, titleExpectedRevision, timezone: _timezone, ...fields } = parsed.data;
   if (id !== undefined && !isValidPrefixedId('note', id)) return invalidNoteId(id);
   if (typeof fields.folderId === 'string' && !(await folderExists(db, fields.folderId))) {
     return notFound();
@@ -203,8 +217,9 @@ export const createNote = async (db: LocalDb, body: unknown): Promise<RouteResul
     const titlePlan = resolveNoteTitle(
       existing,
       {
-        title: explicitTitle,
+        title: titleIntent === 'freeze' ? title : explicitTitle,
         titleIntent,
+        titleExpectedRevision,
         rawTitleWasString: explicitTitle !== undefined,
         nextEventId: fields.eventId,
       },
@@ -226,10 +241,11 @@ export const createNote = async (db: LocalDb, body: unknown): Promise<RouteResul
   const titlePlan = resolveNoteTitle(
     undefined,
     {
-      title: explicitTitle,
+      title: titleIntent === 'freeze' ? title : explicitTitle,
       // A brand-new row with no usable title defaults server-side (core's route
       // stamps titleIntent:'default' before the engine runs).
-      titleIntent: explicitTitle === undefined ? 'default' : titleIntent,
+      titleIntent: titleIntent === 'freeze' ? titleIntent : explicitTitle === undefined ? 'default' : titleIntent,
+      titleExpectedRevision,
       rawTitleWasString: explicitTitle !== undefined,
       nextEventId: fields.eventId,
     },

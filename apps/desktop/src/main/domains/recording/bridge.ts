@@ -54,6 +54,8 @@ export interface RecordingBridgeApi {
   /** Stop via the current workspace; a no-op when none is mounted or the id is stale. */
   readonly stop: (recordingId: string) => Effect.Effect<void>;
   readonly claimCompletion: (recordingId: string) => Effect.Effect<boolean>;
+  /** Trusted app-window reservations, cleared when their workspace closes. */
+  readonly setSkillWorkflow: (webContentsId: number, active: boolean, ownsWorkspace?: Effect.Effect<boolean>) => Effect.Effect<boolean>;
   /** Pause/resume a matching recording; false when no workspace/id/state accepts it. */
   readonly pause: (recordingId: string) => Effect.Effect<boolean>;
   readonly resume: (recordingId: string) => Effect.Effect<boolean>;
@@ -112,20 +114,45 @@ export const makeRecordingBridgeLive = (
       Option.none()
     );
 
+    const skillOwners = new Set<number>();
+    const admission = yield* Effect.makeSemaphore(1);
+
     const api: RecordingBridgeApi = {
       register: service =>
-        Effect.acquireRelease(SubscriptionRef.set(currentRef, Option.some(service)), () =>
-          SubscriptionRef.update(currentRef, cur =>
-            Option.exists(cur, s => s === service) ? Option.none() : cur
-          )
+        Effect.acquireRelease(
+          Effect.sync(() => skillOwners.clear()).pipe(
+            Effect.zipRight(SubscriptionRef.set(currentRef, Option.some(service)))
+          ), () =>
+          SubscriptionRef.update(currentRef, cur => {
+            if (!Option.exists(cur, s => s === service)) return cur;
+            skillOwners.clear();
+            return Option.none();
+          })
         ).pipe(Effect.asVoid),
 
+      setSkillWorkflow: (webContentsId, active, ownsWorkspace = Effect.succeed(true)) =>
+        admission.withPermits(1)(Effect.gen(function* () {
+          if (!active) {
+            skillOwners.delete(webContentsId);
+            return true;
+          }
+          if (!(yield* ownsWorkspace)) return false;
+          const current = yield* SubscriptionRef.get(currentRef);
+          if (Option.isNone(current)) return false;
+          const recording = yield* SubscriptionRef.get(current.value.state);
+          if ((recording.status !== 'idle' && recording.status !== 'error') ||
+            recording.finalizingRecordingIds.length > 0) return false;
+          skillOwners.add(webContentsId);
+          return true;
+        })),
+
       start: input =>
-        Effect.gen(function* () {
+        admission.withPermits(1)(Effect.gen(function* () {
           if (yield* isUpdateRequired) {
             yield* onUpdateRequired;
             return { ok: false, reason: 'update-required' } as const;
           }
+          if (skillOwners.size > 0) return { ok: false, reason: 'suggestion-pending' } as const;
           return yield* SubscriptionRef.get(currentRef).pipe(
             Effect.flatMap(
               Option.match({
@@ -152,7 +179,7 @@ export const makeRecordingBridgeLive = (
               })
             )
           );
-        }),
+        })),
 
       stop: recordingId =>
         SubscriptionRef.get(currentRef).pipe(

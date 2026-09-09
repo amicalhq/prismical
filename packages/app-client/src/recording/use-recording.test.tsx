@@ -2,6 +2,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act, waitFor, cleanup } from '@testing-library/react';
 import * as React from 'react';
+import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
+import { listAudioSessions, listAudioChunks, updateAudioChunk, removeAudioSession } from './audio-outbox';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type {
   AuthPort,
@@ -67,9 +69,9 @@ const fakeNavigation: NavigationAdapter = {
 };
 
 const idle: NativeRecordingState = {
-  finalizingRecordingIds: [],
-  completedRecordings: [],
   recordingId: null,
+    finalizingRecordingIds: [],
+    completedRecordings: [],
   status: 'idle',
   captureMode: null,
   requestedCaptureMode: null,
@@ -340,6 +342,9 @@ const segment = {
 };
 
 beforeEach(() => {
+  Object.defineProperty(globalThis, 'indexedDB', { configurable: true, value: new IDBFactory() });
+  Object.defineProperty(globalThis, 'IDBKeyRange', { configurable: true, value: IDBKeyRange });
+  Object.defineProperty(navigator, 'locks', { configurable: true, value: makeFakeWebLocks() });
   vi.clearAllMocks();
   useAutoEnhanceStore.getState().clear();
 });
@@ -916,6 +921,21 @@ describe('useRecording — web branch pause/resume', () => {
 
   const renderWeb = () => renderWithPorts({ uploadTranscriptionChunk: upload });
 
+  it('does not auto-enhance an empty recovery after microphone permission is denied', async () => {
+    vi.mocked(navigator.mediaDevices.getUserMedia).mockRejectedValue(
+      new DOMException('Denied', 'NotAllowedError')
+    );
+    const { result } = renderWeb();
+    await act(async () => {
+      await result.current.start('note_1', 'Standup');
+    });
+    expect(result.current.error).toBe('recording.errors.microphoneDenied');
+    act(() => window.dispatchEvent(new Event('focus')));
+    await waitFor(async () => expect(await listAudioSessions()).toEqual([]));
+    expect(result.current.completedRecording).toBeNull();
+    expect(useAutoEnhanceStore.getState().requests).toEqual([]);
+  });
+
   it('ignores a resume that resolves after the recording stopped', async () => {
     const { result } = renderWeb();
     await act(async () => {
@@ -960,7 +980,8 @@ describe('useRecording — web branch pause/resume', () => {
     expect(result.current.error).toBe('recording.errors.microphoneDisconnected');
     expect(result.current.state).toBe('idle');
     expect(finalizeRecording).toHaveBeenCalledTimes(1);
-    expect(result.current.completedRecording?.noteId).toBe('note_1');
+    expect(result.current.completedRecording).toBeNull();
+    expect(useAutoEnhanceStore.getState().requests).toEqual([]);
   });
 
   it('an unmounted pending start must release its late microphone', async () => {
@@ -1068,6 +1089,7 @@ describe('useRecording — web branch pause/resume', () => {
     await act(async () => {
       await result.current.start('note_owner', 'Standup');
     });
+    pushFrame(16000);
     await act(async () => {
       await Promise.all([result.current.stop(), result.current.stop()]);
     });
@@ -1098,23 +1120,124 @@ describe('useRecording — web branch pause/resume', () => {
     act(() => {
       stopped = result.current.stop();
     });
-    await waitFor(() =>
-      expect(listPendingRecordingCompletions()).toEqual([
+    await waitFor(async () =>
+      expect(await listAudioSessions()).toEqual([
         expect.objectContaining({
           recordingId: 'rec_web',
           noteId: 'note_owner',
-
-          durationMs: 1000,
+          capturedSamples: 16000,
+          stoppedAt: expect.any(Number),
         }),
       ])
     );
     expect(finalizeRecording).not.toHaveBeenCalled();
+    await waitFor(() => expect(upload).toHaveBeenCalled());
     await act(async () => {
       completeUpload();
       await stopped;
     });
+    await waitFor(() => expect(finalizeRecording).toHaveBeenCalledOnce());
+  });
+
+  it('does not report a save failure when Stop overlaps a healthy live upload', async () => {
+    let completeUpload!: () => void;
+    upload.mockImplementationOnce(
+      () =>
+        new Promise<never[]>(resolve => {
+          completeUpload = () => resolve([]);
+        })
+    );
+    const { result } = renderWeb();
+    await act(async () => {
+      await result.current.start('note_owner', 'Standup');
+    });
+    pushFrame(16000 * 4);
+    await waitFor(() => expect(upload).toHaveBeenCalledOnce());
+    await act(async () => {
+      await result.current.stop();
+    });
+    expect(result.current.isFinalizing).toBe(true);
+    expect(result.current.error).toBeNull();
+    await act(async () => {
+      window.dispatchEvent(new Event('recording-recovery-pending'));
+    });
+    expect(result.current.error).toBeNull();
+    await act(async () => {
+      completeUpload();
+    });
+    await waitFor(() => expect(result.current.isFinalizing).toBe(false));
+    expect(result.current.error).toBeNull();
     expect(finalizeRecording).toHaveBeenCalledOnce();
   });
+
+  it('clears finishing when another tab already delivered the stopped recording', async () => {
+    const { result, qc } = renderWeb();
+    const invalidate = vi.spyOn(qc, 'invalidateQueries');
+    await act(async () => {
+      await result.current.start('note_owner', 'Standup');
+    });
+    const lock = 'recording-audio-upload:rec_web';
+    locks.held.add(lock);
+    pushFrame(16000);
+    await act(async () => {
+      await result.current.stop();
+    });
+    expect(result.current.isFinalizing).toBe(true);
+    expect(await listAudioSessions()).toHaveLength(1);
+    expect(result.current.state).toBe('idle');
+    expect(result.current.completedRecording).toBeNull();
+    invalidate.mockClear();
+    // Another tab successfully finalizes and removes its shared outbox intent.
+    await removeAudioSession('rec_web');
+    locks.held.delete(lock);
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    await waitFor(() => expect(result.current.isFinalizing).toBe(false), { timeout: 6000 });
+    expect(result.current.error).toBeNull();
+    expect(finalizeRecording).not.toHaveBeenCalled();
+    expect(result.current.completedRecording).toBeNull();
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['transcript', 'rec_web'] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['recordings'] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['note-recordings'] });
+    expect(await listAudioSessions()).toEqual([]);
+  }, 10_000);
+
+  it('keeps a genuine save error while another sender holds the retry lock', async () => {
+    upload.mockRejectedValueOnce(new Error('offline'));
+    const { result } = renderWeb();
+    await act(async () => {
+      await result.current.start('note_owner', 'Standup');
+    });
+    pushFrame(16000);
+    await act(async () => {
+      await result.current.stop();
+    });
+    await waitFor(() => expect(result.current.error).toBe('recording.errors.completionRecovery'));
+    const lock = 'recording-audio-upload:rec_web';
+    await waitFor(() => expect(locks.held.has(lock)).toBe(false));
+    locks.held.add(lock);
+    const attempts = locks.request.mock.calls.length;
+    await act(async () => {
+      window.dispatchEvent(new Event('recording-recovery-pending'));
+    });
+    // An already-running sweep may consume the notification; its five-second retry
+    // must also preserve the banner while the other sender owns the lock.
+    await waitFor(() => expect(locks.request.mock.calls.length).toBeGreaterThan(attempts), {
+      timeout: 6000,
+    });
+    await act(async () => {});
+    expect(result.current.error).toBe('recording.errors.completionRecovery');
+    expect(finalizeRecording).not.toHaveBeenCalled();
+    locks.held.delete(lock);
+    for (const chunk of await listAudioChunks('rec_web'))
+      await updateAudioChunk({ ...chunk, nextAttemptAt: 0 });
+    await act(async () => {
+      window.dispatchEvent(new Event('recording-recovery-pending'));
+    });
+    await waitFor(() => expect(result.current.isFinalizing).toBe(false));
+    expect(result.current.error).toBeNull();
+  }, 10_000);
 
   it('releases capture while old uploads drain without leaking them into the next note', async () => {
     let completeUpload!: (
@@ -1152,6 +1275,7 @@ describe('useRecording — web branch pause/resume', () => {
       await result.current.start('note_new', 'New');
     });
     expect(result.current.state).toBe('recording');
+    await waitFor(() => expect(upload).toHaveBeenCalled());
     await act(async () => {
       completeUpload([
         { text: 'Old note words', startTimeMs: 0, endTimeMs: 1000, segmentOrder: 0 },
@@ -1167,9 +1291,51 @@ describe('useRecording — web branch pause/resume', () => {
     );
   });
 
+  it('keeps an old upload failure out of a new recording', async () => {
+    let rejectUpload!: (error: Error) => void;
+    upload.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectUpload = reject;
+        })
+    );
+    const { result } = renderWeb();
+    await act(async () => {
+      await result.current.start('note_old', 'Old');
+    });
+    pushFrame(64000);
+    await waitFor(() => expect(upload).toHaveBeenCalled());
+    let stopped!: Promise<{ segments: number }>;
+    act(() => {
+      stopped = result.current.stop();
+    });
+    await waitFor(() => expect(result.current.state).toBe('idle'));
+    vi.mocked(createRecording).mockResolvedValueOnce({ id: 'rec_new', startedAt: null } as never);
+    await act(async () => {
+      await result.current.start('note_new', 'New');
+    });
+    await act(async () => {
+      rejectUpload(new Error('Offline'));
+      await stopped;
+    });
+    act(() => window.dispatchEvent(new Event('focus')));
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    });
+    expect(result.current.state).toBe('recording');
+    expect(result.current.noteId).toBe('note_new');
+    expect(result.current.error).toBeNull();
+  });
+
   it('does not expose the previous transcript when the next microphone start fails', async () => {
     upload.mockResolvedValue([
-      { text: 'Old transcript', startTimeMs: 0, endTimeMs: 1000, segmentOrder: 0 },
+      {
+        recordingId: 'rec_web',
+        text: 'Old transcript',
+        startTimeMs: 0,
+        endTimeMs: 1000,
+        segmentOrder: 0,
+      },
     ]);
     const { result } = renderWeb();
     await act(async () => {
@@ -1210,10 +1376,12 @@ describe('useRecording — web branch pause/resume', () => {
     renderWeb();
     await act(async () => {});
     expect(finalizeRecording).not.toHaveBeenCalled();
-    expect(locks.request).toHaveBeenCalledWith(
-      lockName,
-      { ifAvailable: true },
-      expect.any(Function)
+    await waitFor(() =>
+      expect(locks.request).toHaveBeenCalledWith(
+        lockName,
+        { ifAvailable: true },
+        expect.any(Function)
+      )
     );
     locks.held.delete(lockName);
     act(() => {
@@ -1223,34 +1391,15 @@ describe('useRecording — web branch pause/resume', () => {
     await waitFor(() => expect(listPendingRecordingCompletions()).toEqual([]));
   });
 
-  it('publishes a stop intent only after draining when Web Locks are unavailable', async () => {
+  it('refuses capture without browser locks rather than accepting unrecoverable audio', async () => {
     Object.defineProperty(navigator, 'locks', { configurable: true, value: undefined });
-    let completeUpload!: () => void;
-    upload.mockImplementationOnce(() =>
-      new Promise<void>(resolve => {
-        completeUpload = resolve;
-      }).then(() => [])
-    );
     const { result } = renderWeb();
     await act(async () => {
       await result.current.start('note_owner', 'Standup');
     });
-    pushFrame(16000);
-    await act(async () => {});
-    let stopped!: Promise<{ segments: number }>;
-    act(() => {
-      stopped = result.current.stop();
-    });
-    await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 180));
-    });
-    expect(listPendingRecordingCompletions()).toEqual([]);
-    expect(finalizeRecording).not.toHaveBeenCalled();
-    await act(async () => {
-      completeUpload();
-      await stopped;
-    });
-    expect(finalizeRecording).toHaveBeenCalledOnce();
+    expect(result.current.state).toBe('idle');
+    expect(navigator.mediaDevices.getUserMedia).not.toHaveBeenCalled();
+    expect(upload).not.toHaveBeenCalled();
   });
 
   it('uses the selected language and microphone for the next recording', async () => {
@@ -1446,6 +1595,7 @@ describe('useRecording — web branch pause/resume', () => {
     await act(async () => {});
 
     expect(result.current.state).toBe('recording');
+    await waitFor(() => expect(upload).toHaveBeenCalled());
     expect(upload).toHaveBeenCalledWith(
       'rec_web',
       expect.any(ArrayBuffer),
@@ -1506,7 +1656,7 @@ describe('useRecording — web branch pause/resume', () => {
     await waitFor(() => expect(listPendingRecordingCompletions()).toEqual([]));
   });
 
-  it('retries a persisted completion after the hook remounts', async () => {
+  it('retries a persisted completion after the hook remounts', { timeout: 10_000 }, async () => {
     vi.mocked(finalizeRecording).mockRejectedValue(new Error('offline'));
     const first = renderWeb();
     await act(async () => {
@@ -1516,7 +1666,7 @@ describe('useRecording — web branch pause/resume', () => {
     await act(async () => {
       await first.result.current.stop();
     });
-    expect(listPendingRecordingCompletions()).toHaveLength(1);
+    expect(await listAudioSessions()).toHaveLength(1);
     first.unmount();
     vi.mocked(finalizeRecording).mockResolvedValue({
       id: 'rec_web',
@@ -1530,8 +1680,12 @@ describe('useRecording — web branch pause/resume', () => {
     const second = renderWeb();
     await waitFor(() => expect(listPendingRecordingCompletions()).toEqual([]));
     expect(upload).toHaveBeenCalledOnce();
-    expect(second.result.current.completedRecording).toEqual(
-      expect.objectContaining({ recordingId: 'rec_web', noteId: 'note_owner' })
+    await waitFor(
+      () =>
+        expect(second.result.current.completedRecording).toEqual(
+          expect.objectContaining({ recordingId: 'rec_web', noteId: 'note_owner' })
+        ),
+      { timeout: 7000 }
     );
   });
 
@@ -1622,6 +1776,7 @@ describe('useRecording — web branch pause/resume', () => {
     // and the context suspended after the flush.
     expect(FakeWorkletNode.last?.port.posted).toContainEqual({ type: 'flush' });
     expect(FakeAudioContext.last?.suspend).toHaveBeenCalled();
+    await waitFor(() => expect(upload).toHaveBeenCalledTimes(2));
     expect(upload.mock.calls.map(c => c[2])).toEqual([
       { chunkIndex: 0, chunkStartMs: 0, authToken: 'tok', activeOrgId: 'org_1' },
       { chunkIndex: 1, chunkStartMs: 4000, authToken: 'tok', activeOrgId: 'org_1' },
@@ -1637,6 +1792,7 @@ describe('useRecording — web branch pause/resume', () => {
     // media timeline continues at 4500ms — the paused gap is compressed out.
     pushFrame(64000);
     await act(async () => {}); // let the upload lane's microtask run
+    await waitFor(() => expect(upload).toHaveBeenCalledTimes(3));
     expect(upload.mock.calls.map(c => c[2])).toContainEqual({
       chunkIndex: 2,
       chunkStartMs: 4500,
@@ -1699,8 +1855,18 @@ describe('useRecording — web branch pause/resume', () => {
     // A 5xx never halts the session: the next chunk is still attempted.
     pushFrame(64000);
     await act(async () => {});
-    expect(upload.mock.calls.length).toBeGreaterThan(3);
-  });
+    await waitFor(async () => expect(await listAudioChunks('rec_web')).toHaveLength(2));
+    expect(await listAudioSessions()).toHaveLength(1);
+    expect(finalizeRecording).not.toHaveBeenCalled();
+    upload.mockResolvedValue([]);
+    await act(async () => {
+      await result.current.stop();
+    });
+    await waitFor(() => expect(result.current.completedRecording).not.toBeNull(), {
+      timeout: 10_000,
+    });
+    expect(result.current.error).toBeNull();
+  }, 15_000);
 
   it("resume during pause's flush beat wins — the context is never left suspended", async () => {
     const { result } = renderWeb();
@@ -1852,7 +2018,13 @@ describe('useRecording — auto-pause on silence', () => {
     });
     // One second per frame keeps the chunker cutting on its normal cadence, so this exercises the
     // real upload path rather than a synthetic single giant frame.
-    for (let i = 0; i < seconds; i++) pushFrame(SECOND);
+    for (let i = 0; i < seconds; i++) {
+      pushFrame(SECOND);
+      await waitFor(
+        async () => expect((await listAudioSessions())[0]?.capturedSamples).toBe((i + 1) * SECOND),
+        { interval: 1 }
+      );
+    }
   };
 
   it('does nothing at all when the org flag is off', async () => {
@@ -1908,7 +2080,7 @@ describe('useRecording — auto-pause on silence', () => {
     const { result } = renderAuto();
     await startAndFeedSilence(result, 41);
     await act(async () => {}); // let the upload lane resolve
-    expect(result.current.gracePrompt).toBeNull();
+    await waitFor(() => expect(result.current.gracePrompt).toBeNull());
     expect(result.current.state).toBe('recording');
   });
 
@@ -1923,7 +2095,10 @@ describe('useRecording — auto-pause on silence', () => {
 
     // Another two minutes of dead silence must NOT ask again.
     await act(async () => {
-      for (let i = 0; i < 120; i++) pushFrame(SECOND);
+      for (let i = 0; i < 120; i++) {
+        pushFrame(SECOND);
+        await new Promise(resolve => setTimeout(resolve, 2));
+      }
     });
     expect(result.current.gracePrompt).toBeNull();
     expect(result.current.state).toBe('recording');
@@ -1968,7 +2143,9 @@ describe('useRecording — auto-pause on silence', () => {
     // stop() here would finalize the recording but skip everything the dock owns around a stop —
     // completed analytics, the cache invalidations, auto-enhance — so an auto-stopped session
     // would leave a transcript that never becomes a note.
-    vi.useFakeTimers();
+    vi.useFakeTimers({
+      toFake: ['setInterval', 'clearInterval', 'Date'],
+    });
     try {
       const { result } = renderAuto({ ...POLICY, autoStopAfterPausedMinutes: 1 });
       await act(async () => {
@@ -1976,9 +2153,7 @@ describe('useRecording — auto-pause on silence', () => {
       });
       pushFrame(SECOND);
       await act(async () => {
-        const paused = result.current.pause();
-        await vi.advanceTimersByTimeAsync(300);
-        await paused;
+        await result.current.pause();
       });
       expect(result.current.state).toBe('paused');
       expect(result.current.autoStopRequested).toBe(false);

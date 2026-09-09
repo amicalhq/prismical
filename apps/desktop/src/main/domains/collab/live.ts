@@ -68,10 +68,12 @@ export const CollabBrokerLive: Layer.Layer<CollabBroker, never, MainLogger | Col
           const onMessage = (event: Electron.MessageEvent) => {
             const parsed = parseInboundCollabMessage(event.data);
             if (!parsed.success) {
-              unsafeLog.warn('invalid collab port message ignored', { context: {
-                openId,
-                issues: parsed.issues,
-              } });
+              unsafeLog.warn('invalid collab port message ignored', {
+                context: {
+                  openId,
+                  issues: parsed.issues,
+                },
+              });
               return;
             }
             Queue.unsafeOffer(inbox, parsed.data);
@@ -113,7 +115,10 @@ export const CollabBrokerLive: Layer.Layer<CollabBroker, never, MainLogger | Col
                       Effect.as('stored' as const),
                       Effect.catchAll(error =>
                         log
-                          .warn(`collab ${what} failed`, { context: { openId }, error: error.cause })
+                          .warn(`collab ${what} failed`, {
+                            context: { openId },
+                            error: error.cause,
+                          })
                           .pipe(Effect.as('failed' as const))
                       )
                     ),
@@ -121,8 +126,25 @@ export const CollabBrokerLive: Layer.Layer<CollabBroker, never, MainLogger | Col
               )
             );
 
+          let appendFailed = false;
+          let flushFailed = false;
           const handleMessage = (message: InboundCollabMessage): Effect.Effect<void> => {
             switch (message.type) {
+              case 'barrier':
+                return bridge.current.pipe(
+                  Effect.flatMap(current =>
+                    Effect.sync(() => {
+                      post(port1, {
+                        type: 'barrier',
+                        requestId: message.requestId,
+                        ok:
+                          Option.getOrNull(current) === storeAtOpen &&
+                          !appendFailed &&
+                          !flushFailed,
+                      });
+                    })
+                  )
+                );
               case 'update':
                 // Append FIRST (awaited — sequential per port), then relay the
                 // blob verbatim so live windows converge even under a swap.
@@ -138,6 +160,7 @@ export const CollabBrokerLive: Layer.Layer<CollabBroker, never, MainLogger | Col
                 ).pipe(
                   Effect.flatMap(outcome =>
                     Effect.sync(() => {
+                      if (outcome !== 'stored') appendFailed = true;
                       if (outcome === 'failed') post(port1, { type: 'resync' });
                       else relay(message.data);
                     })
@@ -150,11 +173,23 @@ export const CollabBrokerLive: Layer.Layer<CollabBroker, never, MainLogger | Col
                     markdown: message.markdown,
                     firstLine: message.firstLine,
                   })
-                ).pipe(Effect.asVoid);
+                ).pipe(
+                  Effect.flatMap(outcome =>
+                    Effect.sync(() => {
+                      flushFailed = outcome !== 'stored';
+                    })
+                  )
+                );
               case 'compact':
                 return withStore('compact', store =>
                   store.compact(noteId, message.upTo, message.state)
-                ).pipe(Effect.asVoid);
+                ).pipe(
+                  Effect.flatMap(outcome =>
+                    Effect.sync(() => {
+                      appendFailed = outcome !== 'stored';
+                    })
+                  )
+                );
             }
           };
 
@@ -178,7 +213,10 @@ export const CollabBrokerLive: Layer.Layer<CollabBroker, never, MainLogger | Col
               )
             ),
             Effect.catchAll(error =>
-              log.error('collab log replay failed — closing', { context: { openId }, error: error.cause })
+              log.error('collab log replay failed — closing', {
+                context: { openId },
+                error: error.cause,
+              })
             )
           );
 

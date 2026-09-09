@@ -27,7 +27,7 @@ export function useSkillDiffDecorations(editor: Editor | null, noteId: string): 
 
   useEffect(() => {
     if (!editor) return;
-    if (!candidate) {
+    if (!candidate || candidate.acceptance?.applied) {
       if (decoratedForRef.current !== null) {
         clearDiffDecorations(editor);
         decoratedForRef.current = null;
