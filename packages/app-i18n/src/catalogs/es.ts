@@ -405,9 +405,7 @@ const es = {
       renameTitle: 'Cambiar nombre de la carpeta',
     },
     tag: {
-      customColor: 'Color personalizado',
       description: 'Cambia el nombre o el color de la etiqueta.',
-      hexColor: 'Color hexadecimal',
       lettersNumbersOnly: 'Solo letras y números',
       title: 'Editar etiqueta',
       useColor: 'Usar el color {{color}}',
@@ -693,8 +691,9 @@ const es = {
       reconnecting: 'Reconectando…',
     },
     list: {
-      all: 'Todas las notas',
-      earlier: 'Anteriores',
+      moreMeetings: '{{count}} reuniones más',
+      moreTags: '{{count}} etiquetas más',
+      earlierThisMonth: 'Antes este mes',
       emptyDescription: 'Las notas que crees o captures aparecerán aquí.',
       emptyTitle: 'Aún no hay notas',
       loadError: 'No se pudieron cargar tus notas.',

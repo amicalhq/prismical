@@ -115,7 +115,18 @@ export type Note = {
   updatedAt: string;
   preview: string;
   body: string; // plain text or simple markdown for static render
-  /** The user's own event row for the note's primary link (see NoteEventLink); never another user's. */
+  /**
+   * The user's own event row for the note's PRIMARY link (see NoteEventLink); never another user's.
+   *
+   * ONE event, even when the note is linked to several — a note carries as many meetings as the
+   * user attaches, and this field names only the first of them. Anything showing a note's meetings
+   * must read them from `useNoteEvents(noteId)` (or `useAllNoteEvents()` when it needs every note's
+   * at once); reaching for this field instead silently drops every link but the primary, which
+   * looks correct until someone attaches a second meeting.
+   *
+   * It exists for the single-event cases: "does this note have a meeting at all", and opening the
+   * note the primary event belongs to.
+   */
   eventId?: string;
   writable?: boolean; // false ⇒ caller has read-only access (disable the editor)
   isOwner?: boolean; // false ⇒ this note was shared with the caller ("Shared with me")

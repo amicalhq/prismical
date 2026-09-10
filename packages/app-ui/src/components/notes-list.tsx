@@ -7,6 +7,7 @@ import { NoteListSkeleton, NoteGroupsSkeleton } from './skeletons';
 import type { Note } from '@prismical/app-contracts';
 import { useNotes } from '@prismical/app-client';
 import { useAllNoteTags } from '@prismical/app-client';
+import { groupNotesByDate } from '../lib/note-date-groups';
 import { useTranslation } from 'react-i18next';
 import { useApplicationLocale } from '@prismical/app-i18n';
 
@@ -19,15 +20,6 @@ interface NotesListProps {
   tagIds?: string[];
   sortBy?: 'updatedAt' | 'createdAt' | 'title';
   sortOrder?: 'asc' | 'desc';
-}
-
-function isToday(date: Date): boolean {
-  const now = new Date();
-  return (
-    date.getFullYear() === now.getFullYear() &&
-    date.getMonth() === now.getMonth() &&
-    date.getDate() === now.getDate()
-  );
 }
 
 function sortNotes(
@@ -59,8 +51,8 @@ function EmptyState() {
   );
 }
 
-// Faithful port of the desktop `NotesList`. Filters/sorts live notes and
-// renders `NoteCard` rows, optionally grouped into Today / Earlier sections.
+// Filters/sorts live notes and renders `NoteCard` rows, optionally under date headings
+// (see lib/note-date-groups.ts for the buckets).
 export function NotesList({
   showPageHeader = true,
   groupByDate = false,
@@ -116,40 +108,33 @@ export function NotesList({
 
   const sorted = sortNotes(filtered, sortBy, sortOrder, resolvedLocale);
 
-  if (groupByDate) {
+  // Date headings only make sense over a date order — a title sort would interleave the buckets
+  // and repeat their headings all the way down the list.
+  if (groupByDate && sortBy !== 'title') {
     if (sorted.length === 0) return <EmptyState />;
-    const todayNotes = sorted.filter(n => isToday(new Date(n.updatedAt)));
-    const earlierNotes = sorted.filter(n => !isToday(new Date(n.updatedAt)));
+    const groups = groupNotesByDate(
+      sorted,
+      note => new Date(sortBy === 'createdAt' ? note.createdAt ?? note.updatedAt : note.updatedAt),
+      new Date(),
+      resolvedLocale,
+      t
+    );
 
     return (
       // -mx-3 cancels the px-3 the rows and group headings carry for their hover
       // pill, so this column's text lines up with the greeting and the meetings
       // header above it while the highlight still bleeds past the content edge.
       <div className="-mx-3 space-y-6">
-        {todayNotes.length > 0 && (
-          <section className="space-y-2">
-            <h2 className="px-3 text-sm font-medium text-muted-foreground">
-              {t('notes.list.today')}
-            </h2>
+        {groups.map(group => (
+          <section key={group.key} className="space-y-2">
+            <h2 className="px-3 text-sm font-medium text-muted-foreground">{group.label}</h2>
             <div>
-              {todayNotes.map(note => (
+              {group.notes.map(note => (
                 <NoteCard key={note.id} note={note} />
               ))}
             </div>
           </section>
-        )}
-        {earlierNotes.length > 0 && (
-          <section className="space-y-2">
-            <h2 className="px-3 text-sm font-medium text-muted-foreground">
-              {todayNotes.length > 0 ? t('notes.list.earlier') : t('notes.list.all')}
-            </h2>
-            <div>
-              {earlierNotes.map(note => (
-                <NoteCard key={note.id} note={note} />
-              ))}
-            </div>
-          </section>
-        )}
+        ))}
       </div>
     );
   }

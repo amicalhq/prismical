@@ -372,9 +372,7 @@ const zhTW = {
       renameTitle: '重新命名資料夾',
     },
     tag: {
-      customColor: '自訂顏色',
       description: '重新命名標籤或變更其顏色。',
-      hexColor: '十六進位色碼',
       lettersNumbersOnly: '僅限文字與數字',
       title: '編輯標籤',
       useColor: '使用顏色 {{color}}',
@@ -642,8 +640,9 @@ const zhTW = {
       reconnecting: '正在重新連接…',
     },
     list: {
-      all: '所有筆記',
-      earlier: '較早',
+      moreMeetings: '還有 {{count}} 個會議',
+      moreTags: '還有 {{count}} 個標籤',
+      earlierThisMonth: '本月稍早',
       emptyDescription: '你建立或擷取的筆記會顯示在這裡。',
       emptyTitle: '尚無筆記',
       loadError: '無法載入你的筆記。',

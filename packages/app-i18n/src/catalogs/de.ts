@@ -410,9 +410,7 @@ const de = {
       renameTitle: 'Ordner umbenennen',
     },
     tag: {
-      customColor: 'Eigene Farbe',
       description: 'Benenne den Tag um oder ändere seine Farbe.',
-      hexColor: 'Hex-Farbe',
       lettersNumbersOnly: 'Nur Buchstaben und Zahlen',
       title: 'Tag bearbeiten',
       useColor: 'Farbe {{color}} verwenden',
@@ -699,8 +697,9 @@ const de = {
       reconnecting: 'Verbindung wird wiederhergestellt…',
     },
     list: {
-      all: 'Alle Notizen',
-      earlier: 'Früher',
+      moreMeetings: '{{count}} weitere Termine',
+      moreTags: '{{count}} weitere Tags',
+      earlierThisMonth: 'Früher diesen Monat',
       emptyDescription: 'Notizen, die du erstellst oder aufzeichnest, erscheinen hier.',
       emptyTitle: 'Noch keine Notizen',
       loadError: 'Deine Notizen konnten nicht geladen werden.',

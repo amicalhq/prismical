@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   TAG_AUTO_ASSIGN_ORDER,
   TAG_PRESETS,
-  isHexColor,
   nextAutoColor,
   normalizeHexColor,
   swatchInk,
@@ -15,6 +14,12 @@ describe("palette", () => {
 
   it("has no duplicate swatches", () => {
     expect(new Set(TAG_PRESETS).size).toBe(TAG_PRESETS.length);
+  });
+
+  // The picker lays the palette out as a fixed 10-column grid, so a count that isn't a multiple of
+  // 10 leaves a ragged last row. Adding a preset means adding ten, or changing the grid.
+  it("fills whole rows of the picker's 10-column grid", () => {
+    expect(TAG_PRESETS.length % 10).toBe(0);
   });
 });
 
@@ -48,15 +53,7 @@ describe("nextAutoColor", () => {
 });
 
 describe("hex helpers", () => {
-  it("accepts 3- and 6-digit hex and rejects anything else", () => {
-    expect(isHexColor("#abc")).toBe(true);
-    expect(isHexColor("#AABBCC")).toBe(true);
-    expect(isHexColor("aabbcc")).toBe(false);
-    expect(isHexColor("#abcd")).toBe(false);
-    expect(isHexColor("oklch(0.7 0.1 250)")).toBe(false);
-  });
-
-  it("expands and lowercases so hand-typed and picker values compare equal", () => {
+  it("expands and lowercases so differently-cased colors compare equal", () => {
     expect(normalizeHexColor("#ABC")).toBe("#aabbcc");
     expect(normalizeHexColor(" #F59E0B ")).toBe("#f59e0b");
     expect(normalizeHexColor("nope")).toBeNull();

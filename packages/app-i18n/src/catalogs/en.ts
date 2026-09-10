@@ -423,9 +423,7 @@ const en = {
       renameTitle: 'Rename folder',
     },
     tag: {
-      customColor: 'Custom color',
       description: 'Rename the tag or change its color.',
-      hexColor: 'Hex color',
       lettersNumbersOnly: 'Letters and numbers only',
       title: 'Edit tag',
       useColor: 'Use color {{color}}',
@@ -713,8 +711,9 @@ const en = {
       reconnecting: 'Reconnecting…',
     },
     list: {
-      all: 'All notes',
-      earlier: 'Earlier',
+      moreMeetings: '{{count}} more meetings',
+      moreTags: '{{count}} more tags',
+      earlierThisMonth: 'Earlier this month',
       emptyDescription: 'Notes you create or capture will appear here.',
       emptyTitle: 'No notes yet',
       loadError: 'Could not load your notes.',

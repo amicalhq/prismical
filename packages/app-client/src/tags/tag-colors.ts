@@ -92,14 +92,10 @@ export function nextAutoColor(existingColors: readonly string[]): string {
 
 const HEX_COLOR = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
 
-/** True for the `#rgb` / `#rrggbb` shape the custom picker round-trips. */
-export function isHexColor(value: string): boolean {
-  return HEX_COLOR.test(value.trim());
-}
-
 /**
- * Normalize a hex color to lowercase 6-digit form, so `#ABC` typed by hand and `#aabbcc` from the
- * native picker compare equal against the presets. Returns null when the input isn't a hex color.
+ * Normalize a hex color to lowercase 6-digit form, so `#ABC` and `#aabbcc` compare equal against the
+ * presets — `tag.color` is free-form text end to end, so a color written through the public API
+ * needn't match the palette's casing. Returns null when the input isn't a hex color.
  */
 export function normalizeHexColor(value: string): string | null {
   const trimmed = value.trim().toLowerCase();
@@ -111,7 +107,7 @@ export function normalizeHexColor(value: string): string | null {
 
 /**
  * Ink that stays readable ON a swatch of `color` — the selected-swatch checkmark sits on top of the
- * fill, and the palette now spans yellow/lime, where white is barely visible. Uses the sRGB
+ * fill, and the palette spans yellow/lime, where white is barely visible. Uses the sRGB
  * relative-luminance threshold; a non-hex color (a legacy oklch seed) can't be measured here, so it
  * falls back to white as before.
  */

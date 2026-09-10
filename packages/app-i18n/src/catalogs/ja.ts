@@ -382,9 +382,7 @@ const ja = {
       renameTitle: 'フォルダ名を変更',
     },
     tag: {
-      customColor: 'カスタムカラー',
       description: 'タグの名前または色を変更します。',
-      hexColor: 'HEX カラー',
       lettersNumbersOnly: '文字と数字のみ',
       title: 'タグを編集',
       useColor: '色 {{color}} を使用',
@@ -665,8 +663,9 @@ const ja = {
       reconnecting: '再接続中…',
     },
     list: {
-      all: 'すべてのノート',
-      earlier: '以前',
+      moreMeetings: '他 {{count}} 件の会議',
+      moreTags: '他 {{count}} 件のタグ',
+      earlierThisMonth: '今月のそれ以前',
       emptyDescription: '作成または記録したノートがここに表示されます。',
       emptyTitle: 'ノートはまだありません',
       loadError: 'ノートを読み込めませんでした。',

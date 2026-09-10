@@ -29,10 +29,11 @@ interface TagEditDialogProps {
 }
 
 // Rename + recolor a tag. Name enforces the web charset inline (letters/numbers only). The color
-// picker is the shared desktop palette plus a custom slot: the native color input and a hex field
-// both write the same value, so any color is reachable. A color outside the palette (a custom pick,
-// or a legacy oklch seed) shows as the fill of the custom swatch, so it stays visible and selected
-// rather than looking unset.
+// picker is the shared curated palette — deliberately NOT a free color input: a tag's color paints
+// the `#` glyph directly on both the light and the dark surface, and an arbitrary pick (white, or
+// near-black) leaves the chip invisible on one of them. A color outside the palette (a legacy oklch
+// seed) is shown as an extra leading swatch so it stays visible and selected rather than looking
+// unset.
 export function TagEditDialog({
   tag,
   onOpenChange,
@@ -46,9 +47,6 @@ export function TagEditDialog({
   // recolor never re-normalizes the name.
   const [name, setName] = React.useState('');
   const [color, setColor] = React.useState<string>(TAG_PRESETS[0]);
-  // What the hex field shows. Kept separate from `color` so a half-typed value ("#ab") doesn't
-  // recolor anything, and so a non-hex legacy color can leave the field empty without clearing it.
-  const [hexDraft, setHexDraft] = React.useState('');
 
   // Reseed only when a DIFFERENT tag is opened — keyed on id, not the live object. If the tags
   // query refetches mid-edit (e.g. a window-focus refetch), `tag` gets a new object identity but the
@@ -57,42 +55,29 @@ export function TagEditDialog({
     if (tag) {
       setName(tag.name);
       setColor(tag.color);
-      setHexDraft(normalizeHexColor(tag.color) ?? '');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tag?.id]);
 
+  // Compare colors case-INSENSITIVELY. The palette is lowercase, but `tag.color` is free-form text
+  // end to end (the column and the `/v1` schema both take any string), so a tag colored `#F59E0B`
+  // through the public API must still light up the amber swatch instead of reading as a stray color.
+  const sameColor = (a: string, b: string) =>
+    (normalizeHexColor(a) ?? a) === (normalizeHexColor(b) ?? b);
+
   const original = { name: tag?.name ?? '', color: tag?.color ?? '' };
   const nameChanged = name !== original.name;
-  const colorChanged = color !== original.color;
+  const colorChanged = !sameColor(color, original.color);
   // Only the changed name is validated — an untouched (possibly legacy) name is always allowed.
   const nameInvalid = nameChanged && !isValidTagName(name);
   const submitDisabled = pending || nameInvalid || (!nameChanged && !colorChanged);
 
-  const isPreset = (TAG_PRESETS as readonly string[]).includes(color);
-  // The native <input type="color"> only accepts 6-digit hex, so a legacy oklch color opens the
-  // picker on black — the tag keeps its color until the user actually picks one.
-  const pickerValue = normalizeHexColor(color) ?? '#000000';
-
-  const applyColor = (next: string) => {
-    const normalized = normalizeHexColor(next) ?? next;
-    setColor(normalized);
-    setHexDraft(normalizeHexColor(normalized) ?? '');
-  };
-
-  // Commit only a complete hex value; anything shorter is still being typed.
-  const handleHexChange = (value: string) => {
-    const cleaned = `#${value.replace(/[^0-9a-fA-F]/g, '').slice(0, 6)}`;
-    setHexDraft(cleaned);
-    if (cleaned.length === 7) setColor(cleaned.toLowerCase());
-  };
-
-  // Accept the 3-digit shorthand on blur, and snap an unfinished value back to the live color.
-  const handleHexBlur = () => {
-    const normalized = normalizeHexColor(hexDraft);
-    if (normalized) applyColor(normalized);
-    else setHexDraft(normalizeHexColor(color) ?? '');
-  };
+  // Show the current color as its own leading swatch when it's not one of the presets, so a legacy
+  // color stays selectable and visible rather than appearing unselected. That makes the grid 21
+  // cells for such a tag; every other tag fills two even rows of 10.
+  const swatches: string[] = TAG_PRESETS.some(c => sameColor(c, color))
+    ? [...TAG_PRESETS]
+    : [color, ...TAG_PRESETS];
 
   const handleSubmit = () => {
     if (submitDisabled) return;
@@ -134,68 +119,30 @@ export function TagEditDialog({
           </div>
           <div className="space-y-2">
             <Label>{t('common.fields.color')}</Label>
-            {/* Explicit 10 columns, not flex-wrap: 19 presets plus the custom
-                swatch is exactly 20, so the grid fills two even rows and stays
-                even if the dialog is resized. Adding or removing a preset means
-                keeping the total a multiple of 10. */}
+            {/* Explicit 10 columns, not flex-wrap: the palette is 20 presets, so the
+                grid fills two even rows and keeps its shape whatever the dialog
+                width does. Adding or removing a preset means keeping the total a
+                multiple of 10 — there's a test on that. */}
             <div className="grid grid-cols-10 gap-2">
-              {TAG_PRESETS.map(c => (
-                <button
-                  key={c}
-                  type="button"
-                  aria-label={t('dialogs.tag.useColor', { color: c })}
-                  aria-pressed={c === color}
-                  onClick={() => applyColor(c)}
-                  className={cn(
-                    'flex size-7 items-center justify-center rounded-full ring-offset-2 ring-offset-background transition-[box-shadow]',
-                    c === color && 'ring-2 ring-ring'
-                  )}
-                  style={{ backgroundColor: c }}
-                >
-                  {c === color && <Check className="size-4" style={{ color: swatchInk(c) }} />}
-                </button>
-              ))}
-            </div>
-            <div className="flex items-center gap-2 pt-1">
-              {/* The native picker sits invisibly on top of the swatch so the OS color panel
-                  anchors to it; the swatch itself shows the rainbow until a custom color is
-                  chosen, then the color. */}
-              <span
-                className={cn(
-                  'relative flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-full ring-offset-2 ring-offset-background transition-[box-shadow]',
-                  !isPreset && 'ring-2 ring-ring'
-                )}
-                style={
-                  isPreset
-                    ? {
-                        background:
-                          'conic-gradient(#ef4444, #facc15, #4ade80, #22d3ee, #60a5fa, #c084fc, #f472b6, #ef4444)',
-                      }
-                    : { backgroundColor: color }
-                }
-              >
-                {!isPreset && <Check className="size-4" style={{ color: swatchInk(color) }} />}
-                <input
-                  type="color"
-                  aria-label={t('dialogs.tag.customColor')}
-                  value={pickerValue}
-                  onChange={e => applyColor(e.target.value)}
-                  className="absolute inset-0 size-full cursor-pointer opacity-0"
-                />
-              </span>
-              <Input
-                aria-label={t('dialogs.tag.hexColor')}
-                value={hexDraft}
-                maxLength={7}
-                spellCheck={false}
-                placeholder="#000000"
-                onChange={e => handleHexChange(e.target.value)}
-                onBlur={handleHexBlur}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') handleSubmit();
-                }}
-                className="h-8 w-28 font-mono text-xs"
-              />
+              {swatches.map(c => {
+                const selected = sameColor(c, color);
+                return (
+                  <button
+                    key={c}
+                    type="button"
+                    aria-label={t('dialogs.tag.useColor', { color: c })}
+                    aria-pressed={selected}
+                    onClick={() => setColor(c)}
+                    className={cn(
+                      'flex size-7 items-center justify-center rounded-full ring-offset-2 ring-offset-background transition-[box-shadow] outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                      selected && 'ring-2 ring-ring'
+                    )}
+                    style={{ backgroundColor: c }}
+                  >
+                    {selected && <Check className="size-4" style={{ color: swatchInk(c) }} />}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
