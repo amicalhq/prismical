@@ -648,6 +648,7 @@ const es = {
     },
     tags: {
       add: 'Añadir etiqueta',
+      clear: 'Borrar filtro de etiquetas',
       create: 'Crear “{{name}}”',
       filter: 'Filtrar por etiquetas',
       lettersNumbersOnly: 'Solo letras y números',
@@ -656,6 +657,7 @@ const es = {
       search: 'Buscar etiquetas…',
       searchOrCreate: 'Buscar o crear…',
       title: 'Etiquetas',
+      unknown: 'Etiqueta desconocida',
     },
     title: 'Título de la nota',
     untitled: 'Sin título',

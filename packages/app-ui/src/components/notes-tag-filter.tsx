@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Check, Star, Tag as TagIcon } from 'lucide-react';
+import { Check, Star, Tag as TagIcon, X } from 'lucide-react';
 import {
   Command,
   CommandEmpty,
@@ -9,6 +9,7 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
+  CommandSeparator,
 } from '../ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { cn } from '../lib/utils';
@@ -46,10 +47,45 @@ export function NotesTagFilter({
   const { data: allTags = [] } = useTags();
   const [open, setOpen] = React.useState(false);
 
-  const toggle = (id: string) =>
-    onChange(selected.includes(id) ? selected.filter(x => x !== id) : [...selected, id]);
+  // `selected` comes from the URL, and the host commits a URL change ASYNCHRONOUSLY (a router push
+  // plus its re-render). Between a pick and that commit `selected` still holds the PREVIOUS value,
+  // so a second pick computed from it would replace the first instead of adding to it — picking two
+  // tags quickly used to leave only the last one. Hold the picks made since the last commit here and
+  // compute every toggle from those; the local copy is released the moment the URL catches up (or
+  // changes underneath us: back/forward, a sidebar tag link).
+  const [pending, setPending] = React.useState<string[] | null>(null);
+  const pendingCommits = React.useRef<string[]>([]);
+  const committed = selected.join(',');
+  React.useEffect(() => {
+    const acknowledged = pendingCommits.current.indexOf(committed);
+    if (acknowledged < 0) pendingCommits.current = [];
+    else pendingCommits.current.splice(0, acknowledged + 1);
+    // An earlier URL acknowledgment must not erase picks made after it.
+    // An unrelated value comes from navigation and replaces the pending filter.
+    if (pendingCommits.current.length === 0) setPending(null);
+  }, [committed]);
+  const active = pending ?? selected;
 
-  const selectedTags = allTags.filter(t => selected.includes(t.id));
+  const apply = (ids: string[]) => {
+    pendingCommits.current.push(ids.join(','));
+    setPending(ids);
+    onChange(ids);
+  };
+  const toggle = (id: string) =>
+    apply(active.includes(id) ? active.filter(x => x !== id) : [...active, id]);
+
+  // By name, like the other tag surfaces — the sync lane hands rows back in update order, which
+  // reads as random once a user has more than a handful of tags.
+  const tags = [...allTags].sort((a, b) => a.name.localeCompare(b.name));
+
+  // A selected id that resolves to no tag still filters the list (ids are ANDed), so it must stay
+  // visible: it is why the page looks empty, and its chip is what makes the filter clearable. It is
+  // NOT dropped from the filter — the tag list can be legitimately behind (a tag another device just
+  // made, a link opened before the first pull), and silently widening a filter the user asked for
+  // would show every note instead of the ones they came for.
+  const selectedTags = active.map(
+    id => tags.find(tag => tag.id === id) ?? { id, name: t('notes.tags.unknown'), color: null }
+  );
   const visible = selectedTags.slice(0, VISIBLE_CHIPS);
   const overflow = selectedTags.length - visible.length;
 
@@ -71,8 +107,11 @@ export function NotesTagFilter({
               {visible.map(tag => (
                 <span
                   key={tag.id}
-                  className="flex h-[22px] shrink-0 items-center gap-0.5 rounded-sm px-1.5 text-xs font-medium"
-                  style={chipStyle(tag.color)}
+                  className={cn(
+                    'flex h-[22px] shrink-0 items-center gap-0.5 rounded-sm px-1.5 text-xs font-medium',
+                    tag.color === null && 'bg-muted-foreground/15 text-muted-foreground'
+                  )}
+                  style={tag.color === null ? undefined : chipStyle(tag.color)}
                 >
                   <span className="font-mono font-bold leading-none">#</span>
                   <span className="max-w-20 truncate">{tag.name}</span>
@@ -91,8 +130,8 @@ export function NotesTagFilter({
           <CommandList>
             <CommandEmpty>{t('notes.tags.notFound')}</CommandEmpty>
             <CommandGroup>
-              {allTags.map(tag => {
-                const isSelected = selected.includes(tag.id);
+              {tags.map(tag => {
+                const isSelected = active.includes(tag.id);
                 return (
                   <CommandItem
                     key={tag.id}
@@ -119,6 +158,21 @@ export function NotesTagFilter({
                 );
               })}
             </CommandGroup>
+            {active.length > 0 && (
+              <>
+                <CommandSeparator />
+                <CommandGroup>
+                  <CommandItem
+                    value="__clear__"
+                    onSelect={() => apply([])}
+                    className="flex items-center gap-2 text-muted-foreground"
+                  >
+                    <X className="h-4 w-4 shrink-0" />
+                    <span>{t('notes.tags.clear')}</span>
+                  </CommandItem>
+                </CommandGroup>
+              </>
+            )}
           </CommandList>
         </Command>
       </PopoverContent>

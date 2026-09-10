@@ -669,6 +669,7 @@ const en = {
     },
     tags: {
       add: 'Add tag',
+      clear: 'Clear tag filter',
       create: 'Create “{{name}}”',
       filter: 'Filter by tags',
       lettersNumbersOnly: 'Letters and numbers only',
@@ -677,6 +678,7 @@ const en = {
       search: 'Search tags…',
       searchOrCreate: 'Search or create…',
       title: 'Tags',
+      unknown: 'Unknown tag',
     },
     title: 'Note title',
     untitled: 'Untitled',

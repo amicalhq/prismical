@@ -620,6 +620,7 @@ const ja = {
     },
     tags: {
       add: 'タグを追加',
+      clear: 'タグフィルターをクリア',
       create: '「{{name}}」を作成',
       filter: 'タグで絞り込む',
       lettersNumbersOnly: '文字と数字のみ',
@@ -628,6 +629,7 @@ const ja = {
       search: 'タグを検索…',
       searchOrCreate: '検索または作成…',
       title: 'タグ',
+      unknown: '不明なタグ',
     },
     title: 'ノートのタイトル',
     untitled: '無題',

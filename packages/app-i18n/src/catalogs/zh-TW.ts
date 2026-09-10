@@ -598,6 +598,7 @@ const zhTW = {
     },
     tags: {
       add: '新增標籤',
+      clear: '清除標籤篩選',
       create: '建立「{{name}}」',
       filter: '依標籤篩選',
       lettersNumbersOnly: '僅限文字與數字',
@@ -606,6 +607,7 @@ const zhTW = {
       search: '搜尋標籤…',
       searchOrCreate: '搜尋或建立…',
       title: '標籤',
+      unknown: '未知標籤',
     },
     title: '筆記標題',
     untitled: '未命名',

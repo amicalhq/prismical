@@ -654,6 +654,7 @@ const de = {
     },
     tags: {
       add: 'Tag hinzufügen',
+      clear: 'Tag-Filter zurücksetzen',
       create: '„{{name}}“ erstellen',
       filter: 'Nach Tags filtern',
       lettersNumbersOnly: 'Nur Buchstaben und Zahlen',
@@ -662,6 +663,7 @@ const de = {
       search: 'Tags durchsuchen…',
       searchOrCreate: 'Suchen oder erstellen…',
       title: 'Tags',
+      unknown: 'Unbekanntes Tag',
     },
     title: 'Notiztitel',
     untitled: 'Ohne Titel',
