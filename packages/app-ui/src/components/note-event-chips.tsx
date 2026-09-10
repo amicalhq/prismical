@@ -28,7 +28,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { cn } from '../lib/utils';
 
 const CHIP =
-  'inline-flex h-[22px] max-w-full items-center gap-1 rounded-full border border-border px-2 text-2xs font-medium transition-colors';
+  'inline-flex h-[22px] max-w-full items-center gap-1 rounded-sm border border-border px-2 text-2xs font-medium transition-colors';
 
 /**
  * The note's calendar events, as chips beside the folder and tags. One chip per link, the

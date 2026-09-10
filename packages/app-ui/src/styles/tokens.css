@@ -368,6 +368,16 @@ body {
   body {
     @apply bg-background text-foreground;
   }
+  /* Tailwind v4 dropped v3's `button { cursor: pointer }` preflight, so every
+   * button in the app fell back to the arrow — chips, the metadata row, Share,
+   * all of it — and nothing looked clickable. Restore it once here rather than
+   * hanging `cursor-pointer` off individual components (which ~47 call sites had
+   * already started doing, one hover bug at a time). Disabled controls keep the
+   * default arrow. */
+  button:not(:disabled),
+  [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
 }
 
 /* Waveform bar oscillation — used by the recording dock's CSS-only waveform.

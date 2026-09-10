@@ -54,6 +54,32 @@ export function formatApplicationRelativeDay(
   return formatApplicationDate(date, now, locale);
 }
 
+/**
+ * Compact "when was this touched" for a dense list row: `now`, `5m`, `3h`, `2d`, then the plain
+ * date (`7 Sep`, with the year once it differs). Short by design — it sits at the right edge of a
+ * row whose title owns the width, so it must not grow with the age of the note.
+ */
+export function formatApplicationTimeAgoShort(
+  date: Date,
+  now: Date,
+  locale: SupportedLocale,
+  t: TFunction
+): string {
+  const elapsed = now.getTime() - date.getTime();
+  // A clock skew (or a note saved a moment in the future) reads as "now", never as a negative age.
+  if (elapsed < 60_000) return t('common.time.now');
+  if (elapsed < 3_600_000) {
+    return t('common.time.shortMinutes', { count: Math.floor(elapsed / 60_000) });
+  }
+  if (elapsed < 86_400_000) {
+    return t('common.time.shortHours', { count: Math.floor(elapsed / 3_600_000) });
+  }
+  if (elapsed < 7 * 86_400_000) {
+    return t('common.time.shortDays', { count: Math.floor(elapsed / 86_400_000) });
+  }
+  return formatApplicationDate(date, now, locale);
+}
+
 export function formatApplicationTime(date: Date, locale: SupportedLocale): string {
   return new Intl.DateTimeFormat(locale, {
     hour: '2-digit',

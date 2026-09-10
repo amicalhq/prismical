@@ -54,15 +54,19 @@ export function NoteFolderChip({
           type="button"
           aria-label={selected ? t('notes.folders.change') : t('notes.folders.add')}
           className={cn(
-            'inline-flex h-[22px] items-center gap-1 rounded-full border border-border px-2 text-2xs font-medium transition-colors',
+            'inline-flex h-[22px] items-center gap-1 rounded-sm border px-2 text-2xs font-medium transition-colors',
+            // Outlined, not filled: a filled chip here was bg-muted + text-muted-foreground
+            // + border-border, which is how disabled controls are drawn — the folder NAME,
+            // real content, was painted in the placeholder colour. Outline + foreground text
+            // also keeps it distinct from the tag badges beside it, which own the fills.
             selected
-              ? 'bg-muted text-muted-foreground hover:bg-accent'
-              : 'border-dashed text-muted-foreground hover:bg-accent'
+              ? 'border-surface-raised text-foreground hover:bg-surface-raised'
+              : 'border-dashed border-border text-muted-foreground hover:bg-surface-raised hover:text-foreground'
           )}
         >
           {selected ? (
             <>
-              <FolderIcon className="h-3 w-3 shrink-0" />
+              <FolderIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
               <span className="max-w-40 truncate">{folderPath(folders, selected.id)}</span>
             </>
           ) : (

@@ -78,7 +78,10 @@ export function NotesList({
   const filteringTags = Boolean(tagIds?.length);
 
   if (isLoading || (filteringTags && noteTagsQuery.isLoading)) {
-    return groupByDate ? <NoteGroupsSkeleton /> : <NoteListSkeleton />;
+    // Same -mx-3 as the loaded list, so rows don't shift 12px left on load.
+    return (
+      <div className="-mx-3">{groupByDate ? <NoteGroupsSkeleton /> : <NoteListSkeleton />}</div>
+    );
   }
   if (notesQuery.error) {
     return (
@@ -119,7 +122,10 @@ export function NotesList({
     const earlierNotes = sorted.filter(n => !isToday(new Date(n.updatedAt)));
 
     return (
-      <div className="space-y-6">
+      // -mx-3 cancels the px-3 the rows and group headings carry for their hover
+      // pill, so this column's text lines up with the greeting and the meetings
+      // header above it while the highlight still bleeds past the content edge.
+      <div className="-mx-3 space-y-6">
         {todayNotes.length > 0 && (
           <section className="space-y-2">
             <h2 className="px-3 text-sm font-medium text-muted-foreground">
@@ -127,7 +133,7 @@ export function NotesList({
             </h2>
             <div>
               {todayNotes.map(note => (
-                <NoteCard key={note.id} note={note} showTimeOnly />
+                <NoteCard key={note.id} note={note} />
               ))}
             </div>
           </section>
@@ -157,9 +163,13 @@ export function NotesList({
           <h1 className="text-xl font-bold">{t('notes.list.title')}</h1>
         </div>
       )}
-      {sorted.map(note => (
-        <NoteCard key={note.id} note={note} />
-      ))}
+      {/* See the grouped branch: -mx-3 keeps the row text flush with the header
+          and filter row above, which carry no horizontal padding. */}
+      <div className="-mx-3">
+        {sorted.map(note => (
+          <NoteCard key={note.id} note={note} />
+        ))}
+      </div>
     </div>
   );
 }

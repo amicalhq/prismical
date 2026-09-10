@@ -31,6 +31,7 @@ import { useTags } from '@prismical/app-client';
 import { useNotes, useCreateNote } from '@prismical/app-client';
 import { useSearch } from '@prismical/app-client';
 import { FolderNameDialog } from './folder-name-dialog';
+import { TagHash } from './tag-chip';
 import { useTranslation } from 'react-i18next';
 
 // ─── Shared open-state context ────────────────────────────────────────────────
@@ -284,12 +285,7 @@ export function CommandPalette() {
                 onSelect={() => navigate(`/notes?tags=${tag.id}`)}
                 className="cursor-pointer"
               >
-                <span
-                  className="mr-2 h-2 w-2 rounded-full shrink-0"
-                  style={{ backgroundColor: tag.color }}
-                />
-                <span className="mr-1 text-muted-foreground">#</span>
-                <span className="flex-1 truncate">{tag.name}</span>
+                <TagHash color={tag.color} name={tag.name} className="flex-1" />
               </CommandItem>
             ))}
           </CommandGroup>

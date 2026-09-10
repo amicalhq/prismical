@@ -12,6 +12,7 @@ import {
   formatApplicationNumber,
   formatApplicationRelativeDay,
   formatApplicationTime,
+  formatApplicationTimeAgoShort,
 } from './format';
 
 const now = new Date(2026, 6, 13, 12, 0, 0);
@@ -25,6 +26,34 @@ describe('locale-aware application formatting', () => {
     expect(formatApplicationRelativeDay(new Date(2026, 6, 11), now, 'de', de.t)).toBe(
       'vor 2 Tagen'
     );
+  });
+
+  // The compact form sits at the right edge of a note row, so every step has to stay short and a
+  // future timestamp must never render as a negative age.
+  it('steps a compact age through minutes, hours and days before falling back to a date', async () => {
+    const en = await createApplicationI18n('en');
+    const ago = (ms: number) =>
+      formatApplicationTimeAgoShort(new Date(now.getTime() - ms), now, 'en', en.t);
+
+    expect(ago(0)).toBe('now');
+    expect(ago(59_000)).toBe('now');
+    expect(ago(60_000)).toBe('1m');
+    expect(ago(59 * 60_000)).toBe('59m');
+    expect(ago(60 * 60_000)).toBe('1h');
+    expect(ago(23 * 3_600_000)).toBe('23h');
+    expect(ago(24 * 3_600_000)).toBe('1d');
+    expect(ago(6 * 86_400_000)).toBe('6d');
+    // Seven days over, it becomes the plain date rather than a number that keeps growing.
+    expect(ago(7 * 86_400_000)).toBe('Jul 6');
+    // A clock skew reads as "now", never "-1m".
+    expect(formatApplicationTimeAgoShort(new Date(now.getTime() + 30_000), now, 'en', en.t)).toBe(
+      'now'
+    );
+  });
+
+  it('carries the year on a compact age from another year', async () => {
+    const en = await createApplicationI18n('en');
+    expect(formatApplicationTimeAgoShort(new Date(2025, 6, 6), now, 'en', en.t)).toBe('Jul 6, 2025');
   });
 
   it('uses locale-specific absolute date, time, and number conventions', () => {

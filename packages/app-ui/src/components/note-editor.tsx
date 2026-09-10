@@ -192,8 +192,8 @@ export function NoteEditor({ note }: NoteEditorProps) {
         </DropdownMenu>
       </div>
 
-      {/* ── Metadata row: folder + tags + meetings ──────────────────── */}
-      <div className="mb-3 flex flex-wrap items-center gap-1.5 px-1">
+      {/* ── Metadata row: folder + tags ──────────────────────────────── */}
+      <div className="mb-1.5 flex flex-wrap items-center gap-1.5 px-1">
         <NoteFolderChip
           value={folderId}
           onChange={id => {
@@ -202,6 +202,15 @@ export function NoteEditor({ note }: NoteEditorProps) {
           }}
         />
         <NoteTagEditor noteId={note.id} selected={note.tagIds ?? []} />
+      </div>
+
+      {/* ── Meeting row ───────────────────────────────────────────────── */}
+      {/* Its own line, as it was before the multi-link work folded it in beside
+          folder/tags. Meetings carry a title and a time rather than a one-word
+          label, so a note with two linked meetings wrapped the shared row and
+          pushed the folder and tags out of alignment. Still a wrapping flex row,
+          so it holds as many chips as there are links. */}
+      <div className="mb-3 flex flex-wrap items-center gap-1.5 px-1">
         <NoteEventChips noteId={note.id} writable={note.writable ?? true} />
       </div>
 
