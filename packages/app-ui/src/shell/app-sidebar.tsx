@@ -79,6 +79,7 @@ export function AppSidebar({
   const isAppSidebar =
     pathname.startsWith('/home') ||
     pathname.startsWith('/notes') ||
+    pathname.startsWith('/folders') ||
     pathname.startsWith('/shared') ||
     pathname.startsWith('/events') ||
     pathname.startsWith('/people') ||

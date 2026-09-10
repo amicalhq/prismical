@@ -39,6 +39,7 @@ import { AppShell } from "@prismical/app-ui/shell/app-shell";
 import { FeatureGate } from "@prismical/app-ui/shell/feature-gate";
 import { HomeScreen } from "@prismical/app-ui/screens/home-screen";
 import { NotesScreen } from "@prismical/app-ui/screens/notes-screen";
+import { FoldersScreen } from "@prismical/app-ui/screens/folders-screen";
 import { NoteDetailScreen } from "@prismical/app-ui/screens/note-detail-screen";
 import { SharedScreen } from "@prismical/app-ui/screens/shared-screen";
 import { PeopleScreen } from "@prismical/app-ui/screens/people-screen";
@@ -299,6 +300,7 @@ const routeTree = rootRoute.addChildren([
   indexRoute,
   child("home", HomeScreen),
   child("notes", NotesScreen),
+  child("folders", FoldersScreen),
   child("notes/$noteId", NoteDetailRoute),
   // The floating note window's routes — bare (no AppShell,
   // see RootLayout). Only the float-note BrowserWindow ever lands here. Their

@@ -369,7 +369,7 @@ export function NavNotesGroups() {
             asChild
             className="top-1.5 right-2 aspect-auto h-5 w-auto px-1.5 text-xs font-medium text-sidebar-foreground-muted hover:text-sidebar-foreground opacity-0 transition-opacity after:hidden focus-visible:opacity-100 group-hover/folders:opacity-100"
           >
-            <Link href="/notes" aria-label={t('navigation.collections.viewAllFolders')}>
+            <Link href="/folders" aria-label={t('navigation.collections.viewAllFolders')}>
               {t('navigation.collections.viewAll')}
             </Link>
           </SidebarGroupAction>

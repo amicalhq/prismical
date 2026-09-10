@@ -15,6 +15,7 @@ function getStaticPageTitleKey(pathname: string): string | null {
   if (pathname.startsWith('/events')) return 'navigation.pages.events';
   if (/^\/notes\/[^/]+/.test(pathname)) return null; // dynamic — resolved from context
   if (pathname.startsWith('/notes')) return 'navigation.pages.notes';
+  if (pathname.startsWith('/folders')) return 'folders.title';
   if (pathname.startsWith('/shared')) return 'navigation.pages.sharedWithMe';
   if (pathname.startsWith('/people')) return 'navigation.pages.people';
   if (pathname.startsWith('/companies')) return 'navigation.pages.companies';
