@@ -20,7 +20,7 @@ export function SharedScreen() {
   const shared = notes.filter(n => n.isOwner === false);
 
   return (
-    <div className="mx-auto w-full max-w-4xl">
+    <div className="mx-auto w-full" style={{ maxWidth: 'var(--content-width-browse)' }}>
       <div className="mb-8">
         <h1 className="text-xl font-bold">{t('shared.title')}</h1>
         <p className="text-sm text-muted-foreground">{t('shared.description')}</p>

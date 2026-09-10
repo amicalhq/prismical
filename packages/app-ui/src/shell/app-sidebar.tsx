@@ -83,9 +83,6 @@ export function AppSidebar({
     pathname.startsWith('/events') ||
     pathname.startsWith('/people') ||
     pathname.startsWith('/companies');
-  const showNotesNavigation =
-    pathname.startsWith('/home') || pathname.startsWith('/notes') || pathname.startsWith('/shared');
-
   // The "Notes" primary item only highlights on the unfiltered browser — an
   // active folder/tag row in the groups below should otherwise own the
   // selection.
@@ -258,8 +255,17 @@ export function AppSidebar({
       )}
 
       <SidebarContent>
-        {!isAppSidebar ? <SettingsNavigation items={settingsNavItems} /> : null}
-        {showNotesNavigation ? <NavNotesGroups /> : null}
+        {/* Two modes, not three: settings shows the settings nav, and every app
+            route shows the Favorites/Folders/Tags tree. The tree used to be
+            gated to /home, /notes and /shared, so navigating to People,
+            Companies or Events silently emptied the sidebar — a nav that
+            restructures itself mid-navigation is more disorienting than a
+            couple of note-shaped sections on a directory page. */}
+        {isAppSidebar ? (
+          <NavNotesGroups />
+        ) : (
+          <SettingsNavigation items={settingsNavItems} />
+        )}
       </SidebarContent>
 
       <SidebarFooter className="gap-1 p-0">

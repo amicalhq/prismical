@@ -113,6 +113,18 @@ body {
   --sidebar-ring: oklch(0.708 0 0);
   --content-padding: 2rem;
   --content-max-width: 75rem;
+  /* Shared measure for the top-level browse screens (Home, Notes, People,
+   * Companies, Events, Shared). They sit INSIDE the shell's --content-max-width
+   * container, so each one used to pick its own Tailwind step (3xl/4xl/6xl) and
+   * the column visibly jumped on every route change. One token instead.
+   *
+   * 48rem, not 56rem: these screens are all short rows (a note title + a date, a
+   * name + an email). At 56rem the rows trail dead space on the right and read
+   * stretched — the reason Home was pinned to 48rem before this token existed.
+   * 48rem also matches person/company detail, and sits close to the note
+   * editor's 45rem line length, so moving between a list and a note barely
+   * shifts the column. */
+  --content-width-browse: 48rem;
   --header-height: 3rem;
   /* Reserve space below the scroll viewport for the recording/Ask dock:
    * 42px pill row + 16px bottom offset + breathing room. Content padding alone

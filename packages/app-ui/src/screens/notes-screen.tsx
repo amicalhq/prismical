@@ -68,7 +68,7 @@ export function NotesScreen() {
   const folderIds = folderId ? folderSubtreeIds(folders, folderId) : undefined;
 
   return (
-    <div className="mx-auto w-full max-w-6xl pb-8">
+    <div className="mx-auto w-full pb-8" style={{ maxWidth: 'var(--content-width-browse)' }}>
       <h1 className="mb-6 text-xl font-bold">{t('notes.list.title')}</h1>
 
       <div className="mb-6 flex flex-wrap items-center gap-2">
