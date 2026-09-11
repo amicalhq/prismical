@@ -448,7 +448,7 @@ test.describe('local mode (seeded app:mode profile, no servers)', () => {
     await expect(page.getByTestId('ai-provider')).toBeVisible();
   });
 
-  test('Cleanup, Name-note and Ask run against the scripted provider with no server', async () => {
+  test('Cleanup and Ask run against the scripted provider while naming stays gated', async () => {
     const profileDir = await createLocalModeProfile();
     const opened = await openLocalApp(profileDir, { PRISMICAL_E2E_FAKE_AI: '1' });
     launched = opened.launch;
@@ -482,23 +482,8 @@ test.describe('local mode (seeded app:mode profile, no servers)', () => {
       })
       .toBe(1);
 
-    // Name-note: the naming lane returns the fake title, apply lands it in the
-    // title field (revision CAS through the local title lock).
-    await page.getByRole('button', { name: 'Name with AI' }).click();
-    await expect(page.getByLabel('Note title')).toHaveValue('Product launch planning').catch(
-      async error => {
-        const log = await readFile(path.join(launched!.userDataDir, 'logs', 'main.jsonl'), 'utf8');
-        const lines = log.split('\n');
-        const picked = new Set<number>();
-        lines.forEach((line, index) => {
-          if (/title|skill run|local backend/i.test(line)) {
-            for (let i = index; i < Math.min(lines.length, index + 8); i += 1) picked.add(i);
-          }
-        });
-        console.log([...picked].sort((a, b) => a - b).map(i => lines[i]).slice(-60).join('\n'));
-        throw error;
-      }
-    );
+    // The naming rollout stays disabled even after a body skill succeeds.
+    await expect(page.getByRole('button', { name: 'Name with AI', exact: true })).toHaveCount(0);
 
     // Ask: the stream rides the SAME broker as cloud mode; the answer is the
     // fake's deterministic text.
