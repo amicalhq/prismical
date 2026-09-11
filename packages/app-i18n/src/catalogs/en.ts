@@ -356,6 +356,7 @@ const en = {
     },
     collections: {
       addToFavorites: 'Add to favorites',
+      favorited: 'Favorited',
       favorites: 'Favorites',
       folderOptions: 'Folder options',
       folders: 'Folders',
@@ -417,6 +418,7 @@ const en = {
     folder: {
       createAction: 'Create folder',
       createDescription: 'Folders help you group related notes.',
+      createInsideTitle: 'New folder in {{name}}',
       createTitle: 'New folder',
       namePlaceholder: 'e.g. Meeting notes',
       renameDescription: 'Give this folder a new name.',
@@ -627,7 +629,11 @@ const en = {
     empty: 'No folders yet',
     emptyHint: 'Folders keep related notes together. Create one to get started.',
     expand: 'Expand {{name}}',
+    moveTo: 'Move to',
+    moveToRoot: 'Top level',
+    noMoveTargets: 'Nowhere to move this',
     new: 'New folder',
+    newSubfolder: 'New subfolder',
     noMatch: 'No folders match your search',
     noteCount_one: '{{count}} note',
     noteCount_other: '{{count}} notes',

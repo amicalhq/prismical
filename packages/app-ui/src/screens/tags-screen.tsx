@@ -11,7 +11,6 @@ import {
   DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
 import {
@@ -198,9 +197,34 @@ export function TagsScreen() {
               <Link href={`/notes?tags=${tag.id}`} className="min-w-0 flex-1">
                 <TagHash color={tag.color} name={tag.name} className="font-medium" />
               </Link>
-              {tag.favorite ? (
-                <Star className="size-3 shrink-0 fill-yellow-400 text-yellow-400" />
-              ) : null}
+              {/* Always drawn, hollow when it is not a favorite — favoriting was otherwise only
+                  reachable through the menu. */}
+              <button
+                type="button"
+                aria-pressed={!!tag.favorite}
+                aria-label={
+                  tag.favorite
+                    ? t('navigation.collections.removeFromFavorites')
+                    : t('navigation.collections.addToFavorites')
+                }
+                onClick={() => {
+                  // Un-favoriting under the favorites filter removes this very row; hand focus to
+                  // the filter that did it rather than letting it fall to the body.
+                  const rowLeaves = favoritesOnly && tag.favorite;
+                  favoriteTag.mutate({ id: tag.id, patch: { isFavorite: !tag.favorite } });
+                  if (rowLeaves) requestAnimationFrame(() => favoritesToggleRef.current?.focus());
+                }}
+                className="-m-1 shrink-0 cursor-pointer rounded p-1"
+              >
+                <Star
+                  className={cn(
+                    'size-3.5 transition-colors',
+                    tag.favorite
+                      ? 'fill-yellow-400 text-yellow-400'
+                      : 'text-muted-foreground/40 hover:text-muted-foreground'
+                  )}
+                />
+              </button>
               {/* A tag no note carries is the main thing you would come here to delete, so it reads
                   as a state rather than as the number zero. */}
               <span
@@ -224,27 +248,6 @@ export function TagsScreen() {
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent className="w-48 rounded-lg" align="end">
-                  <DropdownMenuItem
-                    onSelect={() => {
-                      // Un-favoriting under the favorites filter removes this very row, so the
-                      // menu's trigger unmounts while Radix is restoring focus to it and the next
-                      // Tab restarts from the top of the page. Hand focus to the filter that did
-                      // it, after the row is gone.
-                      const rowLeaves = favoritesOnly && tag.favorite;
-                      favoriteTag.mutate({ id: tag.id, patch: { isFavorite: !tag.favorite } });
-                      if (rowLeaves) {
-                        requestAnimationFrame(() => favoritesToggleRef.current?.focus());
-                      }
-                    }}
-                  >
-                    <Star className="h-4 w-4" />
-                    <span>
-                      {tag.favorite
-                        ? t('navigation.collections.removeFromFavorites')
-                        : t('navigation.collections.addToFavorites')}
-                    </span>
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
                   <DropdownMenuItem onSelect={() => setEditTagId(tag.id)}>
                     <Pencil className="h-4 w-4" />
                     <span>{t('dialogs.tag.title')}</span>

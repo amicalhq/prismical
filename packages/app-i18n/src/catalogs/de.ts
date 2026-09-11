@@ -343,6 +343,7 @@ const de = {
     },
     collections: {
       addToFavorites: 'Zu Favoriten hinzufügen',
+      favorited: 'Favorit',
       favorites: 'Favoriten',
       folderOptions: 'Ordneroptionen',
       folders: 'Ordner',
@@ -404,6 +405,7 @@ const de = {
     folder: {
       createAction: 'Ordner erstellen',
       createDescription: 'Mit Ordnern kannst du zusammengehörige Notizen gruppieren.',
+      createInsideTitle: 'Neuer Ordner in {{name}}',
       createTitle: 'Neuer Ordner',
       namePlaceholder: 'z. B. Besprechungsnotizen',
       renameDescription: 'Gib diesem Ordner einen neuen Namen.',
@@ -611,7 +613,11 @@ const de = {
     empty: 'Noch keine Ordner',
     emptyHint: 'Ordner halten zusammengehörende Notizen zusammen. Erstelle einen, um zu beginnen.',
     expand: '{{name}} ausklappen',
+    moveTo: 'Verschieben nach',
+    moveToRoot: 'Oberste Ebene',
+    noMoveTargets: 'Kein Ziel verfügbar',
     new: 'Neuer Ordner',
+    newSubfolder: 'Neuer Unterordner',
     noMatch: 'Keine Ordner passen zu deiner Suche',
     noteCount_one: '{{count}} Notiz',
     noteCount_other: '{{count}} Notizen',

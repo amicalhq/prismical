@@ -5,6 +5,8 @@ import { AppLink as Link } from '../shell/app-link';
 import {
   ChevronRight,
   Folder,
+  FolderInput,
+  FolderPlus,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -20,6 +22,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
 import {
@@ -49,6 +54,16 @@ import { useTranslation } from 'react-i18next';
 
 /** Indentation stops growing past this depth, so a deep tree can't push names off a narrow screen. */
 const MAX_INDENT_DEPTH = 6;
+
+/**
+ * How many tiers deep this screen will CREATE. Three covers what folders are actually for here
+ * (Work / Clients / Acme) and keeps a path short enough to read in the note page's folder chip.
+ *
+ * A limit on the action, not on the data: a tree built through the API or on another client can be
+ * deeper, and the walk above renders it — refusing to draw what already exists would hide folders
+ * on the one screen meant to account for all of them.
+ */
+const MAX_CREATE_DEPTH = 3;
 
 /** Key for the synthetic root bucket. Not a folder id: ids are prefixed (`fld_`), so it can't collide. */
 const ROOT_KEY = 'root';
@@ -144,6 +159,20 @@ function flatten(
   return rows;
 }
 
+/** Every folder inside this one, at any depth: a folder cannot move into its own subtree. */
+function descendantIds(node: FolderNode, out = new Set<string>()): Set<string> {
+  for (const child of node.children) {
+    out.add(child.folder.id);
+    descendantIds(child, out);
+  }
+  return out;
+}
+
+/** How many tiers the subtree adds below its own row, so a move can't push its children past the limit. */
+function subtreeHeight(node: FolderNode): number {
+  return node.children.length === 0 ? 0 : 1 + Math.max(...node.children.map(subtreeHeight));
+}
+
 export function FoldersScreen() {
   const { t } = useTranslation();
   const foldersQuery = useFolders();
@@ -153,6 +182,8 @@ export function FoldersScreen() {
   const [search, setSearch] = React.useState('');
   const [expanded, setExpanded] = React.useState<ReadonlySet<string>>(() => new Set<string>());
   const [createOpen, setCreateOpen] = React.useState(false);
+  /** Which folder the create dialog is filling; null for the top level. */
+  const [createParent, setCreateParent] = React.useState<{ id: string; name: string } | null>(null);
   const [renameFolder, setRenameFolder] = React.useState<{ id: string; name: string } | null>(null);
   const [deleteFolder, setDeleteFolder] = React.useState<{ id: string; name: string } | null>(null);
   const [shareFolder, setShareFolder] = React.useState<{ id: string; name: string } | null>(null);
@@ -160,6 +191,7 @@ export function FoldersScreen() {
   const createFolder = useCreateFolder();
   const favoriteFolder = useUpdateFolder();
   const renameFolderMut = useUpdateFolder();
+  const moveFolderMut = useUpdateFolder();
   const deleteFolderMut = useDeleteFolder();
 
   const folders = foldersQuery.data;
@@ -187,6 +219,20 @@ export function FoldersScreen() {
     setExpanded(current => new Set([...current, ...added]));
   }, [query, visible]);
   const rows = flatten(tree, id => expanded.has(id), visible);
+  // The move targets are the WHOLE tree, not the visible rows: you can file a folder into one that
+  // happens to be collapsed, and a search must not narrow where things can go.
+  const allRows = React.useMemo(() => flatten(tree, () => true, null), [tree]);
+  const nodeById = React.useMemo(() => {
+    const map = new Map<string, FolderNode>();
+    for (const { node } of allRows) map.set(node.folder.id, node);
+    return map;
+  }, [allRows]);
+
+  const moveFolder = (id: string, parentId: string | null) => {
+    moveFolderMut.mutate({ id, patch: { parentId } });
+    // Open the destination, or the folder appears to vanish into a collapsed row.
+    if (parentId) setExpanded(current => new Set([...current, parentId]));
+  };
 
   const toggle = (id: string) =>
     setExpanded(current => {
@@ -209,7 +255,15 @@ export function FoldersScreen() {
             className="pl-8"
           />
         </div>
-        <Button variant="outline" className="shrink-0" disabled={foldersQuery.isLoading} onClick={() => setCreateOpen(true)}>
+        <Button
+          variant="outline"
+          className="shrink-0"
+          disabled={foldersQuery.isLoading}
+          onClick={() => {
+            setCreateParent(null);
+            setCreateOpen(true);
+          }}
+        >
           <Plus className="size-4" />
           {t('folders.new')}
         </Button>
@@ -290,9 +344,34 @@ export function FoldersScreen() {
                 >
                   {folder.name}
                 </Link>
-                {folder.favorite ? (
-                  <Star className="size-3 shrink-0 fill-yellow-400 text-yellow-400" />
-                ) : null}
+                {/* Always drawn, hollow when it is not a favorite: a star that only appears once
+                    something IS a favorite gives you no way to make one, which left favoriting
+                    buried in the menu. */}
+                <button
+                  type="button"
+                  aria-pressed={!!folder.favorite}
+                  aria-label={
+                    folder.favorite
+                      ? t('navigation.collections.removeFromFavorites')
+                      : t('navigation.collections.addToFavorites')
+                  }
+                  onClick={() =>
+                    favoriteFolder.mutate({
+                      id: folder.id,
+                      patch: { isFavorite: !folder.favorite },
+                    })
+                  }
+                  className="-m-1 shrink-0 cursor-pointer rounded p-1"
+                >
+                  <Star
+                    className={cn(
+                      'size-3.5 transition-colors',
+                      folder.favorite
+                        ? 'fill-yellow-400 text-yellow-400'
+                        : 'text-muted-foreground/40 hover:text-muted-foreground'
+                    )}
+                  />
+                </button>
                 <span className="shrink-0 text-xs text-muted-foreground">
                   {t('folders.noteCount', { count: noteCount })}
                 </span>
@@ -310,21 +389,64 @@ export function FoldersScreen() {
                     </button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent className="w-48 rounded-lg" align="end">
+                    {/* Depth is counted in tiers, so a row at depth 1 is the last that can hold
+                        one. Disabled rather than hidden past the limit: the item disappearing
+                        entirely reads as the feature being missing, not as a limit being reached. */}
                     <DropdownMenuItem
-                      onSelect={() =>
-                        favoriteFolder.mutate({
-                          id: folder.id,
-                          patch: { isFavorite: !folder.favorite },
-                        })
-                      }
+                      disabled={depth + 1 >= MAX_CREATE_DEPTH}
+                      onSelect={() => {
+                        setCreateParent({ id: folder.id, name: folder.name });
+                        setCreateOpen(true);
+                      }}
                     >
-                      <Star className="h-4 w-4" />
-                      <span>
-                        {folder.favorite
-                          ? t('navigation.collections.removeFromFavorites')
-                          : t('navigation.collections.addToFavorites')}
-                      </span>
+                      <FolderPlus className="h-4 w-4" />
+                      <span>{t('folders.newSubfolder')}</span>
                     </DropdownMenuItem>
+                    {/* Where this folder may go: not itself, not inside its own subtree (which
+                        would strand the lot), and nowhere that pushes its deepest child past the
+                        limit — a folder that carries children needs room for them. */}
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger>
+                        <FolderInput className="h-4 w-4" />
+                        <span>{t('folders.moveTo')}</span>
+                      </DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent className="max-h-72 w-56 overflow-y-auto">
+                        <DropdownMenuItem
+                          disabled={folder.parentId === null}
+                          onSelect={() => moveFolder(folder.id, null)}
+                        >
+                          <span>{t('folders.moveToRoot')}</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        {(() => {
+                          const self = nodeById.get(folder.id);
+                          const inside = self ? descendantIds(self) : new Set<string>();
+                          const height = self ? subtreeHeight(self) : 0;
+                          const targets = allRows.filter(
+                            row =>
+                              row.node.folder.id !== folder.id &&
+                              !inside.has(row.node.folder.id) &&
+                              row.depth + 1 + height < MAX_CREATE_DEPTH
+                          );
+                          if (targets.length === 0) {
+                            return (
+                              <DropdownMenuItem disabled>{t('folders.noMoveTargets')}</DropdownMenuItem>
+                            );
+                          }
+                          return targets.map(({ node, depth: targetDepth }) => (
+                            <DropdownMenuItem
+                              key={node.folder.id}
+                              disabled={node.folder.id === folder.parentId}
+                              onSelect={() => moveFolder(folder.id, node.folder.id)}
+                              style={{ paddingInlineStart: `calc(0.5rem + 0.75rem * ${targetDepth})` }}
+                            >
+                              <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
+                              <span className="truncate">{node.folder.name}</span>
+                            </DropdownMenuItem>
+                          ));
+                        })()}
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
                     {sharingEnabled ? (
                       <DropdownMenuItem
                         onSelect={() => setShareFolder({ id: folder.id, name: folder.name })}
@@ -371,8 +493,24 @@ export function FoldersScreen() {
         open={createOpen}
         onOpenChange={setCreateOpen}
         mode="create"
+        parentName={createParent?.name}
         pending={createFolder.isPending}
-        onSubmit={name => createFolder.mutate(name, { onSuccess: () => setCreateOpen(false) })}
+        onSubmit={name =>
+          createFolder.mutate(
+            { name, parentId: createParent?.id ?? null },
+            {
+              onSuccess: () => {
+                // Open the parent, or the folder just created is filed out of sight under a
+                // collapsed row and the create looks like it did nothing.
+                if (createParent) {
+                  const parentId = createParent.id;
+                  setExpanded(current => new Set([...current, parentId]));
+                }
+                setCreateOpen(false);
+              },
+            }
+          )
+        }
       />
 
       <FolderNameDialog

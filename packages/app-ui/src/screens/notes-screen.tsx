@@ -105,7 +105,10 @@ export function NotesScreen() {
         >
           <SelectTrigger
             aria-label={t('notes.screen.sort')}
-            className="h-9 w-36 shrink-0 gap-2 rounded-lg border-transparent bg-muted px-3 text-sm text-muted-foreground shadow-none transition-colors hover:bg-accent focus-visible:ring-0"
+            // `dark:bg-input/30` / `dark:hover:bg-input/50` ship on the shared SelectTrigger and
+            // survive tailwind-merge against a plain `bg-muted`, so the dark-mode pill drifted off
+            // the muted grey the other filters use — restate both under `dark:`.
+            className="h-9 w-36 shrink-0 gap-2 rounded-lg border-transparent bg-muted px-3 text-sm text-muted-foreground shadow-none transition-colors hover:bg-accent focus-visible:ring-0 dark:bg-muted dark:hover:bg-accent"
           >
             <SelectValue />
           </SelectTrigger>

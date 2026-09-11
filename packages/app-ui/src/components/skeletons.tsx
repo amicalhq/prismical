@@ -1,19 +1,25 @@
-import { Skeleton } from "../ui/skeleton";
+import { Skeleton } from '../ui/skeleton';
 
 // Content-shaped skeletons. Each mirrors the real component's layout closely
 // enough that swapping skeleton → content doesn't shift the page (no pop-in,
 // no flash of an empty state while the first fetch is in flight).
 
-/** Mirrors a stack of `NoteCard` rows: leading icon, title line, meta line. */
+/**
+ * Mirrors a stack of `NoteCard` rows: leading icon and one title line, at the row's own geometry
+ * (px-3 py-2 around a 22px line, so 38px a row). One line rather than two — a note only draws its
+ * metadata line when it has a folder or a meeting, and most do not, so a two-line placeholder
+ * collapsed the list upward by 16px a row the moment the real rows arrived.
+ */
 export function NoteListSkeleton({ rows = 5 }: { rows?: number }) {
   return (
     <div aria-hidden="true">
       {Array.from({ length: rows }).map((_, i) => (
         <div key={i} className="flex items-start gap-3 px-3 py-2">
-          <Skeleton className="mt-0.5 h-5 w-5 rounded-md" />
-          <div className="flex-1 space-y-2 py-0.5">
+          <div className="flex min-h-[22px] shrink-0 items-center">
+            <Skeleton className="size-5 rounded-md" />
+          </div>
+          <div className="flex min-h-[22px] min-w-0 flex-1 items-center">
             <Skeleton className="h-3.5 w-1/2" />
-            <Skeleton className="h-3 w-24" />
           </div>
         </div>
       ))}
@@ -40,10 +46,7 @@ export function NoteGroupsSkeleton() {
 /** Mirrors the `NoteEditor` header + opening body lines while a note loads. */
 export function NoteDetailSkeleton() {
   return (
-    <div
-      className="mx-auto w-full max-w-3xl px-4 pb-32 pt-2 md:px-6"
-      aria-hidden="true"
-    >
+    <div className="mx-auto w-full max-w-3xl px-4 pb-32 pt-2 md:px-6" aria-hidden="true">
       <div className="mb-2 flex items-start gap-2">
         <Skeleton className="mt-1 h-10 w-10 rounded-md" />
         <Skeleton className="mt-2 h-8 w-2/3" />

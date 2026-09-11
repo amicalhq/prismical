@@ -315,6 +315,7 @@ const ja = {
     },
     collections: {
       addToFavorites: 'お気に入りに追加',
+      favorited: 'お気に入り',
       favorites: 'お気に入り',
       folderOptions: 'フォルダのオプション',
       folders: 'フォルダ',
@@ -376,6 +377,7 @@ const ja = {
     folder: {
       createAction: 'フォルダを作成',
       createDescription: 'フォルダを使うと関連するノートをまとめられます。',
+      createInsideTitle: '{{name}} 内に新しいフォルダー',
       createTitle: '新しいフォルダ',
       namePlaceholder: '例：会議メモ',
       renameDescription: 'このフォルダに新しい名前を付けます。',
@@ -578,7 +580,11 @@ const ja = {
     empty: 'フォルダーがまだありません',
     emptyHint: 'フォルダーは関連するノートをまとめます。作成して始めましょう。',
     expand: '{{name}} を展開',
+    moveTo: '移動先',
+    moveToRoot: '最上位',
+    noMoveTargets: '移動先がありません',
     new: '新しいフォルダー',
+    newSubfolder: '新しいサブフォルダー',
     noMatch: '検索に一致するフォルダーがありません',
     noteCount_one: '{{count}} 件のノート',
     noteCount_other: '{{count}} 件のノート',

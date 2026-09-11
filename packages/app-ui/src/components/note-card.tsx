@@ -3,14 +3,14 @@
 import * as React from 'react';
 
 import { AppLink as Link } from '../shell/app-link';
-import { Calendar, File, Folder } from 'lucide-react';
+import { Calendar, File, Folder, Star } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { formatApplicationTimeAgoShort, useApplicationLocale } from '@prismical/app-i18n';
 import { useCalendarEvents, useFolders, useNoteEvents, useTags } from '@prismical/app-client';
 import type { Note } from '@prismical/app-contracts';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { TagBadge } from '../shell/tag-chip';
-import { chipBudget } from '../lib/note-chip-budget';
+import { meetingBudget, tagBudget } from '../lib/note-chip-budget';
 import { relativeTickInterval, useNow } from '../hooks/use-now';
 import { useTranslation } from 'react-i18next';
 
@@ -26,6 +26,20 @@ interface NoteCardProps {
  */
 const CHIP =
   'inline-flex h-[22px] min-w-0 shrink-0 items-center gap-1 rounded-sm border px-2 text-2xs font-medium';
+
+/**
+ * The height of the title line, and of the emoji beside it. Both are given the SAME box and centre
+ * their content in it, so the title sits level with the emoji whether or not the note carries a
+ * tag: text-sm is 17.5px tall and a chip is 22px, so a line that just wrapped its content moved
+ * the title up by a couple of pixels the moment a row had no tags on it. 22px is the chip's own
+ * height, so the line doesn't change size when tags appear.
+ *
+ * A floor, NOT a fixed height. The text inside is rem-sized while this is px, so a reader who
+ * raises the browser's default font size grows the title past any hard height: at a 24px root the
+ * title's box is 26.3px, and at 32px it is 35px and would sit on top of the metadata chips below.
+ * min-height keeps the alignment at the default size and lets the line grow past it.
+ */
+const LINE = 'min-h-[22px]';
 
 /**
  * The count of what did not fit, and a popover holding those chips themselves — the colours are how
@@ -65,6 +79,29 @@ function OverflowChip({
   );
 }
 
+/**
+ * The favorite star, drawn only on a note that IS one. An indicator, not a control: the row's
+ * whole surface is the link to the note, and a single stray click on a control here would drop a
+ * favorite with nothing in the row to undo it. Favoriting is done from the note itself or the
+ * sidebar's row menu.
+ *
+ * The folder and tag rows DO carry a clickable star, hollow on every row. Those lists are short
+ * and the star is the only way to favorite from them; a note list runs to hundreds of rows, where
+ * a column of hollow stars is noise against the handful that mean something.
+ */
+function FavoriteStar() {
+  const { t } = useTranslation();
+  return (
+    <span
+      role="img"
+      aria-label={t('navigation.collections.favorited')}
+      className="flex size-[22px] items-center justify-center"
+    >
+      <Star className="size-3.5 fill-yellow-400 text-yellow-400" />
+    </span>
+  );
+}
+
 function MeetingChip({
   title,
   color,
@@ -85,9 +122,10 @@ function MeetingChip({
   );
 }
 
-// A note row: emoji, title, and how long ago it was touched at the right edge, over a line of
-// chips — folder, every meeting, tags — which all carry the same weight, so the title stays the
-// loudest thing in the row.
+// A note row: emoji, title with its tags, and how long ago it was touched at the right edge —
+// over a metadata line carrying the folder and every meeting, and only when the note has one.
+// Tags sit with the title because they name what the note is about; the folder and the meeting
+// say where it came from, which is the quieter question.
 export function NoteCard({ note, className }: NoteCardProps) {
   const { t } = useTranslation();
   const { resolvedLocale } = useApplicationLocale();
@@ -108,7 +146,7 @@ export function NoteCard({ note, className }: NoteCardProps) {
   // makes a long list expensive.
   //
   // Just the folder's own name, not its full path: a nested path would spend the row's width on
-  // ancestors, and the chip line already carries the meeting and the tags.
+  // ancestors, and the metadata line already carries the meetings.
   const folder = React.useMemo(
     () => (note.folderId ? folders.find(f => f.id === note.folderId) : undefined),
     [folders, note.folderId]
@@ -135,10 +173,11 @@ export function NoteCard({ note, className }: NoteCardProps) {
       }),
     [eventLinks, calendarEvents]
   );
-  const hasMeta = Boolean(folder) || events.length > 0 || tags.length > 0;
-  const shown = chipBudget(Boolean(folder), events.length, tags.length);
-  const hiddenEvents = events.slice(shown.events);
-  const hiddenTags = tags.slice(shown.tags);
+  const hasMeta = Boolean(folder) || events.length > 0;
+  const shownEvents = meetingBudget(events.length);
+  const shownTags = tagBudget(tags.length);
+  const hiddenEvents = events.slice(shownEvents);
+  const hiddenTags = tags.slice(shownTags);
 
   return (
     // The row is a div with the link stretched across it, not a link wrapping everything: the
@@ -146,7 +185,7 @@ export function NoteCard({ note, className }: NoteCardProps) {
     // the click would both open the popover and navigate away from the list.
     <div
       className={cn(
-        'group relative flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors',
+        'group relative flex items-start gap-3 rounded-lg px-3 py-2 transition-colors',
         'hover:bg-accent hover:text-accent-foreground',
         className
       )}
@@ -156,7 +195,8 @@ export function NoteCard({ note, className }: NoteCardProps) {
         aria-label={note.title}
         className="absolute inset-0 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
       />
-      <div className="mt-px shrink-0">
+      {/* Centred in the title line's box rather than hung from the top of the row — see LINE. */}
+      <div className={cn('flex shrink-0 items-center', LINE)}>
         {note.emoji ? (
           <span className="text-xl leading-none">{note.emoji}</span>
         ) : (
@@ -165,34 +205,68 @@ export function NoteCard({ note, className }: NoteCardProps) {
       </div>
 
       <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-3">
-          <span className="min-w-0 flex-1 truncate text-base font-medium leading-snug text-foreground">
+        <div className={cn('flex items-center gap-2', LINE)}>
+          {/* No flex-1: the title takes only the width it needs, so its tags follow the NAME
+              rather than being pushed out to the age at the far edge.
+              `truncate` sets overflow:hidden, which drops a flex item's automatic minimum size to
+              zero — so the title needs a floor of its own or a narrow row squeezes it out of
+              existence and leaves the note with no visible name at all. 4ch is small enough that
+              a short title still sits right against its tags. */}
+          <span className="min-w-[4ch] truncate text-sm font-medium leading-tight text-foreground">
             {note.title}
           </span>
-          {/* Right edge, and it stays there: the compact form can't grow with the note's age. */}
-          <span className="shrink-0 text-xs text-muted-foreground">
-            {formatApplicationTimeAgoShort(updatedAt, new Date(now), resolvedLocale, t)}
-          </span>
+          {tags.length > 0 && (
+            // Shrinkable, so the tags give way with the title rather than shoving the star and the
+            // age off the row's right edge — `min-w-0` is what lets it shrink below its chips, and
+            // only then does `overflow-hidden` clip them at the row's edge. Left un-shrinkable this
+            // pushed the age clean outside the row on a narrow column.
+            <div className="flex min-w-0 items-center gap-1 overflow-hidden">
+              {/* The chips the note page uses, so a tag reads the same wherever you meet it. */}
+              {tags.slice(0, shownTags).map(tag => (
+                <TagBadge key={tag.id} color={tag.color} name={tag.name} nameClassName="max-w-24" />
+              ))}
+              {hiddenTags.length > 0 && (
+                <OverflowChip
+                  count={hiddenTags.length}
+                  label={t('notes.list.moreTags', { count: hiddenTags.length })}
+                >
+                  {hiddenTags.map(tag => (
+                    <TagBadge key={tag.id} color={tag.color} name={tag.name} />
+                  ))}
+                </OverflowChip>
+              )}
+            </div>
+          )}
+          {/* The row's trailing edge, and it stays there: the age's compact form can't grow as
+              the note gets older, so the star keeps one column all the way down the list. */}
+          <div className="ml-auto flex shrink-0 items-center gap-1 pl-1">
+            {/* The star's box is held whether or not the note is a favorite: without it the age
+                would sit 22px further right on a favorited row, and the column of dates would
+                jitter down a list where only a few notes are starred. */}
+            {note.starred ? <FavoriteStar /> : <span className="size-[22px]" />}
+            <span className="text-xs text-muted-foreground">
+              {formatApplicationTimeAgoShort(updatedAt, new Date(now), resolvedLocale, t)}
+            </span>
+          </div>
         </div>
         {hasMeta && (
-          // One chip line, folder and meetings ahead of the tags. `overflow-hidden` sits on the
-          // line, not the chips: what the budget did not plan for still clips at the row's edge
-          // rather than wrapping the row to a third line.
-          <div className="mt-1.5 flex gap-1 overflow-hidden">
+          // Where the note came from: its folder, then its meetings. `overflow-hidden` sits on
+          // the line, not the chips: what the budget did not plan for still clips at the row's
+          // edge rather than wrapping the row to a third line.
+          <div className="mt-1 flex gap-1 overflow-hidden">
             {folder && (
               // Outlined, matching the note page's folder chip: a filled bg-muted +
               // text-muted-foreground chip draws the folder NAME in the placeholder colour and
-              // reads as a disabled control. Just the folder's own name here, not the full path
-              // the note page shows — a nested path would spend the row on ancestors.
-              <span
-                className={cn(CHIP, 'border-surface-raised text-foreground')}
-                title={folder.name}
-              >
+              // reads as a disabled control. The outline is --border, NOT --surface-raised: in
+              // light that token is #fcfcfd, the exact value of --background, so the chip lost its
+              // shape entirely and only dark kept an edge. Just the folder's own name here, not the
+              // full path the note page shows — a nested path would spend the row on ancestors.
+              <span className={cn(CHIP, 'border-border text-foreground')} title={folder.name}>
                 <Folder className="size-3 shrink-0 text-muted-foreground" />
                 <span className="max-w-32 truncate">{folder.name}</span>
               </span>
             )}
-            {events.slice(0, shown.events).map(event => (
+            {events.slice(0, shownEvents).map(event => (
               <MeetingChip key={event.key} title={event.title} color={event.color} />
             ))}
             {hiddenEvents.length > 0 && (
@@ -207,20 +281,6 @@ export function NoteCard({ note, className }: NoteCardProps) {
                     color={event.color}
                     className="max-w-full"
                   />
-                ))}
-              </OverflowChip>
-            )}
-            {/* The chips the note page uses, so a tag reads the same wherever you meet it. */}
-            {tags.slice(0, shown.tags).map(tag => (
-              <TagBadge key={tag.id} color={tag.color} name={tag.name} nameClassName="max-w-32" />
-            ))}
-            {hiddenTags.length > 0 && (
-              <OverflowChip
-                count={hiddenTags.length}
-                label={t('notes.list.moreTags', { count: hiddenTags.length })}
-              >
-                {hiddenTags.map(tag => (
-                  <TagBadge key={tag.id} color={tag.color} name={tag.name} />
                 ))}
               </OverflowChip>
             )}

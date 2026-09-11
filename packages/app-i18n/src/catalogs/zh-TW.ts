@@ -307,6 +307,7 @@ const zhTW = {
     },
     collections: {
       addToFavorites: '加入最愛',
+      favorited: '已加入最愛',
       favorites: '最愛',
       folderOptions: '資料夾選項',
       folders: '資料夾',
@@ -366,6 +367,7 @@ const zhTW = {
     folder: {
       createAction: '建立資料夾',
       createDescription: '資料夾可協助你整理相關筆記。',
+      createInsideTitle: '在 {{name}} 中新增資料夾',
       createTitle: '新增資料夾',
       namePlaceholder: '例如：會議筆記',
       renameDescription: '為此資料夾指定新名稱。',
@@ -556,7 +558,11 @@ const zhTW = {
     empty: '尚無資料夾',
     emptyHint: '資料夾可將相關筆記整理在一起。建立一個開始使用。',
     expand: '展開 {{name}}',
+    moveTo: '移動至',
+    moveToRoot: '最上層',
+    noMoveTargets: '沒有可移動的位置',
     new: '新增資料夾',
+    newSubfolder: '新增子資料夾',
     noMatch: '沒有符合搜尋的資料夾',
     noteCount_one: '{{count}} 則筆記',
     noteCount_other: '{{count}} 則筆記',

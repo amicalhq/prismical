@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Check, Folder as FolderIcon } from 'lucide-react';
+import { Check, Folder as FolderIcon, Star } from 'lucide-react';
 import {
   Command,
   CommandEmpty,
@@ -71,8 +71,9 @@ export function NotesFolderPicker({
                 onSelect={() => select(null)}
                 className="flex items-center gap-2"
               >
+                <FolderIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <span className="min-w-0 flex-1 truncate">{t('notes.folders.all')}</span>
                 <Check className={cn('h-4 w-4 shrink-0', !value ? 'opacity-100' : 'opacity-0')} />
-                <span className="flex-1">{t('notes.folders.all')}</span>
               </CommandItem>
               {folders.map(folder => (
                 <CommandItem
@@ -82,14 +83,19 @@ export function NotesFolderPicker({
                   onSelect={() => select(folder.id)}
                   className="flex items-center gap-2"
                 >
+                  <FolderIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 flex-1 truncate">{folderPath(folders, folder.id)}</span>
+                  {folder.favorite && (
+                    <Star className="h-3 w-3 shrink-0 fill-yellow-400 text-yellow-400" />
+                  )}
+                  {/* Trailing check, like the tag filter: a leading one reserves 24px of
+                      indent on every row, pushing the folder icons in from the edge. */}
                   <Check
                     className={cn(
                       'h-4 w-4 shrink-0',
                       value === folder.id ? 'opacity-100' : 'opacity-0'
                     )}
                   />
-                  <FolderIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  <span className="min-w-0 flex-1 truncate">{folderPath(folders, folder.id)}</span>
                 </CommandItem>
               ))}
             </CommandGroup>

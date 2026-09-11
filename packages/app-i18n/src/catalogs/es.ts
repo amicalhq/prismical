@@ -338,6 +338,7 @@ const es = {
     },
     collections: {
       addToFavorites: 'Añadir a favoritos',
+      favorited: 'Favorito',
       favorites: 'Favoritos',
       folderOptions: 'Opciones de carpeta',
       folders: 'Carpetas',
@@ -399,6 +400,7 @@ const es = {
     folder: {
       createAction: 'Crear carpeta',
       createDescription: 'Las carpetas te ayudan a agrupar notas relacionadas.',
+      createInsideTitle: 'Nueva carpeta en {{name}}',
       createTitle: 'Nueva carpeta',
       namePlaceholder: 'p. ej., Notas de reuniones',
       renameDescription: 'Dale un nombre nuevo a esta carpeta.',
@@ -605,7 +607,11 @@ const es = {
     empty: 'Aún no hay carpetas',
     emptyHint: 'Las carpetas mantienen juntas las notas relacionadas. Crea una para empezar.',
     expand: 'Expandir {{name}}',
+    moveTo: 'Mover a',
+    moveToRoot: 'Nivel superior',
+    noMoveTargets: 'No hay dónde moverla',
     new: 'Nueva carpeta',
+    newSubfolder: 'Nueva subcarpeta',
     noMatch: 'Ninguna carpeta coincide con tu búsqueda',
     noteCount_one: '{{count}} nota',
     noteCount_other: '{{count}} notas',

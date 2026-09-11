@@ -59,8 +59,10 @@ export function NoteFolderChip({
             // + border-border, which is how disabled controls are drawn — the folder NAME,
             // real content, was painted in the placeholder colour. Outline + foreground text
             // also keeps it distinct from the tag badges beside it, which own the fills.
+            // The outline is --border: --surface-raised is #fcfcfd in light, the exact value of
+            // --background, so that chip had no visible edge outside dark.
             selected
-              ? 'border-surface-raised text-foreground hover:bg-surface-raised'
+              ? 'border-border text-foreground hover:bg-surface-raised'
               : 'border-dashed border-border text-muted-foreground hover:bg-surface-raised hover:text-foreground'
           )}
         >
