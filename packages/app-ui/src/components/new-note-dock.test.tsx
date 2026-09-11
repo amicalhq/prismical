@@ -151,6 +151,46 @@ describe('NewNoteDock cold-start latch', () => {
     expect(mocks.mutate).not.toHaveBeenCalled(); // must NOT create in org_2
   });
 
+  it('still fires when the login session merely RESOLVES from null during the wait', () => {
+    // Cold web load: the shell paints while the session is refreshing, so the key is null at
+    // click time and becomes the real key a beat later. That resolution is not a session switch.
+    mocks.sessionKey = null;
+    const { rerender } = renderDock();
+    fireEvent.click(screen.getByLabelText('New note'));
+    mocks.sessionKey = 'session_1';
+    mocks.storeReady = true;
+    act(() => {
+      rerender(
+        <I18nextProvider i18n={createApplicationI18nSync()}>
+          <NewNoteDock />
+        </I18nextProvider>
+      );
+    });
+    expect(mocks.mutate).toHaveBeenCalledTimes(1);
+    expect(mocks.error).not.toHaveBeenCalled();
+  });
+
+  it('guards a null-session latch once it resolves, and drops it on a later switch', () => {
+    mocks.sessionKey = null;
+    const { rerender } = renderDock();
+    fireEvent.click(screen.getByLabelText('New note'));
+    const paint = () =>
+      act(() => {
+        rerender(
+          <I18nextProvider i18n={createApplicationI18nSync()}>
+            <NewNoteDock />
+          </I18nextProvider>
+        );
+      });
+    mocks.sessionKey = 'session_1';
+    paint();
+    mocks.sessionKey = 'session_2';
+    paint();
+    mocks.storeReady = true;
+    paint();
+    expect(mocks.mutate).not.toHaveBeenCalled();
+  });
+
   it('drops a queued click when the login session changes within the same workspace', () => {
     const { rerender } = renderDock();
     fireEvent.click(screen.getByLabelText('New note'));

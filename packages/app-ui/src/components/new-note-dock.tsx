@@ -78,7 +78,13 @@ export function NewNoteDock() {
 
   React.useEffect(() => {
     if (!queued) return;
-    if (queuedSessionRef.current !== activeSessionKey) {
+    // Same rule for the login session as for the org below: on a cold web load the shell paints
+    // while the session is still refreshing, so a click in that first second queues with `null`.
+    // The key resolving is not a switch - adopt it, and only drop on a change from that.
+    const clickedSession = queuedSessionRef.current;
+    if (clickedSession === null) {
+      if (activeSessionKey !== null) queuedSessionRef.current = activeSessionKey;
+    } else if (activeSessionKey !== clickedSession) {
       setQueued(false);
       failureRef.current();
       return;
