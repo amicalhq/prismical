@@ -23,9 +23,10 @@ import { useTranslation } from 'react-i18next';
 interface TagSidebarRowProps {
   tag: Tag;
   noteCount: number;
+  tagNames: readonly string[];
 }
 
-export function TagSidebarRow({ tag, noteCount }: TagSidebarRowProps) {
+export function TagSidebarRow({ tag, noteCount, tagNames }: TagSidebarRowProps) {
   const { t } = useTranslation();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -88,7 +89,9 @@ export function TagSidebarRow({ tag, noteCount }: TagSidebarRowProps) {
       </DropdownMenu>
 
       <TagEditDialog
-        tag={editOpen ? tag : null}
+        open={editOpen}
+        tag={tag}
+        takenNames={tagNames}
         onOpenChange={setEditOpen}
         pending={editTag.isPending}
         onSubmit={patch =>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { AppLink as Link } from './app-link';
 import { ChevronRight } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible';
@@ -25,6 +25,7 @@ export function NavTagsGroup() {
   const tagsQ = useTags();
   const noteTagsQ = useAllNoteTags();
   const allTags = tagsQ.data ?? [];
+  const tagNames = useMemo(() => (tagsQ.data ?? []).map(tag => tag.name), [tagsQ.data]);
   const noteTags = noteTagsQ.data ?? [];
   // First load: skeleton rows, not the "No tags" empty state.
   const loading = tagsQ.isLoading || noteTagsQ.isLoading;
@@ -55,7 +56,7 @@ export function NavTagsGroup() {
           asChild
           className="top-1.5 right-2 aspect-auto h-5 w-auto px-1.5 text-xs font-medium text-sidebar-foreground-muted hover:text-sidebar-foreground opacity-0 transition-opacity after:hidden focus-visible:opacity-100 group-hover/tags:opacity-100"
         >
-          <Link href="/notes" aria-label={t('navigation.collections.viewAllTags')}>
+          <Link href="/tags" aria-label={t('navigation.collections.viewAllTags')}>
             {t('navigation.collections.viewAll')}
           </Link>
         </SidebarGroupAction>
@@ -81,6 +82,7 @@ export function NavTagsGroup() {
                 <TagSidebarRow
                   key={`tag-${tag.id}`}
                   tag={tag}
+                  tagNames={tagNames}
                   noteCount={countByTag.get(tag.id) ?? 0}
                 />
               ))}

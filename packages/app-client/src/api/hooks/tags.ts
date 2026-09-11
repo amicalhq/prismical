@@ -37,29 +37,39 @@ export function useTags(): SyncListResult<Tag[]> {
 }
 
 /**
- * Create a tag — client-minted `tag_` id, color auto-assigned from the
- * least-used preset among the tags currently in the store (as before). If the
- * name collides case-insensitively with a live tag, that tag is REUSED instead
- * of creating into a guaranteed 409.
+ * What to create: a bare name (color auto-assigned, which is what typing a new
+ * tag on a note does), or a name with the color the user picked.
  */
-export function useCreateTag(): SyncMutationResult<string, Tag> {
+export type CreateTagInput = string | { name: string; color?: string };
+
+/**
+ * Create a tag — client-minted `tag_` id; the color is the caller's pick, or
+ * the least-used preset among the tags currently in the store. If the name
+ * collides case-insensitively with a live tag, that tag is REUSED instead of
+ * creating into a guaranteed 409 — so a caller that offered a color picker
+ * must reject a taken name itself, or the picked color is silently dropped on
+ * the tag that comes back.
+ */
+export function useCreateTag(): SyncMutationResult<CreateTagInput, Tag> {
   const store = useSyncStore();
-  const create = (name: string): Tag => {
+  const create = (input: CreateTagInput): Tag => {
     if (!store) throw new Error("sync store not ready");
+    const name = typeof input === "string" ? input : input.name;
+    const picked = typeof input === "string" ? undefined : input.color;
     const existing = store.findTagByName(name);
     if (existing) return tagFromRow(existing);
     const rows = Object.values((store.tags$.peek() ?? {}) as Record<string, TagRow>);
-    const color = nextAutoColor(rows.filter((row) => row != null).map((t) => t.color));
+    const color = picked ?? nextAutoColor(rows.filter((row) => row != null).map((t) => t.color));
     const id = store.createTag(name, color);
     if (!id) throw new Error("tag name is empty after sanitization");
     return tagFromRow(store.tags$[id]!.peek() as TagRow);
   };
   return {
-    mutate: (name, callbacks) => {
-      const tag = create(name);
+    mutate: (input, callbacks) => {
+      const tag = create(input);
       callbacks?.onSuccess?.(tag);
     },
-    mutateAsync: async (name) => create(name),
+    mutateAsync: async (input) => create(input),
     isPending: false,
   };
 }

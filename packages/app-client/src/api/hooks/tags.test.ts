@@ -66,6 +66,14 @@ describe("useTags + useCreateTag", () => {
     expect(sent.createdAt).toBeUndefined();
   });
 
+  it("creates with the color the caller picked", async () => {
+    const { result: tags } = renderHook(() => useTags());
+    await waitFor(() => expect(tags.current.isSuccess).toBe(true));
+    const { result: create } = renderHook(() => useCreateTag());
+    const tag = await create.current.mutateAsync({ name: "Roadmap", color: "#7f77dd" });
+    expect(tag.color).toBe("#7f77dd");
+  });
+
   it("REUSES a case-insensitively colliding live tag instead of creating into a 409", async () => {
     mockedApi.restList.mockResolvedValueOnce([
       { id: "tag_work", name: "Work", color: "#1", isFavorite: false, createdAt: "2030-01-01T00:00:00.000Z", updatedAt: "2030-01-01T00:00:00.000Z" },

@@ -44,4 +44,36 @@ test.describe('local collection directories', () => {
     await expect(folder).toBeVisible();
     await page.screenshot({ path: test.info().outputPath('folders-directory.png') });
   });
+
+  test('creates and edits tags, rejects duplicate names, and persists the color', async () => {
+    await page.getByRole('link', { name: 'View all tags' }).click();
+    const main = page.getByRole('main');
+    await main.getByRole('button', { name: 'New tag', exact: true }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByLabel('Name', { exact: true }).fill('work');
+    await dialog.getByRole('button', { name: 'Create tag', exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(main.getByRole('link', { name: 'work', exact: true })).toBeVisible();
+
+    await main.getByRole('button', { name: 'New tag', exact: true }).click();
+    await dialog.getByLabel('Name', { exact: true }).fill('WORK');
+    await expect(dialog.getByRole('button', { name: 'Create tag', exact: true })).toBeDisabled();
+    await expect(dialog.getByText('A tag called WORK already exists.')).toBeVisible();
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+
+    await main.getByRole('button', { name: 'work options', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Edit tag', exact: true }).click();
+    await dialog.getByLabel('Name', { exact: true }).fill('roadmap');
+    await dialog.getByRole('button', { name: 'Use color #a78bfa', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await page.reload();
+    await expect(main.getByRole('link', { name: 'roadmap', exact: true })).toBeVisible();
+    await main.getByRole('button', { name: 'roadmap options', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Edit tag', exact: true }).click();
+    await expect(dialog.getByRole('button', { name: 'Use color #a78bfa', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await main.getByRole('link', { name: 'roadmap', exact: true }).click();
+    await expect.poll(() => page.evaluate(() => window.location.hash)).toMatch(/^#\/notes\?tags=tag_/);
+  });
 });

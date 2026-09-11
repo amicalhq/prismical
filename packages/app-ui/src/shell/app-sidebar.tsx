@@ -80,6 +80,7 @@ export function AppSidebar({
     pathname.startsWith('/home') ||
     pathname.startsWith('/notes') ||
     pathname.startsWith('/folders') ||
+    pathname.startsWith('/tags') ||
     pathname.startsWith('/shared') ||
     pathname.startsWith('/events') ||
     pathname.startsWith('/people') ||

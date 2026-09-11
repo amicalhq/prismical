@@ -38,6 +38,7 @@ const TAG_ACTION =
 export function NoteTagEditor({ noteId, selected }: { noteId: string; selected: string[] }) {
   const { t } = useTranslation();
   const { data: allTags = [] } = useTags();
+  const tagNames = React.useMemo(() => allTags.map(tag => tag.name), [allTags]);
   const noteTags = useAllNoteTags();
   const noteCounts = React.useMemo(() => {
     const counts = new Map<string, number>();
@@ -106,7 +107,13 @@ export function NoteTagEditor({ noteId, selected }: { noteId: string; selected: 
   return (
     <>
       {selectedTags.map(tag => (
-        <NoteTagChip key={tag.id} tag={tag} noteCount={noteCounts.get(tag.id) ?? 0} onRemove={() => toggle(tag.id)} />
+        <NoteTagChip
+          key={tag.id}
+          tag={tag}
+          tagNames={tagNames}
+          noteCount={noteCounts.get(tag.id) ?? 0}
+          onRemove={() => toggle(tag.id)}
+        />
       ))}
 
       <Popover
@@ -199,7 +206,17 @@ export function NoteTagEditor({ noteId, selected }: { noteId: string; selected: 
  * from the tag name. Deleting the tag itself is deliberately NOT offered here — that is a
  * workspace-wide action and belongs in the sidebar row, not beside a single note's chips.
  */
-function NoteTagChip({ tag, noteCount, onRemove }: { tag: Tag; noteCount: number; onRemove: () => void }) {
+function NoteTagChip({
+  tag,
+  tagNames,
+  noteCount,
+  onRemove,
+}: {
+  tag: Tag;
+  tagNames: readonly string[];
+  noteCount: number;
+  onRemove: () => void;
+}) {
   const { t } = useTranslation();
   const router = useNavigation();
   const [open, setOpen] = React.useState(false);
@@ -264,7 +281,9 @@ function NoteTagChip({ tag, noteCount, onRemove }: { tag: Tag; noteCount: number
       </Popover>
 
       <TagEditDialog
-        tag={editOpen ? tag : null}
+        open={editOpen}
+        tag={tag}
+        takenNames={tagNames}
         onOpenChange={setEditOpen}
         pending={editTag.isPending}
         onSubmit={patch =>

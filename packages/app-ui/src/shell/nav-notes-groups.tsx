@@ -241,6 +241,7 @@ export function NavNotesGroups() {
   const folders = foldersQ.data ?? [];
   const notes = notesQ.data ?? [];
   const tags = tagsQ.data ?? [];
+  const tagNames = React.useMemo(() => (tagsQ.data ?? []).map(tag => tag.name), [tagsQ.data]);
   const noteTags = noteTagsQ.data ?? [];
   // First load only (isLoading = fetching with no cached data yet): the groups render
   // skeleton rows instead of conflating "not loaded" with "empty" — "No favorites" used
@@ -339,6 +340,7 @@ export function NavNotesGroups() {
                     <TagSidebarRow
                       key={`favorite-tag-${entry.tag.id}`}
                       tag={entry.tag}
+                      tagNames={tagNames}
                       noteCount={countByTag.get(entry.tag.id) ?? 0}
                     />
                   )
