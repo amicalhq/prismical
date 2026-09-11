@@ -268,6 +268,7 @@ const config: ForgeConfig = {
       ).map(helperBinaryResource),
       ...(IS_WINDOWS_BUILD ? [WINDOWS_AEC_DLL] : []),
       ...WEBRTC_LICENSE_RESOURCES,
+      '../../packages/app-ui/src/fonts/DM-Sans-OFL.txt',
     ],
     // Microphone / system-audio usage strings. NSMicrophoneUsageDescription
     // is MANDATORY — a mic-access attempt without it hard-crashes the process on

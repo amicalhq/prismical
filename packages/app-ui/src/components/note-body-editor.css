@@ -1,34 +1,63 @@
+/*
+ * Vertical rhythm: notes are captured live as short fragments, not authored as prose, so
+ * consecutive lines sit at line-height with NO paragraph margin. Enter therefore reads as
+ * "next point" rather than "next paragraph", and an empty paragraph is the only thing that
+ * opens a gap - which keeps that gap under the writer's control instead of the stylesheet's.
+ * List items are the one block that gets a little air, so a list reads as a distinct group.
+ */
 .note-prose {
   outline: none;
+  /* A reading face, not the UI stack the rest of the app uses - see --font-note. */
+  font-family: var(--font-note);
+  font-size: 1rem;
 }
 .note-prose :where(h1) {
-  margin: 1.5rem 0 0.5rem;
+  margin: 1.25rem 0 0;
   font-size: 1.5rem;
+  line-height: 1.5;
   font-weight: 700;
 }
 .note-prose :where(h2) {
-  margin: 1.5rem 0 0.5rem;
-  font-size: 1.125rem;
+  margin: 1.25rem 0 0;
+  font-size: 1.25rem;
+  line-height: 1.5;
   font-weight: 600;
 }
 .note-prose :where(h3) {
-  margin: 1.25rem 0 0.25rem;
-  font-size: 1rem;
+  margin: 1rem 0 0;
+  font-size: 1.125rem;
+  line-height: 1.5;
   font-weight: 600;
 }
 .note-prose :where(h4) {
-  margin: 1rem 0 0.25rem;
-  font-size: 0.875rem;
+  margin: 1rem 0 0;
+  font-size: 1rem;
+  line-height: 1.625;
   font-weight: 600;
 }
+/* A note that opens on a heading should not be pushed off the top of the page. */
+.note-prose > :where(h1, h2, h3, h4):first-child {
+  margin-top: 0;
+}
 .note-prose :where(p) {
-  margin: 0.5rem 0;
-  font-size: 0.875rem;
+  margin: 0;
+  font-size: 1rem;
+  /* Unitless, so the leading still scales if the browser enlarges the computed font-size
+   * (a reader's minimum-font-size setting). 1.625 x 16px lands on exactly 26px. The ratio
+   * eases off from the old 1.71 because bigger text wants proportionally less leading;
+   * inline children that would compute a SMALLER box from this ratio (code) opt out below. */
   line-height: 1.625;
 }
 .note-prose :where(ul, ol) {
-  margin: 0.5rem 0;
+  margin: 0;
   padding-left: 1.25rem;
+}
+/*
+ * The list's own margin is 0 - the first and last items' margins collapse out through it, so a
+ * list is set off from surrounding text by exactly the same step that separates its own items.
+ */
+.note-prose :where(li) {
+  margin: 0.25rem 0;
 }
 .note-prose :where(ul) {
   list-style: disc;
@@ -37,14 +66,14 @@
   list-style: decimal;
 }
 .note-prose :where(blockquote) {
-  margin: 0.75rem 0;
+  margin: 0.5rem 0;
   padding-left: 1rem;
   border-left: 4px solid var(--border);
   font-style: italic;
   color: var(--muted-foreground);
 }
 .note-prose :where(hr) {
-  margin: 1rem 0;
+  margin: 0.75rem 0;
   border-color: var(--border);
 }
 .note-prose :where(code) {
@@ -52,10 +81,15 @@
   background: var(--muted);
   padding: 0.05rem 0.3rem;
   font-family: var(--font-mono, monospace);
-  font-size: 0.85em;
+  font-size: 0.875em;
+  /* A monospace face has different ascent/descent than the body face, so at the inherited
+   * line-height its inline box outgrows the paragraph's and stretches the line by a pixel.
+   * Collapsing the line-height keeps the box inside the 26px line; the pill is painted from
+   * the content area plus padding, so it is unaffected. */
+  line-height: 1;
 }
 .note-prose :where(pre) {
-  margin: 0.75rem 0;
+  margin: 0.5rem 0;
   padding: 0.75rem;
   border-radius: 0.375rem;
   background: var(--muted);
@@ -67,11 +101,11 @@
 }
 .note-prose :where(table) {
   width: 100%;
-  margin: 0.75rem 0;
+  margin: 0.5rem 0;
   border: 1px solid var(--border);
   border-radius: 0.375rem;
   border-collapse: collapse;
-  font-size: 0.875rem;
+  font-size: 1rem;
 }
 .note-prose :where(th, td) {
   border: 1px solid var(--border);

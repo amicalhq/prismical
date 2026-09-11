@@ -76,4 +76,21 @@ test.describe('local collection directories', () => {
     await main.getByRole('link', { name: 'roadmap', exact: true }).click();
     await expect.poll(() => page.evaluate(() => window.location.hash)).toMatch(/^#\/notes\?tags=tag_/);
   });
+
+  test('loads the note reading fonts from the packaged app', async () => {
+    await page.getByRole('link', { name: 'View all folders' }).click();
+    await expect(page.getByRole('main').getByRole('button', { name: 'New folder', exact: true })).toBeEnabled();
+    await page.getByRole('button', { name: 'New note', exact: true }).click();
+    const editor = page.locator('.note-prose');
+    await expect(editor).toHaveAttribute('contenteditable', 'true');
+    await editor.fill('A note with the shared reading font.');
+    await expect.poll(() => editor.evaluate(element => getComputedStyle(element).fontFamily)).toContain('DM Sans');
+    const loaded = await page.evaluate(async () => {
+      const normal = await document.fonts.load('400 16px "DM Sans"');
+      const italic = await document.fonts.load('italic 400 16px "DM Sans"');
+      return [normal.length, italic.length];
+    });
+    expect(loaded).toEqual([1, 1]);
+    await page.screenshot({ path: test.info().outputPath('note-reading-font.png') });
+  });
 });

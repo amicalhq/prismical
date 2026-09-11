@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* Shared design tokens, theme, self-hosted Ubuntu @font-face and editor
+/* Shared design tokens, theme, self-hosted Ubuntu and DM Sans fonts, and editor
  * animations. The web CSS entry imports the same file right
  * after the Tailwind engine so `@theme` / `@custom-variant` / `@apply` are
  * processed in one pass. The woff2 url()s inside resolve relative to tokens.css

@@ -35,6 +35,28 @@
   src: url("../fonts/ubuntu-latin-700-normal.woff2") format("woff2");
 }
 
+/* Self-hosted DM Sans - the note body's reading face. Scoped to the note editor
+ * via --font-note; UI chrome keeps the system stack below. Shipped self-hosted
+ * (not from a CDN) because the desktop renderer's CSP is `font-src 'self' data:`.
+ * This is the VARIABLE build, so one file covers the 400-700 range the notes use
+ * instead of four static weights; the italic file is a separate face so the
+ * browser only fetches it when italic text is actually rendered.
+ * Licensed under SIL OFL 1.1 - see ../fonts/DM-Sans-OFL.txt. Latin subset only. */
+@font-face {
+  font-family: "DM Sans";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("../fonts/dm-sans-latin-variable-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "DM Sans";
+  font-style: italic;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("../fonts/dm-sans-latin-variable-italic.woff2") format("woff2");
+}
+
 body {
   font-family:
     -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
@@ -47,6 +69,15 @@ body {
   /* Brand wordmark font family, self-hosted via the @font-face rules above
    * Consumed by --font-brand in the @theme block. */
   --font-ubuntu: "Ubuntu";
+  /* Note-body reading face, self-hosted via the @font-face rules above. A text
+   * face rather than a UI face: taller x-height and rounder counters hold up over
+   * paragraphs, where the system UI stack (tuned for labels and controls) does not.
+   * Declared HERE rather than in @theme because it is consumed as var(--font-note)
+   * by the note editor stylesheet, not as a generated utility class - @theme values
+   * are only guaranteed to reach the generated utilities. */
+  --font-dm-sans: "DM Sans";
+  --font-note: var(--font-dm-sans), -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, Helvetica, Arial, sans-serif;
   /* Prismical default theme, light: main #fcfcfd (not pure white), sidebar
    * #fafafa (darker than main), divider #e4e4e4, card borders #e9e9ea,
    * text #242424. */

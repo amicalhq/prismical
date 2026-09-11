@@ -78,6 +78,14 @@ Windows helpers).
 - Source: the Ubuntu font family (Canonical Ltd), packaged via Fontsource.
 - License: Ubuntu Font Licence 1.0 (https://ubuntu.com/legal/font-licence).
 
+## DM Sans font
+
+- Paths: `packages/app-ui/src/fonts/dm-sans-latin-variable-{normal,italic}.woff2`
+- Copyright: The DM Sans Project Authors.
+- Source: https://github.com/googlefonts/dm-fonts
+- License: SIL Open Font License 1.1; the full notice is in
+  `packages/app-ui/src/fonts/DM-Sans-OFL.txt` and is included in packaged app resources.
+
 ## Whisper hallucination phrase list
 
 - Path: `apps/desktop/src/main/infra/audio/hallucination-phrases.ts` (7422 normalized
