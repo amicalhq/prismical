@@ -42,7 +42,7 @@ import { DetectionBridgeLive } from '../../src/main/domains/detection/bridge';
 import { EventKitBridgeLive } from '../../src/main/domains/eventkit/bridge';
 import { CollabBridgeLive } from '../../src/main/domains/collab/store-live';
 import { CollabBridge } from '../../src/main/domains/collab/store';
-import { WorkspaceTransportLive } from '../../src/main/domains/transport/live';
+import { WORKSPACE_READY_TIMEOUT, WorkspaceTransportLive } from '../../src/main/domains/transport/live';
 import { WorkspaceTransport } from '../../src/main/domains/transport/service';
 import { OperationalDbLive } from '../../src/main/infra/operational-db/live';
 import { AppModeService, makeAppMode, type AppMode } from '../../src/main/domains/app-mode/service';
@@ -868,8 +868,12 @@ describe('SignedInRuntime lifecycle', () => {
       assert.isTrue(Exit.isInterrupted(fiberExit), 'local workspace fiber interrupted on quit');
       assert.isTrue(Option.isNone(yield* transport.current), 'local backend deregistered');
       assert.isTrue(Option.isNone(yield* collabBridge.current), 'note-body store deregistered');
+      const pending = yield* transport
+        .request({ method: 'GET', path: '/apps/v1/me/tags' }, { mode: 'local' })
+        .pipe(Effect.fork);
+      yield* TestClock.adjust(WORKSPACE_READY_TIMEOUT);
       assert.deepStrictEqual(
-        yield* transport.request({ method: 'GET', path: '/apps/v1/me/tags' }, { mode: 'local' }),
+        yield* Fiber.join(pending),
         {
           error: { code: 'INTERNAL' },
         }

@@ -516,6 +516,29 @@ const stubClient = (
 });
 
 describe('WorkspaceTransport (session-current accessor)', () => {
+  for (const req of [
+    { method: 'GET', path: '/apps/v1/me/skills' },
+    { method: 'POST', path: '/apps/v1/me/notes', body: { title: 'First note' } },
+  ] satisfies TransportRequest[]) {
+    it.effect(`waits for the local workspace before dispatching the first ${req.method} once`, () =>
+      Effect.gen(function* () {
+        const ct = yield* WorkspaceTransport;
+        const response = { ok: true, status: 200, bodyJson: 'ready' } as const;
+        const request = vi.fn(() => Effect.succeed(response));
+        const pending = yield* ct.request(req, { mode: 'local' }).pipe(Effect.fork);
+        yield* TestClock.adjust('1 second');
+        assert.isTrue(Option.isNone(yield* Fiber.poll(pending)));
+        assert.strictEqual(request.mock.calls.length, 0);
+        const scope = yield* Scope.make();
+        yield* ct.register({ ...stubClient(response), request }).pipe(Scope.extend(scope));
+        assert.deepStrictEqual(yield* Fiber.join(pending), response);
+        assert.strictEqual(request.mock.calls.length, 1);
+        assert.deepStrictEqual(request.mock.calls[0], [req]);
+        yield* Scope.close(scope, Exit.void);
+      }).pipe(Effect.provide(WorkspaceTransportLive))
+    );
+  }
+
   it.effect('waits for the selected org backend and never dispatches through the old one', () =>
     Effect.gen(function* () {
       const ct = yield* WorkspaceTransport;
@@ -686,12 +709,18 @@ describe('WorkspaceTransport (session-current accessor)', () => {
     }).pipe(Effect.provide(WorkspaceTransportLive))
   );
 
-  it.effect('with no live session: current is None and request settles INTERNAL', () =>
+  it.effect('with no local workspace: waits until the readiness deadline then settles INTERNAL', () =>
     Effect.gen(function* () {
       const ct = yield* WorkspaceTransport;
       assert.isTrue(Option.isNone(yield* ct.current));
+      const pending = yield* ct
+        .request({ method: 'GET', path: '/apps/v1/me' }, { mode: 'local' })
+        .pipe(Effect.fork);
+      yield* TestClock.adjust('1 second');
+      assert.isTrue(Option.isNone(yield* Fiber.poll(pending)));
+      yield* TestClock.adjust(WORKSPACE_READY_TIMEOUT);
       assert.deepStrictEqual(
-        yield* ct.request({ method: 'GET', path: '/apps/v1/me' }, { mode: 'local' }),
+        yield* Fiber.join(pending),
         {
           error: { code: 'INTERNAL' },
         }
@@ -718,8 +747,12 @@ describe('WorkspaceTransport (session-current accessor)', () => {
 
       yield* Scope.close(scope, Exit.void);
       assert.isTrue(Option.isNone(yield* ct.current));
+      const pending = yield* ct
+        .request({ method: 'GET', path: '/apps/v1/me' }, { mode: 'local' })
+        .pipe(Effect.fork);
+      yield* TestClock.adjust(WORKSPACE_READY_TIMEOUT);
       assert.deepStrictEqual(
-        yield* ct.request({ method: 'GET', path: '/apps/v1/me' }, { mode: 'local' }),
+        yield* Fiber.join(pending),
         {
           error: { code: 'INTERNAL' },
         }

@@ -63,6 +63,7 @@ export const LOCAL_FEATURE_FLAGS: Readonly<Record<string, boolean>> = {
   cloudflareWorkersAIByok: false,
   cerebrasByok: false,
   integrations: false,
+  nameNoteSkill: false,
   organization: false,
   publicApi: false,
   sharing: false,

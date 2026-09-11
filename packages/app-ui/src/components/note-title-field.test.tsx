@@ -13,24 +13,36 @@ const mocks = vi.hoisted(() => ({
   run: vi.fn(),
   dirty: vi.fn(),
   transcript: false,
+  transcriptEnabled: vi.fn(),
+  nameNoteEnabled: true,
 }));
 vi.mock('@prismical/app-client', () => ({
   useFreezeNoteTitle: () => mocks.freeze,
   useUpdateNote: () => ({ mutate: mocks.update }),
+  useFeatureFlag: (key: string) => ({
+    enabled: key === 'nameNoteSkill' ? mocks.nameNoteEnabled : true,
+    isResolved: true,
+  }),
+  // Mirrors the real hook, which filters the gated skill out of the list.
   useSkillsList: () => ({
-    data: [
-      {
-        id: 'skl_name_note',
-        name: 'Name note',
-        system: true,
-        enabled: true,
-        config: { outputTarget: 'note-title' },
-      },
-    ],
+    data: mocks.nameNoteEnabled
+      ? [
+          {
+            id: 'skl_name_note',
+            name: 'Name note',
+            system: true,
+            enabled: true,
+            config: { outputTarget: 'note-title' },
+          },
+        ]
+      : [],
   }),
   useRunSkill: () => ({ running: false, run: mocks.run, cancel: vi.fn() }),
   setTitleDraftDirty: mocks.dirty,
-  useTitleTranscriptAvailable: () => ({ data: mocks.transcript }),
+  useTitleTranscriptAvailable: (_noteId: string, enabled: boolean) => {
+    mocks.transcriptEnabled(enabled);
+    return { data: mocks.transcript };
+  },
 }));
 const { NoteTitleField } = await import('./note-title-field');
 const i18n = createApplicationI18nSync('en');
@@ -58,6 +70,7 @@ afterEach(async () => {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.transcript = false;
+  mocks.nameNoteEnabled = true;
 });
 
 describe('NoteTitleField', () => {
@@ -158,5 +171,21 @@ describe('NoteTitleField', () => {
     );
     expect((screen.getByRole('textbox') as HTMLInputElement).readOnly).toBe(true);
     expect((screen.getByRole('button') as HTMLButtonElement).disabled).toBe(true);
+  });
+  it.each([false, true])(
+    'hides the naming button entirely when the feature is gated off (compact=%s)',
+    compact => {
+      mocks.nameNoteEnabled = false;
+      mocks.transcript = true;
+      render(field({ ...base, body: 'Some content' }, compact));
+      expect(screen.getByRole('textbox')).toBeTruthy();
+      expect(screen.queryByRole('button')).toBeNull();
+    }
+  );
+  it.each([false, true])('skips the transcript scan when gated off (compact=%s)', compact => {
+    mocks.nameNoteEnabled = false;
+    render(field(base, compact));
+    expect(mocks.transcriptEnabled).toHaveBeenCalledWith(false);
+    expect(mocks.transcriptEnabled).not.toHaveBeenCalledWith(true);
   });
 });

@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { assert, describe, it } from '@effect/vitest';
 import { eq } from 'drizzle-orm';
-import { Cause, Context, Effect, Exit, Layer, Option, Scope } from 'effect';
+import { Cause, Context, Effect, Exit, Fiber, Layer, Option, Scope, TestClock } from 'effect';
 import type { TransportResponse } from '@prismical/desktop-contracts';
 import { LOCAL_FEATURE_FLAGS, LOCAL_WORKSPACE } from '@prismical/desktop-contracts';
 import {
@@ -26,11 +26,11 @@ import {
 import { createId } from '@prismical/id';
 import { fakeAiProviderLayer } from '../helpers/fake-workspace-env';
 import { makeTestLogger, testConfigLayer, testI18nLayer } from '../helpers/test-layers';
-import { SYSTEM_SKILLS } from '@prismical/ai-prompts';
+import { NAME_NOTE_SKILL_ID, SYSTEM_SKILLS } from '@prismical/ai-prompts';
 import { AuthStateError } from '../../src/main/domains/auth/service';
 import { LocalBackendLive } from '../../src/main/domains/local-backend/live';
 import { describeDbError, isUniqueViolation } from '../../src/main/domains/local-backend/wire';
-import { WorkspaceTransportLive } from '../../src/main/domains/transport/live';
+import { WORKSPACE_READY_TIMEOUT, WorkspaceTransportLive } from '../../src/main/domains/transport/live';
 import { WorkspaceBackend, WorkspaceTransport } from '../../src/main/domains/transport/service';
 import { makeProductDbLayer } from '../../src/main/infra/product-db/live';
 import * as schema from '../../src/main/infra/product-db/schema';
@@ -283,16 +283,17 @@ describe('LocalBackendLive', () => {
       })
   );
 
-  it.effect('GET /skills lists the three seeded system skills with the server `system` flag', () =>
+  it.effect('GET /skills lists available system skills and retains the gated seed in storage', () =>
     Effect.gen(function* () {
-      const { api, scope } = yield* buildBackend;
+      const { api, product, scope } = yield* buildBackend;
+      const available = SYSTEM_SKILLS.filter(skill => skill.id !== NAME_NOTE_SKILL_ID);
       const res = expectOk(yield* api.request({ method: 'GET', path: '/apps/v1/me/skills' }), 200);
       const rows = (res.bodyJson as { results: Array<Record<string, unknown>> }).results;
       assert.deepStrictEqual(
         rows.map(row => row.id).sort(),
-        [...SYSTEM_SKILLS.map(skill => skill.id)].sort()
+        available.map(skill => skill.id).sort()
       );
-      for (const skill of SYSTEM_SKILLS) {
+      for (const skill of available) {
         const row = rows.find(r => r.id === skill.id)!;
         assert.strictEqual(row.system, true);
         assert.strictEqual(row.enabled, true);
@@ -300,12 +301,22 @@ describe('LocalBackendLive', () => {
         assert.deepStrictEqual(row.config, skill.config);
         assert.notProperty(row, 'isSystem');
       }
-      // A second acquire re-seeds idempotently: still three rows, bodies intact.
+      // Delta and tombstone reads must keep the same rollout boundary.
       const again = expectOk(
-        yield* api.request({ method: 'GET', path: '/apps/v1/me/skills' }),
+        yield* api.request({
+          method: 'GET',
+          path: '/apps/v1/me/skills',
+          query: { includeDeleted: 'true', since: '2000-01-01T00:00:00.000Z' },
+        }),
         200
       );
-      assert.lengthOf((again.bodyJson as { results: unknown[] }).results, 3);
+      assert.deepStrictEqual(again.bodyJson.results, rows);
+      const stored = yield* Effect.promise(() => product.db.select().from(schema.skill));
+      assert.deepStrictEqual(
+        stored.map(skill => skill.id).sort(),
+        SYSTEM_SKILLS.map(skill => skill.id).sort()
+      );
+      assert.strictEqual(stored.find(skill => skill.id === NAME_NOTE_SKILL_ID)!.enabled, true);
       // System rows cannot be deleted (403), user rows can be created over the dialect.
       const del = expectOk(
         yield* api.request({
@@ -315,6 +326,37 @@ describe('LocalBackendLive', () => {
         403
       );
       assert.deepStrictEqual(del.bodyJson, { error: { code: 'FORBIDDEN', message: 'Forbidden' } });
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+
+  it.effect('refuses direct and stale writes of the gated Name note without echoing its row', () =>
+    Effect.gen(function* () {
+      const { api, product, scope } = yield* buildBackend;
+      const path = `/apps/v1/me/skills/${NAME_NOTE_SKILL_ID}`;
+      for (const updatedAt of ['2000-01-01T00:00:00.000Z', '2099-01-01T00:00:00.000Z']) {
+        for (const request of [
+          { method: 'PUT' as const, path, body: { enabled: false, updatedAt } },
+          {
+            method: 'POST' as const,
+            path: '/apps/v1/me/skills',
+            body: {
+              id: NAME_NOTE_SKILL_ID, name: 'Replacement', body: 'Rewrite this note.', updatedAt,
+            },
+          },
+        ]) {
+          const result = expectOk(yield* api.request(request), 404);
+          assert.strictEqual(result.bodyJson.error.code, 'NOT_FOUND');
+          assert.notProperty(result.bodyJson, 'result');
+        }
+      }
+      expectOk(yield* api.request({ method: 'DELETE', path }), 404);
+      expectOk(yield* api.request({ method: 'GET', path }), 404);
+      const stored = yield* Effect.promise(() =>
+        product.db.select().from(schema.skill).where(eq(schema.skill.id, NAME_NOTE_SKILL_ID))
+      );
+      assert.strictEqual(stored[0]!.enabled, true);
+      assert.isNull(stored[0]!.deletedAt);
       yield* Scope.close(scope, Exit.void);
     })
   );
@@ -334,8 +376,12 @@ describe('LocalBackendLive', () => {
 
       yield* Scope.close(scope, Exit.void);
       assert.isTrue(Option.isNone(yield* transport.current), 'cleared on scope close');
+      const pending = yield* transport
+        .request({ method: 'GET', path: '/apps/v1/me/folders' }, { mode: 'local' })
+        .pipe(Effect.fork);
+      yield* TestClock.adjust(WORKSPACE_READY_TIMEOUT);
       assert.deepStrictEqual(
-        yield* transport.request({ method: 'GET', path: '/apps/v1/me/folders' }, { mode: 'local' }),
+        yield* Fiber.join(pending),
         {
           error: { code: 'INTERNAL' },
         }

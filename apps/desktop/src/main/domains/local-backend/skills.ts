@@ -11,6 +11,7 @@
 import type { LogMetadata } from '../../infra/logging/service';
 import { and, desc, eq, isNotNull, isNull, max, sql } from 'drizzle-orm';
 import { describeAiError, SKILL_RUN_ERROR_CODES, type AiErrorDetails } from '@prismical/api-contracts';
+import { LOCAL_FEATURE_FLAGS } from '@prismical/desktop-contracts';
 import {
   AcceptSkillRunRequestSchema,
   AcceptSkillRunResultSchema,
@@ -28,6 +29,7 @@ import {
   buildSkillSystemPrompt,
   buildTitleSystemPrompt,
   ENHANCE_SKILL_ID,
+  NAME_NOTE_SKILL_ID,
   enhanceDefaultMode,
   SKILL_RUN_USER_PROMPT,
   skillOutputSchema,
@@ -54,7 +56,7 @@ import { loadNoteInput, selectNoteRow, skillInputIsEmpty, transcriptBlocker } fr
 import { bumpUpdatedAt, defaultTitle } from './notes';
 import { runTerminalTool, type RunUsage, type TerminalToolSpec } from './skill-run';
 import { findRecoverableResult, saveRecoverableResult, SuggestionChanged, suggestionChanged } from './skill-recovery';
-import type { LocalEntityConfig } from './sync-entities';
+import { listEntity, type LocalEntityConfig } from './sync-entities';
 import {
   apiError,
   describeDbError,
@@ -76,6 +78,9 @@ const presentSkill = (row: Record<string, unknown>): Record<string, unknown> => 
 /** The only column a system skill row lets a client write. */
 const SYSTEM_SKILL_WRITABLE = new Set(['enabled']);
 
+export const localSkillAvailable = (skillId: unknown): boolean =>
+  skillId !== NAME_NOTE_SKILL_ID || LOCAL_FEATURE_FLAGS.nameNoteSkill === true;
+
 export const SKILL_ENTITY: LocalEntityConfig = {
   route: 'skills',
   idEntity: 'skill',
@@ -92,6 +97,12 @@ export const SKILL_ENTITY: LocalEntityConfig = {
     return Object.keys(fields).every(key => SYSTEM_SKILL_WRITABLE.has(key)) ? null : forbidden();
   },
 };
+
+export async function listSkills(db: LocalDb, query: Record<string, string>): Promise<RouteResult> {
+  const response = await listEntity(db, SKILL_ENTITY, query);
+  const body = response.body as { results: Array<Record<string, unknown>> };
+  return ok({ results: body.results.filter(skill => localSkillAvailable(skill.id)) });
+}
 
 /**
  * Seed the three system skills (idempotent upsert of name/description/body/
@@ -219,6 +230,7 @@ const noteHasEnhanceArtifact = async (db: LocalDb, noteId: string): Promise<bool
 };
 
 const loadRunnableSkill = async (db: LocalDb, skillId: string): Promise<RunnableSkill | null> => {
+  if (!localSkillAvailable(skillId)) return null;
   const rows = await db
     .select()
     .from(schema.skill)
@@ -711,6 +723,9 @@ export async function titleRun(db: LocalDb, undo: boolean, body: unknown): Promi
     .limit(1);
   const run = runs[0];
   if (run === undefined) return apiError(404, 'NOT_FOUND', 'Title run not found');
+  if (!undo && !localSkillAvailable(run.skillId)) {
+    return apiError(404, 'NOT_FOUND', 'Title run not found');
+  }
   const current = await selectNoteRow(db, run.noteId);
   if (current === undefined || current.trashedAt !== null) {
     return apiError(404, 'NOT_FOUND', 'Title run not found');

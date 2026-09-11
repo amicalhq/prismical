@@ -42,6 +42,8 @@ import { pendingSkillResults, resolveSkillResult } from './skill-recovery';
 import {
   acceptSkillRun,
   enhancedRecordings,
+  listSkills,
+  localSkillAvailable,
   restoreSkillRun,
   runSkill,
   SKILL_ENTITY,
@@ -159,6 +161,15 @@ export const handleLocalRequest = async (
   }
 
   // ── AI lanes ──
+  if (route === 'skills') {
+    // Reject before sync's stale-write echo can expose a gated row.
+    const skillId = rest[0] ??
+      (method === 'POST' && typeof req.body === 'object' && req.body !== null && 'id' in req.body
+        ? req.body.id
+        : undefined);
+    if (!localSkillAvailable(skillId)) return notFound();
+    if (method === 'GET' && rest.length === 0) return listSkills(db, query);
+  }
   if (route === 'search') {
     return method === 'GET' && rest.length === 0 ? handleSearch(client, query) : notFound();
   }

@@ -2,17 +2,35 @@
 
 import type { SyncWriteEnvelope } from "@prismical/api-contracts/apps/v1";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback } from "react";
 import { apiClient, ME_PREFIX } from "../client";
 import { toSkill, type CoreSkill } from "../adapters";
-import type { Skill, SkillConfig } from "@prismical/app-contracts";
+import { NAME_NOTE_SKILL_ID, type Skill, type SkillConfig } from "@prismical/app-contracts";
+import { useFeatureFlag } from "./organizations";
 
 export const skillsKey = ["skills"] as const;
 
+/**
+ * Every skill the caller may use, with feature-gated system skills removed.
+ *
+ * The gate is applied through `select` rather than in the query function so the cached payload
+ * stays whatever the server sent: a flag flip re-derives the list without a refetch, and the
+ * loading/error state every caller reads is untouched. Core applies the same gate on the read and
+ * run paths, so this only keeps a locally-cached row (desktop's offline sync) from resurfacing a
+ * skill the server has stopped serving.
+ */
 export function useSkillsList() {
-  return useQuery<Skill[]>({
+  const { enabled: nameNoteEnabled } = useFeatureFlag("nameNoteSkill");
+  const select = useCallback(
+    (skills: Skill[]) =>
+      nameNoteEnabled ? skills : skills.filter((s) => s.id !== NAME_NOTE_SKILL_ID),
+    [nameNoteEnabled],
+  );
+  return useQuery<Skill[], Error, Skill[]>({
     queryKey: skillsKey,
     queryFn: async () =>
       (await apiClient.list<CoreSkill>(`${ME_PREFIX}/skills`)).map((s) => toSkill(s, s.enabled ?? true)),
+    select,
   });
 }
 

@@ -5,6 +5,7 @@ import { Loader2, Sparkles } from 'lucide-react';
 import { firstNoteLine, markdownToTiptapJson } from '@prismical/editor-markdown';
 import { NAME_NOTE_SKILL_ID, type Note } from '@prismical/app-contracts';
 import {
+  useFeatureFlag,
   useRunSkill,
   useSkillsList,
   useUpdateNote,
@@ -58,7 +59,10 @@ export function NoteTitleField({
     };
   }, [editor, note.body]);
   const freeze = useFreezeNoteTitle(note.id);
-  const visit = React.useMemo(() => ({ noteId: note.id, active: false, settle: () => {} }), [note.id]);
+  const visit = React.useMemo(
+    () => ({ noteId: note.id, active: false, settle: () => {} }),
+    [note.id]
+  );
   React.useEffect(() => {
     visit.settle = () => {
       if (note.writable === false) return;
@@ -100,12 +104,22 @@ export function NoteTitleField({
   }, [note.id]);
   React.useEffect(() => onTitleChange?.(draft), [draft, onTitleChange]);
   const update = useUpdateNote(note.id);
+  // The Name-note skill is feature-gated. `useSkillsList` already drops it when the flag is off,
+  // but the button is HIDDEN rather than merely disabled — a disabled sparkle would advertise a
+  // feature the account cannot use, and reads as breakage next to a title that names itself fine.
+  // The flag reads false until the org list resolves, so it appears late instead of flashing.
+  const { enabled: namingEnabled } = useFeatureFlag('nameNoteSkill');
   const { data: skills = [] } = useSkillsList();
   const skill = skills.find(
     s => s.id === NAME_NOTE_SKILL_ID && s.enabled && s.config.outputTarget === 'note-title'
   );
   const naming = useRunSkill(note.id, editor);
-  const hasTranscript = useTitleTranscriptAvailable(note.id, !firstLine && note.writable !== false);
+  // Gating `enabled` here also spares every gated account the transcript scan behind it, which is
+  // the most expensive query on the note.
+  const hasTranscript = useTitleTranscriptAvailable(
+    note.id,
+    namingEnabled && !firstLine && note.writable !== false
+  );
   const hasContent = Boolean(firstLine || hasTranscript.data);
   const disabled = !online || note.writable === false || !skill || !hasContent;
   const label = !online
@@ -116,7 +130,7 @@ export function NoteTitleField({
 
   return (
     <div
-      className={`group/title flex min-w-0 items-center gap-1 ${compact ? 'max-w-full' : 'flex-1'}`}
+      className={`group/title relative flex min-w-0 items-center ${compact ? 'max-w-full gap-1' : 'flex-1'}`}
       style={compact ? ({ WebkitAppRegion: 'no-drag' } as React.CSSProperties) : undefined}
     >
       <input
@@ -155,31 +169,33 @@ export function NoteTitleField({
         className={
           compact
             ? 'min-w-[4ch] truncate bg-transparent text-[12.5px] font-medium text-dock-ink-3 outline-none focus:text-dock-ink'
-            : 'min-w-0 flex-1 bg-transparent px-2 pt-1 text-2xl font-semibold leading-tight text-foreground outline-none placeholder:text-muted-foreground md:text-3xl'
+            : `min-w-0 flex-1 truncate bg-transparent px-2 pt-1 text-2xl font-semibold leading-tight text-foreground outline-none placeholder:text-muted-foreground md:text-3xl ${namingEnabled ? `group-hover/title:pr-9 group-focus-within/title:pr-9 [@media(hover:none)]:pr-9 ${naming.running ? 'pr-9' : ''}` : ''}`
         }
       />
-      <button
-        type="button"
-        disabled={!naming.running && disabled}
-        aria-label={naming.running ? t('skills.dock.stopRun') : t('notes.nameWithAI')}
-        title={naming.running ? t('notes.namingTitle') : label}
-        className={`flex size-7 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent focus-visible:opacity-100 disabled:cursor-not-allowed disabled:opacity-40 ${naming.running ? '' : 'opacity-0 transition-opacity group-hover/title:opacity-100 group-focus-within/title:opacity-100 [@media(hover:none)]:opacity-100'}`}
-        onClick={() => {
-          if (naming.running) naming.cancel();
-          else if (skill)
-            void naming.run({
-              skillId: skill.id,
-              skillName: skillDisplayName(skill, t),
-              outputTarget: 'note-title',
-            });
-        }}
-      >
-        {naming.running ? (
-          <Loader2 className="size-3.5 animate-spin" />
-        ) : (
-          <Sparkles className="size-3.5" />
-        )}
-      </button>
+      {namingEnabled && (
+        <button
+          type="button"
+          disabled={!naming.running && disabled}
+          aria-label={naming.running ? t('skills.dock.stopRun') : t('notes.nameWithAI')}
+          title={naming.running ? t('notes.namingTitle') : label}
+          className={`flex size-7 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent focus-visible:opacity-100 disabled:cursor-not-allowed disabled:opacity-40 ${compact ? '' : 'absolute right-0'} ${naming.running ? '' : 'opacity-0 transition-opacity group-hover/title:opacity-100 group-focus-within/title:opacity-100 [@media(hover:none)]:opacity-100'}`}
+          onClick={() => {
+            if (naming.running) naming.cancel();
+            else if (skill)
+              void naming.run({
+                skillId: skill.id,
+                skillName: skillDisplayName(skill, t),
+                outputTarget: 'note-title',
+              });
+          }}
+        >
+          {naming.running ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : (
+            <Sparkles className="size-3.5" />
+          )}
+        </button>
+      )}
     </div>
   );
 }

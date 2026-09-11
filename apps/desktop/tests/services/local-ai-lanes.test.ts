@@ -210,6 +210,22 @@ const post = (api: WorkspaceBackendApi, path: string, body: unknown) =>
 
 const NOW = '2030-01-01T00:00:00.000Z';
 
+const insertTitleSkill = (product: ProductDbService) =>
+  Effect.promise(async () => {
+    const id = createId('skill');
+    await product.db.insert(schema.skill).values({
+      id,
+      name: 'Custom title',
+      body: 'Write a short descriptive title from the note and transcript.',
+      config: { outputTarget: 'note-title', editingOptions: 'replace-doc', inputs: { transcript: true } },
+      isSystem: false,
+      enabled: true,
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    return id;
+  });
+
 const insertNote = (
   product: ProductDbService,
   fields: {
@@ -766,15 +782,78 @@ describe('skill runs', () => {
   );
 });
 
-describe('Name-note: run and apply/undo revision CAS', () => {
+describe('Name note rollout', () => {
+  it.effect('refuses the shipped naming skill without invoking the model', () =>
+    Effect.gen(function* () {
+      const model = toolCallingModel();
+      const { api, product, scope } = yield* build(model);
+      const noteId = yield* insertNote(product, { title: 'Draft', markdown: 'Launch planning' });
+      const result = expectOk(
+        yield* post(api, `/apps/v1/me/skills/${NAME_NOTE_SKILL_ID}/run`, { noteId }),
+        404
+      );
+      assert.strictEqual(result.bodyJson.error.code, 'NOT_FOUND');
+      assert.isEmpty(model.doGenerateCalls);
+      assert.isEmpty(yield* Effect.promise(() => product.db.select().from(schema.noteTitleRun)));
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+
+  for (const applied of [false, true]) {
+    it.effect(`refuses a historical Name note apply (already applied: ${applied}) and preserves undo`, () =>
+      Effect.gen(function* () {
+        const model = toolCallingModel();
+        const { api, product, scope } = yield* build(model);
+        const noteId = yield* insertNote(product, { title: applied ? 'Saved title' : 'Original title' });
+        const runId = 'ntr_historical';
+        const stamp = new Date().toISOString();
+        yield* Effect.promise(async () => {
+          await product.db.update(schema.note)
+            .set({ titleRevision: applied ? 1 : 0 })
+            .where(eq(schema.note.id, noteId));
+          await product.db.insert(schema.noteTitleRun).values({
+            id: runId, noteId, skillId: NAME_NOTE_SKILL_ID, title: 'Saved title',
+            previousTitle: 'Original title', previousSource: 'manual', baseRevision: 0,
+            appliedRevision: applied ? 1 : null, appliedAt: applied ? stamp : null,
+            createdAt: stamp, updatedAt: stamp,
+          });
+        });
+        const result = expectOk(yield* post(api, '/apps/v1/me/title-runs/apply', { runId }), 404);
+        assert.strictEqual(result.bodyJson.error.code, 'NOT_FOUND');
+        const [unchanged] = yield* Effect.promise(() =>
+          product.db.select().from(schema.note).where(eq(schema.note.id, noteId))
+        );
+        assert.strictEqual(unchanged!.title, applied ? 'Saved title' : 'Original title');
+        assert.strictEqual(unchanged!.titleRevision, applied ? 1 : 0);
+        if (applied) {
+          const undone = expectOk(yield* post(api, '/apps/v1/me/title-runs/undo', { runId }), 200);
+          assert.deepStrictEqual(undone.bodyJson, {
+            noteId, title: 'Original title', titleSource: 'manual', titleRevision: 2,
+          });
+          assert.deepStrictEqual(
+            expectOk(yield* post(api, '/apps/v1/me/title-runs/undo', { runId }), 200).bodyJson,
+            undone.bodyJson
+          );
+        } else {
+          expectOk(yield* post(api, '/apps/v1/me/title-runs/undo', { runId }), 409);
+        }
+        assert.isEmpty(model.doGenerateCalls);
+        yield* Scope.close(scope, Exit.void);
+      })
+    );
+  }
+});
+
+describe('Custom title skills: run and apply/undo revision CAS', () => {
   for (const rung of ['tool', 'JSON'] as const) {
     it.effect(`a null title on the ${rung} rung is an informational decline without retry`, () =>
       Effect.gen(function* () {
         const model = rung === 'tool' ? toolCallingModel(null) : textOnlyModel('{"title":null}');
         const { api, product, scope } = yield* build(model);
+        const titleSkillId = yield* insertTitleSkill(product);
         const noteId = yield* insertNote(product, { title: 'Draft', markdown: 'some body' });
         const res = expectOk(
-          yield* post(api, `/apps/v1/me/skills/${NAME_NOTE_SKILL_ID}/run`, { noteId }),
+          yield* post(api, `/apps/v1/me/skills/${titleSkillId}/run`, { noteId }),
           422
         );
         assert.strictEqual(res.bodyJson.error.code, 'OUTPUT_DECLINED');
@@ -802,9 +881,10 @@ describe('Name-note: run and apply/undo revision CAS', () => {
   it.effect('a declined title uses the desktop locale for its informational message', () =>
     Effect.gen(function* () {
       const { api, product, scope } = yield* buildWith(toolCallingModel(null), undefined, 'de');
+      const titleSkillId = yield* insertTitleSkill(product);
       const noteId = yield* insertNote(product, { title: 'Draft', markdown: 'some body' });
       const res = expectOk(
-        yield* post(api, `/apps/v1/me/skills/${NAME_NOTE_SKILL_ID}/run`, { noteId }),
+        yield* post(api, `/apps/v1/me/skills/${titleSkillId}/run`, { noteId }),
         422
       );
       assert.strictEqual(res.bodyJson.error.code, 'OUTPUT_DECLINED');
@@ -821,9 +901,10 @@ describe('Name-note: run and apply/undo revision CAS', () => {
     it.effect(`a blank string title ${JSON.stringify(title)} is an error with retry`, () =>
       Effect.gen(function* () {
         const { api, product, scope } = yield* build(toolCallingModel(title));
+        const titleSkillId = yield* insertTitleSkill(product);
         const noteId = yield* insertNote(product, { title: 'Draft', markdown: 'some body' });
         const res = expectOk(
-          yield* post(api, `/apps/v1/me/skills/${NAME_NOTE_SKILL_ID}/run`, { noteId }),
+          yield* post(api, `/apps/v1/me/skills/${titleSkillId}/run`, { noteId }),
           422
         );
         assert.strictEqual(res.bodyJson.error.code, 'OUTPUT_EMPTY');
@@ -842,13 +923,14 @@ describe('Name-note: run and apply/undo revision CAS', () => {
     Effect.gen(function* () {
       const model = toolCallingModel('Product launch planning');
       const { api, product, scope } = yield* build(model);
+      const titleSkillId = yield* insertTitleSkill(product);
       const noteId = yield* insertNote(product, {
         title: 'Untitled note',
         titleSource: 'placeholder',
         markdown: 'Launch plan for Q3 with the whole team',
       });
       const run = expectOk(
-        yield* post(api, `/apps/v1/me/skills/${NAME_NOTE_SKILL_ID}/run`, { noteId }),
+        yield* post(api, `/apps/v1/me/skills/${titleSkillId}/run`, { noteId }),
         200
       );
       const result = run.bodyJson;
@@ -892,7 +974,7 @@ describe('Name-note: run and apply/undo revision CAS', () => {
 
       // A second run whose base revision is stale by the time it applies → 409.
       const stale = expectOk(
-        yield* post(api, `/apps/v1/me/skills/${NAME_NOTE_SKILL_ID}/run`, { noteId }),
+        yield* post(api, `/apps/v1/me/skills/${titleSkillId}/run`, { noteId }),
         200
       );
       yield* Effect.promise(() =>
@@ -916,9 +998,10 @@ describe('Name-note: run and apply/undo revision CAS', () => {
     Effect.gen(function* () {
       const json = textOnlyModel('{"title": "Q3 launch plan"}');
       const a = yield* build(json);
+      const titleSkillA = yield* insertTitleSkill(a.product);
       const noteA = yield* insertNote(a.product, { title: 'Draft', markdown: 'Launch plan for Q3' });
       const named = expectOk(
-        yield* post(a.api, `/apps/v1/me/skills/${NAME_NOTE_SKILL_ID}/run`, { noteId: noteA }),
+        yield* post(a.api, `/apps/v1/me/skills/${titleSkillA}/run`, { noteId: noteA }),
         200
       );
       assert.strictEqual(named.bodyJson.title, 'Q3 launch plan');
@@ -928,9 +1011,10 @@ describe('Name-note: run and apply/undo revision CAS', () => {
       // "Sure! Here is a title:" must never be applied to the note.
       const prose = textOnlyModel('Sure! Here is a title:\nQ3 launch plan');
       const b = yield* build(prose);
+      const titleSkillB = yield* insertTitleSkill(b.product);
       const noteB = yield* insertNote(b.product, { title: 'Draft', markdown: 'Launch plan for Q3' });
       const refused = expectOk(
-        yield* post(b.api, `/apps/v1/me/skills/${NAME_NOTE_SKILL_ID}/run`, { noteId: noteB }),
+        yield* post(b.api, `/apps/v1/me/skills/${titleSkillB}/run`, { noteId: noteB }),
         502
       );
       assert.strictEqual(refused.bodyJson.error.code, 'OUTPUT_NOT_SUBMITTED');
@@ -941,15 +1025,16 @@ describe('Name-note: run and apply/undo revision CAS', () => {
   it.effect('an unusable title is 422 TITLE_INVALID; an empty note is NOTE_EMPTY', () =>
     Effect.gen(function* () {
       const { api, product, scope } = yield* build(toolCallingModel('# Heading'));
+      const titleSkillId = yield* insertTitleSkill(product);
       const noteId = yield* insertNote(product, { title: 'Draft', markdown: 'some body' });
       const invalid = expectOk(
-        yield* post(api, `/apps/v1/me/skills/${NAME_NOTE_SKILL_ID}/run`, { noteId }),
+        yield* post(api, `/apps/v1/me/skills/${titleSkillId}/run`, { noteId }),
         422
       );
       assert.strictEqual(invalid.bodyJson.error.code, 'TITLE_INVALID');
       const empty = yield* insertNote(product, { title: 'Draft', markdown: '' });
       const noteEmpty = expectOk(
-        yield* post(api, `/apps/v1/me/skills/${NAME_NOTE_SKILL_ID}/run`, { noteId: empty }),
+        yield* post(api, `/apps/v1/me/skills/${titleSkillId}/run`, { noteId: empty }),
         422
       );
       assert.strictEqual(noteEmpty.bodyJson.error.code, 'NOTE_EMPTY');
@@ -1408,6 +1493,7 @@ describe('completed recording suggestion recovery', () => {
   it.effect('does not recover title, inline, or ordinary manual results', () =>
     Effect.gen(function* () {
       const { api, product, scope } = yield* build(toolCallingModel());
+      const titleSkillId = yield* insertTitleSkill(product);
       const noteId = yield* insertNote(product, {
         title: 'Recorded note',
         markdown: 'A note to rewrite.',
@@ -1419,7 +1505,7 @@ describe('completed recording suggestion recovery', () => {
       for (const request of [
         { path: runPath, body: { noteId, recordingId } },
         {
-          path: `/apps/v1/me/skills/${NAME_NOTE_SKILL_ID}/run`,
+          path: `/apps/v1/me/skills/${titleSkillId}/run`,
           body: { noteId, recordingId, recoverable: true },
         },
         {

@@ -559,7 +559,14 @@ export const WorkspaceTransportLive: Layer.Layer<WorkspaceTransport> = Layer.eff
       request: (req, context) =>
         Effect.gen(function* () {
           if (context.mode === 'local') {
-            const backend = yield* SubscriptionRef.get(currentRef);
+            // The shell can make its first request before the local store has mounted.
+            const backend = yield* currentRef.changes.pipe(
+              Stream.mapEffect(() => SubscriptionRef.get(currentRef)),
+              Stream.filterMap(value => value),
+              Stream.runHead,
+              Effect.timeoutOption(WORKSPACE_READY_TIMEOUT),
+              Effect.map(Option.flatten)
+            );
             return yield* Option.match(backend, {
               onNone: () => Effect.succeed(INTERNAL),
               onSome: client => client.request(req),
