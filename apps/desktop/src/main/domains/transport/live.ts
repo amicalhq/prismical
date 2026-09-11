@@ -55,6 +55,10 @@ import {
 
 /** Unary request budget — mirrors auth's TOKEN_REQUEST_TIMEOUT. */
 export const REQUEST_TIMEOUT = Duration.seconds(15);
+/** Skill generation can spend 90 seconds on the server; allow response overhead. */
+const SKILL_RUN_TIMEOUT = Duration.seconds(120);
+/** MCP probes allow 15 seconds each for connection and tool discovery, plus overhead. */
+const MCP_TEST_TIMEOUT = Duration.seconds(60);
 /** Chunk uploads include audio transfer and the transcription response. */
 const CHUNK_UPLOAD_TIMEOUT = Duration.minutes(1);
 /** Wait for a workspace swap, separately from the HTTP request budget. */
@@ -196,6 +200,15 @@ export const makeWorkspaceBackendRequest =
   (req: TransportRequest): Effect.Effect<TransportResponse> =>
     deps.resolveIdentity.pipe(
       Effect.flatMap(identity => {
+        let timeout = REQUEST_TIMEOUT;
+        if (req.method === 'POST' && /^\/apps\/v1\/me\/skills\/[^/]+\/run$/.test(req.path)) {
+          timeout = SKILL_RUN_TIMEOUT;
+        } else if (
+          req.method === 'POST' &&
+          /^\/apps\/v1\/me\/mcp-servers\/[^/]+\/test$/.test(req.path)
+        ) {
+          timeout = MCP_TEST_TIMEOUT;
+        }
         const url = buildRequestUrl(deps.coreApiUrl, req.path, req.query);
         const headers = stampHeaders(identity, req);
         return Effect.tryPromise({
@@ -219,7 +232,7 @@ export const makeWorkspaceBackendRequest =
           catch: cause => ({ kind: 'network' as const, cause }),
         }).pipe(
           Effect.timeoutFail({
-            duration: REQUEST_TIMEOUT,
+            duration: timeout,
             onTimeout: () => ({ kind: 'timeout' as const }),
           })
         );

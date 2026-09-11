@@ -229,6 +229,71 @@ describe('makeWorkspaceBackendRequest (envelope mapping)', () => {
     })
   );
 
+  for (const { operation, path, serverSeconds, timeoutSeconds } of [
+    {
+      operation: 'skill run',
+      path: '/apps/v1/me/skills/skl_cleanup/run',
+      serverSeconds: 90,
+      timeoutSeconds: 120,
+    },
+    {
+      operation: 'MCP connection test',
+      path: '/apps/v1/me/mcp-servers/mcp_example/test',
+      serverSeconds: 30,
+      timeoutSeconds: 60,
+    },
+  ]) {
+    it.effect(
+      `a ${operation} can return its server error after the ${serverSeconds}s server budget`,
+      () =>
+        Effect.gen(function* () {
+          let respond!: (response: Response) => void;
+          const { fetchFn } = recordingFetch(
+            () =>
+              new Promise(resolve => {
+                respond = resolve;
+              })
+          );
+          const fiber = yield* Effect.fork(
+            runRequest({
+              fetchFn,
+              req: { method: 'POST', path, body: {} },
+            })
+          );
+          yield* TestClock.adjust(`${serverSeconds + 1} seconds`);
+          assert.isTrue(Option.isNone(yield* Fiber.poll(fiber)));
+          const body = { error: { code: 'PROVIDER_UNAVAILABLE' } };
+          respond(jsonResponse(body, 502));
+          assert.deepStrictEqual(yield* Fiber.join(fiber), {
+            ok: true,
+            status: 502,
+            bodyJson: body,
+          });
+        })
+    );
+
+    it.effect(`a hung ${operation} aborts at ${timeoutSeconds}s`, () =>
+      Effect.gen(function* () {
+        let signal: AbortSignal | undefined;
+        const fiber = yield* Effect.fork(
+          runRequest({
+            fetchFn: (_url, init) => {
+              signal = init.signal;
+              return new Promise<Response>(() => {});
+            },
+            req: { method: 'POST', path, body: {} },
+          })
+        );
+        yield* TestClock.adjust(`${timeoutSeconds - 1} seconds`);
+        assert.isTrue(Option.isNone(yield* Fiber.poll(fiber)));
+        assert.isFalse(signal?.aborted);
+        yield* TestClock.adjust('1 second');
+        assert.deepStrictEqual(yield* Fiber.join(fiber), { error: { code: 'INTERNAL' } });
+        assert.isTrue(signal?.aborted);
+      })
+    );
+  }
+
   it.effect('a stalled response body shares the request deadline and abort signal', () =>
     Effect.gen(function* () {
       const readingBody = yield* Deferred.make<void>();
