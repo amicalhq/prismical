@@ -224,11 +224,6 @@ it('waits for notes rather than painting every folder as empty', () => {
   expect(screen.queryByText('folders.noteCount:0')).toBeNull();
 });
 
-
-
-
-
-
 // The folder icon doubles as the toggle, so a folder with nothing inside must not be a button —
 // hovering it would otherwise promise children it does not have.
 it('gives a toggle only to folders that have children', () => {

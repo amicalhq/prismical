@@ -19,10 +19,9 @@ export const skillsKey = ["skills"] as const;
  * the cached payload stays whatever the server sent: a flag flip re-derives the list without a
  * refetch, and the loading/error state every caller reads is untouched.
  *
- * Note the asymmetry this creates on OPT-IN: the org list `useFeatureFlags` reads caches for five
- * minutes while this list caches for thirty seconds, so an org merged into a rollout can be served
- * the skill and still not see it until its next reload. Turning a feature OFF has no such lag,
- * which is the direction that matters for a gate.
+ * The org list stays fresh for five minutes and this list for thirty seconds. Neither query polls,
+ * and focus refetch is disabled, so rollout changes can remain stale in the UI until a refetch or
+ * reload. Core's run and apply checks enforce the current gate even while the UI is stale.
  */
 export function useSkillsList() {
   const { enabled: nameNoteEnabled } = useFeatureFlag("nameNoteSkill");
