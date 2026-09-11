@@ -10,6 +10,8 @@ const mock = vi.hoisted(() => ({
   env: {} as DesktopEnv,
   session: { activeSub: undefined as string | undefined, accounts: [] as { sub: string; name: string; email: string; activeOrgId?: string }[] },
   ready: () => {},
+  setOpenMobile: vi.fn(),
+  toastError: vi.fn(),
   sdk: {
     setCSPNonce: vi.fn(), setDisablePageTracking: vi.fn(), disableConsoleLogOverwrite: vi.fn(),
     setMaxNetworkRequests: vi.fn(), setNetworkLogsBlacklist: vi.fn(), setReplayOptions: vi.fn(),
@@ -21,6 +23,9 @@ const mock = vi.hoisted(() => ({
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('@prismical/app-client', () => ({ useSessionView: () => mock.session }));
 vi.mock('../../src/renderer/main/app/desktop-env', () => ({ useDesktopEnv: () => mock.env }));
+vi.mock('@prismical/app-ui/ui/sidebar', () => ({ useSidebar: () => ({ setOpenMobile: mock.setOpenMobile }) }));
+vi.mock('@prismical/app-ui/ui/sonner', () => ({ toast: { error: mock.toastError } }));
+vi.mock('../../src/renderer/main/app/support/launcher-clearance', () => ({ useLauncherClearance: vi.fn() }));
 vi.mock('gleap', () => ({ default: mock.sdk }));
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -44,7 +49,6 @@ afterEach(async () => {
   await act(async () => root.unmount());
   publishPlanIdentity(null);
   document.body.innerHTML = '';
-  document.documentElement.style.removeProperty('--support-chat-bottom');
   vi.useRealTimers();
 });
 const SupportAction = () => useGleapSupportAction() ?? createElement('a', { href: 'mailto:support@test.invalid' }, 'Email support');
@@ -55,6 +59,17 @@ const render = (strict = false) => act(async () => {
 const ready = () => act(async () => mock.ready());
 
 describe('cloud-only Gleap lifecycle', () => {
+  it('falls back to email and reports an error if opening support fails', async () => {
+    await render();
+    await ready();
+    mock.sdk.open.mockImplementationOnce(() => { throw new Error('SDK unavailable'); });
+    await act(async () => document.querySelector('button')!.click());
+    expect(mock.setOpenMobile).toHaveBeenCalledWith(false);
+    expect(mock.toastError).toHaveBeenCalledWith('common.errors.couldNotLoad');
+    expect(document.querySelector('a')?.getAttribute('href')).toBe('mailto:help@prismical.ai');
+    expect(document.querySelector('button')).toBeNull();
+  });
+
   it('updates a resolved plan on the existing contact and clears it when it becomes unknown', async () => {
     mock.session = { activeSub: 'a', accounts: [{ sub: 'a', name: 'A', email: 'a@test.invalid', activeOrgId: 'org-a' }] };
     await render();
@@ -204,7 +219,7 @@ describe('cloud-only Gleap lifecycle', () => {
     await render();
     await ready();
     expect(mock.sdk.identify).toHaveBeenLastCalledWith('a', { name: 'A', email: 'a@test.invalid', plan: null, customData: null });
-    expect(mock.sdk.showFeedbackButton).toHaveBeenLastCalledWith(false);
+    expect(mock.sdk.showFeedbackButton).toHaveBeenLastCalledWith(true);
     mock.sdk.getIdentity.mockReturnValue({ userId: 'a' });
     mock.session = { activeSub: 'b', accounts: [{ sub: 'b', name: 'B', email: 'b@test.invalid' }] };
     await render();
@@ -243,10 +258,9 @@ describe('cloud-only Gleap lifecycle', () => {
     expect(mock.sdk.clearIdentity).toHaveBeenCalledOnce();
     const supportButton = document.querySelector('button');
     expect(supportButton?.getAttribute('aria-label')).toBe('navigation.secondary.chat');
-    supportButton!.getBoundingClientRect = () => new DOMRect(20, window.innerHeight - 100, 28, 28);
     await act(async () => supportButton!.click());
     expect(mock.sdk.open).toHaveBeenCalledOnce();
-    expect(document.documentElement.style.getPropertyValue('--support-chat-bottom')).toBe('108px');
+    expect(mock.setOpenMobile).toHaveBeenCalledWith(false);
     if (transition === 'switch') {
       expect(mock.sdk.identify).toHaveBeenLastCalledWith('b', { name: 'B', email: 'b@test.invalid', plan: null, customData: null });
       expect(mock.sdk.clearIdentity.mock.invocationCallOrder[0]).toBeLessThan(mock.sdk.identify.mock.invocationCallOrder[1]!);

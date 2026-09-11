@@ -2,6 +2,9 @@ import { createContext, useContext, useEffect, useRef, useState, useSyncExternal
 import { MessageCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSessionView } from '@prismical/app-client';
+import { useSidebar } from '@prismical/app-ui/ui/sidebar';
+import { toast } from '@prismical/app-ui/ui/sonner';
+import { useLauncherClearance } from './launcher-clearance';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@prismical/app-ui/ui/tooltip';
 import { useDesktopEnv } from '../desktop-env';
 import { getPlanIdentity, subscribePlanIdentity } from '../analytics/plan-identity';
@@ -29,6 +32,7 @@ export function GleapProvider({ children }: { children: ReactNode }) {
   const enabled = appMode === 'cloud' && appModeChosen && !window.location.hash.startsWith('#/float');
   const key = gleap?.key;
   const nonce = gleap?.cspNonce;
+  useLauncherClearance(enabled && !!key && !!nonce);
 
   useEffect(() => {
     if (!enabled || !key || !nonce) return;
@@ -89,9 +93,8 @@ export function GleapProvider({ children }: { children: ReactNode }) {
   useEffect(() => () => identitySync.current?.suspend(), []);
 
   useEffect(() => {
-    // The sign-in screen has no sidebar, so it uses Gleap's own launcher.
-    sdk?.showFeedbackButton(identifiedIdentity === identityKey && !sub);
-  }, [sdk, identifiedIdentity, identityKey, sub]);
+    sdk?.showFeedbackButton(identifiedIdentity === identityKey);
+  }, [sdk, identifiedIdentity, identityKey]);
 
   const readySdk = enabled && identifiedIdentity === identityKey ? sdk : null;
   return <SupportContext.Provider value={readySdk}>{children}</SupportContext.Provider>;
@@ -100,23 +103,36 @@ export function GleapProvider({ children }: { children: ReactNode }) {
 /** Undefined leaves the shared sidebar's email fallback in place. */
 export function useGleapSupportAction(): ReactNode {
   const sdk = useContext(SupportContext);
-  const { t } = useTranslation();
   if (!sdk) return undefined;
+  return <GleapSupportTrigger sdk={sdk} />;
+}
+
+function GleapSupportTrigger({ sdk }: { sdk: GleapSdk }) {
+  const { t } = useTranslation();
+  const { setOpenMobile } = useSidebar();
+  const [openFailed, setOpenFailed] = useState(false);
+  const Trigger = openFailed ? 'a' : 'button';
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <button
-          type="button"
+        <Trigger
+          type={openFailed ? undefined : "button"}
+          href={openFailed ? "mailto:help@prismical.ai" : undefined}
           aria-label={t('navigation.secondary.chat')}
-          onClick={event => {
-            const bottom = Math.max(20, window.innerHeight - event.currentTarget.getBoundingClientRect().top + 8);
-            document.documentElement.style.setProperty('--support-chat-bottom', `${bottom}px`);
-            sdk.open();
+          onClick={() => {
+            if (openFailed) return;
+            setOpenMobile(false);
+            try {
+              sdk.open();
+            } catch {
+              setOpenFailed(true);
+              toast.error(t('common.errors.couldNotLoad'));
+            }
           }}
           className="flex size-7 items-center justify-center rounded-md text-sidebar-foreground-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:outline-hidden"
         >
           <MessageCircle className="size-4" />
-        </button>
+        </Trigger>
       </TooltipTrigger>
       <TooltipContent side="top">{t('navigation.secondary.chat')}</TooltipContent>
     </Tooltip>

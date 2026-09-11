@@ -30,6 +30,19 @@ test('live cloud support opens, stays closed, and reopens only on request', asyn
   // Signed out cloud mode exposes the vendor launcher; no account or message is sent.
   const button = page.locator('.bb-feedback-button');
   await expect(button).toBeVisible({ timeout: 45_000 });
+  await expect(button).toHaveCSS('right', '20px');
+  await expect(button).toHaveCSS('bottom', '20px');
+  // Exercise the shared dock's obstacle contract with the real SDK launcher.
+  await page.evaluate(() => {
+    const obstacle = document.createElement('div');
+    obstacle.id = 'support-test-obstacle';
+    obstacle.setAttribute('data-toast-obstacle', '');
+    Object.assign(obstacle.style, { position: 'fixed', right: '0', bottom: '0', width: '120px', height: '120px' });
+    document.body.append(obstacle);
+  });
+  await expect(button).toBeHidden();
+  await page.evaluate(() => { document.getElementById('support-test-obstacle')!.remove(); });
+  await expect(button).toBeVisible();
   const chatbar = page.locator('.gleap-chatbar');
   await expect(chatbar).toHaveCount(0);
   await button.click();
@@ -37,7 +50,7 @@ test('live cloud support opens, stays closed, and reopens only on request', asyn
   await expect(frame.locator('body')).toBeVisible({ timeout: 30_000 });
   await expect(frame.locator('body')).not.toHaveText('');
   const panel = page.locator('.gleap-frame-container');
-  await frame.getByRole('button', { name: 'Close', exact: true }).click();
+  await frame.getByRole('button', { name: /^close$/i }).click();
   await expect(panel).toBeHidden();
   // A recreated chatbar can asynchronously reopen the messenger after its handshake.
   await page.waitForTimeout(2_000);
