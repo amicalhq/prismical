@@ -71,6 +71,7 @@ export type RecordingLaneFailure =
       readonly kind: 'engine';
       readonly reason:
         | 'model-missing'
+        | 'language-unsupported'
         | 'worker-crashed'
         | 'inference-failed'
         | 'timeout'
@@ -101,7 +102,7 @@ export interface CreateRecordingInput {
   readonly noteId?: string | null;
   /** Recording start, epoch ms. */
   readonly startedAt: number;
-  /** Frozen-at-create transcription config; omitted ⇒ managed cloud transcription (see live.ts). */
+  /** Provider/model choice fixed at create; spoken language can change while active. */
   readonly transcriptionConfig?: Record<string, unknown>;
 }
 

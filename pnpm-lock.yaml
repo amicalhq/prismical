@@ -732,6 +732,9 @@ importers:
 
   packages/desktop-contracts:
     dependencies:
+      '@prismical/api-contracts':
+        specifier: workspace:*
+        version: link:../api-contracts
       zod:
         specifier: 'catalog:'
         version: 4.4.3

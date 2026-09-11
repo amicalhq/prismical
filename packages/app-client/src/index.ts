@@ -5,106 +5,111 @@
 // sites); the shared UI shell and desktop mount import from here.
 
 // Build-time canary for source-consumed package imports.
-export const APP_CLIENT_CANARY = "app-client" as const;
+export const APP_CLIENT_CANARY = 'app-client' as const;
 
 // Injection runtime + the ports React context.
-export * from "./runtime";
-export * from "./diagnostics";
-export * from "./ports-context";
-export * from "./workflow/recording-session";
-export * from "./workflow/use-workflow";
-export * from "./workflow/use-workflow-recording";
-export { canAsk } from "@prismical/app-workflow";
-export * from "./analytics-events";
-export { startLoadingTiming } from "./loading-timing";
-export * from "./event-time";
-export * from "./tags/tag-colors";
+export * from './runtime';
+export * from './diagnostics';
+export * from './ports-context';
+export * from './workflow/recording-session';
+export * from './workflow/use-workflow';
+export * from './workflow/use-workflow-recording';
+export { canAsk } from '@prismical/app-workflow';
+export * from './analytics-events';
+export { startLoadingTiming } from './loading-timing';
+export * from './event-time';
+export * from './tags/tag-colors';
 
 // api layer
-export * from "./api/client";
-export * from "./api/auth";
-export * from "./api/adapters";
-export * from "./api/transcription";
-export * from "./api/query-client";
+export * from './api/client';
+export * from './api/auth';
+export * from './api/adapters';
+export * from './api/transcription';
+export * from './api/query-client';
 
 // query hooks
-export * from "./api/hooks/account";
-export * from "./api/hooks/api-keys";
-export * from "./api/hooks/ask-conversation";
-export * from "./api/hooks/automations";
-export * from "./api/hooks/billing";
-export * from "./api/hooks/connections";
-export * from "./api/hooks/events";
-export * from "./api/hooks/folders";
-export * from "./api/hooks/instances";
-export * from "./api/hooks/mcp-servers";
-export * from "./api/hooks/model-defaults";
-export * from "./api/hooks/note-events";
-export * from "./api/hooks/note-tags";
-export * from "./api/hooks/notes";
-export * from "./api/hooks/organizations";
-export * from "./api/hooks/people";
-export * from "./api/hooks/profile";
-export * from "./api/hooks/search";
-export * from "./api/hooks/sharing";
-export * from "./api/hooks/skill-runs";
-export * from "./api/hooks/skills";
-export * from "./api/hooks/tags";
-export * from "./api/hooks/transcripts";
-export * from "./api/hooks/usage";
-export * from "./api/hooks/vocabulary";
+export * from './api/hooks/account';
+export * from './api/hooks/api-keys';
+export * from './api/hooks/ask-conversation';
+export * from './api/hooks/automations';
+export * from './api/hooks/billing';
+export * from './api/hooks/connections';
+export * from './api/hooks/events';
+export * from './api/hooks/folders';
+export * from './api/hooks/instances';
+export * from './api/hooks/mcp-servers';
+export * from './api/hooks/model-defaults';
+export * from './api/hooks/note-events';
+export * from './api/hooks/note-tags';
+export * from './api/hooks/notes';
+export * from './api/hooks/organizations';
+export * from './api/hooks/people';
+export * from './api/hooks/profile';
+export * from './api/hooks/search';
+export * from './api/hooks/sharing';
+export * from './api/hooks/skill-runs';
+export * from './api/hooks/skills';
+export * from './api/hooks/tags';
+export * from './api/hooks/transcripts';
+export * from './api/hooks/usage';
+export * from './api/hooks/vocabulary';
 
 // ask
-export * from "./ask/conversation";
-export * from "./ask/mention";
-export * from "./ask/models";
-export * from "./ask/scope";
-export * from "./ask/transport";
+export * from './ask/conversation';
+export * from './ask/mention';
+export * from './ask/models';
+export * from './ask/scope';
+export * from './ask/transport';
 
 // notes (collab, stores, diff, editor)
-export * from "./notes/artifact-inline-node-commands";
-export * from "./notes/artifact-node-commands";
-export * from "./notes/auto-enhance-store";
-export * from "./notes/ask-skill-run-store";
-export * from "./notes/diff/build-decorations";
-export * from "./notes/diff/diff-plugin";
-export * from "./notes/diff/selection-anchors";
-export * from "./notes/diff/skill-diff-editor-lock";
-export * from "./notes/diff/skill-diff-store";
-export * from "./notes/diff/use-skill-diff-decorations";
-export * from "./notes/editor-extensions";
-export * from "./notes/inline-run-store";
-export * from "./notes/skill-run-activity-store";
-export * from "./notes/skill-run-retry";
-export * from "./notes/use-note-collab";
-export * from "./notes/use-open-note-for-event";
-export * from "./notes/use-run-skill";
+export * from './notes/artifact-inline-node-commands';
+export * from './notes/artifact-node-commands';
+export * from './notes/auto-enhance-store';
+export * from './notes/ask-skill-run-store';
+export * from './notes/diff/build-decorations';
+export * from './notes/diff/diff-plugin';
+export * from './notes/diff/selection-anchors';
+export * from './notes/diff/skill-diff-editor-lock';
+export * from './notes/diff/skill-diff-store';
+export * from './notes/diff/use-skill-diff-decorations';
+export * from './notes/editor-extensions';
+export * from './notes/inline-run-store';
+export * from './notes/skill-run-activity-store';
+export * from './notes/skill-run-retry';
+export * from './notes/use-note-collab';
+export * from './notes/use-open-note-for-event';
+export * from './notes/use-run-skill';
 
 // recording
-export * from "./recording/auto-enhance-setting";
-export * from "./recording/chunker";
-export * from "./recording/recording-budget";
-export * from "./recording/recording-preferences";
-export * from "./recording/use-recording";
-export * from "./recording/wav-encode";
+export * from './recording/auto-enhance-setting';
+export * from './recording/chunker';
+export * from './recording/recording-budget';
+export * from './recording/recording-preferences';
+export * from './recording/use-recording';
+export * from './recording/wav-encode';
 
 // settings: device-local preferences seam and native action surface
-export * from "./settings/use-device-settings";
-export * from "./settings/use-desktop-capabilities";
+export * from './settings/use-device-settings';
+export * from './settings/use-desktop-capabilities';
 
 // Sync layer (desktop injects the persistence factory; the provider is
 // mounted inside ApiQueryProvider — shells don't mount it themselves).
-export { createIndexedDbPersistPlugin } from "./sync/store";
-export type { SyncPartition } from "./sync/partition";
-export { useSyncStore } from "./sync/provider";
+export { createIndexedDbPersistPlugin } from './sync/store';
+export type { SyncPartition } from './sync/partition';
+export { useSyncStore } from './sync/provider';
 
-export { setTitleDraftDirty } from "./notes/title-drafts";
-export * from "./errors/ai-user-error";
+export { setTitleDraftDirty } from './notes/title-drafts';
+export * from './errors/ai-user-error';
 
 export { reportAskError } from './ask/diagnostics';
 
-export { useRecoverSkillResult } from "./notes/use-recover-skill-result";
+export { useRecoverSkillResult } from './notes/use-recover-skill-result';
 
-export * from "./api/hooks/cta";
-export * from './settings/account-language-provider';
-export { OUTPUT_LANGUAGES, type LanguagePreferences } from '@prismical/api-contracts/apps/v1';
+export * from './api/hooks/cta';
+export * from './settings/account-preferences-provider';
+export * from './settings/transcription-language';
+export {
+  OUTPUT_LANGUAGES,
+  type LanguagePreferences,
+  type TranscriptionLanguage,
+} from '@prismical/api-contracts/apps/v1';

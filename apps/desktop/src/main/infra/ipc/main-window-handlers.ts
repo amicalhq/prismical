@@ -47,6 +47,7 @@ import {
   parseSessionChangedPush,
   parseSignOutRequest,
   parseStartRecordingRequest,
+  recordingLanguageRequestSchema,
   parseStopRecordingRequest,
   parseSwitchAccountRequest,
   parseSwitchOrgRequest,
@@ -576,6 +577,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
                   onNone: () =>
                     recording.start({
                       captureMode: parsed.data.captureMode,
+                      ...(parsed.data.language !== undefined ? { language: parsed.data.language } : {}),
                       noteId: parsed.data.noteId ?? null,
                       quotaRemainingAtStartSeconds: parsed.data.quotaRemainingAtStartSeconds ?? null,
                       ...(parsed.data.title !== undefined ? { title: parsed.data.title } : {}),
@@ -678,6 +680,14 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
     yield* registerRecordingControl(CHANNELS.recordingClaimCompletion, 'claimCompletion');
     yield* registerRecordingControl(CHANNELS.recordingPause, 'pause');
     yield* registerRecordingControl(CHANNELS.recordingResume, 'resume');
+
+    yield* acquireHandle(CHANNELS.recordingSetLanguage, (event, payload) =>
+      runPromise(validateMainSender(event).pipe(Effect.flatMap(() => {
+        const parsed = recordingLanguageRequestSchema.safeParse(payload);
+        if (!parsed.success) return Effect.fail(new PayloadRejected('INVALID_REQUEST'));
+        return recording.setLanguage(parsed.data.recordingId, parsed.data.language);
+      })))
+    );
 
     yield* acquireHandle(CHANNELS.loggingGetConfig, event =>
       runPromise(

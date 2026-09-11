@@ -32,7 +32,7 @@ import {
   SubscriptionRef,
 } from 'effect';
 import { createId } from '@prismical/id';
-import { PendingSkillResultsSchema } from '@prismical/api-contracts/apps/v1';
+import { PendingSkillResultsSchema, UserPreferencesSchema, type TranscriptionLanguage } from '@prismical/api-contracts/apps/v1';
 import {
   AUTO_PAUSE_DEFAULTS,
   AutoPauseMachine,
@@ -67,11 +67,12 @@ import { RecordingStore } from './store';
 import { AppModeService } from '../app-mode/service';
 import { DesktopI18n } from '../i18n/service';
 import { SettingsService } from '../settings/service';
-import { resolveRecordingEngine, type RecordingEngine } from '../transcriber/engine';
+import { resolveRecordingEngine, supportsRecordingLanguage, type RecordingEngine } from '../transcriber/engine';
 import { resolveTranscriptionConfig } from '../transcriber/transcription-config';
 import { detectedSpeakerCountFor } from '../transcriber/segment';
 import { Transcriber } from '../transcriber/service';
 import { mirrorSegmentsToCore } from './segment-mirror';
+import { saveRecordingTranscriptionConfig } from './language';
 import {
   CAPTURE_SAMPLE_RATE,
   bufferSamples,
@@ -141,9 +142,11 @@ interface ActiveRecording {
   readonly controls: Ref.Ref<Option.Option<RecordingControls>>;
   readonly stopping: Ref.Ref<boolean>;
   readonly synchronize: <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>;
+  readonly synchronizeLanguage: ActiveRecording['synchronize'];
 }
 
 interface RecordingControls {
+  readonly setLanguage: (language: TranscriptionLanguage) => Effect.Effect<boolean>;
   readonly pause: Effect.Effect<boolean>;
   readonly resume: Effect.Effect<boolean>;
   /** "Keep recording" on the auto-pause prompt. */
@@ -330,7 +333,8 @@ export const RecordingServiceLive: Layer.Layer<
       controlsRef: Ref.Ref<Option.Option<RecordingControls>>,
       createInput: CreateRecordingInput,
       engine: RecordingEngine,
-      synchronize: ActiveRecording['synchronize']
+      synchronize: ActiveRecording['synchronize'],
+      synchronizeLanguage: ActiveRecording['synchronize']
     ): Effect.Effect<void> => {
       const mode = input.captureMode;
       const noteId = input.noteId ?? null;
@@ -386,6 +390,9 @@ export const RecordingServiceLive: Layer.Layer<
       };
 
       const body = Effect.gen(function* () {
+        let activeEngine = engine;
+        let activeCreateInput = createInput;
+        const languageGate = yield* Effect.makeSemaphore(1);
         const attemptStarted = yield* Clock.currentTimeNanos;
         let captureSummarized = false;
         let completed = false;
@@ -458,6 +465,7 @@ export const RecordingServiceLive: Layer.Layer<
           status: 'starting',
           captureMode: mode,
           requestedCaptureMode: requestedMode,
+          language: activeEngine.language ?? 'en',
           spendsCloudQuota: transcriptionConfig?.provider === 'prismical-cloud',
           quotaRemainingAtStartSeconds: input.quotaRemainingAtStartSeconds ?? null,
           noteId,
@@ -654,12 +662,13 @@ export const RecordingServiceLive: Layer.Layer<
             // Keep capture and Stop responsive during provider cooldown. The WAV
             // retains skipped chunks and the unchanged cursor makes recovery replay them.
             if ((yield* Clock.currentTimeMillis) < nextUploadAt) return;
-            const res = yield* transcriber.transcribeChunk(
+            const res = yield* languageGate.withPermits(1)(Effect.suspend(() => uploadsHalted ? Effect.succeed(null) : transcriber.transcribeChunk(
               recordingId,
               { chunkIndex: chunk.index, chunkStartMs: chunk.chunkStartMs, source: chunk.source },
               { samples: chunk.samples, sampleRate: CAPTURE_SAMPLE_RATE },
-              engine
-            );
+              activeEngine
+            )));
+            if (res === null) return;
             if (!res.ok) {
               failedStage ??= 'transcription';
               if (!res.retryable && isSessionTranscriptionFailure(res.failure))
@@ -822,6 +831,52 @@ export const RecordingServiceLive: Layer.Layer<
         yield* Ref.set(
           controlsRef,
           Option.some({
+            setLanguage: language => languageGate.withPermits(1)(Effect.uninterruptibleMask(restore => Effect.gen(function* () {
+              const current = yield* SubscriptionRef.get(state);
+              if (current.recordingId !== recordingId ||
+                (current.status !== 'recording' && current.status !== 'paused') ||
+                (yield* Deferred.isDone(stopSignal)) ||
+                !supportsRecordingLanguage(activeEngine, language)) return false;
+              if ((activeEngine.language ?? 'en') === language) return true;
+              const previous = { engineConfig: activeEngine, createInput: activeCreateInput };
+              const nextEngine = { ...activeEngine, language };
+              const nextInput = {
+                ...activeCreateInput,
+                transcriptionConfig: { ...activeCreateInput.transcriptionConfig, language },
+              };
+              const saved = yield* db.updateRecoveryOutbox(recordingId, {
+                engineConfig: nextEngine, createInput: nextInput,
+              }).pipe(Effect.as(true), Effect.catchAll(() => Effect.succeed(false)));
+              if (!saved) return false;
+              const result = yield* restore(saveRecordingTranscriptionConfig(coreClient, recordingId, nextInput.transcriptionConfig));
+              if (result !== 'saved') {
+                const restored = yield* db.updateRecoveryOutbox(recordingId, previous).pipe(
+                  Effect.as(true), Effect.catchAll(() => Effect.succeed(false))
+                );
+                // A timeout can follow a committed server write. Confirm the old config there too.
+                const backendRestored = result === 'rejected' || (yield* restore(saveRecordingTranscriptionConfig(
+                  coreClient, recordingId, activeCreateInput.transcriptionConfig!
+                ))) === 'saved';
+                if (!restored || !backendRestored) {
+                  // Recovery owns the durable intent. Stop capture and skip live finalization.
+                  if (!restored) {
+                    activeEngine = nextEngine;
+                    activeCreateInput = nextInput;
+                  }
+                  uploadsHalted = true;
+                  failedStage = 'storage';
+                  yield* Deferred.succeed(stopSignal, undefined);
+                }
+                return false;
+              }
+              activeEngine = nextEngine;
+              activeCreateInput = nextInput;
+              yield* setState({ language });
+              return true;
+            })).pipe(Effect.onInterrupt(() => Effect.sync(() => {
+              uploadsHalted = true;
+              failedStage = 'storage';
+            }).pipe(Effect.zipRight(Deferred.succeed(stopSignal, undefined)))))),
             pause: pauseRecording,
             resume: resumeRecording,
             keepRecording,
@@ -1127,6 +1182,7 @@ export const RecordingServiceLive: Layer.Layer<
             ? Effect.void
             : Effect.raceFirst(Deferred.await(stopSignal), captureLoop)
         ).pipe(Effect.either);
+        const stoppingAt = yield* Clock.currentTimeMillis;
         if (Either.isLeft(captureExit)) {
           yield* log.warn('capture ended — completing retained audio', {
             context: { recordingId },
@@ -1136,11 +1192,11 @@ export const RecordingServiceLive: Layer.Layer<
         }
 
         yield* Fiber.interrupt(autoPauseFiber);
-        yield* synchronize(
+        yield* synchronizeLanguage(synchronize(
           applyAutoPause(autoPause.noteStopped()).pipe(
             Effect.zipRight(Ref.set(controlsRef, Option.none()))
           )
-        );
+        ));
 
         // ---- graceful stop path ----
         // `onFrame` is atomic once it owns this gate. Crossing it after capture
@@ -1148,7 +1204,6 @@ export const RecordingServiceLive: Layer.Layer<
         // counters all describe the same final frame boundary.
         yield* frameGate.withPermits(1)(Effect.void);
         const stoppingSamples = yield* Ref.get(acceptedSamplesRef);
-        const stoppingAt = yield* Clock.currentTimeMillis;
         captureSummarized = true;
         yield* log.info('Recording capture ended', {
           context: {
@@ -1224,7 +1279,7 @@ export const RecordingServiceLive: Layer.Layer<
         const finalPipeline = yield* Ref.get(pipeline);
         const totalAssigned = finalPipeline.nextIndex;
         const allAcked =
-          created && (cursor === null ? totalAssigned === 0 : cursor + 1 === totalAssigned);
+          created && !uploadsHalted && (cursor === null ? totalAssigned === 0 : cursor + 1 === totalAssigned);
 
         // Persist the exact stop metadata before recovery takes ownership.
         const savedStop = yield* db
@@ -1383,7 +1438,15 @@ export const RecordingServiceLive: Layer.Layer<
           const resolved = yield* permission.effectiveCaptureMode(input.captureMode);
           const effectiveInput: StartRecordingInput = { ...input, captureMode: resolved.mode };
 
-          const engine = resolveRecordingEngine(appMode, (yield* settings.get).transcription);
+          const response = yield* coreClient.request({ method: 'GET', path: '/apps/v1/me/preferences' });
+          const preferences = 'ok' in response && response.status === 200
+            ? UserPreferencesSchema.safeParse(response.bodyJson) : null;
+          const language = preferences?.success
+            ? preferences.data.transcription?.language ?? input.language ?? 'en'
+            : input.language ?? 'en';
+          const engine = resolveRecordingEngine(appMode, (yield* settings.get).transcription, language);
+          if (!supportsRecordingLanguage(engine, language))
+            return yield* Effect.fail(new RecordingStartError({ reason: 'language-unsupported' }));
           if (
             engine.engine === 'local' &&
             Option.isNone(yield* models.installedPath(engine.modelId))
@@ -1431,8 +1494,11 @@ export const RecordingServiceLive: Layer.Layer<
           const controls = yield* Ref.make<Option.Option<RecordingControls>>(Option.none());
           const stopping = yield* Ref.make(false);
           const commandSemaphore = yield* Effect.makeSemaphore(1);
+          const languageCommands = yield* Effect.makeSemaphore(1);
           const synchronize: ActiveRecording['synchronize'] = effect =>
             commandSemaphore.withPermits(1)(effect);
+          const synchronizeLanguage: ActiveRecording['synchronize'] = effect =>
+            languageCommands.withPermits(1)(effect);
           yield* Ref.set(
             activeRef,
             Option.some({
@@ -1442,6 +1508,7 @@ export const RecordingServiceLive: Layer.Layer<
               controls,
               stopping,
               synchronize,
+              synchronizeLanguage,
             })
           );
 
@@ -1456,6 +1523,7 @@ export const RecordingServiceLive: Layer.Layer<
             recordingId,
             captureMode: resolved.mode,
             requestedCaptureMode: resolved.requested,
+            language,
             spendsCloudQuota: transcriptionConfig.provider === 'prismical-cloud',
             quotaRemainingAtStartSeconds: input.quotaRemainingAtStartSeconds ?? null,
             noteId: createInput.noteId ?? null,
@@ -1503,7 +1571,8 @@ export const RecordingServiceLive: Layer.Layer<
             controls,
             createInput,
             engine,
-            synchronize
+            synchronize,
+            synchronizeLanguage
           ).pipe(
             Effect.ensuring(
               Ref.update(activeRef, cur =>
@@ -1531,8 +1600,7 @@ export const RecordingServiceLive: Layer.Layer<
         Effect.flatMap(current =>
           Option.isNone(current) || current.value.recordingId !== recordingId
             ? log.warn('stop: no matching active recording', { context: { recordingId } })
-            : current.value
-                .synchronize(
+            : current.value.synchronize(
                   Ref.set(current.value.stopping, true).pipe(
                     Effect.zipRight(Deferred.succeed(current.value.stopSignal, undefined))
                   )
@@ -1543,14 +1611,16 @@ export const RecordingServiceLive: Layer.Layer<
 
     const runControl = (
       recordingId: string,
-      select: (controls: RecordingControls) => Effect.Effect<boolean>
+      select: (controls: RecordingControls) => Effect.Effect<boolean>,
+      command: 'capture' | 'language' = 'capture'
     ): Effect.Effect<boolean> =>
       Ref.get(activeRef).pipe(
         Effect.flatMap(current => {
           if (Option.isNone(current) || current.value.recordingId !== recordingId) {
             return Effect.succeed(false);
           }
-          return current.value.synchronize(
+          const synchronize = command === 'language' ? current.value.synchronizeLanguage : current.value.synchronize;
+          return synchronize(
             Ref.get(current.value.stopping).pipe(
               Effect.flatMap(stopping => {
                 if (stopping) return Effect.succeed(false);
@@ -1576,6 +1646,8 @@ export const RecordingServiceLive: Layer.Layer<
       runControl(recordingId, controls => controls.keepRecording);
     const pauseFromPrompt: RecordingServiceApi['pauseFromPrompt'] = recordingId =>
       runControl(recordingId, controls => controls.pauseFromPrompt);
+    const setLanguage: RecordingServiceApi['setLanguage'] = (recordingId, language) =>
+      runControl(recordingId, controls => controls.setLanguage(language), 'language');
 
     const api: RecordingServiceApi = {
       start,
@@ -1605,6 +1677,7 @@ export const RecordingServiceLive: Layer.Layer<
       resume,
       keepRecording,
       pauseFromPrompt,
+      setLanguage,
       state,
       level,
     };

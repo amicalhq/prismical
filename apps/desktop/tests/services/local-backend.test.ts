@@ -584,10 +584,39 @@ describe('LocalBackendLive', () => {
 describe('local account preferences', () => {
   const preferencesPath = '/apps/v1/me/preferences';
 
+  it.effect('seeds spoken language independently and preserves all groups across edits and restart', () =>
+    Effect.gen(function* () {
+      const dbPath = path.join(tempDir, `spoken-preferences-${++dbSeq}.db`);
+      const first = yield* buildBackendAt(dbPath);
+      expectOk(yield* first.api.request({ method: 'POST', path: preferencesPath,
+        body: { language: { interfaceLanguage: 'de' } } }), 200);
+      const seeded = expectOk(yield* first.api.request({ method: 'POST', path: preferencesPath,
+        body: { language: { interfaceLanguage: 'ja' }, transcription: { language: 'hi' } } }), 200).bodyJson;
+      assert.deepStrictEqual(seeded, {
+        language: { interfaceLanguage: 'de', aiOutputLanguage: 'source' }, transcription: { language: 'hi' },
+      });
+      assert.deepStrictEqual(expectOk(yield* first.api.request({ method: 'POST', path: preferencesPath,
+        body: { transcription: { language: 'en' } } }), 200).bodyJson, seeded);
+      const second = yield* buildBackendAt(dbPath);
+      const writes = yield* Effect.all([
+        first.api.request({ method: 'PATCH', path: preferencesPath, body: { transcription: { language: 'fr' } } }),
+        second.api.request({ method: 'PATCH', path: preferencesPath, body: { language: { aiOutputLanguage: 'ja' } } }),
+      ], { concurrency: 'unbounded' });
+      for (const response of writes) expectOk(response, 200);
+      yield* Scope.close(first.scope, Exit.void);
+      yield* Scope.close(second.scope, Exit.void);
+      const reopened = yield* buildBackendAt(dbPath);
+      assert.deepStrictEqual(expectOk(yield* reopened.api.request({ method: 'GET', path: preferencesPath }), 200).bodyJson, {
+        language: { interfaceLanguage: 'de', aiOutputLanguage: 'ja' }, transcription: { language: 'fr' },
+      });
+      yield* Scope.close(reopened.scope, Exit.void);
+    })
+  );
+
   it.effect('seeds the language group once and preserves unrelated stored preferences', () =>
     Effect.gen(function* () {
       const { api, product, scope } = yield* buildBackend;
-      assert.deepStrictEqual(expectOk(yield* api.request({ method: 'GET', path: preferencesPath }), 200).bodyJson, { language: null });
+      assert.deepStrictEqual(expectOk(yield* api.request({ method: 'GET', path: preferencesPath }), 200).bodyJson, { language: null, transcription: null });
       yield* Effect.promise(() => product.db.insert(schema.userPreference).values({
         id: 1, prefs: { appearance: { density: 'compact' }, legacy: true, language: null },
       }));
@@ -596,6 +625,7 @@ describe('local account preferences', () => {
       }), 200).bodyJson;
       assert.deepStrictEqual(UserPreferencesSchema.parse(seeded), {
         language: { interfaceLanguage: 'ja', aiOutputLanguage: 'source' },
+        transcription: null,
       });
       const repeated = expectOk(yield* api.request({
         method: 'POST', path: preferencesPath, body: { language: { interfaceLanguage: 'de' } },
@@ -604,7 +634,7 @@ describe('local account preferences', () => {
       const patched = expectOk(yield* api.request({
         method: 'PATCH', path: preferencesPath, body: { language: { aiOutputLanguage: 'es' } },
       }), 200).bodyJson;
-      assert.deepStrictEqual(patched, { language: { interfaceLanguage: 'ja', aiOutputLanguage: 'es' } });
+      assert.deepStrictEqual(patched, { language: { interfaceLanguage: 'ja', aiOutputLanguage: 'es' }, transcription: null });
       assert.deepStrictEqual(product.db.select().from(schema.userPreference).get()!.prefs, {
         appearance: { density: 'compact' }, legacy: true,
         language: { interfaceLanguage: 'ja', aiOutputLanguage: 'es' },
@@ -620,7 +650,7 @@ describe('local account preferences', () => {
       const saved = expectOk(yield* first.api.request({
         method: 'PATCH', path: preferencesPath, body: { language: { aiOutputLanguage: 'hi' } },
       }), 200).bodyJson;
-      assert.deepStrictEqual(saved, { language: { interfaceLanguage: 'en', aiOutputLanguage: 'hi' } });
+      assert.deepStrictEqual(saved, { language: { interfaceLanguage: 'en', aiOutputLanguage: 'hi' }, transcription: null });
       yield* Scope.close(first.scope, Exit.void);
       const second = yield* buildBackendAt(dbPath);
       assert.deepStrictEqual(expectOk(yield* second.api.request({ method: 'GET', path: preferencesPath }), 200).bodyJson, saved);
@@ -629,9 +659,10 @@ describe('local account preferences', () => {
       }), 200);
       assert.deepStrictEqual(expectOk(yield* second.api.request({ method: 'GET', path: preferencesPath }), 200).bodyJson, {
         language: { interfaceLanguage: 'de', aiOutputLanguage: 'hi' },
+        transcription: null,
       });
       const separate = yield* buildBackend;
-      assert.deepStrictEqual(expectOk(yield* separate.api.request({ method: 'GET', path: preferencesPath }), 200).bodyJson, { language: null });
+      assert.deepStrictEqual(expectOk(yield* separate.api.request({ method: 'GET', path: preferencesPath }), 200).bodyJson, { language: null, transcription: null });
       yield* Scope.close(second.scope, Exit.void);
       yield* Scope.close(separate.scope, Exit.void);
     })
@@ -656,6 +687,7 @@ describe('local account preferences', () => {
       for (const result of patches) expectOk(result, 200);
       assert.deepStrictEqual(expectOk(yield* first.api.request({ method: 'GET', path: preferencesPath }), 200).bodyJson, {
         language: { interfaceLanguage: 'zh-TW', aiOutputLanguage: 'fr' },
+        transcription: null,
       });
       yield* Scope.close(first.scope, Exit.void);
       yield* Scope.close(second.scope, Exit.void);
@@ -668,6 +700,9 @@ describe('local account preferences', () => {
       for (const method of ['POST', 'PATCH'] as const) {
         for (const body of [
           {}, null, { language: {} }, { appearance: {} },
+          { transcription: {} }, { transcription: { language: 'multi' } },
+          { transcription: undefined }, { transcription: { language: undefined } },
+          { language: { interfaceLanguage: 'en' }, transcription: undefined },
           { language: { interfaceLanguage: 'fr' } },
           { language: { interfaceLanguage: 'en', unexpected: true } },
           { language: { interfaceLanguage: 'en' }, userId: 'another-user' },

@@ -27,6 +27,7 @@ import {
 } from './chunker';
 import { wavFileName } from './recovery-writer';
 import { RecordingService, type RecordingServiceApi, type RecordingState } from './service';
+import { saveRecordingTranscriptionConfig } from './language';
 import { WorkspaceIdentity, sameWorkspace } from '../../runtime/workspace-identity';
 import { RecordingStore } from './store';
 
@@ -282,7 +283,7 @@ export const drainRecoveries = (
             yield* db.deleteRecoveryOutbox(row.recordingId);
             return 'resolved' as const;
           }
-          const engine = row.engineConfig;
+          const engine = { ...row.engineConfig, language: row.engineConfig.language ?? 'en' };
           const mirrorToCore = appMode === 'cloud' && engine.engine !== 'cloud';
           const sources = sourcesForMode(row.captureMode);
           const { mic, system, mediaDuration, lastWriteAt } = yield* fileOperation(() => {
@@ -338,6 +339,14 @@ export const drainRecoveries = (
                 ? park(row, `create:${failureLabel(created.failure)}`, created.failure)
                 : fail(row, `create:${failureLabel(created.failure)}`);
             yield* transition('chunks');
+          }
+          // A crash can follow the durable language write but precede its API write.
+          // Replay that complete config before any remaining chunks or finalization.
+          if (row.engineConfig.language !== undefined && row.createInput.transcriptionConfig) {
+            const saved = yield* saveRecordingTranscriptionConfig(
+              backend, row.recordingId, row.createInput.transcriptionConfig
+            );
+            if (saved !== 'saved') return yield* park(row, 'transcription-config-save');
           }
           if (row.phase === 'chunks') {
             const chunks = yield* Effect.try({

@@ -57,6 +57,43 @@ test.describe('recording dock alignment', () => {
     await closePrismical(launched);
   });
 
+  test('shows the active language in both windows when saving a default cannot update capture', async () => {
+    await page.getByRole('link', { name: 'Settings', exact: true }).click();
+    await page.getByRole('link', { name: 'Transcription settings', exact: true }).click();
+    const language = page.getByRole('button', { name: 'Select language', exact: true });
+    await expect(language).toBeEnabled();
+    await language.click();
+    await page.getByRole('option', { name: 'Hindi', exact: true }).click();
+    await expect(language).toContainText('Hindi');
+    const owner = await createNote(page);
+    await page.evaluate(id => window.desktop.float.open(id), owner);
+    await expect.poll(() => launched.app.windows().filter(window => window.url().includes('#/float')).length).toBe(1);
+    const floating = launched.app.windows().find(window => window.url().includes('#/float'))!;
+    await expect(floating.locator('.note-prose')).toBeVisible();
+    // A pushed capture view exercises both renderers; main has no real capture to update.
+    await page.evaluate(view => window.desktop.e2e!.recording({ kind: 'push', view }), {
+      ...recordingView(owner), language: 'de' as const,
+    });
+    await page.getByRole('button', { name: 'Show transcription', exact: true }).click();
+    await floating.getByRole('button', { name: 'Show transcription', exact: true }).click();
+    const mainChip = page.getByTestId('recording-language-chip');
+    const floatChip = floating.getByTestId('recording-language-chip');
+    await expect(mainChip).toBeVisible();
+    await expect(floatChip).toBeVisible();
+    await expect(mainChip).toContainText('German');
+    await expect(floatChip).toContainText('German');
+    await floatChip.click();
+    await floating.getByRole('option', { name: 'Japanese', exact: true }).click();
+    await expect.poll(() => request(page, { method: 'GET', path: '/apps/v1/me/preferences' }))
+      .toMatchObject({ bodyJson: { transcription: { language: 'ja' } } });
+    await expect(floatChip).toContainText('German');
+    await expect(mainChip).toContainText('German');
+    await expect(floating.getByText(
+      'Could not change the language for this recording. Check the transcription model in Settings and try again.'
+    )).toBeVisible();
+    await floating.screenshot({ path: test.info().outputPath('float-recording-language.png') });
+  });
+
   test('keeps the owner dock across note navigation and returns on Stop', async () => {
     const owner = await createNote(page);
     const other = await createNote(page);

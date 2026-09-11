@@ -31,6 +31,7 @@ import {
   type PermissionRequest,
   type RecordingStateView,
   type RecordingControlRequest,
+  type RecordingLanguageRequest,
   type RecordingSkillWorkflowRequest,
   type SessionView,
   type SignOutRequest,
@@ -256,6 +257,8 @@ const api: MainWindowDesktopApi = {
       ipcRenderer.invoke(CHANNELS.recordingPause, request),
     resume: (request: RecordingControlRequest) =>
       ipcRenderer.invoke(CHANNELS.recordingResume, request),
+    setLanguage: (request: RecordingLanguageRequest) =>
+      ipcRenderer.invoke(CHANNELS.recordingSetLanguage, request),
     onStateChanged: recordingBuffer.onStateChanged,
   },
 

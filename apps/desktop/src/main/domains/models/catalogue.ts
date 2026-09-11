@@ -9,7 +9,7 @@
  * figures, rounded here to whole bytes; the downloader prefers the response's
  * content-length and only falls back to `sizeBytes`). `whisper-base-en` is the
  * English-only model verified end to end and the desktop's recommended
- * default (`language: 'en'` is the desktop constant); its size is exact.
+ * default; other spoken languages require a multilingual model. Its size is exact.
  *
  * The one `kind: 'vad'` entry is whisper.cpp's own ggml Silero conversion
  * (ggml-silero-v5.1.2.bin from the ggml-org/whisper-vad repo — NOT under

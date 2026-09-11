@@ -39,6 +39,8 @@ export interface NewRecoveryOutbox {
  * `null` explicitly to clear a nullable column. updatedAt is re-stamped each call.
  */
 export interface RecoveryOutboxPatch {
+  readonly createInput?: NonNullable<RecoveryOutboxRow['createInput']>;
+  readonly engineConfig?: NonNullable<RecoveryOutboxRow['engineConfig']>;
   readonly phase?: NonNullable<RecoveryOutboxRow['phase']>;
   readonly endedAt?: number;
   readonly durationMs?: number;

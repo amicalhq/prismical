@@ -334,3 +334,22 @@ describe('shared workflow dock admission', () => {
     expect(state.askPanel.open).toBe(true);
   });
 });
+
+
+describe('recording language ownership', () => {
+  it.each(['idle', 'starting', 'recording', 'paused', 'stopping'])(
+    'uses the active language only during recording or pause (%s)',
+    phase => {
+      state.rec.state = phase;
+      state.rec.isRecording = phase === 'recording';
+      state.rec.isPaused = phase === 'paused';
+      state.rec.language = 'de';
+      state.rec.setLanguage = state.noop;
+      render(<RecordingBottomCluster />);
+      expect(state.panel.activeLanguage).toBe(
+        phase === 'recording' || phase === 'paused' ? 'de' : undefined
+      );
+      expect(state.panel.onChangeLanguage).toBe(state.noop);
+    }
+  );
+});

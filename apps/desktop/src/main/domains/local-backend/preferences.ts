@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import {
   InitializeUserPreferencesRequestSchema,
   LANGUAGE_PREFERENCE_DEFAULTS,
+  TRANSCRIPTION_PREFERENCE_DEFAULTS,
   UpdateUserPreferencesRequestSchema,
   readUserPreferences,
   type UserPreferences,
@@ -27,16 +28,19 @@ export function writeLocalPreferences(
   if (!parsed.success) return invalidRequest('Invalid preferences');
   return db.transaction(tx => {
     const prefs = storedPreferences(tx);
-    const previous = prefs.language;
-    if (method === 'POST' && previous != null) return ok(readUserPreferences(prefs));
-    const next = {
-      ...prefs,
-      language: {
-        ...LANGUAGE_PREFERENCE_DEFAULTS,
+    const next = { ...prefs };
+    const defaults = { language: LANGUAGE_PREFERENCE_DEFAULTS, transcription: TRANSCRIPTION_PREFERENCE_DEFAULTS };
+    for (const group of ['language', 'transcription'] as const) {
+      const patch = parsed.data[group];
+      if (!patch) continue;
+      const previous = prefs[group];
+      if (method === 'POST' && previous != null) continue;
+      next[group] = {
+        ...defaults[group],
         ...(typeof previous === 'object' && previous !== null ? previous : {}),
-        ...parsed.data.language,
-      },
-    };
+        ...patch,
+      };
+    }
     tx.insert(userPreference).values({ id: 1, prefs: next })
       .onConflictDoUpdate({ target: userPreference.id, set: { prefs: next } }).run();
     return ok(readUserPreferences(next));

@@ -36,6 +36,7 @@ export type StartRecordingOutcome =
         | 'busy'
         | 'no-session'
         | 'model-missing'
+        | 'language-unsupported'
         | 'storage-unavailable'
         | 'suggestion-pending'
         | 'update-required';
@@ -59,6 +60,7 @@ export interface RecordingBridgeApi {
   /** Pause/resume a matching recording; false when no workspace/id/state accepts it. */
   readonly pause: (recordingId: string) => Effect.Effect<boolean>;
   readonly resume: (recordingId: string) => Effect.Effect<boolean>;
+  readonly setLanguage: RecordingServiceApi['setLanguage'];
   /**
    * Stop whatever recording is currently active, without the caller knowing its
    * id (the widget's no-arg Stop): reads the live workspace's state and stops the
@@ -209,6 +211,14 @@ export const makeRecordingBridgeLive = (
               onSome: service => service.pause(recordingId),
             })
           )
+        ),
+
+      setLanguage: (recordingId, language) =>
+        SubscriptionRef.get(currentRef).pipe(
+          Effect.flatMap(Option.match({
+            onNone: () => Effect.succeed(false),
+            onSome: service => service.setLanguage(recordingId, language),
+          }))
         ),
 
       resume: recordingId =>

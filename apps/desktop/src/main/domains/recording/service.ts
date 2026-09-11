@@ -3,6 +3,7 @@ import type { MeetingCaptureMode } from '@/types/meeting';
 import type { RecordingSegment } from '../transport/service';
 import type { PermissionError } from './permission/service';
 import type { MicSource } from './mic-alignment';
+import type { TranscriptionLanguage } from '@prismical/api-contracts/apps/v1';
 
 /**
  * The RecordingService is the session-scoped supervisor that ties native capture
@@ -25,7 +26,7 @@ export class RecordingBusyError extends Data.TaggedError('RecordingBusyError')<{
 }> {}
 
 export class RecordingStartError extends Data.TaggedError('RecordingStartError')<{
-  readonly reason: 'model-missing' | 'storage-unavailable' | 'suggestion-pending';
+  readonly reason: 'model-missing' | 'language-unsupported' | 'storage-unavailable' | 'suggestion-pending';
 }> {}
 
 export type RecordingStatus = 'idle' | 'starting' | 'recording' | 'paused' | 'stopping' | 'error';
@@ -38,6 +39,8 @@ export type RecordingStatus = 'idle' | 'starting' | 'recording' | 'paused' | 'st
  * capture samples, so paused wall time is compressed out of the media timeline.
  */
 export interface RecordingState {
+  /** Actual active transcription configuration; older snapshots default to English. */
+  readonly language?: TranscriptionLanguage;
   readonly recordingId: string | null;
   /** Live processing jobs still own their recovery audio after capture closes. */
   readonly finalizingRecordingIds: readonly string[];
@@ -114,6 +117,7 @@ export const idleRecordingState: RecordingState = {
 
 export interface StartRecordingInput {
   readonly captureMode: MeetingCaptureMode;
+  readonly language?: TranscriptionLanguage;
   /** Owning note's cloud id (WRITE-checked server-side), or null/omitted for standalone. */
   readonly noteId?: string | null;
   /** Recording title (defaults to "Untitled recording"). */
@@ -171,6 +175,7 @@ export interface RecordingServiceApi {
   readonly pauseFromPrompt: (recordingId: string) => Effect.Effect<boolean>;
   /** Resume the matching paused recording, preserving its id and chunk timeline. */
   readonly resume: (recordingId: string) => Effect.Effect<boolean>;
+  readonly setLanguage: (recordingId: string, language: TranscriptionLanguage) => Effect.Effect<boolean>;
   /** The observable recording state for the widget + transcript UI. */
   readonly state: SubscriptionRef.SubscriptionRef<RecordingState>;
   /**

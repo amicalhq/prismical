@@ -8,7 +8,12 @@ import {
   useApplicationLocale,
   type ApplicationI18nProviderProps,
 } from '@prismical/app-i18n';
-import { AccountLanguageProvider, useAccountLanguage } from './account-language-provider';
+import {
+  AccountPreferencesProvider,
+  useAccountLanguage,
+  useTranscriptionPreference,
+} from './account-preferences-provider';
+import { currentTranscriptionLanguage } from './transcription-language';
 import { ApiError, apiClient } from '../api/client';
 
 vi.mock('../api/client', async importOriginal => ({
@@ -24,6 +29,7 @@ vi.mock('../ports-context', () => ({
 function Settings() {
   const locale = useApplicationLocale();
   const account = useAccountLanguage();
+  const transcription = useTranscriptionPreference();
   return (
     <>
       <span data-testid="language">{locale.preference}</span>
@@ -31,8 +37,10 @@ function Settings() {
       <span data-testid="restart-required">{String(locale.restartRequired)}</span>
       <span data-testid="saving">{String(locale.isSaving)}</span>
       <span data-testid="output">{account?.preferences?.aiOutputLanguage}</span>
+      <span data-testid="spoken">{transcription?.language}</span>
       <span data-testid="error">{String(account?.error)}</span>
       <button onClick={() => void locale.changePreference('ja')}>Japanese</button>
+      <button onClick={() => void transcription?.setLanguage('ko').catch(() => {})}>Korean</button>
     </>
   );
 }
@@ -59,9 +67,9 @@ async function mount(
         persistPreference={persist}
         {...options}
       >
-        <AccountLanguageProvider>
+        <AccountPreferencesProvider>
           <Settings />
-        </AccountLanguageProvider>
+        </AccountPreferencesProvider>
       </ApplicationI18nProvider>
     </QueryClientProvider>
   );
@@ -82,8 +90,9 @@ beforeEach(() => {
   session.key = 'account-a';
 });
 describe('account language preference', () => {
-  const saved = (interfaceLanguage: string, aiOutputLanguage = 'source') => ({
+  const saved = (interfaceLanguage: string, aiOutputLanguage = 'source', spoken = 'en') => ({
     language: { interfaceLanguage, aiOutputLanguage },
+    transcription: { language: spoken },
   });
   it('applies an existing account choice without writing anything', async () => {
     vi.mocked(apiClient.getRaw).mockResolvedValue(saved('es', 'hi'));
@@ -97,17 +106,47 @@ describe('account language preference', () => {
     expect(apiClient.patchRaw).not.toHaveBeenCalled();
   });
   it('initializes an account that never chose a language from the detected locale, once', async () => {
-    vi.mocked(apiClient.getRaw).mockResolvedValue({ language: null });
-    vi.mocked(apiClient.postRaw).mockResolvedValue(saved('de'));
+    vi.mocked(apiClient.getRaw).mockResolvedValue({ language: null, transcription: null });
+    vi.mocked(apiClient.postRaw).mockResolvedValue(saved('de', 'source', 'de'));
     const { instance } = await mount();
     await waitFor(() => expect(instance.resolvedLanguage).toBe('de'));
     expect(apiClient.postRaw).toHaveBeenCalledTimes(1);
     expect(apiClient.postRaw).toHaveBeenCalledWith(
       '/apps/v1/me/preferences',
-      { language: { interfaceLanguage: 'de' } },
+      { language: { interfaceLanguage: 'de' }, transcription: { language: 'de' } },
       { activeOrgId: null }
     );
     expect(screen.getByTestId('output').textContent).toBe('source');
+    expect(screen.getByTestId('spoken').textContent).toBe('de');
+  });
+  it('seeds only the group the account is missing, and publishes the spoken language', async () => {
+    vi.mocked(apiClient.getRaw).mockResolvedValue({
+      language: { interfaceLanguage: 'es', aiOutputLanguage: 'hi' },
+      transcription: null,
+    });
+    vi.mocked(apiClient.postRaw).mockResolvedValue(saved('es', 'hi', 'de'));
+    await mount();
+    await waitFor(() => expect(screen.getByTestId('spoken').textContent).toBe('de'));
+    expect(apiClient.postRaw).toHaveBeenCalledWith(
+      '/apps/v1/me/preferences',
+      { transcription: { language: 'de' } },
+      { activeOrgId: null }
+    );
+    expect(currentTranscriptionLanguage()).toBe('de');
+  });
+  it('saves a spoken-language change as a patch of the transcription group', async () => {
+    vi.mocked(apiClient.getRaw).mockResolvedValue(saved('en', 'source', 'en'));
+    vi.mocked(apiClient.patchRaw).mockResolvedValue(saved('en', 'source', 'ko'));
+    await mount();
+    await waitFor(() => expect(screen.getByTestId('spoken').textContent).toBe('en'));
+    fireEvent.click(screen.getByText('Korean'));
+    await waitFor(() => expect(screen.getByTestId('spoken').textContent).toBe('ko'));
+    expect(apiClient.patchRaw).toHaveBeenLastCalledWith(
+      '/apps/v1/me/preferences',
+      { transcription: { language: 'ko' } },
+      { activeOrgId: null }
+    );
+    expect(currentTranscriptionLanguage()).toBe('ko');
   });
   it('retries a desktop workspace that is still mounting', async () => {
     vi.mocked(apiClient.getRaw)
@@ -200,7 +239,7 @@ describe('account language preference', () => {
     switchSession('account-b');
     await waitFor(() => expect(screen.getByTestId('language').textContent).toBe('es'));
 
-    await act(async () => finishRead({ language: null }));
+    await act(async () => finishRead({ language: null, transcription: null }));
     expect(apiClient.postRaw).not.toHaveBeenCalled();
     expect(screen.getByTestId('language').textContent).toBe('es');
   });
@@ -289,10 +328,7 @@ describe('account language preference', () => {
     const { instance, client } = await mount();
     await waitFor(() => expect(instance.resolvedLanguage).toBe('de'));
     await act(async () => {
-      client.setQueryData(['account-language', 'account-a'], {
-        interfaceLanguage: 'es',
-        aiOutputLanguage: 'fr',
-      });
+      client.setQueryData(['account-preferences', 'account-a'], saved('es', 'fr'));
     });
     await waitFor(() => expect(instance.resolvedLanguage).toBe('es'));
     expect(apiClient.patchRaw).not.toHaveBeenCalled();
@@ -321,14 +357,10 @@ describe('account language preference', () => {
       expect(screen.getByTestId('language').textContent).toBe('es');
       expect(instance.resolvedLanguage).toBe(applyMode === 'restart' ? 'en' : 'es');
       expect(persist).not.toHaveBeenCalledWith('ja');
-      expect(client.getQueryData(['account-language', 'account-b'])).toEqual({
-        interfaceLanguage: 'es',
-        aiOutputLanguage: 'fr',
-      });
-      expect(client.getQueryData(['account-language', 'account-a'])).toEqual({
-        interfaceLanguage: 'ja',
-        aiOutputLanguage: 'source',
-      });
+      expect(client.getQueryData(['account-preferences', 'account-b'])).toEqual(saved('es', 'fr'));
+      expect(client.getQueryData(['account-preferences', 'account-a'])).toEqual(
+        saved('ja', 'source')
+      );
     }
   );
 });

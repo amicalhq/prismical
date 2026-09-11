@@ -51,10 +51,15 @@ function makeClient(finished: Completion | null) {
     clearError: vi.fn(),
     keepRecording: vi.fn(),
     pauseFromPrompt: vi.fn(),
+    setLanguage: vi.fn(),
     dispose: vi.fn(),
   } satisfies RecordingSessionClient;
   return {
     client,
+    record(recordingId: string | null) {
+      snapshot = { ...snapshot, recordingId };
+      listeners.forEach(listener => listener());
+    },
     finish(next: Completion) {
       snapshot = { ...snapshot, completedRecording: next };
       listeners.forEach(listener => listener());
@@ -63,11 +68,13 @@ function makeClient(finished: Completion | null) {
 }
 function wrapper() {
   const queryClient = new QueryClient();
-  function Wrapper({ children }: { children: React.ReactNode }) { return (
-    <React.StrictMode>
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    </React.StrictMode>
-  ); }
+  function Wrapper({ children }: { children: React.ReactNode }) {
+    return (
+      <React.StrictMode>
+        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      </React.StrictMode>
+    );
+  }
   return Wrapper;
 }
 afterEach(() => {
@@ -76,6 +83,27 @@ afterEach(() => {
 });
 
 describe('recording completion binding', () => {
+  it('binds a delayed panel language change to the initiating recording', async () => {
+    const { client, record } = makeClient(null);
+    record('first');
+    const { result } = renderHook(() => useWorkflowRecording(client), { wrapper: wrapper() });
+    const delayedChange = result.current.setLanguage;
+    act(() => record('second'));
+    await delayedChange('hi');
+    expect(client.setLanguage).not.toHaveBeenCalled();
+    await result.current.setLanguage('de');
+    expect(client.setLanguage).toHaveBeenCalledWith('de');
+  });
+
+  it('does not apply a choice made while idle to a recording that starts later', async () => {
+    const { client, record } = makeClient(null);
+    const { result } = renderHook(() => useWorkflowRecording(client), { wrapper: wrapper() });
+    const delayedChange = result.current.setLanguage;
+    act(() => record('new'));
+    await delayedChange('hi');
+    expect(client.setLanguage).not.toHaveBeenCalled();
+  });
+
   it('does not replay completion or automatic enhancement after a hook remount', () => {
     const { client } = makeClient(completion('rec', 'workflow'));
     const Wrapper = wrapper();

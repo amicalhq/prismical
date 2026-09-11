@@ -82,10 +82,90 @@ export const LANGUAGE_PREFERENCE_DEFAULTS: LanguagePreferences = Object.freeze({
   aiOutputLanguage: 'source',
 });
 
+/**
+ * Spoken-language codes the transcription lanes accept: the languages Deepgram nova-3 serves as
+ * monolingual models, every one of which whisper also knows. What each engine is actually told
+ * for a pick is the wire mapping in `@prismical/ai` (Deepgram's multilingual mode for the ten it
+ * covers, so a second language mid-meeting is kept). Ordered for the picker: common languages
+ * first, then the rest by code.
+ */
+export const TRANSCRIPTION_LANGUAGE_CODES = [
+  'en',
+  'hi',
+  'es',
+  'fr',
+  'de',
+  'pt',
+  'ja',
+  'zh',
+  'ko',
+  'it',
+  'nl',
+  'ru',
+  'ar',
+  'tr',
+  'af',
+  'as',
+  'be',
+  'bg',
+  'bn',
+  'bs',
+  'ca',
+  'cs',
+  'da',
+  'el',
+  'et',
+  'fa',
+  'fi',
+  'gu',
+  'he',
+  'hr',
+  'hu',
+  'hy',
+  'id',
+  'ka',
+  'kk',
+  'kn',
+  'lt',
+  'lv',
+  'mk',
+  'mn',
+  'mr',
+  'ms',
+  'ne',
+  'no',
+  'pa',
+  'pl',
+  'ps',
+  'ro',
+  'sk',
+  'sl',
+  'sr',
+  'sv',
+  'ta',
+  'te',
+  'th',
+  'tl',
+  'uk',
+  'ur',
+  'vi',
+] as const;
+export const TranscriptionLanguageSchema = z.enum(TRANSCRIPTION_LANGUAGE_CODES);
+export type TranscriptionLanguage = z.output<typeof TranscriptionLanguageSchema>;
+/** The `transcription` group: the language spoken in the user's recordings. */
+export const TranscriptionPreferencesSchema = z
+  .object({ language: TranscriptionLanguageSchema })
+  .strict();
+export type TranscriptionPreferences = z.output<typeof TranscriptionPreferencesSchema>;
+export const TRANSCRIPTION_PREFERENCE_DEFAULTS: TranscriptionPreferences = Object.freeze({
+  language: 'en',
+});
+
 /** Every preference group. A single resource, fields exposed directly (apps/v1 convention). */
 export const UserPreferencesSchema = z
   .object({
     language: LanguagePreferencesSchema.nullable(),
+    transcription: TranscriptionPreferencesSchema.nullable(),
   })
   .strip();
 export type UserPreferences = z.output<typeof UserPreferencesSchema>;
@@ -103,6 +183,7 @@ const hasDefinedFields = (value: object) =>
 export const InitializeUserPreferencesRequestSchema = z
   .object({
     language: z.object({ interfaceLanguage: InterfaceLanguageSchema }).strict().optional(),
+    transcription: TranscriptionPreferencesSchema.optional(),
   })
   .strict()
   .refine(hasDefinedFields, 'Choose a preference group to initialize');
@@ -115,6 +196,9 @@ export const UpdateUserPreferencesRequestSchema = z
   .object({
     language: LanguagePreferencesSchema.partial()
       .refine(hasDefinedFields, 'Choose a language preference to update')
+      .optional(),
+    transcription: TranscriptionPreferencesSchema.partial()
+      .refine(hasDefinedFields, 'Choose a transcription preference to update')
       .optional(),
   })
   .strict()
@@ -129,9 +213,22 @@ export function readLanguagePreferences(prefs: unknown): LanguagePreferences | n
   return parsed.success ? parsed.data : null;
 }
 
+/** The saved `transcription` group, or null when never initialized (or invalid). */
+export function readTranscriptionPreferences(prefs: unknown): TranscriptionPreferences | null {
+  const value =
+    typeof prefs === 'object' && prefs !== null && 'transcription' in prefs
+      ? prefs.transcription
+      : undefined;
+  const parsed = TranscriptionPreferencesSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
 /** Project the raw `user.prefs` jsonb onto the typed resource; unknown/legacy keys are ignored. */
 export function readUserPreferences(prefs: unknown): UserPreferences {
-  return { language: readLanguagePreferences(prefs) };
+  return {
+    language: readLanguagePreferences(prefs),
+    transcription: readTranscriptionPreferences(prefs),
+  };
 }
 
 /** The language a skill run should write in for these preferences. */

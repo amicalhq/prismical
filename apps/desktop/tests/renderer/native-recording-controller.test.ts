@@ -1,5 +1,6 @@
 import { QueryClient } from '@tanstack/react-query';
 import { createWorkflowRuntime } from '@prismical/app-workflow';
+import { resolveTranscriptionLanguage } from '@prismical/app-client';
 import type { AuthPort, NativeRecordingControl, NativeRecordingState, SessionView } from '@prismical/app-contracts';
 import { describe, expect, it, vi } from 'vitest';
 import { createNativeRecordingController } from '../../src/renderer/main/app/ports/native-recording-controller';
@@ -9,6 +10,8 @@ vi.mock('@prismical/app-client', async importOriginal => ({
   activeOrgIdOf: (view: SessionView) => view.accounts[0]?.activeOrgId ?? null,
   ensureAutoPausePolicy: vi.fn(async () => ({ enabled: false })),
   getAutoEnhanceEnabled: () => true,
+  getRecordingPreferences: () => ({ autoDetectLanguage: true, language: 'en' }),
+  resolveTranscriptionLanguage: vi.fn(async () => 'en'),
   usageKey: (orgId: string) => ['usage', orgId],
 }));
 
@@ -41,6 +44,7 @@ function fixture(initial = idle) {
   } as unknown as AuthPort;
   const control: NativeRecordingControl = {
     start: vi.fn(async () => ({ ok: true as const, recordingId: 'rec_1' })),
+    setLanguage: vi.fn(async () => true),
     pause: vi.fn(async () => true), resume: vi.fn(async () => true),
     stop: vi.fn(async () => {}), claimCompletion: vi.fn(async () => true),
     subscribe: fn => { listener = fn; fn(state); return offNative; },
@@ -60,6 +64,49 @@ function fixture(initial = idle) {
 }
 
 describe('native recording workflow', () => {
+  it('waits for spoken preferences and passes the chosen language to native Start', async () => {
+    const language = deferred<'hi'>();
+    vi.mocked(resolveTranscriptionLanguage).mockReturnValueOnce(language.promise);
+    const f = fixture();
+    const starting = f.client.start('note_1', 'Meeting');
+    await Promise.resolve();
+    expect(f.control.start).not.toHaveBeenCalled();
+    language.resolve('hi');
+    await starting;
+    expect(f.control.start).toHaveBeenCalledWith(expect.objectContaining({ language: 'hi' }));
+  });
+
+  it('keeps actual language on failed changes and follows authoritative native updates', async () => {
+    const f = fixture({ ...capturing, language: 'en' });
+    vi.mocked(f.control.setLanguage!).mockResolvedValueOnce(false);
+    await expect(f.client.setLanguage!('hi')).rejects.toThrow('not applied');
+    expect(f.client.getSnapshot()).toMatchObject({ language: 'en', isRecording: true,
+      error: 'recording.errors.languageChangeFailed' });
+    await f.client.setLanguage!('de');
+    expect(f.control.setLanguage).toHaveBeenLastCalledWith('rec_1', 'de');
+    expect(f.client.getSnapshot().language).toBe('en');
+    f.push({ ...capturing, language: 'de' });
+    expect(f.client.getSnapshot()).toMatchObject({ language: 'de', error: null });
+  });
+
+  it('does not mutate idle, finished, or another workspace recordings', async () => {
+    const idleClient = fixture();
+    await idleClient.client.setLanguage!('ja');
+    expect(idleClient.control.setLanguage).not.toHaveBeenCalled();
+    const active = fixture(capturing);
+    active.switchOrg();
+    await active.client.setLanguage!('ja');
+    expect(active.control.setLanguage).not.toHaveBeenCalled();
+  });
+
+  it('surfaces incompatible local model failures without admitting capture', async () => {
+    const f = fixture();
+    vi.mocked(f.control.start).mockResolvedValueOnce({ ok: false, reason: 'language-unsupported' });
+    await f.client.start('note_1', 'Meeting');
+    expect(f.client.getSnapshot()).toMatchObject({ isRecording: false, error: 'recording.errors.languageUnsupported' });
+    expect(f.workflow.getSnapshot().kind).toBe('idle');
+  });
+
   it('adopts capture after renderer reload and keeps its native clock and paused phase', () => {
     const f = fixture({ ...capturing, status: 'paused' });
     expect(f.workflow.getSnapshot()).toMatchObject({ kind: 'recording', phase: 'paused', recordingId: 'rec_1' });
@@ -99,7 +146,7 @@ describe('native recording workflow', () => {
     const f = fixture();
     f.qc.setQueryData(['usage', 'org_1'], { quota: { cloudTranscription: { limitSeconds: 900, usedSeconds: 300 } } });
     await f.client.start('note_1', 'Meeting');
-    expect(f.control.start).toHaveBeenCalledWith({ noteId: 'note_1', title: 'Meeting', quotaRemainingAtStartSeconds: 600 });
+    expect(f.control.start).toHaveBeenCalledWith({ noteId: 'note_1', title: 'Meeting', language: 'en', quotaRemainingAtStartSeconds: 600 });
     f.push(capturing);
     expect(await f.client.pause()).toBe(true);
     expect(f.workflow.getSnapshot()).toMatchObject({ phase: 'paused' });

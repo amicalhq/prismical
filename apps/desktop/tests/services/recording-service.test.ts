@@ -59,6 +59,7 @@ import {
 } from '../../src/main/domains/transport/service';
 import { AppModeService, makeAppMode, type AppMode } from '../../src/main/domains/app-mode/service';
 import type { DeviceSettings } from '@prismical/desktop-contracts';
+import type { RecordingEngine } from '../../src/main/domains/transcriber/engine';
 import { SyncTranscriptSegmentCreateRequestSchema } from '@prismical/api-contracts';
 import { RECOMMENDED_MODEL_ID } from '../../src/main/domains/models/catalogue';
 import { TRANSCRIPT_SEGMENTS_PATH } from '../../src/main/domains/recording/segment-mirror';
@@ -90,6 +91,7 @@ import {
 } from '../../src/main/domains/recording/service';
 import {
   OperationalDb,
+  DbError,
   type OperationalDbService,
 } from '../../src/main/infra/operational-db/service';
 import { OperationalDbLive } from '../../src/main/infra/operational-db/live';
@@ -459,12 +461,13 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
         ]);
         assert.deepStrictEqual(
           h.fakeCloud.requestCalls,
-          [{ method: 'GET', path: '/apps/v1/me/model-defaults' }],
-          'loads the transcription default once, without a full-session upload request'
+          [{ method: 'GET', path: '/apps/v1/me/preferences' }, { method: 'GET', path: '/apps/v1/me/model-defaults' }],
+          'loads preferences and the transcription default once, without a full-session upload request'
         );
         assert.isTrue(fs.existsSync(h.recoveryDir(recordingId)), 'recovery retained until drain');
         yield* h.drain;
         assert.deepStrictEqual(h.fakeCloud.requestCalls, [
+          { method: 'GET', path: '/apps/v1/me/preferences' },
           { method: 'GET', path: '/apps/v1/me/model-defaults' },
         ]);
         assert.isNull(yield* h.db.getRecoveryOutbox(recordingId));
@@ -2075,7 +2078,7 @@ describe('RecordingService — transcription engine', () => {
         );
 
         assert.isFalse(fs.existsSync(h.recoveryDir(recordingId)), 'WAVs deleted (never staged)');
-        assert.strictEqual(h.fakeCloud.requestCalls.length, 0, 'nothing to mirror (no segments)');
+        assert.isFalse(h.fakeCloud.requestCalls.some(call => call.path === TRANSCRIPT_SEGMENTS_PATH), 'nothing to mirror (no segments)');
         const row = (yield* productRecording(h, recordingId))!;
         assert.strictEqual(row.status, 'completed');
         assert.deepStrictEqual(row.transcriptionConfig, LOCAL_CONFIG(RECOMMENDED_MODEL_ID));
@@ -2127,8 +2130,9 @@ describe('RecordingService — transcription engine', () => {
           ]
         );
         // One mirror POST per segment, sync-create dialect, the store's ids + orders, all before finalize.
-        assert.strictEqual(h.fakeCloud.requestCalls.length, 4);
-        for (const [i, call] of h.fakeCloud.requestCalls.entries()) {
+        const segmentCalls = h.fakeCloud.requestCalls.filter(call => call.path === TRANSCRIPT_SEGMENTS_PATH);
+        assert.strictEqual(segmentCalls.length, 4);
+        for (const [i, call] of segmentCalls.entries()) {
           assert.strictEqual(call.method, 'POST');
           assert.strictEqual(call.path, TRANSCRIPT_SEGMENTS_PATH);
           const parsed = SyncTranscriptSegmentCreateRequestSchema.safeParse(call.body);
@@ -2142,7 +2146,7 @@ describe('RecordingService — transcription engine', () => {
         const finalizeAt = h.fakeCloud.timeline.indexOf('finalize');
         const mirrors = h.fakeCloud.timeline
           .map((entry, i) => [entry, i] as const)
-          .filter(([entry]) => entry.startsWith('request:'));
+          .filter(([entry]) => entry === `request:POST ${TRANSCRIPT_SEGMENTS_PATH}`);
         assert.strictEqual(mirrors.length, 4);
         assert.isTrue(
           mirrors.every(([, i]) => i < finalizeAt),
@@ -2198,7 +2202,7 @@ describe('RecordingService — transcription engine', () => {
         );
         yield* h.service.stop(recordingId);
 
-        assert.strictEqual(h.fakeCloud.requestCalls.length, 0, 'local mode never mirrors');
+        assert.isFalse(h.fakeCloud.requestCalls.some(call => call.path === TRANSCRIPT_SEGMENTS_PATH), 'local mode never mirrors');
         assert.strictEqual(h.fakeCloud.uploadCalls.length, 0);
 
         assert.strictEqual((yield* productSegments(h, recordingId)).length, 1);
@@ -2294,10 +2298,10 @@ describe('RecordingService — transcription engine', () => {
       yield* settle;
       yield* TestClock.adjust(CHUNK_INTERVAL);
       yield* poll(
-        Effect.sync(() => h.fakeCloud.requestCalls.length === 1),
+        Effect.sync(() => h.fakeCloud.requestCalls.filter(call => call.path === TRANSCRIPT_SEGMENTS_PATH).length === 1),
         'mirror attempted'
       );
-      assert.strictEqual(h.fakeCloud.requestCalls.length, 1);
+      assert.strictEqual(h.fakeCloud.requestCalls.filter(call => call.path === TRANSCRIPT_SEGMENTS_PATH).length, 1);
       assert.isNull((yield* h.db.getRecoveryOutbox(recordingId))?.lastChunkIndex);
       assert.deepStrictEqual(
         h.logger.find(e => e.message === 'segment mirror to core failed — retained for recovery')
@@ -2759,10 +2763,12 @@ describe('RecordingService — lifecycle ownership and durability', () => {
           ok: true,
           value: { recordingId: input.recordingId },
         }));
-        h.fakeCloud.setRequestResponder(() => ({
+        h.fakeCloud.setRequestResponder(req => ({
           ok: true,
           status: 200,
-          bodyJson: { formatting: null, transcription: null },
+          bodyJson: req.method === 'PUT'
+            ? { result: req.body, applied: true }
+            : { formatting: null, transcription: null },
         }));
         yield* h.drain;
         assert.deepStrictEqual(h.fakeCloud.createCalls[1], intent);
@@ -3010,6 +3016,296 @@ describe('RecordingService — lifecycle ownership and durability', () => {
       );
       assert.strictEqual(claims.filter(Boolean).length, 1);
       assert.isFalse(yield* h.service.claimCompletion(id));
+      yield* Scope.close(h.sessionScope, Exit.void);
+    })
+  );
+});
+
+describe('RecordingService — spoken language', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it.effect('reads saved spoken language at Start, with validated caller and legacy fallbacks', () =>
+    Effect.gen(function* () {
+      for (const [saved, supplied, expected] of [
+        ['ja', 'de', 'ja'],
+        [null, 'hi', 'hi'],
+        ['invalid', 'fr', 'fr'],
+        ['unavailable', undefined, 'en'],
+      ] as const) {
+        const h = yield* setup();
+        h.fakeCloud.setRequestResponder(req => req.path === '/apps/v1/me/preferences'
+          ? saved === 'unavailable'
+            ? { error: { code: 'INTERNAL' } }
+            : { ok: true, status: 200, bodyJson: { language: null, transcription: saved === null ? null : { language: saved } } }
+          : { ok: true, status: 200, bodyJson: { formatting: null, transcription: null } });
+        const id = yield* h.service.start({ captureMode: 'mic', language: supplied });
+        yield* poll(SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')), 'recording');
+        assert.strictEqual((yield* SubscriptionRef.get(h.service.state)).language, expected);
+        assert.strictEqual(h.fakeCloud.createCalls[0].transcriptionConfig?.language, expected);
+        const row = (yield* h.db.getRecoveryOutbox(id))!;
+        assert.strictEqual(row.engineConfig?.language, expected);
+        assert.strictEqual(row.createInput?.transcriptionConfig?.language, expected);
+        yield* h.service.stop(id);
+        yield* Scope.close(h.sessionScope, Exit.void);
+      }
+    })
+  );
+
+  it.effect('refuses non-English capture and active updates with an English-only local model', () =>
+    Effect.gen(function* () {
+      const h = yield* setup({}, undefined, { mode: 'local' });
+      const refused = yield* Effect.either(h.service.start({ captureMode: 'mic', language: 'ja' }));
+      assert.isTrue(Either.isLeft(refused));
+      if (Either.isLeft(refused)) assert.deepStrictEqual(refused.left, new RecordingStartError({ reason: 'language-unsupported' }));
+      assert.isEmpty(h.fakeCapture.sessions);
+      assert.isEmpty(h.fakeCloud.createCalls);
+      assert.isEmpty(yield* h.db.listRecoveryOutbox());
+      const id = yield* h.service.start({ captureMode: 'mic' });
+      yield* poll(SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')), 'recording');
+      const before = (yield* h.db.getRecoveryOutbox(id))!;
+      assert.isFalse(yield* h.service.setLanguage(id, 'ja'));
+      assert.strictEqual((yield* SubscriptionRef.get(h.service.state)).language, 'en');
+      assert.deepStrictEqual((yield* h.db.getRecoveryOutbox(id))?.engineConfig, before.engineConfig);
+      assert.isFalse(h.fakeCloud.requestCalls.some(req => req.method === 'PUT'));
+      yield* h.service.stop(id);
+      yield* Scope.close(h.sessionScope, Exit.void);
+    })
+  );
+
+  it.effect('changes later local chunks while paused and retains the original model and earlier segments', () =>
+    Effect.gen(function* () {
+      const received: RecordingEngine[] = [];
+      const h = yield* setup({}, undefined, {
+        mode: 'local', transcription: { modelId: 'whisper-base' }, installedModels: { 'whisper-base': '/test/model.bin' },
+        localLane: Layer.succeed(LocalTranscriberLane, {
+          transcribeChunk: (recordingId, params, audio, engine) => Effect.sync(() => {
+            received.push(engine);
+            const segment = mintChunkSegment({ recordingId, params, samples: audio.samples, text: engine.language!, now: 0 });
+            return { ok: true as const, value: segment ? [segment] : [] };
+          }),
+        }),
+      });
+      const id = yield* h.service.start({ captureMode: 'mic', language: 'ja' });
+      yield* poll(SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')), 'recording');
+      yield* Queue.offer(h.fakeCapture.current().frames, fakeFrame('mic_raw', seconds(15)));
+      yield* poll(Effect.sync(() => received.length === 1), 'first Japanese chunk');
+      assert.isTrue(yield* h.service.pause(id));
+      yield* SubscriptionRef.update(yield* h.settings.ref, value => ({ ...value, transcription: { ...value.transcription, engine: 'byok' as const, modelId: 'whisper-base-en' } }));
+      assert.isTrue(yield* h.service.setLanguage(id, 'hi'));
+      assert.strictEqual((yield* SubscriptionRef.get(h.service.state)).language, 'hi');
+      const row = (yield* h.db.getRecoveryOutbox(id))!;
+      assert.strictEqual(row.engineConfig?.modelId, 'whisper-base');
+      assert.strictEqual(row.engineConfig?.engine, 'local');
+      assert.strictEqual(row.engineConfig?.language, 'hi');
+      assert.deepStrictEqual(row.createInput?.transcriptionConfig, { provider: 'local-whisper', model: 'local:whisper-base', language: 'hi' });
+      assert.isTrue(yield* h.service.resume(id));
+      yield* Queue.offer(h.fakeCapture.current().frames, fakeFrame('mic_raw', oneSecond()));
+      yield* settle;
+      yield* h.service.stop(id);
+      assert.deepStrictEqual(received.map(engine => [engine.language, engine.modelId, engine.engine]), [['ja', 'whisper-base', 'local'], ['hi', 'whisper-base', 'local']]);
+      assert.deepStrictEqual((yield* productSegments(h, id)).map(segment => segment.text), ['ja', 'hi']);
+      assert.isFalse(yield* h.service.setLanguage(id, 'fr'));
+      assert.isFalse(yield* h.service.setLanguage('not-active', 'fr'));
+      yield* Scope.close(h.sessionScope, Exit.void);
+    })
+  );
+
+  it.effect('preserves Cloud BYOK instance and model through language changes and finalization', () =>
+    Effect.gen(function* () {
+      const h = yield* setup();
+      h.fakeCloud.setRequestResponder(req => req.method === 'PUT'
+        ? { ok: true, status: 200, bodyJson: { result: req.body, applied: true } }
+        : req.path === '/apps/v1/me/model-defaults'
+          ? { ok: true, status: 200, bodyJson: { formatting: null, transcription: { instanceId: 'inst_original', modelId: 'nova-3' } } }
+          : { ok: true, status: 200, bodyJson: { language: null, transcription: { language: 'ja' } } });
+      const id = yield* h.service.start({ captureMode: 'mic' });
+      yield* poll(SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')), 'recording');
+      const original = h.fakeCloud.createCalls[0].transcriptionConfig!;
+      assert.isTrue(yield* h.service.setLanguage(id, 'hi'));
+      const expected: Record<string, unknown> = { ...original, language: 'hi' };
+      assert.deepStrictEqual(h.fakeCloud.requestCalls.find(req => req.method === 'PUT')?.body, { transcriptionConfig: expected });
+      assert.deepStrictEqual((yield* h.db.getRecoveryOutbox(id))?.createInput?.transcriptionConfig, expected);
+      assert.strictEqual(expected.instanceId, 'inst_original');
+      assert.strictEqual(expected.modelId, 'nova-3');
+      yield* h.service.stop(id);
+      assert.strictEqual(h.fakeCloud.finalizeCalls.length, 1);
+      assert.isTrue(h.fakeCloud.timeline.indexOf(`request:PUT /apps/v1/me/recordings/${id}`) < h.fakeCloud.timeline.indexOf('finalize'));
+      yield* Scope.close(h.sessionScope, Exit.void);
+    })
+  );
+
+  it.effect('failed API or durable writes keep active and persisted configuration unchanged', () =>
+    Effect.gen(function* () {
+      const h = yield* setup();
+      const id = yield* h.service.start({ captureMode: 'mic', language: 'ja' });
+      yield* poll(SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')), 'recording');
+      const previous = (yield* h.db.getRecoveryOutbox(id))!;
+      for (const response of [
+        { error: { code: 'INTERNAL' as const } },
+        { ok: true as const, status: 503, bodyJson: null },
+        { ok: true as const, status: 200, bodyJson: { result: {}, applied: false } },
+      ]) {
+        let first = true;
+        h.fakeCloud.setRequestResponder(req => {
+          if (first) { first = false; return response; }
+          return { ok: true, status: 200, bodyJson: { result: req.body, applied: true } };
+        });
+        assert.isFalse(yield* h.service.setLanguage(id, 'hi'));
+        const row = (yield* h.db.getRecoveryOutbox(id))!;
+        assert.deepStrictEqual(row.engineConfig, previous.engineConfig);
+        assert.deepStrictEqual(row.createInput, previous.createInput);
+        assert.strictEqual((yield* SubscriptionRef.get(h.service.state)).language, 'ja');
+      }
+      const writes = h.fakeCloud.requestCalls.length;
+      vi.spyOn(h.db, 'updateRecoveryOutbox').mockReturnValueOnce(Effect.fail(new DbError({ op: 'test', cause: 'disk full' })));
+      assert.isFalse(yield* h.service.setLanguage(id, 'hi'));
+      assert.strictEqual(h.fakeCloud.requestCalls.length, writes, 'a failed durable save never reaches the API');
+      assert.strictEqual((yield* SubscriptionRef.get(h.service.state)).language, 'ja');
+      yield* h.service.stop(id);
+      yield* Scope.close(h.sessionScope, Exit.void);
+    })
+  );
+
+  it.effect('Stop waits for a pending language update before finalizing', () =>
+    Effect.gen(function* () {
+      const entered = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      const h = yield* setup({}, undefined, { backendTransform: api => ({
+        ...api, request: req => req.method === 'PUT' && req.path.includes('/recordings/')
+          ? Deferred.succeed(entered, undefined).pipe(Effect.zipRight(Deferred.await(release)), Effect.zipRight(api.request(req)))
+          : api.request(req),
+      }) });
+      const id = yield* h.service.start({ captureMode: 'mic' });
+      yield* poll(SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')), 'recording');
+      const change = yield* Effect.fork(h.service.setLanguage(id, 'ja'));
+      yield* Deferred.await(entered);
+      for (let frame = 0; frame < 3; frame += 1)
+        yield* Queue.offer(h.fakeCapture.current().frames, fakeFrame('mic_raw', seconds(5)));
+      yield* poll(SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.elapsedMs === 15_000)), 'audio persisted while PUT waits');
+      const stoppingAt = yield* Clock.currentTimeMillis;
+      const stop = yield* Effect.fork(h.service.stop(id));
+      yield* poll(Effect.sync(() => h.fakeCapture.current().released), 'capture closes before PUT settles');
+      yield* TestClock.adjust(Duration.seconds(5));
+      assert.isEmpty(h.fakeCloud.finalizeCalls);
+      assert.strictEqual((yield* SubscriptionRef.get(h.service.state)).language, 'en');
+      yield* Deferred.succeed(release, undefined);
+      assert.isTrue(yield* Fiber.join(change));
+      yield* Fiber.join(stop);
+      assert.strictEqual((yield* SubscriptionRef.get(h.service.state)).language, 'ja');
+      assert.strictEqual(h.fakeCloud.finalizeCalls.length, 1);
+      assert.strictEqual(h.fakeCloud.finalizeCalls[0].input.durationMs, 15_000);
+      assert.strictEqual(h.fakeCloud.finalizeCalls[0].input.endedAt, stoppingAt);
+      assert.isFalse(yield* h.service.setLanguage(id, 'hi'));
+      yield* Scope.close(h.sessionScope, Exit.void);
+    })
+  );
+
+  it.effect('a stalled language request times out without blocking capture close or finalization', () =>
+    Effect.gen(function* () {
+      const entered = yield* Deferred.make<void>();
+      let first = true;
+      const h = yield* setup({}, undefined, { backendTransform: api => ({
+        ...api, request: req => {
+          if (req.method !== 'PUT' || !first) return api.request(req);
+          first = false;
+          return Deferred.succeed(entered, undefined).pipe(
+            Effect.zipRight(Effect.promise(() => new Promise<never>(() => {})).pipe(
+              Effect.timeoutOption(Duration.seconds(1)), Effect.as({ error: { code: 'INTERNAL' as const } })
+            ))
+          );
+        },
+      }) });
+      const id = yield* h.service.start({ captureMode: 'mic' });
+      yield* poll(SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')), 'recording');
+      const change = yield* Effect.fork(h.service.setLanguage(id, 'ja'));
+      yield* Deferred.await(entered);
+      const stop = yield* Effect.fork(h.service.stop(id));
+      yield* poll(Effect.sync(() => h.fakeCapture.current().released), 'capture closed during stalled PUT');
+      yield* TestClock.adjust(Duration.seconds(1));
+      assert.isFalse(yield* Fiber.join(change));
+      yield* Fiber.join(stop);
+      assert.strictEqual((yield* h.db.getRecoveryOutbox(id))?.engineConfig?.language, 'en');
+      assert.strictEqual(h.fakeCloud.finalizeCalls.length, 1);
+      yield* Scope.close(h.sessionScope, Exit.void);
+    })
+  );
+
+  it.effect('compensates a timed-out server write, and parks capture if compensation is uncertain', () =>
+    Effect.gen(function* () {
+      for (const compensate of [true, false]) {
+        const h = yield* setup();
+        const id = yield* h.service.start({ captureMode: 'mic' });
+        yield* poll(SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')), 'recording');
+        let serverLanguage = 'en';
+        h.fakeCloud.setRequestResponder(req => {
+          const language = (req.body as { transcriptionConfig: { language: string } }).transcriptionConfig.language;
+          if (language === 'ja') { serverLanguage = language; return { error: { code: 'INTERNAL' } }; }
+          if (!compensate) return { error: { code: 'INTERNAL' } };
+          serverLanguage = language;
+          return { ok: true, status: 200, bodyJson: { result: req.body, applied: true } };
+        });
+        assert.isFalse(yield* h.service.setLanguage(id, 'ja'));
+        assert.strictEqual((yield* h.db.getRecoveryOutbox(id))?.engineConfig?.language, 'en');
+        assert.strictEqual((yield* SubscriptionRef.get(h.service.state)).language, 'en');
+        if (compensate) {
+          assert.strictEqual(serverLanguage, 'en');
+          assert.strictEqual((yield* SubscriptionRef.get(h.service.state)).status, 'recording');
+          yield* h.service.stop(id);
+        } else {
+          yield* poll(Effect.sync(() => h.fakeCapture.current().released), 'uncertain server config parks capture');
+          yield* settle;
+          assert.isEmpty(h.fakeCloud.finalizeCalls);
+          h.fakeCloud.setRequestResponder(req => {
+            serverLanguage = (req.body as { transcriptionConfig: { language: string } }).transcriptionConfig.language;
+            return { ok: true, status: 200, bodyJson: { result: req.body, applied: true } };
+          });
+          assert.strictEqual((yield* h.drain).resolved, 1);
+          assert.strictEqual(serverLanguage, 'en');
+        }
+        yield* Scope.close(h.sessionScope, Exit.void);
+      }
+    })
+  );
+
+  it.effect('interrupting an in-flight language update parks its durable intent for recovery', () =>
+    Effect.gen(function* () {
+      const entered = yield* Deferred.make<void>();
+      const h = yield* setup({}, undefined, { backendTransform: api => ({
+        ...api, request: req => req.method === 'PUT'
+          ? Deferred.succeed(entered, undefined).pipe(Effect.zipRight(Effect.never))
+          : api.request(req),
+      }) });
+      const id = yield* h.service.start({ captureMode: 'mic' });
+      yield* poll(SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')), 'recording');
+      const change = yield* Effect.fork(h.service.setLanguage(id, 'ja'));
+      yield* Deferred.await(entered);
+      yield* Fiber.interrupt(change);
+      yield* poll(Effect.sync(() => h.fakeCapture.current().released), 'interrupted update parks capture');
+      yield* Scope.close(h.sessionScope, Exit.void);
+      assert.strictEqual((yield* h.db.getRecoveryOutbox(id))?.engineConfig?.language, 'ja');
+      assert.isEmpty(h.fakeCloud.finalizeCalls);
+    })
+  );
+
+  it.effect('rollback storage failure stops capture and retains the latest durable language for recovery', () =>
+    Effect.gen(function* () {
+      const h = yield* setup();
+      const id = yield* h.service.start({ captureMode: 'mic' });
+      yield* poll(SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')), 'recording');
+      h.fakeCloud.setRequestResponder(() => ({ error: { code: 'INTERNAL' } }));
+      const update = h.db.updateRecoveryOutbox;
+      vi.spyOn(h.db, 'updateRecoveryOutbox').mockImplementation((recordingId, patch) =>
+        patch.engineConfig?.language === 'en'
+          ? Effect.fail(new DbError({ op: 'test rollback', cause: 'disk full' }))
+          : update(recordingId, patch));
+      assert.isFalse(yield* h.service.setLanguage(id, 'ja'));
+      yield* poll(Effect.sync(() => h.fakeCapture.current().released), 'capture parked');
+      yield* settle;
+      assert.isEmpty(h.fakeCloud.finalizeCalls);
+      const row = (yield* h.db.getRecoveryOutbox(id))!;
+      assert.strictEqual(row.engineConfig?.language, 'ja');
+      assert.strictEqual(row.createInput?.transcriptionConfig?.language, 'ja');
+      assert.notStrictEqual(row.phase, 'cleanup');
       yield* Scope.close(h.sessionScope, Exit.void);
     })
   );

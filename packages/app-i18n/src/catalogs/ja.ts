@@ -754,6 +754,10 @@ const ja = {
       couldNotPause: '録音を一時停止できませんでした。',
       couldNotResume: '録音を再開できませんでした。',
       couldNotStart: '録音を開始できませんでした。',
+      languageUnsupported:
+        'この言語で録音するには、設定で多言語対応の文字起こしモデルを選択してください。',
+      languageChangeFailed:
+        'この録音の言語を変更できませんでした。設定で文字起こしモデルを確認し、もう一度お試しください。',
       modelMissing: '録音する前に、設定で文字起こしモデルをダウンロードしてください。',
       storageUnavailable:
         '録音を保存できませんでした。ディスクの空き容量を確認して、もう一度お試しください。',
@@ -798,6 +802,8 @@ const ja = {
       allAudioSettings: 'すべてのオーディオ設定…',
       systemAudioCaptured: 'システム音声も録音されます',
       soundSettings: '入力とサウンド',
+      language: '言語',
+      languageChip: '文字起こしの言語: {{language}}',
       latestEnhanced: '最新の録音を整えました ✓',
       enhanceChip: 'この録音をエンハンス',
       listening: '聞き取りと文字起こし中…',
@@ -2219,7 +2225,8 @@ const ja = {
         retry: '再試行',
       },
       language: {
-        description: 'Prismical 全体で使用する言語を選択します。',
+        description:
+          'アプリ自体の言語です - メニュー、ボタン、設定、メッセージに使われます。ノートや文字起こしには影響しません。',
         label: 'インターフェース言語',
         restart: {
           applyNextStart: '次回 Prismical を起動したときに新しい言語が使用されます。',
@@ -2228,6 +2235,11 @@ const ja = {
           restarting: 'Prismical を再起動しています…',
           title: '言語を変更するには再起動してください',
         },
+      },
+      spokenLanguage: {
+        current: '現在は{{language}}です。',
+        description: '録音で話す言語です。ライブ文字起こしと最終的な文字起こしに使われます。',
+        open: '文字起こしの設定',
       },
       theme: {
         dark: 'ダークテーマ',
@@ -2269,45 +2281,20 @@ const ja = {
       title: 'キーボードショートカット',
     },
     transcription: {
-      autoDetectDescription:
-        '話されている言語を Prismical が自動的に識別します。特定の言語を選ぶにはオフにしてください。',
-      autoDetectLabel: '言語を自動検出',
       description: '文字起こし言語とマイク入力を設定します。',
       desktopNotice:
         'デスクトップ版のマイクと文字起こしコントロールを仕上げています。現在のデスクトップ録音は既存の既定値を引き続き使用します。',
       language: {
         aria: '言語を選択',
         empty: '言語が見つかりません。',
-        label: '言語',
+        label: '話す言語・文字起こし言語',
+        description:
+          '録音で話される言語です。ライブ文字起こしと最終的な文字起こしの両方で使われます。別の言語の会議では録音パネルから変更できます。',
+        saveError:
+          '文字起こしの言語を読み込み、または保存できませんでした。もう一度お試しください。',
+        retry: '再試行',
         placeholder: '言語を選択…',
         search: '言語を検索…',
-        selectHint: '特定の言語を選ぶには自動検出をオフにしてください。',
-      },
-      languages: {
-        ar: 'العربية',
-        cs: 'Čeština',
-        da: 'Dansk',
-        de: 'Deutsch',
-        el: 'Ελληνικά',
-        en: 'English',
-        es: 'Español',
-        fi: 'Suomi',
-        fr: 'Français',
-        he: 'עברית',
-        hi: 'हिन्दी',
-        id: 'Bahasa Indonesia',
-        it: 'Italiano',
-        ja: '日本語',
-        ko: '한국어',
-        nl: 'Nederlands',
-        pl: 'Polski',
-        pt: 'Português',
-        ru: 'Русский',
-        sv: 'Svenska',
-        th: 'ไทย',
-        tr: 'Türkçe',
-        vi: 'Tiếng Việt',
-        zh: '中文',
       },
       microphoneDescription: '録音に使用するマイク入力を選択します。',
       microphoneLabel: 'マイク',

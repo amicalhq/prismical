@@ -48,7 +48,14 @@ import { useActiveSkillRun, type SkillRunSource } from '@prismical/app-client';
 import { useNavigation, bindAiErrorActions } from '@prismical/app-client';
 import { AskPanel } from './ask/ask-panel';
 import { recordingFinalizePhase, recordingIsProcessing } from '../lib/recording-finalize-phase';
-import { canAsk, useRecording, useWorkflowRecording, useWorkflowSnapshot, type UseRecording, type RecordingSessionClient } from '@prismical/app-client';
+import {
+  canAsk,
+  useRecording,
+  useWorkflowRecording,
+  useWorkflowSnapshot,
+  type UseRecording,
+  type RecordingSessionClient,
+} from '@prismical/app-client';
 import { EVENTS, usePorts, activeOrgIdOf } from '@prismical/app-client';
 import { listTranscriptSegments } from '@prismical/app-client';
 import {
@@ -89,12 +96,17 @@ type ClusterProps = {
 
 export function RecordingBottomCluster(props: ClusterProps) {
   const { recordingSession } = usePorts();
-  return recordingSession
-    ? <WorkflowRecordingCluster {...props} client={recordingSession} />
-    : <LegacyRecordingCluster {...props} />;
+  return recordingSession ? (
+    <WorkflowRecordingCluster {...props} client={recordingSession} />
+  ) : (
+    <LegacyRecordingCluster {...props} />
+  );
 }
 
-function WorkflowRecordingCluster({ client, ...props }: ClusterProps & { client: RecordingSessionClient }) {
+function WorkflowRecordingCluster({
+  client,
+  ...props
+}: ClusterProps & { client: RecordingSessionClient }) {
   const tour = useWalkthroughStage();
   const rec = useWorkflowRecording(client, tour?.noteId);
   return <RecordingBottomClusterView {...props} rec={rec} />;
@@ -120,7 +132,11 @@ function RecordingBottomClusterView({
    * while a recording is engaged — it is inert then anyway, and it would
    * overflow the window. Default false keeps the web/app layout unchanged.
    */
-  rec: UseRecording & { retryAvailable?: boolean; retry?: () => Promise<void>; abandon?: () => Promise<void> };
+  rec: UseRecording & {
+    retryAvailable?: boolean;
+    retry?: () => Promise<void>;
+    abandon?: () => Promise<void>;
+  };
   compact?: boolean;
   /**
    * Desktop-float autostart intent (the widget's Record): when it names the
@@ -187,16 +203,19 @@ function RecordingBottomClusterView({
   const noteId = currentNote?.noteId ?? null;
   const captureActive = liveActive || rec.state === 'starting';
   useCtaRecordingGuard(captureActive || rec.isFinalizing || workflowState.kind !== 'idle');
-  const transcriptNoteId = workflowState.kind !== 'idle' ? workflowState.noteId
-    : captureActive ? rec.noteId : noteId;
+  const transcriptNoteId =
+    workflowState.kind !== 'idle' ? workflowState.noteId : captureActive ? rec.noteId : noteId;
   const recordingAway = !!transcriptNoteId && transcriptNoteId !== noteId;
   const recPillWidth = recordingPillWidth(rec.state, rec.canPause, compact);
   const { data: transcriptNote } = useNote(transcriptNoteId ?? '');
   const noteName = transcriptNote?.title.trim();
-  const customNoteName = transcriptNote?.titleSource !== 'placeholder' &&
-    noteName && noteName !== t('notes.emptyTitle') ? noteName : undefined;
+  const customNoteName =
+    transcriptNote?.titleSource !== 'placeholder' && noteName && noteName !== t('notes.emptyTitle')
+      ? noteName
+      : undefined;
   const openNoteLabel = customNoteName
-    ? t('workflow.openNamedNote', { name: customNoteName }) : t('workflow.openNote');
+    ? t('workflow.openNamedNote', { name: customNoteName })
+    : t('workflow.openNote');
 
   // Dead-mic capture (micSilent): the OS is feeding the browser pure silence — usually a
   // revoked/wedged system-level mic permission, which getUserMedia does NOT error on (the
@@ -487,7 +506,9 @@ function RecordingBottomClusterView({
   const onEnhanceRecording = (recordingId: string, opts?: { auto?: boolean }) => {
     if (!transcriptNoteId) return;
     if (workflow && workflow.getSnapshot().kind !== 'idle') {
-      toast.info(t('workflow.busy', { defaultValue: 'Finish the current recording or skill first.' }));
+      toast.info(
+        t('workflow.busy', { defaultValue: 'Finish the current recording or skill first.' })
+      );
       return;
     }
     // Don't queue onto an unreviewed suggestion (the engine holds one candidate per note; the
@@ -536,11 +557,18 @@ function RecordingBottomClusterView({
   const activeRun = useActiveSkillRun(noteId);
   const recordingStartBlockedReason = hasStagedCandidate
     ? t('recording.actions.reviewBeforeRecording')
-    : workflowState.kind === 'skill' || activeRun ? t('workflow.busy') : undefined;
-  const workflowRun = useActiveSkillRun(workflowState.kind === 'skill' ? workflowState.noteId : null);
+    : workflowState.kind === 'skill' || activeRun
+      ? t('workflow.busy')
+      : undefined;
+  const workflowRun = useActiveSkillRun(
+    workflowState.kind === 'skill' ? workflowState.noteId : null
+  );
   const canRetryRecording = rec.retryAvailable || (rec.state === 'stopping' && !!rec.error);
-  const enhancementPending = workflowState.kind === 'skill' && workflowState.phase === 'running' &&
-    !!workflowState.recordingId && !workflowRun;
+  const enhancementPending =
+    workflowState.kind === 'skill' &&
+    workflowState.phase === 'running' &&
+    !!workflowState.recordingId &&
+    !workflowRun;
   React.useEffect(() => {
     if (askBlocked) setExpandedUnit(null);
   }, [askBlocked]);
@@ -584,7 +612,9 @@ function RecordingBottomClusterView({
       source: Extract<SkillRunSource, 'chip' | 'composer'> = 'composer'
     ) => {
       if (workflow && workflow.getSnapshot().kind !== 'idle') {
-        toast.info(t('workflow.busy', { defaultValue: 'Finish the current recording or skill first.' }));
+        toast.info(
+          t('workflow.busy', { defaultValue: 'Finish the current recording or skill first.' })
+        );
         return;
       }
       if (useSkillDiffStore.getState().candidatesByNote.has(targetNoteId)) {
@@ -1011,20 +1041,26 @@ function RecordingBottomClusterView({
     return first ?? null;
   }, [rec.errorUser, router]);
 
-  const workflowPhaseLabel = workflowState.kind === 'recording'
-    ? workflowState.phase === 'draining'
-      ? t('workflow.draining')
-      : workflowState.phase === 'finalizing' ? t('workflow.finalizing')
-      : workflowState.phase === 'paused'
-        ? !customNoteName && recordingAway
-          ? t('workflow.pausedAway') : t('recording.panel.paused')
-      : !customNoteName && recordingAway
-        ? t('workflow.recordingAway') : t('workflow.recording')
-    : workflowState.kind === 'skill'
-      ? workflowState.phase === 'review'
-        ? t('workflow.review')
-        : workflowState.phase === 'applying' ? t('workflow.applying') : t('workflow.skill')
-      : '';
+  const workflowPhaseLabel =
+    workflowState.kind === 'recording'
+      ? workflowState.phase === 'draining'
+        ? t('workflow.draining')
+        : workflowState.phase === 'finalizing'
+          ? t('workflow.finalizing')
+          : workflowState.phase === 'paused'
+            ? !customNoteName && recordingAway
+              ? t('workflow.pausedAway')
+              : t('recording.panel.paused')
+            : !customNoteName && recordingAway
+              ? t('workflow.recordingAway')
+              : t('workflow.recording')
+      : workflowState.kind === 'skill'
+        ? workflowState.phase === 'review'
+          ? t('workflow.review')
+          : workflowState.phase === 'applying'
+            ? t('workflow.applying')
+            : t('workflow.skill')
+        : '';
   const workflowLabel = customNoteName
     ? workflowState.kind === 'skill' && workflowState.phase === 'review'
       ? t('workflow.reviewNamed', { name: customNoteName })
@@ -1033,10 +1069,20 @@ function RecordingBottomClusterView({
 
   const recoveryActions = canRetryRecording ? (
     <>
-      {rec.retryAvailable && <button type="button" className="underline underline-offset-2" onClick={() => void rec.retry?.()}>
-        {t('workflow.retry', { defaultValue: 'Retry' })}
-      </button>}
-      <button type="button" className="underline underline-offset-2" onClick={() => void rec.abandon?.()}>
+      {rec.retryAvailable && (
+        <button
+          type="button"
+          className="underline underline-offset-2"
+          onClick={() => void rec.retry?.()}
+        >
+          {t('workflow.retry', { defaultValue: 'Retry' })}
+        </button>
+      )}
+      <button
+        type="button"
+        className="underline underline-offset-2"
+        onClick={() => void rec.abandon?.()}
+      >
         {t('workflow.end', { defaultValue: 'End workflow' })}
       </button>
     </>
@@ -1107,18 +1153,28 @@ function RecordingBottomClusterView({
       <div
         className={`mx-auto flex w-full max-w-4xl flex-col items-center ${compact ? 'px-[10px]' : 'px-6'}`}
       >
-        {!isTranscriptionOpen && workflowState.kind !== 'idle' &&
+        {!isTranscriptionOpen &&
+          workflowState.kind !== 'idle' &&
           (workflowState.noteId !== noteId || canRetryRecording) && (
-          <div role="status" className="pointer-events-auto relative mb-2 flex max-w-full items-center gap-3 rounded-xl bg-dock-surface px-4 py-2 text-sm text-dock-ink">
-            {workflowState.noteId !== noteId && (
-              <button type="button" className="absolute inset-0 cursor-pointer rounded-xl transition-colors hover:bg-dock-hover focus-visible:outline-2 focus-visible:outline-ring"
-                aria-label={openNoteLabel} title={openNoteLabel}
-                onClick={() => router.push(`/notes/${workflowState.noteId}`)} />
-            )}
-            <span className="pointer-events-none relative min-w-0 truncate">{workflowLabel}</span>
-            {recoveryActions && <div className="relative flex shrink-0 items-center gap-3">{recoveryActions}</div>}
-          </div>
-        )}
+            <div
+              role="status"
+              className="pointer-events-auto relative mb-2 flex max-w-full items-center gap-3 rounded-xl bg-dock-surface px-4 py-2 text-sm text-dock-ink"
+            >
+              {workflowState.noteId !== noteId && (
+                <button
+                  type="button"
+                  className="absolute inset-0 cursor-pointer rounded-xl transition-colors hover:bg-dock-hover focus-visible:outline-2 focus-visible:outline-ring"
+                  aria-label={openNoteLabel}
+                  title={openNoteLabel}
+                  onClick={() => router.push(`/notes/${workflowState.noteId}`)}
+                />
+              )}
+              <span className="pointer-events-none relative min-w-0 truncate">{workflowLabel}</span>
+              {recoveryActions && (
+                <div className="relative flex shrink-0 items-center gap-3">{recoveryActions}</div>
+              )}
+            </div>
+          )}
         {/* Dock row (v3): two morphing units — Record and Ask — that expand IN PLACE into
             their panels (the sibling collapses out of the row), plus the transient skill
             slot. items-end so an expanding unit grows upward off the shared baseline; the
@@ -1189,6 +1245,8 @@ function RecordingBottomClusterView({
                       onStartRecording={onStart}
                       onStopRecording={onStop}
                       onPauseRecording={onPause}
+                      activeLanguage={sessionActive ? rec.language : undefined}
+                      onChangeLanguage={rec.setLanguage}
                       onResumeRecording={onResume}
                       errorText={isTranscriptionOpen ? recErrorTitle : null}
                       errorHint={isTranscriptionOpen ? recErrorBody : null}
@@ -1260,6 +1318,8 @@ function RecordingBottomClusterView({
                     onStartRecording={() => {}}
                     onStopRecording={onStop}
                     onPauseRecording={onPause}
+                    activeLanguage={sessionActive ? rec.language : undefined}
+                    onChangeLanguage={rec.setLanguage}
                     onResumeRecording={onResume}
                     errorText={isTranscriptionOpen ? recErrorTitle : null}
                     errorHint={isTranscriptionOpen ? recErrorBody : null}
@@ -1279,7 +1339,9 @@ function RecordingBottomClusterView({
           {/* Review replaces Ask and stays tied to its target across navigation.
               Keep the slot mounted: it also hosts the skill request bridge. */}
           <DockRowmate
-            collapsed={expandedUnit !== null || !hasStagedCandidate || (compact && rec.state !== 'idle')}
+            collapsed={
+              expandedUnit !== null || !hasStagedCandidate || (compact && rec.state !== 'idle')
+            }
           >
             <div
               className={rec.state !== 'idle' ? 'dock-slot-dimmed pointer-events-none' : ''}
@@ -1308,7 +1370,9 @@ function RecordingBottomClusterView({
             panelHeight={panelHeight(askMaxi, 'ask')}
             pill={
               <AskPillFace
-                onClick={() => { if (!askBlocked) setExpandedUnit('ask'); }}
+                onClick={() => {
+                  if (!askBlocked) setExpandedUnit('ask');
+                }}
                 onPickSkill={onPickSuggestedSkill}
                 noteId={noteId}
                 activeRun={activeRun}

@@ -2,12 +2,15 @@ import {
   activeOrgIdOf,
   ensureAutoPausePolicy,
   getAutoEnhanceEnabled,
+  getRecordingPreferences,
   nativeNotice,
+  resolveTranscriptionLanguage,
   usageKey,
   type RecordingSessionClient,
   type RecordingSessionSnapshot,
   type Usage,
 } from '@prismical/app-client';
+import { TranscriptionLanguageSchema, type TranscriptionLanguage } from '@prismical/api-contracts/apps/v1';
 import {
   ENHANCE_SKILL_ID,
   type AuthPort,
@@ -161,6 +164,7 @@ export function createNativeRecordingController(options: {
     }
     publish({
       recordingId: s.recordingId ?? null,
+      language: TranscriptionLanguageSchema.parse(state.language ?? 'en'),
       startedAt: state.startedAt == null ? null : new Date(state.startedAt).toISOString(),
       nativeElapsed: { status: state.status, elapsedMs: state.elapsedMs, elapsedAt: state.elapsedAt },
       liveSegments: [...state.segments], error: nativeNotice(state),
@@ -203,12 +207,15 @@ export function createNativeRecordingController(options: {
     const s = admit(noteId);
     if (!s) return;
     try {
-      const policy = await ensureAutoPausePolicy(queryClient, s.ownerOrgId);
+      const [policy, language] = await Promise.all([
+        ensureAutoPausePolicy(queryClient, s.ownerOrgId),
+        resolveTranscriptionLanguage(getRecordingPreferences()),
+      ]);
       if (!owns(s) || scope(s)?.phase !== 'starting') return;
       const quota = queryClient.getQueryData<Usage>(usageKey(s.ownerOrgId))?.quota?.cloudTranscription;
       s.startingNative = true;
       const result = await control.start({
-        noteId, title,
+        noteId, title, language,
         quotaRemainingAtStartSeconds: quota?.limitSeconds == null ? null : Math.max(0, quota.limitSeconds - quota.usedSeconds),
         ...(policy.enabled ? { autoPause: {
           silenceSeconds: policy.silenceSeconds, graceSeconds: policy.graceSeconds,
@@ -229,6 +236,7 @@ export function createNativeRecordingController(options: {
         fail(s, result.reason === 'permission-denied' ? 'recording.errors.microphoneDenied'
           : result.reason === 'busy' ? 'recording.errors.alreadyInProgress'
           : result.reason === 'model-missing' ? 'recording.errors.modelMissing'
+          : result.reason === 'language-unsupported' ? 'recording.errors.languageUnsupported'
           : result.reason === 'storage-unavailable' ? 'recording.errors.storageUnavailable'
           : result.reason === 'suggestion-pending' ? 'recording.actions.reviewBeforeRecording'
           : 'recording.errors.couldNotStart');
@@ -253,6 +261,17 @@ export function createNativeRecordingController(options: {
     }
     return accepted;
   }
+  async function setLanguage(language: TranscriptionLanguage) {
+    const s = session;
+    if (!s?.recordingId || !owns(s) || !['capturing', 'paused'].includes(scope(s)?.phase ?? '')) return;
+    const accepted = await control.setLanguage?.(s.recordingId, language).catch(() => false);
+    if (!owns(s)) return;
+    if (!accepted) {
+      publish({ error: 'recording.errors.languageChangeFailed' });
+      throw new Error('The recording language was not applied');
+    }
+    if (snapshot.error === 'recording.errors.languageChangeFailed') publish({ error: null });
+  }
   async function stop() {
     const s = session;
     if (!s || !owns(s)) return { segments: snapshot.liveSegments.length };
@@ -271,7 +290,7 @@ export function createNativeRecordingController(options: {
   return {
     getSnapshot: () => snapshot,
     subscribe(listener) { connect(); listeners.add(listener); return () => { listeners.delete(listener); }; },
-    start, pause: () => changePause(true), resume: () => changePause(false), stop,
+    start, pause: () => changePause(true), resume: () => changePause(false), stop, setLanguage,
     // Durable native jobs retry in main. There is no renderer-owned audio to abandon.
     retry: async () => {}, abandon: async () => {},
     clearError: () => publish({ error: null, errorUser: null }),

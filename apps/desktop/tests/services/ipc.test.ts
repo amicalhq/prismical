@@ -349,6 +349,7 @@ const ALL_HANDLER_CHANNELS = [
   CHANNELS.recordingClaimCompletion,
   CHANNELS.recordingSetSkillWorkflow,
   CHANNELS.recordingPause,
+  CHANNELS.recordingSetLanguage,
   CHANNELS.recordingResume,
   CHANNELS.loggingGetConfig,
   CHANNELS.loggingWrite,
@@ -407,11 +408,16 @@ const makeFakeRecordingService = () =>
     const stopCalls: string[] = [];
     const pauseCalls: string[] = [];
     const resumeCalls: string[] = [];
+    const languageCalls: Array<{ recordingId: string; language: string }> = [];
     const claimCalls: string[] = [];
     let claimResult = false;
     let startResult: Effect.Effect<string, RecordingBusyError | PermissionError> =
       Effect.succeed('rec_fake');
     const api: RecordingServiceApi = {
+      setLanguage: (recordingId, language) => Effect.sync(() => {
+        languageCalls.push({ recordingId, language });
+        return true;
+      }),
       resolveCompletion: () => Effect.void,
       claimCompletion: id => Effect.sync(() => {
         claimCalls.push(id);
@@ -448,6 +454,7 @@ const makeFakeRecordingService = () =>
       stopCalls,
       pauseCalls,
       resumeCalls,
+      languageCalls,
       claimCalls,
       setClaim: (accepted: boolean) => { claimResult = accepted; },
       setStart: (effect: Effect.Effect<string, RecordingBusyError | PermissionError>) => {
@@ -675,6 +682,22 @@ describe('registerMainWindowHandlers', () => {
         );
         assert.deepStrictEqual(rec.pauseCalls, ['rec_1']);
         assert.deepStrictEqual(rec.resumeCalls, ['rec_1']);
+
+        assert.isTrue(yield* Effect.promise(() => fake.ipcMain.invoke(
+          CHANNELS.recordingSetLanguage, { sender: wc }, { recordingId: 'rec_1', language: 'ja' }
+        )));
+        assert.deepStrictEqual(rec.languageCalls, [{ recordingId: 'rec_1', language: 'ja' }]);
+        for (const payload of [{ recordingId: 'rec_1', language: 'auto' }, { recordingId: 'rec_1' }, { recordingId: '', language: 'ja' }]) {
+          const invalid = yield* Effect.exit(Effect.tryPromise(() => fake.ipcMain.invoke(
+            CHANNELS.recordingSetLanguage, { sender: wc }, payload
+          )));
+          assert.isTrue(Exit.isFailure(invalid));
+        }
+        const foreign = yield* Effect.exit(Effect.tryPromise(() => fake.ipcMain.invoke(
+          CHANNELS.recordingSetLanguage, { sender: { id: -1 } }, { recordingId: 'rec_1', language: 'ja' }
+        )));
+        assert.isTrue(Exit.isFailure(foreign));
+        assert.strictEqual(rec.languageCalls.length, 1);
 
         const bad = yield* Effect.exit(
           Effect.tryPromise(() => fake.ipcMain.invoke(CHANNELS.recordingPause, { sender: wc }, {}))
@@ -1520,7 +1543,7 @@ describe('registerMainWindowHandlers', () => {
         // Happy path: the minted id comes back; the input reaches the service
         // (noteId defaulted, title threaded).
         assert.deepStrictEqual(
-          yield* start({ captureMode: 'dual', noteId: 'note_1', title: 'Standup', quotaRemainingAtStartSeconds: 600 }),
+          yield* start({ captureMode: 'dual', noteId: 'note_1', title: 'Standup', language: 'hi', quotaRemainingAtStartSeconds: 600 }),
           {
             ok: true,
             recordingId: 'rec_fake',
@@ -1530,6 +1553,7 @@ describe('registerMainWindowHandlers', () => {
           captureMode: 'dual',
           noteId: 'note_1',
           title: 'Standup',
+          language: 'hi',
           quotaRemainingAtStartSeconds: 600,
         });
 

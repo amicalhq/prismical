@@ -35,6 +35,7 @@ import { RECORDING_TROUBLESHOOTING_URL } from '../lib/docs-links';
 import { copyToClipboard } from '../lib/clipboard';
 import { DockPanelAction, DockPanelActions } from './dock-panel-actions';
 import { DockMicMenu } from './dock-mic-menu';
+import type { TranscriptionLanguage } from '@prismical/app-client';
 import { PxOrbitLoader } from './px-orbit-loader';
 import { Waveform } from './waveform';
 import { DOCK_CTL, DOCK_SCROLL_BUTTON } from './dock-chrome';
@@ -113,6 +114,10 @@ type TranscriptPanelProps = {
   onStopRecording: () => void;
   onPauseRecording?: () => void;
   onResumeRecording?: () => void;
+  /** The language currently used by the recording, when recording or paused. */
+  activeLanguage?: TranscriptionLanguage;
+  /** The spoken language changed from the panel's gear; a running recording follows it. */
+  onChangeLanguage?: (language: TranscriptionLanguage) => void | Promise<void>;
   /** Translated recording error, shown as an in-panel banner just above the bar. */
   errorText?: string | null;
   /** Concrete per-error fix (e.g. the platform's mic-permission path), shown
@@ -177,6 +182,8 @@ function TranscriptPanelContent({
   onStopRecording,
   onPauseRecording,
   onResumeRecording,
+  activeLanguage,
+  onChangeLanguage,
   errorText = null,
   errorHint = null,
   errorAction = null,
@@ -300,10 +307,19 @@ function TranscriptPanelContent({
     onEnhanceRecording(finished.id, { auto: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fire once on the settle transition
   }, [enhanceWaiting, doneReady]);
-  const settledEmpty = doneReady && !!finished?.linesLoaded && finished.lines.length === 0 &&
-    finished.finalizeStatus !== 'failed' && finished.finalizeStatus !== 'stalled';
-  const doneMode = !isRecording && recState === 'idle' && !!finished && !doneDismissed &&
-    !settledEmpty && !startBlockedReason;
+  const settledEmpty =
+    doneReady &&
+    !!finished?.linesLoaded &&
+    finished.lines.length === 0 &&
+    finished.finalizeStatus !== 'failed' &&
+    finished.finalizeStatus !== 'stalled';
+  const doneMode =
+    !isRecording &&
+    recState === 'idle' &&
+    !!finished &&
+    !doneDismissed &&
+    !settledEmpty &&
+    !startBlockedReason;
 
   // The refetch gap right after a stop with no live-line bridge (short/silent
   // recordings): the finished recording isn't in `recordings` yet, so without
@@ -555,8 +571,8 @@ function TranscriptPanelContent({
                   </Marker>
                 ) : null}
               </MessageScrollerItem>
-            ) : recState === 'stopping' || isFinishing || settling ? null
-            : !hasAnyPersisted && !recordings.some(rec => rec.processing) ? (
+            ) : recState === 'stopping' || isFinishing || settling ? null : !hasAnyPersisted &&
+              !recordings.some(rec => rec.processing) ? (
               <MessageScrollerItem className="flex min-h-full flex-1">
                 <div className="flex flex-1 items-center justify-center p-8 text-center text-sm text-dock-ink-3">
                   {t('recording.panel.empty')}
@@ -622,11 +638,16 @@ function TranscriptPanelContent({
       {/* Bottom bar — the panel's full recording controls; 42px rhythm. */}
       <div
         data-onboarding={
-          recState === 'starting' ? 'record-pending'
-            : recState === 'stopping' || isFinishing ? 'record-saving'
-            : settling || (finished && !doneReady) ? 'transcript-wait'
-            : recState === 'idle' && (settledEmpty || (tour && ['speak', 'stop'].includes(tour.step))) ? 'record-retry'
-            : undefined
+          recState === 'starting'
+            ? 'record-pending'
+            : recState === 'stopping' || isFinishing
+              ? 'record-saving'
+              : settling || (finished && !doneReady)
+                ? 'transcript-wait'
+                : recState === 'idle' &&
+                    (settledEmpty || (tour && ['speak', 'stop'].includes(tour.step)))
+                  ? 'record-retry'
+                  : undefined
         }
         className="flex min-h-[41px] shrink-0 items-center gap-2 border-t border-dock-line p-1.5"
       >
@@ -683,7 +704,7 @@ function TranscriptPanelContent({
                 <TooltipContent side="top">{t('recording.actions.stop')}</TooltipContent>
               </Tooltip>
               <span className="flex-1" />
-              <DockMicMenu />
+              <DockMicMenu activeLanguage={activeLanguage} onChangeLanguage={onChangeLanguage} />
             </>
           ) : !showBlockedStart && (recState === 'stopping' || isFinishing || settling) ? (
             <>
@@ -763,7 +784,7 @@ function TranscriptPanelContent({
                 ) : null}
               </Tooltip>
               <span className="flex-1" />
-              <DockMicMenu />
+              <DockMicMenu activeLanguage={activeLanguage} onChangeLanguage={onChangeLanguage} />
             </>
           )}
         </div>
@@ -779,11 +800,13 @@ function TranscriptPanelContent({
               <FileText className="size-3 shrink-0" />
               <span className="truncate">{openNoteLabel ?? t('workflow.openNote')}</span>
             </button>
-          ) : engaged
-            ? null
-            : isFinishing || settling || (!!finished && !doneReady)
-              ? skillStatus?.(null, true)
-            : skillStatus ? skillStatus(enhanceAction, settledEmpty) : enhanceAction}
+          ) : engaged ? null : isFinishing || settling || (!!finished && !doneReady) ? (
+            skillStatus?.(null, true)
+          ) : skillStatus ? (
+            skillStatus(enhanceAction, settledEmpty)
+          ) : (
+            enhanceAction
+          )}
         </div>
       </div>
     </div>

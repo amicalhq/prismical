@@ -289,6 +289,23 @@ describe('ByokTranscriberLive', () => {
     })
   );
 
+  it.effect('sends the selected spoken language while preserving the configured provider and model', () =>
+    Effect.gen(function* () {
+      const h = yield* build();
+      h.setResponder(() => Promise.resolve(jsonResponse({ text: 'Bonjour.' })));
+      for (const byokModel of ['whisper-1', 'gpt-4o-transcribe']) {
+        yield* h.lane.transcribeChunk('rec_fr', PARAMS, chunk(tone(240_000)), {
+          ...BYOK, byokModel, language: 'fr',
+        });
+      }
+      assert.deepStrictEqual(h.calls.map(call => [call.url, call.body.get('model'), call.body.get('language')]), [
+        ['https://byok.test/v1/audio/transcriptions', 'whisper-1', 'fr'],
+        ['https://byok.test/v1/audio/transcriptions', 'gpt-4o-transcribe', 'fr'],
+      ]);
+      yield* Scope.close(h.scope, Exit.void);
+    })
+  );
+
   it.effect('filters hallucinations before replacements and keeps genuine speech', () =>
     Effect.gen(function* () {
       const h = yield* build();

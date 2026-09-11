@@ -10,6 +10,7 @@
  * model and BYOK endpoint. Credentials remain in SecureStore.
  */
 import type { TranscriptionEngine, TranscriptionSetting } from '@prismical/desktop-contracts';
+import type { TranscriptionLanguage } from '@prismical/api-contracts/apps/v1';
 import type { AppMode } from '../app-mode/service';
 import { RECOMMENDED_MODEL_ID } from '../models/catalogue';
 import { MANAGED_TRANSCRIPTION_CONFIG } from '../transport/live';
@@ -17,6 +18,8 @@ import { MANAGED_TRANSCRIPTION_CONFIG } from '../transport/live';
 /** The frozen per-recording engine: what the lanes need to run a chunk. */
 export interface RecordingEngine {
   readonly engine: TranscriptionEngine;
+  /** Missing on historical recordings, which used English. */
+  readonly language?: TranscriptionLanguage;
   /** Local whisper catalogue id — the preference, or the recommended default. */
   readonly modelId: string;
   readonly byokBaseUrl: string | null;
@@ -32,13 +35,22 @@ export interface RecordingEngine {
  */
 export const resolveRecordingEngine = (
   mode: AppMode,
-  setting: TranscriptionSetting
+  setting: TranscriptionSetting,
+  language: TranscriptionLanguage = 'en'
 ): RecordingEngine => ({
   engine: mode === 'local' && setting.engine === 'cloud' ? 'local' : setting.engine,
+  language,
   modelId: setting.modelId ?? RECOMMENDED_MODEL_ID,
   byokBaseUrl: setting.byokBaseUrl,
   byokModel: setting.byokModel,
 });
+
+/** The English-only local model cannot honor another spoken language. */
+export const supportsRecordingLanguage = (
+  engine: Pick<RecordingEngine, 'engine' | 'modelId'>,
+  language: TranscriptionLanguage
+): boolean =>
+  engine.engine !== 'local' || engine.modelId !== 'whisper-base-en' || language === 'en';
 
 /**
  * transcriptionConfig for an on-device whisper recording. Informational for
@@ -54,21 +66,26 @@ export const resolveRecordingEngine = (
  * keeps the user's on-device selection in a distinct namespace so it survives
  * sync redaction verbatim.
  */
-export const LOCAL_WHISPER_TRANSCRIPTION_CONFIG = (modelId: string) =>
-  ({ provider: 'local-whisper', model: `local:${modelId}`, language: 'en' }) as const;
+export const LOCAL_WHISPER_TRANSCRIPTION_CONFIG = (
+  modelId: string,
+  language: TranscriptionLanguage = 'en'
+) => ({ provider: 'local-whisper', model: `local:${modelId}`, language }) as const;
 
 /** transcriptionConfig for a desktop-BYOK recording (the key never leaves main). */
-export const BYOK_DESKTOP_TRANSCRIPTION_CONFIG = (byokModel: string | null) =>
-  ({ provider: 'byok-desktop', model: byokModel ?? 'unknown', language: 'en' }) as const;
+export const BYOK_DESKTOP_TRANSCRIPTION_CONFIG = (
+  byokModel: string | null,
+  language: TranscriptionLanguage = 'en'
+) => ({ provider: 'byok-desktop', model: byokModel ?? 'unknown', language }) as const;
 
 /** The config frozen into BOTH the cloud create body and the product-store row. */
 export const transcriptionConfigFor = (engine: RecordingEngine): Record<string, unknown> => {
+  const language = engine.language ?? 'en';
   switch (engine.engine) {
     case 'cloud':
-      return MANAGED_TRANSCRIPTION_CONFIG;
+      return { ...MANAGED_TRANSCRIPTION_CONFIG, language };
     case 'local':
-      return LOCAL_WHISPER_TRANSCRIPTION_CONFIG(engine.modelId);
+      return LOCAL_WHISPER_TRANSCRIPTION_CONFIG(engine.modelId, language);
     case 'byok':
-      return BYOK_DESKTOP_TRANSCRIPTION_CONFIG(engine.byokModel);
+      return BYOK_DESKTOP_TRANSCRIPTION_CONFIG(engine.byokModel, language);
   }
 };

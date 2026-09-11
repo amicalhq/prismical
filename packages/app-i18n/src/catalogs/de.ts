@@ -792,6 +792,10 @@ const de = {
       couldNotPause: 'Die Aufnahme konnte nicht pausiert werden.',
       couldNotResume: 'Die Aufnahme konnte nicht fortgesetzt werden.',
       couldNotStart: 'Die Aufnahme konnte nicht gestartet werden.',
+      languageUnsupported:
+        'Wähle in den Einstellungen ein mehrsprachiges Transkriptionsmodell aus, um in dieser Sprache aufzunehmen.',
+      languageChangeFailed:
+        'Die Sprache für diese Aufnahme konnte nicht geändert werden. Prüfe das Transkriptionsmodell in den Einstellungen und versuche es erneut.',
       modelMissing: 'Lade vor der Aufnahme in den Einstellungen ein Transkriptionsmodell herunter.',
       storageUnavailable:
         'Die Aufnahme konnte nicht gespeichert werden. Prüfe den freien Speicherplatz und versuche es erneut.',
@@ -841,6 +845,8 @@ const de = {
       allAudioSettings: 'Alle Audioeinstellungen…',
       systemAudioCaptured: 'Systemaudio wird ebenfalls aufgenommen',
       soundSettings: 'Eingang & Ton',
+      language: 'Sprache',
+      languageChip: 'Transkriptionssprache: {{language}}',
       latestEnhanced: 'Neueste Aufnahme verbessert ✓',
       enhanceChip: 'Diese Aufnahme aufbereiten',
       listening: 'Wird angehört und transkribiert…',
@@ -2316,7 +2322,8 @@ const de = {
         retry: 'Erneut versuchen',
       },
       language: {
-        description: 'Wähle die Sprache für die gesamte Prismical-Oberfläche.',
+        description:
+          'Die Sprache der App selbst - Menüs, Buttons, Einstellungen und Meldungen. Notizen und Transkripte bleiben unverändert.',
         label: 'Oberflächensprache',
         restart: {
           applyNextStart: 'Die neue Sprache wird beim nächsten Start von Prismical verwendet.',
@@ -2325,6 +2332,12 @@ const de = {
           restarting: 'Prismical wird neu gestartet…',
           title: 'Zum Ändern der Sprache neu starten',
         },
+      },
+      spokenLanguage: {
+        current: 'Aktuell {{language}}.',
+        description:
+          'Die Sprache, die du in deinen Aufnahmen sprichst; Live-Transkription und finales Transkript verwenden sie.',
+        open: 'Transkriptionseinstellungen',
       },
       theme: {
         dark: 'Dunkles Design',
@@ -2367,46 +2380,20 @@ const de = {
       title: 'Tastenkürzel',
     },
     transcription: {
-      autoDetectDescription:
-        'Lass Prismical die gesprochene Sprache automatisch erkennen. Deaktiviere dies, um unten eine bestimmte Sprache auszuwählen.',
-      autoDetectLabel: 'Sprache automatisch erkennen',
       description: 'Konfiguriere Transkriptionssprache und Mikrofoneingang.',
       desktopNotice:
         'Die Mikrofon- und Transkriptionssteuerung für den Desktop wird derzeit fertiggestellt. Die aktuelle Desktop-Aufnahme verwendet weiterhin ihre bisherigen Standardwerte.',
       language: {
         aria: 'Sprache auswählen',
         empty: 'Keine Sprache gefunden.',
-        label: 'Sprache',
+        label: 'Sprech- und Transkriptionssprache',
+        description:
+          'Die Sprache, die in deinen Aufnahmen gesprochen wird. Live-Transkription und finales Transkript verwenden sie; für ein Meeting in einer anderen Sprache änderst du sie im Aufnahmepanel.',
+        saveError:
+          'Die Transkriptionssprache konnte nicht geladen oder gespeichert werden. Bitte erneut versuchen.',
+        retry: 'Erneut versuchen',
         placeholder: 'Sprache auswählen…',
         search: 'Sprachen durchsuchen…',
-        selectHint:
-          'Deaktiviere die automatische Erkennung, um eine bestimmte Sprache auszuwählen.',
-      },
-      languages: {
-        ar: 'العربية',
-        cs: 'Čeština',
-        da: 'Dansk',
-        de: 'Deutsch',
-        el: 'Ελληνικά',
-        en: 'English',
-        es: 'Español',
-        fi: 'Suomi',
-        fr: 'Français',
-        he: 'עברית',
-        hi: 'हिन्दी',
-        id: 'Bahasa Indonesia',
-        it: 'Italiano',
-        ja: '日本語',
-        ko: '한국어',
-        nl: 'Nederlands',
-        pl: 'Polski',
-        pt: 'Português',
-        ru: 'Русский',
-        sv: 'Svenska',
-        th: 'ไทย',
-        tr: 'Türkçe',
-        vi: 'Tiếng Việt',
-        zh: '中文',
       },
       microphoneDescription: 'Wähle den Mikrofoneingang für Aufnahmen aus.',
       microphoneLabel: 'Mikrofon',

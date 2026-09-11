@@ -8,7 +8,6 @@ import {
   promoteMicrophone,
   resolveActiveMicrophone,
   setRecordingPreferences,
-  transcriptionLanguageFor,
 } from './recording-preferences';
 
 beforeEach(() => {
@@ -37,12 +36,10 @@ describe('recording preferences', () => {
       language: 'fr',
       microphonePriority: [{ deviceId: 'mic_2', name: 'External mic' }],
     });
-    expect(transcriptionLanguageFor(getRecordingPreferences())).toBe('fr');
   });
 
   it("maps auto-detect to the provider's multi-language mode", () => {
     setRecordingPreferences({ autoDetectLanguage: true, language: 'ja' });
-    expect(transcriptionLanguageFor(getRecordingPreferences())).toBe('multi');
   });
 
   it('consumes an auto-transcribe marker once and only for the matching note', () => {

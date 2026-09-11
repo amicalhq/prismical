@@ -5,7 +5,9 @@ import { useTranslation } from 'react-i18next';
 
 export interface RecordingPreferences {
   autoTranscribeNewNotes: boolean;
+  /** Legacy device-local language pick. Read once to seed the account preference; not written. */
   autoDetectLanguage: boolean;
+  /** Legacy device-local language pick (see above). The account preference is the source now. */
   language: string;
   /** Ordered device fallback chain, highest priority first. */
   microphonePriority: MicrophonePriorityEntry[];
@@ -133,10 +135,6 @@ export function useRecordingPreferences(): [
   return [preferences, set];
 }
 
-export function transcriptionLanguageFor(preferences: RecordingPreferences): string {
-  return preferences.autoDetectLanguage ? 'multi' : preferences.language;
-}
-
 export function findConnectedMicrophone<T extends { deviceId: string }>(
   entry: MicrophonePriorityEntry,
   connected: T[]
@@ -232,8 +230,7 @@ export function useMicrophoneDevices(enabled = true): MicrophoneDevice[] {
           .map((device, index) => ({
             deviceId: device.deviceId,
             label:
-              device.label ||
-              t('settings.transcription.microphoneNumber', { number: index + 1 }),
+              device.label || t('settings.transcription.microphoneNumber', { number: index + 1 }),
           }));
         if (cancelled) return;
         setDevices([

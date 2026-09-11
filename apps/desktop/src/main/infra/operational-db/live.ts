@@ -149,6 +149,8 @@ export const OperationalDbLive: Layer.Layer<OperationalDb, BootError, AppConfig 
               updatedAt: new Date().toISOString(),
             };
             if (patch.status !== undefined) set.status = patch.status;
+            if (patch.createInput !== undefined) set.createInput = patch.createInput;
+            if (patch.engineConfig !== undefined) set.engineConfig = patch.engineConfig;
             if (patch.phase !== undefined) set.phase = patch.phase;
             if (patch.endedAt !== undefined) set.endedAt = patch.endedAt;
             if (patch.durationMs !== undefined) set.durationMs = patch.durationMs;

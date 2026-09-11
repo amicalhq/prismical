@@ -193,7 +193,7 @@ export const makeFakeWorkspaceBackend = (): FakeWorkspaceBackend => {
   let requestResponder: (req: TransportRequest) => TransportResponse = req => ({
     ok: true,
     status: 201,
-    bodyJson: { success: true, result: req.body },
+    bodyJson: { success: true, result: req.body, applied: true },
   });
   let createResponder: (
     input: CreateRecordingInput

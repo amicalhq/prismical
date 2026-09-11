@@ -21,6 +21,7 @@ it.scoped(
         recordingId: 'rec_1',
       });
       const service: RecordingServiceApi = {
+        setLanguage: () => Effect.succeed(false),
         state,
         level: yield* SubscriptionRef.make(0),
         start: () =>

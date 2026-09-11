@@ -47,8 +47,6 @@ import { BYOK_API_KEY_SECRET, byokKeyForEndpoint } from './byok-credential';
 export const BYOK_TRANSCRIPTIONS_PATH = '/audio/transcriptions';
 /** Request deadline for one chunk and one provider call. */
 export const BYOK_REQUEST_TIMEOUT = Duration.seconds(30);
-/** The desktop constant (BYOK_DESKTOP_TRANSCRIPTION_CONFIG.language). */
-const BYOK_LANGUAGE = 'en';
 
 const EMPTY_OK: RecordingLaneResult<readonly RecordingSegment[]> = { ok: true, value: [] };
 const NOT_CONFIGURED: RecordingLaneResult<readonly RecordingSegment[]> = {
@@ -135,7 +133,7 @@ export const makeByokTranscriberLive = (
           const form = new FormData();
           form.append('model', engine.byokModel);
           form.append('file', new Blob([wav], { type: 'audio/wav' }), 'audio.wav');
-          form.append('language', BYOK_LANGUAGE);
+          form.append('language', engine.language ?? 'en');
           // Newer non-Whisper models may only support json responses.
           const isWhisper = engine.byokModel.toLowerCase().includes('whisper');
           form.append('response_format', isWhisper ? 'verbose_json' : 'json');

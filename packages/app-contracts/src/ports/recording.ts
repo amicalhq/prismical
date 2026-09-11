@@ -62,6 +62,8 @@ export interface NativeRecordingState {
   }[];
   readonly status: NativeRecordingStatus;
   readonly captureMode: NativeCaptureMode | null;
+  /** Spoken language actually used by the active native recording. */
+  readonly language?: string;
   readonly requestedCaptureMode: NativeCaptureMode | null;
   /** Whether this recording spends Cloud transcription quota, fixed by main at Start. */
   readonly spendsCloudQuota?: boolean | null;
@@ -98,7 +100,7 @@ export interface NativeRecordingState {
  */
 export type NativeStartResult =
   | { readonly ok: true; readonly recordingId: string }
-  | { readonly ok: false; readonly reason: 'permission-denied' | 'busy' | 'no-session' | 'model-missing' | 'storage-unavailable' | 'suggestion-pending' | 'update-required' };
+  | { readonly ok: false; readonly reason: 'permission-denied' | 'busy' | 'no-session' | 'model-missing' | 'language-unsupported' | 'storage-unavailable' | 'suggestion-pending' | 'update-required' };
 
 export interface NativeRecordingControl {
   /**
@@ -110,6 +112,8 @@ export interface NativeRecordingControl {
   start(input: {
     noteId: string | null;
     title: string;
+    /** Validated ASR language code; main resolves the saved preference when available. */
+    language?: string;
     /** Cached allowance before capture begins. Omitted when unknown or unlimited. */
     quotaRemainingAtStartSeconds?: number | null;
     /**
@@ -125,6 +129,8 @@ export interface NativeRecordingControl {
   }): Promise<NativeStartResult>;
   /** Gracefully stop + finalize the given recording (no-op if it is not active). */
   stop(recordingId: string): Promise<void>;
+  /** Change later audio and finalization without changing the recording's provider/model. */
+  setLanguage?(recordingId: string, language: string): Promise<boolean>;
   /** Claim the completed recording once across native windows. */
   claimCompletion(recordingId: string): Promise<boolean>;
   /** Pause/resume without ending or replacing the native recording. */

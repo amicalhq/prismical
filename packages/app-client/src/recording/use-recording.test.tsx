@@ -14,7 +14,7 @@ import type {
 import { DEFAULT_DEVICE_SETTINGS, INERT_UPDATE_STATE } from '@prismical/app-contracts';
 import type { AppPorts, NavigationAdapter } from '../ports-context';
 import { PortsProvider } from '../ports-context';
-import { createRecording, finalizeRecording } from '../api/transcription';
+import { createRecording, finalizeRecording, updateRecordingLanguage } from '../api/transcription';
 import { useRecording } from './use-recording';
 import { organizationsKey } from '../api/hooks/organizations';
 import { usageKey } from '../api/hooks/usage';
@@ -55,6 +55,9 @@ const STABLE_SESSION = {
 vi.mock('../api/transcription', () => ({
   createRecording: vi.fn(async () => ({ id: 'rec_web', startedAt: '2026-07-18T00:00:00.000Z' })),
   finalizeRecording: vi.fn(async () => {}),
+  updateRecordingLanguage: vi.fn(async (_id: string, config: Record<string, unknown> | null, language: string) => ({
+    transcriptionConfig: { ...config, language },
+  })),
 }));
 vi.mock('../api/hooks/model-defaults', () => ({
   ensureModelDefault: vi.fn(async () => ({})),
@@ -1426,6 +1429,55 @@ describe('useRecording — web branch pause/resume', () => {
       audio: expect.objectContaining({ deviceId: { exact: 'mic_external' } }),
     });
   });
+
+  it('does not apply a delayed language choice from one recording to its replacement', async () => {
+    const { result } = renderWeb();
+    await act(async () => { await result.current.start('note_1', 'First'); });
+    const changeFirstLanguage = result.current.setLanguage;
+    await act(async () => { await result.current.stop(); });
+    const config = { provider: 'prismical-cloud', model: 'auto', language: 'en' };
+    vi.mocked(createRecording).mockResolvedValueOnce({
+      id: 'rec_replacement', noteId: 'note_1', title: 'Replacement', status: 'recording',
+      startedAt: null, endedAt: null, durationMs: null, transcriptionConfig: config,
+    });
+    await act(async () => { await result.current.start('note_1', 'Replacement'); });
+    expect(result.current.recordingId).toBe('rec_replacement');
+
+    await act(async () => { await changeFirstLanguage('ja'); });
+    expect(updateRecordingLanguage).not.toHaveBeenCalled();
+    await act(async () => { await result.current.setLanguage('fr'); });
+    expect(updateRecordingLanguage).toHaveBeenCalledWith('rec_replacement', config, 'fr', {
+      activeOrgId: 'org_1', authToken: 'tok',
+    });
+  });
+
+  it.each(['stop', 'replacement'])(
+    'does not update a recording after %s while language authentication is pending',
+    async transition => {
+      const session = mutableAuth(STABLE_SESSION);
+      const { result } = renderWithPorts({ uploadTranscriptionChunk: upload }, undefined, session.auth);
+      await act(async () => { await result.current.start('note_1', 'First'); });
+      let resolveToken!: (token: string) => void;
+      const getToken = vi.spyOn(session.auth, 'getTokenForSession').mockImplementationOnce(
+        () => new Promise(resolve => { resolveToken = resolve; })
+      );
+      let changing!: Promise<void>;
+      act(() => { changing = result.current.setLanguage('ja'); });
+      expect(getToken).toHaveBeenCalledWith('user_1');
+      await act(async () => { await result.current.stop(); });
+      expect(result.current.state).toBe('idle');
+      if (transition === 'replacement') {
+        vi.mocked(createRecording).mockResolvedValueOnce({
+          id: 'rec_replacement', noteId: 'note_1', title: 'Replacement', status: 'recording',
+          startedAt: null, endedAt: null, durationMs: null,
+        });
+        await act(async () => { await result.current.start('note_1', 'Replacement'); });
+        expect(result.current.recordingId).toBe('rec_replacement');
+      }
+      await act(async () => { resolveToken('ordinary-token'); await changing; });
+      expect(updateRecordingLanguage).not.toHaveBeenCalled();
+    }
+  );
 
   it('falls back to the default microphone when a preferred device disappears', async () => {
     setRecordingPreferences({

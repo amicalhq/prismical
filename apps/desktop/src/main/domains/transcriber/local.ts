@@ -32,6 +32,7 @@
  */
 import { Clock, Effect, Either, HashSet, Layer, Option, Ref } from 'effect';
 import { applyReplacements, targets } from '@prismical/ai-prompts/transcription';
+import type { TranscriptionLanguage } from '@prismical/api-contracts/apps/v1';
 import type { StreamingLinearResampler } from '../../infra/audio/streaming-linear-resampler';
 import { MainLogger, type ScopedLog } from '../../infra/logging/service';
 import { ProductDb } from '../../infra/product-db/service';
@@ -47,6 +48,7 @@ import {
   type TranscribeChunkParams,
 } from '../transport/service';
 import { isNearSilence, makeWhisperResampler } from './audio';
+import { supportsRecordingLanguage } from './engine';
 import { mintChunkSegment } from './segment';
 import { LocalTranscriberLane, type TranscriberLaneApi } from './service';
 import { makeVocabularySource } from './vocabulary';
@@ -71,8 +73,8 @@ export const LANE_IDLE_TTL_MS = 10 * 60_000;
 export const ENGINE_BREAKER_THRESHOLD = 2;
 
 /**
- * The decode options the lane sends (the plan's frozen five). `language` is
- * the desktop constant (LOCAL_WHISPER_TRANSCRIPTION_CONFIG.language). The
+ * The decode options the lane sends include the recording's spoken language;
+ * translation stays disabled. The
  * worker passes every key through to the addon verbatim. When the VAD
  * weights are installed the pair `vad: true, vad_model_path` is appended and
  * NOTHING else — every other `vad_*` knob keeps whisper-cli's defaults (the
@@ -80,9 +82,11 @@ export const ENGINE_BREAKER_THRESHOLD = 2;
  */
 export const localDecodeOptions = (
   initialPrompt: string | undefined,
-  vadModelPath?: string
+  vadModelPath?: string,
+  language: TranscriptionLanguage = 'en'
 ): WhisperDecodeOptions => ({
-  language: 'en',
+  language,
+  translate: false,
   initial_prompt: initialPrompt ?? '',
   suppress_blank: true,
   suppress_non_speech_tokens: true,
@@ -195,6 +199,13 @@ export const LocalWhisperLive: Layer.Layer<
       engine
     ) =>
       Effect.gen(function* () {
+        if (!supportsRecordingLanguage(engine, engine.language ?? 'en')) {
+          return {
+            ok: false,
+            retryable: true,
+            failure: { kind: 'engine', reason: 'language-unsupported' },
+          };
+        }
         // An open circuit bypasses the engine outright — every remaining
         // chunk of this recording fails retryable so the drain re-covers it.
         const breaker = yield* Clock.currentTimeMillis.pipe(
@@ -233,7 +244,7 @@ export const LocalWhisperLive: Layer.Layer<
             Effect.zipRight(
               whisper.transcribe(
                 audio16k,
-                localDecodeOptions(prompt, Option.getOrUndefined(vadPath))
+                localDecodeOptions(prompt, Option.getOrUndefined(vadPath), engine.language)
               )
             ),
             Effect.either

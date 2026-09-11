@@ -43,6 +43,30 @@ describe('recording transcription configuration', () => {
     })
   );
 
+  it.effect('keeps the selected spoken language and exact account provider/model in cloud defaults', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWorkspaceBackend();
+      const backend = yield* WorkspaceBackend.pipe(Effect.provide(fake.layer));
+      fake.setRequestResponder(() => ({
+        ok: true,
+        status: 200,
+        bodyJson: {
+          formatting: null,
+          transcription: { instanceId: 'inst_user', modelId: 'whisper-1' },
+        },
+      }));
+      assert.deepStrictEqual(
+        yield* resolveTranscriptionConfig({ ...CLOUD, language: 'ja' }, backend),
+        { provider: 'byok', model: 'whisper-1', language: 'ja', instanceId: 'inst_user', modelId: 'whisper-1' }
+      );
+      fake.setRequestResponder(() => ({ error: { code: 'INTERNAL' } }));
+      assert.deepStrictEqual(
+        yield* resolveTranscriptionConfig({ ...CLOUD, language: 'ja' }, backend),
+        { ...MANAGED_TRANSCRIPTION_CONFIG, language: 'ja' }
+      );
+    })
+  );
+
   it.effect('keeps local and device-BYOK configuration without requesting server defaults', () =>
     Effect.gen(function* () {
       const fake = makeFakeWorkspaceBackend();

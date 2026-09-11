@@ -5,7 +5,6 @@ import { Check, ChevronsUpDown, Mic } from 'lucide-react';
 import { Card, CardContent } from '../../ui/card';
 import { Label } from '../../ui/label';
 import { Separator } from '../../ui/separator';
-import { Switch } from '../../ui/switch';
 import {
   Command,
   CommandEmpty,
@@ -15,9 +14,11 @@ import {
   CommandList,
 } from '../../ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '../../ui/popover';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../ui/tooltip';
+import { TooltipProvider } from '../../ui/tooltip';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
 import { cn } from '../../lib/utils';
+import { transcriptionLanguageOptions } from '../../lib/transcription-language-name';
+import { Button } from '../../ui/button';
 import {
   DEFAULT_MICROPHONE_DEVICE_ID,
   mergeConnectedMicrophones,
@@ -26,52 +27,26 @@ import {
   useDesktopCapabilities,
   useMicrophoneDevices,
   useRecordingPreferences,
+  useTranscriptionPreference,
+  type TranscriptionLanguage,
 } from '@prismical/app-client';
 import { useTranslation } from 'react-i18next';
 
-// A representative subset of the desktop AVAILABLE_LANGUAGES (minus "auto",
-// which is now the toggle above the picker).
-const LANGUAGES = [
-  { value: 'en', flag: '🇺🇸' },
-  { value: 'zh', flag: '🇨🇳' },
-  { value: 'es', flag: '🇪🇸' },
-  { value: 'fr', flag: '🇫🇷' },
-  { value: 'de', flag: '🇩🇪' },
-  { value: 'ja', flag: '🇯🇵' },
-  { value: 'ko', flag: '🇰🇷' },
-  { value: 'pt', flag: '🇵🇹' },
-  { value: 'it', flag: '🇮🇹' },
-  { value: 'ru', flag: '🇷🇺' },
-  { value: 'ar', flag: '🇸🇦' },
-  { value: 'hi', flag: '🇮🇳' },
-  { value: 'nl', flag: '🇳🇱' },
-  { value: 'pl', flag: '🇵🇱' },
-  { value: 'tr', flag: '🇹🇷' },
-  { value: 'sv', flag: '🇸🇪' },
-  { value: 'da', flag: '🇩🇰' },
-  { value: 'fi', flag: '🇫🇮' },
-  { value: 'el', flag: '🇬🇷' },
-  { value: 'he', flag: '🇮🇱' },
-  { value: 'th', flag: '🇹🇭' },
-  { value: 'vi', flag: '🇻🇳' },
-  { value: 'id', flag: '🇮🇩' },
-  { value: 'cs', flag: '🇨🇿' },
-] as const;
-
-// Searchable language combobox (mirrors the desktop dictation Combobox). The
-// whole control is disabled when auto-detect is on.
-function LanguageCombobox({
+// Searchable language combobox (mirrors the desktop dictation Combobox). Names come from the
+// platform's language table in the interface locale; the mixed entry is labelled by the catalog.
+export function LanguageCombobox({
   value,
   onChange,
   disabled,
 }: {
-  value: string;
-  onChange: (v: string) => void;
+  value: TranscriptionLanguage | undefined;
+  onChange: (v: TranscriptionLanguage) => void;
   disabled?: boolean;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [open, setOpen] = React.useState(false);
-  const selected = LANGUAGES.find(l => l.value === value);
+  const options = React.useMemo(() => transcriptionLanguageOptions(i18n.language), [i18n.language]);
+  const selected = options.find(l => l.code === value);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -83,9 +58,7 @@ function LanguageCombobox({
           className="flex h-9 w-[220px] items-center justify-between gap-2 rounded-md border border-input bg-transparent px-3 text-sm transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
         >
           <span className="truncate">
-            {selected
-              ? `${selected.flag} ${t(`settings.transcription.languages.${selected.value}`)}`
-              : t('settings.transcription.language.placeholder')}
+            {selected ? selected.name : t('settings.transcription.language.placeholder')}
           </span>
           <ChevronsUpDown className="size-4 shrink-0 opacity-50" />
         </button>
@@ -96,29 +69,26 @@ function LanguageCombobox({
           <CommandList>
             <CommandEmpty>{t('settings.transcription.language.empty')}</CommandEmpty>
             <CommandGroup>
-              {LANGUAGES.map(lang => {
-                const label = `${lang.flag} ${t(`settings.transcription.languages.${lang.value}`)}`;
-                return (
-                  <CommandItem
-                    key={lang.value}
-                    value={label}
-                    keywords={[lang.value]}
-                    onSelect={() => {
-                      onChange(lang.value);
-                      setOpen(false);
-                    }}
-                    className="flex items-center gap-2"
-                  >
-                    <Check
-                      className={cn(
-                        'h-4 w-4 shrink-0',
-                        value === lang.value ? 'opacity-100' : 'opacity-0'
-                      )}
-                    />
-                    <span className="flex-1 truncate">{label}</span>
-                  </CommandItem>
-                );
-              })}
+              {options.map(lang => (
+                <CommandItem
+                  key={lang.code}
+                  value={lang.name}
+                  keywords={[lang.code]}
+                  onSelect={() => {
+                    onChange(lang.code);
+                    setOpen(false);
+                  }}
+                  className="flex items-center gap-2"
+                >
+                  <Check
+                    className={cn(
+                      'h-4 w-4 shrink-0',
+                      value === lang.code ? 'opacity-100' : 'opacity-0'
+                    )}
+                  />
+                  <span className="flex-1 truncate">{lang.name}</span>
+                </CommandItem>
+              ))}
             </CommandGroup>
           </CommandList>
         </Command>
@@ -137,6 +107,7 @@ export function TranscriptionScreen({ engineSettings }: { engineSettings?: React
   const { t } = useTranslation();
   const isDesktop = useDesktopCapabilities().has('global-shortcuts');
   const [preferences, setPreferences] = useRecordingPreferences();
+  const spoken = useTranscriptionPreference();
   const microphones = useMicrophoneDevices(!isDesktop);
   const microphoneOptions = microphones.length
     ? microphones
@@ -152,28 +123,6 @@ export function TranscriptionScreen({ engineSettings }: { engineSettings?: React
     microphoneOptions
   );
 
-  if (isDesktop) {
-    return (
-      <div>
-        <div className="mb-8">
-          <h1 className="text-xl font-bold">{t('settings.transcription.title')}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {t('settings.transcription.description')}
-          </p>
-        </div>
-        {engineSettings ?? (
-          <Card>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">
-                {t('settings.transcription.desktopNotice')}
-              </p>
-            </CardContent>
-          </Card>
-        )}
-      </div>
-    );
-  }
-
   return (
     <TooltipProvider>
       <div>
@@ -186,100 +135,98 @@ export function TranscriptionScreen({ engineSettings }: { engineSettings?: React
 
         <Card>
           <CardContent className="space-y-4">
-            {/* Auto-detect language */}
-            <div className="flex items-center justify-between">
-              <div className="space-y-1">
+            {/* Spoken language: the account's choice, shared with the recording panel's gear. */}
+            <div className="flex items-start justify-between gap-6">
+              <div className="min-w-0 space-y-1">
                 <Label className="text-base font-semibold text-foreground">
-                  {t('settings.transcription.autoDetectLabel')}
-                </Label>
-                <p className="text-xs text-muted-foreground">
-                  {t('settings.transcription.autoDetectDescription')}
-                </p>
-              </div>
-              <Switch
-                checked={preferences.autoDetectLanguage}
-                onCheckedChange={on => setPreferences({ autoDetectLanguage: on })}
-              />
-            </div>
-
-            {/* Language picker — disabled while auto-detect is on */}
-            <div className="flex items-start justify-between rounded-md border border-border p-4">
-              <div
-                className={cn(
-                  'flex flex-col gap-2',
-                  preferences.autoDetectLanguage && 'pointer-events-none opacity-50'
-                )}
-              >
-                <Label className="text-sm font-medium text-foreground">
                   {t('settings.transcription.language.label')}
                 </Label>
-              </div>
-              <Tooltip delayDuration={100}>
-                <TooltipTrigger asChild>
-                  <div>
-                    <LanguageCombobox
-                      value={preferences.language}
-                      onChange={language => setPreferences({ language })}
-                      disabled={preferences.autoDetectLanguage}
-                    />
-                  </div>
-                </TooltipTrigger>
-                {preferences.autoDetectLanguage && (
-                  <TooltipContent className="max-w-sm text-center">
-                    {t('settings.transcription.language.selectHint')}
-                  </TooltipContent>
-                )}
-              </Tooltip>
-            </div>
-
-            <Separator />
-
-            {/* Microphone */}
-            <div className="flex items-center justify-between">
-              <div className="space-y-1">
-                <Label
-                  htmlFor="dictation-microphone"
-                  className="text-base font-semibold text-foreground"
-                >
-                  {t('settings.transcription.microphoneLabel')}
-                </Label>
                 <p className="text-xs text-muted-foreground">
-                  {t('settings.transcription.microphoneDescription')}
+                  {t('settings.transcription.language.description')}
                 </p>
               </div>
-              <Select
-                value={activeMicrophone}
-                onValueChange={deviceId =>
-                  setPreferences({
-                    microphonePriority: promoteMicrophone(
-                      mergeConnectedMicrophones(preferences.microphonePriority, microphoneOptions),
-                      microphoneOptions.find(microphone => microphone.deviceId === deviceId) ??
-                        microphoneOptions[0]!
-                    ),
-                  })
-                }
-              >
-                <SelectTrigger id="dictation-microphone" className="w-[220px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {microphoneOptions.map(microphone => (
-                    <SelectItem key={microphone.deviceId} value={microphone.deviceId}>
-                      <div className="flex items-center gap-2">
-                        <Mic className="h-4 w-4" />
-                        <span>{microphone.label}</span>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <LanguageCombobox
+                value={spoken?.language}
+                onChange={language => {
+                  void spoken?.setLanguage(language).catch(() => {});
+                }}
+                disabled={!spoken || spoken.isPending}
+              />
             </div>
+            {spoken?.error && (
+              <div role="alert" className="text-sm text-destructive">
+                {t('settings.transcription.language.saveError')}
+                <Button variant="ghost" size="sm" onClick={spoken.retry}>
+                  {t('settings.transcription.language.retry')}
+                </Button>
+              </div>
+            )}
+
+            {!isDesktop && (
+              <>
+                <Separator />
+
+                {/* Microphone */}
+                <div className="flex items-center justify-between">
+                  <div className="space-y-1">
+                    <Label
+                      htmlFor="dictation-microphone"
+                      className="text-base font-semibold text-foreground"
+                    >
+                      {t('settings.transcription.microphoneLabel')}
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      {t('settings.transcription.microphoneDescription')}
+                    </p>
+                  </div>
+                  <Select
+                    value={activeMicrophone}
+                    onValueChange={deviceId =>
+                      setPreferences({
+                        microphonePriority: promoteMicrophone(
+                          mergeConnectedMicrophones(preferences.microphonePriority, microphoneOptions),
+                          microphoneOptions.find(microphone => microphone.deviceId === deviceId) ??
+                            microphoneOptions[0]!
+                        ),
+                      })
+                    }
+                  >
+                    <SelectTrigger id="dictation-microphone" className="w-[220px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {microphoneOptions.map(microphone => (
+                        <SelectItem key={microphone.deviceId} value={microphone.deviceId}>
+                          <div className="flex items-center gap-2">
+                            <Mic className="h-4 w-4" />
+                            <span>{microphone.label}</span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
+            )}
 
             <p className="text-xs text-muted-foreground">
               {t('settings.transcription.nextRecording')}
             </p>
           </CardContent>
         </Card>
+        {isDesktop && (
+          <div className="mt-6">
+            {engineSettings ?? (
+              <Card>
+                <CardContent>
+                  <p className="text-sm text-muted-foreground">
+                    {t('settings.transcription.desktopNotice')}
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        )}
       </div>
     </TooltipProvider>
   );

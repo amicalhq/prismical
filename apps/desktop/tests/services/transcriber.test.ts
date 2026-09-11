@@ -30,6 +30,7 @@ import {
   BYOK_DESKTOP_TRANSCRIPTION_CONFIG,
   LOCAL_WHISPER_TRANSCRIPTION_CONFIG,
   resolveRecordingEngine,
+  supportsRecordingLanguage,
   transcriptionConfigFor,
   type RecordingEngine,
 } from '../../src/main/domains/transcriber/engine';
@@ -195,6 +196,7 @@ describe('resolveRecordingEngine (mode × preference; model presence is the lane
   it('cloud mode keeps the stored choice; local mode coerces the cloud default to local', () => {
     assert.deepStrictEqual(resolveRecordingEngine('cloud', pref()), {
       engine: 'cloud',
+      language: 'en',
       modelId: RECOMMENDED_MODEL_ID,
       byokBaseUrl: null,
       byokModel: null,
@@ -204,6 +206,26 @@ describe('resolveRecordingEngine (mode × preference; model presence is the lane
     assert.strictEqual(resolveRecordingEngine('local', pref({ engine: 'local' })).engine, 'local');
     assert.strictEqual(resolveRecordingEngine('cloud', pref({ engine: 'byok' })).engine, 'byok');
     assert.strictEqual(resolveRecordingEngine('local', pref({ engine: 'byok' })).engine, 'byok');
+  });
+
+  it('keeps the chosen engine configuration when resolving a non-English recording', () => {
+    const setting = pref({
+      engine: 'byok', modelId: 'whisper-small',
+      byokBaseUrl: 'https://byok.test/v1', byokModel: 'whisper-1',
+    });
+    assert.deepStrictEqual(resolveRecordingEngine('cloud', setting, 'ja'), {
+      ...setting, modelId: 'whisper-small', language: 'ja',
+    });
+  });
+
+  it('rejects non-English only for the English-only local model without rerouting the selection', () => {
+    const englishOnly = resolveRecordingEngine('local', pref(), 'ja');
+    assert.strictEqual(englishOnly.modelId, 'whisper-base-en');
+    assert.isFalse(supportsRecordingLanguage(englishOnly, 'ja'));
+    assert.isTrue(supportsRecordingLanguage(englishOnly, 'en'));
+    assert.isTrue(supportsRecordingLanguage({ ...englishOnly, modelId: 'whisper-small' }, 'ja'));
+    assert.isTrue(supportsRecordingLanguage({ ...englishOnly, engine: 'cloud' }, 'ja'));
+    assert.isTrue(supportsRecordingLanguage({ ...englishOnly, engine: 'byok' }, 'ja'));
   });
 
   it('modelId falls back to the recommended model; an explicit id and the BYOK knobs pass through', () => {
@@ -222,6 +244,7 @@ describe('resolveRecordingEngine (mode × preference; model presence is the lane
     );
     assert.deepStrictEqual(byok, {
       engine: 'byok',
+      language: 'en',
       modelId: RECOMMENDED_MODEL_ID,
       byokBaseUrl: 'https://byok.test/v1',
       byokModel: 'whisper-1',
@@ -230,8 +253,8 @@ describe('resolveRecordingEngine (mode × preference; model presence is the lane
 });
 
 describe('transcriptionConfigFor (frozen per engine)', () => {
-  it('cloud → the managed constant itself (the disclosure-guarded one)', () => {
-    assert.strictEqual(transcriptionConfigFor(CLOUD), MANAGED_TRANSCRIPTION_CONFIG);
+  it('historical cloud recordings keep the managed English default', () => {
+    assert.deepStrictEqual(transcriptionConfigFor(CLOUD), MANAGED_TRANSCRIPTION_CONFIG);
   });
 
   it('local → local-whisper + the local:-prefixed model id; byok → byok-desktop + the model (or unknown)', () => {
@@ -258,6 +281,14 @@ describe('transcriptionConfigFor (frozen per engine)', () => {
       transcriptionConfigFor({ ...BYOK, byokModel: null }),
       BYOK_DESKTOP_TRANSCRIPTION_CONFIG(null)
     );
+  });
+
+  it('freezes the selected spoken language without changing model or provider metadata', () => {
+    for (const engine of [CLOUD, LOCAL, BYOK]) {
+      assert.deepStrictEqual(transcriptionConfigFor({ ...engine, language: 'ja' }), {
+        ...transcriptionConfigFor(engine), language: 'ja',
+      });
+    }
   });
 
   it('never carries an instanceId because the server would resolve BYOK on every chunk upload', () => {

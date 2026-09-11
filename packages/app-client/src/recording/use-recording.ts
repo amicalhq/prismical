@@ -14,8 +14,11 @@ import { drainAudioSession, type AudioDrainResult } from './audio-outbox-drain';
 import {
   createRecording,
   finalizeRecording,
+  updateRecordingLanguage,
   type CoreTranscriptSegment,
 } from '../api/transcription';
+import { resolveTranscriptionLanguage } from '../settings/transcription-language';
+import type { TranscriptionLanguage } from '@prismical/api-contracts/apps/v1';
 import {
   listPendingRecordingCompletions,
   removePendingRecordingCompletion,
@@ -45,7 +48,6 @@ import {
   DEFAULT_MICROPHONE_DEVICE_ID,
   getRecordingPreferences,
   resolveActiveMicrophone,
-  transcriptionLanguageFor,
 } from './recording-preferences';
 
 const SAMPLE_RATE = 16000; // mirrors desktop useAudioCapture
@@ -307,6 +309,14 @@ export interface RecordingCompletion {
 }
 
 export interface UseRecording {
+  /** Actual active native language; distinct from the saved default for the next recording. */
+  language?: TranscriptionLanguage;
+  /**
+   * Change the spoken language of the running recording (the account default changed from the
+   * panel). Later chunks and the final pass follow it; audio already transcribed is not re-run.
+   * A no-op when nothing is recording.
+   */
+  setLanguage: (language: TranscriptionLanguage) => Promise<void>;
   state: RecState;
   isRecording: boolean;
   isPaused: boolean;
@@ -373,8 +383,20 @@ export function useRecording({
   skipAutoEnhanceForNote,
 }: { handleCompletion?: boolean; skipAutoEnhanceForNote?: string } = {}): UseRecording {
   const [state, setState] = React.useState<RecState>('idle');
+  const stateRef = React.useRef<RecState>('idle');
+  React.useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
   const [recordingId, setRecordingId] = React.useState<string | null>(null);
   const [noteId, setNoteId] = React.useState<string | null>(null);
+  // What the running recording was created with, so a mid-recording language change can send the
+  // whole config back (the column is one jsonb value) under the owner's auth.
+  const activeConfigRef = React.useRef<{
+    recordingId: string;
+    config: Record<string, unknown> | null;
+    ownerOrgId: string;
+    ownerSessionKey: string;
+  } | null>(null);
   const [finalizingIds, setFinalizingIds] = React.useState<Set<string>>(() => new Set());
   const finalizingIdsRef = React.useRef(finalizingIds);
   React.useEffect(() => {
@@ -425,6 +447,28 @@ export function useRecording({
   // the audio/wav POST; desktop never mounts this — its record button routes to
   // main's native pipeline).
   const { auth, recording, analytics } = usePorts();
+  const setLanguage = React.useCallback(
+    async (language: TranscriptionLanguage) => {
+      const active = activeConfigRef.current;
+      // Only a running recording follows a change; a finished one keeps the config it ended with.
+      if (!active || active.recordingId !== recordingId ||
+        (stateRef.current !== 'recording' && stateRef.current !== 'paused')) return;
+      const authToken = await boundAuthToken(auth, active.ownerSessionKey);
+      if (activeConfigRef.current !== active ||
+        (stateRef.current !== 'recording' && stateRef.current !== 'paused')) return;
+      const updated = await updateRecordingLanguage(active.recordingId, active.config, language, {
+        activeOrgId: active.ownerOrgId,
+        authToken,
+      });
+      if (activeConfigRef.current?.recordingId === active.recordingId) {
+        activeConfigRef.current = {
+          ...active,
+          config: updated.transcriptionConfig ?? { ...active.config, language },
+        };
+      }
+    },
+    [auth, recordingId]
+  );
   const finishRecording = React.useCallback(
     (finished: RecordingCompletion) => {
       // Completion remains owned even when the initiating renderer unmounts during its claim.
@@ -847,6 +891,7 @@ export function useRecording({
       void s.writes.then(s.releaseCapture, s.releaseCapture);
       setState('idle');
       setRecordingId(null);
+      activeConfigRef.current = null;
       setNoteId(null);
       setCompletedRecording(null);
       setStartedAt(null);
@@ -898,6 +943,7 @@ export function useRecording({
         // Bind the starting UI before awaiting policy or the native recorder.
         setNoteId(noteId);
         setRecordingId(null);
+        activeConfigRef.current = null;
         setStartedAt(null);
         setCompletedRecording(null);
         setState('starting');
@@ -964,6 +1010,7 @@ export function useRecording({
       };
       setNoteId(noteId);
       setRecordingId(null);
+      activeConfigRef.current = null;
       setStartedAt(null);
       setLiveSegments([]);
       segmentCountRef.current = 0;
@@ -991,13 +1038,25 @@ export function useRecording({
           activeOrgId: ownerOrgId,
           authToken,
         });
-        const preferences = getRecordingPreferences();
         authToken = await boundAuthToken(auth, ownerSessionKey);
         const rec = await createRecording(
-          { noteId, title, ...modelParams, language: transcriptionLanguageFor(preferences) },
+          {
+            noteId,
+            title,
+            ...modelParams,
+            // The account's spoken language (Settings > Transcription / the panel's gear); waits
+            // briefly for an account still loading, guesses from the device without one.
+            language: await resolveTranscriptionLanguage(getRecordingPreferences()),
+          },
           { activeOrgId: ownerOrgId, authToken }
         );
         assertOpening();
+        activeConfigRef.current = {
+          recordingId: rec.id,
+          config: rec.transcriptionConfig ?? null,
+          ownerOrgId,
+          ownerSessionKey,
+        };
         releaseCapture = await holdAudioCapture(rec.id);
         await createAudioSession({
           recordingId: rec.id,
@@ -1007,6 +1066,7 @@ export function useRecording({
           ownerSessionKey,
         });
         assertOpening();
+        const preferences = getRecordingPreferences();
         openingStream = await openWebMicrophone(
           await resolveWebMicrophone(preferences.microphonePriority)
         );
@@ -1445,6 +1505,7 @@ export function useRecording({
     autoStopRequested,
     keepRecording,
     pauseFromPrompt,
+    setLanguage,
     start,
     pause,
     resume,

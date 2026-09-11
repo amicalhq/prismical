@@ -224,6 +224,7 @@ describe('widget-window IPC handlers', () => {
       });
       const stops: string[] = [];
       const recApi: RecordingServiceApi = {
+        setLanguage: () => Effect.succeed(false),
         claimCompletion: () => Effect.succeed(false),
         resolveCompletion: () => Effect.void,
         state: recState,
@@ -260,6 +261,7 @@ describe('widget-window IPC handlers', () => {
         const recState = yield* SubscriptionRef.make<RecordingState>(idleRecordingState);
         const starts: unknown[] = [];
         const recApi: RecordingServiceApi = {
+          setLanguage: () => Effect.succeed(false),
           claimCompletion: () => Effect.succeed(false),
         resolveCompletion: () => Effect.void,
           state: recState,
@@ -321,6 +323,7 @@ describe('widget-window IPC handlers', () => {
         startedAt: 1_700_000_000_000,
       });
       const recApi: RecordingServiceApi = {
+        setLanguage: () => Effect.succeed(false),
         claimCompletion: () => Effect.succeed(false),
         resolveCompletion: () => Effect.void,
         state: recState,
@@ -483,6 +486,7 @@ describe('widget-window IPC handlers', () => {
       });
       const calls: string[] = [];
       const recApi: RecordingServiceApi = {
+        setLanguage: () => Effect.succeed(false),
         claimCompletion: () => Effect.succeed(false),
         resolveCompletion: () => Effect.void,
         state: recState,
@@ -532,6 +536,7 @@ describe('widget-window IPC handlers', () => {
       const levelRef = yield* SubscriptionRef.make(0);
       const recState = yield* SubscriptionRef.make<RecordingState>(idleRecordingState);
       const recApi: RecordingServiceApi = {
+        setLanguage: () => Effect.succeed(false),
         claimCompletion: () => Effect.succeed(false),
         resolveCompletion: () => Effect.void,
         state: recState,
@@ -614,6 +619,7 @@ describe('widget-window IPC handlers', () => {
         startedAt: 1_000,
       });
       const recApi: RecordingServiceApi = {
+        setLanguage: () => Effect.succeed(false),
         claimCompletion: () => Effect.succeed(false),
         resolveCompletion: () => Effect.void,
         state: recState,

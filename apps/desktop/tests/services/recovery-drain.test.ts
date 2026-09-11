@@ -1786,7 +1786,7 @@ describe('RecoveryDrain finalized data and frozen engine', () => {
           .resolved,
         1
       );
-      assert.deepStrictEqual(received, engineConfig);
+      assert.deepStrictEqual(received, { ...engineConfig, language: 'en' });
       yield* Scope.close(h.scope, Exit.void);
     })
   );
@@ -1813,6 +1813,72 @@ describe('RecoveryDrain finalized data and frozen engine', () => {
       assert.strictEqual((yield* h.drain()).parked, 1);
       assert.strictEqual((yield* h.db.getRecoveryOutbox(recordingId))?.lastError, 'model-missing');
       assert.isTrue(fs.existsSync(dir));
+      yield* Scope.close(h.scope, Exit.void);
+    })
+  );
+});
+
+describe('RecoveryDrain spoken language', () => {
+  it.effect('repairs the crash gap between durable language and API writes before cloud chunks or finalization', () =>
+    Effect.gen(function* () {
+      const h = yield* setup;
+      const recordingId = 'rec_language_crash_gap';
+      const dir = h.recoveryDir(recordingId);
+      const transcriptionConfig = { provider: 'byok', model: 'nova-3', instanceId: 'inst_original', modelId: 'nova-3', language: 'ja' };
+      yield* writeWav(dir, 'mic', seconds(1));
+      yield* h.insertRecovery({
+        recordingId, captureMode: 'mic', wavPath: dir,
+        createInput: { recordingId, captureMode: 'mic', title: 'Recovered', startedAt: 0, transcriptionConfig },
+        engineConfig: { engine: 'cloud', modelId: RECOMMENDED_MODEL_ID, byokBaseUrl: null, byokModel: null, language: 'ja' },
+      });
+      h.fakeCloud.setRequestResponder(() => ({ ok: true, status: 503, bodyJson: null }));
+      yield* h.drain();
+      assert.isEmpty(h.fakeCloud.uploadCalls);
+      assert.isEmpty(h.fakeCloud.finalizeCalls);
+      assert.strictEqual((yield* h.db.getRecoveryOutbox(recordingId))?.lastError, 'transcription-config-save');
+      let serverConfig: unknown;
+      h.fakeCloud.setRequestResponder(req => {
+        serverConfig = (req.body as { transcriptionConfig: unknown }).transcriptionConfig;
+        return { ok: true, status: 200, bodyJson: { result: req.body, applied: true } };
+      });
+      h.fakeCloud.setUploadResponder(() => {
+        assert.deepStrictEqual(serverConfig, transcriptionConfig);
+        return laneOk([]);
+      });
+      h.fakeCloud.setFinalizeResponder(id => {
+        assert.deepStrictEqual(serverConfig, transcriptionConfig);
+        return laneOk({ recordingId: id });
+      });
+      yield* h.db.updateRecoveryOutbox(recordingId, { nextAttemptAt: null });
+      assert.strictEqual((yield* h.drain()).resolved, 1);
+      assert.strictEqual(h.fakeCloud.uploadCalls.length, 1);
+      assert.strictEqual(h.fakeCloud.finalizeCalls.length, 1);
+      assert.isNull(yield* h.db.getRecoveryOutbox(recordingId));
+      yield* Scope.close(h.scope, Exit.void);
+    })
+  );
+
+  it.effect('passes the last durable spoken language and local model to recovered audio', () =>
+    Effect.gen(function* () {
+      const h = yield* setupWith({ mode: 'local', transcription: { modelId: 'whisper-base-en' } });
+      const recordingId = 'rec_language_local';
+      const dir = h.recoveryDir(recordingId);
+      yield* installModel(h, 'whisper-base');
+      yield* writeWav(dir, 'mic', seconds(1));
+      const engineConfig = { engine: 'local' as const, modelId: 'whisper-base', byokBaseUrl: null, byokModel: null, language: 'hi' as const };
+      yield* h.insertRecovery({
+        recordingId, captureMode: 'mic', wavPath: dir, engine: 'local', engineConfig,
+        createInput: { recordingId, captureMode: 'mic', title: 'Recovered', startedAt: 0, transcriptionConfig: { provider: 'local-whisper', model: 'local:whisper-base', language: 'hi' } },
+      });
+      let received: unknown;
+      const ctx = Context.add(h.ctx, Transcriber, {
+        transcribeChunk: (_id, _params, _audio, engine) => Effect.sync(() => {
+          received = engine;
+          return laneOk([]);
+        }),
+      });
+      assert.strictEqual((yield* drainRecoveries(Effect.succeed(null), ignoreCompletion).pipe(Effect.provide(ctx))).resolved, 1);
+      assert.deepStrictEqual(received, engineConfig);
       yield* Scope.close(h.scope, Exit.void);
     })
   );

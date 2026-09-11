@@ -20,6 +20,7 @@
  */
 import * as React from 'react';
 import { createWorkflowRuntime } from '@prismical/app-workflow';
+import { TranscriptionLanguageSchema } from '@prismical/api-contracts/apps/v1';
 import { createNativeRecordingController } from './native-recording-controller';
 import { reserveNativeSkillWorkflow } from './native-skill-reservation';
 import { useLocation, useParams } from '@tanstack/react-router';
@@ -273,6 +274,7 @@ const toNativeState = (view: RecordingStateView): NativeRecordingState => ({
   completedRecordings: view.completedRecordings,
   status: view.status,
   captureMode: view.captureMode,
+  language: view.language,
   requestedCaptureMode: view.requestedCaptureMode,
   spendsCloudQuota: view.spendsCloudQuota ?? null,
   quotaRemainingAtStartSeconds: view.quotaRemainingAtStartSeconds ?? null,
@@ -300,12 +302,13 @@ const recordingPort: RecordingPort = {
     );
   },
   control: {
-    start: async ({ noteId, title, autoPause, quotaRemainingAtStartSeconds }) => {
+    start: async ({ noteId, title, language, autoPause, quotaRemainingAtStartSeconds }) => {
       try {
         return await window.desktop.recording.start({
           captureMode: DESKTOP_CAPTURE_MODE,
           noteId,
           title,
+          language: language === undefined ? undefined : TranscriptionLanguageSchema.parse(language),
           quotaRemainingAtStartSeconds: quotaRemainingAtStartSeconds ?? null,
           // Auto-pause policy: resolved renderer-side from the org gate + tuning and
           // handed over per session, so main runs the same machine web does without looking
@@ -321,6 +324,9 @@ const recordingPort: RecordingPort = {
       }
     },
     stop: recordingId => window.desktop.recording.stop({ recordingId }),
+    setLanguage: (recordingId, language) => window.desktop.recording.setLanguage({
+      recordingId, language: TranscriptionLanguageSchema.parse(language),
+    }),
     claimCompletion: recordingId =>
       window.desktop.recording.claimCompletion({ recordingId }).catch(error => {
         log('recording.claimCompletion invoke failed', error);

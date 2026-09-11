@@ -802,6 +802,10 @@ const en = {
       couldNotPause: 'Could not pause recording.',
       couldNotResume: 'Could not resume recording.',
       couldNotStart: 'Could not start recording.',
+      languageUnsupported:
+        'Choose a multilingual transcription model in Settings to record in this language.',
+      languageChangeFailed:
+        'Could not change the language for this recording. Check the transcription model in Settings and try again.',
       modelMissing: 'Download a transcription model in Settings before recording.',
       storageUnavailable: 'Recording could not be saved. Check available disk space and try again.',
       currentSuggestion: 'Review or dismiss the current suggestion first.',
@@ -846,6 +850,8 @@ const en = {
       allAudioSettings: 'All audio settings…',
       systemAudioCaptured: 'System audio is also captured',
       soundSettings: 'Input & sound',
+      language: 'Language',
+      languageChip: 'Transcription language: {{language}}',
       latestEnhanced: 'Latest recording enhanced ✓',
       enhanceChip: 'Enhance this recording',
       listening: 'Listening and transcribing…',
@@ -2276,7 +2282,8 @@ const en = {
         retry: 'Try again',
       },
       language: {
-        description: 'Choose the language used throughout Prismical.',
+        description:
+          'The language of the app itself - menus, buttons, settings, and messages. Your notes and transcripts are not affected.',
         label: 'Interface language',
         restart: {
           applyNextStart: 'The new language will be used the next time Prismical starts.',
@@ -2285,6 +2292,12 @@ const en = {
           restarting: 'Restarting Prismical…',
           title: 'Restart to change language',
         },
+      },
+      spokenLanguage: {
+        current: 'Currently {{language}}.',
+        description:
+          'The language you speak in your recordings, used for live and final transcription.',
+        open: 'Transcription settings',
       },
       theme: {
         dark: 'Dark theme',
@@ -2326,45 +2339,19 @@ const en = {
       title: 'Keyboard Shortcuts',
     },
     transcription: {
-      autoDetectDescription:
-        'Let Prismical identify the spoken language automatically. Turn this off to pick a specific language below.',
-      autoDetectLabel: 'Auto-detect language',
       description: 'Configure transcription language and microphone input.',
       desktopNotice:
         'Desktop microphone and transcription controls are being completed. The current desktop recording pipeline continues to use its existing defaults.',
       language: {
         aria: 'Select language',
         empty: 'No language found.',
-        label: 'Language',
+        label: 'Spoken & transcription language',
+        description:
+          'The language spoken in your recordings. Live transcription and the final transcript both use it; change it for a meeting in another language from the recording panel.',
+        saveError: 'Could not load or save your transcription language. Please try again.',
+        retry: 'Try again',
         placeholder: 'Select language…',
         search: 'Search languages…',
-        selectHint: 'Turn off auto-detect to choose a specific language.',
-      },
-      languages: {
-        ar: 'العربية',
-        cs: 'Čeština',
-        da: 'Dansk',
-        de: 'Deutsch',
-        el: 'Ελληνικά',
-        en: 'English',
-        es: 'Español',
-        fi: 'Suomi',
-        fr: 'Français',
-        he: 'עברית',
-        hi: 'हिन्दी',
-        id: 'Bahasa Indonesia',
-        it: 'Italiano',
-        ja: '日本語',
-        ko: '한국어',
-        nl: 'Nederlands',
-        pl: 'Polski',
-        pt: 'Português',
-        ru: 'Русский',
-        sv: 'Svenska',
-        th: 'ไทย',
-        tr: 'Türkçe',
-        vi: 'Tiếng Việt',
-        zh: '中文',
       },
       microphoneDescription: 'Choose the microphone input used when recording.',
       microphoneLabel: 'Microphone',

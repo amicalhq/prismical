@@ -11,6 +11,7 @@
  * session-changed replay buffer.
  */
 import { z } from 'zod';
+import { TranscriptionLanguageSchema } from '@prismical/api-contracts/apps/v1';
 
 /** Complete interface locales allowed across every desktop IPC membrane. */
 export const applicationLocaleSchema = z.enum(['en', 'de', 'es', 'ja', 'zh-TW']);
@@ -123,6 +124,8 @@ export const CHANNELS = {
   recordingPause: 'recording:pause',
   /** invoke(RecordingControlRequest) → boolean. Resume the same recording timeline. */
   recordingResume: 'recording:resume',
+  /** Update the active recording's spoken language after durable persistence succeeds. */
+  recordingSetLanguage: 'recording:setLanguage',
   /**
    * push main→renderer: the sanitized RecordingState — status, effective +
    * requested capture mode, live transcript segments, elapsedMs, recording/note
@@ -646,6 +649,7 @@ export type CaptureMode = z.infer<typeof captureModeSchema>;
 export const startRecordingRequestSchema = z
   .object({
     captureMode: captureModeSchema,
+    language: TranscriptionLanguageSchema.optional(),
     noteId: z.string().min(1).nullable().optional(),
     title: z.string().optional(),
     /** Cached allowance at Start, used only to keep recording warnings consistent across windows. */
@@ -683,6 +687,7 @@ export const startRecordingResultSchema = z.discriminatedUnion('ok', [
         'busy',
         'no-session',
         'model-missing',
+        'language-unsupported',
         'storage-unavailable',
         'suggestion-pending',
         'update-required',
@@ -696,6 +701,10 @@ export const stopRecordingRequestSchema = z.object({ recordingId: z.string().min
 export type StopRecordingRequest = z.infer<typeof stopRecordingRequestSchema>;
 export const recordingControlRequestSchema = stopRecordingRequestSchema;
 export type RecordingControlRequest = z.infer<typeof recordingControlRequestSchema>;
+export const recordingLanguageRequestSchema = stopRecordingRequestSchema.extend({
+  language: TranscriptionLanguageSchema,
+});
+export type RecordingLanguageRequest = z.infer<typeof recordingLanguageRequestSchema>;
 export const recordingSkillWorkflowRequestSchema = z.object({
   active: z.boolean(),
   ownerSessionKey: z.string().min(1),
@@ -745,6 +754,7 @@ export const recordingStateViewSchema = z
     status: z.enum(['idle', 'starting', 'recording', 'paused', 'stopping', 'error']),
     captureMode: captureModeSchema.nullable(),
     requestedCaptureMode: captureModeSchema.nullable(),
+    language: TranscriptionLanguageSchema.optional(),
     /** Quota behavior fixed for the session, independent of later settings changes. */
     spendsCloudQuota: z.boolean().nullable().optional(),
     quotaRemainingAtStartSeconds: z.number().finite().nonnegative().nullable().optional(),
@@ -1567,6 +1577,7 @@ export interface MainWindowRecordingApi {
   readonly setSkillWorkflow: (request: RecordingSkillWorkflowRequest) => Promise<boolean>;
   readonly pause: (request: RecordingControlRequest) => Promise<boolean>;
   readonly resume: (request: RecordingControlRequest) => Promise<boolean>;
+  readonly setLanguage: (request: RecordingLanguageRequest) => Promise<boolean>;
   readonly onStateChanged: (listener: (state: RecordingStateView) => void) => () => void;
 }
 

@@ -783,6 +783,10 @@ const es = {
       couldNotPause: 'No se ha podido pausar la grabación.',
       couldNotResume: 'No se ha podido reanudar la grabación.',
       couldNotStart: 'No se ha podido iniciar la grabación.',
+      languageUnsupported:
+        'Elige un modelo de transcripción multilingüe en Ajustes para grabar en este idioma.',
+      languageChangeFailed:
+        'No se pudo cambiar el idioma de esta grabación. Revisa el modelo de transcripción en Ajustes e inténtalo de nuevo.',
       modelMissing: 'Descarga un modelo de transcripción en Ajustes antes de grabar.',
       storageUnavailable:
         'No se pudo guardar la grabación. Comprueba el espacio disponible y vuelve a intentarlo.',
@@ -832,6 +836,8 @@ const es = {
       allAudioSettings: 'Todos los ajustes de audio…',
       systemAudioCaptured: 'El audio del sistema también se captura',
       soundSettings: 'Entrada y sonido',
+      language: 'Idioma',
+      languageChip: 'Idioma de transcripción: {{language}}',
       latestEnhanced: 'Última grabación mejorada ✓',
       enhanceChip: 'Mejorar esta grabación',
       listening: 'Escuchando y transcribiendo…',
@@ -2290,7 +2296,8 @@ const es = {
         retry: 'Reintentar',
       },
       language: {
-        description: 'Elige el idioma que se usa en todo Prismical.',
+        description:
+          'El idioma de la propia app - menús, botones, ajustes y mensajes. Tus notas y transcripciones no cambian.',
         label: 'Idioma de la interfaz',
         restart: {
           applyNextStart: 'El nuevo idioma se usará la próxima vez que se inicie Prismical.',
@@ -2299,6 +2306,12 @@ const es = {
           restarting: 'Reiniciando Prismical…',
           title: 'Reinicia para cambiar el idioma',
         },
+      },
+      spokenLanguage: {
+        current: 'Actualmente {{language}}.',
+        description:
+          'El idioma que hablas en tus grabaciones; lo usan la transcripción en vivo y la final.',
+        open: 'Ajustes de transcripción',
       },
       theme: {
         dark: 'Tema oscuro',
@@ -2340,45 +2353,19 @@ const es = {
       title: 'Atajos de teclado',
     },
     transcription: {
-      autoDetectDescription:
-        'Permite que Prismical identifique automáticamente el idioma hablado. Desactiva esta opción para elegir un idioma específico.',
-      autoDetectLabel: 'Detectar idioma automáticamente',
       description: 'Configura el idioma de transcripción y la entrada del micrófono.',
       desktopNotice:
         'Los controles de micrófono y transcripción para escritorio se están completando. El flujo de grabación actual sigue usando sus valores predeterminados.',
       language: {
         aria: 'Seleccionar idioma',
         empty: 'No se encontró ningún idioma.',
-        label: 'Idioma',
+        label: 'Idioma hablado y de transcripción',
+        description:
+          'El idioma que se habla en tus grabaciones. La transcripción en vivo y la transcripción final lo usan; para una reunión en otro idioma, cámbialo desde el panel de grabación.',
+        saveError: 'No se pudo cargar o guardar el idioma de transcripción. Inténtalo de nuevo.',
+        retry: 'Reintentar',
         placeholder: 'Seleccionar idioma…',
         search: 'Buscar idiomas…',
-        selectHint: 'Desactiva la detección automática para elegir un idioma específico.',
-      },
-      languages: {
-        ar: 'العربية',
-        cs: 'Čeština',
-        da: 'Dansk',
-        de: 'Deutsch',
-        el: 'Ελληνικά',
-        en: 'English',
-        es: 'Español',
-        fi: 'Suomi',
-        fr: 'Français',
-        he: 'עברית',
-        hi: 'हिन्दी',
-        id: 'Bahasa Indonesia',
-        it: 'Italiano',
-        ja: '日本語',
-        ko: '한국어',
-        nl: 'Nederlands',
-        pl: 'Polski',
-        pt: 'Português',
-        ru: 'Русский',
-        sv: 'Svenska',
-        th: 'ไทย',
-        tr: 'Türkçe',
-        vi: 'Tiếng Việt',
-        zh: '中文',
       },
       microphoneDescription: 'Elige el micrófono que se usará al grabar.',
       microphoneLabel: 'Micrófono',

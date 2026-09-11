@@ -44,7 +44,7 @@ test.describe('local settings alignment', () => {
     await expect(page.getByRole('button', { name: 'Name with AI', exact: true })).toHaveCount(0);
   });
 
-  test('persists independent interface and AI output languages across a local restart', async () => {
+  test('persists independent interface, AI output, and spoken languages across a local restart', async () => {
     await page.getByRole('link', { name: 'Settings', exact: true }).click();
     const outputLanguage = page.getByRole('combobox', { name: 'AI output language', exact: true });
     const interfaceLanguage = page.getByRole('combobox', { name: 'Interface language', exact: true });
@@ -57,6 +57,17 @@ test.describe('local settings alignment', () => {
     await page.getByRole('option', { name: 'Español', exact: true }).click();
     await expect(outputLanguage).toContainText('Español');
     await expect(interfaceLanguage).toHaveValue('en');
+
+    await page.getByRole('link', { name: 'Transcription settings', exact: true }).click();
+    const spokenLanguage = page.getByRole('button', { name: 'Select language', exact: true });
+    await expect(spokenLanguage).toContainText('English');
+    await spokenLanguage.click();
+    await page.getByRole('option', { name: 'Hindi', exact: true }).click();
+    await expect(spokenLanguage).toContainText('Hindi');
+    await page.getByRole('link', { name: 'Preferences', exact: true }).click();
+    await expect(outputLanguage).toContainText('Español');
+    await expect(interfaceLanguage).toHaveValue('en');
+    await expect(page.getByText(/Currently Hindi\./)).toBeVisible();
 
     await interfaceLanguage.selectOption('de');
     await expect(page.getByRole('alertdialog')).toContainText('Restart to change language');
@@ -77,6 +88,7 @@ test.describe('local settings alignment', () => {
     await page.getByRole('link', { name: 'Einstellungen', exact: true }).click();
     await expect(page.getByRole('combobox', { name: 'Oberflächensprache', exact: true })).toHaveValue('de');
     await expect(page.getByRole('combobox', { name: 'KI-Ausgabesprache', exact: true })).toContainText('Español');
+    await expect(page.getByText(/Aktuell Hindi\./)).toBeVisible();
     await expect(page.getByRole('alertdialog')).toHaveCount(0);
   });
 });

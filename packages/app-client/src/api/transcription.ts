@@ -13,6 +13,8 @@ export type CoreRecording = {
   durationMs: number | null;
   /** Server bookkeeping: `meta.staging` (staged lanes) + `meta.finalize` (finalization lifecycle). */
   meta?: Record<string, unknown> | null;
+  /** Provider selection fixed at create plus current spoken language (managed models stay opaque). */
+  transcriptionConfig?: Record<string, unknown> | null;
 };
 
 /** One speaker in a recording's registry, minted by the finalize pass. */
@@ -83,6 +85,36 @@ export function createRecording(
     .then(response => response.result);
 }
 
+/**
+ * Change the spoken language of a recording that is still running. The chunk handler re-reads the
+ * row per chunk and finalize reads it once at the end, so later audio follows the new pick; audio
+ * already transcribed is not re-run. The column is a whole jsonb value, so the config as created is
+ * sent back with only `language` changed.
+ */
+export function updateRecordingLanguage(
+  recordingId: string,
+  config: Record<string, unknown> | null | undefined,
+  language: string,
+  opts?: { activeOrgId?: string; authToken?: string }
+): Promise<CoreRecording> {
+  // The column is replaced whole: without the provider selection as created, the write would
+  // turn a BYOK recording managed mid-flight. Better to leave the recording alone.
+  if (!config || typeof config.provider !== 'string') {
+    return Promise.reject(new Error('Recording configuration unavailable; language not applied'));
+  }
+  return apiClient
+    .put<SyncWriteEnvelope<CoreRecording>>(
+      `${ME_PREFIX}/recordings/${recordingId}`,
+      { transcriptionConfig: { ...config, language } },
+      {
+        activeOrgId: opts?.activeOrgId,
+        authToken: opts?.authToken,
+        signal: AbortSignal.timeout(15_000),
+      }
+    )
+    .then(response => response.result);
+}
+
 export function finalizeRecording(
   recordingId: string,
   durationMs: number,
@@ -96,7 +128,11 @@ export function finalizeRecording(
         endedAt: opts?.endedAt ?? Date.now(),
         durationMs: Math.round(durationMs),
       },
-      { activeOrgId: opts?.activeOrgId, authToken: opts?.authToken, signal: AbortSignal.timeout(30_000) }
+      {
+        activeOrgId: opts?.activeOrgId,
+        authToken: opts?.authToken,
+        signal: AbortSignal.timeout(30_000),
+      }
     )
     .then(response => {
       const recording = response?.result;

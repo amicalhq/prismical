@@ -115,6 +115,7 @@ const build = (
 
 const FROZEN_OPTIONS = {
   language: 'en',
+  translate: false,
   initial_prompt: '',
   suppress_blank: true,
   suppress_non_speech_tokens: true,
@@ -122,7 +123,7 @@ const FROZEN_OPTIONS = {
 };
 
 describe('LocalWhisperLive', () => {
-  it('localDecodeOptions has the fixed five options, plus only the VAD pair when weights are installed', () => {
+  it('localDecodeOptions defaults historical recordings to English and adds only the installed VAD pair', () => {
     assert.deepStrictEqual(localDecodeOptions(undefined), FROZEN_OPTIONS);
     assert.deepStrictEqual(localDecodeOptions('Prismical'), {
       ...FROZEN_OPTIONS,
@@ -136,6 +137,34 @@ describe('LocalWhisperLive', () => {
       vad_model_path: VAD_PATH,
     });
   });
+
+  it.effect('passes the selected spoken language to the chosen multilingual model without translation', () =>
+    Effect.gen(function* () {
+      const modelPath = '/models/ggml-small.bin';
+      const h = yield* build({ 'whisper-small': modelPath });
+      const engine: RecordingEngine = { ...LOCAL, modelId: 'whisper-small', language: 'ja' };
+      yield* h.lane.transcribeChunk('rec_ja', PARAMS, chunk(tone(240_000)), engine);
+      assert.deepStrictEqual(h.whisper.ensureCalls, [modelPath]);
+      assert.strictEqual(h.whisper.transcribeCalls[0]?.options.language, 'ja');
+      assert.strictEqual(h.whisper.transcribeCalls[0]?.options.translate, false);
+      yield* Scope.close(h.scope, Exit.void);
+    })
+  );
+
+  it.effect('retains incompatible English-only model audio without loading or replacing the model', () =>
+    Effect.gen(function* () {
+      const h = yield* build();
+      const result = yield* h.lane.transcribeChunk(
+        'rec_ja', PARAMS, chunk(tone(240_000)), { ...LOCAL, language: 'ja' }
+      );
+      assert.deepStrictEqual(result, {
+        ok: false, retryable: true, failure: { kind: 'engine', reason: 'language-unsupported' },
+      });
+      assert.deepStrictEqual(h.whisper.ensureCalls, []);
+      assert.deepStrictEqual(h.whisper.transcribeCalls, []);
+      yield* Scope.close(h.scope, Exit.void);
+    })
+  );
 
   it.effect('near-silence acks [] without touching the engine (the server’s 330/32767 guard)', () =>
     Effect.gen(function* () {

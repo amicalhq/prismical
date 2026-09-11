@@ -7,7 +7,7 @@ import {
   useEnsureActiveOrg,
   useActiveOrgId,
   useEnv,
-  AccountLanguageProvider,
+  AccountPreferencesProvider,
 } from '@prismical/app-client';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../ui/button';
@@ -159,8 +159,8 @@ function AppShellContent({
 
 export function AppShell(props: React.ComponentProps<typeof AppShellContent>) {
   return (
-    <AccountLanguageProvider>
+    <AccountPreferencesProvider>
       <AppShellContent {...props} />
-    </AccountLanguageProvider>
+    </AccountPreferencesProvider>
   );
 }
