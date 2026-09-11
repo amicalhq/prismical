@@ -26,8 +26,15 @@ const localeOptions = [
 
 export function InterfaceLanguageSetting() {
   const { t } = useTranslation();
-  const { preference, applyMode, restartRequired, isSaving, changePreference, restartApplication } =
-    useApplicationLocale();
+  const {
+    accountManaged,
+    preference,
+    applyMode,
+    restartRequired,
+    isSaving,
+    changePreference,
+    restartApplication,
+  } = useApplicationLocale();
   const [dismissedPreference, setDismissedPreference] = useState<LocalePreference | null>(null);
   const [isRestarting, setIsRestarting] = useState(false);
   const dialogOpen =
@@ -66,11 +73,13 @@ export function InterfaceLanguageSetting() {
           disabled={isSaving}
           onChange={handleChange}
         >
-          {localeOptions.map(([value, labelKey]) => (
-            <option key={value} value={value}>
-              {t(labelKey as never)}
-            </option>
-          ))}
+          {localeOptions
+            .filter(([value]) => !accountManaged || value !== 'system')
+            .map(([value, labelKey]) => (
+              <option key={value} value={value}>
+                {t(labelKey as never)}
+              </option>
+            ))}
         </select>
       </div>
 

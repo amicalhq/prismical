@@ -782,6 +782,79 @@ describe('skill runs', () => {
   );
 });
 
+describe('local AI output language', () => {
+  const preferencesPath = '/apps/v1/me/preferences';
+
+  it.effect('body and custom title runs keep the source language until the user chooses otherwise', () =>
+    Effect.gen(function* () {
+      const model = toolCallingModel();
+      const { api, product, scope } = yield* build(model);
+      const titleSkillId = yield* insertTitleSkill(product);
+      const noteId = yield* insertNote(product, { title: 'Draft', markdown: 'Mixed English and Hindi notes.' });
+      for (const skillId of [CLEANUP_SKILL_ID, titleSkillId])
+        expectOk(yield* post(api, `/apps/v1/me/skills/${skillId}/run`, { noteId }), 200);
+      for (const call of model.doGenerateCalls) {
+        const prompt = JSON.stringify(call.prompt);
+        assert.include(prompt, 'Write in the same language as the note and transcript');
+        assert.notInclude(prompt, "The user's preferred output language is");
+      }
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+
+  it.effect('saved output language reaches Cleanup, Enhance, inline rewrite, and title refinement', () =>
+    Effect.gen(function* () {
+      const model = toolCallingModel();
+      const { api, product, scope } = yield* build(model);
+      const titleSkillId = yield* insertTitleSkill(product);
+      const noteId = yield* insertNote(product, { title: 'Draft', markdown: 'Mixed English and Hindi notes.' });
+      const recordingId = yield* insertRecording(product, { noteId, segments: ['Meeting content.'] });
+      expectOk(yield* api.request({ method: 'PATCH', path: preferencesPath, body: {
+        language: { interfaceLanguage: 'ja', aiOutputLanguage: 'es' },
+      } }), 200);
+      for (const request of [
+        { skillId: CLEANUP_SKILL_ID, body: { noteId } },
+        { skillId: ENHANCE_SKILL_ID, body: { noteId, recordingId } },
+        { skillId: CLEANUP_SKILL_ID, body: { noteId, mode: 'inline-rewrite', selectionText: 'Mixed English' } },
+        { skillId: CLEANUP_SKILL_ID, body: { noteId, previousOutput: 'Earlier output', refineInstruction: 'Write the result in French.' } },
+        { skillId: titleSkillId, body: { noteId, refineInstruction: 'Write the title in French.' } },
+      ]) expectOk(yield* post(api, `/apps/v1/me/skills/${request.skillId}/run`, request.body), 200);
+      assert.lengthOf(model.doGenerateCalls, 5);
+      for (const call of model.doGenerateCalls) {
+        const prompt = JSON.stringify(call.prompt);
+        assert.include(prompt, "The user's preferred output language is Spanish (es)");
+        assert.include(prompt, 'overrides this default');
+        assert.notInclude(prompt, "The user's preferred output language is Japanese");
+      }
+      assert.include(JSON.stringify(model.doGenerateCalls[3]!.prompt), 'Write the result in French.');
+      assert.include(JSON.stringify(model.doGenerateCalls[4]!.prompt), 'Write the title in French.');
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+
+  it.effect('reads persisted output language again for each run after reopening the workspace', () =>
+    Effect.gen(function* () {
+      const dbPath = path.join(tempDir, `language-reopen-${++dbSeq}.db`);
+      const first = yield* buildWith(toolCallingModel(), undefined, 'en', dbPath);
+      const noteId = yield* insertNote(first.product, { title: 'Draft', markdown: 'A useful note.' });
+      expectOk(yield* first.api.request({ method: 'PATCH', path: preferencesPath, body: {
+        language: { interfaceLanguage: 'de', aiOutputLanguage: 'hi' },
+      } }), 200);
+      yield* Scope.close(first.scope, Exit.void);
+      const model = toolCallingModel();
+      const second = yield* buildWith(model, undefined, 'de', dbPath);
+      expectOk(yield* post(second.api, `/apps/v1/me/skills/${CLEANUP_SKILL_ID}/run`, { noteId }), 200);
+      assert.include(JSON.stringify(model.doGenerateCalls[0]!.prompt), "The user's preferred output language is Hindi (hi)");
+      expectOk(yield* second.api.request({ method: 'PATCH', path: preferencesPath, body: {
+        language: { aiOutputLanguage: 'source' },
+      } }), 200);
+      expectOk(yield* post(second.api, `/apps/v1/me/skills/${CLEANUP_SKILL_ID}/run`, { noteId }), 200);
+      assert.include(JSON.stringify(model.doGenerateCalls[1]!.prompt), 'Write in the same language as the note and transcript');
+      yield* Scope.close(second.scope, Exit.void);
+    })
+  );
+});
+
 describe('Name note rollout', () => {
   it.effect('refuses the shipped naming skill without invoking the model', () =>
     Effect.gen(function* () {

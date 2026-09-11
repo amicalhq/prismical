@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useTranslation } from 'react-i18next';
 import { createApplicationI18n } from './i18n';
@@ -19,6 +19,7 @@ function LocaleHarness() {
       <span data-testid="translated">{t('common.actions.save')}</span>
       <span data-testid="preference">{locale.preference}</span>
       <span data-testid="resolved">{locale.resolvedLocale}</span>
+      <span data-testid="saving">{String(locale.isSaving)}</span>
       <span data-testid="restart-required">{String(locale.restartRequired)}</span>
       <button type="button" onClick={() => void locale.changePreference('de')}>
         German
@@ -112,6 +113,38 @@ describe('ApplicationI18nProvider', () => {
     await waitFor(() => expect(onPersistenceError).toHaveBeenCalledWith(error));
     expect(screen.getByTestId('preference').textContent).toBe('en');
     expect(screen.getByTestId('restart-required').textContent).toBe('false');
+  });
+
+  it('keeps a superseded desktop completion from publishing while a newer choice is saving', async () => {
+    let finishGerman!: () => void;
+    let finishJapanese!: () => void;
+    const persistPreference = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>(resolve => {
+            finishGerman = resolve;
+          })
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>(resolve => {
+            finishJapanese = resolve;
+          })
+      );
+    await renderProvider({ applyMode: 'restart', persistPreference });
+    fireEvent.click(screen.getByRole('button', { name: 'German' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Japanese' }));
+
+    await act(async () => finishGerman());
+    expect(screen.getByTestId('preference').textContent).toBe('en');
+    expect(screen.getByTestId('restart-required').textContent).toBe('false');
+    expect(screen.getByTestId('saving').textContent).toBe('true');
+    await act(async () => finishJapanese());
+    expect(screen.getByTestId('preference').textContent).toBe('ja');
+    expect(screen.getByTestId('resolved').textContent).toBe('en');
+    expect(screen.getByTestId('restart-required').textContent).toBe('true');
+    expect(screen.getByTestId('saving').textContent).toBe('false');
   });
 
   it('exposes the platform restart action without assuming every renderer can restart', async () => {

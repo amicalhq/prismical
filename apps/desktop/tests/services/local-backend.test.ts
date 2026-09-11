@@ -22,6 +22,7 @@ import { LOCAL_FEATURE_FLAGS, LOCAL_WORKSPACE } from '@prismical/desktop-contrac
 import {
   OrganizationsResponseSchema,
   ViewerProfileResponseSchema,
+  UserPreferencesSchema,
 } from '@prismical/api-contracts/apps/v1';
 import { createId } from '@prismical/id';
 import { fakeAiProviderLayer } from '../helpers/fake-workspace-env';
@@ -41,11 +42,11 @@ const tempDir = mkdtempSync(path.join(tmpdir(), 'prismical-local-backend-test-')
 let dbSeq = 0;
 
 /** Build the backend graph over a fresh file-backed product store. */
-const buildBackend = Effect.gen(function* () {
+const buildBackendAt = (localDbPath?: string) => Effect.gen(function* () {
   dbSeq += 1;
   const logger = makeTestLogger();
   const env = Layer.mergeAll(
-    testConfigLayer({ localDbPath: path.join(tempDir, `local-backend-${dbSeq}.db`) }),
+    testConfigLayer({ localDbPath: localDbPath ?? path.join(tempDir, `local-backend-${dbSeq}.db`) }),
     logger.layer,
     testI18nLayer(),
     WorkspaceTransportLive,
@@ -68,6 +69,7 @@ const buildBackend = Effect.gen(function* () {
     transport: Context.get(envCtx, WorkspaceTransport),
   };
 });
+const buildBackend = buildBackendAt();
 
 const expectOk = (res: TransportResponse, status?: number): { status: number; bodyJson: any } => {
   assert.isTrue('ok' in res && res.ok, `expected the ok arm, got ${JSON.stringify(res)}`);
@@ -576,5 +578,151 @@ describe('LocalBackendLive', () => {
         assert.strictEqual(stale.bodyJson.result.starred, false);
         yield* Scope.close(scope, Exit.void);
       })
+  );
+});
+
+describe('local account preferences', () => {
+  const preferencesPath = '/apps/v1/me/preferences';
+
+  it.effect('seeds the language group once and preserves unrelated stored preferences', () =>
+    Effect.gen(function* () {
+      const { api, product, scope } = yield* buildBackend;
+      assert.deepStrictEqual(expectOk(yield* api.request({ method: 'GET', path: preferencesPath }), 200).bodyJson, { language: null });
+      yield* Effect.promise(() => product.db.insert(schema.userPreference).values({
+        id: 1, prefs: { appearance: { density: 'compact' }, legacy: true, language: null },
+      }));
+      const seeded = expectOk(yield* api.request({
+        method: 'POST', path: preferencesPath, body: { language: { interfaceLanguage: 'ja' } },
+      }), 200).bodyJson;
+      assert.deepStrictEqual(UserPreferencesSchema.parse(seeded), {
+        language: { interfaceLanguage: 'ja', aiOutputLanguage: 'source' },
+      });
+      const repeated = expectOk(yield* api.request({
+        method: 'POST', path: preferencesPath, body: { language: { interfaceLanguage: 'de' } },
+      }), 200).bodyJson;
+      assert.deepStrictEqual(repeated, seeded);
+      const patched = expectOk(yield* api.request({
+        method: 'PATCH', path: preferencesPath, body: { language: { aiOutputLanguage: 'es' } },
+      }), 200).bodyJson;
+      assert.deepStrictEqual(patched, { language: { interfaceLanguage: 'ja', aiOutputLanguage: 'es' } });
+      assert.deepStrictEqual(product.db.select().from(schema.userPreference).get()!.prefs, {
+        appearance: { density: 'compact' }, legacy: true,
+        language: { interfaceLanguage: 'ja', aiOutputLanguage: 'es' },
+      });
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+
+  it.effect('partial updates initialize defaults and survive reopening the local database', () =>
+    Effect.gen(function* () {
+      const dbPath = path.join(tempDir, `preferences-${++dbSeq}.db`);
+      const first = yield* buildBackendAt(dbPath);
+      const saved = expectOk(yield* first.api.request({
+        method: 'PATCH', path: preferencesPath, body: { language: { aiOutputLanguage: 'hi' } },
+      }), 200).bodyJson;
+      assert.deepStrictEqual(saved, { language: { interfaceLanguage: 'en', aiOutputLanguage: 'hi' } });
+      yield* Scope.close(first.scope, Exit.void);
+      const second = yield* buildBackendAt(dbPath);
+      assert.deepStrictEqual(expectOk(yield* second.api.request({ method: 'GET', path: preferencesPath }), 200).bodyJson, saved);
+      expectOk(yield* second.api.request({
+        method: 'PATCH', path: preferencesPath, body: { language: { interfaceLanguage: 'de' } },
+      }), 200);
+      assert.deepStrictEqual(expectOk(yield* second.api.request({ method: 'GET', path: preferencesPath }), 200).bodyJson, {
+        language: { interfaceLanguage: 'de', aiOutputLanguage: 'hi' },
+      });
+      const separate = yield* buildBackend;
+      assert.deepStrictEqual(expectOk(yield* separate.api.request({ method: 'GET', path: preferencesPath }), 200).bodyJson, { language: null });
+      yield* Scope.close(second.scope, Exit.void);
+      yield* Scope.close(separate.scope, Exit.void);
+    })
+  );
+
+  it.effect('concurrent seeds keep the first choice and field updates do not overwrite each other', () =>
+    Effect.gen(function* () {
+      const dbPath = path.join(tempDir, `preferences-${++dbSeq}.db`);
+      const first = yield* buildBackendAt(dbPath);
+      const second = yield* buildBackendAt(dbPath);
+      const seeds = yield* Effect.all([
+        first.api.request({ method: 'POST', path: preferencesPath, body: { language: { interfaceLanguage: 'ja' } } }),
+        second.api.request({ method: 'POST', path: preferencesPath, body: { language: { interfaceLanguage: 'de' } } }),
+      ], { concurrency: 'unbounded' });
+      const choice = expectOk(seeds[0]!, 200).bodyJson;
+      assert.include(['ja', 'de'], choice.language.interfaceLanguage);
+      assert.deepStrictEqual(expectOk(seeds[1]!, 200).bodyJson, choice);
+      const patches = yield* Effect.all([
+        first.api.request({ method: 'PATCH', path: preferencesPath, body: { language: { interfaceLanguage: 'zh-TW' } } }),
+        second.api.request({ method: 'PATCH', path: preferencesPath, body: { language: { aiOutputLanguage: 'fr' } } }),
+      ], { concurrency: 'unbounded' });
+      for (const result of patches) expectOk(result, 200);
+      assert.deepStrictEqual(expectOk(yield* first.api.request({ method: 'GET', path: preferencesPath }), 200).bodyJson, {
+        language: { interfaceLanguage: 'zh-TW', aiOutputLanguage: 'fr' },
+      });
+      yield* Scope.close(first.scope, Exit.void);
+      yield* Scope.close(second.scope, Exit.void);
+    })
+  );
+
+  it.effect('rejects invalid groups, fields and languages without writing preferences', () =>
+    Effect.gen(function* () {
+      const { api, product, scope } = yield* buildBackend;
+      for (const method of ['POST', 'PATCH'] as const) {
+        for (const body of [
+          {}, null, { language: {} }, { appearance: {} },
+          { language: { interfaceLanguage: 'fr' } },
+          { language: { interfaceLanguage: 'en', unexpected: true } },
+          { language: { interfaceLanguage: 'en' }, userId: 'another-user' },
+          { language: { aiOutputLanguage: 'auto' } },
+        ]) expectOk(yield* api.request({ method, path: preferencesPath, body }), 400);
+      }
+      expectOk(yield* api.request({ method: 'POST', path: preferencesPath, body: {
+        language: { interfaceLanguage: 'en', aiOutputLanguage: 'es' },
+      } }), 400);
+      for (const method of ['PUT', 'DELETE'] as const)
+        expectOk(yield* api.request({ method, path: preferencesPath, body: { language: { interfaceLanguage: 'en' } } }), 404);
+      expectOk(yield* api.request({ method: 'GET', path: `${preferencesPath}/language` }), 404);
+      assert.isEmpty(product.db.select().from(schema.userPreference).all());
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+
+  it.effect('a failed save retains the last saved preference', () =>
+    Effect.gen(function* () {
+      const { api, product, scope } = yield* buildBackend;
+      const saved = expectOk(yield* api.request({
+        method: 'POST', path: preferencesPath, body: { language: { interfaceLanguage: 'es' } },
+      }), 200).bodyJson;
+      product.client.exec("CREATE TRIGGER fail_preferences BEFORE UPDATE ON user_preference BEGIN SELECT RAISE(ABORT, 'test failure'); END");
+      assert.deepStrictEqual(yield* api.request({
+        method: 'PATCH', path: preferencesPath, body: { language: { aiOutputLanguage: 'ja' } },
+      }), { error: { code: 'INTERNAL' } });
+      assert.deepStrictEqual(expectOk(yield* api.request({ method: 'GET', path: preferencesPath }), 200).bodyJson, saved);
+      assert.isFalse(product.client.inTransaction);
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+
+  it.effect('rejects explicit undefined IPC fields without erasing saved preferences', () =>
+    Effect.gen(function* () {
+      const { api, product, scope } = yield* buildBackend;
+      expectOk(yield* api.request({
+        method: 'POST', path: preferencesPath, body: { language: undefined },
+      }), 400);
+      assert.isEmpty(product.db.select().from(schema.userPreference).all());
+      const saved = expectOk(yield* api.request({
+        method: 'PATCH', path: preferencesPath,
+        body: { language: { interfaceLanguage: 'ja', aiOutputLanguage: 'es' } },
+      }), 200).bodyJson;
+      for (const body of [
+        { language: undefined },
+        { language: { interfaceLanguage: undefined } },
+        { language: { aiOutputLanguage: undefined } },
+        { language: { interfaceLanguage: 'de', aiOutputLanguage: undefined } },
+        { language: { interfaceLanguage: undefined, aiOutputLanguage: 'fr' } },
+      ]) {
+        expectOk(yield* api.request({ method: 'PATCH', path: preferencesPath, body }), 400);
+        assert.deepStrictEqual(expectOk(yield* api.request({ method: 'GET', path: preferencesPath }), 200).bodyJson, saved);
+      }
+      yield* Scope.close(scope, Exit.void);
+    })
   );
 });

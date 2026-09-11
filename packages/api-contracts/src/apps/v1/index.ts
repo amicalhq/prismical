@@ -13,6 +13,7 @@ export * from './organizations.js';
 export * from './people.js';
 export * from './plan.js';
 export * from './profile.js';
+export * from './preferences.js';
 export * from './push-tokens.js';
 export * from './route-coverage.js';
 export * from './search.js';

@@ -37,6 +37,7 @@ import { getModelDefaults, instanceModels, listInstances, setModelDefault } from
 import { askConversations } from './ask';
 import { createNoteTag, deleteNoteTag, listNoteTags } from './junctions';
 import { createNote, listNotes, removeNote, updateNote } from './notes';
+import { getLocalPreferences, writeLocalPreferences } from './preferences';
 import { handleSearch } from './search';
 import { pendingSkillResults, resolveSkillResult } from './skill-recovery';
 import {
@@ -140,6 +141,12 @@ export const handleLocalRequest = async (
   }
   if (route === 'profile') {
     return method === 'GET' && rest.length === 0 ? ok(LOCAL_PROFILE) : notFound();
+  }
+  if (route === 'preferences') {
+    if (rest.length !== 0) return notFound();
+    if (method === 'GET') return ok(getLocalPreferences(db));
+    if (method === 'POST' || method === 'PATCH') return writeLocalPreferences(db, method, req.body);
+    return notFound();
   }
   if (EMPTY_LIST_ROUTES.has(route)) {
     return method === 'GET' && rest.length === 0 ? ok({ results: [] }) : notFound();

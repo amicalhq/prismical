@@ -15,6 +15,13 @@
       "when": 1788297757068,
       "tag": "0001_ai_lanes",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1789086211534,
+      "tag": "0002_user_preferences",
+      "breakpoints": true
     }
   ]
 }

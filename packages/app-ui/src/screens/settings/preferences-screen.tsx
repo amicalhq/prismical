@@ -11,6 +11,7 @@ import { AutoEnhanceToggle } from './auto-enhance-toggle';
 import { DockSettings } from './dock-settings';
 import { LaunchAtLoginSetting } from './launch-at-login-setting';
 import { PermissionsSetting } from './permissions-setting';
+import { AiOutputLanguageSetting } from './ai-output-language-setting';
 import { InterfaceLanguageSetting } from './interface-language-setting';
 import { useTranslation } from 'react-i18next';
 
@@ -75,6 +76,10 @@ export function PreferencesScreen() {
             <Separator />
 
             <InterfaceLanguageSetting />
+
+            <Separator />
+
+            <AiOutputLanguageSetting />
 
             <Separator />
 

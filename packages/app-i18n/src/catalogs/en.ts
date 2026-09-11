@@ -1,111 +1,114 @@
 const en = {
   workflow: {
-    noteChanged: "The note changed after this suggestion was generated. Decline it and run the skill again.",
-      "busy": "Finish the current recording or skill first.",
-      "draining": "Sending remaining audio…",
-      "finalizing": "Finalizing recording…",
-      "recording": "Recording in progress",
-      "recordingAway": "Recording in another note",
-      "pausedAway": "Recording paused in another note",
-      "review": "Reviewing changes in another note",
-      "reviewNamed": "Reviewing changes in {{name}}",
-      "applying": "Applying changes…",
-      "skill": "Skill in progress…",
-      "openNote": "Open note",
-      "openNamedNote": "Open {{name}}",
-      "retry": "Retry",
-      "end": "End workflow"
+    noteChanged:
+      'The note changed after this suggestion was generated. Decline it and run the skill again.',
+    busy: 'Finish the current recording or skill first.',
+    draining: 'Sending remaining audio…',
+    finalizing: 'Finalizing recording…',
+    recording: 'Recording in progress',
+    recordingAway: 'Recording in another note',
+    pausedAway: 'Recording paused in another note',
+    review: 'Reviewing changes in another note',
+    reviewNamed: 'Reviewing changes in {{name}}',
+    applying: 'Applying changes…',
+    skill: 'Skill in progress…',
+    openNote: 'Open note',
+    openNamedNote: 'Open {{name}}',
+    retry: 'Retry',
+    end: 'End workflow',
   },
 
   onboarding: {
-  "helpDocs": "Need a hand? Read the docs",
-  "continueToNote": "Continue to my note",
-  "useCases": {
-    "meetings": {
-      "title": "Meetings",
-      "body": "Turn conversations into clear notes and action items."
+    helpDocs: 'Need a hand? Read the docs',
+    continueToNote: 'Continue to my note',
+    useCases: {
+      meetings: {
+        title: 'Meetings',
+        body: 'Turn conversations into clear notes and action items.',
+      },
+      lectures: {
+        title: 'Lectures',
+        body: 'Turn lessons into organized study notes.',
+      },
+      voiceNotes: {
+        title: 'Voice notes',
+        body: 'Capture ideas and turn scattered thoughts into something useful.',
+      },
     },
-    "lectures": {
-      "title": "Lectures",
-      "body": "Turn lessons into organized study notes."
-    },
-    "voiceNotes": {
-      "title": "Voice notes",
-      "body": "Capture ideas and turn scattered thoughts into something useful."
-    }
-  },
-    welcomeHeading: "Welcome to your AI Note taker",
-    welcomeTitle: "Create your first voice note",
-    welcomeBody: "Say a few words, turn them into a clear note, and learn how to review the result. We’ll guide you through each step.",
-    start: "Start walkthrough",
-    later: "Maybe later",
+    welcomeHeading: 'Welcome to your AI Note taker',
+    welcomeTitle: 'Create your first voice note',
+    welcomeBody:
+      'Say a few words, turn them into a clear note, and learn how to review the result. We’ll guide you through each step.',
+    start: 'Start walkthrough',
+    later: 'Maybe later',
 
-    close: "Exit walkthrough",
-  "unavailable": "This control isn’t available yet. Wait for the app to finish loading, or use × to exit the walkthrough.",
-  "doneTitle": "Your first note is ready",
-  "doneBody": "What will you capture next?",
-  "download": "Download",
-  "mobileBeta": "Join mobile beta",
-  "platforms": {
-    "mac": "macOS",
-    "windows": "Windows",
-    "ios": "iOS",
-    "android": "Android"
-  },
-  "tour": {
-    "create": {
-      "title": "Create a note from the dock",
-      "body": "Click the + button in the dock below to create your first note."
+    close: 'Exit walkthrough',
+    unavailable:
+      'This control isn’t available yet. Wait for the app to finish loading, or use × to exit the walkthrough.',
+    doneTitle: 'Your first note is ready',
+    doneBody: 'What will you capture next?',
+    download: 'Download',
+    mobileBeta: 'Join mobile beta',
+    platforms: {
+      mac: 'macOS',
+      windows: 'Windows',
+      ios: 'iOS',
+      android: 'Android',
     },
-    "record": {
-      "title": "Start recording",
-      "body": "Click the microphone in the dock, then Start recording. Allow microphone access when asked."
+    tour: {
+      create: {
+        title: 'Create a note from the dock',
+        body: 'Click the + button in the dock below to create your first note.',
+      },
+      record: {
+        title: 'Start recording',
+        body: 'Click the microphone in the dock, then Start recording. Allow microphone access when asked.',
+      },
+      waiting: {
+        title: 'Preparing your transcript',
+        body: 'Your recording is being saved and processed. Wait for the transcript before continuing.',
+      },
+      retry: {
+        title: 'Continue with a recording',
+        body: 'Open the recording panel and start a new recording to continue. You can also exit this walkthrough.',
+      },
+      generating: {
+        title: 'Follow your draft',
+        body: 'Your draft and its progress appear here. If the run fails or stops, use the available recovery actions or return to the recording panel to try again.',
+      },
+      starting: {
+        title: 'Preparing microphone',
+        body: 'Allow microphone access if asked. Wait for recording to begin before speaking.',
+      },
+      speak: {
+        title: 'Say a few words',
+        body: 'Try: ‘Today I’m trying Prismical. My next step is to turn this recording into a clear note.’ Keep speaking for a few seconds.',
+      },
+      stop: {
+        title: 'Now press Stop',
+        body: 'Click Stop in the recording controls. Your recording will save and the transcript will appear.',
+      },
+      transcript: {
+        title: 'Here’s your transcript',
+        body: 'This is what you said. Prismical can also label different speakers when your transcription model supports it; a short solo recording may have just one speaker.',
+      },
+      enhance: {
+        title: 'Turn speech into a note',
+        body: 'Click Enhance in the recording panel. We’ll wait for the draft — it won’t replace your note until you accept it.',
+      },
+      result: {
+        title: 'Review your enhanced note',
+        body: 'Here’s the suggested note. Read the highlighted changes, then continue to the review controls.',
+      },
+      review: {
+        title: 'Keep it, undo it, or ask for changes',
+        body: 'The dock lets you Keep this draft, Undo it, or describe changes in the text box. Click Keep to finish your first note.',
+      },
     },
-    "waiting": {
-      "title": "Preparing your transcript",
-      "body": "Your recording is being saved and processed. Wait for the transcript before continuing."
-    },
-    "retry": {
-      "title": "Continue with a recording",
-      "body": "Open the recording panel and start a new recording to continue. You can also exit this walkthrough."
-    },
-    "generating": {
-      "title": "Follow your draft",
-      "body": "Your draft and its progress appear here. If the run fails or stops, use the available recovery actions or return to the recording panel to try again."
-    },
-    "starting": {
-      "title": "Preparing microphone",
-      "body": "Allow microphone access if asked. Wait for recording to begin before speaking."
-    },
-    "speak": {
-      "title": "Say a few words",
-      "body": "Try: ‘Today I’m trying Prismical. My next step is to turn this recording into a clear note.’ Keep speaking for a few seconds."
-    },
-    "stop": {
-      "title": "Now press Stop",
-      "body": "Click Stop in the recording controls. Your recording will save and the transcript will appear."
-    },
-    "transcript": {
-      "title": "Here’s your transcript",
-      "body": "This is what you said. Prismical can also label different speakers when your transcription model supports it; a short solo recording may have just one speaker."
-    },
-    "enhance": {
-      "title": "Turn speech into a note",
-      "body": "Click Enhance in the recording panel. We’ll wait for the draft — it won’t replace your note until you accept it."
-    },
-    "result": {
-      "title": "Review your enhanced note",
-      "body": "Here’s the suggested note. Read the highlighted changes, then continue to the review controls."
-    },
-    "review": {
-      "title": "Keep it, undo it, or ask for changes",
-      "body": "The dock lets you Keep this draft, Undo it, or describe changes in the text box. Click Keep to finish your first note."
-    }
-  },
-    replayTitle: "Getting started",
-    replayBody: "Replay the quick walkthrough",
+    replayTitle: 'Getting started',
+    replayBody: 'Replay the quick walkthrough',
     title: 'Your first note',
-    recovery: "You can retry a failed action, or use × to exit this walkthrough.",
+    recovery: 'You can retry a failed action, or use × to exit this walkthrough.',
   },
   common: {
     actions: {
@@ -787,7 +790,8 @@ const en = {
     budget: {
       dismiss: 'Dismiss',
       quotaSoon: 'About {{duration}} of transcription left this month',
-      quotaSoonDescription: 'This recording will outlast it. The transcript stops when it runs out.',
+      quotaSoonDescription:
+        'This recording will outlast it. The transcript stops when it runs out.',
       stopNow: 'Stop now',
       upgrade: 'Upgrade',
     },
@@ -805,10 +809,13 @@ const en = {
       deadMicHelp: 'How to fix',
       deadMicTitle: 'No audio is reaching your microphone',
       limitSoon: 'Less than {{minutes}} minutes left on this recording',
-      limitSoonDescription: 'Your plan allows {{limit}}-minute recordings. It will stop automatically at the limit.',
+      limitSoonDescription:
+        'Your plan allows {{limit}}-minute recordings. It will stop automatically at the limit.',
       limitStopped: 'Recording stopped at your plan’s {{minutes}}-minute limit.',
-      limitStoppedDescription: 'The note and transcript are saved. Start a new recording to keep going, or upgrade for longer recordings.',
-      completionRecovery: 'The recording could not finish saving. It will retry when you reconnect.',
+      limitStoppedDescription:
+        'The note and transcript are saved. Start a new recording to keep going, or upgrade for longer recordings.',
+      completionRecovery:
+        'The recording could not finish saving. It will retry when you reconnect.',
       endedUnexpectedly: 'Recording ended unexpectedly.',
       microphoneDenied: 'Microphone access was denied.',
       microphoneDeniedHintDesktop:
@@ -1064,7 +1071,8 @@ const en = {
       planGate: {
         title: 'Bring your own key',
         availability: 'Available in Pro',
-        description: 'Bring Your Own Key is not included in your current plan. Upgrade to Pro to connect your own AI providers and choose the models you use.',
+        description:
+          'Bring Your Own Key is not included in your current plan. Upgrade to Pro to connect your own AI providers and choose the models you use.',
         upgrade: 'Upgrade to Pro',
         back: 'Back to settings',
       },
@@ -1812,8 +1820,10 @@ const en = {
         currentPlan: 'Current plan',
         gateAskAiDescription: 'Upgrade to ask questions across your notes.',
         gateAskAiTitle: 'Ask AI isn’t included in your plan',
-        gateAutomations: 'Automations aren’t included in your plan. Upgrade to send events to a webhook.',
-        gateByokDescription: 'Your plan runs on Prismical Cloud. Upgrade to connect your own provider keys.',
+        gateAutomations:
+          'Automations aren’t included in your plan. Upgrade to send events to a webhook.',
+        gateByokDescription:
+          'Your plan runs on Prismical Cloud. Upgrade to connect your own provider keys.',
         gateByokTitle: 'Bring your own keys with an upgrade',
         gateFloatingMode: 'Floating mode isn’t included in your plan. See plans in Billing.',
         gateSeePlans: 'See plans',
@@ -2030,7 +2040,8 @@ const en = {
         addSectionDescription: 'Add the result as a new section, keeping the existing note.',
         rewriteNote: 'Rewrite entire note',
         rewriteNoteDescription: 'Generate a replacement for the entire note body.',
-        transcriptDescription: 'Include recording transcripts from this note as context for the skill.',
+        transcriptDescription:
+          'Include recording transcripts from this note as context for the skill.',
         titleDescription: 'Generate a new note title instead of editing the note body.',
         preservedMode: 'This skill uses an experimental output setting. Saving keeps it unchanged.',
 
@@ -2039,7 +2050,8 @@ const en = {
         descriptionLabel: 'Description',
         descriptionPlaceholder: 'One short line shown on the skill card',
         enabled: 'Enabled',
-        modeAgnosticDescription: 'Let the prompt define the output without append or rewrite instructions. Inline rewrites and recording Enhance still use mode-specific instructions.',
+        modeAgnosticDescription:
+          'Let the prompt define the output without append or rewrite instructions. Inline rewrites and recording Enhance still use mode-specific instructions.',
         modeAgnosticLabel: 'Mode-agnostic prompt',
         modeLabel: 'Mode',
         nameLabel: 'Name',
@@ -2253,6 +2265,15 @@ const en = {
       launchAtLogin: {
         description: 'Automatically start Prismical when you log in.',
         label: 'Launch at login',
+      },
+      aiOutputLanguage: {
+        label: 'AI output language',
+        description:
+          'The language Enhance, Cleanup, and other skills write in. Picking a language translates notes into it; an explicit language instruction in a skill or refine request still wins.',
+        sameAsNoteHint: 'Each note stays in the language it was written in.',
+        sameAsNote: 'Same as the note',
+        saveError: 'Could not load or save your language preferences. Please try again.',
+        retry: 'Try again',
       },
       language: {
         description: 'Choose the language used throughout Prismical.',
@@ -2599,8 +2620,7 @@ const en = {
         unsupported: 'Model listing is not available for this provider.',
       },
       clearKey: 'Clear key',
-      description:
-        'Choose which language model runs Ask, Enhance and Cleanup on this device.',
+      description: 'Choose which language model runs Ask, Enhance and Cleanup on this device.',
       keyMissing: 'No key is saved on this device.',
       keySet: 'A key is saved on this device. Paste a new one to replace it.',
       modelLabel: 'Model',

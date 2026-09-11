@@ -1,3 +1,4 @@
+import { rm } from 'node:fs/promises';
 import { test, expect, type Page } from '@playwright/test';
 import {
   launchPrismical,
@@ -7,7 +8,8 @@ import {
 } from './helpers/launch';
 
 test.describe('local settings alignment', () => {
-  let launched: PrismicalLaunch;
+  let launched: PrismicalLaunch | undefined;
+  let keptProfile: string | undefined;
   let page: Page;
 
   test.beforeEach(async () => {
@@ -19,6 +21,13 @@ test.describe('local settings alignment', () => {
 
   test.afterEach(async () => {
     await closePrismical(launched);
+    launched = undefined;
+    await Promise.all(
+      [keptProfile]
+        .filter((dir): dir is string => dir !== undefined)
+        .map(dir => rm(dir, { recursive: true, force: true }))
+    );
+    keptProfile = undefined;
   });
 
   test('keeps the Name note rollout disabled while other skills remain available', async () => {
@@ -33,5 +42,41 @@ test.describe('local settings alignment', () => {
     await expect(editor).toHaveAttribute('contenteditable', 'true');
     await editor.fill('Content is present, but the naming feature remains gated.');
     await expect(page.getByRole('button', { name: 'Name with AI', exact: true })).toHaveCount(0);
+  });
+
+  test('persists independent interface and AI output languages across a local restart', async () => {
+    await page.getByRole('link', { name: 'Settings', exact: true }).click();
+    const outputLanguage = page.getByRole('combobox', { name: 'AI output language', exact: true });
+    const interfaceLanguage = page.getByRole('combobox', { name: 'Interface language', exact: true });
+    await expect(outputLanguage).toBeEnabled();
+    await expect(outputLanguage).toContainText('Same as the note');
+    await outputLanguage.click();
+    await expect(page.getByRole('option', { name: 'Same as the note', exact: true })).toHaveAccessibleDescription(
+      'Each note stays in the language it was written in.'
+    );
+    await page.getByRole('option', { name: 'Español', exact: true }).click();
+    await expect(outputLanguage).toContainText('Español');
+    await expect(interfaceLanguage).toHaveValue('en');
+
+    await interfaceLanguage.selectOption('de');
+    await expect(page.getByRole('alertdialog')).toContainText('Restart to change language');
+    await expect
+      .poll(() => page.evaluate(() => window.desktop.settings.get().then(settings => settings.language)))
+      .toBe('de');
+    await page.getByRole('button', { name: 'Later', exact: true }).click();
+    await expect(outputLanguage).toContainText('Español');
+    await expect(interfaceLanguage).toHaveValue('de');
+
+    keptProfile = launched!.userDataDir;
+    await closePrismical(launched, { keepProfile: true });
+    launched = undefined;
+    launched = await launchPrismical({ PRISMICAL_E2E_USER_DATA_DIR: keptProfile });
+    page = await launched.app.firstWindow({ timeout: 60_000 });
+    assertNotStaleDevBundle(page.url());
+    await expect(page.getByTestId('desktop-shell')).toBeVisible();
+    await page.getByRole('link', { name: 'Einstellungen', exact: true }).click();
+    await expect(page.getByRole('combobox', { name: 'Oberflächensprache', exact: true })).toHaveValue('de');
+    await expect(page.getByRole('combobox', { name: 'KI-Ausgabesprache', exact: true })).toContainText('Español');
+    await expect(page.getByRole('alertdialog')).toHaveCount(0);
   });
 });

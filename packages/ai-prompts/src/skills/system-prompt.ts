@@ -1,3 +1,5 @@
+import { outputLanguageInstruction } from './output-language.js';
+import type { SkillOutputLanguage } from '@prismical/api-contracts/apps/v1';
 import { SUBMIT_OUTPUT_TOOL, type ArtifactMode } from './types.js';
 import type { RunnableSkill } from './skill.js';
 import type { SkillNoteInput } from './note-input.js';
@@ -19,7 +21,6 @@ const MARKDOWN_RULES = [
   '- Prefer starting sections at ## (# only for a document title in a whole-note rewrite) — unless',
   "  the skill's own rules say to preserve the note's existing heading levels.",
   '- Use plain hyphens (-), never em-dashes.',
-  '- Write in the same language as the note and transcript.',
 ].join('\n');
 
 /**
@@ -32,6 +33,8 @@ const MARKDOWN_RULES = [
  * branches are retained but unreachable until that mode ships.
  */
 export function buildSkillSystemPrompt(args: {
+  /** Omitted ⇒ keep the note's own language (see `outputLanguageInstruction`). */
+  outputLanguage?: SkillOutputLanguage;
   skill: RunnableSkill;
   mode: ArtifactMode;
   input: SkillNoteInput;
@@ -138,6 +141,8 @@ export function buildSkillSystemPrompt(args: {
     out.push(refineInstruction);
   }
 
+  out.push('');
+  out.push(outputLanguageInstruction(args.outputLanguage));
   out.push('');
   out.push('# Output');
   out.push(

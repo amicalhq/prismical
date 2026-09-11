@@ -39,6 +39,12 @@ export const schemaMeta = sqliteTable('schema_meta', {
   appliedAt: text('applied_at').notNull(),
 });
 
+/** The local user's grouped preferences. One row (id 1); the database file owns the workspace. */
+export const userPreference = sqliteTable('user_preference', {
+  id: integer('id').primaryKey(),
+  prefs: text('prefs', { mode: 'json' }).$type<Record<string, unknown>>().notNull(),
+});
+
 /**
  * A note's list/search metadata plus the derived read-model of its body.
  * The collaborative body itself lives as a Yjs update log in

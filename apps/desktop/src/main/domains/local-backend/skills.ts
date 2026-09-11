@@ -20,6 +20,7 @@ import {
   RestoreSkillRunRequestSchema,
   RunSkillRequestSchema,
   RunSkillResultSchema,
+  resolveOutputLanguage,
   type RunSkillRequest,
   type RunSkillResult,
   SyncSkillCreateRequestSchema,
@@ -54,6 +55,7 @@ import * as schema from '../../infra/product-db/schema';
 import type { LocalAiPort } from './ai-port';
 import { loadNoteInput, selectNoteRow, skillInputIsEmpty, transcriptBlocker } from './note-input';
 import { bumpUpdatedAt, defaultTitle } from './notes';
+import { getLocalPreferences } from './preferences';
 import { runTerminalTool, type RunUsage, type TerminalToolSpec } from './skill-run';
 import { findRecoverableResult, saveRecoverableResult, SuggestionChanged, suggestionChanged } from './skill-recovery';
 import { listEntity, type LocalEntityConfig } from './sync-entities';
@@ -388,13 +390,18 @@ async function executeSkillRun(
   }
   const resolved = resolvedResult.value;
 
+  const preferences = getLocalPreferences(db).language;
+  const outputLanguage = preferences ? resolveOutputLanguage(preferences) : 'source';
   const system = titleTarget
     ? buildTitleSystemPrompt({
         skillBody: skill.body,
         noteText: input.noteText,
         transcript: input.transcript,
+        outputLanguage,
+        refineInstruction: req.refineInstruction,
       })
     : buildSkillSystemPrompt({
+        outputLanguage,
         skill,
         mode,
         input,

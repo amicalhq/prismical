@@ -3,112 +3,115 @@ import type en from './en';
 
 const ja = {
   workflow: {
-    noteChanged: "この提案の生成後にノートが変更されました。提案を破棄してスキルを再実行してください。",
-      "busy": "現在の録音またはスキルを先に完了してください。",
-      "draining": "残りの音声を送信中…",
-      "finalizing": "録音を完了処理中…",
-      "recording": "録音中",
-      "recordingAway": "別のノートで録音中",
-      "pausedAway": "別のノートで録音を一時停止中",
-      "review": "別のノートの変更を確認中",
-      "reviewNamed": "{{name}} の変更を確認中",
-      "applying": "変更を適用中…",
-      "skill": "スキルを実行中…",
-      "openNote": "ノートを開く",
-      "openNamedNote": "{{name}} を開く",
-      "retry": "再試行",
-      "end": "処理を終了"
+    noteChanged:
+      'この提案の生成後にノートが変更されました。提案を破棄してスキルを再実行してください。',
+    busy: '現在の録音またはスキルを先に完了してください。',
+    draining: '残りの音声を送信中…',
+    finalizing: '録音を完了処理中…',
+    recording: '録音中',
+    recordingAway: '別のノートで録音中',
+    pausedAway: '別のノートで録音を一時停止中',
+    review: '別のノートの変更を確認中',
+    reviewNamed: '{{name}} の変更を確認中',
+    applying: '変更を適用中…',
+    skill: 'スキルを実行中…',
+    openNote: 'ノートを開く',
+    openNamedNote: '{{name}} を開く',
+    retry: '再試行',
+    end: '処理を終了',
   },
 
   onboarding: {
-  "helpDocs": "お困りですか？ドキュメントを読む",
-  "continueToNote": "ノートに戻る",
-  "useCases": {
-    "meetings": {
-      "title": "会議",
-      "body": "会話をわかりやすいノートやアクション項目にまとめます。"
+    helpDocs: 'お困りですか？ドキュメントを読む',
+    continueToNote: 'ノートに戻る',
+    useCases: {
+      meetings: {
+        title: '会議',
+        body: '会話をわかりやすいノートやアクション項目にまとめます。',
+      },
+      lectures: {
+        title: '講義',
+        body: '授業の内容を整理された学習ノートにまとめます。',
+      },
+      voiceNotes: {
+        title: '音声ノート',
+        body: 'アイデアを記録し、散らばった考えを役立つ形に整理します。',
+      },
     },
-    "lectures": {
-      "title": "講義",
-      "body": "授業の内容を整理された学習ノートにまとめます。"
-    },
-    "voiceNotes": {
-      "title": "音声ノート",
-      "body": "アイデアを記録し、散らばった考えを役立つ形に整理します。"
-    }
-  },
-    welcomeHeading: "AIノートアシスタントへようこそ",
-    welcomeTitle: "最初の音声ノートを作成",
-    welcomeBody: "少し話して、わかりやすいノートにまとめ、結果を確認しましょう。各ステップをご案内します。",
-    start: "ガイドを開始",
-    later: "あとで",
+    welcomeHeading: 'AIノートアシスタントへようこそ',
+    welcomeTitle: '最初の音声ノートを作成',
+    welcomeBody:
+      '少し話して、わかりやすいノートにまとめ、結果を確認しましょう。各ステップをご案内します。',
+    start: 'ガイドを開始',
+    later: 'あとで',
 
-    close: "ガイドを終了",
-  "unavailable": "この操作はまだ利用できません。アプリの読み込みを待つか、× でガイドを終了してください。",
-  "doneTitle": "最初のノートができました",
-  "doneBody": "次は何を記録しますか？",
-  "download": "ダウンロード",
-  "mobileBeta": "モバイル版ベータに参加",
-  "platforms": {
-    "mac": "macOS",
-    "windows": "Windows",
-    "ios": "iOS",
-    "android": "Android"
-  },
-  "tour": {
-    "create": {
-      "title": "ドックからノートを作成",
-      "body": "下のドックの＋ボタンをクリックして、最初のノートを作成しましょう。"
+    close: 'ガイドを終了',
+    unavailable:
+      'この操作はまだ利用できません。アプリの読み込みを待つか、× でガイドを終了してください。',
+    doneTitle: '最初のノートができました',
+    doneBody: '次は何を記録しますか？',
+    download: 'ダウンロード',
+    mobileBeta: 'モバイル版ベータに参加',
+    platforms: {
+      mac: 'macOS',
+      windows: 'Windows',
+      ios: 'iOS',
+      android: 'Android',
     },
-    "record": {
-      "title": "録音を開始",
-      "body": "ドックのマイクをクリックし、録音開始を押します。求められたらマイクへのアクセスを許可してください。"
+    tour: {
+      create: {
+        title: 'ドックからノートを作成',
+        body: '下のドックの＋ボタンをクリックして、最初のノートを作成しましょう。',
+      },
+      record: {
+        title: '録音を開始',
+        body: 'ドックのマイクをクリックし、録音開始を押します。求められたらマイクへのアクセスを許可してください。',
+      },
+      waiting: {
+        title: '文字起こしを準備しています',
+        body: '録音を保存して処理しています。文字起こしが完了するまでお待ちください。',
+      },
+      retry: {
+        title: '録音して続ける',
+        body: '録音パネルを開いて新しい録音を開始すると続行できます。このガイドを終了することもできます。',
+      },
+      generating: {
+        title: '下書きの進行を確認',
+        body: '下書きと進行状況がここに表示されます。失敗または停止した場合は、利用可能な操作を使うか、録音パネルに戻って再試行してください。',
+      },
+      starting: {
+        title: 'マイクを準備しています',
+        body: '確認が表示されたらマイクへのアクセスを許可してください。録音が始まるまで話さずにお待ちください。',
+      },
+      speak: {
+        title: '少し話してみましょう',
+        body: '例えば「今日はPrismicalを試しています。次はこの録音を分かりやすいノートにまとめます」と、数秒話してみてください。',
+      },
+      stop: {
+        title: '停止を押しましょう',
+        body: '録音コントロールの停止をクリックします。録音が保存され、文字起こしが表示されます。',
+      },
+      transcript: {
+        title: 'これが文字起こしです',
+        body: '話した内容がここに表示されます。対応モデルでは話者ごとのラベルも付けられます。一人で短く録音した場合は、話者は一人だけのこともあります。',
+      },
+      enhance: {
+        title: '音声をノートに整理',
+        body: '録音パネルの整理をクリックします。下書きができるまで待ちましょう。承認するまではノートを置き換えません。',
+      },
+      result: {
+        title: '整理されたノートを確認',
+        body: 'これが提案されたノートです。強調表示された変更を読み、確認操作に進みましょう。',
+      },
+      review: {
+        title: '保持、取り消し、修正依頼',
+        body: 'ドックで下書きを保持・取り消したり、テキスト欄で変更を依頼できます。保持をクリックして最初のノートを完成させましょう。',
+      },
     },
-    "waiting": {
-      "title": "文字起こしを準備しています",
-      "body": "録音を保存して処理しています。文字起こしが完了するまでお待ちください。"
-    },
-    "retry": {
-      "title": "録音して続ける",
-      "body": "録音パネルを開いて新しい録音を開始すると続行できます。このガイドを終了することもできます。"
-    },
-    "generating": {
-      "title": "下書きの進行を確認",
-      "body": "下書きと進行状況がここに表示されます。失敗または停止した場合は、利用可能な操作を使うか、録音パネルに戻って再試行してください。"
-    },
-    "starting": {
-      "title": "マイクを準備しています",
-      "body": "確認が表示されたらマイクへのアクセスを許可してください。録音が始まるまで話さずにお待ちください。"
-    },
-    "speak": {
-      "title": "少し話してみましょう",
-      "body": "例えば「今日はPrismicalを試しています。次はこの録音を分かりやすいノートにまとめます」と、数秒話してみてください。"
-    },
-    "stop": {
-      "title": "停止を押しましょう",
-      "body": "録音コントロールの停止をクリックします。録音が保存され、文字起こしが表示されます。"
-    },
-    "transcript": {
-      "title": "これが文字起こしです",
-      "body": "話した内容がここに表示されます。対応モデルでは話者ごとのラベルも付けられます。一人で短く録音した場合は、話者は一人だけのこともあります。"
-    },
-    "enhance": {
-      "title": "音声をノートに整理",
-      "body": "録音パネルの整理をクリックします。下書きができるまで待ちましょう。承認するまではノートを置き換えません。"
-    },
-    "result": {
-      "title": "整理されたノートを確認",
-      "body": "これが提案されたノートです。強調表示された変更を読み、確認操作に進みましょう。"
-    },
-    "review": {
-      "title": "保持、取り消し、修正依頼",
-      "body": "ドックで下書きを保持・取り消したり、テキスト欄で変更を依頼できます。保持をクリックして最初のノートを完成させましょう。"
-    }
-  },
-    replayTitle: "はじめに",
-    replayBody: "クイックガイドをもう一度",
+    replayTitle: 'はじめに',
+    replayBody: 'クイックガイドをもう一度',
     title: '最初のノート',
-    recovery: "失敗した操作は再試行できます。× でガイドを終了できます。",
+    recovery: '失敗した操作は再試行できます。× でガイドを終了できます。',
   },
   common: {
     actions: {
@@ -590,7 +593,8 @@ const ja = {
   },
   tags: {
     empty: 'タグがまだありません',
-    emptyHint: 'タグはフォルダーをまたいでノートをまとめます。ノートに追加するか、ここで作成しましょう。',
+    emptyHint:
+      'タグはフォルダーをまたいでノートをまとめます。ノートに追加するか、ここで作成しましょう。',
     favoritesOnly: 'お気に入り',
     new: '新しいタグ',
     noMatch: 'フィルターに一致するタグがありません',
@@ -751,15 +755,18 @@ const ja = {
       couldNotResume: '録音を再開できませんでした。',
       couldNotStart: '録音を開始できませんでした。',
       modelMissing: '録音する前に、設定で文字起こしモデルをダウンロードしてください。',
-      storageUnavailable: '録音を保存できませんでした。ディスクの空き容量を確認して、もう一度お試しください。',
+      storageUnavailable:
+        '録音を保存できませんでした。ディスクの空き容量を確認して、もう一度お試しください。',
       currentSuggestion: '現在の提案を確認または破棄してください。',
       deadMicDescription: 'システムがブラウザのマイクアクセスをブロックしている可能性があります。',
       deadMicHelp: '解決方法',
       deadMicTitle: 'マイクに音声が届いていません',
       limitSoon: 'この録音は残り {{minutes}} 分未満です',
-      limitSoonDescription: '現在のプランでは {{limit}} 分までの録音が可能です。上限に達すると自動的に停止します。',
+      limitSoonDescription:
+        '現在のプランでは {{limit}} 分までの録音が可能です。上限に達すると自動的に停止します。',
       limitStopped: 'プランの上限（{{minutes}} 分）に達したため録音を停止しました。',
-      limitStoppedDescription: 'ノートと文字起こしは保存されています。続けるには新しい録音を開始するか、アップグレードして長い録音を有効にしてください。',
+      limitStoppedDescription:
+        'ノートと文字起こしは保存されています。続けるには新しい録音を開始するか、アップグレードして長い録音を有効にしてください。',
       completionRecovery: '録音の保存を完了できませんでした。再接続すると再試行します。',
       endedUnexpectedly: '録音が予期せず終了しました。',
       microphoneDenied: 'マイクへのアクセスが拒否されました。',
@@ -1004,7 +1011,8 @@ const ja = {
       planGate: {
         title: '自分のAPIキーを使用',
         availability: 'Proで利用可能',
-        description: '現在のプランでは自分のAPIキーを使用できません。Proにアップグレードすると、独自のAIプロバイダーを接続し、使用するモデルを選択できます。',
+        description:
+          '現在のプランでは自分のAPIキーを使用できません。Proにアップグレードすると、独自のAIプロバイダーを接続し、使用するモデルを選択できます。',
         upgrade: 'Proにアップグレード',
         back: '設定に戻る',
       },
@@ -1758,8 +1766,10 @@ const ja = {
         currentPlan: '現在のプラン',
         gateAskAiDescription: 'ノート全体に質問するにはアップグレードしてください。',
         gateAskAiTitle: 'Ask AI は現在のプランに含まれていません',
-        gateAutomations: '自動化は現在のプランに含まれていません。イベントを Webhook に送信するにはアップグレードしてください。',
-        gateByokDescription: '現在のプランは Prismical Cloud で動作します。自分のプロバイダーキーを接続するにはアップグレードしてください。',
+        gateAutomations:
+          '自動化は現在のプランに含まれていません。イベントを Webhook に送信するにはアップグレードしてください。',
+        gateByokDescription:
+          '現在のプランは Prismical Cloud で動作します。自分のプロバイダーキーを接続するにはアップグレードしてください。',
         gateByokTitle: 'アップグレードして自分のキーを使う',
         gateFloatingMode: 'フローティングモードは現在のプランに含まれていません。請求設定でプランをご確認ください。',
         gateSeePlans: 'プランを見る',
@@ -1979,14 +1989,16 @@ const ja = {
         rewriteNoteDescription: 'ノート本文全体を置き換える内容を生成します。',
         transcriptDescription: 'このノートの録音の文字起こしをスキルのコンテキストに含めます。',
         titleDescription: 'ノート本文を編集する代わりに、新しいタイトルを生成します。',
-        preservedMode: 'このスキルは実験的な出力設定を使用しています。保存しても設定は変わりません。',
+        preservedMode:
+          'このスキルは実験的な出力設定を使用しています。保存しても設定は変わりません。',
 
         advanced: '詳細設定',
         defaultLabel: '既定のきらめきボタンに設定',
         descriptionLabel: '説明',
         descriptionPlaceholder: 'スキルカードに表示する短い説明',
         enabled: '有効',
-        modeAgnosticDescription: '追加や書き換えの指示を加えず、プロンプトで出力を定義します。選択範囲の書き換えと録音のEnhanceでは、モード別の指示を引き続き使用します。',
+        modeAgnosticDescription:
+          '追加や書き換えの指示を加えず、プロンプトで出力を定義します。選択範囲の書き換えと録音のEnhanceでは、モード別の指示を引き続き使用します。',
         modeAgnosticLabel: 'モードに依存しないプロンプト',
         modeLabel: 'モード',
         nameLabel: '名前',
@@ -2197,6 +2209,15 @@ const ja = {
         description: 'ログイン時に Prismical を自動的に起動します。',
         label: 'ログイン時に起動',
       },
+      aiOutputLanguage: {
+        label: 'AIの出力言語',
+        description:
+          'Enhance、Cleanupなどのスキルが出力に使う言語です。言語を選ぶとノートをその言語に翻訳します。スキルや調整指示で言語を明示した場合は、その指示が優先されます。',
+        sameAsNoteHint: '各ノートは書かれた言語のまま保たれます。',
+        sameAsNote: 'ノートと同じ',
+        saveError: '言語設定を読み込み、または保存できませんでした。もう一度お試しください。',
+        retry: '再試行',
+      },
       language: {
         description: 'Prismical 全体で使用する言語を選択します。',
         label: 'インターフェース言語',
@@ -2395,7 +2416,8 @@ const ja = {
         title: 'アカウントを選択',
         checkingSession: 'セッションを確認中…',
         sessionFailed: 'セッションを確認できませんでした。このページを再読み込みしてください。',
-        accountChanged: 'ログイン中のアカウントが変更されました。表示されているアカウントを確認してください。',
+        accountChanged:
+          'ログイン中のアカウントが変更されました。表示されているアカウントを確認してください。',
         continueFailed: '続行できませんでした。もう一度お試しください。',
         signOutFailed: 'ログアウトできませんでした。もう一度お試しください。',
         continuing: '続行中…',
@@ -2544,8 +2566,7 @@ const ja = {
         unsupported: 'このプロバイダーではモデルの一覧を取得できません。',
       },
       clearKey: 'キーを削除',
-      description:
-        'このデバイスで Ask、Enhance、Cleanup に使う言語モデルを選択します。',
+      description: 'このデバイスで Ask、Enhance、Cleanup に使う言語モデルを選択します。',
       keyMissing: 'このデバイスにキーは保存されていません。',
       keySet:
         'このデバイスにキーが保存されています。置き換えるには新しいキーを貼り付けてください。',

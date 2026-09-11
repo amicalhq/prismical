@@ -3,112 +3,112 @@ import type en from './en';
 
 const zhTW = {
   workflow: {
-    noteChanged: "產生此建議後，筆記已有變更。請捨棄建議並重新執行技能。",
-      "busy": "請先完成目前的錄音或技能。",
-      "draining": "正在傳送剩餘音訊…",
-      "finalizing": "正在完成錄音…",
-      "recording": "錄音進行中",
-      "recordingAway": "正在另一則筆記中錄音",
-      "pausedAway": "另一則筆記中的錄音已暫停",
-      "review": "正在檢閱另一則筆記的變更",
-      "reviewNamed": "正在檢閱 {{name}} 的變更",
-      "applying": "正在套用變更…",
-      "skill": "技能執行中…",
-      "openNote": "開啟筆記",
-      "openNamedNote": "開啟 {{name}}",
-      "retry": "重試",
-      "end": "結束流程"
+    noteChanged: '產生此建議後，筆記已有變更。請捨棄建議並重新執行技能。',
+    busy: '請先完成目前的錄音或技能。',
+    draining: '正在傳送剩餘音訊…',
+    finalizing: '正在完成錄音…',
+    recording: '錄音進行中',
+    recordingAway: '正在另一則筆記中錄音',
+    pausedAway: '另一則筆記中的錄音已暫停',
+    review: '正在檢閱另一則筆記的變更',
+    reviewNamed: '正在檢閱 {{name}} 的變更',
+    applying: '正在套用變更…',
+    skill: '技能執行中…',
+    openNote: '開啟筆記',
+    openNamedNote: '開啟 {{name}}',
+    retry: '重試',
+    end: '結束流程',
   },
 
   onboarding: {
-  "helpDocs": "需要協助嗎？閱讀使用文件",
-  "continueToNote": "繼續查看我的筆記",
-  "useCases": {
-    "meetings": {
-      "title": "會議",
-      "body": "將對話整理成清楚的筆記與待辦事項。"
+    helpDocs: '需要協助嗎？閱讀使用文件',
+    continueToNote: '繼續查看我的筆記',
+    useCases: {
+      meetings: {
+        title: '會議',
+        body: '將對話整理成清楚的筆記與待辦事項。',
+      },
+      lectures: {
+        title: '課堂',
+        body: '將課程內容整理成有條理的學習筆記。',
+      },
+      voiceNotes: {
+        title: '語音筆記',
+        body: '記下靈感，將零散的想法整理成實用的內容。',
+      },
     },
-    "lectures": {
-      "title": "課堂",
-      "body": "將課程內容整理成有條理的學習筆記。"
-    },
-    "voiceNotes": {
-      "title": "語音筆記",
-      "body": "記下靈感，將零散的想法整理成實用的內容。"
-    }
-  },
-    welcomeHeading: "歡迎使用您的 AI 筆記助手",
-    welcomeTitle: "建立您的第一則語音筆記",
-    welcomeBody: "說幾句話，將內容整理成清楚的筆記，並學習如何檢查結果。我們會逐步引導您。",
-    start: "開始導覽",
-    later: "稍後再說",
+    welcomeHeading: '歡迎使用您的 AI 筆記助手',
+    welcomeTitle: '建立您的第一則語音筆記',
+    welcomeBody: '說幾句話，將內容整理成清楚的筆記，並學習如何檢查結果。我們會逐步引導您。',
+    start: '開始導覽',
+    later: '稍後再說',
 
-    close: "結束導覽",
-  "unavailable": "此控制項尚未就緒。請等待應用程式載入完成，或使用 × 結束導覽。",
-  "doneTitle": "您的第一則筆記已完成",
-  "doneBody": "接下來想記錄什麼？",
-  "download": "下載",
-  "mobileBeta": "申請行動版測試",
-  "platforms": {
-    "mac": "macOS",
-    "windows": "Windows",
-    "ios": "iOS",
-    "android": "Android"
-  },
-  "tour": {
-    "create": {
-      "title": "從 Dock 建立筆記",
-      "body": "點擊下方 Dock 的 + 按鈕，建立第一篇筆記。"
+    close: '結束導覽',
+    unavailable: '此控制項尚未就緒。請等待應用程式載入完成，或使用 × 結束導覽。',
+    doneTitle: '您的第一則筆記已完成',
+    doneBody: '接下來想記錄什麼？',
+    download: '下載',
+    mobileBeta: '申請行動版測試',
+    platforms: {
+      mac: 'macOS',
+      windows: 'Windows',
+      ios: 'iOS',
+      android: 'Android',
     },
-    "record": {
-      "title": "開始錄音",
-      "body": "點擊 Dock 的麥克風，再按開始錄音。出現提示時請允許存取麥克風。"
+    tour: {
+      create: {
+        title: '從 Dock 建立筆記',
+        body: '點擊下方 Dock 的 + 按鈕，建立第一篇筆記。',
+      },
+      record: {
+        title: '開始錄音',
+        body: '點擊 Dock 的麥克風，再按開始錄音。出現提示時請允許存取麥克風。',
+      },
+      waiting: {
+        title: '正在準備逐字稿',
+        body: '正在儲存並處理錄音。請等逐字稿完成後再繼續。',
+      },
+      retry: {
+        title: '錄音以繼續',
+        body: '開啟錄音面板並開始新的錄音以繼續。你也可以退出此導覽。',
+      },
+      generating: {
+        title: '查看草稿進度',
+        body: '草稿及其進度會顯示在這裡。如果執行失敗或停止，請使用可用的復原操作，或返回錄音面板重試。',
+      },
+      starting: {
+        title: '正在準備麥克風',
+        body: '如有提示，請允許存取麥克風。請等錄音開始後再說話。',
+      },
+      speak: {
+        title: '說幾句話',
+        body: '試著說：「今天我在試用 Prismical。接下來要把這段錄音整理成清楚的筆記。」請說幾秒鐘。',
+      },
+      stop: {
+        title: '現在按停止',
+        body: '點擊錄音控制項的停止。錄音會儲存，接著顯示逐字稿。',
+      },
+      transcript: {
+        title: '這是你的逐字稿',
+        body: '這裡顯示你說的內容。如果轉錄模型支援，Prismical 也能標示不同說話者。簡短的單人錄音可能只有一位說話者。',
+      },
+      enhance: {
+        title: '把語音整理成筆記',
+        body: '點擊錄音面板的整理。請等待草稿完成；接受前不會取代筆記。',
+      },
+      result: {
+        title: '檢閱整理後的筆記',
+        body: '這是建議的筆記。閱讀醒目標示的變更，再繼續到檢閱控制項。',
+      },
+      review: {
+        title: '保留、復原或要求修改',
+        body: '你可以在 Dock 保留草稿、復原，或在文字欄描述想要的修改。點擊保留以完成第一篇筆記。',
+      },
     },
-    "waiting": {
-      "title": "正在準備逐字稿",
-      "body": "正在儲存並處理錄音。請等逐字稿完成後再繼續。"
-    },
-    "retry": {
-      "title": "錄音以繼續",
-      "body": "開啟錄音面板並開始新的錄音以繼續。你也可以退出此導覽。"
-    },
-    "generating": {
-      "title": "查看草稿進度",
-      "body": "草稿及其進度會顯示在這裡。如果執行失敗或停止，請使用可用的復原操作，或返回錄音面板重試。"
-    },
-    "starting": {
-      "title": "正在準備麥克風",
-      "body": "如有提示，請允許存取麥克風。請等錄音開始後再說話。"
-    },
-    "speak": {
-      "title": "說幾句話",
-      "body": "試著說：「今天我在試用 Prismical。接下來要把這段錄音整理成清楚的筆記。」請說幾秒鐘。"
-    },
-    "stop": {
-      "title": "現在按停止",
-      "body": "點擊錄音控制項的停止。錄音會儲存，接著顯示逐字稿。"
-    },
-    "transcript": {
-      "title": "這是你的逐字稿",
-      "body": "這裡顯示你說的內容。如果轉錄模型支援，Prismical 也能標示不同說話者。簡短的單人錄音可能只有一位說話者。"
-    },
-    "enhance": {
-      "title": "把語音整理成筆記",
-      "body": "點擊錄音面板的整理。請等待草稿完成；接受前不會取代筆記。"
-    },
-    "result": {
-      "title": "檢閱整理後的筆記",
-      "body": "這是建議的筆記。閱讀醒目標示的變更，再繼續到檢閱控制項。"
-    },
-    "review": {
-      "title": "保留、復原或要求修改",
-      "body": "你可以在 Dock 保留草稿、復原，或在文字欄描述想要的修改。點擊保留以完成第一篇筆記。"
-    }
-  },
-    replayTitle: "開始使用",
-    replayBody: "重新查看快速導覽",
+    replayTitle: '開始使用',
+    replayBody: '重新查看快速導覽',
     title: '你的第一篇筆記',
-    recovery: "您可以重試失敗的操作，或使用 × 結束導覽。",
+    recovery: '您可以重試失敗的操作，或使用 × 結束導覽。',
   },
   common: {
     actions: {
@@ -736,7 +736,8 @@ const zhTW = {
       limitSoon: '這段錄音剩餘不到 {{minutes}} 分鐘',
       limitSoonDescription: '你的方案允許 {{limit}} 分鐘的錄音，達到上限時會自動停止。',
       limitStopped: '錄音已在你方案的 {{minutes}} 分鐘上限停止。',
-      limitStoppedDescription: '筆記與逐字稿已儲存。開始新的錄音以繼續，或升級以取得更長的錄音時間。',
+      limitStoppedDescription:
+        '筆記與逐字稿已儲存。開始新的錄音以繼續，或升級以取得更長的錄音時間。',
       completionRecovery: '錄音尚未完成儲存，重新連線後會再次嘗試。',
       endedUnexpectedly: '錄音意外結束。',
       microphoneDenied: '麥克風存取遭拒。',
@@ -941,7 +942,8 @@ const zhTW = {
       couldNotUndo: '無法復原這次編輯。',
       newSectionAdded: '已加入新區段',
       noteReplaced: '已取代筆記',
-      previewRewriteFailed: '無法預覽這次改寫，因為所選文字已變更或移除。建議仍保留著：請取消它，或重新選取文字後再執行一次。',
+      previewRewriteFailed:
+        '無法預覽這次改寫，因為所選文字已變更或移除。建議仍保留著：請取消它，或重新選取文字後再執行一次。',
       previewRunFailed: '目前無法預覽這項建議。建議仍保留著，請在檢閱列中保留或取消它。',
       refine: '調整',
       refineInstruction: '依指示調整',
@@ -976,7 +978,8 @@ const zhTW = {
       planGate: {
         title: '使用自己的 API 金鑰',
         availability: 'Pro 方案提供',
-        description: '你目前的方案不包含自備金鑰功能。升級至 Pro，即可連接自己的 AI 供應商並選擇要使用的模型。',
+        description:
+          '你目前的方案不包含自備金鑰功能。升級至 Pro，即可連接自己的 AI 供應商並選擇要使用的模型。',
         upgrade: '升級至 Pro',
         back: '返回設定',
       },
@@ -1925,7 +1928,8 @@ const zhTW = {
         descriptionLabel: '說明',
         descriptionPlaceholder: '顯示在技能卡片上的簡短說明',
         enabled: '已啟用',
-        modeAgnosticDescription: '由提示詞定義輸出，不加入新增或重寫指示。選取文字的改寫與錄音 Enhance 仍使用模式專屬指示。',
+        modeAgnosticDescription:
+          '由提示詞定義輸出，不加入新增或重寫指示。選取文字的改寫與錄音 Enhance 仍使用模式專屬指示。',
         modeAgnosticLabel: '不受模式限制的提示',
         modeLabel: '模式',
         nameLabel: '名稱',
@@ -2132,6 +2136,15 @@ const zhTW = {
       launchAtLogin: {
         description: '登入時自動啟動 Prismical。',
         label: '登入時啟動',
+      },
+      aiOutputLanguage: {
+        label: 'AI 輸出語言',
+        description:
+          'Enhance、Cleanup 和其他技能輸出時使用的語言。選擇語言後會將筆記翻譯成該語言；技能或調整指示中明確指定的語言優先。',
+        sameAsNoteHint: '每則筆記會保留其撰寫時的語言。',
+        sameAsNote: '與筆記相同',
+        saveError: '無法載入或儲存語言偏好設定，請重試。',
+        retry: '重試',
       },
       language: {
         description: '選擇 Prismical 全介面使用的語言。',

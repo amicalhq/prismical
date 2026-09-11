@@ -3,11 +3,13 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { assert, describe, it } from '@effect/vitest';
 import { eq } from 'drizzle-orm';
+import Database from 'better-sqlite3';
 import { Cause, Context, Effect, Exit, Layer, Option, Scope } from 'effect';
 import { makeTestLogger, testConfigLayer } from '../helpers/test-layers';
 import type { AppConfigService } from '../../src/main/infra/config/service';
 import { makeProductDbLayer, redactCause } from '../../src/main/infra/product-db/live';
 import * as schema from '../../src/main/infra/product-db/schema';
+import { MIGRATIONS } from '../../src/main/infra/product-db/migrations';
 import {
   ProductDb,
   ProductDbError,
@@ -65,7 +67,7 @@ describe('ProductDb', () => {
       yield* Layer.build(first.layer).pipe(Scope.extend(scopeA));
       yield* Scope.close(scopeA, Exit.void);
       const firstOpen = first.logger.find(entry => entry.message === 'product db opened');
-      assert.deepStrictEqual((firstOpen?.data as { migrationsRun: number[] }).migrationsRun, [0, 1, 2]);
+      assert.deepStrictEqual((firstOpen?.data as { migrationsRun: number[] }).migrationsRun, [0, 1, 2, 3]);
 
       const second = buildDb({ kind: 'local' }, { localDbPath: dbPath });
       const scopeB = yield* Scope.make();
@@ -73,6 +75,29 @@ describe('ProductDb', () => {
       yield* Scope.close(scopeB, Exit.void);
       const secondOpen = second.logger.find(entry => entry.message === 'product db opened');
       assert.deepStrictEqual((secondOpen?.data as { migrationsRun: number[] }).migrationsRun, []);
+    })
+  );
+
+  it.effect('upgrades a version-2 store without changing notes or its FTS index', () =>
+    Effect.gen(function* () {
+      const dbPath = path.join(tempDir, 'upgrade-preferences.db');
+      const old = new Database(dbPath);
+      for (const migration of MIGRATIONS.filter(migration => migration.version <= 2)) {
+        old.exec(migration.sql);
+        old.prepare('INSERT INTO schema_meta (version, name, applied_at) VALUES (?, ?, ?)')
+          .run(migration.version, migration.name, new Date().toISOString());
+      }
+      old.prepare('INSERT INTO note (id, title, content_text, created_at, updated_at, metadata_updated_at) VALUES (?, ?, ?, ?, ?, ?)')
+        .run('nt_upgrade', 'Existing note', 'timeline', '2026-01-01', '2026-01-01', '2026-01-01');
+      old.close();
+      const { layer, logger } = buildDb({ kind: 'local' }, { localDbPath: dbPath });
+      const scope = yield* Scope.make();
+      const svc = Context.get(yield* Layer.build(layer).pipe(Scope.extend(scope)), ProductDb);
+      assert.deepStrictEqual((logger.find(entry => entry.message === 'product db opened')?.data as { migrationsRun: number[] }).migrationsRun, [3]);
+      assert.strictEqual(svc.db.select().from(schema.note).get()!.title, 'Existing note');
+      assert.deepStrictEqual(yield* ftsMatch(svc, 'timelines'), ['nt_upgrade']);
+      assert.isEmpty(svc.db.select().from(schema.userPreference).all());
+      yield* Scope.close(scope, Exit.void);
     })
   );
 

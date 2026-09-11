@@ -7,6 +7,7 @@ import {
   useEnsureActiveOrg,
   useActiveOrgId,
   useEnv,
+  AccountLanguageProvider,
 } from '@prismical/app-client';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../ui/button';
@@ -37,7 +38,7 @@ import { RecordingBottomCluster } from '../components/recording-bottom-cluster';
 // Mirrors the desktop `_app/route.tsx` shell: a single sidebar + inset, with the
 // header, a centred scroll container for the page, and the recording cluster
 // pinned to the bottom of the content area.
-export function AppShell({
+function AppShellContent({
   children,
   accountSwitcher,
   enableOnboarding,
@@ -153,5 +154,13 @@ export function AppShell({
         </CurrentEditorProvider>
       </CurrentNoteProvider>
     </CommandPaletteProvider>
+  );
+}
+
+export function AppShell(props: React.ComponentProps<typeof AppShellContent>) {
+  return (
+    <AccountLanguageProvider>
+      <AppShellContent {...props} />
+    </AccountLanguageProvider>
   );
 }

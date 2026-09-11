@@ -3,112 +3,115 @@ import type en from './en';
 
 const es = {
   workflow: {
-    noteChanged: "La nota cambió después de generar esta sugerencia. Descártala y ejecuta la acción de nuevo.",
-      "busy": "Finaliza primero la grabación o acción actual.",
-      "draining": "Enviando el audio restante…",
-      "finalizing": "Finalizando la grabación…",
-      "recording": "Grabación en curso",
-      "recordingAway": "Grabando en otra nota",
-      "pausedAway": "Grabación pausada en otra nota",
-      "review": "Revisando cambios en otra nota",
-      "reviewNamed": "Revisando cambios en {{name}}",
-      "applying": "Aplicando cambios…",
-      "skill": "Acción en curso…",
-      "openNote": "Abrir nota",
-      "openNamedNote": "Abrir {{name}}",
-      "retry": "Reintentar",
-      "end": "Finalizar proceso"
+    noteChanged:
+      'La nota cambió después de generar esta sugerencia. Descártala y ejecuta la acción de nuevo.',
+    busy: 'Finaliza primero la grabación o acción actual.',
+    draining: 'Enviando el audio restante…',
+    finalizing: 'Finalizando la grabación…',
+    recording: 'Grabación en curso',
+    recordingAway: 'Grabando en otra nota',
+    pausedAway: 'Grabación pausada en otra nota',
+    review: 'Revisando cambios en otra nota',
+    reviewNamed: 'Revisando cambios en {{name}}',
+    applying: 'Aplicando cambios…',
+    skill: 'Acción en curso…',
+    openNote: 'Abrir nota',
+    openNamedNote: 'Abrir {{name}}',
+    retry: 'Reintentar',
+    end: 'Finalizar proceso',
   },
 
   onboarding: {
-  "helpDocs": "¿Necesitas ayuda? Lee la documentación",
-  "continueToNote": "Continuar a mi nota",
-  "useCases": {
-    "meetings": {
-      "title": "Reuniones",
-      "body": "Convierte conversaciones en notas claras y tareas."
+    helpDocs: '¿Necesitas ayuda? Lee la documentación',
+    continueToNote: 'Continuar a mi nota',
+    useCases: {
+      meetings: {
+        title: 'Reuniones',
+        body: 'Convierte conversaciones en notas claras y tareas.',
+      },
+      lectures: {
+        title: 'Clases',
+        body: 'Convierte las lecciones en apuntes de estudio organizados.',
+      },
+      voiceNotes: {
+        title: 'Notas de voz',
+        body: 'Captura ideas y convierte pensamientos sueltos en algo útil.',
+      },
     },
-    "lectures": {
-      "title": "Clases",
-      "body": "Convierte las lecciones en apuntes de estudio organizados."
-    },
-    "voiceNotes": {
-      "title": "Notas de voz",
-      "body": "Captura ideas y convierte pensamientos sueltos en algo útil."
-    }
-  },
-    welcomeHeading: "Te damos la bienvenida a tu asistente de notas con IA",
-    welcomeTitle: "Crea tu primera nota de voz",
-    welcomeBody: "Di unas palabras, conviértelas en una nota clara y aprende a revisar el resultado. Te guiaremos paso a paso.",
-    start: "Iniciar recorrido",
-    later: "Quizás más tarde",
+    welcomeHeading: 'Te damos la bienvenida a tu asistente de notas con IA',
+    welcomeTitle: 'Crea tu primera nota de voz',
+    welcomeBody:
+      'Di unas palabras, conviértelas en una nota clara y aprende a revisar el resultado. Te guiaremos paso a paso.',
+    start: 'Iniciar recorrido',
+    later: 'Quizás más tarde',
 
-    close: "Salir del recorrido",
-  "unavailable": "Este control aún no está disponible. Espera a que cargue la aplicación o usa × para salir del recorrido.",
-  "doneTitle": "Tu primera nota está lista",
-  "doneBody": "¿Qué vas a capturar ahora?",
-  "download": "Descargar",
-  "mobileBeta": "Unirse a la beta móvil",
-  "platforms": {
-    "mac": "macOS",
-    "windows": "Windows",
-    "ios": "iOS",
-    "android": "Android"
-  },
-  "tour": {
-    "create": {
-      "title": "Crea una nota desde el dock",
-      "body": "Haz clic en + en el dock de abajo para crear tu primera nota."
+    close: 'Salir del recorrido',
+    unavailable:
+      'Este control aún no está disponible. Espera a que cargue la aplicación o usa × para salir del recorrido.',
+    doneTitle: 'Tu primera nota está lista',
+    doneBody: '¿Qué vas a capturar ahora?',
+    download: 'Descargar',
+    mobileBeta: 'Unirse a la beta móvil',
+    platforms: {
+      mac: 'macOS',
+      windows: 'Windows',
+      ios: 'iOS',
+      android: 'Android',
     },
-    "record": {
-      "title": "Empieza a grabar",
-      "body": "Haz clic en el micrófono del dock y luego en Iniciar grabación. Permite el acceso al micrófono cuando se solicite."
+    tour: {
+      create: {
+        title: 'Crea una nota desde el dock',
+        body: 'Haz clic en + en el dock de abajo para crear tu primera nota.',
+      },
+      record: {
+        title: 'Empieza a grabar',
+        body: 'Haz clic en el micrófono del dock y luego en Iniciar grabación. Permite el acceso al micrófono cuando se solicite.',
+      },
+      waiting: {
+        title: 'Preparando tu transcripción',
+        body: 'Tu grabación se está guardando y procesando. Espera a la transcripción antes de continuar.',
+      },
+      retry: {
+        title: 'Continuar con una grabación',
+        body: 'Abre el panel de grabación e inicia una nueva grabación para continuar. También puedes salir de este recorrido.',
+      },
+      generating: {
+        title: 'Sigue tu borrador',
+        body: 'Aquí aparecen tu borrador y su progreso. Si el proceso falla o se detiene, usa las acciones disponibles o vuelve al panel de grabación para intentarlo de nuevo.',
+      },
+      starting: {
+        title: 'Preparando el micrófono',
+        body: 'Permite el acceso al micrófono si se solicita. Espera a que comience la grabación antes de hablar.',
+      },
+      speak: {
+        title: 'Di unas palabras',
+        body: 'Prueba: ‘Hoy estoy probando Prismical. Mi siguiente paso es convertir esta grabación en una nota clara.’ Habla durante unos segundos.',
+      },
+      stop: {
+        title: 'Ahora pulsa Detener',
+        body: 'Haz clic en Detener en los controles de grabación. Se guardará la grabación y aparecerá la transcripción.',
+      },
+      transcript: {
+        title: 'Aquí está tu transcripción',
+        body: 'Esto es lo que has dicho. Prismical también puede etiquetar distintos hablantes si tu modelo lo admite; una grabación breve de una persona puede tener un solo hablante.',
+      },
+      enhance: {
+        title: 'Convierte tu voz en una nota',
+        body: 'Haz clic en Mejorar en el panel de grabación. Esperaremos el borrador; no reemplazará tu nota hasta que lo aceptes.',
+      },
+      result: {
+        title: 'Revisa tu nota mejorada',
+        body: 'Aquí está la nota sugerida. Lee los cambios resaltados y continúa a los controles de revisión.',
+      },
+      review: {
+        title: 'Conserva, deshaz o pide cambios',
+        body: 'El dock permite conservar el borrador, deshacerlo o describir cambios en el campo de texto. Haz clic en Conservar para terminar.',
+      },
     },
-    "waiting": {
-      "title": "Preparando tu transcripción",
-      "body": "Tu grabación se está guardando y procesando. Espera a la transcripción antes de continuar."
-    },
-    "retry": {
-      "title": "Continuar con una grabación",
-      "body": "Abre el panel de grabación e inicia una nueva grabación para continuar. También puedes salir de este recorrido."
-    },
-    "generating": {
-      "title": "Sigue tu borrador",
-      "body": "Aquí aparecen tu borrador y su progreso. Si el proceso falla o se detiene, usa las acciones disponibles o vuelve al panel de grabación para intentarlo de nuevo."
-    },
-    "starting": {
-      "title": "Preparando el micrófono",
-      "body": "Permite el acceso al micrófono si se solicita. Espera a que comience la grabación antes de hablar."
-    },
-    "speak": {
-      "title": "Di unas palabras",
-      "body": "Prueba: ‘Hoy estoy probando Prismical. Mi siguiente paso es convertir esta grabación en una nota clara.’ Habla durante unos segundos."
-    },
-    "stop": {
-      "title": "Ahora pulsa Detener",
-      "body": "Haz clic en Detener en los controles de grabación. Se guardará la grabación y aparecerá la transcripción."
-    },
-    "transcript": {
-      "title": "Aquí está tu transcripción",
-      "body": "Esto es lo que has dicho. Prismical también puede etiquetar distintos hablantes si tu modelo lo admite; una grabación breve de una persona puede tener un solo hablante."
-    },
-    "enhance": {
-      "title": "Convierte tu voz en una nota",
-      "body": "Haz clic en Mejorar en el panel de grabación. Esperaremos el borrador; no reemplazará tu nota hasta que lo aceptes."
-    },
-    "result": {
-      "title": "Revisa tu nota mejorada",
-      "body": "Aquí está la nota sugerida. Lee los cambios resaltados y continúa a los controles de revisión."
-    },
-    "review": {
-      "title": "Conserva, deshaz o pide cambios",
-      "body": "El dock permite conservar el borrador, deshacerlo o describir cambios en el campo de texto. Haz clic en Conservar para terminar."
-    }
-  },
-    replayTitle: "Primeros pasos",
-    replayBody: "Repetir la guía rápida",
+    replayTitle: 'Primeros pasos',
+    replayBody: 'Repetir la guía rápida',
     title: 'Tu primera nota',
-    recovery: "Puedes reintentar una acción fallida o usar × para salir del recorrido.",
+    recovery: 'Puedes reintentar una acción fallida o usar × para salir del recorrido.',
   },
   common: {
     actions: {
@@ -617,7 +620,8 @@ const es = {
   },
   tags: {
     empty: 'Aún no hay etiquetas',
-    emptyHint: 'Las etiquetas agrupan notas de distintas carpetas. Añade una a una nota o créala aquí.',
+    emptyHint:
+      'Las etiquetas agrupan notas de distintas carpetas. Añade una a una nota o créala aquí.',
     favoritesOnly: 'Favoritas',
     new: 'Nueva etiqueta',
     noMatch: 'Ninguna etiqueta coincide con tus filtros',
@@ -767,7 +771,8 @@ const es = {
     budget: {
       dismiss: 'Ocultar',
       quotaSoon: 'Queda alrededor de {{duration}} de transcripción este mes',
-      quotaSoonDescription: 'Esta grabación durará más. La transcripción se detiene cuando se agote.',
+      quotaSoonDescription:
+        'Esta grabación durará más. La transcripción se detiene cuando se agote.',
       stopNow: 'Detener ahora',
       upgrade: 'Mejorar plan',
     },
@@ -779,17 +784,21 @@ const es = {
       couldNotResume: 'No se ha podido reanudar la grabación.',
       couldNotStart: 'No se ha podido iniciar la grabación.',
       modelMissing: 'Descarga un modelo de transcripción en Ajustes antes de grabar.',
-      storageUnavailable: 'No se pudo guardar la grabación. Comprueba el espacio disponible y vuelve a intentarlo.',
+      storageUnavailable:
+        'No se pudo guardar la grabación. Comprueba el espacio disponible y vuelve a intentarlo.',
       currentSuggestion: 'Revisa o descarta primero la sugerencia actual.',
       deadMicDescription:
         'Es posible que el sistema esté bloqueando el acceso del navegador al micrófono.',
       deadMicHelp: 'Cómo solucionarlo',
       deadMicTitle: 'El micrófono no recibe audio',
       limitSoon: 'Quedan menos de {{minutes}} minutos en esta grabación',
-      limitSoonDescription: 'Tu plan permite grabaciones de {{limit}} minutos. Se detendrá automáticamente al llegar al límite.',
+      limitSoonDescription:
+        'Tu plan permite grabaciones de {{limit}} minutos. Se detendrá automáticamente al llegar al límite.',
       limitStopped: 'Grabación detenida en el límite de {{minutes}} minutos de tu plan.',
-      limitStoppedDescription: 'La nota y la transcripción están guardadas. Inicia una nueva grabación para continuar, o mejora tu plan para grabaciones más largas.',
-      completionRecovery: 'No se pudo terminar de guardar la grabación. Se volverá a intentar cuando te conectes.',
+      limitStoppedDescription:
+        'La nota y la transcripción están guardadas. Inicia una nueva grabación para continuar, o mejora tu plan para grabaciones más largas.',
+      completionRecovery:
+        'No se pudo terminar de guardar la grabación. Se volverá a intentar cuando te conectes.',
       endedUnexpectedly: 'La grabación terminó de forma inesperada.',
       microphoneDenied: 'Se ha denegado el acceso al micrófono.',
       microphoneDeniedHintDesktop:
@@ -1042,7 +1051,8 @@ const es = {
       planGate: {
         title: 'Usa tu propia clave',
         availability: 'Disponible en Pro',
-        description: 'Tu plan actual no incluye el uso de claves propias. Mejora a Pro para conectar tus propios proveedores de IA y elegir los modelos que utilizas.',
+        description:
+          'Tu plan actual no incluye el uso de claves propias. Mejora a Pro para conectar tus propios proveedores de IA y elegir los modelos que utilizas.',
         upgrade: 'Mejorar a Pro',
         back: 'Volver a ajustes',
       },
@@ -1813,8 +1823,10 @@ const es = {
         currentPlan: 'Plan actual',
         gateAskAiDescription: 'Mejora tu plan para hacer preguntas sobre tus notas.',
         gateAskAiTitle: 'Ask AI no está incluido en tu plan',
-        gateAutomations: 'Las automatizaciones no están incluidas en tu plan. Mejora tu plan para enviar eventos a un webhook.',
-        gateByokDescription: 'Tu plan funciona con Prismical Cloud. Mejora tu plan para conectar tus propias claves de proveedor.',
+        gateAutomations:
+          'Las automatizaciones no están incluidas en tu plan. Mejora tu plan para enviar eventos a un webhook.',
+        gateByokDescription:
+          'Tu plan funciona con Prismical Cloud. Mejora tu plan para conectar tus propias claves de proveedor.',
         gateByokTitle: 'Usa tus propias claves con una mejora de plan',
         gateFloatingMode: 'El modo flotante no está incluido en tu plan. Consulta los planes en Facturación.',
         gateSeePlans: 'Ver planes',
@@ -2033,19 +2045,23 @@ const es = {
       },
       form: {
         addSection: 'Añadir una sección',
-        addSectionDescription: 'Añade el resultado como una nueva sección y conserva la nota existente.',
+        addSectionDescription:
+          'Añade el resultado como una nueva sección y conserva la nota existente.',
         rewriteNote: 'Reescribir toda la nota',
         rewriteNoteDescription: 'Genera un reemplazo para todo el contenido de la nota.',
-        transcriptDescription: 'Incluye las transcripciones de las grabaciones de esta nota como contexto.',
+        transcriptDescription:
+          'Incluye las transcripciones de las grabaciones de esta nota como contexto.',
         titleDescription: 'Genera un nuevo título en lugar de editar el contenido de la nota.',
-        preservedMode: 'Esta habilidad usa un ajuste de salida experimental. Se conservará al guardar.',
+        preservedMode:
+          'Esta habilidad usa un ajuste de salida experimental. Se conservará al guardar.',
 
         advanced: 'Ajustes avanzados',
         defaultLabel: 'Establecer como destino brillante predeterminado',
         descriptionLabel: 'Descripción',
         descriptionPlaceholder: 'Una línea breve que aparece en la tarjeta de la habilidad',
         enabled: 'Activada',
-        modeAgnosticDescription: 'El prompt define la salida sin instrucciones para añadir o reescribir. La edición de selecciones y Enhance de grabaciones siguen usando instrucciones específicas del modo.',
+        modeAgnosticDescription:
+          'El prompt define la salida sin instrucciones para añadir o reescribir. La edición de selecciones y Enhance de grabaciones siguen usando instrucciones específicas del modo.',
         modeAgnosticLabel: 'Indicación independiente del modo',
         modeLabel: 'Modo',
         nameLabel: 'Nombre',
@@ -2262,6 +2278,16 @@ const es = {
       launchAtLogin: {
         description: 'Inicia Prismical automáticamente cuando inicies sesión.',
         label: 'Iniciar al iniciar sesión',
+      },
+      aiOutputLanguage: {
+        label: 'Idioma de salida de IA',
+        description:
+          'El idioma en el que escriben Enhance, Cleanup y otras habilidades. Al elegir un idioma, las notas se traducen a él; una instrucción de idioma explícita en una habilidad o al refinar tiene prioridad.',
+        sameAsNoteHint: 'Cada nota se mantiene en el idioma en que fue escrita.',
+        sameAsNote: 'Igual que la nota',
+        saveError:
+          'No se pudieron cargar o guardar tus preferencias de idioma. Inténtalo de nuevo.',
+        retry: 'Reintentar',
       },
       language: {
         description: 'Elige el idioma que se usa en todo Prismical.',
@@ -2668,7 +2694,8 @@ const es = {
       saveTitle: 'Guardar registros de diagnóstico',
       bundleLabel: 'Paquete de diagnóstico',
       exportErrorTitle: 'Error al exportar los registros',
-      exportErrorMessage: 'No se pudo guardar el paquete de diagnóstico. Prueba con otra ubicación.',
+      exportErrorMessage:
+        'No se pudo guardar el paquete de diagnóstico. Prueba con otra ubicación.',
     },
     fatal: {
       description:

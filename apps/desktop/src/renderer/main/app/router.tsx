@@ -23,7 +23,7 @@ import {
   redirect,
 } from "@tanstack/react-router";
 import { useLocation, useParams, useSearch } from "@tanstack/react-router";
-import { usePorts, useSessionView } from "@prismical/app-client";
+import { AccountLanguageProvider, usePorts, useSessionView } from "@prismical/app-client";
 import type { AppModeValue } from "@prismical/desktop-contracts";
 import { useDesktopEnv } from "./desktop-env";
 import { useGleapSupportAction } from "./support/gleap";
@@ -92,7 +92,9 @@ function RootLayout() {
   // slot holds the shared AccountSwitcher in cloud mode and the local-workspace
   // footer in local mode — no shared code learns the mode.
   const { appMode } = useDesktopEnv();
-  if (pathname.startsWith("/float")) return <Outlet />;
+  if (pathname.startsWith("/float")) {
+    return <AccountLanguageProvider><Outlet /></AccountLanguageProvider>;
+  }
   return (
     <AppShell
       supportAction={supportAction}

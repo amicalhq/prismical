@@ -24,6 +24,9 @@ export type LocaleApplyMode = 'immediate' | 'restart';
 
 export interface ApplicationLocaleContextValue {
   readonly preference: LocalePreference;
+  readonly isReady: boolean;
+  readonly systemLocale?: string | null;
+  readonly accountManaged?: boolean;
   readonly resolvedLocale: SupportedLocale;
   readonly applyMode: LocaleApplyMode;
   readonly restartRequired: boolean;
@@ -36,6 +39,7 @@ export interface ApplicationI18nProviderProps {
   readonly children?: ReactNode;
   readonly instance: i18n;
   readonly initialPreference: LocalePreference;
+  readonly isReady?: boolean;
   readonly systemLocale?: string | null;
   readonly applyMode: LocaleApplyMode;
   readonly persistPreference: (next: LocalePreference) => Promise<void> | void;
@@ -54,6 +58,7 @@ export function ApplicationI18nProvider({
   children,
   instance,
   initialPreference,
+  isReady = true,
   systemLocale,
   applyMode,
   persistPreference,
@@ -68,6 +73,7 @@ export function ApplicationI18nProvider({
   const [restartRequired, setRestartRequired] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const startupLocale = useRef(instanceLocale(instance));
+  const latestChange = useRef(0);
 
   useEffect(() => {
     setPreference(initialPreference);
@@ -88,6 +94,7 @@ export function ApplicationI18nProvider({
 
   const changePreference = useCallback(
     async (next: LocalePreference): Promise<void> => {
+      const change = ++latestChange.current;
       const nextResolvedLocale = resolveLocale(next, systemLocale);
       setIsSaving(true);
 
@@ -107,12 +114,13 @@ export function ApplicationI18nProvider({
 
       try {
         await persistPreference(next);
+        if (change !== latestChange.current) return;
         setPreference(next);
         setRestartRequired(nextResolvedLocale !== startupLocale.current);
       } catch (error) {
-        onPersistenceError?.(error);
+        if (change === latestChange.current) onPersistenceError?.(error);
       } finally {
-        setIsSaving(false);
+        if (change === latestChange.current) setIsSaving(false);
       }
     },
     [applyMode, instance, onPersistenceError, persistPreference, systemLocale]
@@ -121,6 +129,8 @@ export function ApplicationI18nProvider({
   const value = useMemo<ApplicationLocaleContextValue>(
     () => ({
       preference,
+      isReady,
+      systemLocale,
       resolvedLocale,
       applyMode,
       restartRequired,
@@ -131,6 +141,8 @@ export function ApplicationI18nProvider({
     [
       applyMode,
       changePreference,
+      isReady,
+      systemLocale,
       isSaving,
       preference,
       resolvedLocale,
@@ -145,6 +157,19 @@ export function ApplicationI18nProvider({
         {children}
       </ApplicationLocaleContext.Provider>
     </I18nextProvider>
+  );
+}
+
+/** Override account-owned preferences without creating a second i18next instance. */
+export function ApplicationLocaleOverride({
+  value,
+  children,
+}: {
+  value: ApplicationLocaleContextValue;
+  children: ReactNode;
+}) {
+  return (
+    <ApplicationLocaleContext.Provider value={value}>{children}</ApplicationLocaleContext.Provider>
   );
 }
 

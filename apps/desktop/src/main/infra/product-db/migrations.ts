@@ -15,6 +15,7 @@ import type Database from 'better-sqlite3';
 import migration0000 from '../../../../drizzle-product/0000_init.sql?raw';
 import migration0001 from '../../../../drizzle-product/0001_ai_lanes.sql?raw';
 import migration0002 from '../../../../drizzle-product/0002_fts_porter.sql?raw';
+import migration0003 from '../../../../drizzle-product/0002_user_preferences.sql?raw';
 
 export interface Migration {
   readonly version: number;
@@ -28,6 +29,8 @@ export const MIGRATIONS: ReadonlyArray<Migration> = [
   { version: 1, name: 'ai_lanes', sql: migration0001 },
   // note_fts rebuilt with the porter stemmer (hand-authored FTS5 DDL).
   { version: 2, name: 'fts_porter', sql: migration0002 },
+  // Generated index 2: the hand-authored FTS migration is outside Drizzle's journal.
+  { version: 3, name: 'user_preferences', sql: migration0003 },
 ];
 
 const STATEMENT_BREAKPOINT = '--> statement-breakpoint';

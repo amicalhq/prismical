@@ -3,112 +3,116 @@ import type en from './en';
 
 const de = {
   workflow: {
-    noteChanged: "Die Notiz wurde nach diesem Vorschlag geändert. Verwirf ihn und führe die Aktion erneut aus.",
-      "busy": "Beende zuerst die aktuelle Aufnahme oder Aktion.",
-      "draining": "Verbleibendes Audio wird gesendet…",
-      "finalizing": "Aufnahme wird abgeschlossen…",
-      "recording": "Aufnahme läuft",
-      "recordingAway": "Aufnahme in einer anderen Notiz läuft",
-      "pausedAway": "Aufnahme in einer anderen Notiz pausiert",
-      "review": "Änderungen in einer anderen Notiz prüfen",
-      "reviewNamed": "Änderungen in {{name}} prüfen",
-      "applying": "Änderungen werden angewendet…",
-      "skill": "Aktion läuft…",
-      "openNote": "Notiz öffnen",
-      "openNamedNote": "{{name}} öffnen",
-      "retry": "Erneut versuchen",
-      "end": "Vorgang beenden"
+    noteChanged:
+      'Die Notiz wurde nach diesem Vorschlag geändert. Verwirf ihn und führe die Aktion erneut aus.',
+    busy: 'Beende zuerst die aktuelle Aufnahme oder Aktion.',
+    draining: 'Verbleibendes Audio wird gesendet…',
+    finalizing: 'Aufnahme wird abgeschlossen…',
+    recording: 'Aufnahme läuft',
+    recordingAway: 'Aufnahme in einer anderen Notiz läuft',
+    pausedAway: 'Aufnahme in einer anderen Notiz pausiert',
+    review: 'Änderungen in einer anderen Notiz prüfen',
+    reviewNamed: 'Änderungen in {{name}} prüfen',
+    applying: 'Änderungen werden angewendet…',
+    skill: 'Aktion läuft…',
+    openNote: 'Notiz öffnen',
+    openNamedNote: '{{name}} öffnen',
+    retry: 'Erneut versuchen',
+    end: 'Vorgang beenden',
   },
 
   onboarding: {
-  "helpDocs": "Brauchst du Hilfe? Lies die Dokumentation",
-  "continueToNote": "Weiter zu meiner Notiz",
-  "useCases": {
-    "meetings": {
-      "title": "Meetings",
-      "body": "Verwandle Gespräche in übersichtliche Notizen und Aufgaben."
+    helpDocs: 'Brauchst du Hilfe? Lies die Dokumentation',
+    continueToNote: 'Weiter zu meiner Notiz',
+    useCases: {
+      meetings: {
+        title: 'Meetings',
+        body: 'Verwandle Gespräche in übersichtliche Notizen und Aufgaben.',
+      },
+      lectures: {
+        title: 'Vorlesungen',
+        body: 'Verwandle Unterricht in strukturierte Lernnotizen.',
+      },
+      voiceNotes: {
+        title: 'Sprachnotizen',
+        body: 'Halte Ideen fest und ordne deine Gedanken.',
+      },
     },
-    "lectures": {
-      "title": "Vorlesungen",
-      "body": "Verwandle Unterricht in strukturierte Lernnotizen."
-    },
-    "voiceNotes": {
-      "title": "Sprachnotizen",
-      "body": "Halte Ideen fest und ordne deine Gedanken."
-    }
-  },
-    welcomeHeading: "Willkommen bei deinem KI-Notizassistenten",
-    welcomeTitle: "Erstelle deine erste Sprachnotiz",
-    welcomeBody: "Sprich ein paar Worte, verwandle sie in eine übersichtliche Notiz und prüfe das Ergebnis. Wir führen dich durch jeden Schritt.",
-    start: "Einführung starten",
-    later: "Vielleicht später",
+    welcomeHeading: 'Willkommen bei deinem KI-Notizassistenten',
+    welcomeTitle: 'Erstelle deine erste Sprachnotiz',
+    welcomeBody:
+      'Sprich ein paar Worte, verwandle sie in eine übersichtliche Notiz und prüfe das Ergebnis. Wir führen dich durch jeden Schritt.',
+    start: 'Einführung starten',
+    later: 'Vielleicht später',
 
-    close: "Einführung beenden",
-  "unavailable": "Dieses Steuerelement ist noch nicht verfügbar. Warte, bis die App geladen ist, oder beende die Einführung mit ×.",
-  "doneTitle": "Deine erste Notiz ist fertig",
-  "doneBody": "Was möchtest du als Nächstes festhalten?",
-  "download": "Herunterladen",
-  "mobileBeta": "Für mobile Beta anmelden",
-  "platforms": {
-    "mac": "macOS",
-    "windows": "Windows",
-    "ios": "iOS",
-    "android": "Android"
-  },
-  "tour": {
-    "create": {
-      "title": "Notiz über das Dock erstellen",
-      "body": "Klicke unten im Dock auf +, um deine erste Notiz zu erstellen."
+    close: 'Einführung beenden',
+    unavailable:
+      'Dieses Steuerelement ist noch nicht verfügbar. Warte, bis die App geladen ist, oder beende die Einführung mit ×.',
+    doneTitle: 'Deine erste Notiz ist fertig',
+    doneBody: 'Was möchtest du als Nächstes festhalten?',
+    download: 'Herunterladen',
+    mobileBeta: 'Für mobile Beta anmelden',
+    platforms: {
+      mac: 'macOS',
+      windows: 'Windows',
+      ios: 'iOS',
+      android: 'Android',
     },
-    "record": {
-      "title": "Aufnahme starten",
-      "body": "Klicke im Dock auf das Mikrofon und dann auf Aufnahme starten. Erlaube den Mikrofonzugriff, wenn du gefragt wirst."
+    tour: {
+      create: {
+        title: 'Notiz über das Dock erstellen',
+        body: 'Klicke unten im Dock auf +, um deine erste Notiz zu erstellen.',
+      },
+      record: {
+        title: 'Aufnahme starten',
+        body: 'Klicke im Dock auf das Mikrofon und dann auf Aufnahme starten. Erlaube den Mikrofonzugriff, wenn du gefragt wirst.',
+      },
+      waiting: {
+        title: 'Transkript wird vorbereitet',
+        body: 'Deine Aufnahme wird gespeichert und verarbeitet. Warte auf das Transkript, bevor du fortfährst.',
+      },
+      retry: {
+        title: 'Mit einer Aufnahme fortfahren',
+        body: 'Öffne das Aufnahmefeld und starte eine neue Aufnahme, um fortzufahren. Du kannst diese Einführung auch verlassen.',
+      },
+      generating: {
+        title: 'Deinen Entwurf verfolgen',
+        body: 'Hier erscheinen dein Entwurf und der Fortschritt. Wenn der Vorgang fehlschlägt oder stoppt, nutze die verfügbaren Aktionen oder kehre zum Aufnahmefeld zurück, um es erneut zu versuchen.',
+      },
+      starting: {
+        title: 'Mikrofon wird vorbereitet',
+        body: 'Erlaube den Mikrofonzugriff, wenn du dazu aufgefordert wirst. Warte, bis die Aufnahme beginnt, bevor du sprichst.',
+      },
+      speak: {
+        title: 'Sprich ein paar Worte',
+        body: 'Zum Beispiel: ‚Heute teste ich Prismical. Als Nächstes möchte ich aus dieser Aufnahme eine klare Notiz machen.‘ Sprich einige Sekunden.',
+      },
+      stop: {
+        title: 'Jetzt Stopp drücken',
+        body: 'Klicke in den Aufnahme-Steuerelementen auf Stopp. Die Aufnahme wird gespeichert und das Transkript erscheint.',
+      },
+      transcript: {
+        title: 'Hier ist dein Transkript',
+        body: 'Das hast du gesagt. Prismical kann verschiedene Sprecher kennzeichnen, wenn dein Transkriptionsmodell dies unterstützt. Eine kurze Einzelaufnahme hat möglicherweise nur einen Sprecher.',
+      },
+      enhance: {
+        title: 'Sprache in eine Notiz verwandeln',
+        body: 'Klicke im Aufnahmefenster auf Verbessern. Wir warten auf den Entwurf — er ersetzt deine Notiz erst, wenn du ihn annimmst.',
+      },
+      result: {
+        title: 'Verbesserte Notiz prüfen',
+        body: 'Hier ist der Vorschlag. Lies die markierten Änderungen und gehe dann zu den Prüfoptionen weiter.',
+      },
+      review: {
+        title: 'Behalten, verwerfen oder ändern',
+        body: 'Im Dock kannst du den Entwurf behalten, rückgängig machen oder Änderungen im Textfeld beschreiben. Klicke auf Behalten, um abzuschließen.',
+      },
     },
-    "waiting": {
-      "title": "Transkript wird vorbereitet",
-      "body": "Deine Aufnahme wird gespeichert und verarbeitet. Warte auf das Transkript, bevor du fortfährst."
-    },
-    "retry": {
-      "title": "Mit einer Aufnahme fortfahren",
-      "body": "Öffne das Aufnahmefeld und starte eine neue Aufnahme, um fortzufahren. Du kannst diese Einführung auch verlassen."
-    },
-    "generating": {
-      "title": "Deinen Entwurf verfolgen",
-      "body": "Hier erscheinen dein Entwurf und der Fortschritt. Wenn der Vorgang fehlschlägt oder stoppt, nutze die verfügbaren Aktionen oder kehre zum Aufnahmefeld zurück, um es erneut zu versuchen."
-    },
-    "starting": {
-      "title": "Mikrofon wird vorbereitet",
-      "body": "Erlaube den Mikrofonzugriff, wenn du dazu aufgefordert wirst. Warte, bis die Aufnahme beginnt, bevor du sprichst."
-    },
-    "speak": {
-      "title": "Sprich ein paar Worte",
-      "body": "Zum Beispiel: ‚Heute teste ich Prismical. Als Nächstes möchte ich aus dieser Aufnahme eine klare Notiz machen.‘ Sprich einige Sekunden."
-    },
-    "stop": {
-      "title": "Jetzt Stopp drücken",
-      "body": "Klicke in den Aufnahme-Steuerelementen auf Stopp. Die Aufnahme wird gespeichert und das Transkript erscheint."
-    },
-    "transcript": {
-      "title": "Hier ist dein Transkript",
-      "body": "Das hast du gesagt. Prismical kann verschiedene Sprecher kennzeichnen, wenn dein Transkriptionsmodell dies unterstützt. Eine kurze Einzelaufnahme hat möglicherweise nur einen Sprecher."
-    },
-    "enhance": {
-      "title": "Sprache in eine Notiz verwandeln",
-      "body": "Klicke im Aufnahmefenster auf Verbessern. Wir warten auf den Entwurf — er ersetzt deine Notiz erst, wenn du ihn annimmst."
-    },
-    "result": {
-      "title": "Verbesserte Notiz prüfen",
-      "body": "Hier ist der Vorschlag. Lies die markierten Änderungen und gehe dann zu den Prüfoptionen weiter."
-    },
-    "review": {
-      "title": "Behalten, verwerfen oder ändern",
-      "body": "Im Dock kannst du den Entwurf behalten, rückgängig machen oder Änderungen im Textfeld beschreiben. Klicke auf Behalten, um abzuschließen."
-    }
-  },
-    replayTitle: "Erste Schritte",
-    replayBody: "Kurze Einführung wiederholen",
+    replayTitle: 'Erste Schritte',
+    replayBody: 'Kurze Einführung wiederholen',
     title: 'Deine erste Notiz',
-    recovery: "Du kannst eine fehlgeschlagene Aktion wiederholen oder die Einführung mit × beenden.",
+    recovery:
+      'Du kannst eine fehlgeschlagene Aktion wiederholen oder die Einführung mit × beenden.',
   },
   common: {
     actions: {
@@ -623,7 +627,8 @@ const de = {
   },
   tags: {
     empty: 'Noch keine Tags',
-    emptyHint: 'Tags gruppieren Notizen über Ordner hinweg. Füge einen zu einer Notiz hinzu oder erstelle ihn hier.',
+    emptyHint:
+      'Tags gruppieren Notizen über Ordner hinweg. Füge einen zu einer Notiz hinzu oder erstelle ihn hier.',
     favoritesOnly: 'Favoriten',
     new: 'Neuer Tag',
     noMatch: 'Keine Tags passen zu deinen Filtern',
@@ -752,7 +757,8 @@ const de = {
       stop: 'Aufnahme beenden',
       viewInLog: 'Im Protokoll anzeigen',
       pastRecordings: 'Frühere Aufnahmen',
-      reviewBeforeRecording: 'Behalte die vorgeschlagenen Änderungen bei oder mache sie rückgängig, bevor du aufnimmst.',
+      reviewBeforeRecording:
+        'Behalte die vorgeschlagenen Änderungen bei oder mache sie rückgängig, bevor du aufnimmst.',
     },
     autoPause: {
       description: 'Seit einiger Zeit kein Ton — die Aufnahme wird pausiert, um Minuten zu sparen.',
@@ -773,7 +779,8 @@ const de = {
     budget: {
       dismiss: 'Ausblenden',
       quotaSoon: 'Noch etwa {{duration}} Transkription in diesem Monat',
-      quotaSoonDescription: 'Diese Aufnahme dauert länger. Das Transkript endet, wenn es aufgebraucht ist.',
+      quotaSoonDescription:
+        'Diese Aufnahme dauert länger. Das Transkript endet, wenn es aufgebraucht ist.',
       stopNow: 'Jetzt stoppen',
       upgrade: 'Tarif wechseln',
     },
@@ -786,17 +793,21 @@ const de = {
       couldNotResume: 'Die Aufnahme konnte nicht fortgesetzt werden.',
       couldNotStart: 'Die Aufnahme konnte nicht gestartet werden.',
       modelMissing: 'Lade vor der Aufnahme in den Einstellungen ein Transkriptionsmodell herunter.',
-      storageUnavailable: 'Die Aufnahme konnte nicht gespeichert werden. Prüfe den freien Speicherplatz und versuche es erneut.',
+      storageUnavailable:
+        'Die Aufnahme konnte nicht gespeichert werden. Prüfe den freien Speicherplatz und versuche es erneut.',
       currentSuggestion: 'Prüfe oder verwirf zuerst den aktuellen Vorschlag.',
       deadMicDescription:
         'Dein System blockiert möglicherweise den Mikrofonzugriff dieses Browsers.',
       deadMicHelp: 'Problem beheben',
       deadMicTitle: 'Dein Mikrofon liefert kein Audiosignal',
       limitSoon: 'Weniger als {{minutes}} Minuten für diese Aufnahme',
-      limitSoonDescription: 'Dein Plan erlaubt Aufnahmen von {{limit}} Minuten. Die Aufnahme stoppt am Limit automatisch.',
+      limitSoonDescription:
+        'Dein Plan erlaubt Aufnahmen von {{limit}} Minuten. Die Aufnahme stoppt am Limit automatisch.',
       limitStopped: 'Aufnahme am {{minutes}}-Minuten-Limit deines Plans gestoppt.',
-      limitStoppedDescription: 'Notiz und Transkript sind gespeichert. Starte eine neue Aufnahme, um weiterzumachen, oder führe ein Upgrade für längere Aufnahmen durch.',
-      completionRecovery: 'Die Aufnahme konnte noch nicht fertig gespeichert werden. Sobald du wieder online bist, wird es erneut versucht.',
+      limitStoppedDescription:
+        'Notiz und Transkript sind gespeichert. Starte eine neue Aufnahme, um weiterzumachen, oder führe ein Upgrade für längere Aufnahmen durch.',
+      completionRecovery:
+        'Die Aufnahme konnte noch nicht fertig gespeichert werden. Sobald du wieder online bist, wird es erneut versucht.',
       endedUnexpectedly: 'Die Aufnahme wurde unerwartet beendet.',
       microphoneDenied: 'Der Mikrofonzugriff wurde verweigert.',
       microphoneDeniedHintDesktop:
@@ -1050,7 +1061,8 @@ const de = {
       planGate: {
         title: 'Eigenen API-Schlüssel verwenden',
         availability: 'In Pro verfügbar',
-        description: 'Bring Your Own Key ist in deinem aktuellen Plan nicht enthalten. Mit Pro kannst du eigene KI-Anbieter verbinden und deine Modelle auswählen.',
+        description:
+          'Bring Your Own Key ist in deinem aktuellen Plan nicht enthalten. Mit Pro kannst du eigene KI-Anbieter verbinden und deine Modelle auswählen.',
         upgrade: 'Auf Pro upgraden',
         back: 'Zurück zu den Einstellungen',
       },
@@ -1831,8 +1843,10 @@ const de = {
         currentPlan: 'Aktueller Tarif',
         gateAskAiDescription: 'Führe ein Upgrade durch, um Fragen zu deinen Notizen zu stellen.',
         gateAskAiTitle: 'Ask AI ist in deinem Plan nicht enthalten',
-        gateAutomations: 'Automatisierungen sind in deinem Plan nicht enthalten. Führe ein Upgrade durch, um Ereignisse an einen Webhook zu senden.',
-        gateByokDescription: 'Dein Plan läuft über Prismical Cloud. Führe ein Upgrade durch, um eigene Anbieter-Schlüssel zu verbinden.',
+        gateAutomations:
+          'Automatisierungen sind in deinem Plan nicht enthalten. Führe ein Upgrade durch, um Ereignisse an einen Webhook zu senden.',
+        gateByokDescription:
+          'Dein Plan läuft über Prismical Cloud. Führe ein Upgrade durch, um eigene Anbieter-Schlüssel zu verbinden.',
         gateByokTitle: 'Eigene Schlüssel mit einem Upgrade',
         gateFloatingMode: 'Der schwebende Modus ist in deinem Tarif nicht enthalten. Sieh dir die Tarife unter Abrechnung an.',
         gateSeePlans: 'Pläne ansehen',
@@ -2052,19 +2066,23 @@ const de = {
       },
       form: {
         addSection: 'Abschnitt hinzufügen',
-        addSectionDescription: 'Das Ergebnis als neuen Abschnitt hinzufügen und die vorhandene Notiz behalten.',
+        addSectionDescription:
+          'Das Ergebnis als neuen Abschnitt hinzufügen und die vorhandene Notiz behalten.',
         rewriteNote: 'Gesamte Notiz umschreiben',
         rewriteNoteDescription: 'Einen Ersatz für den gesamten Notizinhalt erstellen.',
-        transcriptDescription: 'Aufnahmetranskripte dieser Notiz als Kontext für den Skill verwenden.',
+        transcriptDescription:
+          'Aufnahmetranskripte dieser Notiz als Kontext für den Skill verwenden.',
         titleDescription: 'Einen neuen Notiztitel erstellen, statt den Notizinhalt zu bearbeiten.',
-        preservedMode: 'Dieser Skill verwendet eine experimentelle Ausgabeeinstellung. Sie bleibt beim Speichern unverändert.',
+        preservedMode:
+          'Dieser Skill verwendet eine experimentelle Ausgabeeinstellung. Sie bleibt beim Speichern unverändert.',
 
         advanced: 'Erweiterte Einstellungen',
         defaultLabel: 'Als Standardziel für das Funkeln festlegen',
         descriptionLabel: 'Beschreibung',
         descriptionPlaceholder: 'Eine kurze Zeile für die Skill-Karte',
         enabled: 'Aktiviert',
-        modeAgnosticDescription: 'Der Prompt bestimmt die Ausgabe ohne Anweisungen zum Anhängen oder Umschreiben. Inline-Änderungen und Enhance für Aufnahmen verwenden weiterhin modusspezifische Anweisungen.',
+        modeAgnosticDescription:
+          'Der Prompt bestimmt die Ausgabe ohne Anweisungen zum Anhängen oder Umschreiben. Inline-Änderungen und Enhance für Aufnahmen verwenden weiterhin modusspezifische Anweisungen.',
         modeAgnosticLabel: 'Modusunabhängiger Prompt',
         modeLabel: 'Modus',
         nameLabel: 'Name',
@@ -2287,6 +2305,16 @@ const de = {
         description: 'Starte Prismical automatisch, wenn du dich anmeldest.',
         label: 'Beim Anmelden starten',
       },
+      aiOutputLanguage: {
+        label: 'KI-Ausgabesprache',
+        description:
+          'Die Sprache, in der Enhance, Cleanup und andere Skills schreiben. Eine gewählte Sprache übersetzt Notizen bei Bedarf; eine ausdrückliche Sprachanweisung in einem Skill oder einer Verfeinerung hat Vorrang.',
+        sameAsNoteHint: 'Jede Notiz bleibt in der Sprache, in der sie geschrieben wurde.',
+        sameAsNote: 'Wie die Notiz',
+        saveError:
+          'Die Spracheinstellungen konnten nicht geladen oder gespeichert werden. Bitte erneut versuchen.',
+        retry: 'Erneut versuchen',
+      },
       language: {
         description: 'Wähle die Sprache für die gesamte Prismical-Oberfläche.',
         label: 'Oberflächensprache',
@@ -2395,7 +2423,8 @@ const de = {
       welcome: 'Willkommen bei Prismical',
     },
     flow: {
-      sessionUnavailable: 'Deine Sitzung ist vorübergehend nicht verfügbar. Bitte versuche es erneut.',
+      sessionUnavailable:
+        'Deine Sitzung ist vorübergehend nicht verfügbar. Bitte versuche es erneut.',
       retryIn: 'In {{count}}s erneut versuchen',
       callbackFailed: 'Die Anmeldung konnte nicht abgeschlossen werden. Bitte versuche es erneut.',
       couldNotSignIn: 'Anmeldung nicht möglich',
@@ -2487,7 +2516,8 @@ const de = {
         title: 'Konto auswählen',
         checkingSession: 'Deine Sitzung wird geprüft…',
         sessionFailed: 'Deine Sitzung konnte nicht geprüft werden. Bitte lade diese Seite neu.',
-        accountChanged: 'Dein angemeldetes Konto hat sich geändert. Bitte bestätige das angezeigte Konto.',
+        accountChanged:
+          'Dein angemeldetes Konto hat sich geändert. Bitte bestätige das angezeigte Konto.',
         continueFailed: 'Fortfahren nicht möglich. Bitte versuche es erneut.',
         signOutFailed: 'Abmelden nicht möglich. Bitte versuche es erneut.',
         continuing: 'Weiterleitung…',
@@ -2696,7 +2726,8 @@ const de = {
       saveTitle: 'Diagnoseprotokolle speichern',
       bundleLabel: 'Diagnosepaket',
       exportErrorTitle: 'Protokollexport fehlgeschlagen',
-      exportErrorMessage: 'Das Diagnosepaket konnte nicht gespeichert werden. Bitte versuchen Sie einen anderen Speicherort.',
+      exportErrorMessage:
+        'Das Diagnosepaket konnte nicht gespeichert werden. Bitte versuchen Sie einen anderen Speicherort.',
     },
     fatal: {
       description:
