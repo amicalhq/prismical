@@ -1517,6 +1517,7 @@ export const RecordingServiceLive: Layer.Layer<
           const previousState = yield* SubscriptionRef.get(state);
           yield* SubscriptionRef.update(state, current => ({
             ...idleRecordingState,
+            processingRecordingIds: [...current.processingRecordingIds, recordingId],
             finalizingRecordingIds: current.finalizingRecordingIds,
             completedRecordings: current.completedRecordings,
             status: 'starting' as const,
@@ -1551,6 +1552,7 @@ export const RecordingServiceLive: Layer.Layer<
                   Effect.zipRight(
                     SubscriptionRef.update(state, current => ({
                       ...previousState,
+                      processingRecordingIds: current.processingRecordingIds.filter(id => id !== recordingId),
                       finalizingRecordingIds: current.finalizingRecordingIds,
                       completedRecordings: current.completedRecordings,
                     }))
@@ -1578,6 +1580,12 @@ export const RecordingServiceLive: Layer.Layer<
               Ref.update(activeRef, cur =>
                 Option.exists(cur, a => a.recordingId === recordingId) ? Option.none() : cur
               ).pipe(
+                // Release recovery ownership only after the live scope has closed
+                // its WAVs and finished every upload/finalization attempt.
+                Effect.zipRight(SubscriptionRef.update(state, current => ({
+                  ...current,
+                  processingRecordingIds: current.processingRecordingIds.filter(id => id !== recordingId),
+                }))),
                 Effect.zipRight(Deferred.succeed(done, undefined))
               )
             )

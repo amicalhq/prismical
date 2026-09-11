@@ -44,6 +44,7 @@ import { aiUserErrorOf } from '../errors/ai-user-error';
 import type { AiUserError } from '@prismical/api-contracts';
 import { ensureModelDefault } from '../api/hooks/model-defaults';
 import { activeOrgIdOf, usePorts } from '../ports-context';
+import { useSyncStore } from '../sync/provider';
 import {
   DEFAULT_MICROPHONE_DEVICE_ID,
   getRecordingPreferences,
@@ -404,7 +405,7 @@ export function useRecording({
   }, [finalizingIds]);
   const [completedRecording, setCompletedRecording] =
     React.useState<UseRecording['completedRecording']>(null);
-  const openingRef = React.useRef<object | null>(null);
+  const openingRef = React.useRef<{ nativeStartIssued?: boolean } | null>(null);
   const mountedRef = React.useRef(true);
   const [startedAt, setStartedAt] = React.useState<string | null>(null);
   const [nativeElapsed, setNativeElapsed] = React.useState<UseRecording['nativeElapsed']>(null);
@@ -447,6 +448,7 @@ export function useRecording({
   // the audio/wav POST; desktop never mounts this — its record button routes to
   // main's native pipeline).
   const { auth, recording, analytics } = usePorts();
+  const syncStore = useSyncStore();
   const setLanguage = React.useCallback(
     async (language: TranscriptionLanguage) => {
       const active = activeConfigRef.current;
@@ -931,7 +933,7 @@ export function useRecording({
       // push above; here we only reflect start intent + a failed start's reason.
       if (control) {
         if (state !== 'idle' || openingRef.current || !mountedRef.current) return;
-        const opening = {};
+        const opening = { nativeStartIssued: false };
         openingRef.current = opening;
         const owner = auth.getSession();
         const ownerSessionKey = exactSessionKey(owner);
@@ -953,12 +955,17 @@ export function useRecording({
           // Desktop runs the same machine in main — it only needs the policy.
           const policy = await ensureAutoPausePolicy(qc, ownerOrgId);
           if (!stillOwned()) return;
+          if (!syncStore) throw new Error('Note sync is unavailable');
+          // A recording POST requires its parent note to exist in the backend.
+          await syncStore.requireNoteCreateAck(noteId);
+          if (!stillOwned()) return;
           // Main keeps this pre-capture estimate for every window. A later usage response
           // already includes this recording's chunks and cannot serve as its starting allowance.
           const usage = qc.getQueryData<Usage>(usageKey(ownerOrgId));
           const quota = usage?.quota?.cloudTranscription;
           const quotaRemainingAtStartSeconds =
             quota?.limitSeconds != null ? Math.max(0, quota.limitSeconds - quota.usedSeconds) : null;
+          opening.nativeStartIssued = true;
           const result = await control.start({
             noteId,
             title,
@@ -995,6 +1002,13 @@ export function useRecording({
             return;
           }
           setRecordingId(result.recordingId);
+        } catch {
+          const pushed = nativeCaptureRef.current;
+          const captureInProgress = pushed && pushed.status !== 'idle' && pushed.status !== 'error';
+          if (stillOwned() && !captureInProgress) {
+            setState('idle');
+            setError('recording.errors.couldNotStart');
+          }
         } finally {
           if (openingRef.current === opening) openingRef.current = null;
         }
@@ -1225,7 +1239,7 @@ export function useRecording({
         if (openingRef.current === opening) openingRef.current = null;
       }
     },
-    [control, state, enqueueChunk, detectSilentMic, qc, auth, applyAutoPauseEffects]
+    [control, state, enqueueChunk, detectSilentMic, qc, auth, applyAutoPauseEffects, syncStore]
   );
 
   // Pause = flush, then suspend. The worklet drains its sub-frame remainder and the picker's
@@ -1334,6 +1348,10 @@ export function useRecording({
     // point the last segments have been pushed; segmentCountRef tracks them.
     if (control) {
       const id = recordingId;
+      if (openingRef.current && !openingRef.current.nativeStartIssued) {
+        openingRef.current = null;
+        setState('idle');
+      }
       if (id === null || (state !== 'starting' && state !== 'recording' && state !== 'paused'))
         return { segments: segmentCountRef.current };
       try {

@@ -25,6 +25,12 @@ import {
 import { ApiError } from '../api/client';
 import { useAutoEnhanceStore } from '../notes/auto-enhance-store';
 import { setRecordingPreferences } from './recording-preferences';
+import { useSyncStore } from '../sync/provider';
+import type { SyncStore } from '../sync/store';
+
+vi.mock('../sync/provider', () => ({ useSyncStore: vi.fn() }));
+
+let noteStore: Pick<SyncStore, 'requireNoteCreateAck'>;
 
 const stopAfterTest: Array<() => Promise<unknown>> = [];
 afterEach(async () => {
@@ -349,10 +355,78 @@ beforeEach(() => {
   Object.defineProperty(globalThis, 'IDBKeyRange', { configurable: true, value: IDBKeyRange });
   Object.defineProperty(navigator, 'locks', { configurable: true, value: makeFakeWebLocks() });
   vi.clearAllMocks();
+  noteStore = {
+    requireNoteCreateAck: vi.fn(async () => {}),
+  };
+  vi.mocked(useSyncStore).mockReturnValue(noteStore as SyncStore);
   useAutoEnhanceStore.getState().clear();
 });
 
 describe('useRecording — native (desktop) branch', () => {
+  it('waits for the new note create acknowledgement before starting native capture', async () => {
+    const fake = makeFakeControl();
+    let acknowledge!: () => void;
+    vi.mocked(noteStore.requireNoteCreateAck).mockImplementation(() => new Promise(resolve => {
+      acknowledge = () => {
+        resolve();
+      };
+    }));
+    const { result } = renderRecording(fake.control);
+    let starting!: Promise<void>;
+    await act(async () => { starting = result.current.start('note_1', 'New note'); });
+    expect(noteStore.requireNoteCreateAck).toHaveBeenCalledWith('note_1');
+    expect(result.current.state).toBe('starting');
+    expect(fake.startCalls).toEqual([]);
+    await act(async () => { acknowledge(); await starting; });
+    expect(fake.startCalls).toEqual([expect.objectContaining({ noteId: 'note_1' })]);
+  });
+
+  it.each(['timeout', 'rejected', 'missing-store'] as const)(
+    'does not start native capture when note sync is %s', async failure => {
+      const fake = makeFakeControl();
+      vi.mocked(noteStore.requireNoteCreateAck).mockRejectedValue(new Error(failure));
+      if (failure === 'missing-store') vi.mocked(useSyncStore).mockReturnValue(null);
+      const { result } = renderRecording(fake.control);
+      await act(() => result.current.start('note_1', 'New note'));
+      expect(fake.startCalls).toEqual([]);
+      expect(result.current.state).toBe('idle');
+      expect(result.current.error).toBe('recording.errors.couldNotStart');
+    }
+  );
+
+  it.each(['stop', 'workspace-change', 'unmount'] as const)(
+    'does not start after %s while the new note is waiting for sync', async action => {
+      const fake = makeFakeControl();
+      const auth = mutableAuth(STABLE_SESSION);
+      let acknowledge!: () => void;
+      vi.mocked(noteStore.requireNoteCreateAck).mockImplementation(() => new Promise(resolve => { acknowledge = resolve; }));
+      const { result, unmount } = renderWithPorts({ control: fake.control, uploadTranscriptionChunk: vi.fn() }, undefined, auth.auth);
+      let starting!: Promise<void>;
+      await act(async () => { starting = result.current.start('note_1', 'New note'); });
+      if (action === 'stop') await act(() => result.current.stop());
+      if (action === 'workspace-change') auth.setView({ ...STABLE_SESSION, accounts: STABLE_SESSION.accounts.map(account => ({ ...account, activeOrgId: 'org_other' })) });
+      if (action === 'unmount') unmount();
+      await act(async () => { acknowledge(); await starting; });
+      expect(fake.startCalls).toEqual([]);
+    }
+  );
+
+  it('cancels a pending start after an idle push restores the previous recording ID', async () => {
+    const fake = makeFakeControl();
+    let acknowledge!: () => void;
+    vi.mocked(noteStore.requireNoteCreateAck).mockImplementation(() => new Promise(resolve => { acknowledge = resolve; }));
+    const { result } = renderRecording(fake.control);
+    let starting!: Promise<void>;
+    await act(async () => { starting = result.current.start('note_new', 'New note'); });
+    fake.push({ ...idle, recordingId: 'rec_previous', noteId: 'note_previous' });
+    expect(result.current.recordingId).toBe('rec_previous');
+    await act(() => result.current.stop());
+    await act(async () => { acknowledge(); await starting; });
+    expect(fake.startCalls).toEqual([]);
+    expect(fake.stopCalls).toEqual([]);
+    expect(result.current.state).toBe('idle');
+  });
+
   it('does not start an old note after the workspace changes during policy loading', async () => {
     const fake = makeFakeControl();
     const auth = mutableAuth(STABLE_SESSION);
@@ -366,6 +440,21 @@ describe('useRecording — native (desktop) branch', () => {
     auth.setView({ ...STABLE_SESSION, accounts: STABLE_SESSION.accounts.map(account => ({ ...account, activeOrgId: 'org_other' })) });
     await act(async () => { finishPolicy(); await starting; });
     expect(fake.startCalls).toEqual([]);
+  });
+
+  it('preserves another window’s active capture when the pending note sync fails', async () => {
+    const fake = makeFakeControl();
+    let rejectSync!: (error: Error) => void;
+    vi.mocked(noteStore.requireNoteCreateAck).mockImplementation(() => new Promise((_resolve, reject) => { rejectSync = reject; }));
+    const { result } = renderRecording(fake.control);
+    let starting!: Promise<void>;
+    await act(async () => { starting = result.current.start('note_first', 'First'); });
+    fake.push({ ...idle, status: 'recording', noteId: 'note_second', recordingId: 'rec_second' });
+    await act(async () => { rejectSync(new Error('Sync failed')); await starting; });
+    expect(fake.startCalls).toEqual([]);
+    expect(result.current.state).toBe('recording');
+    expect(result.current.recordingId).toBe('rec_second');
+    expect(result.current.error).toBeNull();
   });
 
   it('does not let a delayed busy response replace another window’s active capture', async () => {

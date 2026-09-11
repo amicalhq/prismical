@@ -1452,7 +1452,16 @@ describe('RecoveryDrain owned processing lifecycle', () => {
         );
         yield* TestClock.adjust(Duration.seconds(30));
         assert.isNotNull(yield* h.db.getRecoveryOutbox(recordingId));
-        yield* SubscriptionRef.set(state, idleRecordingState);
+        // Capture may be idle while its live upload/finalization fiber still owns the WAV.
+        yield* SubscriptionRef.set(state, {
+          ...idleRecordingState,
+          recordingId,
+          processingRecordingIds: [recordingId],
+          finalizingRecordingIds: [recordingId],
+        });
+        yield* TestClock.adjust(Duration.seconds(30));
+        assert.isNotNull(yield* h.db.getRecoveryOutbox(recordingId));
+        yield* SubscriptionRef.update(state, current => ({ ...current, processingRecordingIds: [] }));
         yield* poll(
           h.db.getRecoveryOutbox(recordingId).pipe(Effect.map(row => row === null)),
           'stopped recording processed'

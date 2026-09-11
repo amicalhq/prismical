@@ -50,6 +50,7 @@ import {
 } from '../helpers/fake-workspace-env';
 import {
   drainRecoveries,
+  runRecoveryWorker,
   type DrainSummary,
 } from '../../src/main/domains/recording/recovery-drain';
 import { WorkspaceIdentity } from '../../src/main/runtime/workspace-identity';
@@ -145,6 +146,7 @@ interface Harness {
   readonly micActivityLatest: SubscriptionRef.SubscriptionRef<Option.Option<LatestMicActivity>>;
   readonly sessionScope: Scope.CloseableScope;
   readonly drain: Effect.Effect<DrainSummary>;
+  readonly recoveryWorker: Effect.Effect<never>;
   readonly recoveryDir: (recordingId: string) => string;
 }
 
@@ -274,6 +276,10 @@ const setup = (
       sessionScope,
       drain: drainRecoveries(
         Effect.succeed(null),
+        Context.get(svcCtx, RecordingService).resolveCompletion
+      ).pipe(Effect.provide(svcCtx), Effect.provide(envCtx)),
+      recoveryWorker: runRecoveryWorker(
+        Context.get(svcCtx, RecordingService).state,
         Context.get(svcCtx, RecordingService).resolveCompletion
       ).pipe(Effect.provide(svcCtx), Effect.provide(envCtx)),
       recoveryDir: (recordingId: string) => path.join(userDataDir, 'recovery', recordingId),
@@ -2449,6 +2455,7 @@ describe('RecordingService — lifecycle ownership and durability', () => {
           'first capture released while processing'
         );
         assert.isTrue(firstCapture.released);
+        assert.deepStrictEqual((yield* SubscriptionRef.get(h.service.state)).processingRecordingIds, [first]);
         assert.isTrue(Option.isNone(yield* Fiber.poll(stopping)));
 
         assert.deepStrictEqual(
@@ -2461,6 +2468,7 @@ describe('RecordingService — lifecycle ownership and durability', () => {
         yield* Deferred.succeed(release, undefined);
         yield* Fiber.join(stopping);
         const state = yield* SubscriptionRef.get(h.service.state);
+        assert.deepStrictEqual(state.processingRecordingIds, []);
         assert.deepStrictEqual(state.finalizingRecordingIds, []);
         assert.deepStrictEqual(state.completedRecordings, [
           { recordingId: first, noteId: 'note_first', segments: 2 },
@@ -2515,6 +2523,65 @@ describe('RecordingService — lifecycle ownership and durability', () => {
         assert.isFalse(yield* h.service.claimCompletion(first));
         yield* Scope.close(h.sessionScope, Exit.void);
       })
+  );
+
+  it.effect('recovers a finalizing recording in the same workspace after create failed', () =>
+    Effect.gen(function* () {
+      const h = yield* setup();
+      h.fakeCloud.setCreateResponder(() => laneFail(false, { kind: 'http', status: 404 }));
+      const id = yield* h.service.start({ captureMode: 'mic', noteId: 'note_recovery' });
+      yield* poll(
+        SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')),
+        'capture started'
+      );
+      yield* Queue.offer(h.fakeCapture.current().frames, fakeFrame('mic_raw', oneSecond()));
+      yield* settle;
+      yield* h.service.stop(id);
+      assert.deepStrictEqual((yield* SubscriptionRef.get(h.service.state)).finalizingRecordingIds, [id]);
+      h.fakeCloud.setCreateResponder(input => ({ ok: true, value: { recordingId: input.recordingId } }));
+      const worker = yield* Effect.fork(h.recoveryWorker);
+      yield* poll(
+        h.db.getRecoveryOutbox(id).pipe(Effect.map(row => row === null)),
+        'worker recovered finalizing recording without restart'
+      );
+      assert.deepStrictEqual((yield* SubscriptionRef.get(h.service.state)).finalizingRecordingIds, []);
+      assert.strictEqual(h.fakeCloud.createCalls.length, 2);
+      assert.strictEqual(h.fakeCloud.uploadCalls.length, 1);
+      assert.strictEqual(h.fakeCloud.finalizeCalls.length, 1);
+      assert.isTrue(yield* h.service.claimCompletion(id));
+      assert.isFalse(yield* h.service.claimCompletion(id));
+      assert.isFalse(fs.existsSync(h.recoveryDir(id)));
+      yield* Fiber.interrupt(worker);
+      yield* Scope.close(h.sessionScope, Exit.void);
+    })
+  );
+
+  it.effect('retries failed finalization at its deadline while completion remains pending', () =>
+    Effect.gen(function* () {
+      const h = yield* setup();
+      h.fakeCloud.setFinalizeResponder(() => laneFail(true, {
+        kind: 'http', status: 503, retryAfterMs: 30_000,
+      }));
+      const id = yield* h.service.start({ captureMode: 'mic' });
+      yield* h.service.stop(id);
+      assert.deepStrictEqual((yield* SubscriptionRef.get(h.service.state)).finalizingRecordingIds, [id]);
+      assert.deepStrictEqual((yield* SubscriptionRef.get(h.service.state)).processingRecordingIds, []);
+      h.fakeCloud.setFinalizeResponder(recordingId => ({ ok: true, value: { recordingId } }));
+      const worker = yield* Effect.fork(h.recoveryWorker);
+      yield* TestClock.adjust(Duration.seconds(29));
+      assert.strictEqual(h.fakeCloud.finalizeCalls.length, 1);
+      assert.isNotNull(yield* h.db.getRecoveryOutbox(id));
+      yield* TestClock.adjust(Duration.seconds(1));
+      yield* poll(
+        h.db.getRecoveryOutbox(id).pipe(Effect.map(row => row === null)),
+        'worker retried finalization at its deadline'
+      );
+      assert.strictEqual(h.fakeCloud.finalizeCalls.length, 2);
+      assert.isTrue(yield* h.service.claimCompletion(id));
+      assert.deepStrictEqual((yield* SubscriptionRef.get(h.service.state)).finalizingRecordingIds, []);
+      yield* Fiber.interrupt(worker);
+      yield* Scope.close(h.sessionScope, Exit.void);
+    })
   );
 
   it.effect('completion waits for unresolved chunks to be transcribed and finalized', () =>
@@ -2982,6 +3049,17 @@ describe('RecordingService — lifecycle ownership and durability', () => {
   it.effect('failed durable job creation releases Start ownership for a retry', () =>
     Effect.gen(function* () {
       const h = yield* setup();
+      // The previous completion is ready, but its live scope can still be closing.
+      yield* SubscriptionRef.update(h.service.state, current => ({
+        ...current, processingRecordingIds: ['rec_previous'],
+      }));
+      const insert = h.db.insertRecoveryOutbox;
+      const insertSpy = vi.spyOn(h.db, 'insertRecoveryOutbox').mockImplementation(input =>
+        SubscriptionRef.update(h.service.state, current => ({
+          ...current,
+          processingRecordingIds: current.processingRecordingIds.filter(id => id !== 'rec_previous'),
+        })).pipe(Effect.zipRight(insert(input)))
+      );
       yield* Effect.sync(() =>
         h.db.db.run(
           sql`CREATE TRIGGER fail_job BEFORE INSERT ON recovery_outbox BEGIN SELECT RAISE(ABORT, 'storage unavailable'); END`
@@ -2990,7 +3068,9 @@ describe('RecordingService — lifecycle ownership and durability', () => {
       const refused = yield* Effect.either(h.service.start({ captureMode: 'mic' }));
       assert.deepInclude(refused, { _tag: 'Left' });
       assert.strictEqual((yield* SubscriptionRef.get(h.service.state)).status, 'idle');
+      assert.deepStrictEqual((yield* SubscriptionRef.get(h.service.state)).processingRecordingIds, []);
       assert.strictEqual(h.fakeCapture.sessions.length, 0);
+      insertSpy.mockRestore();
       yield* Effect.sync(() => h.db.db.run(sql`DROP TRIGGER fail_job`));
       const id = yield* h.service.start({ captureMode: 'mic' });
       yield* h.service.stop(id);

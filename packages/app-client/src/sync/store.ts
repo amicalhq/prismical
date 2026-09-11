@@ -32,7 +32,7 @@
  * window focus + `online`, all delta `sync()` — NO scheduled full refresh
  * (by design; `reset()` is rebuild/sign-out-only).
  */
-import { observable, syncState, type Observable } from "@legendapp/state";
+import { observable, observe, syncState, type Observable } from "@legendapp/state";
 import type { WaitForSetFnParams } from "@legendapp/state";
 import { createRevertChanges } from "@legendapp/state/sync";
 import type { SyncedGetParams, SyncedSetParams } from "@legendapp/state/sync";
@@ -230,6 +230,8 @@ export interface SyncStore {
   readonly noteEvents$: Observable<Record<string, NoteEventRow>>;
   /** Resolves once the note's collab room may open (metadata create acknowledged or not local). */
   whenNoteCreateAcked(id: string, timeoutMs?: number): Promise<void>;
+  /** Strict gate for dependent writes: rejects if the note disappears or never gets a create echo. */
+  requireNoteCreateAck(id: string, timeoutMs?: number): Promise<void>;
   /** Delta re-pull of every collection (manual re-sync / poller tick). */
   refreshAll(): Promise<unknown>;
   /** Clear rows + cursor + pending for every collection (sign-out / rebuild). Pushes nothing. */
@@ -622,6 +624,23 @@ export function createSyncStore(options: SyncStoreOptions): SyncStore {
     noteTags$,
     noteEvents$,
     whenNoteCreateAcked,
+    requireNoteCreateAck: (id, timeoutMs = 20_000) => new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        stop();
+        reject(new Error('Note creation was not acknowledged'));
+      }, timeoutMs);
+      // Observe the saved row, including pending creates restored from persistence.
+      // onSaved runs before Legend applies the echo; the editor gate also releases
+      // on rejected creates and timeouts, so neither can admit a dependent write.
+      const stop = observe(event => {
+        const note = notes$[id]?.get();
+        if (note && !note.deletedAt && !note.createdAt) return;
+        event.cancel = true;
+        clearTimeout(timeout);
+        if (note?.createdAt && !note.deletedAt) resolve();
+        else reject(new Error('Note is unavailable'));
+      });
+    }),
     refreshAll,
     reset,
     startPolling,

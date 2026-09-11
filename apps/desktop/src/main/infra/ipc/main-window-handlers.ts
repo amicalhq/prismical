@@ -1551,7 +1551,8 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
     // than crossing the membrane (recording state is ids + transcript text only).
     yield* Effect.forkScoped(
       Stream.runForEach(recording.stateChanges, state => {
-        const parsed = parseRecordingStateView(state);
+        const { processingRecordingIds: _processingRecordingIds, ...view } = state;
+        const parsed = parseRecordingStateView(view);
         const push = parsed.success
           ? windows.sendToAppWindows(CHANNELS.recordingStateChanged, parsed.data)
           : log.error('recording:stateChanged push dropped: view failed the strict schema', {

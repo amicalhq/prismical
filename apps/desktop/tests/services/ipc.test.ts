@@ -1784,6 +1784,7 @@ describe('registerMainWindowHandlers', () => {
 
         // A recording state with a segment + a system/dual → mic degrade.
         const recordingState: RecordingState = {
+          processingRecordingIds: ['rec_1'],
           finalizingRecordingIds: [], completedRecordings: [],
           recordingId: 'rec_1',
           status: 'recording',
@@ -1820,7 +1821,8 @@ describe('registerMainWindowHandlers', () => {
         );
         // Structurally the RecordingState — segments carried through, and the
         // requested !== effective capture mode (mic-only) the renderer surfaces.
-        assert.deepStrictEqual(pushed?.payload, recordingState);
+        const { processingRecordingIds: _processingRecordingIds, ...expectedView } = recordingState;
+        assert.deepStrictEqual(pushed?.payload, expectedView);
         const view = pushed?.payload as RecordingStateView;
         assert.strictEqual(view.captureMode, 'mic');
         assert.strictEqual(view.requestedCaptureMode, 'dual');

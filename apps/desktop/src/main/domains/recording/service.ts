@@ -46,7 +46,9 @@ export interface RecordingState {
   /** Actual active transcription configuration; older snapshots default to English. */
   readonly language?: TranscriptionLanguage;
   readonly recordingId: string | null;
-  /** Live processing jobs still own their recovery audio after capture closes. */
+  /** Live pipelines that still own their audio, including uploads after capture closes. */
+  readonly processingRecordingIds: readonly string[];
+  /** Stopped recordings awaiting completion from live processing or recovery. */
   readonly finalizingRecordingIds: readonly string[];
   /** Completed work stays visible to late subscribers until one window claims it. */
   readonly completedRecordings: readonly {
@@ -101,6 +103,7 @@ export interface RecordingState {
 
 export const idleRecordingState: RecordingState = {
   recordingId: null,
+  processingRecordingIds: [],
   finalizingRecordingIds: [],
   completedRecordings: [],
   status: 'idle',

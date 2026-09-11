@@ -498,7 +498,7 @@ export const runRecoveryWorker = (
       const activeId = SubscriptionRef.get(state).pipe(
         Effect.map(
           value =>
-            value.finalizingRecordingIds[0] ??
+            value.processingRecordingIds[0] ??
             (value.status === 'idle' || value.status === 'error'
               ? null
               : (value.recordingId ?? 'starting'))

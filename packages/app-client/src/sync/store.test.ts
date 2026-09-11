@@ -397,6 +397,57 @@ describe("note-tags junction gating (waitForSet)", () => {
 });
 
 describe("gated note create (collaboration ordering)", () => {
+  it("requires the saved note row before admitting a dependent write", async () => {
+    let acknowledge!: () => void;
+    mocked.restCreate.mockImplementation((_route, input) => new Promise(resolve => {
+      acknowledge = () => resolve({ ...(input as object), createdAt: "2030-01-01T00:00:00.000Z" });
+    }));
+    await activate(store.notes$);
+    const id = store.createNote({ title: "New recording note" });
+    let ready = false;
+    const gate = store.requireNoteCreateAck(id).then(() => {
+      expect(store.notes$[id]!.peek().createdAt).toBeTruthy();
+      ready = true;
+    });
+    await vi.waitFor(() => expect(acknowledge).toBeDefined());
+    expect(ready).toBe(false);
+    acknowledge();
+    await gate;
+    expect(ready).toBe(true);
+    await expect(store.requireNoteCreateAck(id)).resolves.toBeUndefined();
+  });
+
+  it("rejects a dependent write when the note create is stuck, even if it later succeeds", async () => {
+    let acknowledge!: () => void;
+    mocked.restCreate.mockImplementation((_route, input) => new Promise(resolve => {
+      acknowledge = () => resolve({ ...(input as object), createdAt: "2030-01-01T00:00:00.000Z" });
+    }));
+    await activate(store.notes$);
+    const id = store.createNote({ title: "Stuck" });
+    await vi.waitFor(() => expect(acknowledge).toBeDefined());
+    vi.useFakeTimers();
+    try {
+      const ready = vi.fn();
+      const gate = store.requireNoteCreateAck(id).then(ready);
+      const rejected = expect(gate).rejects.toThrow('Note creation was not acknowledged');
+      await vi.advanceTimersByTimeAsync(20_000);
+      await rejected;
+      acknowledge();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(ready).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("rejects a dependent write when note creation is rejected or the note is missing", async () => {
+    mocked.restCreate.mockRejectedValue(new ApiError('FORBIDDEN', 'Denied', 403));
+    await activate(store.notes$);
+    const id = store.createNote({ title: "Rejected" });
+    await expect(store.requireNoteCreateAck(id)).rejects.toThrow('Note is unavailable');
+    await expect(store.requireNoteCreateAck('nt_missing')).rejects.toThrow('Note is unavailable');
+  });
+
   it("whenNoteCreateAcked blocks until the create echo lands; unknown notes pass immediately", async () => {
     let release: ((value: unknown) => void) | null = null;
     mocked.restCreate.mockImplementation(
