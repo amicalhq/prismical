@@ -44,6 +44,7 @@ import { NavTagsGroup } from './nav-tags-group';
 import type { Note, FavoriteEntry } from '@prismical/app-contracts';
 import {
   useFolders,
+  useCreateFolder,
   useUpdateFolder,
   useDeleteFolder,
 } from '@prismical/app-client';
@@ -223,12 +224,14 @@ export function NavNotesGroups() {
 
   const [favoritesOpen, setFavoritesOpen] = React.useState(true);
   const [foldersOpen, setFoldersOpen] = React.useState(true);
+  const [createFolderOpen, setCreateFolderOpen] = React.useState(false);
   const [shareFolder, setShareFolder] = React.useState<{ id: string; name: string } | null>(null);
   // Sharing is an org feature (off in the desktop local workspace).
   const { enabled: sharingEnabled } = useFeatureFlag('sharing');
   const [renameFolder, setRenameFolder] = React.useState<{ id: string; name: string } | null>(null);
   const [deleteFolder, setDeleteFolder] = React.useState<{ id: string; name: string } | null>(null);
 
+  const createFolderMut = useCreateFolder();
   // Separate mutation instances so a background favorite-toggle can't gate the rename dialog's
   // `pending` (which would swallow its Esc/Cancel and trap it open).
   const favoriteFolder = useUpdateFolder();
@@ -250,6 +253,11 @@ export function NavNotesGroups() {
   // Favorites derive from all three sources; Folders only needs folders+notes.
   const favoritesLoading = foldersQ.isLoading || notesQ.isLoading || tagsQ.isLoading;
   const foldersLoading = foldersQ.isLoading || notesQ.isLoading;
+  // A failed pull is neither loaded nor loading: `listResult` reports isLoading false with data
+  // undefined, so an errored folders query would otherwise read as "no folders" and invite creating
+  // one on top of a list we simply failed to fetch. Stay silent, as this group did before the row
+  // existed. Only the folders query is authoritative here — notes just fill the sub-rows.
+  const foldersFailed = Boolean(foldersQ.error);
 
   const countByTag = new Map<string, number>();
   for (const { tagId } of noteTags) countByTag.set(tagId, (countByTag.get(tagId) ?? 0) + 1);
@@ -396,6 +404,20 @@ export function NavNotesGroups() {
                     <SidebarMenuSkeleton showIcon />
                   </SidebarMenuItem>
                 </>
+              ) : foldersFailed ? null : folderEntries.length === 0 ? (
+                // Loaded and empty: this row is the only folder-creating affordance left in the
+                // sidebar — the group's "+" came out with the subfolder work, and "View all" only
+                // shows on hover. Without it the section is a label over nothing.
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    size="sm"
+                    className="text-sidebar-foreground-muted"
+                    onClick={() => setCreateFolderOpen(true)}
+                  >
+                    <Plus className="size-4" />
+                    <span>{t('navigation.collections.createFolder')}</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
               ) : null}
               {folderEntries.map(({ folder, notes: folderNotes }) => (
                 <Collapsible
@@ -517,6 +539,19 @@ export function NavNotesGroups() {
           onOpenChange={o => !o && setShareFolder(null)}
         />
       )}
+
+      {/* Stays on the current route on success: the folder appears as a sidebar row immediately,
+          and pushing to an empty folder's note list would move the user away from what they were
+          reading to see nothing. */}
+      <FolderNameDialog
+        open={createFolderOpen}
+        onOpenChange={setCreateFolderOpen}
+        mode="create"
+        pending={createFolderMut.isPending}
+        onSubmit={name =>
+          createFolderMut.mutate(name, { onSuccess: () => setCreateFolderOpen(false) })
+        }
+      />
 
       <FolderNameDialog
         open={!!renameFolder}

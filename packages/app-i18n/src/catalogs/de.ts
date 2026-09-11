@@ -343,6 +343,8 @@ const de = {
     },
     collections: {
       addToFavorites: 'Zu Favoriten hinzufügen',
+      createFolder: 'Ordner erstellen',
+      createTag: 'Tag erstellen',
       favorited: 'Favorit',
       favorites: 'Favoriten',
       folderOptions: 'Ordneroptionen',
@@ -355,7 +357,6 @@ const de = {
       noFavorites: 'Keine Favoriten',
       noFolders: 'Keine Ordner',
       noNotes: 'Keine Notizen',
-      noTags: 'Keine Tags',
       noteOptions: 'Optionen für {{title}}',
       removeFromFavorites: 'Aus Favoriten entfernen',
       removeFromFolder: 'Aus Ordner entfernen',
@@ -405,7 +406,6 @@ const de = {
     folder: {
       createAction: 'Ordner erstellen',
       createDescription: 'Mit Ordnern kannst du zusammengehörige Notizen gruppieren.',
-      createInsideTitle: 'Neuer Ordner in {{name}}',
       createTitle: 'Neuer Ordner',
       namePlaceholder: 'z. B. Besprechungsnotizen',
       renameDescription: 'Gib diesem Ordner einen neuen Namen.',
@@ -613,11 +613,7 @@ const de = {
     empty: 'Noch keine Ordner',
     emptyHint: 'Ordner halten zusammengehörende Notizen zusammen. Erstelle einen, um zu beginnen.',
     expand: '{{name}} ausklappen',
-    moveTo: 'Verschieben nach',
-    moveToRoot: 'Oberste Ebene',
-    noMoveTargets: 'Kein Ziel verfügbar',
     new: 'Neuer Ordner',
-    newSubfolder: 'Neuer Unterordner',
     noMatch: 'Keine Ordner passen zu deiner Suche',
     noteCount_one: '{{count}} Notiz',
     noteCount_other: '{{count}} Notizen',
@@ -2643,7 +2639,7 @@ const de = {
       },
       clearKey: 'Schlüssel löschen',
       description:
-        'Wähle, welches Sprachmodell Ask, Enhance, Cleanup und Notiz benennen auf diesem Gerät ausführt.',
+        'Wähle, welches Sprachmodell Ask, Enhance und Cleanup auf diesem Gerät ausführt.',
       keyMissing: 'Auf diesem Gerät ist kein Schlüssel gespeichert.',
       keySet:
         'Auf diesem Gerät ist ein Schlüssel gespeichert. Füge einen neuen ein, um ihn zu ersetzen.',

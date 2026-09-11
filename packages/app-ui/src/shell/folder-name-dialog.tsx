@@ -24,8 +24,6 @@ interface FolderNameDialogProps {
   mode: 'create' | 'rename';
   /** Seed value for rename; ignored (treated as empty) for create. */
   initialName?: string;
-  /** For create: the folder the new one goes inside, so the dialog says where it is landing. */
-  parentName?: string;
   /** True while the create/rename mutation is in flight — disables inputs and shows a spinner. */
   pending?: boolean;
   /** Called with the trimmed, non-empty name. The parent owns the mutation and closes on success. */
@@ -40,7 +38,6 @@ export function FolderNameDialog({
   onOpenChange,
   mode,
   initialName = '',
-  parentName,
   pending = false,
   onSubmit,
 }: FolderNameDialogProps) {
@@ -71,11 +68,7 @@ export function FolderNameDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
-            {!isCreate
-              ? t('dialogs.folder.renameTitle')
-              : parentName
-                ? t('dialogs.folder.createInsideTitle', { name: parentName })
-                : t('dialogs.folder.createTitle')}
+            {isCreate ? t('dialogs.folder.createTitle') : t('dialogs.folder.renameTitle')}
           </DialogTitle>
           <DialogDescription>
             {isCreate

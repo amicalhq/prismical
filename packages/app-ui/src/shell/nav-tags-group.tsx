@@ -2,20 +2,27 @@
 
 import { useMemo, useState } from 'react';
 import { AppLink as Link } from './app-link';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, Plus } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible';
 import {
   SidebarGroup,
   SidebarGroupAction,
-  SidebarGroupContent,
   SidebarGroupLabel,
   SidebarMenu,
+  SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSkeleton,
 } from '../ui/sidebar';
 import { TagSidebarRow } from './tag-sidebar-row';
+import { TagEditDialog } from './tag-edit-dialog';
 import { recentPlusCurrent } from '../lib/sidebar-recent';
-import { usePathname, useSearchParams, useTags } from '@prismical/app-client';
+import {
+  nextAutoColor,
+  useCreateTag,
+  usePathname,
+  useSearchParams,
+  useTags,
+} from '@prismical/app-client';
 import { useAllNoteTags } from '@prismical/app-client';
 import { useTranslation } from 'react-i18next';
 
@@ -27,15 +34,29 @@ export function NavTagsGroup() {
   const searchParams = useSearchParams();
   const tagsQ = useTags();
   const noteTagsQ = useAllNoteTags();
-  const allTags = tagsQ.data ?? [];
-  const tagNames = useMemo(() => (tagsQ.data ?? []).map(tag => tag.name), [tagsQ.data]);
+  // Memoized so the `?? []` fallback doesn't hand the derivations below a fresh array every render
+  // (`data` is undefined until the first pull lands).
+  const allTags = useMemo(() => tagsQ.data ?? [], [tagsQ.data]);
   const noteTags = noteTagsQ.data ?? [];
-  // First load: skeleton rows, not the "No tags" empty state.
+  // First load: skeleton rows, not the empty state — "no tags" and "not loaded yet" are different.
   const loading = tagsQ.isLoading || noteTagsQ.isLoading;
+  // And a FAILED pull is a third thing again: `listResult` reports isLoading false with data
+  // undefined, so without this the group would tell someone with thirty tags they have none and
+  // offer to make one. Creating against that empty view mints a colliding tag the server then
+  // rejects, losing the color they picked. The tags query is the authority here — noteTags only
+  // supplies the counts.
+  const failed = Boolean(tagsQ.error);
   // The newest few, plus whichever tags the note list is filtered to — the rest live on /tags.
   const activeTagIds = pathname === '/notes' ? searchParams.getAll('tags') : [];
   const tags = recentPlusCurrent(allTags, RECENT_LIMIT, activeTagIds);
   const [open, setOpen] = useState(true);
+  const [createOpen, setCreateOpen] = useState(false);
+  const createTag = useCreateTag();
+
+  // Seeded the same way the tags index seeds it, so a tag created here lands on the same palette
+  // step it would have had from that screen or from typing the name on a note.
+  const suggestedColor = useMemo(() => nextAutoColor(allTags.map(tag => tag.color)), [allTags]);
+  const takenNames = useMemo(() => allTags.map(tag => tag.name), [allTags]);
 
   const countByTag = new Map<string, number>();
   for (const { tagId } of noteTags) countByTag.set(tagId, (countByTag.get(tagId) ?? 0) + 1);
@@ -70,19 +91,28 @@ export function NavTagsGroup() {
                 <SidebarMenuSkeleton showIcon />
               </SidebarMenuItem>
             </SidebarMenu>
-          ) : tags.length === 0 ? (
-            <SidebarGroupContent>
-              <p className="px-2 py-1 text-xs text-sidebar-foreground-muted">
-                {t('navigation.collections.noTags')}
-              </p>
-            </SidebarGroupContent>
+          ) : failed ? null : tags.length === 0 ? (
+            // A row, not the "No tags" line it replaces: tags are otherwise created from a note or
+            // from /tags, so an empty group was a dead end that only said so.
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  size="sm"
+                  className="text-sidebar-foreground-muted"
+                  onClick={() => setCreateOpen(true)}
+                >
+                  <Plus className="size-4" />
+                  <span>{t('navigation.collections.createTag')}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
           ) : (
             <SidebarMenu>
               {tags.map(tag => (
                 <TagSidebarRow
                   key={`tag-${tag.id}`}
                   tag={tag}
-                  tagNames={tagNames}
+                  tagNames={takenNames}
                   noteCount={countByTag.get(tag.id) ?? 0}
                 />
               ))}
@@ -90,6 +120,22 @@ export function NavTagsGroup() {
           )}
         </CollapsibleContent>
       </SidebarGroup>
+
+      <TagEditDialog
+        open={createOpen}
+        mode="create"
+        onOpenChange={setCreateOpen}
+        defaultColor={suggestedColor}
+        takenNames={takenNames}
+        pending={createTag.isPending}
+        onSubmit={values => {
+          if (!values.name) return;
+          createTag.mutate(
+            { name: values.name, color: values.color },
+            { onSuccess: () => setCreateOpen(false) }
+          );
+        }}
+      />
     </Collapsible>
   );
 }

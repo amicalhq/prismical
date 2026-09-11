@@ -13,8 +13,13 @@ const mocks = vi.hoisted(() => ({
   run: vi.fn(),
   dirty: vi.fn(),
   transcript: false,
-  transcriptEnabled: vi.fn(),
   nameNoteEnabled: true,
+  // Deliberately INDEPENDENT of nameNoteEnabled. Tying them together would let
+  // `{skill && <button/>}` pass every case here while behaving differently in the app, because
+  // the flag being off would also empty the list. Keeping them separate is what pins the button
+  // to the FLAG rather than to an empty list.
+  skillListed: true,
+  transcriptEnabled: vi.fn(),
 }));
 vi.mock('@prismical/app-client', () => ({
   useFreezeNoteTitle: () => mocks.freeze,
@@ -23,9 +28,8 @@ vi.mock('@prismical/app-client', () => ({
     enabled: key === 'nameNoteSkill' ? mocks.nameNoteEnabled : true,
     isResolved: true,
   }),
-  // Mirrors the real hook, which filters the gated skill out of the list.
   useSkillsList: () => ({
-    data: mocks.nameNoteEnabled
+    data: mocks.skillListed
       ? [
           {
             id: 'skl_name_note',
@@ -71,6 +75,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.transcript = false;
   mocks.nameNoteEnabled = true;
+  mocks.skillListed = true;
 });
 
 describe('NoteTitleField', () => {
@@ -176,12 +181,21 @@ describe('NoteTitleField', () => {
     'hides the naming button entirely when the feature is gated off (compact=%s)',
     compact => {
       mocks.nameNoteEnabled = false;
+      // The list STILL carries the skill — a client whose cached org payload has not caught up
+      // with the flag yet. The button must follow the flag, not the list.
+      mocks.skillListed = true;
       mocks.transcript = true;
       render(field({ ...base, body: 'Some content' }, compact));
       expect(screen.getByRole('textbox')).toBeTruthy();
       expect(screen.queryByRole('button')).toBeNull();
     }
   );
+  it('renders a disabled button — not an absent one — when only the skill is missing', () => {
+    mocks.skillListed = false;
+    mocks.transcript = true;
+    render(field({ ...base, body: 'Some content' }));
+    expect((screen.getByRole('button') as HTMLButtonElement).disabled).toBe(true);
+  });
   it.each([false, true])('skips the transcript scan when gated off (compact=%s)', compact => {
     mocks.nameNoteEnabled = false;
     render(field(base, compact));

@@ -13,11 +13,16 @@ export const skillsKey = ["skills"] as const;
 /**
  * Every skill the caller may use, with feature-gated system skills removed.
  *
- * The gate is applied through `select` rather than in the query function so the cached payload
- * stays whatever the server sent: a flag flip re-derives the list without a refetch, and the
- * loading/error state every caller reads is untouched. Core applies the same gate on the read and
- * run paths, so this only keeps a locally-cached row (desktop's offline sync) from resurfacing a
- * skill the server has stopped serving.
+ * Core is the authority — it withholds the row and refuses to run it — so this is belt and
+ * braces for the window where a client's cached list is ahead of its cached flags, and insurance
+ * against a server that regresses. Applied through `select` rather than in the query function so
+ * the cached payload stays whatever the server sent: a flag flip re-derives the list without a
+ * refetch, and the loading/error state every caller reads is untouched.
+ *
+ * Note the asymmetry this creates on OPT-IN: the org list `useFeatureFlags` reads caches for five
+ * minutes while this list caches for thirty seconds, so an org merged into a rollout can be served
+ * the skill and still not see it until its next reload. Turning a feature OFF has no such lag,
+ * which is the direction that matters for a gate.
  */
 export function useSkillsList() {
   const { enabled: nameNoteEnabled } = useFeatureFlag("nameNoteSkill");

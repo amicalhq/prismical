@@ -39,51 +39,38 @@ export function useFolders(): SyncListResult<Folder[]> {
   });
 }
 
-/** A bare name creates at the top level; pass `parentId` to nest it under a folder. */
-export type CreateFolderInput = string | { name: string; parentId?: string | null };
-
 /**
- * Create a folder — client-minted `fld_` id, optimistic row, result immediately (the caller shows
- * it without any round-trip). Depth is not checked here: the limit the folders screen puts on
- * creating is about how deep a tree stays legible, not about what the store can hold, and a tree
- * built through the API or on another client can be deeper than that.
+ * Create a top-level folder — client-minted `fld_` id, optimistic row, result
+ * immediately (the sidebar shows it without any round-trip). Nesting stays
+ * unexposed in the sidebar, so `parentId` is always null here (as before).
  */
-export function useCreateFolder(): SyncMutationResult<CreateFolderInput, Folder> {
+export function useCreateFolder(): SyncMutationResult<string, Folder> {
   const store = useSyncStore();
-  const create = (input: CreateFolderInput): Folder => {
+  const create = (name: string): Folder => {
     if (!store) throw new Error("sync store not ready");
-    const name = typeof input === "string" ? input : input.name;
-    const parentId = typeof input === "string" ? null : (input.parentId ?? null);
-    const id = store.createFolder({ name, parentId });
+    const id = store.createFolder({ name, parentId: null });
     return folderFromRow(store.folders$[id]!.peek() as FolderRow);
   };
   return {
-    mutate: (input, callbacks) => {
-      const folder = create(input);
+    mutate: (name, callbacks) => {
+      const folder = create(name);
       callbacks?.onSuccess?.(folder);
     },
-    mutateAsync: async (input) => create(input),
+    mutateAsync: async (name) => create(name),
     isPending: false,
   };
 }
 
-/** What a folder edit can change. `parentId` moves it; null puts it back at the top level. */
-export type UpdateFolderPatch = { name?: string; isFavorite?: boolean; parentId?: string | null };
-
 /**
- * Update a folder — rename, favorite toggle, or move. Only the keys present in
+ * Update a folder — rename or favorite toggle. Only the keys present in
  * `patch` are written (updatePartial keeps the wire partial too).
- *
- * A move is not validated here: whether a target is legal (not the folder's own descendant, and
- * within the depth the UI allows) depends on the whole tree, which the screen offering the move
- * already has in hand.
  */
 export function useUpdateFolder(): SyncMutationResult<
-  { id: string; patch: UpdateFolderPatch },
+  { id: string; patch: { name?: string; isFavorite?: boolean } },
   Folder | undefined
 > {
   const store = useSyncStore();
-  const update = ({ id, patch }: { id: string; patch: UpdateFolderPatch }) => {
+  const update = ({ id, patch }: { id: string; patch: { name?: string; isFavorite?: boolean } }) => {
     store?.updateFolder(id, patch);
     const row = store?.folders$[id]!.peek() as FolderRow | undefined;
     return row ? folderFromRow(row) : undefined;
