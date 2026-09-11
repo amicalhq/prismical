@@ -37,7 +37,9 @@ test.describe('local collection directories', () => {
     await page.getByPlaceholder('Search folders').fill('Project');
     await expect(folder).toBeVisible();
     await folder.click();
-    await expect.poll(() => page.evaluate(() => window.location.hash)).toMatch(/^#\/notes\?folder=fld_/);
+    await expect
+      .poll(() => page.evaluate(() => window.location.hash))
+      .toMatch(/^#\/notes\?folder=fld_/);
 
     await page.getByRole('link', { name: 'View all folders' }).click();
     await page.reload();
@@ -71,20 +73,28 @@ test.describe('local collection directories', () => {
     await expect(main.getByRole('link', { name: 'roadmap', exact: true })).toBeVisible();
     await main.getByRole('button', { name: 'roadmap options', exact: true }).click();
     await page.getByRole('menuitem', { name: 'Edit tag', exact: true }).click();
-    await expect(dialog.getByRole('button', { name: 'Use color #a78bfa', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await expect(
+      dialog.getByRole('button', { name: 'Use color #a78bfa', exact: true })
+    ).toHaveAttribute('aria-pressed', 'true');
     await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
     await main.getByRole('link', { name: 'roadmap', exact: true }).click();
-    await expect.poll(() => page.evaluate(() => window.location.hash)).toMatch(/^#\/notes\?tags=tag_/);
+    await expect
+      .poll(() => page.evaluate(() => window.location.hash))
+      .toMatch(/^#\/notes\?tags=tag_/);
   });
 
   test('loads the note reading fonts from the packaged app', async () => {
     await page.getByRole('link', { name: 'View all folders' }).click();
-    await expect(page.getByRole('main').getByRole('button', { name: 'New folder', exact: true })).toBeEnabled();
+    await expect(
+      page.getByRole('main').getByRole('button', { name: 'New folder', exact: true })
+    ).toBeEnabled();
     await page.getByRole('button', { name: 'New note', exact: true }).click();
     const editor = page.locator('.note-prose');
     await expect(editor).toHaveAttribute('contenteditable', 'true');
     await editor.fill('A note with the shared reading font.');
-    await expect.poll(() => editor.evaluate(element => getComputedStyle(element).fontFamily)).toContain('DM Sans');
+    await expect
+      .poll(() => editor.evaluate(element => getComputedStyle(element).fontFamily))
+      .toContain('DM Sans');
     const loaded = await page.evaluate(async () => {
       const normal = await document.fonts.load('400 16px "DM Sans"');
       const italic = await document.fonts.load('italic 400 16px "DM Sans"');

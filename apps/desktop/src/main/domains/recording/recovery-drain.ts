@@ -344,7 +344,9 @@ export const drainRecoveries = (
           // Replay that complete config before any remaining chunks or finalization.
           if (row.engineConfig.language !== undefined && row.createInput.transcriptionConfig) {
             const saved = yield* saveRecordingTranscriptionConfig(
-              backend, row.recordingId, row.createInput.transcriptionConfig
+              backend,
+              row.recordingId,
+              row.createInput.transcriptionConfig
             );
             if (saved !== 'saved') return yield* park(row, 'transcription-config-save');
           }

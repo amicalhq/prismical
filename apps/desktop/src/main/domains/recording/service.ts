@@ -26,7 +26,11 @@ export class RecordingBusyError extends Data.TaggedError('RecordingBusyError')<{
 }> {}
 
 export class RecordingStartError extends Data.TaggedError('RecordingStartError')<{
-  readonly reason: 'model-missing' | 'language-unsupported' | 'storage-unavailable' | 'suggestion-pending';
+  readonly reason:
+    | 'model-missing'
+    | 'language-unsupported'
+    | 'storage-unavailable'
+    | 'suggestion-pending';
 }> {}
 
 export type RecordingStatus = 'idle' | 'starting' | 'recording' | 'paused' | 'stopping' | 'error';
@@ -175,7 +179,10 @@ export interface RecordingServiceApi {
   readonly pauseFromPrompt: (recordingId: string) => Effect.Effect<boolean>;
   /** Resume the matching paused recording, preserving its id and chunk timeline. */
   readonly resume: (recordingId: string) => Effect.Effect<boolean>;
-  readonly setLanguage: (recordingId: string, language: TranscriptionLanguage) => Effect.Effect<boolean>;
+  readonly setLanguage: (
+    recordingId: string,
+    language: TranscriptionLanguage
+  ) => Effect.Effect<boolean>;
   /** The observable recording state for the widget + transcript UI. */
   readonly state: SubscriptionRef.SubscriptionRef<RecordingState>;
   /**

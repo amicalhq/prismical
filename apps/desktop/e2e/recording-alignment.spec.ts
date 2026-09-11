@@ -67,12 +67,15 @@ test.describe('recording dock alignment', () => {
     await expect(language).toContainText('Hindi');
     const owner = await createNote(page);
     await page.evaluate(id => window.desktop.float.open(id), owner);
-    await expect.poll(() => launched.app.windows().filter(window => window.url().includes('#/float')).length).toBe(1);
+    await expect
+      .poll(() => launched.app.windows().filter(window => window.url().includes('#/float')).length)
+      .toBe(1);
     const floating = launched.app.windows().find(window => window.url().includes('#/float'))!;
     await expect(floating.locator('.note-prose')).toBeVisible();
     // A pushed capture view exercises both renderers; main has no real capture to update.
     await page.evaluate(view => window.desktop.e2e!.recording({ kind: 'push', view }), {
-      ...recordingView(owner), language: 'de' as const,
+      ...recordingView(owner),
+      language: 'de' as const,
     });
     await page.getByRole('button', { name: 'Show transcription', exact: true }).click();
     await floating.getByRole('button', { name: 'Show transcription', exact: true }).click();
@@ -84,13 +87,16 @@ test.describe('recording dock alignment', () => {
     await expect(floatChip).toContainText('German');
     await floatChip.click();
     await floating.getByRole('option', { name: 'Japanese', exact: true }).click();
-    await expect.poll(() => request(page, { method: 'GET', path: '/apps/v1/me/preferences' }))
+    await expect
+      .poll(() => request(page, { method: 'GET', path: '/apps/v1/me/preferences' }))
       .toMatchObject({ bodyJson: { transcription: { language: 'ja' } } });
     await expect(floatChip).toContainText('German');
     await expect(mainChip).toContainText('German');
-    await expect(floating.getByText(
-      'Could not change the language for this recording. Check the transcription model in Settings and try again.'
-    )).toBeVisible();
+    await expect(
+      floating.getByText(
+        'Could not change the language for this recording. Check the transcription model in Settings and try again.'
+      )
+    ).toBeVisible();
     await floating.screenshot({ path: test.info().outputPath('float-recording-language.png') });
   });
 

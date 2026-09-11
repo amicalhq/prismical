@@ -42,7 +42,10 @@ import { DetectionBridgeLive } from '../../src/main/domains/detection/bridge';
 import { EventKitBridgeLive } from '../../src/main/domains/eventkit/bridge';
 import { CollabBridgeLive } from '../../src/main/domains/collab/store-live';
 import { CollabBridge } from '../../src/main/domains/collab/store';
-import { WORKSPACE_READY_TIMEOUT, WorkspaceTransportLive } from '../../src/main/domains/transport/live';
+import {
+  WORKSPACE_READY_TIMEOUT,
+  WorkspaceTransportLive,
+} from '../../src/main/domains/transport/live';
 import { WorkspaceTransport } from '../../src/main/domains/transport/service';
 import { OperationalDbLive } from '../../src/main/infra/operational-db/live';
 import { AppModeService, makeAppMode, type AppMode } from '../../src/main/domains/app-mode/service';
@@ -872,12 +875,9 @@ describe('SignedInRuntime lifecycle', () => {
         .request({ method: 'GET', path: '/apps/v1/me/tags' }, { mode: 'local' })
         .pipe(Effect.fork);
       yield* TestClock.adjust(WORKSPACE_READY_TIMEOUT);
-      assert.deepStrictEqual(
-        yield* Fiber.join(pending),
-        {
-          error: { code: 'INTERNAL' },
-        }
-      );
+      assert.deepStrictEqual(yield* Fiber.join(pending), {
+        error: { code: 'INTERNAL' },
+      });
     })
   );
 

@@ -341,17 +341,29 @@ describe('recording schemas', () => {
   it('spoken language uses the shared closed enum across Start, update and state', () => {
     for (const language of ['en', 'ja', 'hi', 'zh']) {
       expect(parseStartRecordingRequest({ captureMode: 'mic', language }).success).toBe(true);
-      expect(recordingLanguageRequestSchema.safeParse({ recordingId: 'rec_1', language }).success).toBe(true);
+      expect(
+        recordingLanguageRequestSchema.safeParse({ recordingId: 'rec_1', language }).success
+      ).toBe(true);
       expect(parseRecordingStateView({ ...state, language }).success).toBe(true);
     }
     for (const language of ['auto', 'source', 'xx', '', null]) {
       expect(parseStartRecordingRequest({ captureMode: 'mic', language }).success).toBe(false);
-      expect(recordingLanguageRequestSchema.safeParse({ recordingId: 'rec_1', language }).success).toBe(false);
+      expect(
+        recordingLanguageRequestSchema.safeParse({ recordingId: 'rec_1', language }).success
+      ).toBe(false);
       expect(parseRecordingStateView({ ...state, language }).success).toBe(false);
     }
     expect(recordingLanguageRequestSchema.safeParse({ recordingId: 'rec_1' }).success).toBe(false);
-    expect(recordingLanguageRequestSchema.safeParse({ recordingId: '', language: 'en' }).success).toBe(false);
-    expect(recordingLanguageRequestSchema.safeParse({ recordingId: 'rec_1', language: 'en', token: 'secret' }).success).toBe(false);
+    expect(
+      recordingLanguageRequestSchema.safeParse({ recordingId: '', language: 'en' }).success
+    ).toBe(false);
+    expect(
+      recordingLanguageRequestSchema.safeParse({
+        recordingId: 'rec_1',
+        language: 'en',
+        token: 'secret',
+      }).success
+    ).toBe(false);
   });
 
   it('quota baseline crosses Start and state only as a finite, nonnegative value or null', () => {

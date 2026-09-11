@@ -47,13 +47,16 @@ test.describe('local settings alignment', () => {
   test('persists independent interface, AI output, and spoken languages across a local restart', async () => {
     await page.getByRole('link', { name: 'Settings', exact: true }).click();
     const outputLanguage = page.getByRole('combobox', { name: 'AI output language', exact: true });
-    const interfaceLanguage = page.getByRole('combobox', { name: 'Interface language', exact: true });
+    const interfaceLanguage = page.getByRole('combobox', {
+      name: 'Interface language',
+      exact: true,
+    });
     await expect(outputLanguage).toBeEnabled();
     await expect(outputLanguage).toContainText('Same as the note');
     await outputLanguage.click();
-    await expect(page.getByRole('option', { name: 'Same as the note', exact: true })).toHaveAccessibleDescription(
-      'Each note stays in the language it was written in.'
-    );
+    await expect(
+      page.getByRole('option', { name: 'Same as the note', exact: true })
+    ).toHaveAccessibleDescription('Each note stays in the language it was written in.');
     await page.getByRole('option', { name: 'Español', exact: true }).click();
     await expect(outputLanguage).toContainText('Español');
     await expect(interfaceLanguage).toHaveValue('en');
@@ -72,7 +75,9 @@ test.describe('local settings alignment', () => {
     await interfaceLanguage.selectOption('de');
     await expect(page.getByRole('alertdialog')).toContainText('Restart to change language');
     await expect
-      .poll(() => page.evaluate(() => window.desktop.settings.get().then(settings => settings.language)))
+      .poll(() =>
+        page.evaluate(() => window.desktop.settings.get().then(settings => settings.language))
+      )
       .toBe('de');
     await page.getByRole('button', { name: 'Later', exact: true }).click();
     await expect(outputLanguage).toContainText('Español');
@@ -86,8 +91,12 @@ test.describe('local settings alignment', () => {
     assertNotStaleDevBundle(page.url());
     await expect(page.getByTestId('desktop-shell')).toBeVisible();
     await page.getByRole('link', { name: 'Einstellungen', exact: true }).click();
-    await expect(page.getByRole('combobox', { name: 'Oberflächensprache', exact: true })).toHaveValue('de');
-    await expect(page.getByRole('combobox', { name: 'KI-Ausgabesprache', exact: true })).toContainText('Español');
+    await expect(
+      page.getByRole('combobox', { name: 'Oberflächensprache', exact: true })
+    ).toHaveValue('de');
+    await expect(
+      page.getByRole('combobox', { name: 'KI-Ausgabesprache', exact: true })
+    ).toContainText('Español');
     await expect(page.getByText(/Aktuell Hindi\./)).toBeVisible();
     await expect(page.getByRole('alertdialog')).toHaveCount(0);
   });

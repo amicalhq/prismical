@@ -22,27 +22,36 @@ export function writeLocalPreferences(
   method: 'POST' | 'PATCH',
   body: unknown
 ): RouteResult {
-  const parsed = method === 'POST'
-    ? InitializeUserPreferencesRequestSchema.safeParse(body)
-    : UpdateUserPreferencesRequestSchema.safeParse(body);
+  const parsed =
+    method === 'POST'
+      ? InitializeUserPreferencesRequestSchema.safeParse(body)
+      : UpdateUserPreferencesRequestSchema.safeParse(body);
   if (!parsed.success) return invalidRequest('Invalid preferences');
-  return db.transaction(tx => {
-    const prefs = storedPreferences(tx);
-    const next = { ...prefs };
-    const defaults = { language: LANGUAGE_PREFERENCE_DEFAULTS, transcription: TRANSCRIPTION_PREFERENCE_DEFAULTS };
-    for (const group of ['language', 'transcription'] as const) {
-      const patch = parsed.data[group];
-      if (!patch) continue;
-      const previous = prefs[group];
-      if (method === 'POST' && previous != null) continue;
-      next[group] = {
-        ...defaults[group],
-        ...(typeof previous === 'object' && previous !== null ? previous : {}),
-        ...patch,
+  return db.transaction(
+    tx => {
+      const prefs = storedPreferences(tx);
+      const next = { ...prefs };
+      const defaults = {
+        language: LANGUAGE_PREFERENCE_DEFAULTS,
+        transcription: TRANSCRIPTION_PREFERENCE_DEFAULTS,
       };
-    }
-    tx.insert(userPreference).values({ id: 1, prefs: next })
-      .onConflictDoUpdate({ target: userPreference.id, set: { prefs: next } }).run();
-    return ok(readUserPreferences(next));
-  }, { behavior: 'immediate' });
+      for (const group of ['language', 'transcription'] as const) {
+        const patch = parsed.data[group];
+        if (!patch) continue;
+        const previous = prefs[group];
+        if (method === 'POST' && previous != null) continue;
+        next[group] = {
+          ...defaults[group],
+          ...(typeof previous === 'object' && previous !== null ? previous : {}),
+          ...patch,
+        };
+      }
+      tx.insert(userPreference)
+        .values({ id: 1, prefs: next })
+        .onConflictDoUpdate({ target: userPreference.id, set: { prefs: next } })
+        .run();
+      return ok(readUserPreferences(next));
+    },
+    { behavior: 'immediate' }
+  );
 }
