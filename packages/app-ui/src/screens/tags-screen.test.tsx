@@ -261,14 +261,18 @@ it('cannot start a create after the tags failed to load', () => {
   expect((screen.getByRole('button', { name: /tags.new/ }) as HTMLButtonElement).disabled).toBe(true);
 });
 
-it('blocks an open create dialog if the tag collection becomes unavailable', () => {
+it('closes creation if tags become unavailable and keeps it closed after recovery', () => {
+  const loadedTags = state.tags;
   const view = render(<TagsScreen />);
   fireEvent.click(screen.getByRole('button', { name: /tags.new/ }));
-  state.tags = { data: undefined, isLoading: true, error: undefined };
+  state.tags = { data: undefined, isLoading: false, error: new Error('offline') };
   view.rerender(<TagsScreen />);
-  expect(screen.getByTestId('create-dialog').getAttribute('data-pending')).toBe('true');
-  fireEvent.click(screen.getByRole('button', { name: 'Submit create' }));
+  expect(screen.getByTestId('create-dialog').getAttribute('data-open')).toBe('false');
   expect(state.created).toEqual([]);
+
+  state.tags = loadedTags;
+  view.rerender(<TagsScreen />);
+  expect(screen.getByTestId('create-dialog').getAttribute('data-open')).toBe('false');
 });
 
 it('blocks create while the mutation is unavailable', () => {

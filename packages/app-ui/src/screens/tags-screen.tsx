@@ -76,7 +76,11 @@ export function TagsScreen() {
   const deleteTagMut = useDeleteTag();
 
   const tags = tagsQuery.data;
-  const createUnavailable = tagsQuery.isLoading || tags === undefined || createTag.isPending;
+  const tagsAvailable = !tagsQuery.isLoading && tags !== undefined;
+  const createUnavailable = !tagsAvailable || createTag.isPending;
+  React.useEffect(() => {
+    if (!tagsAvailable) setCreateOpen(false);
+  }, [tagsAvailable]);
   const noteTags = noteTagsQuery.data;
 
   // Resolved from the live collection every render, never held as a snapshot: a tag deleted on
@@ -212,8 +216,9 @@ export function TagsScreen() {
                   <button
                     type="button"
                     aria-label={t('tags.options', { name: tag.name })}
-                    // Always reachable on touch, where there is no hover to reveal it.
-                    className="-m-1 shrink-0 cursor-pointer rounded p-1 text-muted-foreground transition-opacity hover:text-foreground sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100 sm:data-[state=open]:opacity-100"
+                    // Always drawn rather than revealed on hover: it is the only way to rename,
+                    // recolor or delete a tag. Muted so a column of them recedes.
+                    className="-m-1 shrink-0 cursor-pointer rounded p-1 text-muted-foreground/60 transition-colors hover:text-foreground data-[state=open]:text-foreground"
                   >
                     <MoreHorizontal className="size-4" />
                   </button>
@@ -264,7 +269,7 @@ export function TagsScreen() {
         onOpenChange={setCreateOpen}
         defaultColor={suggestedColor}
         takenNames={takenNames}
-        pending={createUnavailable}
+        pending={createTag.isPending}
         onSubmit={values => {
           if (createUnavailable || !values.name) return;
           createTag.mutate(

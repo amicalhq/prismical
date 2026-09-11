@@ -44,7 +44,6 @@ import { NavTagsGroup } from './nav-tags-group';
 import type { Note, FavoriteEntry } from '@prismical/app-contracts';
 import {
   useFolders,
-  useCreateFolder,
   useUpdateFolder,
   useDeleteFolder,
 } from '@prismical/app-client';
@@ -53,6 +52,7 @@ import { useTags } from '@prismical/app-client';
 import { useAllNoteTags } from '@prismical/app-client';
 import { ShareDialog } from './share-dialog';
 import { FolderNameDialog } from './folder-name-dialog';
+import { recentPlusCurrent } from '../lib/sidebar-recent';
 import { DeleteFolderDialog } from './delete-folder-dialog';
 import { DeleteNoteDialog } from './delete-note-dialog';
 import { useTranslation } from 'react-i18next';
@@ -62,6 +62,9 @@ function NoteLeadingIcon({ icon }: { icon?: string }) {
   if (icon) return <span className="text-base leading-none">{icon}</span>;
   return <FileText className="size-4" />;
 }
+
+/** How many folders the sidebar keeps; the rest live on /folders. Matches the tags group. */
+const RECENT_FOLDER_LIMIT = 5;
 
 // Wired row-actions menu (favorite toggle, move-to-folder submenu, delete-with-confirm).
 // Rendered from both the Favorites section and the per-folder note sub-rows; the caller supplies
@@ -223,11 +226,9 @@ export function NavNotesGroups() {
   const [shareFolder, setShareFolder] = React.useState<{ id: string; name: string } | null>(null);
   // Sharing is an org feature (off in the desktop local workspace).
   const { enabled: sharingEnabled } = useFeatureFlag('sharing');
-  const [createFolderOpen, setCreateFolderOpen] = React.useState(false);
   const [renameFolder, setRenameFolder] = React.useState<{ id: string; name: string } | null>(null);
   const [deleteFolder, setDeleteFolder] = React.useState<{ id: string; name: string } | null>(null);
 
-  const createFolder = useCreateFolder();
   // Separate mutation instances so a background favorite-toggle can't gate the rename dialog's
   // `pending` (which would swallow its Esc/Cancel and trap it open).
   const favoriteFolder = useUpdateFolder();
@@ -265,11 +266,20 @@ export function NavNotesGroups() {
       .map(tag => ({ kind: 'tag' as const, createdAt: new Date(tag.createdAt), tag })),
   ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 
-  // All folders, name-sorted — each is its own collapsible row (mirrors the
-  // desktop flat folder list, which expands to show that folder's direct notes).
-  const folderEntries = [...folders]
-    .sort((a, b) => a.name.localeCompare(b.name))
-    .map(folder => ({ folder, notes: notes.filter(n => n.folderId === folder.id) }));
+  // The newest few folders, each its own collapsible row (mirrors the desktop flat folder list,
+  // which expands to show that folder's direct notes). Newest rather than all, matching the tags
+  // group: a workspace with forty folders made the sidebar unscrollable, and the whole hierarchy
+  // now has a home on /folders. Favorites is how an older folder gets pinned here — it has its own
+  // group above.
+  //
+  // Newest FIRST, not name-sorted, so the rule the list follows is visible; alphabetical order
+  // would leave "why these five?" unanswerable.
+  const activeFolderId = pathname === '/notes' ? searchParams.get('folder') : null;
+  const openNoteFolderId = notes.find(note => pathname === `/notes/${note.id}`)?.folderId ?? null;
+  const folderEntries = recentPlusCurrent(folders, RECENT_FOLDER_LIMIT, [
+    activeFolderId,
+    openNoteFolderId,
+  ]).map(folder => ({ folder, notes: notes.filter(n => n.folderId === folder.id) }));
 
   const isNoteActive = (noteId: string) => pathname === `/notes/${noteId}`;
   const isFolderActive = (folderId: string) =>
@@ -491,16 +501,6 @@ export function NavNotesGroups() {
                   </SidebarMenuItem>
                 </Collapsible>
               ))}
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  size="sm"
-                  className="text-sidebar-foreground-muted hover:text-sidebar-foreground"
-                  onClick={() => setCreateFolderOpen(true)}
-                >
-                  <Plus className="size-4" />
-                  <span>{t('navigation.collections.newFolder')}</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
             </SidebarMenu>
           </CollapsibleContent>
         </SidebarGroup>
@@ -517,16 +517,6 @@ export function NavNotesGroups() {
           onOpenChange={o => !o && setShareFolder(null)}
         />
       )}
-
-      <FolderNameDialog
-        open={createFolderOpen}
-        onOpenChange={setCreateFolderOpen}
-        mode="create"
-        pending={createFolder.isPending}
-        onSubmit={name =>
-          createFolder.mutate(name, { onSuccess: () => setCreateFolderOpen(false) })
-        }
-      />
 
       <FolderNameDialog
         open={!!renameFolder}

@@ -80,6 +80,35 @@ function row(name: string): HTMLElement {
   return link.parentElement;
 }
 
+it('reports a notes load failure instead of false zero counts', () => {
+  state.notes = { data: undefined, isLoading: false, error: new Error('offline') };
+  render(<FoldersScreen />);
+  expect(screen.getByText('common.errors.couldNotLoad')).toBeTruthy();
+  expect(screen.queryByText('folders.noteCount:0')).toBeNull();
+});
+
+it('reveals a search entered before folders arrive and preserves a later collapse', () => {
+  const loadedFolders = state.folders.data;
+  state.folders = { data: [], isLoading: true, error: undefined };
+  const view = render(<FoldersScreen />);
+  fireEvent.change(screen.getByPlaceholderText('folders.search'), { target: { value: 'weekly' } });
+  state.folders = { data: loadedFolders, isLoading: false, error: undefined };
+  view.rerender(<FoldersScreen />);
+  expect(rowNames()).toEqual(['Meetings', 'Weekly sync']);
+
+  fireEvent.click(screen.getByLabelText('folders.collapse:Meetings'));
+  state.notes.data = [...(state.notes.data ?? []), { id: 'n6', folderId: 'fld_weekly' }];
+  state.folders.data = [...loadedFolders];
+  view.rerender(<FoldersScreen />);
+  expect(rowNames()).toEqual(['Meetings']);
+});
+
+it('waits for the collection before allowing folder creation', () => {
+  state.folders.isLoading = true;
+  render(<FoldersScreen />);
+  expect((screen.getByRole('button', { name: 'folders.new' }) as HTMLButtonElement).disabled).toBe(true);
+});
+
 it('shows only root folders until one is expanded', () => {
   render(<FoldersScreen />);
   expect(rowNames()).toEqual(['Journal', 'Meetings']);
@@ -196,32 +225,15 @@ it('waits for notes rather than painting every folder as empty', () => {
 });
 
 
-it('reports a notes load failure instead of false zero counts', () => {
-  state.notes = { data: undefined, isLoading: false, error: new Error('offline') };
+
+
+
+
+// The folder icon doubles as the toggle, so a folder with nothing inside must not be a button —
+// hovering it would otherwise promise children it does not have.
+it('gives a toggle only to folders that have children', () => {
   render(<FoldersScreen />);
-  expect(screen.getByText('common.errors.couldNotLoad')).toBeTruthy();
-  expect(screen.queryByText('folders.noteCount:0')).toBeNull();
-});
-
-it('reveals a search entered before folders arrive and preserves a later collapse', () => {
-  const loadedFolders = state.folders.data;
-  state.folders = { data: [], isLoading: true, error: undefined };
-  const view = render(<FoldersScreen />);
-  fireEvent.change(screen.getByPlaceholderText('folders.search'), { target: { value: 'weekly' } });
-  state.folders = { data: loadedFolders, isLoading: false, error: undefined };
-  view.rerender(<FoldersScreen />);
-  expect(rowNames()).toEqual(['Meetings', 'Weekly sync']);
-
-  fireEvent.click(screen.getByLabelText('folders.collapse:Meetings'));
-  state.notes.data = [...(state.notes.data ?? []), { id: 'n6', folderId: 'fld_weekly' }];
-  state.folders.data = [...loadedFolders];
-  view.rerender(<FoldersScreen />);
-  expect(rowNames()).toEqual(['Meetings']);
-});
-
-
-it('waits for the collection before allowing folder creation', () => {
-  state.folders.isLoading = true;
-  render(<FoldersScreen />);
-  expect((screen.getByRole('button', { name: 'folders.new' }) as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.getByLabelText('folders.expand:Meetings')).toBeTruthy();
+  expect(screen.queryByLabelText('folders.expand:Journal')).toBeNull();
+  expect(screen.getAllByRole('button', { name: /folders.expand/ })).toHaveLength(1);
 });

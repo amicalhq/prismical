@@ -244,6 +244,14 @@ export function FoldersScreen() {
                   )})`,
                 }}
               >
+                {/* The folder icon IS the toggle: it turns into a chevron on hover, so a row spends
+                    no width on a separate control — and in a list where most folders hold nothing,
+                    an always-drawn chevron column is blank on nearly every row.
+
+                    Two cases keep the chevron drawn without a pointer: an expanded row, where a
+                    folder icon sitting above indented children reads as broken; and a touch screen,
+                    which has no hover to reveal it at all. A folder with nothing inside keeps its
+                    icon and is not a button, so hovering also answers "does this have children?". */}
                 {children.length > 0 ? (
                   <button
                     type="button"
@@ -254,16 +262,28 @@ export function FoldersScreen() {
                         ? t('folders.collapse', { name: folder.name })
                         : t('folders.expand', { name: folder.name })
                     }
-                    className="-m-1 shrink-0 cursor-pointer rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
+                    className="group/toggle -m-1 shrink-0 cursor-pointer rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
                   >
+                    <Folder
+                      className={cn(
+                        'size-4',
+                        isOpen
+                          ? 'hidden'
+                          : 'group-hover:hidden group-focus-within:hidden [@media(hover:none)]:hidden'
+                      )}
+                    />
                     <ChevronRight
-                      className={cn('size-4 transition-transform', isOpen && 'rotate-90')}
+                      className={cn(
+                        'size-4 transition-transform',
+                        isOpen
+                          ? 'rotate-90'
+                          : 'hidden group-hover:block group-focus-within:block [@media(hover:none)]:block'
+                      )}
                     />
                   </button>
                 ) : (
-                  <span className="size-4 shrink-0" />
+                  <Folder className="size-4 shrink-0 text-muted-foreground" />
                 )}
-                <Folder className="size-4 shrink-0 text-muted-foreground" />
                 <Link
                   href={`/notes?folder=${folder.id}`}
                   className="min-w-0 flex-1 truncate text-sm font-medium"
@@ -281,8 +301,10 @@ export function FoldersScreen() {
                     <button
                       type="button"
                       aria-label={t('folders.options', { name: folder.name })}
-                      // Always reachable on touch, where there is no hover to reveal it.
-                      className="-m-1 shrink-0 cursor-pointer rounded p-1 text-muted-foreground transition-opacity hover:text-foreground sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100 sm:data-[state=open]:opacity-100"
+                      // Always drawn, not revealed on hover: it is the only way to rename, share or
+                      // delete a folder, and a control you have to discover by hovering is one most
+                      // people never find. Muted so a column of them recedes.
+                      className="-m-1 shrink-0 cursor-pointer rounded p-1 text-muted-foreground/60 transition-colors hover:text-foreground data-[state=open]:text-foreground"
                     >
                       <MoreHorizontal className="size-4" />
                     </button>

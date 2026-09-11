@@ -14,7 +14,8 @@ import {
   SidebarMenuSkeleton,
 } from '../ui/sidebar';
 import { TagSidebarRow } from './tag-sidebar-row';
-import { useTags } from '@prismical/app-client';
+import { recentPlusCurrent } from '../lib/sidebar-recent';
+import { usePathname, useSearchParams, useTags } from '@prismical/app-client';
 import { useAllNoteTags } from '@prismical/app-client';
 import { useTranslation } from 'react-i18next';
 
@@ -22,6 +23,8 @@ const RECENT_LIMIT = 5;
 
 export function NavTagsGroup() {
   const { t } = useTranslation();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const tagsQ = useTags();
   const noteTagsQ = useAllNoteTags();
   const allTags = tagsQ.data ?? [];
@@ -29,12 +32,9 @@ export function NavTagsGroup() {
   const noteTags = noteTagsQ.data ?? [];
   // First load: skeleton rows, not the "No tags" empty state.
   const loading = tagsQ.isLoading || noteTagsQ.isLoading;
-  // Newest-first before the slice: the /me sync lane hands rows back oldest-first, so slicing
-  // straight off `allTags` would pin this group to the 5 tags created longest ago and never
-  // surface a new one.
-  const tags = [...allTags]
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-    .slice(0, RECENT_LIMIT);
+  // The newest few, plus whichever tags the note list is filtered to — the rest live on /tags.
+  const activeTagIds = pathname === '/notes' ? searchParams.getAll('tags') : [];
+  const tags = recentPlusCurrent(allTags, RECENT_LIMIT, activeTagIds);
   const [open, setOpen] = useState(true);
 
   const countByTag = new Map<string, number>();
