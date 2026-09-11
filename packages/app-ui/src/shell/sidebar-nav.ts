@@ -67,7 +67,16 @@ const SETTINGS_NAV_DEFINITIONS: SidebarNavDefinition[] = [
     url: '/settings/preferences',
     icon: Settings,
     descriptionKey: 'navigation.settingsSections.preferences.description',
-    searchTerms: ['appearance', 'dark mode', 'light mode', 'dock', 'permissions'],
+    searchTerms: [
+      'appearance',
+      'dark mode',
+      'light mode',
+      'dock',
+      'permissions',
+      'language',
+      'interface language',
+      'AI output language',
+    ],
   },
   // Organization membership. Shown on both platforms — the screen is ports-based
   // and desktop's router mounts the route.
@@ -101,7 +110,15 @@ const SETTINGS_NAV_DEFINITIONS: SidebarNavDefinition[] = [
     url: '/settings/transcription',
     icon: AudioLines,
     descriptionKey: 'navigation.settingsSections.transcription.description',
-    searchTerms: ['dictation', 'microphone', 'recording', 'speech', 'language'],
+    searchTerms: [
+      'dictation',
+      'microphone',
+      'recording',
+      'speech',
+      'language',
+      'spoken language',
+      'transcription language',
+    ],
   },
   // Desktop-only (gated in app-sidebar on the 'local-models' capability): the
   // on-device whisper model manager. The screen itself is
