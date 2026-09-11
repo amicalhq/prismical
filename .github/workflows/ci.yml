@@ -126,6 +126,10 @@ jobs:
       - name: Build audio-capture (swift + prebuilt AEC3)
         run: pnpm --filter @prismical/audio-capture build
 
+      # Install once before parallel workers can trigger Electron's lazy download.
+      - name: Install Electron for native tests
+        run: pnpm --filter @prismical/desktop exec install-electron
+
       - name: Native golden fixtures + helper handshakes
         run: pnpm --filter @prismical/desktop exec vitest run tests/native
 
@@ -187,6 +191,10 @@ jobs:
 
       - name: Build audio-capture (dotnet publish win-x64 + AEC3 DLL copy)
         run: pnpm --filter @prismical/audio-capture build
+
+      # Install once before parallel workers can trigger Electron's lazy download.
+      - name: Install Electron for native tests
+        run: pnpm --filter @prismical/desktop exec install-electron
 
       - name: Native golden fixtures + helper handshakes
         run: pnpm --filter @prismical/desktop exec vitest run tests/native
