@@ -363,6 +363,19 @@ beforeEach(() => {
 });
 
 describe('useRecording — native (desktop) branch', () => {
+  it('requires a connection before starting cloud recording', async () => {
+    const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    try {
+      const fake = makeFakeControl();
+      const { result } = renderRecording(fake.control);
+      await act(() => result.current.start('note_1', 'New note'));
+      expect(fake.startCalls).toEqual([]);
+      expect(result.current.error).toBe('recording.errors.connectionRequired');
+    } finally {
+      online.mockRestore();
+    }
+  });
+
   it('waits for the new note create acknowledgement before starting native capture', async () => {
     const fake = makeFakeControl();
     let acknowledge!: () => void;

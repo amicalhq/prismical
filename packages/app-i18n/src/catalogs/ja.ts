@@ -289,6 +289,7 @@ const ja = {
       noTimeLeft: '残り時間なし',
     },
     secondary: {
+      downloadApps: 'アプリをダウンロード',
       chat: 'チャット',
       community: 'コミュニティ',
       docs: 'ドキュメント',
@@ -679,6 +680,10 @@ const ja = {
     title: 'ノートのタイトル',
     untitled: '無題',
     editor: {
+      localSaveError: 'このデバイスに保存できませんでした。ノートを開いたまま、もう一度お試しください。',
+      savedLocally: 'このデバイスに保存済み',
+      synced: '同期済み',
+      offlineUnavailable: 'このノートはまだこのデバイスで利用できません。再接続してダウンロードしてください。',
       loading: 'ノートを読み込み中…',
       openError:
         'このノートを開けませんでした — アクセス権がないか、セッションの有効期限が切れている可能性があります。',
@@ -754,6 +759,7 @@ const ja = {
       couldNotPause: '録音を一時停止できませんでした。',
       couldNotResume: '録音を再開できませんでした。',
       couldNotStart: '録音を開始できませんでした。',
+      connectionRequired: '録音を開始するには再接続してください。',
       languageUnsupported:
         'この言語で録音するには、設定で多言語対応の文字起こしモデルを選択してください。',
       languageChangeFailed:

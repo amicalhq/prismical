@@ -49,18 +49,15 @@ let envPort: EnvPort | null = null;
 let transportPort: TransportPort | null = null;
 let askFetch: AskFetch | null = null;
 let syncPersistence: SyncPersistenceFactory | null = null;
-// The note-body log lane. Web leaves this null and keeps
-// its provider-only collab path byte-identical; desktop injects the
-// MessagePort log opener so useNoteCollab hydrates/persists through main.
+// Desktop injects its MessagePort log opener. Web uses the IndexedDB log
+// inside useNoteCollab when no native opener is supplied.
 let noteLog: NoteLogConfig | null = null;
 
 /**
  * Inject the renderer's ports into the non-React data lane. Call once, before
  * any request is issued. `transport`/`askFetch`/`syncPersistence`/`noteLog`
- * are optional and only supplied by the desktop mount; when
- * absent, apiClient + the Ask transport keep their web-native fetch behavior
- * unchanged, the sync store runs without persistence, and note collab stays
- * provider-only.
+ * are optional. Both shells supply syncPersistence; desktop also supplies
+ * native transports and its note log. Web uses fetch and the browser body log.
  */
 export function configureAppClient(config: {
   env: EnvPort;

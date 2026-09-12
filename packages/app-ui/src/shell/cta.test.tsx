@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   data: null as Cta | null,
   capture: vi.fn(),
   post: vi.fn(),
+  shown: vi.fn(),
   refetch: vi.fn(),
   external: vi.fn(),
   user: 'user-a',
@@ -34,7 +35,10 @@ vi.mock('@prismical/app-client', () => ({
   getAuthToken: () => mocks.token,
   getClientTransport: () => mocks.transport,
   activeOrgIdOf: () => mocks.org,
-  apiClient: { postRaw: mocks.post },
+  apiClient: {
+    postRaw: (...args: unknown[]) =>
+      String(args[0]).endsWith('/shown') ? mocks.shown(...args) : mocks.post(...args),
+  },
   ME_PREFIX: '/apps/v1/me',
   EVENTS: {
     CTA_SHOWN: 'cta_shown',
@@ -107,6 +111,7 @@ beforeEach(() => {
   mocks.data = campaign();
   Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
   mocks.post.mockReset().mockResolvedValue({ dismissed: true });
+  mocks.shown.mockReset().mockResolvedValue({ recorded: true });
   mocks.refetch.mockReset().mockImplementation(async () => ({ isSuccess: true, data: mocks.data }));
   mocks.capture.mockReset();
   mocks.external.mockReset();
@@ -125,6 +130,11 @@ describe('CTA delivery', () => {
     expect(screen.queryByTestId('cta-card')).toBeNull();
     await advance(1);
     expect(screen.getByTestId('cta-card')).toBeTruthy();
+    expect(mocks.shown).toHaveBeenCalledWith(
+      '/apps/v1/me/cta/assignment/shown',
+      { placement: 'card' },
+      { authToken: 'pinned-token' }
+    );
     expect(document.activeElement).toBe(screen.getByText('Work'));
     view.rerender(<App />);
     await advance(2000);
@@ -135,10 +145,48 @@ describe('CTA delivery', () => {
     ).toHaveLength(1);
     fireEvent.click(screen.getByText('Learn more'));
     expect(mocks.external).toHaveBeenCalledWith('https://example.com');
+    expect(mocks.post).toHaveBeenCalledWith(
+      '/apps/v1/me/cta/assignment/click',
+      { eventId: expect.any(String), placement: 'card' },
+      { authToken: 'pinned-token' }
+    );
     expect(mocks.capture).toHaveBeenCalledWith(
       'cta_clicked',
       expect.objectContaining({ campaign_key: 'example', placement: 'card' })
     );
+  });
+  it('retries a failed click with the same event identity without blocking its link', async () => {
+    mocks.data = { ...campaign(), content: { ...campaign().content, sidebarAction: 'open_url' } };
+    mocks.post.mockRejectedValueOnce(new Error('network'));
+    render(<App />);
+    fireEvent.click(screen.getByText('News'));
+    expect(mocks.external).toHaveBeenCalledWith('https://example.com');
+    await advance(0);
+    expect(mocks.post).toHaveBeenCalledTimes(2);
+    expect(mocks.post.mock.calls[1]).toEqual(mocks.post.mock.calls[0]);
+    expect(mocks.post.mock.calls[0]?.[1]).toMatchObject({ placement: 'sidebar' });
+  });
+  it('does not count a sidebar action that only opens the card', async () => {
+    render(<App />);
+    fireEvent.click(screen.getByText('News'));
+    await advance(0);
+    expect(screen.getByTestId('cta-card')).toBeTruthy();
+    expect(mocks.post).not.toHaveBeenCalled();
+  });
+  it('suppresses a clicked card across reload until the assignment is reset', async () => {
+    const view = render(<App />);
+    await advance(5000);
+    fireEvent.click(screen.getByText('Learn more'));
+    expect(screen.queryByTestId('cta-card')).toBeNull();
+    expect(mocks.capture).not.toHaveBeenCalledWith('cta_dismissed', expect.anything());
+    view.unmount();
+    const reloaded = render(<App />);
+    await advance(6000);
+    expect(screen.queryByTestId('cta-card')).toBeNull();
+    mocks.data = { ...campaign(), assignmentId: 'reset-clicked' };
+    reloaded.rerender(<App />);
+    await advance(5000);
+    expect(screen.getByTestId('cta-card')).toBeTruthy();
   });
   it('defers and hides during recording without writing a dismissal, then restarts the delay', async () => {
     const view = render(<App busy />);

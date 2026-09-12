@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as Y from "yjs";
 import { HocuspocusProvider } from "@hocuspocus/provider";
+import { useSelector } from '@legendapp/state/react';
 import type { NoteLogHandle } from "@prismical/app-contracts";
 import { deriveNoteContentFromYDoc } from "@prismical/note-derive";
 import {
@@ -15,6 +16,8 @@ import {
 import { getNoteLogConfig } from "../runtime";
 import { startLoadingTiming } from "../loading-timing";
 import { useSyncStore } from "../sync/provider";
+import { BodyCache, registerOpenBody } from './body-cache';
+import { openIndexedDbNoteLog } from './indexeddb-note-log';
 
 export type CollabStatus = "connecting" | "connected" | "disconnected";
 export type CollabScope = "read-write" | "readonly";
@@ -45,6 +48,12 @@ export interface NoteCollab {
   doc: Y.Doc | null;
   status: CollabStatus;
   synced: boolean;
+  /** A new or cached body has hydrated locally; independent of remote delivery. */
+  ready: boolean;
+  localSaved: boolean;
+  localSaveError: string | null;
+  remotePending: boolean;
+  waitForLocalChanges: () => Promise<void>;
   /**
    * The server's authoritative per-connection scope (from onAuthenticated).
    * A read-only member's connection is flagged `readonly` and Hocuspocus
@@ -72,16 +81,21 @@ export interface NoteCollab {
  * the doc, local edits stream back for append + cross-window relay, and a
  * debounced flush projects the derived read-model. In local mode the log IS
  * the collab lane (hydration flips the state to connected/synced); in cloud
- * mode it is an offline cache riding beside the unchanged provider. Web never
- * configures a note log and keeps this hook's original behavior exactly.
+ * mode it persists beside the provider. Web uses the same log contract over
+ * IndexedDB. Local hydration and remote delivery are separate readiness states.
  */
-export function useNoteCollab(noteId: string): NoteCollab {
+export function useNoteCollab(noteId: string, options: { background?: boolean } = {}): NoteCollab {
+  const background = options.background ?? false;
+  const [logRetryEpoch, retryLog] = useState(0);
+  const logStartup = useRef<{ identity: string; startedAt: number } | null>(null);
   const waitForPendingChangesRef = useRef<() => Promise<void>>(() =>
     Promise.reject(new Error('The note connection is unavailable.'))
   );
   const waitForPendingChanges = useCallback(() => waitForPendingChangesRef.current(), []);
   const hasWriteAccessRef = useRef<() => boolean>(() => false);
   const hasWriteAccess = useCallback(() => hasWriteAccessRef.current(), []);
+  const waitForLocalChangesRef = useRef<() => Promise<void>>(() => Promise.reject(new Error('Local note storage unavailable')));
+  const waitForLocalChanges = useCallback(() => waitForLocalChangesRef.current(), []);
   const activeOrgId = useActiveOrgId();
   const activeAccountId = useActiveAccountId();
   const activeSessionKey = useActiveSessionKey();
@@ -90,15 +104,20 @@ export function useNoteCollab(noteId: string): NoteCollab {
   // the connect token from the AuthPort (web reads the api/auth seam; desktop
   // fetches a main-owned token per (re)connect) — never env sniffing / the raw
   // token seam directly.
-  const { noteWsUrl } = useEnv();
+  const { noteWsUrl, platform } = useEnv();
   const { auth, analytics } = usePorts();
   const analyticsRef = useRef(analytics);
   analyticsRef.current = analytics;
   const syncStore = useSyncStore();
-  const [state, setState] = useState<Omit<NoteCollab, 'waitForPendingChanges' | 'hasWriteAccess'>>({
+  const metadataSaveError = useSelector(() => syncStore?.persistenceError$?.get() ?? null);
+  const [state, setState] = useState<Omit<NoteCollab, 'waitForPendingChanges' | 'hasWriteAccess' | 'waitForLocalChanges'>>({
     doc: null,
     status: "connecting",
     synced: false,
+    ready: false,
+    localSaved: false,
+    localSaveError: null,
+    remotePending: true,
     scope: "read-write",
     error: null,
   });
@@ -106,7 +125,26 @@ export function useNoteCollab(noteId: string): NoteCollab {
   useEffect(() => {
     const timing = startLoadingTiming(analyticsRef.current, "note_collaboration", noteId);
     const doc = new Y.Doc();
-    setState({ doc, status: "connecting", synced: false, scope: "read-write", error: null, loadingAttemptId: timing.attemptId });
+    const identity = `${activeAccountId}:${activeSessionKey}:${activeOrgId}:${noteId}`;
+    const sameStartup = logStartup.current?.identity === identity;
+    if (!sameStartup) logStartup.current = { identity, startedAt: Date.now() };
+    setState(previous => ({ doc, status: "connecting", synced: false, ready: false, localSaved: false,
+      localSaveError: sameStartup ? previous.localSaveError : null, remotePending: true, scope: "read-write",
+      error: sameStartup ? previous.error : null, loadingAttemptId: timing.attemptId }));
+    const configuredLog = getNoteLogConfig();
+    const partition = activeAccountId ? { accountSub: activeAccountId, orgId: activeOrgId ?? '' } : null;
+    const cache = partition && typeof indexedDB !== 'undefined' && configuredLog?.remote !== false
+      ? new BodyCache(partition) : null;
+    const unregister = partition && !background ? registerOpenBody(partition, noteId) : null;
+    const noteAtOpen = syncStore?.notes$[noteId]?.peek();
+    const createdLocally = !!noteAtOpen && !noteAtOpen.createdAt;
+    let bodyHydrated = !configuredLog && !(platform === 'web' && cache);
+    let indexedRevision = 0;
+    let unseenCacheChanges = false;
+    let localRevision = 0;
+    let indexWrites: Promise<unknown> = cache?.update(noteId, row => ({
+      ...row, initialized: row.initialized || createdLocally,
+    })).then(row => { indexedRevision = row.revision; }) ?? Promise.resolve();
 
     // The active organization rides on the connection query string (the WS-transport
     // equivalent of `x-active-org-id`); the note server re-checks it against live
@@ -115,13 +153,42 @@ export function useNoteCollab(noteId: string): NoteCollab {
       ? `${noteWsUrl}?activeOrgId=${encodeURIComponent(activeOrgId)}`
       : noteWsUrl;
 
-    // Gated create: a note minted optimistically in this session must not open its collaboration
-    // room until the server acknowledges the metadata create — the note
-    // service lazy-creates missing rows with a date-fallback title that would
-    // clobber the real one under LWW. Notes not created locally resolve
-    // immediately; a stuck create is released by the store's 20s valve.
+    // Local editing has no network gate. Remote collaboration requires actual
+    // metadata acknowledgement, including after restart; cancellation never releases it.
     let disposed = false;
+    let logRetryTimer: ReturnType<typeof setTimeout> | null = null;
+    const abort = new AbortController();
     let provider: HocuspocusProvider | null = null;
+    let persistLocal: () => Promise<void> = platform === 'web' && activeAccountId && !cache
+      ? () => Promise.reject(new Error('Local note storage unavailable')) : () => Promise.resolve();
+    const storageFailed = (error: unknown) => {
+      if (!disposed) setState(s => ({ ...s, localSaved: false, localSaveError: error instanceof Error ? error.message : 'Local note storage failed' }));
+    };
+    void indexWrites.catch(storageFailed);
+    const saveLocal = async () => {
+      const revision = localRevision;
+      await indexWrites;
+      await persistLocal();
+      if (!disposed && revision === localRevision) setState(s => ({ ...s, localSaved: true, localSaveError: null }));
+    };
+    waitForLocalChangesRef.current = async () => {
+      if (disposed) throw new Error('The note connection is unavailable.');
+      await saveLocal();
+    };
+    const remoteDelivered = () => {
+      const connection = provider;
+      if (!connection?.synced || connection.hasUnsyncedChanges) return;
+      const revision = localRevision;
+      void saveLocal().then(async () => {
+        if (disposed || provider !== connection || connection.hasUnsyncedChanges || revision !== localRevision) return;
+        if (cache) {
+          // Another window can persist edits this document has not replayed.
+          // A skipped revision keeps the body dirty until a fresh session hydrates it.
+          const row = await cache.markSynced(noteId, unseenCacheChanges ? -1 : indexedRevision, connection.authorizedScope === 'read-write');
+          if (!disposed && localRevision === revision) setState(s => ({ ...s, remotePending: row.dirty }));
+        }
+      }).catch(storageFailed);
+    };
     const pendingWaits = new Set<() => void>();
     hasWriteAccessRef.current = () => !disposed && !!provider?.isAuthenticated &&
       provider.authorizedScope === 'read-write';
@@ -197,6 +264,10 @@ export function useNoteCollab(noteId: string): NoteCollab {
         onAuthenticated: ({ scope }) => {
           timing.mark("authenticated", connectionAttempt);
           setState((s) => ({ ...s, scope: scope as CollabScope }));
+          if (cache) {
+            indexWrites = indexWrites.catch(() => {}).then(() => cache.update(noteId, row => ({ ...row, scope: scope as CollabScope })));
+            void indexWrites.catch(storageFailed);
+          }
         },
         onSynced: ({ state: synced }) => {
           if (synced) {
@@ -207,7 +278,12 @@ export function useNoteCollab(noteId: string): NoteCollab {
           }
           // A successful sync clears a prior auth error (reconnect after the
           // AuthProvider refreshed the token).
-          setState((s) => ({ ...s, synced, error: synced ? null : s.error }));
+          setState((s) => ({ ...s, synced, ready: s.ready || (synced && bodyHydrated), error: synced ? null : s.error }));
+          if (synced) remoteDelivered();
+        },
+        onUnsyncedChanges: ({ number }) => {
+          setState(s => ({ ...s, remotePending: number > 0 }));
+          remoteDelivered();
         },
         onAuthenticationFailed: ({ reason }) => {
           if (hasSynced && authRetries < MAX_AUTH_RETRIES) {
@@ -228,15 +304,29 @@ export function useNoteCollab(noteId: string): NoteCollab {
 
     const startProvider = () => {
       timing.mark("create_gate_waiting");
-      if (syncStore) void syncStore.whenNoteCreateAcked(noteId).then(connect);
-      else connect();
+      if (syncStore) void syncStore.requireNoteCreateAck(noteId, Infinity, abort.signal).then(async () => {
+        const connectAuthenticated = async () => {
+          if (disposed) return;
+          const token = activeSessionKey ? await auth.getTokenForSession(activeSessionKey, activeOrgId).catch(() => null) : null;
+          if (disposed) return;
+          if (token) connect();
+          else {
+            setState(s => ({ ...s, status: 'disconnected' }));
+            retryTimer = setTimeout(() => { void connectAuthenticated(); }, 5000);
+          }
+        };
+        await connectAuthenticated();
+      }).catch(error => {
+        if (!disposed) setState(s => ({ ...s, error: error instanceof Error ? error.message : 'Note creation rejected' }));
+      });
     };
 
     // --- Desktop note-body log lane -----------------------------------------
     // Deliberately NOT gated on whenNoteCreateAcked: the log lane cannot
     // clobber titles (main's applyFlush follows placeholder/first-line titles
     // only), and gating it would stall local-mode hydration behind a sync ack.
-    const noteLog = getNoteLogConfig();
+    const noteLog = configuredLog ?? (platform === 'web' && cache
+      ? { remote: true, open: (id: string) => openIndexedDbNoteLog(cache, id) } : null);
     let logHandle: NoteLogHandle | null = null;
     let flushTimer: ReturnType<typeof setTimeout> | null = null;
     let flushDirty = false;
@@ -246,6 +336,7 @@ export function useNoteCollab(noteId: string): NoteCollab {
     if (noteLog) {
       const handle = noteLog.open(noteId);
       logHandle = handle;
+      persistLocal = () => handle.waitForPendingChanges();
       let logHydrated = false;
       let logFailed = false;
 
@@ -312,8 +403,16 @@ export function useNoteCollab(noteId: string): NoteCollab {
       });
       doc.on("update", (update: Uint8Array, origin: unknown) => {
         if (origin === "notelog") return;
+        localRevision++;
+        setState(s => ({ ...s, localSaved: false }));
+        if (cache) indexWrites = indexWrites.catch(() => {}).then(async () => {
+          const row = await cache.markChanged(noteId, origin !== provider);
+          if (row.revision !== indexedRevision + 1) unseenCacheChanges = true;
+          indexedRevision = row.revision;
+        });
         handle.sendUpdate(update);
         scheduleFlush();
+        void saveLocal().then(remoteDelivered).catch(storageFailed);
       });
 
       // Resync: main could not durably append an update, so the log has a gap
@@ -336,11 +435,9 @@ export function useNoteCollab(noteId: string): NoteCollab {
         }
         resyncCount += 1;
         if (resyncCount >= NOTE_LOG_RESYNC_MAX) {
-          // Local mode has no other authority, so a store that keeps rejecting
-          // writes must surface — the user cannot be left typing into a black
-          // hole. In cloud mode the log is only an offline cache beside a live
-          // provider, so a failing cache degrades quietly instead of replacing
-          // a perfectly working editor with a lock card.
+          // Keep the cloud document visible for recovery, but never claim a
+          // failed local write is saved. Local mode has no other authority.
+          storageFailed(new Error('Local note storage is not accepting writes'));
           if (!noteLog.remote) {
             logFailed = true;
             setState((s) => ({ ...s, error: "note log writes failing" }));
@@ -352,7 +449,7 @@ export function useNoteCollab(noteId: string): NoteCollab {
         void handle.hydrated.then(({ seq }) => {
           if (disposed) return;
           handle.compact(seq, Y.encodeStateAsUpdate(doc));
-        });
+        }).catch(storageFailed);
       });
 
       // A failed open is terminal for this lane. LOCAL mode must NOT fall back
@@ -362,7 +459,9 @@ export function useNoteCollab(noteId: string): NoteCollab {
       // non-empty `error` (it ignores the content). Cloud mode keeps the
       // provider attached below and simply runs without the offline cache.
       const failOpen = (reason: string) => {
-        if (disposed || noteLog.remote) return;
+        if (disposed) return;
+        storageFailed(new Error(reason));
+        if (noteLog.remote) return;
         logFailed = true;
         timing.finish("error");
         setState((s) => ({ ...s, status: "disconnected", synced: false, error: reason }));
@@ -372,11 +471,31 @@ export function useNoteCollab(noteId: string): NoteCollab {
         (result) => {
           if (disposed) return;
           if ("error" in result) {
+            // Desktop opens its windows before the workspace database finishes
+            // mounting. Only this explicit startup result is retryable. The
+            // editor has not been published, so no user edits can be discarded.
+            if (configuredLog && result.error.code === 'NO_WORKSPACE' && !bodyHydrated) {
+              if (Date.now() - logStartup.current!.startedAt >= 5000) failOpen('note log unavailable: NO_WORKSPACE');
+              logRetryTimer = setTimeout(() => { if (!disposed) retryLog(epoch => epoch + 1); }, 1000);
+              return;
+            }
             failOpen(`note log unavailable: ${result.error.code}`);
             return;
           }
-          void handle.hydrated.then(({ seq, count }) => {
+          void handle.hydrated.then(async ({ seq, count }) => {
             if (disposed) return;
+            await indexWrites;
+            const cached = cache ? await cache.get(noteId) : null;
+            if (disposed) return;
+            if (cached?.scope && !provider?.isAuthenticated) setState(s => ({ ...s, scope: cached.scope! }));
+            logHydrated = true;
+            bodyHydrated = true;
+            if (!noteLog.remote || createdLocally || cached?.initialized || hasSynced || (configuredLog && count > 0)) {
+              if (cache) await cache.update(noteId, row => ({ ...row, initialized: true }));
+              if (disposed) return;
+              setState(s => ({ ...s, ready: true }));
+            }
+            await saveLocal();
             // Local mode has no server: hydration IS the sync point.
             if (!noteLog.remote) {
               logHydrated = true;
@@ -386,6 +505,7 @@ export function useNoteCollab(noteId: string): NoteCollab {
                 ...s,
                 status: "connected",
                 synced: true,
+                remotePending: false,
                 scope: "read-write",
                 error: null,
               }));
@@ -393,18 +513,21 @@ export function useNoteCollab(noteId: string): NoteCollab {
             if (count > NOTE_LOG_COMPACT_THRESHOLD) {
               handle.compact(seq, Y.encodeStateAsUpdate(doc));
             }
-          });
+          }).catch(error => failOpen(error instanceof Error ? error.message : 'note log unavailable'));
         },
         () => failOpen("note log unavailable"),
       );
     }
 
-    // No note log (web, byte-identical) or cloud mode (the log is a cache
-    // beside the provider): attach the provider exactly as before.
+    // Local desktop workspaces have no remote provider.
     if (!noteLog || noteLog.remote) startProvider();
+    if (!noteLog && platform === 'web' && activeAccountId) storageFailed(new Error('Local note storage unavailable'));
 
     return () => {
       disposed = true;
+      if (logRetryTimer) clearTimeout(logRetryTimer);
+      abort.abort();
+      unregister?.();
       for (const cancel of [...pendingWaits]) cancel();
       timing.finish("abandoned");
       if (flushTimer) clearTimeout(flushTimer);
@@ -412,7 +535,11 @@ export function useNoteCollab(noteId: string): NoteCollab {
       // Final projection of unflushed local edits, BEFORE the doc is destroyed
       // (the port outlives this tick — queued messages still deliver).
       if (flushDirty) finalFlush?.();
-      logHandle?.close();
+      const localDrain = persistLocal();
+      void Promise.allSettled([indexWrites, localDrain]).then(() => {
+        logHandle?.close();
+        cache?.close();
+      });
       if (retryTimer) clearTimeout(retryTimer);
       provider?.destroy();
       doc.destroy();
@@ -420,19 +547,12 @@ export function useNoteCollab(noteId: string): NoteCollab {
     // Reconnect on org OR account change — a new account reconnects under its own
     // exact-context token, preventing the prior account's WS session
     // from lingering open over this note. `noteWsUrl`/`auth` are session-stable.
-    //
-    // `syncStore` is deliberately NOT a dep, preserving the behaviour this hook has always had.
-    // Listing it would tear down and reopen a live collab session every time the store identity
-    // changes, which is a worse trade than the gate it would re-apply.
-    //
-    // Pre-existing hazard this does NOT fix, recorded so it isn't rediscovered from scratch:
-    // SyncStoreProvider nulls the store on every identity change and the replacement starts with
-    // an empty `locallyCreatedNotes`. A note whose create has NOT yet been acked, mounting across
-    // that swap, therefore passes the gate instantly — the note service lazy-creates the row with
-    // a date-fallback title and LWW clobbers the real one, which is the exact case the gate
-    // exists to prevent. Fixing it means surviving the swap, not adding a dep here.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [noteId, activeOrgId, activeAccountId, activeSessionKey, noteWsUrl, auth]);
+  }, [noteId, activeOrgId, activeAccountId, activeSessionKey, noteWsUrl, auth, platform, background, syncStore, logRetryEpoch]);
 
-  return { ...state, waitForPendingChanges, hasWriteAccess };
+  return {
+    ...state,
+    localSaveError: metadataSaveError?.message ?? state.localSaveError,
+    localSaved: !metadataSaveError && state.localSaved,
+    waitForPendingChanges, waitForLocalChanges, hasWriteAccess,
+  };
 }

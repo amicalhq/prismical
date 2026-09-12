@@ -31,6 +31,10 @@ export interface RecordingSessionClient {
   pauseFromPrompt: UseRecording['pauseFromPrompt'];
   /** Optional until every shell implements it; a missing one means a change cannot follow a running recording. */
   setLanguage?: UseRecording['setLanguage'];
-  configure(options: { skipAutoEnhanceForNote?: string; queryClient?: QueryClient }): void;
+  configure(options: {
+    skipAutoEnhanceForNote?: string;
+    queryClient?: QueryClient;
+    requireNoteCreateAck?: (noteId: string, signal?: AbortSignal) => Promise<void>;
+  }): void;
   dispose(): void;
 }

@@ -15,6 +15,7 @@ import { useTranslation } from 'react-i18next';
 import type { ApplicationTranslationKey } from '@prismical/app-i18n';
 import { useActiveAccountId, useActiveOrgId, useActiveSessionKey } from '../ports-context';
 import { SyncStoreProvider } from '../sync/provider';
+import { NoteBodySyncProvider } from '../notes/note-body-sync-provider';
 import { mutationErrorMessage } from './mutation-error';
 
 // Per-mutation control over the global error toast below. Set these on a
@@ -64,7 +65,9 @@ export function ApiQueryProvider({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={client}>
       <OrgScopedCacheReset />
-      <SyncStoreProvider>{children}</SyncStoreProvider>
+      <SyncStoreProvider>
+        <NoteBodySyncProvider>{children}</NoteBodySyncProvider>
+      </SyncStoreProvider>
     </QueryClientProvider>
   );
 }

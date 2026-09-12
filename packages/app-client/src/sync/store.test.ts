@@ -25,14 +25,7 @@ import { ApiError } from "../api/client";
 import * as api from "./api";
 import { createSyncStore, type SyncStore, type TagRow } from "./store";
 
-/**
- * Activate a collection and wait for its FIRST pull to land. Writes issued
- * while the initial load is in flight are clobbered by the arriving remote
- * snapshot when no persistence (and thus no retrySync pending bookkeeping)
- * is attached — the real UI only writes after boot paint, and desktop always
- * persists, but tests must respect the same ordering. The web lane runs
- * persistence-off, so its mutation wiring must not fire before the first pull settles.
- */
+/** Activate a collection for tests that start with an acknowledged remote snapshot. */
 async function activate(collection$: { get: () => unknown }): Promise<void> {
   collection$.get();
   await vi.waitFor(() => {
@@ -448,7 +441,7 @@ describe("gated note create (collaboration ordering)", () => {
     await expect(store.requireNoteCreateAck('nt_missing')).rejects.toThrow('Note is unavailable');
   });
 
-  it("whenNoteCreateAcked blocks until the create echo lands; unknown notes pass immediately", async () => {
+  it("the legacy acknowledgement name uses the same strict gate", async () => {
     let release: ((value: unknown) => void) | null = null;
     mocked.restCreate.mockImplementation(
       (_route, input) =>
@@ -458,7 +451,7 @@ describe("gated note create (collaboration ordering)", () => {
     );
     await activate(store.notes$);
 
-    await expect(store.whenNoteCreateAcked("nt_not_local")).resolves.toBeUndefined();
+    await expect(store.whenNoteCreateAcked("nt_not_local")).rejects.toThrow('Note is unavailable');
 
     const id = store.createNote({ title: "Gated" });
     let acked = false;
@@ -470,6 +463,91 @@ describe("gated note create (collaboration ordering)", () => {
     release!(undefined);
     await gate;
     expect(acked).toBe(true);
+  });
+
+  it("cancels an unbounded gate on caller abort or partition disposal", async () => {
+    mocked.restCreate.mockImplementation(() => new Promise(() => {}));
+    await store.whenLocalReady();
+    const id = store.createNote({ title: "Offline" });
+    const controller = new AbortController();
+    const aborted = expect(store.requireNoteCreateAck(id, Infinity, controller.signal))
+      .rejects.toMatchObject({ name: "AbortError" });
+    controller.abort();
+    await aborted;
+    const disposed = expect(store.requireNoteCreateAck(id, Infinity)).rejects.toThrow("Sync store disposed");
+    store.dispose();
+    await disposed;
+    await expect(store.requireNoteCreateAck(id)).rejects.toThrow("Sync store disposed");
+  });
+});
+
+describe("local creation", () => {
+  it("keeps an edited local note when the first network snapshot eventually arrives", async () => {
+    let release!: (rows: unknown[]) => void;
+    mocked.restList.mockImplementation(route => route === "notes"
+      ? new Promise(resolve => { release = resolve; }) : Promise.resolve([]));
+    await store.whenLocalReady();
+    const id = store.createNote({ title: "Initial" });
+    const createdAt = store.notes$[id]!.clientCreatedAt.peek();
+    store.updateNote(id, { title: "Edited before sync" });
+    expect(store.notes$[id]!.title.peek()).toBe("Edited before sync");
+    expect(mocked.restCreate).not.toHaveBeenCalled();
+    release([]);
+    await store.requireNoteCreateAck(id);
+    expect(store.notes$[id]!.peek()).toMatchObject({ title: "Edited before sync", clientCreatedAt: createdAt });
+    expect(mocked.restCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits for new parent folders before creating child folders and notes", async () => {
+    const pending = new Map<string, () => void>();
+    mocked.restCreate.mockImplementation((_route, input) => new Promise(resolve => {
+      const row = input as { id: string };
+      pending.set(row.id, () => resolve({ ...row, createdAt: "2030-01-01" }));
+    }));
+    await store.whenLocalReady();
+    const parent = store.createFolder({ name: "Parent" });
+    const child = store.createFolder({ name: "Child", parentId: parent });
+    const note = store.createNote({ title: "N", folderId: child });
+    await vi.waitFor(() => expect(pending.has(parent)).toBe(true));
+    expect(pending.has(child)).toBe(false);
+    expect(pending.has(note)).toBe(false);
+    pending.get(parent)!();
+    await vi.waitFor(() => expect(pending.has(child)).toBe(true));
+    expect(pending.has(note)).toBe(false);
+    pending.get(child)!();
+    await vi.waitFor(() => expect(pending.has(note)).toBe(true));
+    pending.get(note)!();
+    await store.requireNoteCreateAck(note);
+  });
+
+  it("never sends a delayed authenticated create after its partition is disposed", async () => {
+    await store.whenLocalReady();
+    store.dispose();
+    let authorize!: (opts: { authToken: string; activeOrgId: string }) => void;
+    const getRequestOptions = vi.fn(async () => ({ authToken: "old", activeOrgId: "org_test" }));
+    store = createSyncStore({ partition: PARTITION, getRequestOptions, pollIntervalMs: 0 });
+    await store.whenLocalReady();
+    await activate(store.notes$);
+    getRequestOptions.mockImplementation(() => new Promise(resolve => { authorize = resolve; }));
+    store.createNote({ title: "Pending auth" });
+    await vi.waitFor(() => expect(authorize).toBeDefined());
+    store.dispose();
+    authorize({ authToken: "later", activeOrgId: "org_other" });
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(mocked.restCreate).not.toHaveBeenCalled();
+  });
+
+  it("keeps a departed partition's pending row when its old server request rejects later", async () => {
+    let rejectCreate!: (error: Error) => void;
+    mocked.restCreate.mockImplementation(() => new Promise((_resolve, reject) => { rejectCreate = reject; }));
+    await store.whenLocalReady();
+    const id = store.createNote({ title: "Keep pending" });
+    await vi.waitFor(() => expect(rejectCreate).toBeDefined());
+    store.dispose();
+    rejectCreate(new ApiError("FORBIDDEN", "Old session ended", 403));
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(store.notes$[id]!.title.peek()).toBe("Keep pending");
+    expect(() => store.updateNote(id, { title: "Late mutation" })).toThrow("Sync store disposed");
   });
 });
 

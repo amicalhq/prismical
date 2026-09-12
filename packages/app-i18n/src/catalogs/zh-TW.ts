@@ -278,6 +278,7 @@ const zhTW = {
       noTimeLeft: '沒有剩餘時間',
     },
     secondary: {
+      downloadApps: '下載應用程式',
       chat: '聊天',
       community: '社群',
       docs: '文件',
@@ -653,6 +654,10 @@ const zhTW = {
     title: '筆記標題',
     untitled: '未命名',
     editor: {
+      localSaveError: '無法儲存到此裝置。請保持此筆記開啟並重試。',
+      savedLocally: '已儲存到此裝置',
+      synced: '已同步',
+      offlineUnavailable: '此筆記尚未下載到此裝置。請重新連線以下載。',
       loading: '正在載入筆記…',
       openError: '無法開啟這則筆記 — 你可能沒有存取權，或工作階段已過期。',
       placeholder: '開始輸入…',
@@ -727,6 +732,7 @@ const zhTW = {
       couldNotPause: '無法暫停錄音。',
       couldNotResume: '無法繼續錄音。',
       couldNotStart: '無法開始錄音。',
+      connectionRequired: '請重新連線以開始錄音。',
       languageUnsupported:
         '若要使用此語言錄音，請在設定中選擇多語言轉錄模型。',
       languageChangeFailed:

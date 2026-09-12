@@ -330,6 +330,7 @@ const en = {
       noTimeLeft: 'No time left',
     },
     secondary: {
+      downloadApps: 'Download apps',
       chat: 'Chat',
       community: 'Community',
       docs: 'Docs',
@@ -727,6 +728,10 @@ const en = {
     title: 'Note title',
     untitled: 'Untitled',
     editor: {
+      localSaveError: 'Couldn’t save on this device. Keep this note open and try again.',
+      savedLocally: 'Saved on this device',
+      synced: 'Synced',
+      offlineUnavailable: 'This note is not available on this device yet. Reconnect to download it.',
       loading: 'Loading note…',
       openError: 'Couldn’t open this note — you may not have access, or your session expired.',
       placeholder: 'Start writing…',
@@ -802,6 +807,7 @@ const en = {
       couldNotPause: 'Could not pause recording.',
       couldNotResume: 'Could not resume recording.',
       couldNotStart: 'Could not start recording.',
+      connectionRequired: 'Reconnect to start a recording.',
       languageUnsupported:
         'Choose a multilingual transcription model in Settings to record in this language.',
       languageChangeFailed:

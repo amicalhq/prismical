@@ -6,6 +6,7 @@ export const APPS_V1_NON_JSON_SUCCESS_OPERATION_IDS = [
   'askAi',
   'connectionCallback',
   'mcpConnectCallback',
+  'streamRecordingAudio',
 ] as const;
 
 export type AppsV1NonJsonSuccessOperationId =

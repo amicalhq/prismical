@@ -1,9 +1,10 @@
 'use client';
 
 import * as React from 'react';
-import { BookText, MessageSquare } from 'lucide-react';
+import { BookText, Download, MessageSquare } from 'lucide-react';
+import { useDesktopCapabilities } from '@prismical/app-client';
 import { IconBrandDiscord } from '@tabler/icons-react';
-import { SidebarGroup, SidebarGroupContent } from '../ui/sidebar';
+import { SidebarGroup, SidebarGroupContent, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '../ui/sidebar';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 import { cn } from '../lib/utils';
 import { useTranslation } from 'react-i18next';
@@ -29,12 +30,9 @@ const secondaryLinks = [
   },
 ] as const;
 
-// TEMPORARILY removed until the desktop app is tested (revert this commit to restore):
-// the web-only "Get the apps" link (https://prismical.ai/apps, gated off desktop via
-// useDesktopCapabilities().has("global-shortcuts")).
-
 export function NavSecondary({ supportAction, className, ...props }: React.ComponentProps<typeof SidebarGroup> & { supportAction?: React.ReactNode }) {
   const { t } = useTranslation();
+  const caps = useDesktopCapabilities();
   return (
     <SidebarGroup className={cn('px-2 py-1', className)} {...props}>
       <SidebarGroupContent>
@@ -72,6 +70,18 @@ export function NavSecondary({ supportAction, className, ...props }: React.Compo
             </Tooltip>
           )}
         </div>
+        {!caps.has('global-shortcuts') && (
+          <SidebarMenu className="mt-1">
+            <SidebarMenuItem>
+              <SidebarMenuButton asChild size="sm" className="text-sm text-sidebar-foreground">
+                <a href="https://prismical.ai/apps" target="_blank" rel="noreferrer">
+                  <Download aria-hidden="true" />
+                  <span>{t('navigation.secondary.downloadApps')}</span>
+                </a>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        )}
       </SidebarGroupContent>
     </SidebarGroup>
   );

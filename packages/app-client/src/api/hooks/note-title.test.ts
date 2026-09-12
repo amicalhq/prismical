@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
-import { observable } from '@legendapp/state';
-import { renderHook } from '@testing-library/react';
+import { observable, syncState } from '@legendapp/state';
+import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { NoteRow } from '../../sync/store';
+import type { NoteRow, SyncStore } from '../../sync/store';
 
 const mocks = vi.hoisted(() => ({ store: null as unknown }));
 vi.mock('../../sync/provider', () => ({ useSyncStore: () => mocks.store }));
-import { useFreezeNoteTitle } from './notes';
+import { listResult, useFreezeNoteTitle, useNote } from './notes';
 
 const updateNote = vi.fn();
 let notes$: ReturnType<typeof observable<Record<string, NoteRow>>>;
@@ -52,4 +52,21 @@ describe('useFreezeNoteTitle', () => {
     result.current('First line');
     expect(updateNote).not.toHaveBeenCalled();
   });
+});
+
+it('treats an empty hydrated collection as usable while its first pull is pending or offline', () => {
+  const store = { refreshAll: vi.fn() } as unknown as SyncStore;
+  const read = listResult(store, {}, { isLoaded: false, error: new Error('Offline') }, row => row);
+  expect(read).toMatchObject({ data: [], isLoading: false, isSuccess: true, error: undefined });
+  expect(listResult(null, undefined, null, row => row).isLoading).toBe(true);
+});
+
+it('keeps an uncached note detail loading until the initial server lookup settles', () => {
+  notes$ = observable<Record<string, NoteRow>>({});
+  syncState(notes$).isLoaded.set(false);
+  mocks.store = { notes$, noteTags$: observable({}), noteEvents$: observable({}), refreshAll: vi.fn() };
+  const { result } = renderHook(() => useNote('nt_remote'));
+  expect(result.current.isLoading).toBe(true);
+  act(() => syncState(notes$).isLoaded.set(true));
+  expect(result.current.isLoading).toBe(false);
 });

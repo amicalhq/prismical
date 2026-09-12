@@ -10,6 +10,7 @@ const spies = vi.hoisted(() => ({ capture: vi.fn(), enhance: vi.fn() }));
 vi.mock('../ports-context', () => ({
   usePorts: () => ({ analytics: { capture: spies.capture } }),
 }));
+vi.mock('../sync/provider', () => ({ useSyncStore: () => null }));
 vi.mock('../notes/auto-enhance-store', () => ({
   useAutoEnhanceStore: { getState: () => ({ requestAutoEnhance: spies.enhance }) },
 }));

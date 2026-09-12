@@ -14,6 +14,7 @@ import {
 } from '../api/hooks/transcripts';
 import { usageKeyPrefix } from '../api/hooks/usage';
 import { useAutoEnhanceStore } from '../notes/auto-enhance-store';
+import { useSyncStore } from '../sync/provider';
 
 const handledCompletions = new WeakMap<RecordingSessionClient, string>();
 
@@ -28,9 +29,17 @@ export function useWorkflowRecording(
   );
   const qc = useQueryClient();
   const { analytics } = usePorts();
+  const syncStore = useSyncStore();
   React.useEffect(() => {
-    client.configure({ skipAutoEnhanceForNote, queryClient: qc });
-  }, [client, skipAutoEnhanceForNote, qc]);
+    client.configure({
+      skipAutoEnhanceForNote,
+      queryClient: qc,
+      requireNoteCreateAck: (noteId, signal) => {
+        if (!syncStore) return Promise.reject(new Error('Notes are still loading'));
+        return syncStore.requireNoteCreateAck(noteId, 20_000, signal);
+      },
+    });
+  }, [client, skipAutoEnhanceForNote, qc, syncStore]);
   React.useEffect(() => {
     const finished = snapshot.completedRecording;
     if (!finished || handledCompletions.get(client) === finished.recordingId) return;

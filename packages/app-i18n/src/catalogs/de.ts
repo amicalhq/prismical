@@ -318,6 +318,7 @@ const de = {
       noTimeLeft: 'Keine Zeit übrig',
     },
     secondary: {
+      downloadApps: 'Apps herunterladen',
       chat: 'Chat',
       community: 'Community',
       docs: 'Dokumentation',
@@ -714,6 +715,10 @@ const de = {
     title: 'Notiztitel',
     untitled: 'Ohne Titel',
     editor: {
+      localSaveError: 'Speichern auf diesem Gerät fehlgeschlagen. Lass diese Notiz geöffnet und versuche es erneut.',
+      savedLocally: 'Auf diesem Gerät gespeichert',
+      synced: 'Synchronisiert',
+      offlineUnavailable: 'Diese Notiz ist auf diesem Gerät noch nicht verfügbar. Stelle die Verbindung wieder her, um sie herunterzuladen.',
       loading: 'Notiz wird geladen…',
       openError:
         'Diese Notiz konnte nicht geöffnet werden — möglicherweise fehlt dir der Zugriff oder deine Sitzung ist abgelaufen.',
@@ -792,6 +797,7 @@ const de = {
       couldNotPause: 'Die Aufnahme konnte nicht pausiert werden.',
       couldNotResume: 'Die Aufnahme konnte nicht fortgesetzt werden.',
       couldNotStart: 'Die Aufnahme konnte nicht gestartet werden.',
+      connectionRequired: 'Stelle die Verbindung wieder her, um eine Aufnahme zu starten.',
       languageUnsupported:
         'Wähle in den Einstellungen ein mehrsprachiges Transkriptionsmodell aus, um in dieser Sprache aufzunehmen.',
       languageChangeFailed:

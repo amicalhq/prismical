@@ -23,18 +23,18 @@
  *  - Gated note create: a note's collaboration room must not open until
  *    the server acknowledges the metadata create — the note service lazy-creates
  *    rows with a date-fallback title that would clobber the real one under
- *    LWW. `whenNoteCreateAcked` is the per-store gate used by the editor-open
- *    path.
+ *    LWW. `requireNoteCreateAck` observes the persisted row before allowing
+ *    a dependent server request.
  *
- * Persistence is injected (IndexedDB per partition database on desktop —
- * see partition.ts; none on web today). Pull cadence beyond Legend's
+ * Persistence is injected (IndexedDB per partition database — see partition.ts).
+ * Pull cadence beyond Legend's
  * on-activation sync is the caller-driven poller (`startPolling`): interval +
  * window focus + `online`, all delta `sync()` — NO scheduled full refresh
  * (by design; `reset()` is rebuild/sign-out-only).
  */
 import { observable, observe, syncState, type Observable } from "@legendapp/state";
 import type { WaitForSetFnParams } from "@legendapp/state";
-import { createRevertChanges } from "@legendapp/state/sync";
+import { createRevertChanges, onChangeRemote } from "@legendapp/state/sync";
 import type { SyncedGetParams, SyncedSetParams } from "@legendapp/state/sync";
 import { syncedCrud } from "@legendapp/state/sync-plugins/crud";
 import type { ObservablePersistPlugin } from "@legendapp/state/sync";
@@ -53,8 +53,10 @@ import {
   restUpdate,
 } from "./api";
 import type { SyncRequestOptions } from "./api";
-import { partitionDatabaseName, type SyncPartition, type SyncTableName } from "./partition";
+import { type SyncPartition, type SyncTableName } from "./partition";
 import { sanitizeTagNameInput } from "./tag-name";
+import { initializeLocalBody } from "../notes/body-cache";
+import { createPartitionPersistence, PartitionPersistence } from "./persist";
 
 // ── Row types (the server's list-lane wire shapes, stored verbatim) ──
 
@@ -78,6 +80,8 @@ export type SyncTimestamp = string | Date;
 
 export interface NoteRow {
   id: string;
+  /** Original local creation time; stays fixed while a pending create is edited. */
+  clientCreatedAt?: string;
   titleIntent?: "default" | "freeze" | null;
   titleExpectedRevision?: number;
   titleSource?: string;
@@ -155,6 +159,10 @@ export interface NoteTagRow {
 
 const nowIso = (): string => new Date().toISOString();
 
+class SyncStoreDisposedError extends Error {
+  constructor() { super("Sync store disposed"); }
+}
+
 // ── Terminal 4xx (don't stall the push queue, don't strand state) ──
 // retry:{infinite:true} is right for network/5xx and wrong for deterministic
 // rejections: a 409/400 can never succeed on retry and would head-of-line-block
@@ -171,6 +179,10 @@ function terminal4xx<T>(
   onDropped?: () => void,
 ) {
   return (error: unknown): null => {
+    if (error instanceof SyncStoreDisposedError) {
+      params.cancelRetry = true;
+      throw error;
+    }
     const status = error instanceof ApiError ? error.status : undefined;
     const isTerminal =
       status !== undefined && status >= 400 && status < 500 && ![401, 408, 429].includes(status);
@@ -202,9 +214,10 @@ export interface SyncStoreOptions {
   /**
    * Persistence plugin for this partition (desktop: observablePersistIndexedDB
    * against partitionDatabaseName(partition) — see createIndexedDbPersistPlugin
-   * in persist.ts). null/undefined = in-memory only (web today; node tests).
+   * in this file). null/undefined = in-memory only (tests or storage fallback).
    */
   readonly persistPlugin?: ObservablePersistPlugin | null;
+  readonly persistenceError?: Error;
   /** Poll cadence for startPolling(); 0 disables the interval (focus/online stay). */
   readonly pollIntervalMs?: number;
   /**
@@ -228,10 +241,14 @@ export interface SyncStore {
   readonly tags$: Observable<Record<string, TagRow>>;
   readonly noteTags$: Observable<Record<string, NoteTagRow>>;
   readonly noteEvents$: Observable<Record<string, NoteEventRow>>;
-  /** Resolves once the note's collab room may open (metadata create acknowledged or not local). */
-  whenNoteCreateAcked(id: string, timeoutMs?: number): Promise<void>;
-  /** Strict gate for dependent writes: rejects if the note disappears or never gets a create echo. */
-  requireNoteCreateAck(id: string, timeoutMs?: number): Promise<void>;
+  /** A failed local write is never reported as durably saved. */
+  readonly persistenceError$: Observable<Error | null>;
+  /** Local collections are hydrated; independent of remote reads. */
+  whenLocalReady(): Promise<void>;
+  /** Strict acknowledgement gate; retained for callers of the original name. */
+  whenNoteCreateAcked(id: string, timeoutMs?: number, signal?: AbortSignal): Promise<void>;
+  /** Infinity waits until acknowledgement, abort, removal, or store disposal. */
+  requireNoteCreateAck(id: string, timeoutMs?: number, signal?: AbortSignal): Promise<void>;
   /** Delta re-pull of every collection (manual re-sync / poller tick). */
   refreshAll(): Promise<unknown>;
   /** Clear rows + cursor + pending for every collection (sign-out / rebuild). Pushes nothing. */
@@ -290,58 +307,56 @@ export interface SyncStore {
 export function createSyncStore(options: SyncStoreOptions): SyncStore {
   const { partition } = options;
   const pollIntervalMs = options.pollIntervalMs ?? 60_000;
+  const lifetime = new AbortController();
+  const active$ = observable(true);
+  const persistenceError$ = options.persistPlugin instanceof PartitionPersistence
+    ? options.persistPlugin.error$ : observable<Error | null>(options.persistenceError ?? null);
+  const assertActive = (): void => {
+    if (lifetime.signal.aborted) throw new SyncStoreDisposedError();
+  };
+  const request = async <T>(send: (opts?: SyncRequestOptions) => Promise<T>): Promise<T> => {
+    assertActive();
+    try {
+      const opts = await options.getRequestOptions?.();
+      // Authentication can settle after the account/workspace has changed.
+      assertActive();
+      return await send(opts);
+    } finally {
+      // A late rejection must not revert the departing partition's pending data.
+      assertActive();
+    }
+  };
   const list = async <T>(
     route: string,
     lastSync?: number,
     extraQuery?: Record<string, string | number>,
   ): Promise<T[]> =>
-    options.getRequestOptions
-      ? restList<T>(route, lastSync, extraQuery, await options.getRequestOptions())
-      : restList<T>(route, lastSync, extraQuery);
+    request(opts => opts ? restList<T>(route, lastSync, extraQuery, opts) : restList<T>(route, lastSync, extraQuery));
   const create = async <T>(route: string, input: unknown): Promise<T> =>
-    options.getRequestOptions
-      ? restCreate<T>(route, input, await options.getRequestOptions())
-      : restCreate<T>(route, input);
+    request(opts => opts ? restCreate<T>(route, input, opts) : restCreate<T>(route, input));
   const update = async <T>(route: string, id: string, input: unknown): Promise<T> =>
-    options.getRequestOptions
-      ? restUpdate<T>(route, id, input, await options.getRequestOptions())
-      : restUpdate<T>(route, id, input);
+    request(opts => opts ? restUpdate<T>(route, id, input, opts) : restUpdate<T>(route, id, input));
   const remove = async (route: string, id: string): Promise<void> =>
-    options.getRequestOptions
-      ? restRemove(route, id, await options.getRequestOptions())
-      : restRemove(route, id);
+    request(opts => opts ? restRemove(route, id, opts) : restRemove(route, id));
   const listNoteTags = async (lastSync?: number): Promise<NoteTagRow[]> =>
-    options.getRequestOptions
-      ? restNoteTagList(lastSync, await options.getRequestOptions())
-      : restNoteTagList(lastSync);
+    request(opts => opts ? restNoteTagList(lastSync, opts) : restNoteTagList(lastSync));
   const createNoteTag = async (noteId: string, tagId: string): Promise<void> =>
-    options.getRequestOptions
-      ? restNoteTagCreate(noteId, tagId, await options.getRequestOptions())
-      : restNoteTagCreate(noteId, tagId);
+    request(opts => opts ? restNoteTagCreate(noteId, tagId, opts) : restNoteTagCreate(noteId, tagId));
   const removeNoteTag = async (noteId: string, tagId: string): Promise<void> =>
-    options.getRequestOptions
-      ? restNoteTagRemove(noteId, tagId, await options.getRequestOptions())
-      : restNoteTagRemove(noteId, tagId);
+    request(opts => opts ? restNoteTagRemove(noteId, tagId, opts) : restNoteTagRemove(noteId, tagId));
   const listNoteEvents = async (lastSync?: number): Promise<NoteEventRow[]> =>
-    options.getRequestOptions
-      ? restNoteEventList(lastSync, await options.getRequestOptions())
-      : restNoteEventList(lastSync);
+    request(opts => opts ? restNoteEventList(lastSync, opts) : restNoteEventList(lastSync));
   const createNoteEvent = async (body: {
     noteId: string;
     eventId: string;
     isPrimary?: boolean;
   }): Promise<NoteEventRow> =>
-    options.getRequestOptions
-      ? restNoteEventCreate(body, await options.getRequestOptions())
-      : restNoteEventCreate(body);
+    request(opts => opts ? restNoteEventCreate(body, opts) : restNoteEventCreate(body));
   const removeNoteEvent = async (linkId: string, decline: boolean): Promise<void> =>
-    options.getRequestOptions
-      ? restNoteEventRemove(linkId, decline, await options.getRequestOptions())
-      : restNoteEventRemove(linkId, decline);
+    request(opts => opts ? restNoteEventRemove(linkId, decline, opts) : restNoteEventRemove(linkId, decline));
 
   const dropped =
-    (collection: string, op: "create" | "update" | "delete", extra?: () => void) => () => {
-      extra?.();
+    (collection: string, op: "create" | "update" | "delete") => () => {
       options.onWriteRejected?.({ collection, op });
     };
 
@@ -350,49 +365,20 @@ export function createSyncStore(options: SyncStoreOptions): SyncStore {
       ? { persist: { plugin: options.persistPlugin, name: table, retrySync: true } }
       : {};
 
-  // ── Gated note create (per-store, NOT module-level: desktop is multi-identity) ──
-  const locallyCreatedNotes = new Set<string>();
-  const createAckedNotes = new Set<string>();
-  const createAckWaiters = new Map<string, (() => void)[]>();
-
-  const resolveNoteCreateAck = (id: string): void => {
-    if (!locallyCreatedNotes.has(id) || createAckedNotes.has(id)) return;
-    createAckedNotes.add(id);
-    const waiters = createAckWaiters.get(id);
-    if (waiters) {
-      createAckWaiters.delete(id);
-      for (const waiter of waiters) waiter();
-    }
+  // A disposed partition keeps its persisted queue but must never send it using
+  // a later session's transport. Cancel Legend's retry after the guarded call fails.
+  const onError = (_error: Error, params: { retry: { cancelRetry: boolean } }): void => {
+    if (lifetime.signal.aborted) params.retry.cancelRetry = true;
   };
-
-  const whenNoteCreateAcked = (id: string, timeoutMs = 20_000): Promise<void> => {
-    if (!locallyCreatedNotes.has(id) || createAckedNotes.has(id)) return Promise.resolve();
-    return new Promise<void>((resolve) => {
-      let done = false;
-      const finish = () => {
-        if (done) return;
-        done = true;
-        resolve();
-      };
-      const waiters = createAckWaiters.get(id) ?? [];
-      waiters.push(finish);
-      createAckWaiters.set(id, waiters);
-      // Safety valve: a permanently-stuck create must not block the editor forever;
-      // an online create acks well under a second, so this never fires in practice.
-      setTimeout(() => {
-        if (!done) {
-          console.warn(`[sync] gated-create: note ${id} not acked in ${timeoutMs}ms — proceeding`);
-        }
-        finish();
-      }, timeoutMs);
-    });
+  const stopDisposedRetry = (params: { cancelRetry: boolean }) => (error: unknown): never => {
+    if (lifetime.signal.aborted) params.cancelRetry = true;
+    throw error;
   };
 
   function crud<T extends { id: string; updatedAt: SyncTimestamp }>(
     route: "notes" | "folders" | "tags",
     table: SyncTableName,
     onSavedRow?: (saved: T) => void,
-    onDroppedCreate?: (input: T) => void,
   ) {
     return syncedCrud<T>({
       list: async (params: SyncedGetParams<T>) => {
@@ -409,7 +395,7 @@ export function createSyncStore(options: SyncStoreOptions): SyncStore {
           route,
           params.lastSync || undefined,
           route === "notes" ? { includeBody: 1 } : undefined
-        );
+        ).catch(stopDisposedRetry(params));
         if (params.lastSync) return rows;
 
         // Full pulls must still remove older rows that were deleted or became
@@ -434,7 +420,7 @@ export function createSyncStore(options: SyncStoreOptions): SyncStore {
             route,
             "create",
             params,
-            dropped(route, "create", onDroppedCreate ? () => onDroppedCreate(input) : undefined),
+            dropped(route, "create"),
           ),
         ),
       update: (input: Partial<T>, params: SyncedSetParams<T>) =>
@@ -455,6 +441,18 @@ export function createSyncStore(options: SyncStoreOptions): SyncStore {
           terminal4xx(route, "delete", params, dropped(route, "delete")),
         ),
       ...persistFor(table),
+      onError,
+      waitForSet: (p: WaitForSetFnParams<T>) => {
+        const type = (p as unknown as { type?: string }).type;
+        if (type === "delete" || route === "tags") return undefined;
+        const value = p.value as T & { folderId?: string | null; parentId?: string | null };
+        const parentId = route === "notes" ? value.folderId : value.parentId;
+        if (!parentId) return undefined;
+        return () => {
+          const parent = folders$[parentId]?.get();
+          return !active$.get() || !parent || !!parent.createdAt;
+        };
+      },
       changesSince: "last-sync",
       fieldUpdatedAt: "updatedAt",
       fieldCreatedAt: "createdAt",
@@ -475,25 +473,27 @@ export function createSyncStore(options: SyncStoreOptions): SyncStore {
       "notes",
       "notes",
       (saved) => {
-        resolveNoteCreateAck(saved.id);
         // A create that named an event was linked server-side in the same transaction (the
         // transitional `eventId` path); pull the link now rather than on the next poll tick so the
         // editor's meeting chip is there when the note opens. (`noteEvents$` is initialised below;
         // this only ever runs after the create round-trips.)
         if (saved.eventId) void syncState(noteEvents$ as never).sync().catch(() => undefined);
       },
-      // A terminally-dropped create also releases the gate: the optimistic row was
-      // reverted away; letting the collab lane connect (and lazy-create server-side)
-      // beats losing the user's typed body behind the 20s valve on every open.
-      (input) => resolveNoteCreateAck(input.id),
     ),
   );
-  const folders$ = observable(crud<FolderRow>("folders", "folders"));
+  const folders$ = observable(crud<FolderRow>("folders", "folders", saved => {
+    // Legend merges a batch's echoes only when every item finishes. A child
+    // folder in that same batch must see its parent's acknowledgement sooner.
+    if (saved.createdAt && folders$[saved.id]?.peek()) {
+      onChangeRemote(() => folders$[saved.id]!.createdAt.set(saved.createdAt));
+    }
+  }));
   const tags$ = observable(crud<TagRow>("tags", "tags"));
 
   const noteTags$ = observable(
     syncedCrud<NoteTagRow>({
-      list: ({ lastSync }: SyncedGetParams<NoteTagRow>) => listNoteTags(lastSync || undefined),
+      list: (params: SyncedGetParams<NoteTagRow>) =>
+        listNoteTags(params.lastSync || undefined).catch(stopDisposedRetry(params)),
       create: (input: NoteTagRow, params: SyncedSetParams<NoteTagRow>) =>
         createNoteTag(input.noteId, input.tagId)
           .then((): NoteTagRow | null => input)
@@ -518,10 +518,11 @@ export function createSyncStore(options: SyncStoreOptions): SyncStore {
         return () => {
           const tagRow = tags$[tagId]!.get() as TagRow | undefined;
           const noteRow = notes$[noteId]!.get() as NoteRow | undefined;
-          return (!tagRow || !!tagRow.createdAt) && (!noteRow || !!noteRow.createdAt);
+          return !active$.get() || ((!tagRow || !!tagRow.createdAt) && (!noteRow || !!noteRow.createdAt));
         };
       },
       ...persistFor("noteTags"),
+      onError,
       changesSince: "last-sync",
       fieldUpdatedAt: "updatedAt",
       fieldCreatedAt: "createdAt",
@@ -537,7 +538,8 @@ export function createSyncStore(options: SyncStoreOptions): SyncStore {
 
   const noteEvents$ = observable(
     syncedCrud<NoteEventRow>({
-      list: ({ lastSync }: SyncedGetParams<NoteEventRow>) => listNoteEvents(lastSync || undefined),
+      list: (params: SyncedGetParams<NoteEventRow>) =>
+        listNoteEvents(params.lastSync || undefined).catch(stopDisposedRetry(params)),
       create: (input: NoteEventRow, params: SyncedSetParams<NoteEventRow>) =>
         input.eventId
           ? createNoteEvent({ noteId: input.noteId, eventId: input.eventId, isPrimary: input.isPrimary })
@@ -571,10 +573,11 @@ export function createSyncStore(options: SyncStoreOptions): SyncStore {
         const { noteId } = p.value;
         return () => {
           const noteRow = notes$[noteId]!.get() as NoteRow | undefined;
-          return !noteRow || !!noteRow.createdAt;
+          return !active$.get() || !noteRow || !!noteRow.createdAt;
         };
       },
       ...persistFor("noteEvents"),
+      onError,
       changesSince: "last-sync",
       fieldUpdatedAt: "updatedAt",
       fieldCreatedAt: "createdAt",
@@ -586,8 +589,59 @@ export function createSyncStore(options: SyncStoreOptions): SyncStore {
 
   const collections = [notes$, folders$, tags$, noteTags$, noteEvents$] as const;
 
+  const waitUntil = (
+    ready: () => boolean,
+    timeoutMs = Infinity,
+    signal?: AbortSignal,
+  ): Promise<void> => new Promise((resolve, reject) => {
+    let stop = () => {};
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const finish = (error?: Error): void => {
+      stop();
+      clearTimeout(timer);
+      lifetime.signal.removeEventListener("abort", disposed);
+      signal?.removeEventListener("abort", aborted);
+      if (error) reject(error);
+      else resolve();
+    };
+    const disposed = () => finish(new Error("Sync store disposed"));
+    const aborted = () => finish(new DOMException("Note acknowledgement cancelled", "AbortError"));
+    if (lifetime.signal.aborted) return disposed();
+    if (signal?.aborted) return aborted();
+    lifetime.signal.addEventListener("abort", disposed, { once: true });
+    signal?.addEventListener("abort", aborted, { once: true });
+    if (Number.isFinite(timeoutMs)) {
+      timer = setTimeout(() => finish(new Error("Note creation was not acknowledged")), timeoutMs);
+    }
+    stop = observe(event => {
+      try {
+        if (!ready()) return;
+        event.cancel = true;
+        finish();
+      } catch (error) {
+        event.cancel = true;
+        finish(error as Error);
+      }
+    });
+  });
+
+  const whenLocalReady = (): Promise<void> => {
+    // Activate every local table before waiting; a slow network never participates.
+    for (const collection$ of collections) collection$.get();
+    return waitUntil(() => collections.every(collection$ => syncState(collection$ as never).isPersistLoaded.get()));
+  };
+  const requireNoteCreateAck = (id: string, timeoutMs = 20_000, signal?: AbortSignal): Promise<void> =>
+    waitUntil(() => {
+      notes$.get();
+      if (!syncState(notes$).isPersistLoaded.get()) return false;
+      const note = notes$[id]?.get();
+      if (!note || note.deletedAt) throw new Error("Note is unavailable");
+      return !!note.createdAt;
+    }, timeoutMs, signal);
+
   const refreshAll = (): Promise<unknown> =>
-    Promise.all(collections.map((collection$) => syncState(collection$ as never).sync()));
+    lifetime.signal.aborted ? Promise.resolve() :
+      Promise.all(collections.map((collection$) => syncState(collection$ as never).sync()));
 
   const reset = (): Promise<unknown> =>
     Promise.all(collections.map((collection$) => syncState(collection$ as never).reset()));
@@ -595,6 +649,7 @@ export function createSyncStore(options: SyncStoreOptions): SyncStore {
   // ── Poller (desktop cadence; Legend itself syncs on activation only) ──
   let stopPolling: (() => void) | null = null;
   const startPolling = (): (() => void) => {
+    assertActive();
     stopPolling?.();
     const tick = () => void refreshAll().catch(() => undefined);
     const interval = pollIntervalMs > 0 ? setInterval(tick, pollIntervalMs) : null;
@@ -623,32 +678,30 @@ export function createSyncStore(options: SyncStoreOptions): SyncStore {
     tags$,
     noteTags$,
     noteEvents$,
-    whenNoteCreateAcked,
-    requireNoteCreateAck: (id, timeoutMs = 20_000) => new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        stop();
-        reject(new Error('Note creation was not acknowledged'));
-      }, timeoutMs);
-      // Observe the saved row, including pending creates restored from persistence.
-      // onSaved runs before Legend applies the echo; the editor gate also releases
-      // on rejected creates and timeouts, so neither can admit a dependent write.
-      const stop = observe(event => {
-        const note = notes$[id]?.get();
-        if (note && !note.deletedAt && !note.createdAt) return;
-        event.cancel = true;
-        clearTimeout(timeout);
-        if (note?.createdAt && !note.deletedAt) resolve();
-        else reject(new Error('Note is unavailable'));
-      });
-    }),
+    persistenceError$,
+    whenLocalReady,
+    whenNoteCreateAcked: requireNoteCreateAck,
+    requireNoteCreateAck,
     refreshAll,
     reset,
     startPolling,
-    dispose: () => stopPolling?.(),
+    dispose: () => {
+      stopPolling?.();
+      lifetime.abort();
+      for (const collection$ of collections) syncState(collection$ as never).isSyncEnabled.set(false);
+      active$.set(false);
+    },
 
     createNote: (input) => {
+      assertActive();
       const id = createId("note");
-      locallyCreatedNotes.add(id);
+      const createdAt = nowIso();
+      if (options.persistPlugin && globalThis.indexedDB) {
+        void initializeLocalBody(partition, id).catch(error => {
+          console.error("[sync] local note body initialization failed", error);
+          persistenceError$.set(error instanceof Error ? error : new Error(String(error)));
+        });
+      }
       // Deliberately NO createdAt (create → POST; core's PUT 404s unknown ids) and
       // synthesized derived fields (the raw write echo won't carry them; the next
       // pull re-delivers the joined wire row). `title` is omitted for event-linked
@@ -656,6 +709,7 @@ export function createSyncStore(options: SyncStoreOptions): SyncStore {
       // echo merges it back onto this row.
       notes$[id]!.set({
         id,
+        clientCreatedAt: createdAt,
         ...(input.title !== undefined ? { title: input.title } : {}),
         ...(input.titleIntent ? { titleIntent: input.titleIntent } : {}),
         titleSource:
@@ -677,11 +731,12 @@ export function createSyncStore(options: SyncStoreOptions): SyncStore {
         isOwner: true,
         canWrite: true,
         sharedByName: null,
-        updatedAt: nowIso(),
+        updatedAt: createdAt,
       });
       return id;
     },
     updateNote: (id, patch) => {
+      assertActive();
       notes$[id]!.assign({
         ...patch,
         ...(patch.title !== undefined
@@ -699,10 +754,12 @@ export function createSyncStore(options: SyncStoreOptions): SyncStore {
       });
     },
     deleteNote: (id) => {
+      assertActive();
       notes$[id]!.delete();
     },
 
     createFolder: (input) => {
+      assertActive();
       const id = createId("folder");
       folders$[id]!.set({
         id,
@@ -713,13 +770,16 @@ export function createSyncStore(options: SyncStoreOptions): SyncStore {
       return id;
     },
     updateFolder: (id, patch) => {
+      assertActive();
       folders$[id]!.assign({ ...patch, updatedAt: nowIso() });
     },
     deleteFolder: (id) => {
+      assertActive();
       folders$[id]!.delete();
     },
 
     createTag: (name, color = "green") => {
+      assertActive();
       const clean = sanitizeTagNameInput(name);
       if (!clean) {
         // The server would normalize this to the literal 'tag' — refusing loudly
@@ -734,6 +794,7 @@ export function createSyncStore(options: SyncStoreOptions): SyncStore {
       return id;
     },
     renameTag: (id, name) => {
+      assertActive();
       const clean = sanitizeTagNameInput(name);
       if (!clean) {
         console.error(`[sync] renameTag(${id}): name sanitizes to empty — ignored`);
@@ -742,9 +803,11 @@ export function createSyncStore(options: SyncStoreOptions): SyncStore {
       tags$[id]!.assign({ name: clean, updatedAt: nowIso() });
     },
     updateTag: (id, patch) => {
+      assertActive();
       tags$[id]!.assign({ ...patch, updatedAt: nowIso() });
     },
     deleteTag: (id) => {
+      assertActive();
       tags$[id]!.delete();
     },
     findTagByName: (name) => {
@@ -758,18 +821,21 @@ export function createSyncStore(options: SyncStoreOptions): SyncStore {
     },
 
     addNoteTag: (noteId, tagId) => {
+      assertActive();
       const id = `${noteId}:${tagId}`;
       const ts = nowIso();
       // No createdAt (create → POST; the link POST is an upsert keyed on the pair).
       noteTags$[id]!.set({ id, noteId, tagId, addedAt: ts, updatedAt: ts });
     },
     removeNoteTag: (noteId, tagId) => {
+      assertActive();
       const id = `${noteId}:${tagId}`;
       const existing = noteTags$[id]!.peek() as NoteTagRow | undefined;
       if (existing && !existing.deletedAt) noteTags$[id]!.delete();
     },
 
     linkNoteEvent: ({ noteId, event, isPrimary }) => {
+      assertActive();
       const id = `${noteId}:${event.key}`;
       const rows = noteEvents$.peek() as Record<string, NoteEventRow> | undefined;
       const hasPrimary = Object.values(rows ?? {}).some(
@@ -791,6 +857,7 @@ export function createSyncStore(options: SyncStoreOptions): SyncStore {
       });
     },
     setPrimaryNoteEvent: (noteId, eventKey) => {
+      assertActive();
       const id = `${noteId}:${eventKey}`;
       const target = noteEvents$[id]!.peek() as NoteEventRow | undefined;
       if (!target || target.deletedAt || !target.eventId || target.isPrimary) return;
@@ -804,6 +871,7 @@ export function createSyncStore(options: SyncStoreOptions): SyncStore {
       noteEvents$[id]!.assign({ isPrimary: true, updatedAt: nowIso() });
     },
     unlinkNoteEvent: (noteId, eventKey, opts) => {
+      assertActive();
       const id = `${noteId}:${eventKey}`;
       const existing = noteEvents$[id]!.peek() as NoteEventRow | undefined;
       if (!existing || existing.deletedAt) return;
@@ -813,15 +881,9 @@ export function createSyncStore(options: SyncStoreOptions): SyncStore {
   };
 }
 
-/** Desktop persistence plugin for a partition (renderer IndexedDB). Web passes none today. */
+/** Shared browser/desktop persistence plugin for one account/workspace partition. */
 export async function createIndexedDbPersistPlugin(
   partition: SyncPartition,
 ): Promise<ObservablePersistPlugin> {
-  const { observablePersistIndexedDB } = await import("@legendapp/state/persist-plugins/indexeddb");
-  const { SYNC_TABLE_NAMES, SYNC_DB_VERSION } = await import("./partition");
-  return observablePersistIndexedDB({
-    databaseName: partitionDatabaseName(partition),
-    version: SYNC_DB_VERSION,
-    tableNames: [...SYNC_TABLE_NAMES],
-  });
+  return createPartitionPersistence(partition);
 }

@@ -5,6 +5,7 @@ let sequence = 0;
 const pageId = Math.random().toString(36).slice(2);
 const phases = new Set([
   'persistence_ready',
+  'local_loaded',
   'notes_loaded',
   'notes_failed',
   'folders_loaded',

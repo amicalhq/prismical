@@ -47,7 +47,7 @@ export function FirstNoteWalkthroughReplay({
         restart();
         onReplay?.();
       }}
-      className={`mx-2 mb-2 inline-flex h-9 min-w-0 ${compact ? 'w-fit self-start' : 'self-stretch'} items-center gap-2 rounded-md border border-sidebar-border bg-transparent px-3 text-left text-sm text-sidebar-foreground motion-safe:transition-colors hover:border-indigo-400/50 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring`}
+      className={`mx-2 inline-flex h-9 min-w-0 ${compact ? 'w-fit self-start' : 'self-stretch'} items-center gap-2 rounded-md border border-sidebar-border bg-transparent px-3 text-left text-sm text-sidebar-foreground motion-safe:transition-colors hover:border-indigo-400/50 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring`}
     >
       <span className="flex size-4 shrink-0 items-center justify-center">
         <Play aria-hidden="true" className="size-4 text-indigo-500 dark:text-indigo-400" />

@@ -48,7 +48,7 @@ export interface SyncMutationResult<TVars, TResult> {
   mutateAsync: (vars: TVars) => Promise<TResult>;
   /**
    * Optimistic writes have no in-flight phase, so this is false for all but one case: a CREATE is
-   * pending while the sync store has yet to publish (its first pull hasn't settled), because the
+   * pending while the sync store has yet to hydrate locally, because the
    * write helper throws without a store. Callers disable their trigger on it. Spinners otherwise
    * never show.
    */
@@ -84,16 +84,14 @@ export function listResult<TRow extends { id: string; updatedAt: string | Date }
   }
   // Reverting an optimistic create can leave an undefined value in the collection.
   const all = Object.values(rows ?? {}).filter((row): row is TRow => row != null);
-  // Persisted/optimistic rows render even before (or without) a live pull —
-  // the warm-boot/offline paint. Empty + not-loaded = still loading; a failed
-  // first load surfaces as the error card exactly like the old query hooks.
-  const ready = all.length > 0 || state.isLoaded;
-  const data = ready ? sortRows(all).map(map) : undefined;
+  // The provider publishes only after every local collection has hydrated.
+  // An empty local collection is usable too; a pending GET is background work.
+  const data = sortRows(all).map(map);
   return {
     data,
-    isLoading: !ready && !state.error,
-    isSuccess: data !== undefined,
-    error: data ? undefined : state.error,
+    isLoading: false,
+    isSuccess: true,
+    error: undefined,
     refetch: () => void store.refreshAll(),
   };
 }
@@ -143,15 +141,21 @@ export function useNotes(): SyncListResult<Note[]> {
 // A single note, derived from the notes collection + its tag links (no detail
 // endpoint — same derivation as before).
 export function useNote(id: string) {
+  const store = useSyncStore();
   const notes = useNotes();
   const noteTags = useAllNoteTags();
   const base = notes.data?.find((n) => n.id === id);
+  const pendingRemoteLookup = useSelector(() => {
+    if (base || !store) return false;
+    const state = syncState(store.notes$);
+    return !state.isLoaded.get() && !state.error.get();
+  });
   const data: Note | undefined = base
     ? { ...base, tagIds: (noteTags.data ?? []).filter((t) => t.noteId === id).map((t) => t.tagId) }
     : undefined;
   return {
     data,
-    isLoading: notes.isLoading || noteTags.isLoading,
+    isLoading: notes.isLoading || noteTags.isLoading || pendingRemoteLookup,
     error: notes.error ?? noteTags.error,
   };
 }
@@ -201,11 +205,7 @@ export function useCreateNote(): SyncMutationResult<
       callbacks?.onSuccess?.(note);
     },
     mutateAsync: async (vars) => create(vars),
-    // Pending until the store is published, i.e. until its first pull has settled — see
-    // SyncStoreProvider. `create` throws without a store, and the bottom dock's "New note" button
-    // is clickable the moment the shell paints, so without this the fix for the clobbered-create
-    // race would just trade a silently-lost note for a thrown click. Callers already disable on
-    // isPending, so they hold the button for the beat the store needs.
+    // Creation waits for local hydration, independently of the first server pull.
     isPending: !store,
   };
 }

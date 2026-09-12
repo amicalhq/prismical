@@ -8,6 +8,7 @@ const context = vi.hoisted(() => ({
   sessionKey: 'session_a' as string | null,
   orgId: null as string | null,
   platform: 'web',
+  persistenceFails: false,
   analytics: { capture: vi.fn(), capturePageview: vi.fn() },
   auth: { getTokenForSession: vi.fn(async () => 'fixture-token') },
 }));
@@ -19,7 +20,9 @@ vi.mock('../ports-context', () => ({
   usePorts: () => ({ auth: context.auth, analytics: context.analytics }),
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
-vi.mock('../runtime', () => ({ getSyncPersistenceFactory: () => null }));
+vi.mock('../runtime', () => ({ getSyncPersistenceFactory: () => context.persistenceFails
+  ? async () => { throw new Error('Storage denied'); } : null }));
+vi.mock('sonner', () => ({ toast: { error: vi.fn() } }));
 vi.mock('./purge', () => ({ purgeAccountPartitions: vi.fn(), registerPartitionDatabase: vi.fn() }));
 vi.mock('./api', () => ({
   restList: vi.fn(async () => []),
@@ -35,6 +38,7 @@ vi.mock('./api', () => ({
 }));
 import * as api from './api';
 import { SyncStoreProvider, useSyncStore } from './provider';
+import { toast } from 'sonner';
 const mocked = vi.mocked(api);
 const wrapper = ({ children }: { children: React.ReactNode }) => (
   <SyncStoreProvider>{children}</SyncStoreProvider>
@@ -45,6 +49,7 @@ beforeEach(() => {
   context.accountId = 'account_a';
   context.sessionKey = 'session_a';
   context.platform = 'web';
+  context.persistenceFails = false;
 });
 afterEach(() => {
   cleanup();
@@ -60,6 +65,18 @@ it('withholds a web store until the workspace is selected', async () => {
   context.orgId = 'org_a';
   rerender();
   await waitFor(() => expect(result.current?.partition.orgId).toBe('org_a'));
+});
+
+it('reports failed local storage and marks the fallback store as not durably saved', async () => {
+  context.orgId = 'org_a';
+  context.persistenceFails = true;
+  const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    const { result } = renderHook(useSyncStore, { wrapper });
+    await waitFor(() => expect(result.current).not.toBeNull());
+    expect(result.current!.persistenceError$.peek()?.message).toBe('Storage denied');
+    expect(toast.error).toHaveBeenCalledWith('common.errors.generic');
+  } finally { log.mockRestore(); }
 });
 
 it('keeps a queued create in the selected workspace across an older pull and delayed acknowledgement', async () => {
@@ -137,7 +154,7 @@ it('preserves desktop local-workspace startup without an explicit organization',
 });
 
 it.each([false, true])(
-  'reports a stalled collection without publishing early with recorder=%s',
+  'publishes local collections while a remote collection is stalled with recorder=%s',
   async enabled => {
     (window as Window & { __PRISMICAL_LOADING_PHASES__?: boolean }).__PRISMICAL_LOADING_PHASES__ =
       enabled;
@@ -150,8 +167,7 @@ it.each([false, true])(
         })
     );
     const { result } = renderHook(useSyncStore, { wrapper });
-    await act(async () => {});
-    expect(result.current).toBeNull();
+    await waitFor(() => expect(result.current).not.toBeNull());
     expect(context.analytics.capture).toHaveBeenCalledWith(
       'loading_timing',
       expect.objectContaining({
@@ -165,10 +181,7 @@ it.each([false, true])(
       'loading_timing',
       expect.objectContaining({
         status: 'published',
-        notes_loaded_ms: expect.any(Number),
-        folders_loaded_ms: expect.any(Number),
-        tags_loaded_ms: expect.any(Number),
-        note_tags_loaded_ms: expect.any(Number),
+        local_loaded_ms: expect.any(Number),
       })
     );
   }

@@ -32,8 +32,12 @@ let releaseCreate: () => void;
 function wrapper({ children }: { children: React.ReactNode }) {
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 }
-beforeEach(() => {
+beforeEach(async () => {
   vi.clearAllMocks();
+  vi.mocked(api.restList).mockImplementation(async route => route === 'notes' ? [
+    { id: 'nt_existing', createdAt: '2030-01-01T00:00:00.000Z', updatedAt: '2030-01-01T00:00:00.000Z' },
+    { id: 'nt_inaccessible', createdAt: '2030-01-01T00:00:00.000Z', updatedAt: '2030-01-01T00:00:00.000Z' },
+  ] : []);
   vi.mocked(listEnhancedRecordingIds).mockResolvedValue(['rec_kept']);
   vi.mocked(api.restCreate).mockImplementation(
     (_route, input) =>
@@ -45,6 +49,7 @@ beforeEach(() => {
   vi.mocked(useSyncStore).mockReturnValue(store);
   client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   store.notes$.get();
+  await waitFor(() => expect(store.notes$.nt_existing?.peek()?.createdAt).toBeTruthy());
 });
 afterEach(() => {
   cleanup();

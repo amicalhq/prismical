@@ -94,3 +94,18 @@ it('keeps server-readonly content uneditable with diagnostics enabled', async ()
   );
   expect(events.some(event => event.phase === 'editor_editable')).toBe(false);
 });
+
+it('publishes an editable locally hydrated body before remote sync', async () => {
+  const doc = new Y.Doc();
+  documents.push(doc);
+  collab.current = { doc, status: 'disconnected', synced: false, ready: true, localSaved: true, remotePending: true, scope: 'read-write', error: null };
+  const view = render(fixture());
+  await waitFor(() => expect(view.container.querySelector('.ProseMirror')?.getAttribute('contenteditable')).toBe('true'));
+  expect(view.getByTestId('published').textContent).toBe('published');
+  expect(view.getByText('notes.editor.savedLocally')).toBeTruthy();
+  collab.current = { ...collab.current, localSaveError: 'Disk full', localSaved: false };
+  view.rerender(fixture());
+  expect(view.getByRole('alert').textContent).toBe('notes.editor.localSaveError');
+  expect(view.queryByText('notes.editor.savedLocally')).toBeNull();
+  expect(view.container.querySelector('.ProseMirror')).not.toBeNull();
+});

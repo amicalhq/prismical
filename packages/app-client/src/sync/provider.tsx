@@ -7,10 +7,9 @@
  * reads are impossible because the store instance itself is per-partition).
  *
  * Mounted inside ApiQueryProvider (query-client.tsx), so BOTH shells — web and
- * desktop — get it without shell edits. Desktop injects a persistence factory
+ * desktop — get it without shell edits. Each shell injects a persistence factory
  * via configureAppClient({ syncPersistence }) → each partition hydrates from
- * its own IndexedDB database for the instant warm boot; web has no factory and
- * runs the store in-memory (every boot a full pull ≈ today's behavior).
+ * its own IndexedDB database for the instant warm boot.
  *
  * On mount the synchronized collections are activated immediately (warm partitions
  * paint from disk before any network settles) and the delta poller starts
@@ -19,8 +18,8 @@
  * old react-query mutation `meta.errorMessage` used — a rejected save/delete
  * never fails silently.
  */
-import { observe, syncState } from '@legendapp/state';
 import * as React from 'react';
+import { observe } from '@legendapp/state';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import type { ApplicationTranslationKey } from '@prismical/app-i18n';
@@ -37,6 +36,7 @@ import { getSyncPersistenceFactory } from '../runtime';
 import { partitionDatabaseName } from './partition';
 import { purgeAccountPartitions, registerPartitionDatabase } from './purge';
 import { createSyncStore, type SyncStore } from './store';
+import { PartitionPersistence } from './persist';
 
 const REJECTION_MESSAGE_KEYS: Record<string, Record<string, ApplicationTranslationKey>> = {
   notes: {
@@ -66,41 +66,6 @@ const REJECTION_MESSAGE_KEYS: Record<string, Record<string, ApplicationTranslati
 };
 
 const SyncStoreContext = React.createContext<SyncStore | null>(null);
-
-/**
- * Resolves once every synchronized collection has finished its first pull (or failed it — a store that
- * can never load must still be published, or the app would sit in a permanent loading state with
- * no way to write). Each collection is already activated by the caller, so this only waits.
- */
-function whenWaveOneLoaded(store: SyncStore, mark: (name: string) => void): Promise<void> {
-  const collections = [store.notes$, store.folders$, store.tags$, store.noteTags$];
-  return Promise.all(
-    collections.map(
-      (collection$, index) =>
-        new Promise<void>(resolve => {
-          const state = syncState(collection$ as never);
-          const settled = () => state.isLoaded.get() || !!state.error.get();
-          const record = () =>
-            mark(
-              `${['notes', 'folders', 'tags', 'note_tags'][index]}_${state.error.get() ? 'failed' : 'loaded'}`
-            );
-          if (settled()) {
-            record();
-            resolve();
-            return;
-          }
-          const dispose = observe(() => {
-            if (!settled()) return;
-            record();
-            resolve();
-            // `observe` hands its own disposer to the reaction; calling the outer binding is safe
-            // because the first run cannot settle (guarded above).
-            dispose?.();
-          });
-        })
-    )
-  ).then(() => undefined);
-}
 
 export function SyncStoreProvider({ children }: { children: React.ReactNode }) {
   const { t } = useTranslation();
@@ -145,34 +110,41 @@ export function SyncStoreProvider({ children }: { children: React.ReactNode }) {
     const timing = startLoadingTiming(analyticsRef.current, 'sync_bootstrap');
     let cancelled = false;
     let created: SyncStore | null = null;
+    let stopPersistenceErrors = () => {};
     const partition = { accountSub: accountId, orgId: orgId ?? '' };
     void (async () => {
       const factory = getSyncPersistenceFactory();
       let plugin = null;
+      let persistenceError: Error | undefined;
       if (factory) {
         try {
           plugin = await factory(partition);
           registerPartitionDatabase(accountId, partitionDatabaseName(partition));
         } catch (error) {
-          // Persistence must never block the session: degrade to an in-memory
-          // store (a full pull, like web) and log.
+          // Online access can continue, but this session cannot promise durable
+          // metadata. Report storage failure instead of silently degrading.
           console.error('[sync] partition persistence unavailable — running in-memory', error);
+          persistenceError = error instanceof Error ? error : new Error(String(error));
           plugin = null;
         }
       }
-      if (cancelled) return;
+      if (cancelled) {
+        if (plugin instanceof PartitionPersistence) plugin.close();
+        return;
+      }
       timing.mark('persistence_ready');
       created = createSyncStore({
         partition,
         persistPlugin: plugin,
+        persistenceError,
         ...(platform === 'web'
           ? {
               getRequestOptions: async () => {
-                if (!sessionKey) {
+                if (cancelled || !sessionKey) {
                   throw new ApiError('AUTH_CONTEXT_CHANGED', 'Session changed', 401);
                 }
                 const authToken = await auth.getTokenForSession(sessionKey, orgId);
-                if (!authToken) {
+                if (cancelled || !authToken) {
                   throw new ApiError('AUTH_CONTEXT_CHANGED', 'Session changed', 401);
                 }
                 return { authToken, activeOrgId: orgId };
@@ -187,39 +159,28 @@ export function SyncStoreProvider({ children }: { children: React.ReactNode }) {
           );
         },
       });
-      // Activate the collections now: warm partitions hydrate from disk (instant paint);
-      // cold ones start their first pull.
-      created.notes$.get();
-      created.folders$.get();
-      created.tags$.get();
-      created.noteTags$.get();
-      created.noteEvents$.get();
-      created.startPolling();
-      // Do NOT publish the store until that first pull has settled. A write applied while it is
-      // still in flight is destroyed by it: the initial list carries no `lastSync`, so it returns
-      // every row and replaces the collection wholesale, taking any locally-minted row the server
-      // has never heard of with it — and because the row is gone before the push queue flushes, no
-      // create is ever sent. There is no rejection and no error; the note simply ceases to exist
-      // while the URL still points at it, and the screen reads "Note not found" forever.
-      //
-      // store.test.ts's `activate()` helper describes this as "clobbered by the
-      // arriving remote snapshot when no persistence ... is attached"), on the assumption that
-      // "the real UI only writes after boot paint". That assumption does not hold: the bottom
-      // dock's "New note" button is clickable as soon as the shell paints, well before the pull
-      // lands. Reproduced deterministically by holding GET /me/notes open and creating inside the
-      // window — 6/6 lost, zero POSTs — against 0/24 without the delay.
-      //
-      // WEB ONLY in effect: desktop passes a persistence plugin, whose retrySync bookkeeping
-      // survives the snapshot. Web runs in-memory, so nothing does. Publishing late costs a beat
-      // of the loading state the synchronized hooks already render for a null store.
-      await whenWaveOneLoaded(created, timing.mark);
+      const errors$ = created.persistenceError$;
+      stopPersistenceErrors = observe(() => {
+        if (errors$.get()) toast.error(translationRef.current('common.errors.generic'));
+      });
+      // Writes begin only after local tables hydrate. The store reconciles remote
+      // snapshots with pending rows, so a hanging GET cannot block local creation.
+      await created.whenLocalReady();
       if (cancelled) return;
+      timing.mark('local_loaded');
+      created.startPolling();
       setPublished({ store: created, accountId, sessionKey, orgId, platform, auth });
       timing.finish('published');
-    })();
+    })().catch(error => {
+      if (cancelled) return;
+      console.error('[sync] local initialization failed', error);
+      toast.error(translationRef.current('common.errors.generic'));
+      timing.finish('error');
+    });
     return () => {
       cancelled = true;
       timing.finish('abandoned');
+      stopPersistenceErrors();
       created?.dispose();
       setPublished(null);
     };

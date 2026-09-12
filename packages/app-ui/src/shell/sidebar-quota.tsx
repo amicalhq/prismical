@@ -94,7 +94,7 @@ export function SidebarQuota() {
       <TooltipTrigger asChild>
         <div
           className={cn(
-            'relative mx-2 rounded-md px-2 py-2 transition-colors',
+            'relative mx-2 rounded-md px-2 pt-1 pb-2 transition-colors',
             quota.href && 'hover:bg-sidebar-accent'
           )}
         >

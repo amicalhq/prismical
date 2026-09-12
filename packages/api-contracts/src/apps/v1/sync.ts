@@ -211,6 +211,7 @@ export const SyncFolderUpdateRequestSchema = SyncUpdateBaseSchema.extend({
 });
 
 export const SyncNoteCreateRequestSchema = SyncCreateBaseSchema.extend({
+  clientCreatedAt: z.string().datetime().optional(),
   titleIntent: z.enum(['default', 'freeze']).nullable().optional(),
   titleExpectedRevision: z.number().int().nonnegative().optional(),
   title: z.string().optional(),

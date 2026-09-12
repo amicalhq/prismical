@@ -40,6 +40,7 @@ import {
 } from '../api/hooks/transcripts';
 import { useAutoEnhanceStore } from '../notes/auto-enhance-store';
 import { getAutoEnhanceEnabled } from './auto-enhance-setting';
+import { getNoteLogConfig } from '../runtime';
 import { aiUserErrorOf } from '../errors/ai-user-error';
 import type { AiUserError } from '@prismical/api-contracts';
 import { ensureModelDefault } from '../api/hooks/model-defaults';
@@ -933,6 +934,10 @@ export function useRecording({
       // push above; here we only reflect start intent + a failed start's reason.
       if (control) {
         if (state !== 'idle' || openingRef.current || !mountedRef.current) return;
+        if (navigator.onLine === false && getNoteLogConfig()?.remote !== false) {
+          setError('recording.errors.connectionRequired');
+          return;
+        }
         const opening = { nativeStartIssued: false };
         openingRef.current = opening;
         const owner = auth.getSession();
@@ -1016,6 +1021,10 @@ export function useRecording({
       }
       if (session.current?.phase === 'stopping' && !session.current.ctx) session.current = null;
       if (session.current || openingRef.current || !mountedRef.current) return;
+      if (navigator.onLine === false) {
+        setError('recording.errors.connectionRequired');
+        return;
+      }
       const opening = {};
       openingRef.current = opening;
       const assertOpening = () => {
@@ -1045,6 +1054,9 @@ export function useRecording({
         if (!ownerSub || !ownerSessionKey || !ownerOrgId) {
           throw new Error('No active recording owner');
         }
+        if (!syncStore) throw new Error('Notes are still loading');
+        await syncStore.requireNoteCreateAck(noteId);
+        assertOpening();
         let authToken = await boundAuthToken(auth, ownerSessionKey);
         // Resolve the Transcription default (loads it if the query hasn't settled) before create —
         // the recording's model is frozen here, so a BYOK choice must not be silently dropped.

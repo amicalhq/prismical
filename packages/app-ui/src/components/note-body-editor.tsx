@@ -55,7 +55,7 @@ function Loading() {
 
 export function NoteBodyEditor({ noteId, writable }: NoteBodyEditorProps) {
   const { t } = useTranslation();
-  const { doc, status, synced, scope, error, loadingAttemptId } = useNoteCollab(noteId);
+  const { doc, status, synced, ready = synced, scope, error, localSaved, localSaveError, remotePending, loadingAttemptId } = useNoteCollab(noteId);
 
   if (error) {
     return (
@@ -69,7 +69,11 @@ export function NoteBodyEditor({ noteId, writable }: NoteBodyEditorProps) {
   // The editor is only created once the Y.Doc exists — otherwise the schema would
   // have no nodes ("missing top node type 'doc'"). The inner component owns the
   // editor so its useEditor hook always receives a valid doc.
-  if (!doc) return <Loading />;
+  if (!doc || !ready) {
+    if (localSaveError) return <p role="alert" className="text-sm text-destructive">{t('notes.editor.localSaveError')}</p>;
+    if (status === 'disconnected') return <p role="status" className="text-sm text-muted-foreground">{t('notes.editor.offlineUnavailable')}</p>;
+    return <Loading />;
+  }
 
   // Writability = core's canWrite snapshot AND the connection's live scope.
   // The scope is authoritative: a readonly connection's edits are silently
@@ -77,14 +81,22 @@ export function NoteBodyEditor({ noteId, writable }: NoteBodyEditorProps) {
   const canEdit = writable && scope !== 'readonly';
 
   return (
-    <NoteBodyEditorInner
-      doc={doc}
-      noteId={noteId}
-      status={status}
-      synced={synced}
-      writable={canEdit}
-      loadingAttemptId={loadingAttemptId}
-    />
+    <div>
+      {localSaveError ? (
+        <p role="alert" className="mb-2 text-sm text-destructive">{t('notes.editor.localSaveError')}</p>
+      ) : localSaved ? (
+        <p role="status" className="mb-2 text-xs text-muted-foreground">
+          {t(synced && !remotePending ? 'notes.editor.synced' : 'notes.editor.savedLocally')}
+        </p>
+      ) : null}
+      <NoteBodyEditorInner
+        doc={doc}
+        noteId={noteId}
+        status={status}
+        writable={canEdit}
+        loadingAttemptId={loadingAttemptId}
+      />
+    </div>
   );
 }
 
@@ -92,7 +104,6 @@ interface InnerProps {
   doc: Y.Doc;
   noteId: string;
   status: 'connecting' | 'connected' | 'disconnected';
-  synced: boolean;
   writable: boolean;
   loadingAttemptId?: string;
 }
@@ -101,7 +112,6 @@ function NoteBodyEditorInner({
   doc,
   noteId,
   status,
-  synced,
   writable,
   loadingAttemptId,
 }: InnerProps) {
@@ -127,7 +137,7 @@ function NoteBodyEditorInner({
   const editor: Editor | null = useEditor(
     {
       extensions: buildWebEditorExtensions(doc, noteId, placeholder),
-      editable: false, // toggled below once writable/synced are known
+      editable: false, // toggled below once the editor exists
       immediatelyRender: false, // Next.js SSR: avoid a hydration mismatch
       editorProps: {
         attributes: { class: 'note-prose w-full text-note-foreground' },
@@ -136,33 +146,21 @@ function NoteBodyEditorInner({
     [doc, noteId, placeholder]
   );
 
-  // The Y.Doc exists from the first render but is EMPTY until y-sync loads the body, and the editor
-  // is created before that. Publishing it early would let the dock accept a staged skill result into
-  // a document that has not loaded: replace-doc would snapshot an empty body (making its Undo a
-  // note-wipe) and then merge the proposal with the real content once sync landed. Sticky, not the
-  // live `synced` flag - once the body is here a routine reconnect must not yank the review pill.
-  const [loaded, setLoaded] = useState(false);
-  useEffect(() => {
-    if (synced) setLoaded(true);
-  }, [synced]);
-  const liveEditor = loaded ? editor : null;
-
+  // Only a hydrated local body is published. Reconnects do not withdraw it.
   // Publish the live editor to the layout-level dock so the skill run/diff/accept flow can drive it.
-  useRegisterNoteEditor(noteId, liveEditor);
+  useRegisterNoteEditor(noteId, editor);
 
   // Apply/clear the diff overlay when a skill candidate is staged/cleared for this note. Also gated:
   // previewing against the pre-sync empty doc would fail and (for inline-rewrite) claim the user's
   // selection had been deleted when the document simply had not arrived.
-  useSkillDiffDecorations(liveEditor, noteId);
+  useSkillDiffDecorations(editor, noteId);
 
-  // Editable only when we own write access and the doc has synced. A transient
-  // disconnect deliberately keeps it editable: Yjs buffers offline edits and
-  // resyncs on reconnect (no data loss).
+  // Local hydration enables editing; provider reconnects do not interrupt typing.
   useEffect(() => {
-    editor?.setEditable(writable && synced);
+    editor?.setEditable(writable);
     try {
       if (editor) loading.current?.mark('editor_created');
-      if (editor && writable && synced && !editor.isDestroyed) {
+      if (editor && writable && !editor.isDestroyed) {
         loading.current?.mark('editor_editability_set');
         if (editor.view.dom.isConnected) {
           loading.current?.mark('editor_dom_mounted');
@@ -175,9 +173,9 @@ function NoteBodyEditorInner({
     } catch {
       // A detached editor view leaves the diagnostic phase unknown.
     }
-  }, [editor, writable, synced]);
+  }, [editor, writable]);
 
-  if (!editor || !synced) return <Loading />;
+  if (!editor) return <Loading />;
 
   return (
     <div className="w-full">

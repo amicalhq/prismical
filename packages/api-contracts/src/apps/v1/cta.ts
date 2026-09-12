@@ -62,10 +62,17 @@ export const CtaSchema = z.object({
   campaignKey: z.string().min(1),
   assignmentId: z.string().min(1),
   dismissed: z.boolean(),
+  suppressed: z.boolean().optional(),
   expiresAt: z.iso.datetime().nullable(),
   content: CtaContentSchema,
 });
 export const CtaDismissParamsSchema = z.object({ assignmentId: z.string().min(1).max(200) });
 export const CtaDismissResponseSchema = z.object({ dismissed: z.literal(true) });
+export const CtaClickBodySchema = z.object({
+  eventId: z.uuid(),
+  placement: z.enum(['card', 'sidebar']),
+});
+export const CtaClickResponseSchema = z.object({ recorded: z.boolean() });
+export const CtaShownBodySchema = z.object({ placement: z.enum(['card', 'sidebar']) });
 export type Cta = z.output<typeof CtaSchema>;
 export type CtaContent = z.output<typeof CtaContentSchema>;

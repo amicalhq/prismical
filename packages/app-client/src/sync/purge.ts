@@ -40,21 +40,23 @@ export function registerPartitionDatabase(accountSub: string, databaseName: stri
 export async function purgeAccountPartitions(accountSub: string): Promise<number> {
   const registry = readRegistry();
   const mine = Object.entries(registry).filter(([, sub]) => sub === accountSub);
-  await Promise.all(
+  const removed = await Promise.all(
     mine.map(
       ([databaseName]) =>
-        new Promise<void>((resolve) => {
+        new Promise<boolean>((resolve) => {
           const request = globalThis.indexedDB?.deleteDatabase(databaseName);
-          if (!request) return resolve();
-          request.onsuccess = () => resolve();
-          request.onerror = () => resolve();
-          // A blocked delete (an open connection elsewhere) resolves too —
-          // the delete completes when the connection closes; don't hang sign-out.
-          request.onblocked = () => resolve();
+          if (!request) return resolve(false);
+          request.onsuccess = () => resolve(true);
+          request.onerror = () => resolve(false);
+          // A legacy tab may retain a connection. Keep its registry entry so a
+          // later sign-out can retry; do not claim that a blocked deletion finished.
+          request.onblocked = () => resolve(false);
         }),
     ),
   );
-  for (const [databaseName] of mine) delete registry[databaseName];
+  mine.forEach(([databaseName], index) => {
+    if (removed[index]) delete registry[databaseName];
+  });
   writeRegistry(registry);
-  return mine.length;
+  return removed.filter(Boolean).length;
 }

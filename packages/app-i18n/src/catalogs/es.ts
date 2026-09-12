@@ -312,6 +312,7 @@ const es = {
       noTimeLeft: 'Sin tiempo restante',
     },
     secondary: {
+      downloadApps: 'Descargar aplicaciones',
       chat: 'Chat',
       community: 'Comunidad',
       docs: 'Documentación',
@@ -707,6 +708,10 @@ const es = {
     title: 'Título de la nota',
     untitled: 'Sin título',
     editor: {
+      localSaveError: 'No se pudo guardar en este dispositivo. Mantén esta nota abierta e inténtalo de nuevo.',
+      savedLocally: 'Guardado en este dispositivo',
+      synced: 'Sincronizado',
+      offlineUnavailable: 'Esta nota aún no está disponible en este dispositivo. Vuelve a conectarte para descargarla.',
       loading: 'Cargando nota…',
       openError:
         'No se pudo abrir esta nota — puede que no tengas acceso o que tu sesión haya caducado.',
@@ -783,6 +788,7 @@ const es = {
       couldNotPause: 'No se ha podido pausar la grabación.',
       couldNotResume: 'No se ha podido reanudar la grabación.',
       couldNotStart: 'No se ha podido iniciar la grabación.',
+      connectionRequired: 'Vuelve a conectarte para iniciar una grabación.',
       languageUnsupported:
         'Elige un modelo de transcripción multilingüe en Ajustes para grabar en este idioma.',
       languageChangeFailed:

@@ -81,6 +81,14 @@ function CtaSession({ children }: { children: React.ReactNode }) {
   const [now, setNow] = React.useState(Date.now);
   const [foreground, setForeground] = React.useState(false);
   const storageKey = `cta-dismissal:${userId}`;
+  const clickStorageKey = `cta-clicked:${userId}`;
+  const [clicked, setClicked] = React.useState<string | null>(() => {
+    try {
+      return localStorage.getItem(clickStorageKey);
+    } catch {
+      return null;
+    }
+  });
   const [pending, setPending] = React.useState<string | null>(() => {
     try {
       return localStorage.getItem(storageKey);
@@ -92,7 +100,7 @@ function CtaSession({ children }: { children: React.ReactNode }) {
   const cta =
     !isError && data && (!data.expiresAt || Date.parse(data.expiresAt) > now) ? data : null;
   const id = cta?.assignmentId;
-  const dismissed = cta?.dismissed || pending === id;
+  const dismissed = cta?.suppressed || cta?.dismissed || pending === id || clicked === id;
   const campaignId = cta?.id;
   const campaignKey = cta?.campaignKey;
   const automaticCard = cta?.content.card;
@@ -100,6 +108,17 @@ function CtaSession({ children }: { children: React.ReactNode }) {
   const track = React.useCallback(
     (event: string, placement: 'card' | 'sidebar') => {
       if (!campaignId || !id) return;
+      if (event === EVENTS.CTA_SHOWN) {
+        const token = getAuthToken();
+        if (token)
+          void apiClient
+            .postRaw(
+              `${ME_PREFIX}/cta/${encodeURIComponent(id)}/shown`,
+              { placement },
+              { authToken: token }
+            )
+            .catch(() => {});
+      }
       try {
         analytics.capture(event, {
           campaign_id: campaignId,
@@ -254,6 +273,7 @@ function CtaSession({ children }: { children: React.ReactNode }) {
     if (!cta || busy) return;
     if (cta.content.sidebarAction === 'open_url') {
       track(EVENTS.CTA_CLICKED, 'sidebar');
+      recordClick('sidebar');
       external.openExternalUrl(cta.content.action.url);
     } else {
       track(EVENTS.CTA_OPENED, 'sidebar');
@@ -261,6 +281,28 @@ function CtaSession({ children }: { children: React.ReactNode }) {
       setManual(cta.assignmentId);
       setVisible(cta.assignmentId);
     }
+  };
+  const recordClick = (placement: 'card' | 'sidebar') => {
+    if (!id) return;
+    setClicked(id);
+    setVisible(null);
+    setManual(null);
+    try {
+      localStorage.setItem(clickStorageKey, id);
+    } catch {
+      /* Keep in-memory suppression when storage is unavailable. */
+    }
+    const token = getAuthToken();
+    if (!token) return;
+    const body = { eventId: crypto.randomUUID(), placement };
+    const send = () =>
+      apiClient.postRaw(`${ME_PREFIX}/cta/${encodeURIComponent(id)}/click`, body, {
+        authToken: token,
+      });
+    // Pin identity and event ID across retries; navigation never waits for reporting.
+    void send()
+      .catch(() => send())
+      .catch(() => {});
   };
   return (
     <Context.Provider value={{ cta, busy, foreground, setBusy, open, track }}>
@@ -272,6 +314,7 @@ function CtaSession({ children }: { children: React.ReactNode }) {
               onDismiss={dismiss}
               onAction={() => {
                 track(EVENTS.CTA_CLICKED, 'card');
+                recordClick('card');
                 external.openExternalUrl(cta.content.action.url);
               }}
             />,

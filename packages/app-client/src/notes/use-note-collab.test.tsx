@@ -1,11 +1,14 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook, act } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { renderHook, act, cleanup } from '@testing-library/react';
 import * as React from 'react';
 import type { AppPorts, NavigationAdapter } from '../ports-context';
 import { PortsProvider } from '../ports-context';
 import type { EnvDescriptor, SessionView } from '@prismical/app-contracts';
 import { DEFAULT_DEVICE_SETTINGS, INERT_UPDATE_STATE } from '@prismical/app-contracts';
+
+const sync = vi.hoisted(() => ({ current: null as unknown }));
+vi.mock('../sync/provider', () => ({ useSyncStore: () => sync.current }));
 
 // Capture the provider config so the test can drive its callbacks without a socket.
 interface CapturedConfig {
@@ -178,14 +181,19 @@ function wrapper({ children }: { children: React.ReactNode }) {
   return <PortsProvider ports={ports}>{children}</PortsProvider>;
 }
 
-function render(noteId: string) {
-  return renderHook(() => useNoteCollab(noteId), { wrapper });
+async function render(noteId: string) {
+  const view = renderHook(() => useNoteCollab(noteId), { wrapper });
+  await act(async () => {});
+  return view;
 }
 
+afterEach(cleanup);
+
 beforeEach(() => {
+  sync.current = { notes$: {}, requireNoteCreateAck: () => Promise.resolve() };
   lastConfig = null;
   lastProvider = null;
-  session = { state: 'signed-in', accounts: [], activeSub: undefined };
+  session = signedInWithOrg(null);
   destroy.mockClear();
   // Reset the injected runtime config — web-shaped (no noteLog) by default, so
   // the suites below exercise the byte-identical provider-only path.
@@ -193,72 +201,72 @@ beforeEach(() => {
 });
 
 describe('useNoteCollab', () => {
-  it('starts connecting with a doc, not synced, no error', () => {
-    const { result } = render('note_1');
+  it('starts connecting with a doc, not synced, no error', async () => {
+    const { result } = await render('note_1');
     expect(result.current.status).toBe('connecting');
     expect(result.current.synced).toBe(false);
     expect(result.current.error).toBeNull();
     expect(result.current.doc).not.toBeNull();
   });
 
-  it('flips synced from the onSynced payload', () => {
-    const { result } = render('note_1');
+  it('flips synced from the onSynced payload', async () => {
+    const { result } = await render('note_1');
     act(() => lastConfig!.onSynced({ state: true }));
     expect(result.current.synced).toBe(true);
   });
 
-  it('surfaces an error on onAuthenticationFailed instead of spinning forever', () => {
-    const { result } = render('note_1');
+  it('surfaces an error on onAuthenticationFailed instead of spinning forever', async () => {
+    const { result } = await render('note_1');
     act(() => lastConfig!.onAuthenticationFailed({ reason: 'Access denied' }));
     expect(result.current.error).toBe('Access denied');
     expect(result.current.synced).toBe(false);
   });
 
-  it('clears a prior auth error once a later reconnect syncs', () => {
-    const { result } = render('note_1');
+  it('clears a prior auth error once a later reconnect syncs', async () => {
+    const { result } = await render('note_1');
     act(() => lastConfig!.onAuthenticationFailed({ reason: 'expired' }));
     act(() => lastConfig!.onSynced({ state: true }));
     expect(result.current.error).toBeNull();
     expect(result.current.synced).toBe(true);
   });
 
-  it('tracks connection status changes', () => {
-    const { result } = render('note_1');
+  it('tracks connection status changes', async () => {
+    const { result } = await render('note_1');
     act(() => lastConfig!.onStatus({ status: 'disconnected' }));
     expect(result.current.status).toBe('disconnected');
   });
 
-  it('destroys the provider on unmount', () => {
-    const { unmount } = render('note_1');
+  it('destroys the provider on unmount', async () => {
+    const { unmount } = await render('note_1');
     unmount();
     expect(destroy).toHaveBeenCalled();
   });
 
   it('wires the token callback to the AuthPort', async () => {
     session = signedInWithOrg('org_x');
-    render('note_1');
+    await render('note_1');
     await expect(lastConfig!.token()).resolves.toBe('tok');
   });
 
-  it('connects without an org param when no organization is active', () => {
-    render('note_1');
+  it('connects without an org param when no organization is active', async () => {
+    await render('note_1');
     expect(lastConfig!.url).toBe('wss://test/collaboration');
   });
 
-  it('rides the active organization on the connection URL', () => {
+  it('rides the active organization on the connection URL', async () => {
     session = signedInWithOrg('org_x');
-    render('note_1');
+    await render('note_1');
     expect(lastConfig!.url).toBe('wss://test/collaboration?activeOrgId=org_x');
   });
 
-  it('defaults scope to read-write and tracks a readonly connection', () => {
-    const { result } = render('note_1');
+  it('defaults scope to read-write and tracks a readonly connection', async () => {
+    const { result } = await render('note_1');
     expect(result.current.scope).toBe('read-write');
     act(() => lastConfig!.onAuthenticated({ scope: 'readonly' }));
     expect(result.current.scope).toBe('readonly');
   });
 
-  it('reconnects when the exact login slot changes but the target sub and org do not', () => {
+  it('reconnects when the exact login slot changes but the target sub and org do not', async () => {
     session = {
       state: 'signed-in',
       accounts: [
@@ -272,7 +280,7 @@ describe('useNoteCollab', () => {
       activeSub: 'acct_1',
       activeSessionKey: 'slot_support',
     };
-    const view = render('note_1');
+    const view = await render('note_1');
     const supportConfig = lastConfig;
 
     session = {
@@ -289,6 +297,7 @@ describe('useNoteCollab', () => {
       activeSessionKey: 'slot_ordinary',
     };
     view.rerender();
+    await act(async () => {});
 
     expect(destroy).toHaveBeenCalledOnce();
     expect(lastConfig).not.toBe(supportConfig);
@@ -299,7 +308,7 @@ describe('useNoteCollab', () => {
 
 describe('temporary document delivery', () => {
   it('waits for both document sync and acknowledgement of local changes', async () => {
-    const { result } = render('note_1');
+    const { result } = await render('note_1');
     const connection = lastProvider!;
     connection.hasUnsyncedChanges = true;
     const delivered = vi.fn();
@@ -316,7 +325,7 @@ describe('temporary document delivery', () => {
   });
 
   it('immediately accepts a synced document without pending changes', async () => {
-    const { result } = render('note_1');
+    const { result } = await render('note_1');
     lastProvider!.synced = true;
     await expect(result.current.waitForPendingChanges()).resolves.toBeUndefined();
     expect(lastProvider!.listeners.size).toBe(0);
@@ -325,7 +334,7 @@ describe('temporary document delivery', () => {
   it('times out without losing the same connection needed for a delivery retry', async () => {
     vi.useFakeTimers();
     try {
-      const { result } = render('note_1');
+      const { result } = await render('note_1');
       const connection = lastProvider!;
       connection.synced = true;
       connection.hasUnsyncedChanges = true;
@@ -344,7 +353,7 @@ describe('temporary document delivery', () => {
   });
 
   it('rejects delivery on host closure and refuses later access', async () => {
-    const { result, unmount } = render('note_1');
+    const { result, unmount } = await render('note_1');
     const access = result.current;
     lastProvider!.isAuthenticated = true;
     expect(access.hasWriteAccess()).toBe(true);
@@ -355,8 +364,8 @@ describe('temporary document delivery', () => {
     await expect(access.waitForPendingChanges()).rejects.toThrow('unavailable');
   });
 
-  it('reads live authentication and permission changes before React callbacks render', () => {
-    const { result } = render('note_1');
+  it('reads live authentication and permission changes before React callbacks render', async () => {
+    const { result } = await render('note_1');
     const connection = lastProvider!;
     expect(result.current.hasWriteAccess()).toBe(false);
     connection.isAuthenticated = true;
@@ -372,8 +381,10 @@ describe('temporary document delivery', () => {
     const view = renderHook(({ noteId }) => useNoteCollab(noteId), {
       initialProps: { noteId: 'note_1' }, wrapper,
     });
+    await act(async () => {});
     const old = lastProvider!;
     old.isAuthenticated = true;
+    await act(async () => {});
     const failed = expect(view.result.current.waitForPendingChanges()).rejects.toThrow('connection closed');
     view.rerender({ noteId: 'note_2' });
     await failed;
@@ -381,6 +392,7 @@ describe('temporary document delivery', () => {
     expect(current).not.toBe(old);
     expect(view.result.current.hasWriteAccess()).toBe(false);
     const delivered = vi.fn();
+    await act(async () => {});
     const retry = view.result.current.waitForPendingChanges().then(delivered);
     old.synced = true;
     old.emit('synced');
@@ -486,7 +498,7 @@ describe('useNoteCollab with a desktop note log', () => {
   it('local mode: hydration applies replayed updates and IS the sync point — no provider', async () => {
     const fake = makeFakeNoteLog();
     configureNoteLog(fake, false);
-    const { result } = render('nt_1');
+    const { result } = await render('nt_1');
 
     expect(fake.state.openCalls).toEqual(['nt_1']);
     await flushMicrotasks();
@@ -518,7 +530,7 @@ describe('useNoteCollab with a desktop note log', () => {
   it('local mode: flushes and awaits durable delivery before releasing a proposal editor', async () => {
     const fake = makeFakeNoteLog();
     configureNoteLog(fake, false);
-    const { result, unmount } = render('nt_1');
+    const { result, unmount } = await render('nt_1');
     expect(result.current.hasWriteAccess()).toBe(false);
     await expect(result.current.waitForPendingChanges()).rejects.toThrow('unavailable');
     await act(async () => {
@@ -552,7 +564,7 @@ describe('useNoteCollab with a desktop note log', () => {
     try {
       const fake = makeFakeNoteLog();
       configureNoteLog(fake, false);
-      const { result } = render('nt_1');
+      const { result } = await render('nt_1');
 
       act(() => typeParagraph(result.current.doc!, 'First line'));
       expect(fake.state.sent).toHaveLength(1);
@@ -570,7 +582,7 @@ describe('useNoteCollab with a desktop note log', () => {
   it('compacts after hydrate when the replay exceeds the threshold', async () => {
     const fake = makeFakeNoteLog();
     configureNoteLog(fake, false);
-    const { result } = render('nt_1');
+    const { result } = await render('nt_1');
 
     act(() => fake.emitUpdate(encodeDocWith('Body')));
     await act(async () => {
@@ -592,7 +604,7 @@ describe('useNoteCollab with a desktop note log', () => {
   it('cloud mode: the provider attaches unchanged and stays the sync authority', async () => {
     const fake = makeFakeNoteLog();
     configureNoteLog(fake, true);
-    const { result } = render('nt_1');
+    const { result } = await render('nt_1');
 
     // The provider connected exactly as before (the log is a cache beside it)…
     expect(lastConfig).not.toBeNull();
@@ -613,11 +625,11 @@ describe('useNoteCollab with a desktop note log', () => {
   it('local mode: an open failure surfaces the error and NEVER dials the cloud provider', async () => {
     const fake = makeFakeNoteLog();
     configureNoteLog(fake, false);
-    const { result } = render('nt_1');
+    const { result } = await render('nt_1');
 
     expect(lastConfig).toBeNull();
     await act(async () => {
-      fake.resolveOpened({ error: { code: 'NO_WORKSPACE' } });
+      fake.resolveOpened({ error: { code: 'STORAGE_FAILED' } });
     });
     // A mode whose premise is "no server" must not open a socket to the
     // packaged cloud collab URL — no HocuspocusProvider is ever constructed…
@@ -633,7 +645,7 @@ describe('useNoteCollab with a desktop note log', () => {
   it('local mode: a REJECTED open also surfaces the error without a provider', async () => {
     const fake = makeFakeNoteLog();
     configureNoteLog(fake, false);
-    const { result } = render('nt_1');
+    const { result } = await render('nt_1');
 
     await act(async () => {
       fake.rejectOpened(new Error('invoke failed'));
@@ -642,12 +654,59 @@ describe('useNoteCollab with a desktop note log', () => {
     expect(result.current.error).toBeTruthy();
   });
 
+  it('retries an unopened native workspace, reports a slow startup, and recovers when it mounts', async () => {
+    vi.useFakeTimers();
+    try {
+      const unavailable = makeFakeNoteLog();
+      configureNoteLog(unavailable, false);
+      const view = await render('nt_startup');
+      await act(async () => unavailable.resolveOpened({ error: { code: 'NO_WORKSPACE' } }));
+      expect(view.result.current.ready).toBe(false);
+      expect(view.result.current.localSaveError).toBeNull();
+      await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+      expect(view.result.current.localSaveError).toContain('NO_WORKSPACE');
+      const available = makeFakeNoteLog();
+      configureNoteLog(available, false);
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+      await act(async () => {
+        available.resolveOpened({ ok: true });
+        available.resolveHydrated({ seq: 0, count: 0 });
+      });
+      expect(view.result.current.ready).toBe(true);
+      expect(view.result.current.localSaveError).toBeNull();
+      expect(view.result.current.error).toBeNull();
+      expect(lastConfig).toBeNull();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('cancels the old native startup retry when account identity changes', async () => {
+    vi.useFakeTimers();
+    try {
+      const oldLog = makeFakeNoteLog();
+      configureNoteLog(oldLog, false);
+      const view = await render('nt_startup');
+      await act(async () => oldLog.resolveOpened({ error: { code: 'NO_WORKSPACE' } }));
+      const replacement = makeFakeNoteLog();
+      configureNoteLog(replacement, false);
+      session = { state: 'signed-in', activeSub: 'acct_2', accounts: [{ sub: 'acct_2', email: 'new@example.test' }] };
+      view.rerender();
+      await act(async () => {
+        replacement.resolveOpened({ ok: true });
+        replacement.resolveHydrated({ seq: 0, count: 0 });
+      });
+      await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+      expect(oldLog.state.openCalls).toEqual(['nt_startup']);
+      expect(replacement.state.openCalls).toEqual(['nt_startup']);
+      expect(view.result.current.ready).toBe(true);
+    } finally { vi.useRealTimers(); }
+  });
+
   it('flushes at the max-wait ceiling while continuous typing re-arms the debounce', async () => {
     vi.useFakeTimers();
     try {
       const fake = makeFakeNoteLog();
       configureNoteLog(fake, false);
-      const { result } = render('nt_1');
+      const { result } = await render('nt_1');
 
       // One update every 900ms: the 1s debounce alone would never fire.
       for (let i = 0; i < 7; i++) {
@@ -665,7 +724,7 @@ describe('useNoteCollab with a desktop note log', () => {
   it('resync heals the gap by compacting a full state snapshot at the hydrated seq', async () => {
     const fake = makeFakeNoteLog();
     configureNoteLog(fake, false);
-    const { result } = render('nt_1');
+    const { result } = await render('nt_1');
 
     await act(async () => {
       fake.resolveOpened({ ok: true });
@@ -691,7 +750,7 @@ describe('useNoteCollab with a desktop note log', () => {
   it('resync heals at most once per interval and surfaces the error after three', async () => {
     const fake = makeFakeNoteLog();
     configureNoteLog(fake, false);
-    const { result } = render('nt_1');
+    const { result } = await render('nt_1');
 
     await act(async () => {
       fake.resolveOpened({ ok: true });
@@ -719,7 +778,7 @@ describe('useNoteCollab with a desktop note log', () => {
   it('cloud mode: a persistently failing cache degrades quietly (the provider is authority)', async () => {
     const fake = makeFakeNoteLog();
     configureNoteLog(fake, true);
-    const { result } = render('nt_1');
+    const { result } = await render('nt_1');
 
     await act(async () => {
       fake.resolveOpened({ ok: true });
@@ -740,7 +799,7 @@ describe('useNoteCollab with a desktop note log', () => {
   it('cleanup flushes dirty edits, closes the handle, and still destroys the doc', async () => {
     const fake = makeFakeNoteLog();
     configureNoteLog(fake, false);
-    const { result, unmount } = render('nt_1');
+    const { result, unmount } = await render('nt_1');
 
     act(() => typeParagraph(result.current.doc!, 'Unsaved'));
     expect(fake.state.flushes).toHaveLength(0);
@@ -749,6 +808,7 @@ describe('useNoteCollab with a desktop note log', () => {
     expect(fake.state.flushes).toEqual([
       { text: 'Unsaved', markdown: 'Unsaved', firstLine: 'Unsaved' },
     ]);
+    await flushMicrotasks();
     expect(fake.state.closed).toBe(true);
   });
 });
