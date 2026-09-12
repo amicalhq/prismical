@@ -15,6 +15,7 @@ import { CollabBroker, CollabError, type CollabBrokerApi } from './service';
 interface PortEntry {
   readonly openId: string;
   readonly port: MessagePortMain;
+  readonly store: NoteBodyStoreApi;
 }
 
 /**
@@ -62,7 +63,7 @@ export const CollabBrokerLive: Layer.Layer<CollabBroker, never, MainLogger | Col
           const closedSignal = yield* Deferred.make<void>();
 
           const { port1, port2 } = new MessageChannelMain();
-          const entry: PortEntry = { openId, port: port1 };
+          const entry: PortEntry = { openId, port: port1, store: storeAtOpen };
 
           // Callback edges: parse + enqueue only, no business logic.
           const onMessage = (event: Electron.MessageEvent) => {
@@ -94,7 +95,8 @@ export const CollabBrokerLive: Layer.Layer<CollabBroker, never, MainLogger | Col
             const group = registry.get(noteId);
             if (group === undefined) return;
             for (const peer of group) {
-              if (peer !== entry) post(peer.port, { type: 'update', data });
+              if (peer !== entry && peer.store === storeAtOpen)
+                post(peer.port, { type: 'update', data });
             }
           };
 
@@ -111,17 +113,23 @@ export const CollabBrokerLive: Layer.Layer<CollabBroker, never, MainLogger | Col
                       .warn(`collab ${what} dropped — no workspace`, { context: { openId } })
                       .pipe(Effect.as('no-workspace' as const)),
                   onSome: store =>
-                    run(store).pipe(
-                      Effect.as('stored' as const),
-                      Effect.catchAll(error =>
-                        log
-                          .warn(`collab ${what} failed`, {
+                    store !== storeAtOpen
+                      ? log
+                          .warn(`collab ${what} dropped — workspace changed`, {
                             context: { openId },
-                            error: error.cause,
                           })
-                          .pipe(Effect.as('failed' as const))
-                      )
-                    ),
+                          .pipe(Effect.as('no-workspace' as const))
+                      : run(store).pipe(
+                          Effect.as('stored' as const),
+                          Effect.catchAll(error =>
+                            log
+                              .warn(`collab ${what} failed`, {
+                                context: { openId },
+                                error: error.cause,
+                              })
+                              .pipe(Effect.as('failed' as const))
+                          )
+                        ),
                 })
               )
             );
@@ -147,10 +155,10 @@ export const CollabBrokerLive: Layer.Layer<CollabBroker, never, MainLogger | Col
                 );
               case 'update':
                 // Append FIRST (awaited — sequential per port), then relay the
-                // blob verbatim so live windows converge even under a swap.
+                // blob verbatim to live windows in the same workspace.
                 //
-                // A REJECTED append is the one case that must NOT relay: the
-                // log (the only authority in local mode) now has a gap that
+                // Failed or dropped appends must not relay. A storage failure
+                // leaves a gap in the log (the authority in local mode) that
                 // leaves every LATER update unapplicable on replay, so relaying
                 // would spread an edit no store holds and desynchronize the
                 // windows from the log. Tell the ORIGIN to resync instead — it
@@ -162,7 +170,7 @@ export const CollabBrokerLive: Layer.Layer<CollabBroker, never, MainLogger | Col
                     Effect.sync(() => {
                       if (outcome !== 'stored') appendFailed = true;
                       if (outcome === 'failed') post(port1, { type: 'resync' });
-                      else relay(message.data);
+                      else if (outcome === 'stored') relay(message.data);
                     })
                   )
                 );

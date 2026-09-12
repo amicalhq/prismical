@@ -439,38 +439,76 @@ describe('CollabBroker note-body log lane', () => {
     })
   );
 
-  it.effect(
-    'a workspace swap (bridge → None) degrades appends to warn+drop and keeps relaying',
-    () =>
-      Effect.gen(function* () {
-        const logger = makeTestLogger();
-        const scope = yield* Scope.make();
-        const { broker, bridge } = yield* buildBroker(logger, scope);
-        const store = makeFakeStore();
-        const storeScope = yield* Scope.make();
-        yield* bridge.register(store.api).pipe(Scope.extend(storeScope));
-        const harness = makeHarness();
+  it.effect('a workspace closing drops appends and never relays unpersisted updates', () =>
+    Effect.gen(function* () {
+      const logger = makeTestLogger();
+      const scope = yield* Scope.make();
+      const { broker, bridge } = yield* buildBroker(logger, scope);
+      const store = makeFakeStore();
+      const storeScope = yield* Scope.make();
+      yield* bridge.register(store.api).pipe(Scope.extend(storeScope));
+      const harness = makeHarness();
 
-        yield* broker.open({ openId: ID_A, noteId: 'nt_a', sender: asSender(harness) });
-        yield* broker.open({ openId: ID_B, noteId: 'nt_a', sender: asSender(harness) });
-        const portA = harness.rendererPort(ID_A);
-        harness.rendererPort(ID_B);
-        yield* settle;
+      yield* broker.open({ openId: ID_A, noteId: 'nt_a', sender: asSender(harness) });
+      yield* broker.open({ openId: ID_B, noteId: 'nt_a', sender: asSender(harness) });
+      const portA = harness.rendererPort(ID_A);
+      harness.rendererPort(ID_B);
+      yield* settle;
 
-        // The workspace closes under the live ports.
-        yield* Scope.close(storeScope, Exit.void);
+      // The workspace closes under the live ports.
+      yield* Scope.close(storeScope, Exit.void);
 
-        portA.postMessage({ type: 'update', data: blob(3) });
-        yield* settle;
+      portA.postMessage({ type: 'update', data: blob(3) });
+      yield* settle;
 
-        assert.isUndefined(store.logs.get('nt_a'), 'nothing appended after the swap');
-        assert.isDefined(
-          logger.find(e => e.message === 'collab update append dropped — no workspace')
-        );
-        // Live windows still converge: the blob relayed to B verbatim.
-        assert.deepStrictEqual(harness.received(ID_B).at(-1), { type: 'update', data: blob(3) });
-        yield* Scope.close(scope, Exit.void);
-      })
+      assert.isUndefined(store.logs.get('nt_a'), 'nothing appended after the swap');
+      assert.isDefined(
+        logger.find(e => e.message === 'collab update append dropped — no workspace')
+      );
+      assert.deepStrictEqual(harness.received(ID_B), [{ type: 'hydrated', seq: 0, count: 0 }]);
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+
+  it.effect('pending ports cannot write or relay across a workspace replacement', () =>
+    Effect.gen(function* () {
+      const logger = makeTestLogger();
+      const scope = yield* Scope.make();
+      const { broker, bridge } = yield* buildBroker(logger, scope);
+      const oldStore = makeFakeStore();
+      const newStore = makeFakeStore();
+      yield* bridge.register(oldStore.api).pipe(Scope.extend(scope));
+      const harness = makeHarness();
+      yield* broker.open({ openId: ID_A, noteId: 'nt_shared', sender: asSender(harness) });
+      const oldPort = harness.rendererPort(ID_A);
+      yield* settle;
+
+      yield* bridge.register(newStore.api).pipe(Scope.extend(scope));
+      yield* broker.open({ openId: ID_B, noteId: 'nt_shared', sender: asSender(harness) });
+      const newPort = harness.rendererPort(ID_B);
+      yield* settle;
+      oldPort.postMessage({ type: 'update', data: blob(1) });
+      oldPort.postMessage({ type: 'flush', text: 'old', markdown: 'old', firstLine: 'old' });
+      oldPort.postMessage({ type: 'compact', upTo: 1, state: blob(1) });
+      oldPort.postMessage({ type: 'barrier', requestId: 'old_drain' });
+      newPort.postMessage({ type: 'update', data: blob(2) });
+      newPort.postMessage({ type: 'barrier', requestId: 'new_drain' });
+      yield* settle;
+
+      assert.strictEqual(oldStore.logs.size, 0);
+      assert.deepStrictEqual(newStore.logs.get('nt_shared'), [{ seq: 1, update: blob(2) }]);
+      assert.deepStrictEqual(newStore.flushes, []);
+      assert.deepStrictEqual(newStore.compacts, []);
+      assert.deepStrictEqual(harness.received(ID_A), [
+        { type: 'hydrated', seq: 0, count: 0 },
+        { type: 'barrier', requestId: 'old_drain', ok: false },
+      ]);
+      assert.deepStrictEqual(harness.received(ID_B), [
+        { type: 'hydrated', seq: 0, count: 0 },
+        { type: 'barrier', requestId: 'new_drain', ok: true },
+      ]);
+      yield* Scope.close(scope, Exit.void);
+    })
   );
 
   it.effect('layer-scope close interrupts every open and closes its ports', () =>
