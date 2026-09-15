@@ -11,6 +11,7 @@
     "target": "ESNext",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
+    "types": ["node"],
     "moduleDetection": "force",
     "allowSyntheticDefaultImports": true,
     "noUncheckedIndexedAccess": true,

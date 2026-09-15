@@ -14,6 +14,8 @@
     "type:check": "turbo run type:check"
   },
   "devDependencies": {
+    "@types/node": "catalog:",
+    "@typescript/native": "npm:typescript@7.0.2",
     "prettier": "^3.5.3",
     "tsx": "catalog:",
     "turbo": "^2.5.3"

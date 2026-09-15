@@ -25,7 +25,12 @@ app-workflow,silence,editor-markdown,editor-schema,id,note-derive,ai-prompts}`) 
 
 ## Conventions
 
-- TypeScript 5.8 with the shared presets in `packages/config-typescript`; the
+- Workspace `tsc` builds and type checks use TypeScript 7.0.2 through the root `@typescript/native`
+  alias (`pnpm exec tsc --version` verifies it). The `typescript` catalog aliases
+  `@typescript/typescript6` for tools that use the JavaScript compiler API, including ESLint,
+  declaration bundling, and the localization source scan. That package exposes `tsc6`, so
+  workspace `tsc` commands use v7. See the [TypeScript compatibility guidance](https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/#running-side-by-side-with-typescript-6-0).
+  The shared presets are in `packages/config-typescript`; the
   `prismical-source` export condition lets `tsc` see package sources while Vite and vitest
   consume built `dist/` (run `pnpm build` after a shared-package update or a package change).
 - Every renderer-graph package declares `"zod": "catalog:"` — a stray `^3` pin poisons the

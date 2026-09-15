@@ -4,7 +4,7 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "types": ["node"],
+    "types": ["node", "vite/client"],
     // The main-window renderer mounts the shared React shell
     // (@prismical/app-ui) under a TanStack hash router; the automatic JSX runtime
     // matches the shared packages' own tsconfigs (jsx: react-jsx).
