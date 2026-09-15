@@ -13,7 +13,7 @@
  * they settle gracefully (no-session / idle), never a throw. (The wire literal
  * stays 'no-session' — the renderer folds on it.)
  */
-import { Context, Effect, Layer, Option, Stream, SubscriptionRef, type Scope } from 'effect';
+import { Context, Effect, Layer, Option, Semaphore, Stream, SubscriptionRef, type Scope } from 'effect';
 import {
   idleRecordingState,
   type RecordingServiceApi,
@@ -101,10 +101,9 @@ export interface RecordingBridgeApi {
   readonly levelChanges: Stream.Stream<number>;
 }
 
-export class RecordingBridge extends Context.Tag('desktop/recording/RecordingBridge')<
-  RecordingBridge,
-  RecordingBridgeApi
->() {}
+export class RecordingBridge extends Context.Service<RecordingBridge, RecordingBridgeApi>()(
+  'desktop/recording/RecordingBridge'
+) {}
 
 export const makeRecordingBridgeLive = (
   isUpdateRequired: Effect.Effect<boolean> = Effect.succeed(false),
@@ -117,13 +116,13 @@ export const makeRecordingBridgeLive = (
     );
 
     const skillOwners = new Set<number>();
-    const admission = yield* Effect.makeSemaphore(1);
+    const admission = yield* Semaphore.make(1);
 
     const api: RecordingBridgeApi = {
       register: service =>
         Effect.acquireRelease(
           Effect.sync(() => skillOwners.clear()).pipe(
-            Effect.zipRight(SubscriptionRef.set(currentRef, Option.some(service)))
+            Effect.andThen(SubscriptionRef.set(currentRef, Option.some(service)))
           ), () =>
           SubscriptionRef.update(currentRef, cur => {
             if (!Option.exists(cur, s => s === service)) return cur;
@@ -330,25 +329,23 @@ export const makeRecordingBridgeLive = (
         )
       ),
 
-      // switch:true — a workspace swap interrupts the old workspace's inner stream
+      // switchMap — a workspace swap interrupts the old workspace's inner stream
       // and starts the new one (or the idle stream), so the renderer resets to idle
       // when the workspace unmounts and never sees a dead workspace's state.
-      stateChanges: currentRef.changes.pipe(
-        Stream.flatMap(
+      stateChanges: SubscriptionRef.changes(currentRef).pipe(
+        Stream.switchMap(
           Option.match({
             onNone: () => Stream.succeed(idleRecordingState),
-            onSome: service => service.state.changes,
-          }),
-          { switch: true }
+            onSome: service => SubscriptionRef.changes(service.state),
+          })
         )
       ),
-      levelChanges: currentRef.changes.pipe(
-        Stream.flatMap(
+      levelChanges: SubscriptionRef.changes(currentRef).pipe(
+        Stream.switchMap(
           Option.match({
             onNone: () => Stream.succeed(0),
-            onSome: service => service.level.changes,
-          }),
-          { switch: true }
+            onSome: service => SubscriptionRef.changes(service.level),
+          })
         )
       ),
     };

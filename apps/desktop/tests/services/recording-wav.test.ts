@@ -9,7 +9,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { assert, describe, it } from '@effect/vitest';
-import { Effect, Either, Exit, Scope } from 'effect';
+import { Effect, Result, Exit, Scope } from 'effect';
 import { afterAll, afterEach, vi } from 'vitest';
 import type { ScopedLog } from '../../src/main/infra/logging/service';
 import { encodeWavPcm16 } from '../../src/main/domains/recording/wav';
@@ -347,11 +347,11 @@ describe('makeRecoveryWavSet (recovery-scoped on-disk WAV)', () => {
     Effect.scoped(Effect.gen(function* () {
       const dir = path.join(tmpBase, 'blocked');
       fs.writeFileSync(dir, 'not a directory');
-      const result = yield* Effect.either(makeRecoveryWavSet({ dir, mode: 'mic', log: noopLog, callbackLog }));
-      assert.isTrue(Either.isLeft(result));
-      if (Either.isLeft(result)) {
-        assert.strictEqual(result.left._tag, 'RecoveryWriteError');
-        assert.strictEqual(result.left.op, 'open');
+      const result = yield* Effect.result(makeRecoveryWavSet({ dir, mode: 'mic', log: noopLog, callbackLog }));
+      assert.isTrue(Result.isFailure(result));
+      if (Result.isFailure(result)) {
+        assert.strictEqual(result.failure._tag, 'RecoveryWriteError');
+        assert.strictEqual(result.failure.op, 'open');
       }
     }))
   );
@@ -360,12 +360,12 @@ describe('makeRecoveryWavSet (recovery-scoped on-disk WAV)', () => {
     Effect.scoped(Effect.gen(function* () {
       vi.spyOn(StreamingWavWriter.prototype, 'appendAudio').mockRejectedValueOnce(new Error('ENOSPC'));
       const set = yield* makeRecoveryWavSet({ dir: path.join(tmpBase, 'append-failure'), mode: 'mic', log: noopLog, callbackLog });
-      const result = yield* Effect.either(set.append('mic', new Float32Array([0.5])));
-      assert.isTrue(Either.isLeft(result));
-      if (Either.isLeft(result)) {
-        assert.strictEqual(result.left._tag, 'RecoveryWriteError');
-        assert.strictEqual(result.left.op, 'append');
-        assert.strictEqual(result.left.source, 'mic');
+      const result = yield* Effect.result(set.append('mic', new Float32Array([0.5])));
+      assert.isTrue(Result.isFailure(result));
+      if (Result.isFailure(result)) {
+        assert.strictEqual(result.failure._tag, 'RecoveryWriteError');
+        assert.strictEqual(result.failure.op, 'append');
+        assert.strictEqual(result.failure.source, 'mic');
       }
     }))
   );
@@ -381,12 +381,12 @@ describe('makeRecoveryWavSet (recovery-scoped on-disk WAV)', () => {
       const set = yield* makeRecoveryWavSet({ dir, mode: 'dual', log: noopLog, callbackLog });
       yield* set.append('mic', new Float32Array([0.5]));
       yield* set.append('system', new Float32Array([0.25]));
-      const result = yield* Effect.either(set.finalizeAndClose);
-      assert.isTrue(Either.isLeft(result));
-      if (Either.isLeft(result)) assert.strictEqual(result.left.op, 'finalize');
+      const result = yield* Effect.result(set.finalizeAndClose);
+      assert.isTrue(Result.isFailure(result));
+      if (Result.isFailure(result)) assert.strictEqual(result.failure.op, 'finalize');
       assert.strictEqual(finalized.mock.calls.length, 2, 'both lanes were closed');
       assert.strictEqual(parseWav(fs.readFileSync(path.join(dir, 'system.wav'))).dataSize, 2);
-      assert.isTrue(Either.isLeft(yield* Effect.either(set.finalizeAndClose)));
+      assert.isTrue(Result.isFailure(yield* Effect.result(set.finalizeAndClose)));
     }))
   );
 
@@ -395,7 +395,7 @@ describe('makeRecoveryWavSet (recovery-scoped on-disk WAV)', () => {
       const dir = path.join(tmpBase, 'lazy');
       const scope = yield* Scope.make();
       const set = yield* makeRecoveryWavSet({ dir, mode: 'dual', log: noopLog, callbackLog, sampleRate: CAPTURE_SAMPLE_RATE }).pipe(
-        Scope.extend(scope)
+        Scope.provide(scope)
       );
 
       yield* set.append('mic', new Float32Array([0.5, -0.5]));
@@ -421,7 +421,7 @@ describe('makeRecoveryWavSet (recovery-scoped on-disk WAV)', () => {
     Effect.gen(function* () {
       const dir = path.join(tmpBase, 'closed');
       const scope = yield* Scope.make();
-      const set = yield* makeRecoveryWavSet({ dir, mode: 'mic', log: noopLog, callbackLog }).pipe(Scope.extend(scope));
+      const set = yield* makeRecoveryWavSet({ dir, mode: 'mic', log: noopLog, callbackLog }).pipe(Scope.provide(scope));
 
       yield* set.append('mic', new Float32Array([0.5]));
       yield* set.finalizeAndClose;

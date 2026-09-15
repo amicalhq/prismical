@@ -10,7 +10,7 @@ export const makeProcessFailureReporter = (telemetry: TelemetryServiceApi, log: 
     let pending = 0;
     const recordDrop = yield* makeSuppressionCounter(log, 'Process failure reports suppressed');
     return (error: unknown, properties: TelemetryEventProperties = {}): void => {
-      const policy = Effect.runSync(SubscriptionRef.get(telemetry.state));
+      const policy = SubscriptionRef.getUnsafe(telemetry.state);
       if (!policy.enabled) return;
       if (pending >= 32) {
         recordDrop();
@@ -18,21 +18,23 @@ export const makeProcessFailureReporter = (telemetry: TelemetryServiceApi, log: 
       }
       pending++;
       run(
-        telemetry
-          .captureException(
-            error,
-            { source: 'child-process', ...properties },
-            'main',
-            policy.revision
-          )
-          .pipe(
-            Effect.catchAllCause(() => Effect.void),
-            Effect.ensuring(
-              Effect.sync(() => {
-                pending--;
-              })
+        // Register the callback before reporting can resume a closing owner.
+        Effect.yieldNow.pipe(
+          Effect.andThen(
+            telemetry.captureException(
+              error,
+              { source: 'child-process', ...properties },
+              'main',
+              policy.revision
             )
+          ),
+          Effect.catchCause(() => Effect.void),
+          Effect.ensuring(
+            Effect.sync(() => {
+              pending--;
+            })
           )
+        )
       );
     };
   });

@@ -142,7 +142,7 @@ const setup = (
       Layer.provide(Layer.effect(AppModeService, makeAppMode(appMode, true))),
       Layer.provide(logger.layer)
     );
-    const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+    const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
     const bridge = Context.get(ctx, FloatBridge);
     return { bridge, fake, scope, logger, requests, auth: authStub };
   }).pipe(Effect.orDie);
@@ -514,9 +514,9 @@ describe('FloatBridge plan gate', () => {
             null,
             orgAuthState,
             'cloud',
-            Deferred.succeed(started, undefined).pipe(Effect.zipRight(Deferred.await(result)))
+            Deferred.succeed(started, undefined).pipe(Effect.andThen(Deferred.await(result)))
           );
-          const opening = yield* Effect.fork(h.bridge.open(null));
+          const opening = yield* Effect.forkChild(h.bridge.open(null));
           yield* Deferred.await(started);
           yield* SubscriptionRef.set(h.auth.sessionState, nextState);
           yield* Deferred.succeed(result, {

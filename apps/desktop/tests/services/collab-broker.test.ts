@@ -7,7 +7,7 @@
  */
 import { assert, describe, it } from '@effect/vitest';
 import { collabPortChannel } from '@prismical/desktop-contracts';
-import { Context, Effect, Exit, Layer, Scope } from 'effect';
+import { Cause, Context, Deferred, Effect, Exit, Fiber, Layer, Option, Scope } from 'effect';
 import { vi } from 'vitest';
 import type { FakeElectron, FakeMessagePortMain } from '../helpers/fake-electron';
 import { FakeWebContents } from '../helpers/fake-electron';
@@ -34,7 +34,7 @@ void ((await import('electron')) as unknown as FakeElectron);
 // Effect.sleep), so drive them by flushing the microtask queue.
 const settle = Effect.gen(function* () {
   for (let i = 0; i < 16; i++) {
-    yield* Effect.yieldNow();
+    yield* Effect.yieldNow;
     yield* Effect.promise(() => new Promise<void>(resolve => queueMicrotask(resolve)));
   }
 });
@@ -118,7 +118,7 @@ const buildBroker = (logger: ReturnType<typeof makeTestLogger>, scope: Scope.Sco
       CollabBrokerLive.pipe(Layer.provide(logger.layer), Layer.provide(bridge)),
       bridge
     );
-    const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+    const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
     return {
       broker: Context.get(ctx, CollabBroker),
       bridge: Context.get(ctx, CollabBridge),
@@ -134,7 +134,7 @@ const asSender = (harness: Harness): CollabPortSender =>
   harness.sender as unknown as CollabPortSender;
 
 const failureOf = (exit: Exit.Exit<unknown, unknown>): unknown =>
-  Exit.isFailure(exit) && exit.cause._tag === 'Fail' ? exit.cause.error : undefined;
+  Exit.isFailure(exit) ? Option.getOrUndefined(Cause.findErrorOption(exit.cause)) : undefined;
 
 describe('CollabBroker note-body log lane', () => {
   it.effect('replays the log in order, then the hydrated marker with the last seq + count', () =>
@@ -147,7 +147,7 @@ describe('CollabBroker note-body log lane', () => {
         { seq: 1, update: blob(1) },
         { seq: 2, update: blob(2) },
       ]);
-      yield* bridge.register(store.api).pipe(Scope.extend(scope));
+      yield* bridge.register(store.api).pipe(Scope.provide(scope));
       const harness = makeHarness();
 
       yield* broker.open({ openId: ID_A, noteId: 'nt_a', sender: asSender(harness) });
@@ -169,7 +169,7 @@ describe('CollabBroker note-body log lane', () => {
       const scope = yield* Scope.make();
       const { broker, bridge } = yield* buildBroker(logger, scope);
       const store = makeFakeStore();
-      yield* bridge.register(store.api).pipe(Scope.extend(scope));
+      yield* bridge.register(store.api).pipe(Scope.provide(scope));
       const harness = makeHarness();
 
       yield* broker.open({ openId: ID_A, noteId: 'nt_a', sender: asSender(harness) });
@@ -187,7 +187,7 @@ describe('CollabBroker note-body log lane', () => {
       const scope = yield* Scope.make();
       const { broker, bridge } = yield* buildBroker(logger, scope);
       const store = makeFakeStore();
-      yield* bridge.register(store.api).pipe(Scope.extend(scope));
+      yield* bridge.register(store.api).pipe(Scope.provide(scope));
       const harness = makeHarness();
 
       yield* broker.open({ openId: ID_A, noteId: 'nt_a', sender: asSender(harness) });
@@ -216,7 +216,7 @@ describe('CollabBroker note-body log lane', () => {
       const scope = yield* Scope.make();
       const { broker, bridge } = yield* buildBroker(logger, scope);
       const store = makeFakeStore();
-      yield* bridge.register(store.api).pipe(Scope.extend(scope));
+      yield* bridge.register(store.api).pipe(Scope.provide(scope));
       const harness = makeHarness();
 
       yield* broker.open({ openId: ID_A, noteId: 'nt_a', sender: asSender(harness) });
@@ -246,7 +246,7 @@ describe('CollabBroker note-body log lane', () => {
       const scope = yield* Scope.make();
       const { broker, bridge } = yield* buildBroker(logger, scope);
       const store = makeFakeStore();
-      yield* bridge.register(store.api).pipe(Scope.extend(scope));
+      yield* bridge.register(store.api).pipe(Scope.provide(scope));
       const harness = makeHarness();
 
       yield* broker.open({ openId: ID_A, noteId: 'nt_a', sender: asSender(harness) });
@@ -279,9 +279,9 @@ describe('CollabBroker note-body log lane', () => {
         .register({
           ...store.api,
           applyFlush: (noteId, content) =>
-            Effect.promise(() => held).pipe(Effect.zipRight(store.api.applyFlush(noteId, content))),
+            Effect.promise(() => held).pipe(Effect.andThen(store.api.applyFlush(noteId, content))),
         })
-        .pipe(Scope.extend(scope));
+        .pipe(Scope.provide(scope));
       const harness = makeHarness();
       yield* broker.open({ openId: ID_A, noteId: 'nt_a', sender: asSender(harness) });
       const port = harness.rendererPort(ID_A);
@@ -310,7 +310,7 @@ describe('CollabBroker note-body log lane', () => {
         const scope = yield* Scope.make();
         const { broker, bridge } = yield* buildBroker(logger, scope);
         const store = makeFakeStore();
-        yield* bridge.register(store.api).pipe(Scope.extend(scope));
+        yield* bridge.register(store.api).pipe(Scope.provide(scope));
         const harness = makeHarness();
         yield* broker.open({ openId: ID_A, noteId: 'nt_a', sender: asSender(harness) });
         const port = harness.rendererPort(ID_A);
@@ -354,7 +354,7 @@ describe('CollabBroker note-body log lane', () => {
       const scope = yield* Scope.make();
       const { broker, bridge } = yield* buildBroker(logger, scope);
       const store = makeFakeStore();
-      yield* bridge.register(store.api).pipe(Scope.extend(scope));
+      yield* bridge.register(store.api).pipe(Scope.provide(scope));
       const harness = makeHarness();
 
       yield* broker.open({ openId: ID_A, noteId: 'nt_a', sender: asSender(harness) });
@@ -395,7 +395,7 @@ describe('CollabBroker note-body log lane', () => {
       const scope = yield* Scope.make();
       const { broker, bridge } = yield* buildBroker(logger, scope);
       const store = makeFakeStore();
-      yield* bridge.register(store.api).pipe(Scope.extend(scope));
+      yield* bridge.register(store.api).pipe(Scope.provide(scope));
       const harness = makeHarness();
 
       yield* broker.open({ openId: ID_A, noteId: 'nt_a', sender: asSender(harness) });
@@ -415,7 +415,7 @@ describe('CollabBroker note-body log lane', () => {
       const scope = yield* Scope.make();
       const { broker, bridge } = yield* buildBroker(logger, scope);
       const store = makeFakeStore();
-      yield* bridge.register(store.api).pipe(Scope.extend(scope));
+      yield* bridge.register(store.api).pipe(Scope.provide(scope));
       const harness = makeHarness();
 
       yield* broker.open({ openId: ID_A, noteId: 'nt_a', sender: asSender(harness) });
@@ -446,7 +446,7 @@ describe('CollabBroker note-body log lane', () => {
       const { broker, bridge } = yield* buildBroker(logger, scope);
       const store = makeFakeStore();
       const storeScope = yield* Scope.make();
-      yield* bridge.register(store.api).pipe(Scope.extend(storeScope));
+      yield* bridge.register(store.api).pipe(Scope.provide(storeScope));
       const harness = makeHarness();
 
       yield* broker.open({ openId: ID_A, noteId: 'nt_a', sender: asSender(harness) });
@@ -477,13 +477,13 @@ describe('CollabBroker note-body log lane', () => {
       const { broker, bridge } = yield* buildBroker(logger, scope);
       const oldStore = makeFakeStore();
       const newStore = makeFakeStore();
-      yield* bridge.register(oldStore.api).pipe(Scope.extend(scope));
+      yield* bridge.register(oldStore.api).pipe(Scope.provide(scope));
       const harness = makeHarness();
       yield* broker.open({ openId: ID_A, noteId: 'nt_shared', sender: asSender(harness) });
       const oldPort = harness.rendererPort(ID_A);
       yield* settle;
 
-      yield* bridge.register(newStore.api).pipe(Scope.extend(scope));
+      yield* bridge.register(newStore.api).pipe(Scope.provide(scope));
       yield* broker.open({ openId: ID_B, noteId: 'nt_shared', sender: asSender(harness) });
       const newPort = harness.rendererPort(ID_B);
       yield* settle;
@@ -517,7 +517,7 @@ describe('CollabBroker note-body log lane', () => {
       const scope = yield* Scope.make();
       const { broker, bridge } = yield* buildBroker(logger, scope);
       const store = makeFakeStore();
-      yield* bridge.register(store.api).pipe(Scope.extend(scope));
+      yield* bridge.register(store.api).pipe(Scope.provide(scope));
       const harness = makeHarness();
 
       yield* broker.open({ openId: ID_A, noteId: 'nt_a', sender: asSender(harness) });
@@ -530,6 +530,51 @@ describe('CollabBroker note-body log lane', () => {
       yield* settle;
       assert.isTrue(harness.mainPort(ID_A)?.closed, "A's main-side port closed on scope close");
       assert.isTrue(harness.mainPort(ID_B)?.closed, "B's main-side port closed on scope close");
+    })
+  );
+
+  it.effect('collab startup closes only after its producer is canceled', () =>
+    Effect.gen(function* () {
+      const scope = yield* Scope.make();
+      const { broker, bridge } = yield* buildBroker(makeTestLogger(), scope);
+      const harness = makeHarness();
+      const entered = yield* Deferred.make<void>();
+      let finalized = false;
+      yield* bridge.register({ ...makeFakeStore().api,
+        listUpdates: () => Deferred.succeed(entered, undefined).pipe(
+          Effect.andThen(Effect.never),
+          Effect.ensuring(Effect.sync(() => { finalized = true; })))
+      }).pipe(Scope.provide(scope));
+      const opening = yield* Effect.forkChild(broker.open({
+        openId: ID_A, noteId: 'nt_a', sender: asSender(harness),
+      }));
+      yield* Deferred.await(entered);
+      yield* Scope.close(scope, Exit.void);
+      assert.isTrue(finalized, 'Scope.close returned before producer cancellation');
+      assert.isTrue(harness.mainPort(ID_A)?.closed);
+      yield* Fiber.join(opening);
+    })
+  );
+
+  it.effect('closes collab port at initial yield before producer work', () =>
+    Effect.gen(function* () {
+      const scope = yield* Scope.make();
+      const { broker, bridge } = yield* buildBroker(makeTestLogger(), scope);
+      const harness = makeHarness();
+      let started = false;
+      yield* bridge.register({ ...makeFakeStore().api,
+        listUpdates: () => Effect.sync(() => { started = true; }).pipe(Effect.andThen(Effect.never))
+      }).pipe(Scope.provide(scope));
+      yield* broker.open({
+        openId: ID_A, noteId: 'nt_a', sender: asSender(harness),
+      });
+      const startedBeforeClose = started;
+      yield* Scope.close(scope, Exit.void);
+      assert.isFalse(startedBeforeClose);
+      assert.isFalse(started);
+      assert.isTrue(harness.mainPort(ID_A)?.closed);
+      assert.strictEqual(harness.mainPort(ID_A)?.listenerCount('message'), 0);
+      assert.strictEqual(harness.mainPort(ID_A)?.listenerCount('close'), 0);
     })
   );
 });

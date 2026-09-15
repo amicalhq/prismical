@@ -12,7 +12,6 @@ export interface LoggingTransportService {
   readonly rendererConfig: Omit<RendererLoggingConfig, 'pid' | 'surface'>;
   readonly exportBundle: (t: ApplicationTFunction) => Effect.Effect<void, unknown>;
 }
-export class LoggingTransport extends Context.Tag('desktop/LoggingTransport')<
-  LoggingTransport,
-  LoggingTransportService
->() {}
+export class LoggingTransport extends Context.Service<LoggingTransport, LoggingTransportService>()(
+  'desktop/LoggingTransport'
+) {}

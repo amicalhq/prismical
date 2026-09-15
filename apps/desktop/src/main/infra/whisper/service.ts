@@ -49,7 +49,6 @@ export interface WhisperEngineApi {
   readonly dispose: Effect.Effect<void>;
 }
 
-export class WhisperEngine extends Context.Tag('desktop/WhisperEngine')<
-  WhisperEngine,
-  WhisperEngineApi
->() {}
+export class WhisperEngine extends Context.Service<WhisperEngine, WhisperEngineApi>()(
+  'desktop/WhisperEngine'
+) {}

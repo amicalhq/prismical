@@ -33,7 +33,6 @@ export interface SettingsServiceApi {
   readonly reset: Effect.Effect<void, DbError>;
 }
 
-export class SettingsService extends Context.Tag('desktop/settings/SettingsService')<
-  SettingsService,
-  SettingsServiceApi
->() {}
+export class SettingsService extends Context.Service<SettingsService, SettingsServiceApi>()(
+  'desktop/settings/SettingsService'
+) {}

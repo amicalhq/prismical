@@ -52,10 +52,10 @@ describe('WindowRegistry (widget window resource)', () => {
     Effect.gen(function* () {
       const { layer } = build({ isE2E: true });
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const registry = Context.get(ctx, WindowRegistry);
 
-      yield* registry.openWidgetWindow.pipe(Scope.extend(scope));
+      yield* registry.openWidgetWindow.pipe(Scope.provide(scope));
       const win = fake.__windowInstances().at(-1);
       assert.isDefined(win);
       if (!win) return;
@@ -78,11 +78,11 @@ describe('WindowRegistry (widget window resource)', () => {
     Effect.gen(function* () {
       const { layer, logger } = build();
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const registry = Context.get(ctx, WindowRegistry);
 
       const windowScope = yield* Scope.make();
-      yield* registry.openWidgetWindow.pipe(Scope.extend(windowScope));
+      yield* registry.openWidgetWindow.pipe(Scope.provide(windowScope));
       const win = fake.__windowInstances().at(-1);
       assert.isDefined(win);
       if (!win) return;
@@ -149,12 +149,12 @@ describe('WindowRegistry (widget window resource)', () => {
     Effect.gen(function* () {
       const { layer } = build();
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const registry = Context.get(ctx, WindowRegistry);
 
       assert.strictEqual(yield* SubscriptionRef.get(registry.mainWindowFocused), false);
 
-      yield* registry.openMainWindow.pipe(Scope.extend(scope));
+      yield* registry.openMainWindow.pipe(Scope.provide(scope));
       const mainWin = fake.__windowInstances().at(-1);
       assert.isDefined(mainWin);
       if (!mainWin) return;
@@ -171,7 +171,7 @@ describe('WindowRegistry (widget window resource)', () => {
     Effect.gen(function* () {
       const { layer } = build();
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const registry = Context.get(ctx, WindowRegistry);
 
       // No widget yet → no-ops (never throw).
@@ -179,7 +179,7 @@ describe('WindowRegistry (widget window resource)', () => {
       assert.strictEqual(yield* registry.sendToWidgetWindow('widget:state', { x: 1 }), false);
       assert.isTrue(Option.isNone(yield* registry.widgetWindow));
 
-      yield* registry.openWidgetWindow.pipe(Scope.extend(scope));
+      yield* registry.openWidgetWindow.pipe(Scope.provide(scope));
       const win = fake.__windowInstances().at(-1);
       assert.isDefined(win);
       if (!win) return;
@@ -205,9 +205,9 @@ describe('WindowRegistry (widget window resource)', () => {
     Effect.gen(function* () {
       const { layer } = build({ rendererDevServerUrl: 'http://localhost:5173' });
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const registry = Context.get(ctx, WindowRegistry);
-      yield* registry.openWidgetWindow.pipe(Scope.extend(scope));
+      yield* registry.openWidgetWindow.pipe(Scope.provide(scope));
       assert.deepStrictEqual(fake.__windowInstances().at(-1)?.loadedUrls, [
         'http://localhost:5173/widget.html',
       ]);
@@ -230,9 +230,9 @@ describe('WindowRegistry (widget window resource)', () => {
         }
       );
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const registry = Context.get(ctx, WindowRegistry);
-      yield* registry.openWidgetWindow.pipe(Scope.extend(scope));
+      yield* registry.openWidgetWindow.pipe(Scope.provide(scope));
       const opts = fake.__windowInstances().at(-1)?.options as { x: number; y: number };
       assert.strictEqual(opts.x, 12);
       assert.strictEqual(opts.y, 24);
@@ -251,9 +251,9 @@ describe('WindowRegistry (widget window resource)', () => {
         }
       );
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const registry = Context.get(ctx, WindowRegistry);
-      yield* registry.openWidgetWindow.pipe(Scope.extend(scope));
+      yield* registry.openWidgetWindow.pipe(Scope.provide(scope));
       const opts = fake.__windowInstances().at(-1)?.options as { x: number; y: number };
       assert.strictEqual(opts.x, Math.round(12 + (1048 - 12) * 0.5)); // 530
       assert.strictEqual(opts.y, 330);
@@ -266,9 +266,9 @@ describe('WindowRegistry (widget window resource)', () => {
       // Legacy-position compatibility: read-side fallback, right edge at the old row.
       const { layer } = build({}, { 'pref:widgetNormalizedY': JSON.stringify(0.25) });
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const registry = Context.get(ctx, WindowRegistry);
-      yield* registry.openWidgetWindow.pipe(Scope.extend(scope));
+      yield* registry.openWidgetWindow.pipe(Scope.provide(scope));
       const opts = fake.__windowInstances().at(-1)?.options as { x: number; y: number };
       assert.strictEqual(opts.x, 1440 - 380 - 12);
       assert.strictEqual(opts.y, Math.round(24 + 612 * 0.25)); // 177
@@ -280,7 +280,7 @@ describe('WindowRegistry (widget window resource)', () => {
     Effect.gen(function* () {
       const { layer } = build();
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const registry = Context.get(ctx, WindowRegistry);
 
       // No widget → None (never throws).
@@ -295,7 +295,7 @@ describe('WindowRegistry (widget window resource)', () => {
         )
       );
 
-      yield* registry.openWidgetWindow.pipe(Scope.extend(scope));
+      yield* registry.openWidgetWindow.pipe(Scope.provide(scope));
       const win = fake.__windowInstances().at(-1);
       assert.isDefined(win);
       if (!win) return;

@@ -239,13 +239,13 @@ export const SettingsServiceLive: Layer.Layer<SettingsService, never, Operationa
                 changed,
                 field => store.setSetting(prefKey(field), JSON.stringify(merged[field])),
                 { discard: true }
-              ).pipe(Effect.zipRight(SubscriptionRef.set(ref, merged)));
+              ).pipe(Effect.andThen(SubscriptionRef.set(ref, merged)));
             })
           ),
         // Delete every pref row, then publish the defaults (delete-then-publish,
         // so a DbError leaves the observed settings untouched — like set).
         reset: store.deleteSettingsByPrefix(PREF_PREFIX).pipe(
-          Effect.zipRight(SubscriptionRef.set(ref, DEFAULT_DEVICE_SETTINGS))
+          Effect.andThen(SubscriptionRef.set(ref, DEFAULT_DEVICE_SETTINGS))
         ),
       };
       return api;

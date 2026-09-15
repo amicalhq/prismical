@@ -16,6 +16,8 @@ export interface SecureStoreService {
   readonly deleteSecret: (key: string) => Effect.Effect<void, DbError>;
 }
 
-export class SecureStore extends Context.Tag('desktop/SecureStore')<SecureStore, SecureStoreService>() {}
+export class SecureStore extends Context.Service<SecureStore, SecureStoreService>()(
+  'desktop/SecureStore'
+) {}
 
 export const SECURE_KEY_PREFIX = 'secure:';

@@ -77,7 +77,7 @@ import {
   type UpdateCheckResult,
 } from '@prismical/desktop-contracts';
 import { isValidPrefixedId } from '@prismical/id';
-import { Cause, Effect, Option, Ref, Runtime, Stream, SubscriptionRef, type Scope } from 'effect';
+import { Cause, Effect, Option, Ref, FiberSet, Stream, SubscriptionRef, type Scope } from 'effect';
 import { toSessionView } from '../../domains/auth/policy';
 import { AuthService } from '../../domains/auth/service';
 import { CollabBroker } from '../../domains/collab/service';
@@ -199,8 +199,17 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
     const logging = yield* LoggingTransport;
     const loggingIngress = logger.scopedSync('logging-ingress');
 
-    const runtime = yield* Effect.runtime<HandlerEnv>();
-    const runPromise = Runtime.runPromise(runtime);
+    const skillOwnerCleanups = new Map<number, Effect.Effect<void>>();
+    // Registered first so callbacks are canceled before reservation cleanup
+    // waits for the recording admission lock that a pending call can hold.
+    yield* Effect.addFinalizer(() =>
+      Effect.forEach(skillOwnerCleanups.values(), cleanup => cleanup, { discard: true })
+    );
+    const runOwned = yield* FiberSet.makeRuntimePromise<HandlerEnv>();
+    // rc.115 starts a fiber before registering it. Yield before handler work so
+    // a synchronous callback cannot close the owner before the fiber is tracked.
+    const runPromise = <A, E>(effect: Effect.Effect<A, E, HandlerEnv>) =>
+      runOwned(Effect.andThen(Effect.yieldNow, effect));
 
     // E2E-only: a one-shot forced `recording:start` result so the packaged e2e can
     // drive the permission-denied render without a capture device (set via
@@ -223,7 +232,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
                 .warn('ipc rejected: unknown sender', {
                   context: { webContentsId: event.sender.id },
                 })
-                .pipe(Effect.zipRight(Effect.fail(new SenderRejected('UNKNOWN_SENDER'))))
+                .pipe(Effect.andThen(Effect.fail(new SenderRejected('UNKNOWN_SENDER'))))
         )
       );
 
@@ -289,7 +298,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
               sessionState: auth.sessionState,
             });
           }),
-          Effect.catchAll(rejected =>
+          Effect.catch(rejected =>
             Effect.succeed<TransportResponse>({ error: { code: rejected.code } })
           )
         )
@@ -326,7 +335,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
               )
             );
           }),
-          Effect.catchAll(rejected =>
+          Effect.catch(rejected =>
             Effect.succeed<OpenStreamResponse>({ error: { code: rejected.code } })
           )
         )
@@ -369,7 +378,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
                 )
               );
           }),
-          Effect.catchAll(rejected =>
+          Effect.catch(rejected =>
             Effect.succeed<CollabOpenResponse>({ error: { code: rejected.code } })
           )
         )
@@ -382,7 +391,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
     yield* acquireHandle(CHANNELS.authGetSession, event =>
       runPromise(
         validateMainSender(event).pipe(
-          Effect.zipRight(SubscriptionRef.get(auth.sessionState)),
+          Effect.andThen(SubscriptionRef.get(auth.sessionState)),
           Effect.map(toSessionView)
         )
       )
@@ -394,15 +403,15 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
     yield* acquireHandle(CHANNELS.authSignIn, event =>
       runPromise(
         validateMainSender(event).pipe(
-          Effect.zipRight(auth.signIn()),
+          Effect.andThen(auth.signIn()),
           Effect.as<SignInResult>({ ok: true }),
           Effect.catchTag('AuthFlowError', error =>
             Effect.succeed<SignInResult>({ ok: false, code: FLOW_ERROR_CODES[error.reason] })
           ),
-          Effect.catchAll(rejected =>
+          Effect.catch(rejected =>
             Effect.succeed<SignInResult>({ ok: false, code: rejected.code })
           ),
-          Effect.catchAllDefect(defect =>
+          Effect.catchDefect(defect =>
             log
               .error('auth:signIn defect', { error: defect })
               .pipe(Effect.as<SignInResult>({ ok: false, code: 'INTERNAL' }))
@@ -423,7 +432,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
                 .warn('auth:openWebSession rejected: invalid payload', {
                   context: { issues: parsed.issues },
                 })
-                .pipe(Effect.zipRight(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
+                .pipe(Effect.andThen(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
             }
             return auth.openWebSession(parsed.data.returnPath, parsed.data.activeOrgId).pipe(
               Effect.tapError(error =>
@@ -447,7 +456,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
     yield* acquireHandle(CHANNELS.authGetCollabToken, event =>
       runPromise(
         validateMainSender(event).pipe(
-          Effect.zipRight(coreTransport.collabToken),
+          Effect.andThen(coreTransport.collabToken),
           Effect.map(Option.getOrNull)
         )
       )
@@ -465,7 +474,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
                 .warn('auth:signOut rejected: invalid payload', {
                   context: { issues: parsed.issues },
                 })
-                .pipe(Effect.zipRight(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
+                .pipe(Effect.andThen(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
             }
             return auth.signOut(parsed.data.sub);
           })
@@ -494,7 +503,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
                 .warn('auth:switchOrg rejected: invalid payload', {
                   context: { issues: parsed.issues },
                 })
-                .pipe(Effect.zipRight(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
+                .pipe(Effect.andThen(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
             }
             return auth.setActiveOrg(parsed.data.orgId).pipe(
               Effect.catchTag('AuthStateError', error =>
@@ -529,7 +538,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
                 .warn('auth:switchAccount rejected: invalid payload', {
                   context: { issues: parsed.issues },
                 })
-                .pipe(Effect.zipRight(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
+                .pipe(Effect.andThen(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
             }
             return auth.setActiveAccount(parsed.data.sub).pipe(
               Effect.catchTag('AuthStateError', error =>
@@ -566,7 +575,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
                 .warn('recording:start rejected: invalid payload', {
                   context: { issues: parsed.issues },
                 })
-                .pipe(Effect.zipRight(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
+                .pipe(Effect.andThen(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
             }
             const forced = config.isE2E
               ? Ref.getAndSet(startOverrideRef, Option.none())
@@ -610,7 +619,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
                 .warn('recording:stop rejected: invalid payload', {
                   context: { issues: parsed.issues },
                 })
-                .pipe(Effect.zipRight(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
+                .pipe(Effect.andThen(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
             }
             return recording.stop(parsed.data.recordingId);
           })
@@ -634,7 +643,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
                       issues: parsed.issues,
                     },
                   })
-                  .pipe(Effect.zipRight(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
+                  .pipe(Effect.andThen(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
               }
               return recording[operation](parsed.data.recordingId);
             })
@@ -642,10 +651,6 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
         )
       );
 
-    const skillOwnerCleanups = new Map<number, () => void>();
-    yield* Effect.addFinalizer(() => Effect.sync(() => {
-      for (const cleanup of skillOwnerCleanups.values()) cleanup();
-    }));
     yield* acquireHandle(CHANNELS.recordingSetSkillWorkflow, (event, payload) =>
       runPromise(validateMainSender(event).pipe(Effect.flatMap(() => Effect.gen(function* () {
         const parsed = recordingSkillWorkflowRequestSchema.safeParse(payload);
@@ -660,18 +665,29 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
         });
         const id = event.sender.id;
         if (!skillOwnerCleanups.has(id)) {
-          const release = () => { void runPromise(recording.setSkillWorkflow(id, false)); };
-          const cleanup = () => {
+          const releaseReservation = recording.setSkillWorkflow(id, false).pipe(Effect.asVoid);
+          const runRelease = (effect: Effect.Effect<void>) => {
+            void runPromise(effect.pipe(Effect.catchCause(cause =>
+              Cause.hasInterruptsOnly(cause) ? Effect.void : log.error('skill reservation release failed', {
+                error: Cause.squash(cause),
+              })
+            ))).catch(() => undefined); // An owner already closed rejects before the effect starts.
+          };
+          const release = () => runRelease(releaseReservation);
+          const detach = () => {
             event.sender.removeListener('destroyed', cleanup);
             event.sender.removeListener('render-process-gone', release);
             event.sender.removeListener('did-navigate', release);
             skillOwnerCleanups.delete(id);
-            release();
           };
+          // Keep the entry until release completes: owner close can interrupt
+          // the destroyed callback before it acquires the admission lock.
+          const releaseAndDetach = releaseReservation.pipe(Effect.andThen(Effect.sync(detach)));
+          const cleanup = () => runRelease(releaseAndDetach);
           event.sender.once('destroyed', cleanup);
           event.sender.on('render-process-gone', release);
           event.sender.on('did-navigate', release);
-          skillOwnerCleanups.set(id, cleanup);
+          skillOwnerCleanups.set(id, releaseAndDetach);
         }
         return yield* recording.setSkillWorkflow(id, parsed.data.active, ownsWorkspace);
       }))))
@@ -722,7 +738,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
     });
     yield* Effect.addFinalizer(() => flushIngress);
     yield* Effect.forkScoped(
-      Effect.forever(Effect.sleep('1 second').pipe(Effect.zipRight(flushIngress)))
+      Effect.forever(Effect.sleep('1 second').pipe(Effect.andThen(flushIngress)))
     );
     yield* acquireHandle(CHANNELS.loggingWrite, (event, payload) =>
       runPromise(
@@ -822,14 +838,14 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
       )
     );
     yield* Effect.forkScoped(
-      Stream.runForEach(telemetry.state.changes, current => {
+      Stream.runForEach(SubscriptionRef.changes(telemetry.state), current => {
         const parsed = telemetryStateSchema.safeParse(current);
         if (!parsed.success) return log.error('telemetry state failed validation');
         return Effect.forEach(
           [windows.sendToAppWindows, windows.sendToWidgetWindow, windows.sendToNotifyWindow],
           send =>
             send(CHANNELS.telemetryStateChanged, parsed.data).pipe(
-              Effect.catchAllDefect(() => log.warn('telemetry state push failed'))
+              Effect.catchDefect(() => log.warn('telemetry state push failed'))
             ),
           { discard: true }
         );
@@ -842,7 +858,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
     yield* acquireHandle(CHANNELS.settingsGet, event =>
       runPromise(
         validateMainSender(event).pipe(
-          Effect.zipRight(settings.get),
+          Effect.andThen(settings.get),
           Effect.map((current): DeviceSettings => {
             const parsed = parseDeviceSettings(current);
             return parsed.success ? parsed.data : DEFAULT_DEVICE_SETTINGS;
@@ -867,7 +883,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
                 .warn('settings:set rejected: invalid payload', {
                   context: { issues: parsed.issues },
                 })
-                .pipe(Effect.zipRight(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
+                .pipe(Effect.andThen(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
             }
             return Effect.gen(function* () {
               if (
@@ -881,7 +897,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
               Effect.catchTag('DbError', () =>
                 log.error('settings:set could not persist — change dropped').pipe(
                   // Onboarding must stay on the current step when progress cannot be saved.
-                  Effect.zipRight(
+                  Effect.andThen(
                     parsed.data.onboarding !== undefined
                       ? Effect.fail(new PayloadRejected('INTERNAL'))
                       : Effect.void
@@ -913,15 +929,15 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
     yield* acquireHandle(CHANNELS.capabilityCheckUpdates, event =>
       runPromise(
         validateMainSender(event).pipe(
-          Effect.zipRight(Effect.forkIn(remoteConfig.refresh, scope)),
-          Effect.zipRight(updater.checkForUpdates),
+          Effect.andThen(Effect.forkIn(remoteConfig.refresh, scope)),
+          Effect.andThen(updater.checkForUpdates),
           Effect.map((status): UpdateCheckResult => ({ status }))
         )
       )
     );
 
     const updateAccessChanges = Stream.zipLatest(
-      remoteConfig.requirement.changes,
+      SubscriptionRef.changes(remoteConfig.requirement),
       recording.stateChanges
     ).pipe(
       Stream.map(([requirement, state]): UpdateAccessView => ({
@@ -932,7 +948,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
     yield* acquireHandle(CHANNELS.updaterGetAccess, event =>
       runPromise(
         validateMainSender(event).pipe(
-          Effect.zipRight(Stream.runHead(updateAccessChanges)),
+          Effect.andThen(Stream.runHead(updateAccessChanges)),
           Effect.map(Option.getOrThrow)
         )
       )
@@ -940,12 +956,12 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
     yield* acquireHandle(CHANNELS.updaterOpenDownload, event =>
       runPromise(
         validateMainSender(event).pipe(
-          Effect.zipRight(nativeOs.openExternal('https://prismical.ai/download'))
+          Effect.andThen(nativeOs.openExternal('https://prismical.ai/download'))
         )
       )
     );
     yield* acquireHandle(CHANNELS.updaterQuit, event =>
-      runPromise(validateMainSender(event).pipe(Effect.zipRight(electronApp.quit)))
+      runPromise(validateMainSender(event).pipe(Effect.andThen(electronApp.quit)))
     );
     yield* Effect.forkScoped(
       Stream.runForEach(updateAccessChanges, access =>
@@ -959,12 +975,12 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
     yield* acquireHandle(CHANNELS.updaterGetState, event =>
       runPromise(
         validateMainSender(event).pipe(
-          Effect.zipRight(SubscriptionRef.get(updater.state)),
+          Effect.andThen(SubscriptionRef.get(updater.state)),
           Effect.flatMap(view => {
             const parsed = parseUpdateStateView(view);
             return parsed.success
               ? Effect.succeed(parsed.data)
-              : Effect.zipRight(
+              : Effect.andThen(
                   log.error('updater:getState view failed the schema', {
                     context: { issues: parsed.issues },
                   }),
@@ -975,10 +991,10 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
       )
     );
     yield* acquireHandle(CHANNELS.updaterQuitInstall, event =>
-      runPromise(validateMainSender(event).pipe(Effect.zipRight(updater.quitAndInstall)))
+      runPromise(validateMainSender(event).pipe(Effect.andThen(updater.quitAndInstall)))
     );
     yield* acquireHandle(CHANNELS.updaterDismissPrompt, event =>
-      runPromise(validateMainSender(event).pipe(Effect.zipRight(updater.dismissPrompt)))
+      runPromise(validateMainSender(event).pipe(Effect.andThen(updater.dismissPrompt)))
     );
 
     // models:* — the local whisper model manager. getState
@@ -990,12 +1006,12 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
     yield* acquireHandle(CHANNELS.modelsGetState, event =>
       runPromise(
         validateMainSender(event).pipe(
-          Effect.zipRight(SubscriptionRef.get(models.state)),
+          Effect.andThen(SubscriptionRef.get(models.state)),
           Effect.flatMap(view => {
             const parsed = parseModelsStateView(view);
             return parsed.success
               ? Effect.succeed(parsed.data)
-              : Effect.zipRight(
+              : Effect.andThen(
                   log.error('models:getState view failed the schema', {
                     context: { issues: parsed.issues },
                   }),
@@ -1019,7 +1035,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
                   .warn(`${channel} rejected: invalid payload`, {
                     context: { issues: parsed.issues },
                   })
-                  .pipe(Effect.zipRight(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
+                  .pipe(Effect.andThen(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
               }
               const run =
                 verb === 'download'
@@ -1054,12 +1070,12 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
     yield* acquireHandle(CHANNELS.capabilityExportLogs, event =>
       runPromise(
         validateMainSender(event).pipe(
-          Effect.zipRight(
+          Effect.andThen(
             nativeOs.revealLogs.pipe(
-              Effect.catchAllCause(cause =>
+              Effect.catchCause(cause =>
                 log
                   .error('Diagnostic bundle export failed', { error: Cause.squash(cause) })
-                  .pipe(Effect.zipRight(Effect.fail(new PayloadRejected('INTERNAL'))))
+                  .pipe(Effect.andThen(Effect.fail(new PayloadRejected('INTERNAL'))))
               )
             )
           )
@@ -1073,8 +1089,8 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
     yield* acquireHandle(CHANNELS.capabilityRestartApp, event =>
       runPromise(
         validateMainSender(event).pipe(
-          Effect.zipRight(log.info('capability:restartApp — relaunching')),
-          Effect.zipRight(nativeOs.relaunch)
+          Effect.andThen(log.info('capability:restartApp — relaunching')),
+          Effect.andThen(nativeOs.relaunch)
         )
       )
     );
@@ -1100,7 +1116,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
     yield* acquireHandle(CHANNELS.capabilityGetAppModeState, event =>
       runPromise(
         validateMainSender(event).pipe(
-          Effect.zipRight(SubscriptionRef.get(appMode.chosenState)),
+          Effect.andThen(SubscriptionRef.get(appMode.chosenState)),
           Effect.map((chosen): AppModeState => ({ mode: appMode.mode, chosen }))
         )
       )
@@ -1124,7 +1140,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
                     issues: parsed.issues,
                   },
                 })
-                .pipe(Effect.zipRight(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
+                .pipe(Effect.andThen(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
             }
             const { mode } = parsed.data;
             // Backstop for the unchosen cloud boot: a roster that somehow got
@@ -1137,13 +1153,13 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
                   .error('capability:chooseAppMode — mode persist failed', {
                     context: { op: error.op },
                   })
-                  .pipe(Effect.zipRight(Effect.fail(new PayloadRejected('INTERNAL'))))
+                  .pipe(Effect.andThen(Effect.fail(new PayloadRejected('INTERNAL'))))
               ),
-              Effect.zipRight(severAccounts),
-              Effect.zipRight(
+              Effect.andThen(severAccounts),
+              Effect.andThen(
                 mode === appMode.mode ? SubscriptionRef.set(appMode.chosenState, true) : Effect.void
               ),
-              Effect.zipRight(
+              Effect.andThen(
                 mode === appMode.mode
                   ? log
                       .info('capability:chooseAppMode — mode chosen', { context: { mode } })
@@ -1153,7 +1169,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
                         context: { mode },
                       })
                       .pipe(
-                        Effect.zipRight(relaunch),
+                        Effect.andThen(relaunch),
                         Effect.as<ChooseAppModeResult>({ relaunch: true })
                       )
               )
@@ -1177,7 +1193,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
                 .warn('capability:resetApp rejected: invalid payload', {
                   context: { issues: parsed.issues },
                 })
-                .pipe(Effect.zipRight(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
+                .pipe(Effect.andThen(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
             }
             const { mode } = parsed.data;
             const retainedSettings = {
@@ -1193,18 +1209,18 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
             return operationalDb.setSetting(PENDING_PURGE_KEY, purgeMarker).pipe(
               Effect.catchTag('DbError', () =>
                 log.error('capability:resetApp — purge marker write failed').pipe(
-                  Effect.zipRight(Effect.fail(new PayloadRejected('INTERNAL')))
+                  Effect.andThen(Effect.fail(new PayloadRejected('INTERNAL')))
                 )
               ),
-              Effect.zipRight(signOutEveryAccount),
+              Effect.andThen(signOutEveryAccount),
               // Publish defaults so OS preferences such as launch-at-login are
               // reset too. The boot-time wipe retries any failed persistence.
-              Effect.zipRight(
+              Effect.andThen(
                 settings.reset.pipe(
                   Effect.catchTag('DbError', () => log.error('capability:resetApp — settings clear failed'))
                 )
               ),
-              Effect.zipRight(
+              Effect.andThen(
                 operationalDb.resetDeviceState({
                   ...retainedSettings,
                   [PENDING_PURGE_KEY]: purgeMarker,
@@ -1212,19 +1228,19 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
                   Effect.catchTag('DbError', () => log.error('capability:resetApp — device clear deferred to boot'))
                 )
               ),
-              Effect.zipRight(
+              Effect.andThen(
                 electronApp.clearRendererStorage.pipe(
-                  Effect.catchAllDefect(() => log.error('capability:resetApp — renderer storage clear failed'))
+                  Effect.catchDefect(() => log.error('capability:resetApp — renderer storage clear failed'))
                 )
               ),
-              Effect.zipRight(
+              Effect.andThen(
                 log.warn('capability:resetApp — reset scheduled; relaunching', {
                   context: {
                     switchTo: mode ?? null,
                   },
                 })
               ),
-              Effect.zipRight(relaunch)
+              Effect.andThen(relaunch)
             );
           })
         )
@@ -1233,17 +1249,17 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
 
     // capability:getPermissions — the current mic + system-audio statuses.
     yield* acquireHandle(CHANNELS.capabilityGetPermissions, event =>
-      runPromise(validateMainSender(event).pipe(Effect.zipRight(readPermissions)))
+      runPromise(validateMainSender(event).pipe(Effect.andThen(readPermissions)))
     );
 
     yield* acquireHandle(CHANNELS.capabilityGetAppleCalendarStatus, event =>
-      runPromise(validateMainSender(event).pipe(Effect.zipRight(eventkit.getStatus)))
+      runPromise(validateMainSender(event).pipe(Effect.andThen(eventkit.getStatus)))
     );
     yield* acquireHandle(CHANNELS.capabilityEnableAppleCalendar, event =>
-      runPromise(validateMainSender(event).pipe(Effect.zipRight(eventkit.enable)))
+      runPromise(validateMainSender(event).pipe(Effect.andThen(eventkit.enable)))
     );
     yield* acquireHandle(CHANNELS.capabilityRefreshAppleCalendar, event =>
-      runPromise(validateMainSender(event).pipe(Effect.zipRight(eventkit.refresh)))
+      runPromise(validateMainSender(event).pipe(Effect.andThen(eventkit.refresh)))
     );
 
     // capability:{set,clear,has}TranscriptionByokKey — the BYOK
@@ -1259,7 +1275,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
             if (!parsed.success) {
               return log
                 .warn('capability:setTranscriptionByokKey rejected: invalid payload')
-                .pipe(Effect.zipRight(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
+                .pipe(Effect.andThen(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
             }
             return secureStore
               .setSecret(
@@ -1289,7 +1305,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
     yield* acquireHandle(CHANNELS.capabilityClearTranscriptionByokKey, event =>
       runPromise(
         validateMainSender(event).pipe(
-          Effect.zipRight(
+          Effect.andThen(
             secureStore.deleteSecret(BYOK_API_KEY_SECRET).pipe(
               Effect.catchTag('DbError', error =>
                 log.error('capability:clearTranscriptionByokKey — could not persist', {
@@ -1306,7 +1322,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
     yield* acquireHandle(CHANNELS.capabilityHasTranscriptionByokKey, event =>
       runPromise(
         validateMainSender(event).pipe(
-          Effect.zipRight(
+          Effect.andThen(
             secureStore.getSecret(BYOK_API_KEY_SECRET).pipe(
               Effect.flatMap(secret =>
                 settings.get.pipe(
@@ -1352,14 +1368,14 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
             if (!parsed.success) {
               return log
                 .warn('capability:setAiProviderKey rejected: invalid payload')
-                .pipe(Effect.zipRight(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
+                .pipe(Effect.andThen(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
             }
             return secureStore
               .setSecret(aiProviderSecretKey(parsed.data.provider), parsed.data.key)
               .pipe(
                 // A new key changes what the catalogue and the tool memo would
                 // say — drop both so the next read is fresh.
-                Effect.zipRight(aiProvider.forget(parsed.data.provider)),
+                Effect.andThen(aiProvider.forget(parsed.data.provider)),
                 Effect.catchTags({
                   SecureStoreError: error =>
                     log.error('capability:setAiProviderKey — secure store failed', {
@@ -1389,10 +1405,10 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
             if (!parsed.success) {
               return log
                 .warn('capability:clearAiProviderKey rejected: invalid payload')
-                .pipe(Effect.zipRight(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
+                .pipe(Effect.andThen(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
             }
             return secureStore.deleteSecret(aiProviderSecretKey(parsed.data.provider)).pipe(
-              Effect.zipRight(aiProvider.forget(parsed.data.provider)),
+              Effect.andThen(aiProvider.forget(parsed.data.provider)),
               Effect.catchTag('DbError', error =>
                 log.error('capability:clearAiProviderKey — could not persist', {
                   context: {
@@ -1414,7 +1430,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
             if (!parsed.success) {
               return log
                 .warn('capability:hasAiProviderKey rejected: invalid payload')
-                .pipe(Effect.zipRight(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
+                .pipe(Effect.andThen(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
             }
             return secureStore.getSecret(aiProviderSecretKey(parsed.data.provider)).pipe(
               Effect.map(secret => secret !== null && secret !== ''),
@@ -1451,7 +1467,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
             if (!parsed.success) {
               return log
                 .warn('capability:listAiModels rejected: invalid payload')
-                .pipe(Effect.zipRight(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
+                .pipe(Effect.andThen(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
             }
             return aiProvider.listModels(parsed.data.provider, parsed.data.force === true);
           })
@@ -1474,13 +1490,13 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
                     issues: parsed.issues,
                   },
                 })
-                .pipe(Effect.zipRight(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
+                .pipe(Effect.andThen(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
             }
             const prompt =
               parsed.data.kind === 'microphone'
                 ? sysPermissions.requestMicrophoneAccess.pipe(Effect.asVoid)
                 : Effect.void;
-            return prompt.pipe(Effect.zipRight(readPermissions));
+            return prompt.pipe(Effect.andThen(readPermissions));
           })
         )
       )
@@ -1502,7 +1518,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
                 .warn('theme:setSource rejected: invalid payload', {
                   context: { issues: parsed.issues },
                 })
-                .pipe(Effect.zipRight(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
+                .pipe(Effect.andThen(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
             }
             return windows.setThemeSource(parsed.data);
           })
@@ -1522,7 +1538,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
                     issues: parsed.issues,
                   },
                 })
-                .pipe(Effect.zipRight(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
+                .pipe(Effect.andThen(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
             }
             const link = systemSettingsDeepLink(parsed.data.kind, config.platform);
             return link === null
@@ -1533,7 +1549,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
                   },
                 })
               : nativeOs.openExternal(link).pipe(
-                  Effect.catchAllDefect(defect =>
+                  Effect.catchDefect(defect =>
                     log.error('capability:openSystemSettings — openExternal failed', {
                       error: defect,
                     })
@@ -1563,7 +1579,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
         // Like the auth push: a webContents.send racing window destruction throws a
         // DEFECT — logged so the fan-out fiber survives for the process lifetime.
         return push.pipe(
-          Effect.catchAllDefect(defect =>
+          Effect.catchDefect(defect =>
             log.error('recording:stateChanged push failed — fiber continues', { error: defect })
           )
         );
@@ -1576,7 +1592,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
     // parse and the push is dropped loudly instead of crossing the membrane.
     // Released with the layer scope like the handlers above.
     yield* Effect.forkScoped(
-      Stream.runForEach(auth.sessionState.changes, state => {
+      Stream.runForEach(SubscriptionRef.changes(auth.sessionState), state => {
         const parsed = parseSessionChangedPush(toSessionView(state));
         const push = parsed.success
           ? windows.sendToAppWindows(CHANNELS.authSessionChanged, parsed.data)
@@ -1589,9 +1605,9 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
         // defect here would kill this fan-out fiber for the process lifetime
         // (every later renderer permanently stale once a window reopens).
         // One dropped push is logged; the fiber lives on. Interrupts (scope
-        // close) pass through untouched — catchAllDefect never sees them.
+        // close) pass through untouched — catchDefect never sees them.
         return push.pipe(
-          Effect.catchAllDefect(defect =>
+          Effect.catchDefect(defect =>
             log.error('auth:sessionChanged push failed — fiber continues', { error: defect })
           )
         );
@@ -1606,7 +1622,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
     // than crossing, and a send racing window destruction throws a DEFECT that is
     // logged so the fan-out fiber survives for the process lifetime.
     yield* Effect.forkScoped(
-      Stream.runForEach(settings.settings.changes, current => {
+      Stream.runForEach(SubscriptionRef.changes(settings.settings), current => {
         const parsed = parseDeviceSettings(current);
         const push = parsed.success
           ? windows.sendToAppWindows(CHANNELS.settingsChanged, parsed.data)
@@ -1616,7 +1632,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
               },
             });
         return push.pipe(
-          Effect.catchAllDefect(defect =>
+          Effect.catchDefect(defect =>
             log.error('settings:changed push failed — fiber continues', { error: defect })
           )
         );
@@ -1626,7 +1642,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
     // updater:stateChanged — scoped push fiber: every updater-view change
     // fans out to the main window (same replay/parse/defect posture as settings).
     yield* Effect.forkScoped(
-      Stream.runForEach(updater.state.changes, current => {
+      Stream.runForEach(SubscriptionRef.changes(updater.state), current => {
         const parsed = parseUpdateStateView(current);
         const push = parsed.success
           ? windows.sendToAppWindows(CHANNELS.updaterStateChanged, parsed.data)
@@ -1636,7 +1652,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
               },
             });
         return push.pipe(
-          Effect.catchAllDefect(defect =>
+          Effect.catchDefect(defect =>
             log.error('updater:stateChanged push failed — fiber continues', { error: defect })
           )
         );
@@ -1649,7 +1665,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
     // replays the current snapshot on registration; a value that fails the
     // schema is dropped loudly; a send racing window destruction is logged.
     yield* Effect.forkScoped(
-      Stream.runForEach(models.state.changes, current => {
+      Stream.runForEach(SubscriptionRef.changes(models.state), current => {
         const parsed = parseModelsStateView(current);
         const push = parsed.success
           ? windows.sendToAppWindows(CHANNELS.modelsStateChanged, parsed.data)
@@ -1659,7 +1675,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
               },
             });
         return push.pipe(
-          Effect.catchAllDefect(defect =>
+          Effect.catchDefect(defect =>
             log.error('models:stateChanged push failed — fiber continues', { error: defect })
           )
         );
@@ -1678,7 +1694,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
                 .warn('float:open rejected: invalid payload', {
                   context: { issues: parsed.issues },
                 })
-                .pipe(Effect.zipRight(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
+                .pipe(Effect.andThen(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
             }
             return floatBridge.open(parsed.data.noteId).pipe(Effect.asVoid);
           })
@@ -1686,10 +1702,10 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
       )
     );
     yield* acquireHandle(CHANNELS.floatCollapse, event =>
-      runPromise(validateMainSender(event).pipe(Effect.zipRight(floatBridge.collapse)))
+      runPromise(validateMainSender(event).pipe(Effect.andThen(floatBridge.collapse)))
     );
     yield* acquireHandle(CHANNELS.floatDockBack, event =>
-      runPromise(validateMainSender(event).pipe(Effect.zipRight(floatBridge.dockBack)))
+      runPromise(validateMainSender(event).pipe(Effect.andThen(floatBridge.dockBack)))
     );
 
     // Sign-out teardown for the float: with no active account the float window
@@ -1699,7 +1715,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
     // clear the slot the moment the session loses its active account.
     yield* Effect.forkScoped(
       Stream.runForEach(
-        auth.sessionState.changes.pipe(
+        SubscriptionRef.changes(auth.sessionState).pipe(
           Stream.map(state => {
             const view = toSessionView(state);
             return (
@@ -1712,7 +1728,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
         ),
         () =>
           floatBridge.reset.pipe(
-            Effect.catchAllDefect(defect =>
+            Effect.catchDefect(defect =>
               log.error('float sign-out reset failed', { error: defect })
             )
           )
@@ -1723,7 +1739,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
     // (pop-out button state; the float chrome itself). Same parse/defect posture
     // as every push lane.
     yield* Effect.forkScoped(
-      Stream.runForEach(floatBridge.state.changes, current => {
+      Stream.runForEach(SubscriptionRef.changes(floatBridge.state), current => {
         const parsed = parseFloatState(current);
         const push = parsed.success
           ? windows.sendToAppWindows(CHANNELS.floatStateChanged, parsed.data)
@@ -1733,7 +1749,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
               },
             });
         return push.pipe(
-          Effect.catchAllDefect(defect =>
+          Effect.catchDefect(defect =>
             log.error('float:state push failed — fiber continues', { error: defect })
           )
         );
@@ -1744,22 +1760,22 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
     if (config.isE2E) {
       const sessionProbe = yield* SessionLifecycleProbe;
       yield* acquireHandle(CHANNELS.e2eStreamStats, event =>
-        runPromise(validateMainSender(event).pipe(Effect.zipRight(broker.stats)))
+        runPromise(validateMainSender(event).pipe(Effect.andThen(broker.stats)))
       );
       // The pending OAuth attempt's state param (never the verifier) — the auth
       // e2e specs mint their fake deep-link callbacks from it.
       yield* acquireHandle(CHANNELS.e2eAuthPendingState, event =>
-        runPromise(validateMainSender(event).pipe(Effect.zipRight(auth.pendingAttemptState)))
+        runPromise(validateMainSender(event).pipe(Effect.andThen(auth.pendingAttemptState)))
       );
       // Public OAuth request values only (challenge + state); the verifier remains in AuthService.
       yield* acquireHandle(CHANNELS.e2eAuthAuthorizeUrl, event =>
-        runPromise(validateMainSender(event).pipe(Effect.zipRight(auth.pendingAttemptAuthorizeUrl)))
+        runPromise(validateMainSender(event).pipe(Effect.andThen(auth.pendingAttemptAuthorizeUrl)))
       );
       // SignedInRuntime lifecycle counters + pinned identity (the
       // only way an e2e can observe "exactly one runtime per valid callback" —
       // acquisition failure is silent to the gate by design).
       yield* acquireHandle(CHANNELS.e2eSessionProbe, event =>
-        runPromise(validateMainSender(event).pipe(Effect.zipRight(sessionProbe.snapshot)))
+        runPromise(validateMainSender(event).pipe(Effect.andThen(sessionProbe.snapshot)))
       );
       // e2e:recording — the packaged recording e2e driver: push a fabricated
       // RecordingState to the window, or arm the next recording:start result, so the
@@ -1775,7 +1791,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
                   .warn('e2e:recording rejected: invalid payload', {
                     context: { issues: parsed.issues },
                   })
-                  .pipe(Effect.zipRight(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
+                  .pipe(Effect.andThen(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
               }
               return parsed.data.kind === 'push'
                 ? windows

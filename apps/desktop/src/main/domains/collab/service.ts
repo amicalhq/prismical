@@ -35,7 +35,6 @@ export interface CollabBrokerApi {
   }) => Effect.Effect<void, CollabError>;
 }
 
-export class CollabBroker extends Context.Tag('desktop/CollabBroker')<
-  CollabBroker,
-  CollabBrokerApi
->() {}
+export class CollabBroker extends Context.Service<CollabBroker, CollabBrokerApi>()(
+  'desktop/CollabBroker'
+) {}

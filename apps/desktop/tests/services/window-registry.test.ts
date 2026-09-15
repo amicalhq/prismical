@@ -1,3 +1,4 @@
+import { TestClock } from 'effect/testing';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { assert, describe, it } from '@effect/vitest';
@@ -8,6 +9,7 @@ import { FakeBrowserWindow, FakeEvent } from '../helpers/fake-electron';
 import { makeTestLogger, testConfigLayer } from '../helpers/test-layers';
 import { makeFakeOperationalDb } from '../helpers/fake-operational-db';
 import { ElectronAppLive } from '../../src/main/infra/electron/live';
+import { rectToFloatBounds } from '../../src/main/domains/windows/dock-geometry';
 import { APP_INDEX_URL } from '../../src/main/domains/windows/policy';
 import { WindowRegistry } from '../../src/main/domains/windows/service';
 import { WindowRegistryLive } from '../../src/main/domains/windows/live';
@@ -19,12 +21,14 @@ const fake = (await import('electron')) as unknown as FakeElectron;
 
 const build = (overrides: Parameters<typeof testConfigLayer>[0] = {}) => {
   const logger = makeTestLogger();
+  const db = makeFakeOperationalDb();
   const settings = SettingsServiceLive.pipe(
-    Layer.provide(makeFakeOperationalDb().layer),
+    Layer.provide(db.layer),
     Layer.provide(logger.layer)
   );
   return {
     logger,
+    db,
     layer: WindowRegistryLive.pipe(
       Layer.provide(Layer.effect(AppModeService, makeAppMode('cloud', true))),
       Layer.provide(testConfigLayer(overrides)),
@@ -42,9 +46,9 @@ describe('WindowRegistry (session controls)', () => {
     Effect.gen(function* () {
       const { layer } = build({ isE2E: false });
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const registry = Context.get(ctx, WindowRegistry);
-      yield* registry.openMainWindow.pipe(Scope.extend(scope));
+      yield* registry.openMainWindow.pipe(Scope.provide(scope));
       const original = Option.getOrThrow(yield* registry.mainWindow);
       original.destroy();
       const before = fake.__windowInstances().length;
@@ -55,7 +59,7 @@ describe('WindowRegistry (session controls)', () => {
       assert.strictEqual(fake.__windowInstances().length, before + 1);
       assert.isTrue(reopened.isVisible());
       reopened.destroy();
-      yield* Effect.yieldNow();
+      yield* Effect.yieldNow;
       assert.isTrue(Option.isNone(yield* registry.identityForWebContents(reopened.webContents.id)));
       assert.strictEqual(reopened.listenerCount('closed'), 0);
       yield* registry.focusMainWindow;
@@ -69,7 +73,7 @@ describe('WindowRegistry (session controls)', () => {
     Effect.gen(function* () {
       const { layer } = build();
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const registry = Context.get(ctx, WindowRegistry);
       const load = vi.spyOn(FakeBrowserWindow.prototype, 'loadURL');
       load.mockRejectedValueOnce(new Error('renderer load failed'));
@@ -89,7 +93,7 @@ describe('WindowRegistry (session controls)', () => {
     Effect.gen(function* () {
       const { layer } = build();
       const scope = yield* Scope.make();
-      yield* Layer.build(layer).pipe(Scope.extend(scope));
+      yield* Layer.build(layer).pipe(Scope.provide(scope));
 
       assert.isNotNull(ses().permissionRequestHandler);
       assert.isNotNull(ses().permissionCheckHandler);
@@ -110,7 +114,7 @@ describe('WindowRegistry (session controls)', () => {
     Effect.gen(function* () {
       const { layer } = build({ appVersion: '1.2.3', platform: 'darwin' });
       const scope = yield* Scope.make();
-      yield* Layer.build(layer).pipe(Scope.extend(scope));
+      yield* Layer.build(layer).pipe(Scope.provide(scope));
       assert.deepStrictEqual(ses().beforeSendHeadersFilter?.urls, [
         'http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*',
       ]);
@@ -136,7 +140,7 @@ describe('WindowRegistry (session controls)', () => {
     Effect.gen(function* () {
       const { layer } = build();
       const scope = yield* Scope.make();
-      yield* Layer.build(layer).pipe(Scope.extend(scope));
+      yield* Layer.build(layer).pipe(Scope.provide(scope));
 
       let received: Record<string, string[]> | undefined;
       ses().headersReceivedHandler?.({ responseHeaders: { 'X-Keep': ['1'] }, url: APP_INDEX_URL }, response => {
@@ -159,11 +163,11 @@ describe('WindowRegistry (session controls)', () => {
     Effect.gen(function* () {
       const { layer } = build();
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const registry = Context.get(ctx, WindowRegistry);
 
       const windowScope = yield* Scope.make();
-      yield* registry.openMainWindow.pipe(Scope.extend(windowScope));
+      yield* registry.openMainWindow.pipe(Scope.provide(windowScope));
       const mainWc = fake.__windowInstances().at(-1)?.webContents;
       assert.isDefined(mainWc);
 
@@ -202,11 +206,11 @@ describe('WindowRegistry (main window resource)', () => {
     Effect.gen(function* () {
       const { layer } = build({ isE2E: true });
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const registry = Context.get(ctx, WindowRegistry);
       const appFocusCallsBefore = fake.app.focusCalls.length;
 
-      yield* registry.openMainWindow.pipe(Scope.extend(scope));
+      yield* registry.openMainWindow.pipe(Scope.provide(scope));
       const main = fake.__windowInstances().at(-1);
       assert.isDefined(main);
       if (!main) return;
@@ -252,11 +256,11 @@ describe('WindowRegistry (main window resource)', () => {
     Effect.gen(function* () {
       const { layer, logger } = build();
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const registry = Context.get(ctx, WindowRegistry);
 
       const windowScope = yield* Scope.make();
-      yield* registry.openMainWindow.pipe(Scope.extend(windowScope));
+      yield* registry.openMainWindow.pipe(Scope.provide(windowScope));
       const window = fake.__windowInstances().at(-1);
       assert.isDefined(window);
       if (!window) return;
@@ -300,9 +304,9 @@ describe('WindowRegistry (main window resource)', () => {
     Effect.gen(function* () {
       const { layer } = build();
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const registry = Context.get(ctx, WindowRegistry);
-      yield* registry.openMainWindow.pipe(Scope.extend(scope));
+      yield* registry.openMainWindow.pipe(Scope.provide(scope));
       const window = fake.__windowInstances().at(-1);
       const handler = window?.webContents.windowOpenHandler;
       assert.isDefined(handler);
@@ -319,9 +323,9 @@ describe('WindowRegistry (main window resource)', () => {
     Effect.gen(function* () {
       const { layer } = build();
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const registry = Context.get(ctx, WindowRegistry);
-      yield* registry.openMainWindow.pipe(Scope.extend(scope));
+      yield* registry.openMainWindow.pipe(Scope.provide(scope));
       const wc = fake.__windowInstances().at(-1)?.webContents;
       assert.isDefined(wc);
       if (!wc) return;
@@ -341,10 +345,10 @@ describe('WindowRegistry (main window resource)', () => {
     Effect.gen(function* () {
       const { layer } = build({ rendererDevServerUrl: 'http://localhost:5173' });
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       assert.isFalse(ses().protocol.isProtocolHandled('prismical-app'));
       const registry = Context.get(ctx, WindowRegistry);
-      yield* registry.openMainWindow.pipe(Scope.extend(scope));
+      yield* registry.openMainWindow.pipe(Scope.provide(scope));
       assert.deepStrictEqual(fake.__windowInstances().at(-1)?.loadedUrls, ['http://localhost:5173']);
       yield* Scope.close(scope, Exit.void);
     })
@@ -367,7 +371,7 @@ describe('WindowRegistry (custom-scheme CSP membrane)', () => {
       const { layer } = build();
       const scope = yield* Scope.make();
       try {
-        yield* Layer.build(layer).pipe(Scope.extend(scope));
+        yield* Layer.build(layer).pipe(Scope.provide(scope));
         const handler = ses().protocol.handlers.get('prismical-app');
         assert.isDefined(handler);
         if (!handler) return;
@@ -386,6 +390,57 @@ describe('WindowRegistry (custom-scheme CSP membrane)', () => {
         yield* Scope.close(scope, Exit.void);
         rmSync(rendererRoot, { recursive: true, force: true });
       }
+    })
+  );
+});
+
+
+describe('WindowRegistry (float bounds callback lifetime)', () => {
+  it.effect('debounces on the inherited clock and cancels pending writes when the window closes', () =>
+    Effect.gen(function* () {
+      const { layer, db } = build({ isE2E: true });
+      const scope = yield* Scope.make();
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      const registry = Context.get(ctx, WindowRegistry);
+      yield* registry.openFloatNoteWindow({ noteId: null, onClosed: () => {} });
+      const window = Option.getOrThrow(yield* registry.floatNoteWindow);
+      window.setBounds({ x: 100, y: 100, width: 600, height: 500 });
+      window.emit('moved');
+      yield* TestClock.adjust('250 millis');
+      window.setBounds({ x: 200, y: 120, width: 640, height: 520 });
+      window.emit('resized');
+      yield* TestClock.adjust('499 millis');
+      assert.isFalse(db.store.has('pref:floatNoteBounds'));
+      yield* TestClock.adjust('1 millis');
+      const display = fake.screen.getPrimaryDisplay();
+      assert.deepStrictEqual(JSON.parse(db.store.get('pref:floatNoteBounds')!), {
+        [String(display.id)]: rectToFloatBounds(display.workArea, window.getBounds()),
+      });
+
+      const saved = db.store.get('pref:floatNoteBounds');
+      window.setBounds({ x: 300, y: 150, width: 660, height: 540 });
+      window.emit('moved');
+      yield* registry.closeFloatNoteWindow;
+      yield* TestClock.adjust('1 second');
+      assert.strictEqual(db.store.get('pref:floatNoteBounds'), saved);
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+
+  it.effect('scope close stops pending and late native callbacks', () =>
+    Effect.gen(function* () {
+      const { layer, db } = build({ isE2E: true });
+      const scope = yield* Scope.make();
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      const registry = Context.get(ctx, WindowRegistry);
+      yield* registry.openFloatNoteWindow({ noteId: null, onClosed: () => {} });
+      const window = Option.getOrThrow(yield* registry.floatNoteWindow);
+      window.emit('moved');
+      yield* Scope.close(scope, Exit.void);
+      window.emit('resized');
+      yield* TestClock.adjust('1 second');
+      assert.isFalse(db.store.has('pref:floatNoteBounds'));
+      window.destroy();
     })
   );
 });

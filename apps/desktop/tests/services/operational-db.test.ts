@@ -89,7 +89,7 @@ describe('OperationalDb', () => {
       const dbPath = path.join(tempDir, 'roundtrip.db');
       const { layer } = buildDb(dbPath);
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const db = Context.get(ctx, OperationalDb);
 
       assert.isNull(yield* db.getSetting('missing'));
@@ -110,7 +110,7 @@ describe('OperationalDb', () => {
       const dbPath = path.join(tempDir, 'close.db');
       const { logger, layer } = buildDb(dbPath);
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const db = Context.get(ctx, OperationalDb);
       yield* db.setSetting('k', 'v');
 
@@ -128,7 +128,7 @@ describe('OperationalDb', () => {
 
       const first = buildDb(dbPath);
       const scopeA = yield* Scope.make();
-      yield* Layer.build(first.layer).pipe(Scope.extend(scopeA));
+      yield* Layer.build(first.layer).pipe(Scope.provide(scopeA));
       yield* Scope.close(scopeA, Exit.void);
       const firstOpen = first.logger.find(entry => entry.message === 'operational db opened');
       assert.deepStrictEqual(
@@ -138,7 +138,7 @@ describe('OperationalDb', () => {
 
       const second = buildDb(dbPath);
       const scopeB = yield* Scope.make();
-      yield* Layer.build(second.layer).pipe(Scope.extend(scopeB));
+      yield* Layer.build(second.layer).pipe(Scope.provide(scopeB));
       yield* Scope.close(scopeB, Exit.void);
       const secondOpen = second.logger.find(entry => entry.message === 'operational db opened');
       assert.deepStrictEqual((secondOpen?.data as { migrationsRun: number[] }).migrationsRun, []);
@@ -167,7 +167,7 @@ describe('OperationalDb', () => {
 
       const { logger, layer } = buildDb(dbPath);
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const db = Context.get(ctx, OperationalDb);
 
       // Only 0001 ran — 0000 was already in the ledger (versioned upgrade).
@@ -197,7 +197,7 @@ describe('OperationalDb', () => {
       const dbPath = path.join(tempDir, 'outbox.db');
       const { layer } = buildDb(dbPath);
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const db = Context.get(ctx, OperationalDb);
 
       assert.isNull(yield* db.getRecoveryOutbox('rec_missing'));
@@ -294,7 +294,7 @@ describe('OperationalDb', () => {
 
       const first = buildDb(dbPath);
       const scopeA = yield* Scope.make();
-      const ctxA = yield* Layer.build(first.layer).pipe(Scope.extend(scopeA));
+      const ctxA = yield* Layer.build(first.layer).pipe(Scope.provide(scopeA));
       const dbA = Context.get(ctxA, OperationalDb);
       yield* dbA.insertRecoveryOutbox(
         recordingInput({
@@ -310,7 +310,7 @@ describe('OperationalDb', () => {
 
       const second = buildDb(dbPath);
       const scopeB = yield* Scope.make();
-      const ctxB = yield* Layer.build(second.layer).pipe(Scope.extend(scopeB));
+      const ctxB = yield* Layer.build(second.layer).pipe(Scope.provide(scopeB));
       const dbB = Context.get(ctxB, OperationalDb);
       const reopened = second.logger.find(entry => entry.message === 'operational db opened');
       assert.deepStrictEqual((reopened?.data as { migrationsRun: number[] }).migrationsRun, []);
@@ -329,7 +329,7 @@ describe('OperationalDb', () => {
       const dbPath = path.join(tempDir, 'local-models.db');
       const { layer } = buildDb(dbPath);
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const db = Context.get(ctx, OperationalDb);
 
       assert.deepStrictEqual(yield* db.listLocalModels(), []);
@@ -377,7 +377,7 @@ describe('OperationalDb', () => {
       const { layer } = buildDb(path.join(blocker, 'db.sqlite'));
 
       const scope = yield* Scope.make();
-      const exit = yield* Effect.exit(Layer.build(layer).pipe(Scope.extend(scope)));
+      const exit = yield* Effect.exit(Layer.build(layer).pipe(Scope.provide(scope)));
       assert.isTrue(Exit.isFailure(exit));
       if (Exit.isFailure(exit)) {
         assert.include(JSON.stringify(exit.cause), 'BootError');
@@ -415,7 +415,7 @@ describe('Recovery ownership migration', () => {
       seed.close();
       const { layer } = buildDb(dbPath);
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const row = yield* Context.get(ctx, OperationalDb).getRecoveryOutbox('rec_existing');
       assert.strictEqual(row?.wavPath, '/retained/audio');
       assert.strictEqual(row?.lastError, 'stop-incomplete');

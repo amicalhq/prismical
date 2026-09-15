@@ -82,7 +82,7 @@ export const makeAiProviderLive = (
       const readKey = (provider: AiProviderKind): Effect.Effect<string | null> =>
         secrets.getSecret(aiProviderSecretKey(provider)).pipe(
           Effect.map(value => (value === null || value === '' ? null : value)),
-          Effect.catchAll(error =>
+          Effect.catch(error =>
             log.warn('provider key unreadable', { context: { provider }, error: error._tag }).pipe(Effect.as(null))
           )
         );

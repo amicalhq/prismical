@@ -37,7 +37,7 @@ export const runDeepLinkConsumer: Effect.Effect<
           return log
             .info('oauth callback parked', { context: { state: parsed.state.slice(0, 4) + '…' } })
             .pipe(
-              Effect.zipRight(
+              Effect.andThen(
                 SubscriptionRef.update(deepLinks.pendingOAuth, pending => [
                   ...pending,
                   {
@@ -55,7 +55,7 @@ export const runDeepLinkConsumer: Effect.Effect<
           return log
             .info('oauth error parked', { context: { state: parsed.state === undefined ? undefined : parsed.state.slice(0, 4) + '…' }, error: parsed.error })
             .pipe(
-              Effect.zipRight(
+              Effect.andThen(
                 SubscriptionRef.update(deepLinks.pendingOAuth, pending => [
                   ...pending,
                   {
@@ -81,7 +81,7 @@ export const runDeepLinkConsumer: Effect.Effect<
           }
           const payload: NavPush = { path: parsed.path };
           return windows.focusMainWindow.pipe(
-            Effect.zipRight(windows.sendToMainWindow(CHANNELS.navPush, payload)),
+            Effect.andThen(windows.sendToMainWindow(CHANNELS.navPush, payload)),
             Effect.flatMap(sent =>
               sent
                 ? // 'dispatched', not 'delivered': webContents.send is fire-and-forget
@@ -150,10 +150,10 @@ export const runSecondInstanceConsumer: Effect.Effect<
       // Background install events must not focus windows or deliver links.
       if (argv.some(arg => arg.startsWith('--squirrel-'))) return Effect.void;
       return windows.focusMainWindow.pipe(
-        Effect.zipRight(
+        Effect.andThen(
           Effect.forEach(deepLinksFromArgv(argv, options), url => deepLinks.offerUrl(url))
         ),
-        Effect.zipRight(log.info('second instance handled', { context: { argvLength: argv.length } }))
+        Effect.andThen(log.info('second instance handled', { context: { argvLength: argv.length } }))
       );
     }),
     Effect.forever

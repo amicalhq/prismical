@@ -182,7 +182,7 @@ describe('local whisper end to end (sidecar → worker → whisper.node → prod
       ).pipe(Layer.provide(env));
 
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(stack).pipe(Scope.extend(scope), Effect.orDie);
+      const ctx = yield* Layer.build(stack).pipe(Scope.provide(scope), Effect.orDie);
       const lane = Context.get(ctx, LocalTranscriberLane);
       const store = Context.get(ctx, RecordingStore);
       const product = Context.get(ctx, ProductDb);
@@ -229,7 +229,7 @@ describe('local whisper end to end (sidecar → worker → whisper.node → prod
         );
         return rows;
       }).pipe(
-        Effect.tapErrorCause(() =>
+        Effect.tapCause(() =>
           Effect.sync(() => {
             // Surface the captured worker/engine log on failure — the only
             // diagnostics for a native-side problem.
@@ -315,7 +315,7 @@ describe('local whisper end to end (sidecar → worker → whisper.node → prod
         ).pipe(Layer.provide(env));
 
         const scope = yield* Scope.make();
-        const ctx = yield* Layer.build(stack).pipe(Scope.extend(scope), Effect.orDie);
+        const ctx = yield* Layer.build(stack).pipe(Scope.provide(scope), Effect.orDie);
         const lane = Context.get(ctx, LocalTranscriberLane);
 
         const outcome = yield* Effect.gen(function* () {
@@ -345,7 +345,7 @@ describe('local whisper end to end (sidecar → worker → whisper.node → prod
           );
           return { texts, noise };
         }).pipe(
-          Effect.tapErrorCause(() =>
+          Effect.tapCause(() =>
             Effect.sync(() => {
               for (const entry of logger.entries) {
                 console.error(`[${entry.scope}:${entry.level}] ${entry.message}`, entry.data ?? '');

@@ -12,14 +12,14 @@
  *   4. prismical:// OS protocol registration (skipped under E2E: no OS-state
  *      mutation from tests).
  *   5. Build the ManagedRuntime, run the Boot program, and wire the single
- *      quit path: program resolves (quit signal) → disposeAndExit (the ONLY
- *      runtime.dispose caller) → app.exit(0). Any rejection → exit(1); boot
+ *      quit path: program resolves (quit signal) → disposeAndExit bounds program
+ *      cleanup and runtime.dispose together → app.exit(0). Any rejection → exit(1); boot
  *      failures never soft-continue.
  */
 import path from 'node:path';
 import { WINDOWS_APP_USER_MODEL_ID } from '../app-identity';
 import { app, protocol } from 'electron';
-import { Cause, Effect, Runtime } from 'effect';
+import { Effect, Exit, Scope } from 'effect';
 import { disposeAndExit } from '../domains/shutdown/shutdown';
 import { APP_SCHEME } from '../domains/windows/policy';
 import { bootProgram } from './boot-program';
@@ -59,20 +59,26 @@ export function startDesktop(logging: ReturnType<typeof makeMainLogging>): void 
     }
 
     const runtime = makeDesktopRuntime(logging);
+    const programScope = Scope.makeUnsafe();
     runtime
-      .runPromise(Effect.scoped(bootProgram))
+      .runPromise(Scope.provide(bootProgram, programScope))
       .then(() =>
-        // Quit path: program scope is closed; dispose the runtime (layer
-        // finalizers: DB close, listener removal, tray detach) with a bounded
-        // deadline, then exit. disposeAndExit always exits 0.
+        // Start the quit deadline before closing callbacks and consumer fibers.
+        // Their finalizers can hang just like runtime-owned resource finalizers.
         Effect.runPromise(
           disposeAndExit({
-            dispose: () => runtime.dispose(),
+            dispose: async () => {
+              try {
+                await Effect.runPromise(Scope.close(programScope, Exit.void));
+              } finally {
+                await runtime.dispose();
+              }
+            },
             exit: code => {
               app.exit(code);
             },
             onFailure: error =>
-              log.error('Runtime shutdown failed', { error: failureCause(error) }),
+              log.error('Runtime shutdown failed', { error }),
             onTimeout: () => {
               log.error('Runtime shutdown exceeded deadline; exiting');
             },
@@ -83,15 +89,11 @@ export function startDesktop(logging: ReturnType<typeof makeMainLogging>): void 
         // Boot/program failure. No dispose here — the quit path is the only
         // dispose caller; a non-zero exit tears the process down regardless.
         log.error('Application boot failed', {
-          error: failureCause(error),
+          error,
         });
         app.exit(1);
       });
   }
-}
-
-function failureCause(error: unknown): unknown {
-  return Runtime.isFiberFailure(error) ? Cause.squash(error[Runtime.FiberFailureCauseId]) : error;
 }
 
 function registerProtocolHandlers(): void {

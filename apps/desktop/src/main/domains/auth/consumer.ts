@@ -52,7 +52,7 @@ export const runAuthConsumer: Effect.Effect<void, never, AuthService | DeepLinks
                       )
                     : Effect.void
                 ),
-                Effect.zipRight(drain)
+                Effect.andThen(drain)
               ),
           })
         )
@@ -61,5 +61,5 @@ export const runAuthConsumer: Effect.Effect<void, never, AuthService | DeepLinks
 
     // changes emits the current backlog first (entries parked before this
     // consumer forked — the cold-start path), then every arrival.
-    yield* Stream.runForEach(deepLinks.pendingOAuth.changes, () => drain);
+    yield* Stream.runForEach(SubscriptionRef.changes(deepLinks.pendingOAuth), () => drain);
   });

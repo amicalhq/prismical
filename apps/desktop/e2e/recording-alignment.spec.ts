@@ -146,7 +146,9 @@ test.describe('recording dock alignment', () => {
       elapsedMs: 65_000,
       elapsedAt: Date.now(),
     });
-    await expect(page.getByRole('status')).toContainText('Recording paused in another note');
+    await expect(
+      page.getByRole('status').filter({ hasText: 'Recording paused in another note' })
+    ).toBeVisible();
     await expect(page.getByRole('button', { name: 'Resume recording', exact: true })).toBeEnabled();
     await expect(
       page.getByRole('button', { name: 'Show transcription', exact: true })

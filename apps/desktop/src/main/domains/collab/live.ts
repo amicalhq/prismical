@@ -27,7 +27,7 @@ interface PortEntry {
 type StoreOutcome = 'stored' | 'no-workspace' | 'failed';
 
 export const CollabBrokerLive: Layer.Layer<CollabBroker, never, MainLogger | CollabBridge> =
-  Layer.scoped(
+  Layer.effect(
     CollabBroker,
     Effect.gen(function* () {
       const logger = yield* MainLogger;
@@ -77,10 +77,10 @@ export const CollabBrokerLive: Layer.Layer<CollabBroker, never, MainLogger | Col
               });
               return;
             }
-            Queue.unsafeOffer(inbox, parsed.data);
+            Queue.offerUnsafe(inbox, parsed.data);
           };
           const onClose = () => {
-            Deferred.unsafeDone(closedSignal, Effect.void);
+            Deferred.doneUnsafe(closedSignal, Effect.void);
           };
           port1.on('message', onMessage);
           port1.on('close', onClose);
@@ -91,7 +91,7 @@ export const CollabBrokerLive: Layer.Layer<CollabBroker, never, MainLogger | Col
           registry.set(noteId, peers);
 
           /** Relay a blob VERBATIM to every OTHER port of the same note (never echo). */
-          const relay = (data: Uint8Array): void => {
+          const relay = (data: Uint8Array<ArrayBuffer>): void => {
             const group = registry.get(noteId);
             if (group === undefined) return;
             for (const peer of group) {
@@ -121,7 +121,7 @@ export const CollabBrokerLive: Layer.Layer<CollabBroker, never, MainLogger | Col
                           .pipe(Effect.as('no-workspace' as const))
                       : run(store).pipe(
                           Effect.as('stored' as const),
-                          Effect.catchAll(error =>
+                          Effect.catch(error =>
                             log
                               .warn(`collab ${what} failed`, {
                                 context: { openId },
@@ -211,16 +211,16 @@ export const CollabBrokerLive: Layer.Layer<CollabBroker, never, MainLogger | Col
           const producer: Effect.Effect<void> = storeAtOpen.listUpdates(noteId).pipe(
             Effect.flatMap(rows =>
               Effect.sync(() => {
-                for (const row of rows) post(port1, { type: 'update', data: row.update });
+                for (const row of rows) post(port1, { type: 'update', data: new Uint8Array(row.update) });
                 const seq = rows.length === 0 ? 0 : rows[rows.length - 1]!.seq;
                 post(port1, { type: 'hydrated', seq, count: rows.length });
               }).pipe(
-                Effect.zipRight(
+                Effect.andThen(
                   Queue.take(inbox).pipe(Effect.flatMap(handleMessage), Effect.forever)
                 )
               )
             ),
-            Effect.catchAll(error =>
+            Effect.catch(error =>
               log.error('collab log replay failed — closing', {
                 context: { openId },
                 error: error.cause,
@@ -241,10 +241,16 @@ export const CollabBrokerLive: Layer.Layer<CollabBroker, never, MainLogger | Col
 
           // Port close (renderer gone) wins the race and interrupts the pump;
           // external interruption (scope close) hits both branches.
-          const supervised = Effect.race(
-            producer.pipe(Effect.as('completed' as const)),
-            Deferred.await(closedSignal).pipe(Effect.as('closed' as const))
-          ).pipe(Effect.asVoid, Effect.ensuring(cleanup));
+          const supervised = Effect.yieldNow.pipe(
+            // Install cleanup before yielding to FiberMap registration, then
+            // allow producer callbacks to run against the tracked owner.
+            Effect.andThen(Effect.race(
+              producer.pipe(Effect.as('completed' as const)),
+              Deferred.await(closedSignal).pipe(Effect.as('closed' as const))
+            )),
+            Effect.asVoid,
+            Effect.ensuring(cleanup)
+          );
 
           yield* FiberMap.run(fibers, openId, supervised);
           yield* Effect.sync(() => {

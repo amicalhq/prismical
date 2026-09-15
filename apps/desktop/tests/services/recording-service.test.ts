@@ -23,7 +23,7 @@ import {
   Deferred,
   Duration,
   Effect,
-  Either,
+  Result,
   Exit,
   Fiber,
   Layer,
@@ -32,8 +32,8 @@ import {
   Scope,
   Stream,
   SubscriptionRef,
-  TestClock,
 } from 'effect';
+import { TestClock } from 'effect/testing';
 import { makeTestLogger, testConfigLayer, testI18nLayer } from '../helpers/test-layers';
 import {
   fakeFrame,
@@ -120,7 +120,7 @@ const poll = (cond: Effect.Effect<boolean, unknown>, label: string): Effect.Effe
     const deadline = Date.now() + POLL_BUDGET_MS;
     while (Date.now() < deadline) {
       if (yield* check) return;
-      yield* Effect.yieldNow();
+      yield* Effect.yieldNow;
       yield* Effect.promise(() => new Promise<void>(resolve => setTimeout(resolve, 2)));
     }
     assert.isTrue(yield* check, `poll timed out: ${label}`);
@@ -129,7 +129,7 @@ const poll = (cond: Effect.Effect<boolean, unknown>, label: string): Effect.Effe
 /** Let real async work settle without advancing the clock. */
 const settle: Effect.Effect<void> = Effect.gen(function* () {
   for (let i = 0; i < 12; i += 1) {
-    yield* Effect.yieldNow();
+    yield* Effect.yieldNow;
     yield* Effect.promise(() => new Promise<void>(resolve => setImmediate(resolve)));
   }
 });
@@ -144,7 +144,7 @@ interface Harness {
   readonly logger: ReturnType<typeof makeTestLogger>;
   readonly settings: ReturnType<typeof makeFakeSettings>;
   readonly micActivityLatest: SubscriptionRef.SubscriptionRef<Option.Option<LatestMicActivity>>;
-  readonly sessionScope: Scope.CloseableScope;
+  readonly sessionScope: Scope.Scope;
   readonly drain: Effect.Effect<DrainSummary>;
   readonly recoveryWorker: Effect.Effect<never>;
   readonly recoveryDir: (recordingId: string) => string;
@@ -201,7 +201,7 @@ const setup = (
       testI18nLayer('de'),
       logger.layer
     );
-    const envCtx = yield* Layer.build(envLayer).pipe(Scope.extend(bootScope));
+    const envCtx = yield* Layer.build(envLayer).pipe(Scope.provide(bootScope));
     const db = Context.get(envCtx, OperationalDb);
 
     const sessionScope = yield* Scope.make();
@@ -259,7 +259,7 @@ const setup = (
     );
     const svcCtx = yield* Layer.build(svcLayer).pipe(
       Effect.provide(envCtx),
-      Scope.extend(sessionScope),
+      Scope.provide(sessionScope),
       Effect.orDie
     );
 
@@ -878,14 +878,14 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
     })
   );
 
-  it.effect('workspace close cancels a blocked upload and retains queued audio for recovery', () =>
+  for (const stopFirst of [false, true]) it.effect(`workspace close cancels a blocked upload ${stopFirst ? 'after Stop' : 'during capture'} and retains queued audio for recovery`, () =>
     Effect.gen(function* () {
       const entered = yield* Deferred.make<void>();
       const h = yield* setup({}, undefined, {
         backendTransform: api => ({
           ...api,
           uploadTranscriptionChunk: () =>
-            Deferred.succeed(entered, undefined).pipe(Effect.zipRight(Effect.never)),
+            Deferred.succeed(entered, undefined).pipe(Effect.andThen(Effect.never)),
         }),
       });
       const recordingId = yield* h.service.start({ captureMode: 'mic' });
@@ -902,8 +902,19 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
       yield* Queue.offer(session.frames, fakeFrame('mic_raw', seconds(46)));
       yield* Deferred.await(entered);
 
+      const stopping = stopFirst ? yield* Effect.forkChild(h.service.stop(recordingId)) : undefined;
+      if (stopping) {
+        yield* poll(
+          SubscriptionRef.get(h.service.state).pipe(
+            Effect.map(state => state.finalizingRecordingIds.includes(recordingId))
+          ),
+          'Stop ends the upload queue before waiting for the blocked upload'
+        );
+        assert.isUndefined(stopping.pollUnsafe());
+      }
       // Sign-out / quit must finish without waiting for the blocked upload.
       yield* Scope.close(h.sessionScope, Exit.void);
+      if (stopping) yield* Fiber.join(stopping);
 
       assert.isTrue(session.released, 'native child interrupted on scope close');
       const parked = yield* h.db.getRecoveryOutbox(recordingId);
@@ -1026,30 +1037,41 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
         'initial capturing'
       );
 
-      let crashed = 0;
-      for (let guard = 0; guard < 40; guard += 1) {
-        if ((yield* SubscriptionRef.get(h.service.state)).status === 'error') break;
-        if (crashed < h.fakeCapture.sessions.length) {
-          const session = h.fakeCapture.sessions[crashed];
-          if (!session.released) {
-            yield* Deferred.fail(
-              session.terminated,
-              new CaptureExitError({ code: 139, signal: null })
-            );
-          }
-          crashed += 1;
-        }
+      yield* poll(
+        Effect.sync(() => h.fakeCapture.sessions.length === 1),
+        'initial capture acquired'
+      );
+
+      for (const delay of [1, 2, 4, 8, 10]) {
+        const acquired = h.fakeCapture.sessions.length;
+        yield* Deferred.fail(
+          h.fakeCapture.current().terminated,
+          new CaptureExitError({ code: 139, signal: null })
+        );
         yield* settle;
-        yield* TestClock.adjust(Duration.seconds(11)); // past any capped backoff
-        yield* settle;
+        yield* TestClock.adjust(Duration.millis(delay * 1_000 - 1));
+        assert.strictEqual(h.fakeCapture.sessions.length, acquired, 'waits for the complete backoff');
+        yield* TestClock.adjust(Duration.millis(1));
+        yield* poll(
+          Effect.sync(() => h.fakeCapture.sessions.length === acquired + 1),
+          `capture restarted after ${delay} seconds`
+        );
       }
+      yield* Deferred.fail(
+        h.fakeCapture.current().terminated,
+        new CaptureExitError({ code: 139, signal: null })
+      );
+      yield* poll(
+        SubscriptionRef.get(h.service.state).pipe(Effect.map(state => state.status === 'error')),
+        'sixth capture failure exhausts five restarts'
+      );
 
       assert.strictEqual(
         yield* status(h, recordingId),
         'finalizing',
         'a persistently-failing capture ends acquisition while retaining processing'
       );
-      assert.isBelow(h.fakeCapture.sessions.length, 12, 'restarts are bounded (no infinite loop)');
+      assert.strictEqual(h.fakeCapture.sessions.length, 6, 'exactly five capture restarts');
       assert.strictEqual((yield* SubscriptionRef.get(h.service.state)).status, 'error');
       // Give-up also failed the product-store row.
       yield* poll(
@@ -1215,9 +1237,9 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
           ...api,
           uploadTranscriptionChunk: (id, params, wav) =>
             (params.chunkIndex === 0
-              ? Deferred.succeed(entered, undefined).pipe(Effect.zipRight(Deferred.await(release)))
+              ? Deferred.succeed(entered, undefined).pipe(Effect.andThen(Deferred.await(release)))
               : Effect.void
-            ).pipe(Effect.zipRight(api.uploadTranscriptionChunk(id, params, wav))),
+            ).pipe(Effect.andThen(api.uploadTranscriptionChunk(id, params, wav))),
         }),
       });
       const recordingId = yield* h.service.start({ captureMode: 'mic' });
@@ -1234,9 +1256,9 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
         Effect.sync(() => fs.statSync(wavPath).size === 44 + 61 * 48_000 * 2),
         'all 61 seconds saved while upload remains blocked'
       );
-      const pausing = yield* Effect.fork(h.service.pause(recordingId));
+      const pausing = yield* Effect.forkChild(h.service.pause(recordingId));
       yield* poll(
-        Fiber.poll(pausing).pipe(Effect.map(Option.isSome)),
+        Effect.sync(() => pausing.pollUnsafe() !== undefined),
         'pause does not wait for upload'
       );
       assert.isTrue(yield* Fiber.join(pausing));
@@ -1247,14 +1269,14 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
         Effect.sync(() => fs.statSync(wavPath).size === 44 + 62 * 48_000 * 2),
         'capture resumed while upload remains blocked'
       );
-      const stopping = yield* Effect.fork(h.service.stop(recordingId));
+      const stopping = yield* Effect.forkChild(h.service.stop(recordingId));
       yield* poll(
         SubscriptionRef.get(h.service.state).pipe(
           Effect.map(s => s.status === 'idle' && s.finalizingRecordingIds.length > 0)
         ),
         'capture stopped before the upload finishes'
       );
-      assert.isTrue(Option.isNone(yield* Fiber.poll(stopping)));
+      assert.isTrue(stopping.pollUnsafe() === undefined);
       yield* Deferred.succeed(release, undefined);
       yield* Fiber.join(stopping);
       assert.deepStrictEqual(
@@ -1285,6 +1307,155 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
     })
   );
 
+  it.effect('closing on the first starting state cancels admission before writing a row', () =>
+    Effect.gen(function* () {
+      const h = yield* setup();
+      const watching = yield* Deferred.make<void>();
+      const closed = yield* Deferred.make<void>();
+      let recordingId: string | null = null;
+      const observing = yield* SubscriptionRef.changes(h.service.state).pipe(
+        Stream.runForEach(state => state.status === 'starting'
+          ? Effect.gen(function* () {
+              recordingId = state.recordingId;
+              yield* Scope.close(h.sessionScope, Exit.void);
+              yield* Deferred.succeed(closed, undefined);
+            })
+          : Deferred.succeed(watching, undefined)),
+        Effect.forkChild
+      );
+      yield* Deferred.await(watching);
+      const starting = yield* Effect.forkChild(h.service.start({ captureMode: 'mic' }));
+      yield* Deferred.await(closed);
+      assert.isTrue(Exit.hasInterrupts(yield* Fiber.await(starting)));
+      assert.isNotNull(recordingId);
+      assert.isNull(yield* h.db.getRecoveryOutbox(recordingId!));
+      assert.deepStrictEqual((yield* SubscriptionRef.get(h.service.state)).processingRecordingIds, []);
+      assert.strictEqual(h.fakeCloud.createCalls.length, 0);
+      assert.strictEqual(h.fakeCapture.sessions.length, 0);
+      yield* h.service.stop(recordingId!);
+      assert.isFalse(yield* h.service.claimCompletion(recordingId!));
+      yield* h.service.resolveCompletion(recordingId!, true);
+      assert.deepStrictEqual((yield* SubscriptionRef.get(h.service.state)).completedRecordings, []);
+      yield* Fiber.interrupt(observing);
+    })
+  );
+
+  it.effect('a retained Start call cannot admit work after workspace close', () =>
+    Effect.gen(function* () {
+      const h = yield* setup();
+      yield* Scope.close(h.sessionScope, Exit.void);
+      assert.isTrue(Exit.hasInterrupts(yield* Effect.exit(h.service.start({ captureMode: 'mic' }))));
+      assert.deepStrictEqual((yield* SubscriptionRef.get(h.service.state)).processingRecordingIds, []);
+      assert.strictEqual(h.fakeCloud.createCalls.length, 0);
+      assert.strictEqual(h.fakeCapture.sessions.length, 0);
+    })
+  );
+
+  for (const closeWorkspace of [false, true]) {
+    it.effect('pending recording insertion cancelled by ' + (closeWorkspace ? 'workspace' : 'caller'), () =>
+      Effect.gen(function* () {
+        const h = yield* setup();
+        const entered = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        let inserted = false;
+        let interrupted = false;
+        const insert = h.db.insertRecoveryOutbox;
+        const spy = vi.spyOn(h.db, 'insertRecoveryOutbox').mockImplementation(input =>
+          Deferred.succeed(entered, undefined).pipe(
+            Effect.andThen(Deferred.await(release)),
+            Effect.andThen(Effect.sync(() => { inserted = true; })),
+            Effect.andThen(insert(input)),
+            Effect.onInterrupt(() => Effect.sync(() => { interrupted = true; }))
+          )
+        );
+        const starting = yield* Effect.forkChild(h.service.start({ captureMode: 'mic' }));
+        yield* Deferred.await(entered);
+        const id = (yield* SubscriptionRef.get(h.service.state)).recordingId!;
+        if (closeWorkspace) yield* Scope.close(h.sessionScope, Exit.void);
+        else yield* Fiber.interrupt(starting);
+        assert.isTrue(interrupted, 'cancellation waits for pending insertion cleanup');
+        assert.isFalse(inserted);
+        yield* Deferred.succeed(release, undefined);
+        yield* settle;
+        assert.isFalse(inserted, 'no insertion continues after Start cancellation');
+        assert.isNull(yield* h.db.getRecoveryOutbox(id));
+        assert.notInclude((yield* SubscriptionRef.get(h.service.state)).processingRecordingIds, id);
+        assert.isFalse(yield* h.service.claimCompletion(id));
+        assert.strictEqual(h.fakeCloud.createCalls.length, 0);
+        assert.isTrue(Exit.hasInterrupts(yield* Fiber.await(starting)));
+        spy.mockRestore();
+        if (!closeWorkspace) {
+          const next = yield* h.service.start({ captureMode: 'mic' });
+          assert.isNotNull(yield* h.db.getRecoveryOutbox(next));
+          yield* Scope.close(h.sessionScope, Exit.void);
+        }
+      })
+    );
+  }
+
+  it.effect('partial recording insertion is parked on interruption', () =>
+    Effect.gen(function* () {
+      const h = yield* setup();
+      const inserted = yield* Deferred.make<void>();
+      const insert = h.db.insertRecoveryOutbox;
+      const spy = vi.spyOn(h.db, 'insertRecoveryOutbox').mockImplementation(input => insert(input).pipe(
+        Effect.andThen(Deferred.succeed(inserted, undefined)),
+        Effect.andThen(Effect.never)
+      ));
+      const starting = yield* Effect.forkChild(h.service.start({ captureMode: 'mic' }));
+      yield* Deferred.await(inserted);
+      const id = (yield* SubscriptionRef.get(h.service.state)).recordingId!;
+      yield* Scope.close(h.sessionScope, Exit.void);
+      const row = yield* h.db.getRecoveryOutbox(id);
+      assert.strictEqual(row?.status, 'interrupted');
+      assert.strictEqual(row?.phase, 'create');
+      assert.strictEqual(h.fakeCloud.createCalls.length, 0);
+      assert.notInclude((yield* SubscriptionRef.get(h.service.state)).processingRecordingIds, id);
+      assert.isTrue(Exit.hasInterrupts(yield* Fiber.await(starting)));
+      spy.mockRestore();
+    })
+  );
+
+  it.effect('scope close before recording creation parks and clears ownership', () =>
+    Effect.gen(function* () {
+      const h = yield* setup();
+      const id = yield* h.service.start({ captureMode: 'mic' });
+      assert.strictEqual(h.fakeCloud.createCalls.length, 0, 'creation has not run at the initial ownership yield');
+      yield* Scope.close(h.sessionScope, Exit.void);
+      assert.strictEqual(h.fakeCloud.createCalls.length, 0);
+      assert.strictEqual(h.fakeCapture.sessions.length, 0);
+      const row = yield* h.db.getRecoveryOutbox(id);
+      assert.strictEqual(row?.status, 'interrupted');
+      assert.strictEqual(row?.phase, 'create');
+      assert.strictEqual(row?.lastError, 'interrupted');
+      const state = yield* SubscriptionRef.get(h.service.state);
+      assert.notInclude(state.processingRecordingIds, id);
+      yield* h.service.stop(id);
+      assert.isFalse(yield* h.service.claimCompletion(id));
+      yield* h.service.resolveCompletion(id, true);
+      assert.deepStrictEqual((yield* SubscriptionRef.get(h.service.state)).completedRecordings, []);
+    })
+  );
+
+  it.effect('workspace close waits for a recording interrupted during creation', () =>
+    Effect.gen(function* () {
+      const entered = yield* Deferred.make<void>();
+      let interrupted = false;
+      const h = yield* setup({}, undefined, { backendTransform: api => ({
+        ...api,
+        createRecording: () => Deferred.succeed(entered, undefined).pipe(
+          Effect.andThen(Effect.never),
+          Effect.onInterrupt(() => Effect.sync(() => { interrupted = true; }))
+        ),
+      }) });
+      const starting = yield* Effect.forkChild(h.service.start({ captureMode: 'mic' }));
+      yield* Deferred.await(entered);
+      yield* Scope.close(h.sessionScope, Exit.void);
+      assert.isTrue(interrupted, 'owner close waits for the recording body to cancel');
+      yield* Fiber.await(starting);
+    })
+  );
+
   it.effect('Semaphore(1): a second concurrent start is rejected (one active recording)', () =>
     Effect.gen(function* () {
       const h = yield* setup();
@@ -1293,7 +1464,7 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
       const exit = yield* Effect.exit(h.service.start({ captureMode: 'mic' }));
       assert.isTrue(Exit.isFailure(exit));
       const error = Exit.isFailure(exit)
-        ? Option.getOrUndefined(Cause.failureOption(exit.cause))
+        ? Option.getOrUndefined(Cause.findErrorOption(exit.cause))
         : undefined;
       assert.instanceOf(error, RecordingBusyError);
       assert.strictEqual((error as RecordingBusyError).activeRecordingId, first);
@@ -1316,7 +1487,7 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
       const exit = yield* Effect.exit(h.service.start({ captureMode: 'mic' }));
       assert.isTrue(Exit.isFailure(exit));
       const error = Exit.isFailure(exit)
-        ? Option.getOrUndefined(Cause.failureOption(exit.cause))
+        ? Option.getOrUndefined(Cause.findErrorOption(exit.cause))
         : undefined;
       assert.instanceOf(error, PermissionError);
       assert.strictEqual((error as PermissionError).reason, 'mic-denied');
@@ -1920,9 +2091,9 @@ describe('RecordingService — transcription engine', () => {
                 : api.request(req),
           }),
         });
-        const first = yield* Effect.fork(h.service.start({ captureMode: 'mic' }));
+        const first = yield* Effect.forkChild(h.service.start({ captureMode: 'mic' }));
         yield* Deferred.await(entered);
-        const second = yield* Effect.fork(Effect.exit(h.service.start({ captureMode: 'mic' })));
+        const second = yield* Effect.forkChild(Effect.exit(h.service.start({ captureMode: 'mic' })));
         yield* TestClock.adjust(Duration.seconds(10));
         assert.strictEqual(requests, 1, 'a second Start cannot race the defaults request');
         assert.strictEqual(h.fakeCapture.sessions.length, 0);
@@ -1933,7 +2104,7 @@ describe('RecordingService — transcription engine', () => {
         assert.isTrue(Exit.isFailure(refused));
         if (Exit.isFailure(refused)) {
           assert.strictEqual(
-            Cause.failureOption(refused.cause).pipe(Option.getOrThrow)._tag,
+            Cause.findErrorOption(refused.cause).pipe(Option.getOrThrow)._tag,
             'RecordingBusyError'
           );
         }
@@ -1967,7 +2138,7 @@ describe('RecordingService — transcription engine', () => {
         }));
         yield* h.service.pause(recordingId);
         assert.strictEqual((yield* SubscriptionRef.get(h.service.state)).spendsCloudQuota, true);
-        const replay = Option.getOrThrow(yield* Stream.runHead(h.service.state.changes));
+        const replay = Option.getOrThrow(yield* Stream.runHead(SubscriptionRef.changes(h.service.state)));
         assert.strictEqual(replay.status, 'paused');
         assert.strictEqual(
           replay.quotaRemainingAtStartSeconds,
@@ -2350,12 +2521,12 @@ describe('RecordingService — lifecycle ownership and durability', () => {
                 : [],
           },
         }));
-        const rejected = yield* Effect.either(
+        const rejected = yield* Effect.result(
           h.service.start({ captureMode: 'mic', noteId: 'note_pending' })
         );
         assert.deepStrictEqual(
           rejected,
-          Either.left(new RecordingStartError({ reason: 'suggestion-pending' }))
+          Result.fail(new RecordingStartError({ reason: 'suggestion-pending' }))
         );
         assert.strictEqual(h.fakeCapture.sessions.length, 0);
         assert.strictEqual(h.fakeCloud.createCalls.length, 0);
@@ -2376,27 +2547,27 @@ describe('RecordingService — lifecycle ownership and durability', () => {
           request: req =>
             req.path === '/apps/v1/me/skill-runs/pending'
               ? Deferred.succeed(entered, undefined).pipe(
-                  Effect.zipRight(Deferred.await(release)),
+                  Effect.andThen(Deferred.await(release)),
                   Effect.as({ ok: true as const, status: 200, bodyJson: { results: [] } })
                 )
               : api.request(req),
         }),
       });
-      const first = yield* Effect.fork(
+      const first = yield* Effect.forkChild(
         h.service.start({ captureMode: 'mic', noteId: 'note_first' })
       );
       yield* Deferred.await(entered);
-      const second = yield* Effect.fork(
-        Effect.either(h.service.start({ captureMode: 'mic', noteId: 'note_second' }))
+      const second = yield* Effect.forkChild(
+        Effect.result(h.service.start({ captureMode: 'mic', noteId: 'note_second' }))
       );
       yield* settle;
       assert.strictEqual(h.fakeCapture.sessions.length, 0);
-      assert.isTrue(Option.isNone(yield* Fiber.poll(second)));
+      assert.isTrue(second.pollUnsafe() === undefined);
       yield* Deferred.succeed(release, undefined);
       const id = yield* Fiber.join(first);
       assert.deepStrictEqual(
         yield* Fiber.join(second),
-        Either.left(new RecordingBusyError({ activeRecordingId: id }))
+        Result.fail(new RecordingBusyError({ activeRecordingId: id }))
       );
       yield* h.service.stop(id);
       assert.strictEqual(h.fakeCloud.createCalls.length, 1);
@@ -2416,10 +2587,10 @@ describe('RecordingService — lifecycle ownership and durability', () => {
             uploadTranscriptionChunk: (id, params, wav) =>
               (id === first
                 ? Deferred.succeed(entered, undefined).pipe(
-                    Effect.zipRight(Deferred.await(release))
+                    Effect.andThen(Deferred.await(release))
                   )
                 : Effect.void
-              ).pipe(Effect.zipRight(api.uploadTranscriptionChunk(id, params, wav))),
+              ).pipe(Effect.andThen(api.uploadTranscriptionChunk(id, params, wav))),
           }),
         });
         h.fakeCloud.setUploadResponder(call => ({
@@ -2447,7 +2618,7 @@ describe('RecordingService — lifecycle ownership and durability', () => {
         );
         yield* Deferred.await(entered);
         assert.isNotNull((yield* SubscriptionRef.get(h.service.state)).autoPausePrompt);
-        const stopping = yield* Effect.fork(h.service.stop(first));
+        const stopping = yield* Effect.forkChild(h.service.stop(first));
         yield* poll(
           SubscriptionRef.get(h.service.state).pipe(
             Effect.map(s => s.status === 'idle' && s.finalizingRecordingIds.includes(first))
@@ -2456,11 +2627,11 @@ describe('RecordingService — lifecycle ownership and durability', () => {
         );
         assert.isTrue(firstCapture.released);
         assert.deepStrictEqual((yield* SubscriptionRef.get(h.service.state)).processingRecordingIds, [first]);
-        assert.isTrue(Option.isNone(yield* Fiber.poll(stopping)));
+        assert.isTrue(stopping.pollUnsafe() === undefined);
 
         assert.deepStrictEqual(
-          yield* Effect.either(h.service.start({ captureMode: 'mic', noteId: 'note_second' })),
-          Either.left(new RecordingBusyError({ activeRecordingId: first }))
+          yield* Effect.result(h.service.start({ captureMode: 'mic', noteId: 'note_second' })),
+          Result.fail(new RecordingBusyError({ activeRecordingId: first }))
         );
         assert.strictEqual(h.fakeCapture.sessions.length, 1);
         yield* TestClock.adjust(Duration.minutes(2));
@@ -2498,15 +2669,15 @@ describe('RecordingService — lifecycle ownership and durability', () => {
         const first = yield* h.service.start({ captureMode: 'mic' });
         yield* h.service.stop(first);
         const claims = yield* Effect.all([
-          Effect.fork(h.service.claimCompletion(first)),
-          Effect.fork(h.service.claimCompletion(first)),
+          Effect.forkChild(h.service.claimCompletion(first)),
+          Effect.forkChild(h.service.claimCompletion(first)),
         ]);
         yield* settle;
-        for (const claim of claims) assert.isTrue(Option.isNone(yield* Fiber.poll(claim)));
+        for (const claim of claims) assert.isTrue(claim.pollUnsafe() === undefined);
         assert.deepStrictEqual((yield* SubscriptionRef.get(h.service.state)).finalizingRecordingIds, [first]);
         assert.deepStrictEqual(
-          yield* Effect.either(h.service.start({ captureMode: 'mic' })),
-          Either.left(new RecordingBusyError({ activeRecordingId: first }))
+          yield* Effect.result(h.service.start({ captureMode: 'mic' })),
+          Result.fail(new RecordingBusyError({ activeRecordingId: first }))
         );
         h.fakeCloud.setCreateResponder(input => ({
           ok: true,
@@ -2539,7 +2710,7 @@ describe('RecordingService — lifecycle ownership and durability', () => {
       yield* h.service.stop(id);
       assert.deepStrictEqual((yield* SubscriptionRef.get(h.service.state)).finalizingRecordingIds, [id]);
       h.fakeCloud.setCreateResponder(input => ({ ok: true, value: { recordingId: input.recordingId } }));
-      const worker = yield* Effect.fork(h.recoveryWorker);
+      const worker = yield* Effect.forkChild(h.recoveryWorker);
       yield* poll(
         h.db.getRecoveryOutbox(id).pipe(Effect.map(row => row === null)),
         'worker recovered finalizing recording without restart'
@@ -2567,7 +2738,7 @@ describe('RecordingService — lifecycle ownership and durability', () => {
       assert.deepStrictEqual((yield* SubscriptionRef.get(h.service.state)).finalizingRecordingIds, [id]);
       assert.deepStrictEqual((yield* SubscriptionRef.get(h.service.state)).processingRecordingIds, []);
       h.fakeCloud.setFinalizeResponder(recordingId => ({ ok: true, value: { recordingId } }));
-      const worker = yield* Effect.fork(h.recoveryWorker);
+      const worker = yield* Effect.forkChild(h.recoveryWorker);
       yield* TestClock.adjust(Duration.seconds(29));
       assert.strictEqual(h.fakeCloud.finalizeCalls.length, 1);
       assert.isNotNull(yield* h.db.getRecoveryOutbox(id));
@@ -2596,9 +2767,9 @@ describe('RecordingService — lifecycle ownership and durability', () => {
       yield* Queue.offer(h.fakeCapture.current().frames, fakeFrame('mic_raw', oneSecond()));
       yield* settle;
       yield* h.service.stop(id);
-      const claim = yield* Effect.fork(h.service.claimCompletion(id));
+      const claim = yield* Effect.forkChild(h.service.claimCompletion(id));
       yield* settle;
-      assert.isTrue(Option.isNone(yield* Fiber.poll(claim)));
+      assert.isTrue(claim.pollUnsafe() === undefined);
       assert.strictEqual(h.fakeCloud.finalizeCalls.length, 0);
       h.fakeCloud.setUploadResponder(() => ({ ok: true, value: [] }));
       yield* h.drain;
@@ -2614,9 +2785,9 @@ describe('RecordingService — lifecycle ownership and durability', () => {
       h.fakeCloud.setCreateResponder(() => laneFail(true, { kind: 'http', status: 503 }));
       const id = yield* h.service.start({ captureMode: 'mic' });
       yield* h.service.stop(id);
-      const claim = yield* Effect.fork(h.service.claimCompletion(id));
+      const claim = yield* Effect.forkChild(h.service.claimCompletion(id));
       yield* settle;
-      assert.isTrue(Option.isNone(yield* Fiber.poll(claim)));
+      assert.isTrue(claim.pollUnsafe() === undefined);
       yield* Scope.close(h.sessionScope, Exit.void);
       assert.isFalse(yield* Fiber.join(claim));
       assert.isFalse(yield* h.service.claimCompletion(id));
@@ -2631,9 +2802,9 @@ describe('RecordingService — lifecycle ownership and durability', () => {
         h.fakeCloud.setCreateResponder(() => laneFail(false, { kind: 'http', status: 404 }));
         const id = yield* h.service.start({ captureMode: 'mic' });
         yield* h.service.stop(id);
-        const claim = yield* Effect.fork(h.service.claimCompletion(id));
+        const claim = yield* Effect.forkChild(h.service.claimCompletion(id));
         yield* settle;
-        assert.isTrue(Option.isNone(yield* Fiber.poll(claim)));
+        assert.isTrue(claim.pollUnsafe() === undefined);
         yield* h.drain;
         assert.isFalse(yield* Fiber.join(claim));
         assert.strictEqual((yield* h.db.getRecoveryOutbox(id))?.status, 'failed');
@@ -2738,10 +2909,10 @@ describe('RecordingService — lifecycle ownership and durability', () => {
           ...api,
           uploadTranscriptionChunk: (id, params, wav) =>
             (params.chunkIndex === 0
-              ? Deferred.succeed(entered, undefined).pipe(Effect.zipRight(Deferred.await(release)))
+              ? Deferred.succeed(entered, undefined).pipe(Effect.andThen(Deferred.await(release)))
               : Effect.void
             ).pipe(
-              Effect.zipRight(api.uploadTranscriptionChunk(id, params, wav)),
+              Effect.andThen(api.uploadTranscriptionChunk(id, params, wav)),
               Effect.onInterrupt(() =>
                 Effect.sync(() => {
                   cancelled = true;
@@ -2760,14 +2931,14 @@ describe('RecordingService — lifecycle ownership and durability', () => {
       yield* TestClock.adjust(CHUNK_INTERVAL);
       yield* Deferred.await(entered);
       const stoppingAt = yield* Clock.currentTimeMillis;
-      const stopFiber = yield* Effect.forkDaemon(h.service.stop(id));
+      const stopFiber = yield* Effect.forkDetach(h.service.stop(id));
       yield* poll(
         SubscriptionRef.get(h.service.state).pipe(
           Effect.map(s => s.status === 'idle' && s.finalizingRecordingIds.length > 0)
         ),
         'stopping'
       );
-      assert.isTrue(Option.isNone(yield* Fiber.poll(stopFiber)));
+      assert.isTrue(stopFiber.pollUnsafe() === undefined);
       assert.isTrue(h.fakeCapture.current().released, 'capture already closed while upload drains');
       yield* TestClock.adjust(Duration.seconds(15));
       yield* Deferred.succeed(release, undefined);
@@ -2936,7 +3107,7 @@ describe('RecordingService — lifecycle ownership and durability', () => {
       const result = yield* Effect.exit(h.service.start({ captureMode: 'mic' }));
       assert.isTrue(Exit.isFailure(result));
       if (Exit.isFailure(result)) {
-        const error = Cause.failureOption(result.cause);
+        const error = Cause.findErrorOption(result.cause);
         assert.isTrue(Option.isSome(error));
         if (Option.isSome(error))
           assert.deepInclude(error.value, { _tag: 'RecordingStartError', reason: 'model-missing' });
@@ -3058,15 +3229,15 @@ describe('RecordingService — lifecycle ownership and durability', () => {
         SubscriptionRef.update(h.service.state, current => ({
           ...current,
           processingRecordingIds: current.processingRecordingIds.filter(id => id !== 'rec_previous'),
-        })).pipe(Effect.zipRight(insert(input)))
+        })).pipe(Effect.andThen(insert(input)))
       );
       yield* Effect.sync(() =>
         h.db.db.run(
           sql`CREATE TRIGGER fail_job BEFORE INSERT ON recovery_outbox BEGIN SELECT RAISE(ABORT, 'storage unavailable'); END`
         )
       );
-      const refused = yield* Effect.either(h.service.start({ captureMode: 'mic' }));
-      assert.deepInclude(refused, { _tag: 'Left' });
+      const refused = yield* Effect.result(h.service.start({ captureMode: 'mic' }));
+      assert.isTrue(Result.isFailure(refused));
       assert.strictEqual((yield* SubscriptionRef.get(h.service.state)).status, 'idle');
       assert.deepStrictEqual((yield* SubscriptionRef.get(h.service.state)).processingRecordingIds, []);
       assert.strictEqual(h.fakeCapture.sessions.length, 0);
@@ -3134,9 +3305,9 @@ describe('RecordingService — spoken language', () => {
   it.effect('refuses non-English capture and active updates with an English-only local model', () =>
     Effect.gen(function* () {
       const h = yield* setup({}, undefined, { mode: 'local' });
-      const refused = yield* Effect.either(h.service.start({ captureMode: 'mic', language: 'ja' }));
-      assert.isTrue(Either.isLeft(refused));
-      if (Either.isLeft(refused)) assert.deepStrictEqual(refused.left, new RecordingStartError({ reason: 'language-unsupported' }));
+      const refused = yield* Effect.result(h.service.start({ captureMode: 'mic', language: 'ja' }));
+      assert.isTrue(Result.isFailure(refused));
+      if (Result.isFailure(refused)) assert.deepStrictEqual(refused.failure, new RecordingStartError({ reason: 'language-unsupported' }));
       assert.isEmpty(h.fakeCapture.sessions);
       assert.isEmpty(h.fakeCloud.createCalls);
       assert.isEmpty(yield* h.db.listRecoveryOutbox());
@@ -3252,18 +3423,18 @@ describe('RecordingService — spoken language', () => {
       const release = yield* Deferred.make<void>();
       const h = yield* setup({}, undefined, { backendTransform: api => ({
         ...api, request: req => req.method === 'PUT' && req.path.includes('/recordings/')
-          ? Deferred.succeed(entered, undefined).pipe(Effect.zipRight(Deferred.await(release)), Effect.zipRight(api.request(req)))
+          ? Deferred.succeed(entered, undefined).pipe(Effect.andThen(Deferred.await(release)), Effect.andThen(api.request(req)))
           : api.request(req),
       }) });
       const id = yield* h.service.start({ captureMode: 'mic' });
       yield* poll(SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')), 'recording');
-      const change = yield* Effect.fork(h.service.setLanguage(id, 'ja'));
+      const change = yield* Effect.forkChild(h.service.setLanguage(id, 'ja'));
       yield* Deferred.await(entered);
       for (let frame = 0; frame < 3; frame += 1)
         yield* Queue.offer(h.fakeCapture.current().frames, fakeFrame('mic_raw', seconds(5)));
       yield* poll(SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.elapsedMs === 15_000)), 'audio persisted while PUT waits');
       const stoppingAt = yield* Clock.currentTimeMillis;
-      const stop = yield* Effect.fork(h.service.stop(id));
+      const stop = yield* Effect.forkChild(h.service.stop(id));
       yield* poll(Effect.sync(() => h.fakeCapture.current().released), 'capture closes before PUT settles');
       yield* TestClock.adjust(Duration.seconds(5));
       assert.isEmpty(h.fakeCloud.finalizeCalls);
@@ -3289,7 +3460,7 @@ describe('RecordingService — spoken language', () => {
           if (req.method !== 'PUT' || !first) return api.request(req);
           first = false;
           return Deferred.succeed(entered, undefined).pipe(
-            Effect.zipRight(Effect.promise(() => new Promise<never>(() => {})).pipe(
+            Effect.andThen(Effect.promise(() => new Promise<never>(() => {})).pipe(
               Effect.timeoutOption(Duration.seconds(1)), Effect.as({ error: { code: 'INTERNAL' as const } })
             ))
           );
@@ -3297,9 +3468,9 @@ describe('RecordingService — spoken language', () => {
       }) });
       const id = yield* h.service.start({ captureMode: 'mic' });
       yield* poll(SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')), 'recording');
-      const change = yield* Effect.fork(h.service.setLanguage(id, 'ja'));
+      const change = yield* Effect.forkChild(h.service.setLanguage(id, 'ja'));
       yield* Deferred.await(entered);
-      const stop = yield* Effect.fork(h.service.stop(id));
+      const stop = yield* Effect.forkChild(h.service.stop(id));
       yield* poll(Effect.sync(() => h.fakeCapture.current().released), 'capture closed during stalled PUT');
       yield* TestClock.adjust(Duration.seconds(1));
       assert.isFalse(yield* Fiber.join(change));
@@ -3352,12 +3523,12 @@ describe('RecordingService — spoken language', () => {
       const entered = yield* Deferred.make<void>();
       const h = yield* setup({}, undefined, { backendTransform: api => ({
         ...api, request: req => req.method === 'PUT'
-          ? Deferred.succeed(entered, undefined).pipe(Effect.zipRight(Effect.never))
+          ? Deferred.succeed(entered, undefined).pipe(Effect.andThen(Effect.never))
           : api.request(req),
       }) });
       const id = yield* h.service.start({ captureMode: 'mic' });
       yield* poll(SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')), 'recording');
-      const change = yield* Effect.fork(h.service.setLanguage(id, 'ja'));
+      const change = yield* Effect.forkChild(h.service.setLanguage(id, 'ja'));
       yield* Deferred.await(entered);
       yield* Fiber.interrupt(change);
       yield* poll(Effect.sync(() => h.fakeCapture.current().released), 'interrupted update parks capture');

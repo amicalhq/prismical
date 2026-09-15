@@ -5,7 +5,7 @@ import { DeepLinks, type DeepLinksService, type PendingOAuthEntry } from './serv
 
 const URL_QUEUE_CAPACITY = 32;
 
-export const DeepLinksLive: Layer.Layer<DeepLinks, never, ElectronApp | MainLogger> = Layer.scoped(
+export const DeepLinksLive: Layer.Layer<DeepLinks, never, ElectronApp | MainLogger> = Layer.effect(
   DeepLinks,
   Effect.gen(function* () {
     const electronApp = yield* ElectronApp;

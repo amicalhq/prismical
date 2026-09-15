@@ -79,7 +79,7 @@ describe('CloudTranscriberLive', () => {
         const scope = yield* Scope.make();
         const ctx = yield* Layer.build(
           CloudTranscriberLive.pipe(Layer.provide(fakeCloud.layer))
-        ).pipe(Scope.extend(scope));
+        ).pipe(Scope.provide(scope));
         const lane = Context.get(ctx, CloudTranscriberLane);
         for (const source of ['mic', 'system'] as const) {
           // Speech-band signal plus a high-frequency tone that would alias to 6 kHz.
@@ -133,7 +133,7 @@ describe('TranscriberLive dispatch and placeholder lanes', () => {
     const scope = yield* Scope.make();
     const ctx = yield* Layer.build(
       makeTranscriberStack(fakeCloud.layer).pipe(Layer.provide(logger.layer))
-    ).pipe(Scope.extend(scope));
+    ).pipe(Scope.provide(scope));
     return { transcriber: Context.get(ctx, Transcriber), fakeCloud, logger };
   });
 
@@ -466,7 +466,7 @@ describe('cloud-mode segment mirror (POST /apps/v1/me/transcript-segments)', () 
         const fakeCloud = makeFakeWorkspaceBackend();
         const scope = yield* Scope.make();
         const ctx = yield* Layer.build(Layer.mergeAll(logger.layer, fakeCloud.layer)).pipe(
-          Scope.extend(scope)
+          Scope.provide(scope)
         );
         const log = Context.get(ctx, MainLogger).scoped('recording');
         const backend = Context.get(ctx, WorkspaceBackend);
@@ -518,7 +518,7 @@ describe('cloud-mode segment mirror (POST /apps/v1/me/transcript-segments)', () 
         const fakeCloud = makeFakeWorkspaceBackend();
         const scope = yield* Scope.make();
         const ctx = yield* Layer.build(Layer.mergeAll(logger.layer, fakeCloud.layer)).pipe(
-          Scope.extend(scope)
+          Scope.provide(scope)
         );
         const log = Context.get(ctx, MainLogger).scoped('recording');
         const backend = Context.get(ctx, WorkspaceBackend);

@@ -35,10 +35,9 @@ export interface DetectionBridgeApi {
   readonly stateChanges: Stream.Stream<DetectionState>;
 }
 
-export class DetectionBridge extends Context.Tag('desktop/detection/DetectionBridge')<
-  DetectionBridge,
-  DetectionBridgeApi
->() {}
+export class DetectionBridge extends Context.Service<DetectionBridge, DetectionBridgeApi>()(
+  'desktop/detection/DetectionBridge'
+) {}
 
 export const DetectionBridgeLive: Layer.Layer<DetectionBridge> = Layer.effect(
   DetectionBridge,
@@ -64,16 +63,15 @@ export const DetectionBridgeLive: Layer.Layer<DetectionBridge> = Layer.effect(
         )
       ),
 
-      // switch:true — a workspace swap interrupts the old workspace's inner stream
+      // switchMap — a workspace swap interrupts the old workspace's inner stream
       // and starts the new one (or the idle stream), so the widget resets to idle
       // when the workspace unmounts and never sees a dead workspace's detection.
-      stateChanges: currentRef.changes.pipe(
-        Stream.flatMap(
+      stateChanges: SubscriptionRef.changes(currentRef).pipe(
+        Stream.switchMap(
           Option.match({
             onNone: () => Stream.succeed(idleDetectionState),
-            onSome: service => service.state.changes,
-          }),
-          { switch: true }
+            onSome: service => SubscriptionRef.changes(service.state),
+          })
         )
       ),
     };

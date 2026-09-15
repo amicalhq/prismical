@@ -53,7 +53,7 @@ const readI18n = (language: string, preferredSystemLanguages: ReadonlyArray<stri
   Effect.gen(function* () {
     const scope = yield* Scope.make();
     const ctx = yield* Layer.build(makeLayer(language, preferredSystemLanguages)).pipe(
-      Scope.extend(scope)
+      Scope.provide(scope)
     );
     const service = Context.get(ctx, DesktopI18n);
     yield* Scope.close(scope, Exit.void);

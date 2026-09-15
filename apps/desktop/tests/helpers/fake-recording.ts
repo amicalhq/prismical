@@ -86,7 +86,7 @@ export const makeFakeCapture = (): FakeCapture => {
       yield* Effect.addFinalizer(() =>
         Effect.sync(() => {
           record.released = true;
-        }).pipe(Effect.zipRight(Queue.shutdown(frames)), Effect.zipRight(Queue.shutdown(micEvents)))
+        }).pipe(Effect.andThen(Queue.shutdown(frames)), Effect.andThen(Queue.shutdown(micEvents)))
       );
       sessions.push(record);
       const session: CaptureSession = {

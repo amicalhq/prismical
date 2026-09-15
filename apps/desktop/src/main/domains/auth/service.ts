@@ -143,4 +143,4 @@ export interface AuthApi {
   readonly pendingAttemptAuthorizeUrl: Effect.Effect<string | null>;
 }
 
-export class AuthService extends Context.Tag('desktop/Auth')<AuthService, AuthApi>() {}
+export class AuthService extends Context.Service<AuthService, AuthApi>()('desktop/Auth') {}

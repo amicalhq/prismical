@@ -67,7 +67,6 @@ export interface PermissionServiceApi {
   ) => Effect.Effect<ResolvedCaptureMode, PermissionError>;
 }
 
-export class PermissionService extends Context.Tag('desktop/recording/PermissionService')<
-  PermissionService,
-  PermissionServiceApi
->() {}
+export class PermissionService extends Context.Service<PermissionService, PermissionServiceApi>()(
+  'desktop/recording/PermissionService'
+) {}

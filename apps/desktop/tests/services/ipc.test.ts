@@ -465,9 +465,8 @@ const makeFakeRecordingService = () =>
 
 /** Cooperative wait for the forked push fiber (no clock involved). */
 const drainUntil = (predicate: () => boolean) =>
-  Effect.iterate(0, {
-    while: n => n < 200 && !predicate(),
-    body: n => Effect.yieldNow().pipe(Effect.as(n + 1)),
+  Effect.gen(function* () {
+    for (let n = 0; n < 200 && !predicate(); n++) yield* Effect.yieldNow;
   });
 
 const SIGNED_IN_STATE: AuthState = {
@@ -511,9 +510,9 @@ describe('registerMainWindowHandlers', () => {
     Effect.gen(function* () {
       const { layer, logger } = build();
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
-      const widget = yield* Context.get(ctx, WindowRegistry).openWidgetWindow.pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
+      const widget = yield* Context.get(ctx, WindowRegistry).openWidgetWindow.pipe(Scope.provide(scope));
       const sender = widget.webContents;
       const wire = makeWire('warn', 'widget-ui', 'Widget diagnostic', {
         context: { apiKey: 'private-key' }, error: Object.assign(new Error('failure'), { code: 'EPIPE' }),
@@ -539,9 +538,9 @@ describe('registerMainWindowHandlers', () => {
     Effect.gen(function* () {
       const { layer, telemetry } = build();
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
-      yield* Context.get(ctx, WindowRegistry).openMainWindow.pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
+      yield* Context.get(ctx, WindowRegistry).openMainWindow.pipe(Scope.provide(scope));
       const sender = fake.__windowInstances().at(-1)?.webContents;
       yield* Effect.promise(() => fake.ipcMain.invoke(CHANNELS.telemetryCapture, { sender }, {
         revision: 0, event: 'recording_completed', properties: { recording_id: 'rec_1' },
@@ -576,8 +575,8 @@ describe('registerMainWindowHandlers', () => {
       assert.isTrue(Exit.isFailure(originOverride));
       assert.strictEqual(telemetry.captures.length, 1);
       assert.strictEqual(telemetry.exceptions.length, 1);
-      const widget = yield* Context.get(ctx, WindowRegistry).openWidgetWindow.pipe(Scope.extend(scope));
-      const notify = yield* Context.get(ctx, WindowRegistry).openNotifyWindow.pipe(Scope.extend(scope));
+      const widget = yield* Context.get(ctx, WindowRegistry).openWidgetWindow.pipe(Scope.provide(scope));
+      const notify = yield* Context.get(ctx, WindowRegistry).openNotifyWindow.pipe(Scope.provide(scope));
       yield* Effect.promise(() => fake.ipcMain.invoke(CHANNELS.telemetryCaptureException, { sender: widget.webContents }, {
         revision: 0, error: { name: 'Error', message: 'widget failed' }, properties: { window_type: 'main' },
       }));
@@ -605,9 +604,9 @@ describe('registerMainWindowHandlers', () => {
     Effect.gen(function* () {
       const { layer } = build();
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
-      yield* Context.get(ctx, WindowRegistry).openMainWindow.pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
+      yield* Context.get(ctx, WindowRegistry).openMainWindow.pipe(Scope.provide(scope));
       const sender = fake.__windowInstances().at(-1)?.webContents;
       const telemetry = Context.get(ctx, TelemetryService);
       yield* SubscriptionRef.set(telemetry.state, {
@@ -626,8 +625,8 @@ describe('registerMainWindowHandlers', () => {
     Effect.gen(function* () {
       const { layer } = build();
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
 
       assert.deepStrictEqual(
         [...fake.ipcMain.handlers.keys()].sort(),
@@ -645,17 +644,51 @@ describe('registerMainWindowHandlers', () => {
     })
   );
 
+  it.effect('closing the handler scope cancels pending calls and rejects retained callbacks', () =>
+    Effect.gen(function* () {
+      const { layer, auth } = build();
+      const scope = yield* Scope.make();
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      const entered = yield* Deferred.make<void>();
+      let finalized = false;
+      let calls = 0;
+      auth.setSignIn(Effect.gen(function* () {
+        calls++;
+        yield* Deferred.succeed(entered, undefined);
+        yield* Effect.never;
+      }).pipe(Effect.ensuring(Effect.sync(() => { finalized = true; }))));
+      yield* Context.get(ctx, WindowRegistry).openMainWindow.pipe(Scope.provide(scope));
+      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
+      const sender = fake.__windowInstances().at(-1)?.webContents;
+      const retained = fake.ipcMain.handlers.get(CHANNELS.authSignIn)!;
+      const pending = yield* Effect.forkChild(Effect.promise(() =>
+        Promise.resolve(retained({ sender }, {})).then(() => 'resolved', () => 'rejected')
+      ));
+      yield* Deferred.await(entered);
+
+      yield* Scope.close(scope, Exit.void);
+
+      assert.isTrue(finalized);
+      assert.strictEqual(yield* Fiber.join(pending), 'rejected');
+      assert.isFalse(fake.ipcMain.handlers.has(CHANNELS.authSignIn));
+      assert.strictEqual(yield* Effect.promise(() => Promise.resolve(retained({ sender }, {})).then(
+        () => 'resolved', () => 'rejected'
+      )), 'rejected');
+      assert.strictEqual(calls, 1);
+    })
+  );
+
   it.effect(
     'recording:pause/resume validate the id and return whether the command was accepted',
     () =>
       Effect.gen(function* () {
         const { layer } = build();
         const scope = yield* Scope.make();
-        const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-        yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+        const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+        yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
         const registry = Context.get(ctx, WindowRegistry);
         const bridge = Context.get(ctx, RecordingBridge);
-        yield* registry.openMainWindow.pipe(Scope.extend(scope));
+        yield* registry.openMainWindow.pipe(Scope.provide(scope));
         const wc = fake.__windowInstances().at(-1)?.webContents;
 
         assert.isFalse(
@@ -669,7 +702,7 @@ describe('registerMainWindowHandlers', () => {
         );
 
         const rec = yield* makeFakeRecordingService();
-        yield* bridge.register(rec.api).pipe(Scope.extend(scope));
+        yield* bridge.register(rec.api).pipe(Scope.provide(scope));
         assert.isTrue(
           yield* Effect.promise(() =>
             fake.ipcMain.invoke(CHANNELS.recordingPause, { sender: wc }, { recordingId: 'rec_1' })
@@ -713,8 +746,8 @@ describe('registerMainWindowHandlers', () => {
     Effect.gen(function* () {
       const { layer, auth } = build({ isE2E: true });
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
       assert.isTrue(fake.ipcMain.handlers.has(CHANNELS.e2eStreamStats));
       assert.isTrue(fake.ipcMain.handlers.has(CHANNELS.e2eAuthPendingState));
       assert.isTrue(fake.ipcMain.handlers.has(CHANNELS.e2eAuthAuthorizeUrl));
@@ -724,7 +757,7 @@ describe('registerMainWindowHandlers', () => {
       // Round-trip: the channel serves the auth seam's value to the main
       // window (and refuses foreign senders like every other handler).
       const registry = Context.get(ctx, WindowRegistry);
-      yield* registry.openMainWindow.pipe(Scope.extend(scope));
+      yield* registry.openMainWindow.pipe(Scope.provide(scope));
       const wc = fake.__windowInstances().at(-1)?.webContents;
       assert.isNull(
         yield* Effect.promise(() =>
@@ -772,10 +805,10 @@ describe('registerMainWindowHandlers', () => {
       // must come through, so a re-hardcoded 'cloud' cannot pass this suite.
       const { layer } = build({ gleap: { key: 'test-key', cspNonce: 'test-nonce' } }, { appMode: 'local' });
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
       const registry = Context.get(ctx, WindowRegistry);
-      yield* registry.openMainWindow.pipe(Scope.extend(scope));
+      yield* registry.openMainWindow.pipe(Scope.provide(scope));
       const wc = fake.__windowInstances().at(-1)?.webContents;
       assert.isDefined(wc);
       const env = yield* Effect.promise(() => fake.ipcMain.invoke(CHANNELS.envGet, { sender: wc }));
@@ -789,10 +822,10 @@ describe('registerMainWindowHandlers', () => {
     Effect.gen(function* () {
       const { layer, logger } = build();
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
       const registry = Context.get(ctx, WindowRegistry);
-      yield* registry.openMainWindow.pipe(Scope.extend(scope));
+      yield* registry.openMainWindow.pipe(Scope.provide(scope));
       const wc = fake.__windowInstances().at(-1)?.webContents;
       assert.isDefined(wc);
 
@@ -832,10 +865,10 @@ describe('registerMainWindowHandlers', () => {
     Effect.gen(function* () {
       const { layer } = build();
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
       const registry = Context.get(ctx, WindowRegistry);
-      yield* registry.openMainWindow.pipe(Scope.extend(scope));
+      yield* registry.openMainWindow.pipe(Scope.provide(scope));
       const wc = fake.__windowInstances().at(-1)?.webContents;
 
       const invoke = (payload: unknown) =>
@@ -880,8 +913,8 @@ describe('registerMainWindowHandlers', () => {
     Effect.gen(function* () {
       const { layer } = build();
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
       // Register a session client whose Ask stream never ends, so the opened
       // stream stays ACTIVE and the duplicate-id check below fires (the real
       // no-session producer would complete instantly, freeing the id first).
@@ -893,9 +926,9 @@ describe('registerMainWindowHandlers', () => {
           collabToken: Effect.succeed('STUB-ID-TOKEN'),
           ...recordingLaneStub,
         })
-        .pipe(Scope.extend(scope));
+        .pipe(Scope.provide(scope));
       const registry = Context.get(ctx, WindowRegistry);
-      yield* registry.openMainWindow.pipe(Scope.extend(scope));
+      yield* registry.openMainWindow.pipe(Scope.provide(scope));
       const window = fake.__windowInstances().at(-1);
       const wc = window?.webContents;
 
@@ -933,10 +966,10 @@ describe('registerMainWindowHandlers', () => {
     Effect.gen(function* () {
       const { layer } = build();
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
       const registry = Context.get(ctx, WindowRegistry);
-      yield* registry.openMainWindow.pipe(Scope.extend(scope));
+      yield* registry.openMainWindow.pipe(Scope.provide(scope));
       const wc = fake.__windowInstances().at(-1)?.webContents;
 
       const invoke = (payload: unknown) =>
@@ -962,7 +995,7 @@ describe('registerMainWindowHandlers', () => {
         compact: () => Effect.void,
         applyFlush: () => Effect.void,
       };
-      yield* Context.get(ctx, CollabBridge).register(store).pipe(Scope.extend(scope));
+      yield* Context.get(ctx, CollabBridge).register(store).pipe(Scope.provide(scope));
       assert.deepStrictEqual(yield* invoke({ openId: UUID, noteId: 'nt_1' }), { ok: true });
       const posted = wc?.posted.find(p => p.channel === collabPortChannel(UUID));
       assert.isDefined(posted, 'MessagePort posted to the requesting sender');
@@ -980,11 +1013,11 @@ describe('registerMainWindowHandlers', () => {
     Effect.gen(function* () {
       const { layer, logger } = build();
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
       const registry = Context.get(ctx, WindowRegistry);
       const auth = Context.get(ctx, AuthService);
-      yield* registry.openMainWindow.pipe(Scope.extend(scope));
+      yield* registry.openMainWindow.pipe(Scope.provide(scope));
       const wc = fake.__windowInstances().at(-1)?.webContents;
 
       const invoke = () =>
@@ -1024,10 +1057,10 @@ describe('registerMainWindowHandlers', () => {
     Effect.gen(function* () {
       const { layer, auth } = build();
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
       const registry = Context.get(ctx, WindowRegistry);
-      yield* registry.openMainWindow.pipe(Scope.extend(scope));
+      yield* registry.openMainWindow.pipe(Scope.provide(scope));
       const wc = fake.__windowInstances().at(-1)?.webContents;
 
       const invoke = () =>
@@ -1062,10 +1095,10 @@ describe('registerMainWindowHandlers', () => {
     Effect.gen(function* () {
       const { layer, auth } = build();
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
       const registry = Context.get(ctx, WindowRegistry);
-      yield* registry.openMainWindow.pipe(Scope.extend(scope));
+      yield* registry.openMainWindow.pipe(Scope.provide(scope));
       const wc = fake.__windowInstances().at(-1)?.webContents;
 
       yield* Effect.promise(() =>
@@ -1100,10 +1133,10 @@ describe('registerMainWindowHandlers', () => {
     Effect.gen(function* () {
       const { layer, logger, auth } = build();
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
       const registry = Context.get(ctx, WindowRegistry);
-      yield* registry.openMainWindow.pipe(Scope.extend(scope));
+      yield* registry.openMainWindow.pipe(Scope.provide(scope));
       const wc = fake.__windowInstances().at(-1)?.webContents;
 
       // {} and a bare invoke both mean "the active account".
@@ -1151,10 +1184,10 @@ describe('registerMainWindowHandlers', () => {
       Effect.gen(function* () {
         const { layer, logger, auth } = build();
         const scope = yield* Scope.make();
-        const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-        yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+        const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+        yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
         const registry = Context.get(ctx, WindowRegistry);
-        yield* registry.openMainWindow.pipe(Scope.extend(scope));
+        yield* registry.openMainWindow.pipe(Scope.provide(scope));
         const wc = fake.__windowInstances().at(-1)?.webContents;
 
         // Happy path: the orgId reaches setActiveOrg (which validates it against
@@ -1218,10 +1251,10 @@ describe('registerMainWindowHandlers', () => {
       Effect.gen(function* () {
         const { layer, logger, auth } = build();
         const scope = yield* Scope.make();
-        const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-        yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+        const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+        yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
         const registry = Context.get(ctx, WindowRegistry);
-        yield* registry.openMainWindow.pipe(Scope.extend(scope));
+        yield* registry.openMainWindow.pipe(Scope.provide(scope));
         const wc = fake.__windowInstances().at(-1)?.webContents;
 
         // Happy path: the sub reaches setActiveAccount and the invoke resolves.
@@ -1275,11 +1308,11 @@ describe('registerMainWindowHandlers', () => {
       Effect.gen(function* () {
         const { layer } = build();
         const scope = yield* Scope.make();
-        const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-        yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+        const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+        yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
         const registry = Context.get(ctx, WindowRegistry);
         const coreTransport = Context.get(ctx, WorkspaceTransport);
-        yield* registry.openMainWindow.pipe(Scope.extend(scope));
+        yield* registry.openMainWindow.pipe(Scope.provide(scope));
         const wc = fake.__windowInstances().at(-1)?.webContents;
 
         const invoke = () =>
@@ -1298,7 +1331,7 @@ describe('registerMainWindowHandlers', () => {
             collabToken: Effect.succeed('FRESH-ID-TOKEN'),
             ...recordingLaneStub,
           })
-          .pipe(Scope.extend(scope));
+          .pipe(Scope.provide(scope));
         assert.strictEqual(yield* invoke(), 'FRESH-ID-TOKEN');
 
         // Unknown sender → typed rejection, never a token.
@@ -1316,11 +1349,11 @@ describe('registerMainWindowHandlers', () => {
     Effect.gen(function* () {
       const { layer } = build();
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
       const registry = Context.get(ctx, WindowRegistry);
       const auth = Context.get(ctx, AuthService);
-      yield* registry.openMainWindow.pipe(Scope.extend(scope));
+      yield* registry.openMainWindow.pipe(Scope.provide(scope));
       const wc = fake.__windowInstances().at(-1)?.webContents;
       assert.isDefined(wc);
       const pushes = () =>
@@ -1481,8 +1514,8 @@ describe('registerMainWindowHandlers', () => {
           SessionLifecycleProbeLive
         );
         const scope = yield* Scope.make();
-        const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-        yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+        const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+        yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
         const authService = Context.get(ctx, AuthService);
 
         // First state change: the send THROWS — logged, fiber survives.
@@ -1517,11 +1550,11 @@ describe('registerMainWindowHandlers', () => {
       Effect.gen(function* () {
         const { layer } = build();
         const scope = yield* Scope.make();
-        const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-        yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+        const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+        yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
         const registry = Context.get(ctx, WindowRegistry);
         const bridge = Context.get(ctx, RecordingBridge);
-        yield* registry.openMainWindow.pipe(Scope.extend(scope));
+        yield* registry.openMainWindow.pipe(Scope.provide(scope));
         const wc = fake.__windowInstances().at(-1)?.webContents;
 
         const start = (payload: unknown) =>
@@ -1538,7 +1571,7 @@ describe('registerMainWindowHandlers', () => {
 
         // Register a fake session service into the REAL bridge.
         const rec = yield* makeFakeRecordingService();
-        yield* bridge.register(rec.api).pipe(Scope.extend(scope));
+        yield* bridge.register(rec.api).pipe(Scope.provide(scope));
 
         // Happy path: the minted id comes back; the input reaches the service
         // (noteId defaulted, title threaded).
@@ -1612,11 +1645,11 @@ describe('registerMainWindowHandlers', () => {
       Effect.gen(function* () {
         const { layer } = build();
         const scope = yield* Scope.make();
-        const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-        yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+        const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+        yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
         const registry = Context.get(ctx, WindowRegistry);
         const bridge = Context.get(ctx, RecordingBridge);
-        yield* registry.openMainWindow.pipe(Scope.extend(scope));
+        yield* registry.openMainWindow.pipe(Scope.provide(scope));
         const wc = fake.__windowInstances().at(-1)?.webContents;
 
         // No session ⇒ graceful no-op (resolves void).
@@ -1625,7 +1658,7 @@ describe('registerMainWindowHandlers', () => {
         );
 
         const rec = yield* makeFakeRecordingService();
-        yield* bridge.register(rec.api).pipe(Scope.extend(scope));
+        yield* bridge.register(rec.api).pipe(Scope.provide(scope));
         yield* Effect.promise(() =>
           fake.ipcMain.invoke(CHANNELS.recordingStop, { sender: wc }, { recordingId: 'rec_1' })
         );
@@ -1657,16 +1690,16 @@ describe('registerMainWindowHandlers', () => {
     Effect.gen(function* () {
       const { layer } = build();
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
-      yield* Context.get(ctx, WindowRegistry).openMainWindow.pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
+      yield* Context.get(ctx, WindowRegistry).openMainWindow.pipe(Scope.provide(scope));
       const wc = fake.__windowInstances().at(-1)?.webContents;
       const claim = (recordingId: string) => Effect.promise(() => fake.ipcMain.invoke(
         CHANNELS.recordingClaimCompletion, { sender: wc }, { recordingId }
       ));
       assert.isFalse(yield* claim('rec_1'), 'no workspace owns a completion');
       const rec = yield* makeFakeRecordingService();
-      yield* Context.get(ctx, RecordingBridge).register(rec.api).pipe(Scope.extend(scope));
+      yield* Context.get(ctx, RecordingBridge).register(rec.api).pipe(Scope.provide(scope));
       assert.isFalse(yield* claim('rec_stale'));
       rec.setClaim(true);
       assert.isTrue(yield* claim('rec_1'));
@@ -1687,22 +1720,22 @@ describe('registerMainWindowHandlers', () => {
     Effect.gen(function* () {
       const { layer } = build();
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const bridge = Context.get(ctx, RecordingBridge);
       const rec = yield* makeFakeRecordingService();
-      yield* bridge.register(rec.api).pipe(Scope.extend(scope));
+      yield* bridge.register(rec.api).pipe(Scope.provide(scope));
       const entered = yield* Deferred.make<void>();
       const release = yield* Deferred.make<void>();
       rec.setStart(Deferred.succeed(entered, undefined).pipe(
-        Effect.zipRight(Deferred.await(release)),
-        Effect.zipRight(SubscriptionRef.update(rec.state, state => ({ ...state, status: 'recording' as const }))),
+        Effect.andThen(Deferred.await(release)),
+        Effect.andThen(SubscriptionRef.update(rec.state, state => ({ ...state, status: 'recording' as const }))),
         Effect.as('rec_1')
       ));
-      const starting = yield* Effect.fork(bridge.start({ captureMode: 'mic' }));
+      const starting = yield* Effect.forkChild(bridge.start({ captureMode: 'mic' }));
       yield* Deferred.await(entered);
-      const reserving = yield* Effect.fork(bridge.setSkillWorkflow(123, true));
-      yield* Effect.yieldNow();
-      assert.isTrue(Option.isNone(yield* Fiber.poll(reserving)));
+      const reserving = yield* Effect.forkChild(bridge.setSkillWorkflow(123, true));
+      yield* Effect.yieldNow;
+      assert.isUndefined(reserving.pollUnsafe());
       yield* Deferred.succeed(release, undefined);
       assert.isTrue((yield* Fiber.join(starting)).ok);
       assert.isFalse(yield* Fiber.join(reserving));
@@ -1715,18 +1748,51 @@ describe('registerMainWindowHandlers', () => {
     })
   );
 
+  for (const destroyed of [false, true]) {
+    it.effect(`closing IPC releases skill reservations${destroyed ? ' after sender destruction' : ''} while the workspace stays mounted`, () =>
+      Effect.gen(function* () {
+        const { layer } = build({}, { appMode: 'local' });
+        const scope = yield* Scope.make();
+        const handlers = yield* Scope.make();
+        const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+        yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(handlers));
+        yield* Context.get(ctx, WindowRegistry).openMainWindow.pipe(Scope.provide(scope));
+        const sender = fake.__windowInstances().at(-1)!.webContents;
+        const bridge = Context.get(ctx, RecordingBridge);
+        const recording = yield* makeFakeRecordingService();
+        yield* bridge.register(recording.api).pipe(Scope.provide(scope));
+        assert.isTrue(yield* Effect.promise(() => fake.ipcMain.invoke(
+          CHANNELS.recordingSetSkillWorkflow,
+          { sender },
+          { active: true, ownerSessionKey: LOCAL_WORKSPACE.sub, ownerOrgId: LOCAL_WORKSPACE.orgId }
+        )));
+        assert.deepStrictEqual(yield* bridge.start({ captureMode: 'mic' }), {
+          ok: false, reason: 'suggestion-pending',
+        });
+
+        if (destroyed) sender.emit('destroyed');
+        yield* Scope.close(handlers, Exit.void);
+
+        assert.isTrue((yield* bridge.start({ captureMode: 'mic' })).ok);
+        sender.emit('did-navigate');
+        yield* Effect.yieldNow;
+        yield* Scope.close(scope, Exit.void);
+      })
+    );
+  }
+
   it.effect('skill reservations validate owners and block native starts until renderer or workspace release', () =>
     Effect.gen(function* () {
       const { layer } = build({}, { appMode: 'local' });
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
-      yield* Context.get(ctx, WindowRegistry).openMainWindow.pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
+      yield* Context.get(ctx, WindowRegistry).openMainWindow.pipe(Scope.provide(scope));
       const wc = fake.__windowInstances().at(-1)!.webContents;
       const bridge = Context.get(ctx, RecordingBridge);
       const rec = yield* makeFakeRecordingService();
       const workspace = yield* Scope.make();
-      yield* bridge.register(rec.api).pipe(Scope.extend(workspace));
+      yield* bridge.register(rec.api).pipe(Scope.provide(workspace));
       const payload = { active: true, ownerSessionKey: LOCAL_WORKSPACE.sub, ownerOrgId: LOCAL_WORKSPACE.orgId };
       const reserve = (input: unknown = payload) => Effect.promise(() => fake.ipcMain.invoke(
         CHANNELS.recordingSetSkillWorkflow, { sender: wc }, input
@@ -1741,19 +1807,19 @@ describe('registerMainWindowHandlers', () => {
       assert.isTrue((yield* bridge.start({ captureMode: 'mic' })).ok);
       yield* reserve();
       wc.emit('render-process-gone');
-      yield* Effect.yieldNow();
+      yield* Effect.yieldNow;
       assert.isTrue((yield* bridge.start({ captureMode: 'mic' })).ok);
       yield* reserve();
       wc.emit('did-navigate');
-      yield* Effect.yieldNow();
+      yield* Effect.yieldNow;
       assert.isTrue((yield* bridge.start({ captureMode: 'mic' })).ok);
       yield* reserve();
       wc.emit('destroyed');
-      yield* Effect.yieldNow();
+      yield* Effect.yieldNow;
       assert.isTrue((yield* bridge.start({ captureMode: 'mic' })).ok);
       yield* reserve();
       yield* Scope.close(workspace, Exit.void);
-      yield* bridge.register(rec.api).pipe(Scope.extend(scope));
+      yield* bridge.register(rec.api).pipe(Scope.provide(scope));
       assert.isTrue((yield* bridge.start({ captureMode: 'mic' })).ok);
       for (const [sender, input] of [[wc, {}], [{ id: 9999 }, payload]]) {
         assert.isTrue(Exit.isFailure(yield* Effect.exit(Effect.tryPromise(() => fake.ipcMain.invoke(
@@ -1770,17 +1836,17 @@ describe('registerMainWindowHandlers', () => {
       Effect.gen(function* () {
         const { layer } = build();
         const scope = yield* Scope.make();
-        const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-        yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+        const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+        yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
         const registry = Context.get(ctx, WindowRegistry);
         const bridge = Context.get(ctx, RecordingBridge);
-        yield* registry.openMainWindow.pipe(Scope.extend(scope));
+        yield* registry.openMainWindow.pipe(Scope.provide(scope));
         const wc = fake.__windowInstances().at(-1)?.webContents;
         const pushes = () =>
           (wc?.sent ?? []).filter(entry => entry.channel === CHANNELS.recordingStateChanged);
 
         const rec = yield* makeFakeRecordingService();
-        yield* bridge.register(rec.api).pipe(Scope.extend(scope));
+        yield* bridge.register(rec.api).pipe(Scope.provide(scope));
 
         // A recording state with a segment + a system/dual → mic degrade.
         const recordingState: RecordingState = {
@@ -1845,11 +1911,11 @@ describe('registerMainWindowHandlers', () => {
       Effect.gen(function* () {
         const { layer } = build();
         const scope = yield* Scope.make();
-        const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-        yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+        const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+        yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
         const registry = Context.get(ctx, WindowRegistry);
         const bridge = Context.get(ctx, RecordingBridge);
-        yield* registry.openMainWindow.pipe(Scope.extend(scope));
+        yield* registry.openMainWindow.pipe(Scope.provide(scope));
         const wc = fake.__windowInstances().at(-1)?.webContents;
         const pushes = () =>
           (wc?.sent ?? []).filter(entry => entry.channel === CHANNELS.recordingStateChanged);
@@ -1858,7 +1924,7 @@ describe('registerMainWindowHandlers', () => {
         // that scope (sign-out) — the bridge must switch back to idle.
         const sessionScope = yield* Scope.make();
         const rec = yield* makeFakeRecordingService();
-        yield* bridge.register(rec.api).pipe(Scope.extend(sessionScope));
+        yield* bridge.register(rec.api).pipe(Scope.provide(sessionScope));
         yield* SubscriptionRef.set(rec.state, {
           ...idleRecordingState,
           recordingId: 'rec_1',
@@ -1891,9 +1957,9 @@ describe('registerMainWindowHandlers', () => {
     Effect.gen(function* () {
       const { layer } = build();
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
-      yield* Context.get(ctx, WindowRegistry).openMainWindow.pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
+      yield* Context.get(ctx, WindowRegistry).openMainWindow.pipe(Scope.provide(scope));
       const sender = fake.__windowInstances().at(-1)?.webContents;
       const operationalDb = Context.get(ctx, OperationalDb);
       const write = vi.spyOn(operationalDb, 'setSetting');
@@ -1921,10 +1987,10 @@ describe('registerMainWindowHandlers', () => {
       Effect.gen(function* () {
         const { layer, logger, db } = build();
         const scope = yield* Scope.make();
-        const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-        yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+        const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+        yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
         const registry = Context.get(ctx, WindowRegistry);
-        yield* registry.openMainWindow.pipe(Scope.extend(scope));
+        yield* registry.openMainWindow.pipe(Scope.provide(scope));
         const wc = fake.__windowInstances().at(-1)?.webContents;
 
         const get = () =>
@@ -1996,11 +2062,11 @@ describe('registerMainWindowHandlers', () => {
       Effect.gen(function* () {
         const { layer } = build();
         const scope = yield* Scope.make();
-        const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-        yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+        const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+        yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
         const registry = Context.get(ctx, WindowRegistry);
         const settings = Context.get(ctx, SettingsService);
-        yield* registry.openMainWindow.pipe(Scope.extend(scope));
+        yield* registry.openMainWindow.pipe(Scope.provide(scope));
         const wc = fake.__windowInstances().at(-1)?.webContents;
         const pushes = () => (wc?.sent ?? []).filter(e => e.channel === CHANNELS.settingsChanged);
 
@@ -2032,15 +2098,15 @@ describe('registerMainWindowHandlers', () => {
     Effect.gen(function* () {
       const { layer } = build();
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       let refreshStarted = false;
       const handlerCtx = Context.add(ctx, RemoteConfig, {
         ...Context.get(ctx, RemoteConfig),
-        refresh: Effect.sync(() => { refreshStarted = true; }).pipe(Effect.zipRight(Effect.never)),
+        refresh: Effect.sync(() => { refreshStarted = true; }).pipe(Effect.andThen(Effect.never)),
       });
-      yield* registerMainWindowHandlers.pipe(Effect.provide(handlerCtx), Scope.extend(scope));
+      yield* registerMainWindowHandlers.pipe(Effect.provide(handlerCtx), Scope.provide(scope));
       const registry = Context.get(ctx, WindowRegistry);
-      yield* registry.openMainWindow.pipe(Scope.extend(scope));
+      yield* registry.openMainWindow.pipe(Scope.provide(scope));
       const wc = fake.__windowInstances().at(-1)?.webContents;
 
       // The IPC test config leaves the updater disabled (not packaged); the
@@ -2065,7 +2131,7 @@ describe('registerMainWindowHandlers', () => {
     })
   );
 
-  it.scoped('update access follows policy and recording completion; native actions reject foreign senders', () =>
+  it.effect('update access follows policy and recording completion; native actions reject foreign senders', () =>
     Effect.gen(function* () {
       const { layer, nativeOs } = build();
       const ctx = yield* Layer.build(layer);
@@ -2107,10 +2173,10 @@ describe('registerMainWindowHandlers', () => {
       Effect.gen(function* () {
         const { layer } = build();
         const scope = yield* Scope.make();
-        const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-        yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+        const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+        yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
         const registry = Context.get(ctx, WindowRegistry);
-        yield* registry.openMainWindow.pipe(Scope.extend(scope));
+        yield* registry.openMainWindow.pipe(Scope.provide(scope));
         const wc = fake.__windowInstances().at(-1)?.webContents;
 
         // Disabled lane: the initial inert view (never staged, no prompt).
@@ -2147,10 +2213,10 @@ describe('registerMainWindowHandlers', () => {
     Effect.gen(function* () {
       const { layer, nativeOs } = build();
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
       const registry = Context.get(ctx, WindowRegistry);
-      yield* registry.openMainWindow.pipe(Scope.extend(scope));
+      yield* registry.openMainWindow.pipe(Scope.provide(scope));
       const wc = fake.__windowInstances().at(-1)?.webContents;
 
       yield* Effect.promise(() =>
@@ -2208,10 +2274,10 @@ describe('registerMainWindowHandlers', () => {
         ...extras,
       });
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(built.layer).pipe(Scope.extend(scope));
-      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(built.layer).pipe(Scope.provide(scope));
+      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
       const registry = Context.get(ctx, WindowRegistry);
-      yield* registry.openMainWindow.pipe(Scope.extend(scope));
+      yield* registry.openMainWindow.pipe(Scope.provide(scope));
       const wc = fake.__windowInstances().at(-1)?.webContents;
       const secrets = Context.get(ctx, SecureStore);
       const { db } = built;
@@ -2241,7 +2307,7 @@ describe('registerMainWindowHandlers', () => {
     });
 
   const assertDeviceStateCleared = (
-    h: Effect.Effect.Success<ReturnType<typeof openForReset>>
+    h: Effect.Success<ReturnType<typeof openForReset>>
   ) =>
     Effect.gen(function* () {
       const { db, secrets } = h;
@@ -2306,7 +2372,7 @@ describe('registerMainWindowHandlers', () => {
         const next = yield* Layer.build(Layer.mergeAll(
           AppModeLive,
           makeAuthLive({ fetchFn: () => Promise.reject(new Error('reset must not restore a session')) })
-        ).pipe(Layer.provide(Layer.succeedContext(h.ctx)))).pipe(Scope.extend(scope));
+        ).pipe(Layer.provide(Layer.succeedContext(h.ctx)))).pipe(Scope.provide(scope));
         assert.isFalse(yield* SubscriptionRef.get(Context.get(next, AppModeService).chosenState));
         assert.deepStrictEqual(yield* SubscriptionRef.get(Context.get(next, AuthService).sessionState), initialAuthState);
         assert.strictEqual(nativeOs.calls.relaunch, 1);
@@ -2430,9 +2496,9 @@ describe('registerMainWindowHandlers', () => {
     Effect.gen(function* () {
       const { layer, db, nativeOs } = build({}, { appModeChosen: false });
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
-      yield* Context.get(ctx, WindowRegistry).openMainWindow.pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
+      yield* Context.get(ctx, WindowRegistry).openMainWindow.pipe(Scope.provide(scope));
       const sender = fake.__windowInstances().at(-1)?.webContents;
       const appMode = Context.get(ctx, AppModeService);
       const operationalDb = Context.get(ctx, OperationalDb);
@@ -2462,9 +2528,9 @@ describe('registerMainWindowHandlers', () => {
     Effect.gen(function* () {
       const { layer, nativeOs } = build({}, { appModeChosen: false });
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
-      yield* Context.get(ctx, WindowRegistry).openMainWindow.pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
+      yield* Context.get(ctx, WindowRegistry).openMainWindow.pipe(Scope.provide(scope));
       const sender = fake.__windowInstances().at(-1)?.webContents;
       yield* Effect.promise(() => fake.ipcMain.invoke(
         CHANNELS.capabilityChooseAppMode, { sender }, { mode: 'local' },
@@ -2479,10 +2545,10 @@ describe('registerMainWindowHandlers', () => {
     Effect.gen(function* () {
       const { layer } = build({}, { appMode: 'local' });
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
       const registry = Context.get(ctx, WindowRegistry);
-      yield* registry.openMainWindow.pipe(Scope.extend(scope));
+      yield* registry.openMainWindow.pipe(Scope.provide(scope));
       const wc = fake.__windowInstances().at(-1)?.webContents;
 
       const state = yield* Effect.promise(() =>
@@ -2506,10 +2572,10 @@ describe('registerMainWindowHandlers', () => {
       Effect.gen(function* () {
         const { layer, db, nativeOs, auth } = build();
         const scope = yield* Scope.make();
-        const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-        yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+        const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+        yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
         const registry = Context.get(ctx, WindowRegistry);
-        yield* registry.openMainWindow.pipe(Scope.extend(scope));
+        yield* registry.openMainWindow.pipe(Scope.provide(scope));
         const wc = fake.__windowInstances().at(-1)?.webContents;
         const storageCallsBefore = fake.session.defaultSession.clearDataCalls.length;
 
@@ -2580,10 +2646,10 @@ describe('registerMainWindowHandlers', () => {
           }
         );
         const scope = yield* Scope.make();
-        const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-        yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+        const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+        yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
         const registry = Context.get(ctx, WindowRegistry);
-        yield* registry.openMainWindow.pipe(Scope.extend(scope));
+        yield* registry.openMainWindow.pipe(Scope.provide(scope));
         const wc = fake.__windowInstances().at(-1)?.webContents;
 
         db.store.set('pref:language', '"de"');
@@ -2614,10 +2680,10 @@ describe('registerMainWindowHandlers', () => {
       Effect.gen(function* () {
         const { layer, logger } = build();
         const scope = yield* Scope.make();
-        const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-        yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+        const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+        yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
         const registry = Context.get(ctx, WindowRegistry);
-        yield* registry.openMainWindow.pipe(Scope.extend(scope));
+        yield* registry.openMainWindow.pipe(Scope.provide(scope));
         const wc = fake.__windowInstances().at(-1)?.webContents;
         const store = Context.get(ctx, SecureStore);
         const KEY = 'transcription.byok.apiKey';
@@ -2704,10 +2770,10 @@ describe('registerMainWindowHandlers', () => {
       });
       const { layer } = build({ platform: 'darwin' }, { sysPermissions });
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
       const registry = Context.get(ctx, WindowRegistry);
-      yield* registry.openMainWindow.pipe(Scope.extend(scope));
+      yield* registry.openMainWindow.pipe(Scope.provide(scope));
       const wc = fake.__windowInstances().at(-1)?.webContents;
 
       // darwin ≥14.2 → system audio usable; mic is Electron's status verbatim.
@@ -2738,10 +2804,10 @@ describe('registerMainWindowHandlers', () => {
         });
         const { layer } = build({ platform: 'darwin' }, { sysPermissions });
         const scope = yield* Scope.make();
-        const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-        yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+        const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+        yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
         const registry = Context.get(ctx, WindowRegistry);
-        yield* registry.openMainWindow.pipe(Scope.extend(scope));
+        yield* registry.openMainWindow.pipe(Scope.provide(scope));
         const wc = fake.__windowInstances().at(-1)?.webContents;
 
         // mic → the OS prompt runs once and the refreshed (granted) statuses return.
@@ -2799,10 +2865,10 @@ describe('registerMainWindowHandlers', () => {
       Effect.gen(function* () {
         const { layer } = build({ platform: 'darwin' });
         const scope = yield* Scope.make();
-        const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-        yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+        const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+        yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
         const registry = Context.get(ctx, WindowRegistry);
-        yield* registry.openMainWindow.pipe(Scope.extend(scope));
+        yield* registry.openMainWindow.pipe(Scope.provide(scope));
         const wc = fake.__windowInstances().at(-1)?.webContents;
         const bridge = Context.get(ctx, EventKitBridge);
         const serviceScope = yield* Scope.make();
@@ -2819,7 +2885,7 @@ describe('registerMainWindowHandlers', () => {
             enable: Effect.succeed(ready),
             refresh: Effect.succeed(syncing),
           })
-          .pipe(Scope.extend(serviceScope));
+          .pipe(Scope.provide(serviceScope));
 
         assert.deepStrictEqual(
           yield* Effect.promise(() =>
@@ -2869,10 +2935,10 @@ describe('registerMainWindowHandlers', () => {
     Effect.gen(function* () {
       const { layer, nativeOs } = build({ platform: 'darwin' });
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
       const registry = Context.get(ctx, WindowRegistry);
-      yield* registry.openMainWindow.pipe(Scope.extend(scope));
+      yield* registry.openMainWindow.pipe(Scope.provide(scope));
       const wc = fake.__windowInstances().at(-1)?.webContents;
 
       yield* Effect.promise(() =>
@@ -2930,10 +2996,10 @@ describe('registerMainWindowHandlers', () => {
     Effect.gen(function* () {
       const { layer } = build();
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
       const registry = Context.get(ctx, WindowRegistry);
-      yield* registry.openMainWindow.pipe(Scope.extend(scope));
+      yield* registry.openMainWindow.pipe(Scope.provide(scope));
       const wc = fake.__windowInstances().at(-1)?.webContents;
 
       const view = yield* Effect.promise(() =>
@@ -2958,10 +3024,10 @@ describe('registerMainWindowHandlers', () => {
       Effect.gen(function* () {
         const { layer, logger, models } = build();
         const scope = yield* Scope.make();
-        const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-        yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+        const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+        yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
         const registry = Context.get(ctx, WindowRegistry);
-        yield* registry.openMainWindow.pipe(Scope.extend(scope));
+        yield* registry.openMainWindow.pipe(Scope.provide(scope));
         const wc = fake.__windowInstances().at(-1)?.webContents;
         const request = { modelId: 'whisper-base-en' };
 
@@ -3022,11 +3088,11 @@ describe('registerMainWindowHandlers', () => {
     Effect.gen(function* () {
       const { layer } = build();
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
       const registry = Context.get(ctx, WindowRegistry);
       const manager = Context.get(ctx, ModelManager);
-      yield* registry.openMainWindow.pipe(Scope.extend(scope));
+      yield* registry.openMainWindow.pipe(Scope.provide(scope));
       const wc = fake.__windowInstances().at(-1)?.webContents;
       assert.isDefined(wc);
       const pushes = () =>
@@ -3058,6 +3124,43 @@ describe('registerMainWindowHandlers', () => {
       yield* SubscriptionRef.set(manager.state, MODELS_STATE);
       yield* drainUntil(() => false);
       assert.strictEqual(pushes().length, settled);
+    })
+  );
+
+  it.effect('handler close cancels admission owner before reservation cleanup', () =>
+    Effect.gen(function* () {
+      const { layer } = build({}, { appMode: 'local' });
+      const scope = yield* Scope.make();
+      const handlers = yield* Scope.make();
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(handlers));
+      yield* Context.get(ctx, WindowRegistry).openMainWindow.pipe(Scope.provide(scope));
+      const sender = fake.__windowInstances().at(-1)!.webContents;
+      const bridge = Context.get(ctx, RecordingBridge);
+      const recording = yield* makeFakeRecordingService();
+      yield* bridge.register(recording.api).pipe(Scope.provide(scope));
+      yield* Effect.promise(() => fake.ipcMain.invoke(CHANNELS.recordingSetSkillWorkflow,
+        { sender }, { active: false, ownerSessionKey: LOCAL_WORKSPACE.sub, ownerOrgId: LOCAL_WORKSPACE.orgId }));
+      const entered = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      let finalized = false;
+      recording.setStart(Deferred.succeed(entered, undefined).pipe(
+        Effect.andThen(Deferred.await(release)), Effect.as('rec_pending'),
+        Effect.ensuring(Effect.sync(() => { finalized = true; }))));
+      const pending = yield* Effect.forkChild(Effect.promise(() => fake.ipcMain.invoke(
+        CHANNELS.recordingStart, { sender }, { captureMode: 'mic' }
+      ).then(() => 'resolved', () => 'rejected')));
+      yield* Deferred.await(entered);
+      const closing = yield* Effect.forkDetach(Scope.close(handlers, Exit.void));
+      yield* drainUntil(() => closing.pollUnsafe() !== undefined);
+      const finishedBeforeRelease = closing.pollUnsafe() !== undefined;
+      const finalizedBeforeRelease = finalized;
+      yield* Deferred.succeed(release, undefined);
+      yield* Fiber.join(closing);
+      assert.strictEqual(yield* Fiber.join(pending), 'rejected');
+      yield* Scope.close(scope, Exit.void);
+      assert.isTrue(finishedBeforeRelease, 'Scope.close is blocked until pending start releases admission');
+      assert.isTrue(finalizedBeforeRelease, 'Pending owned callback was not canceled');
     })
   );
 });

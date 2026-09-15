@@ -9,7 +9,8 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { assert, describe, it } from '@effect/vitest';
-import { Context, Duration, Effect, Exit, Layer, Scope, SubscriptionRef, TestClock } from 'effect';
+import { Context, Duration, Effect, Exit, Layer, Scope, SubscriptionRef } from 'effect';
+import { TestClock } from 'effect/testing';
 import { beforeEach, afterEach, vi } from 'vitest';
 beforeEach(() => vi.stubGlobal('fetch', vi.fn(async () => Response.json({}))));
 afterEach(() => vi.unstubAllGlobals());
@@ -34,7 +35,7 @@ const tempDir = mkdtempSync(path.join(tmpdir(), 'prismical-boot-test-'));
 
 /** Poll checkCount on REAL time (the check itself hops through a promise). */
 const awaitCheckCount = (
-  updater: Context.Tag.Service<typeof UpdaterService>,
+  updater: Context.Service.Shape<typeof UpdaterService>,
   n: number
 ): Effect.Effect<void> =>
   Effect.gen(function* () {
@@ -90,7 +91,7 @@ describe('Boot layer (leak gate)', () => {
       const baseline = fake.__appListenerTotal();
 
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
 
       // Acquired: app event listeners…
       for (const event of APP_EVENTS) {
@@ -151,7 +152,7 @@ describe('Boot layer (leak gate)', () => {
       const baseline = fake.__appListenerTotal();
 
       const scope = yield* Scope.make();
-      const exit = yield* Effect.exit(Layer.build(layer).pipe(Scope.extend(scope)));
+      const exit = yield* Effect.exit(Layer.build(layer).pipe(Scope.provide(scope)));
       assert.isTrue(Exit.isFailure(exit));
       if (Exit.isFailure(exit)) {
         assert.include(JSON.stringify(exit.cause), 'BootError');
@@ -176,7 +177,7 @@ describe('Boot layer (leak gate)', () => {
       const baseline = fake.__appListenerTotal();
 
       const scope = yield* Scope.make();
-      const exit = yield* Effect.exit(Layer.build(layer).pipe(Scope.extend(scope)));
+      const exit = yield* Effect.exit(Layer.build(layer).pipe(Scope.provide(scope)));
       fake.safeStorage.available = true;
       assert.isTrue(Exit.isFailure(exit));
       if (Exit.isFailure(exit)) {

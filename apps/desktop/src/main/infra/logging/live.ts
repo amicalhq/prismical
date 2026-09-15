@@ -178,4 +178,4 @@ export function makeMainLogging(appRunId: string = randomUUID()) {
   return { service: logger.service, transport, layer };
 }
 
-export const MainLoggerLive = Layer.unwrapEffect(Effect.sync(() => makeMainLogging().layer));
+export const MainLoggerLive = Layer.unwrap(Effect.sync(() => makeMainLogging().layer));

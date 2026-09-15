@@ -12,7 +12,6 @@ export interface MicActivityApi {
   >;
 }
 
-export class MicActivity extends Context.Tag("desktop/MicActivity")<
-  MicActivity,
-  MicActivityApi
->() {}
+export class MicActivity extends Context.Service<MicActivity, MicActivityApi>()(
+  'desktop/MicActivity'
+) {}

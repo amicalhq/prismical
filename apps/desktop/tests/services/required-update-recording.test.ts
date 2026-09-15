@@ -7,7 +7,7 @@ import {
   type RecordingState,
 } from '../../src/main/domains/recording/service';
 
-it.scoped(
+it.effect(
   'required updates deny all new recordings, focus main, and let existing recordings finish',
   () =>
     Effect.gen(function* () {

@@ -35,7 +35,6 @@ export interface SystemPermissionsApi {
   readonly systemVersion: Effect.Effect<string>;
 }
 
-export class SystemPermissions extends Context.Tag('desktop/SystemPermissions')<
-  SystemPermissions,
-  SystemPermissionsApi
->() {}
+export class SystemPermissions extends Context.Service<SystemPermissions, SystemPermissionsApi>()(
+  'desktop/SystemPermissions'
+) {}

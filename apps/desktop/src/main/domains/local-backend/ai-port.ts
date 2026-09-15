@@ -1,10 +1,10 @@
 /**
  * The promise-shaped view of AiProvider that the async route handlers use.
  * The router is plain async code over SQLite (like the other local
- * lanes); this adapter runs the Effect API on the workspace runtime so the
+ * lanes); this adapter runs the Effect API in the workspace scope so the
  * handlers never touch Effect.
  */
-import { Effect, Either, type Runtime } from 'effect';
+import { Effect, Result } from 'effect';
 import type { AiModelListing, AiProviderKind } from '@prismical/desktop-contracts';
 import type {
   AiInstanceView,
@@ -35,20 +35,21 @@ export interface LocalAiPort {
   ) => Promise<void>;
 }
 
-export const makeLocalAiPort = (api: AiProviderApi, runtime: Runtime.Runtime<never>): LocalAiPort => {
-  const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> =>
-    Effect.runPromise(Effect.provide(effect, runtime.context));
+export const makeLocalAiPort = (
+  api: AiProviderApi,
+  run: <A, E>(effect: Effect.Effect<A, E>) => Promise<A>
+): LocalAiPort => {
   return {
     resolve: selection =>
-      run(Effect.either(api.resolve(selection))).then(either =>
-        Either.isRight(either)
-          ? { ok: true, value: either.right }
-          : { ok: false, error: either.left }
+      run(Effect.result(api.resolve(selection))).then(result =>
+        Result.isSuccess(result)
+          ? { ok: true, value: result.success }
+          : { ok: false, error: result.failure }
       ),
     instances: () => run(api.instances),
     listModels: provider => run(api.listModels(provider)),
     defaultSelection: () => run(api.defaultSelection),
-    setDefault: selection => run(api.setDefault(selection).pipe(Effect.orElseSucceed(() => false))),
+    setDefault: selection => run(api.setDefault(selection).pipe(Effect.catch(() => Effect.succeed(false)))),
     rememberToolSupport: (provider, modelId, support) =>
       run(api.rememberToolSupport(provider, modelId, support)),
   };

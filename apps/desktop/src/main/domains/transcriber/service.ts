@@ -48,10 +48,9 @@ export interface TranscriberApi {
   ) => Effect.Effect<RecordingLaneResult<readonly RecordingSegment[]>>;
 }
 
-export class Transcriber extends Context.Tag('desktop/Transcriber')<
-  Transcriber,
-  TranscriberApi
->() {}
+export class Transcriber extends Context.Service<Transcriber, TranscriberApi>()(
+  'desktop/Transcriber'
+) {}
 
 /**
  * One engine's lane — the same shape as the seam, so TranscriberLive is pure
@@ -61,17 +60,16 @@ export class Transcriber extends Context.Tag('desktop/Transcriber')<
  */
 export type TranscriberLaneApi = TranscriberApi;
 
-export class CloudTranscriberLane extends Context.Tag('desktop/transcriber/CloudLane')<
+export class CloudTranscriberLane extends Context.Service<
   CloudTranscriberLane,
   TranscriberLaneApi
->() {}
+>()('desktop/transcriber/CloudLane') {}
 
-export class LocalTranscriberLane extends Context.Tag('desktop/transcriber/LocalLane')<
+export class LocalTranscriberLane extends Context.Service<
   LocalTranscriberLane,
   TranscriberLaneApi
->() {}
+>()('desktop/transcriber/LocalLane') {}
 
-export class ByokTranscriberLane extends Context.Tag('desktop/transcriber/ByokLane')<
-  ByokTranscriberLane,
-  TranscriberLaneApi
->() {}
+export class ByokTranscriberLane extends Context.Service<ByokTranscriberLane, TranscriberLaneApi>()(
+  'desktop/transcriber/ByokLane'
+) {}

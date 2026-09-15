@@ -13,7 +13,7 @@ interface Listeners {
   readonly windowAllClosed: () => void;
 }
 
-export const ElectronAppLive: Layer.Layer<ElectronApp, never, MainLogger> = Layer.scoped(
+export const ElectronAppLive: Layer.Layer<ElectronApp, never, MainLogger> = Layer.effect(
   ElectronApp,
   Effect.gen(function* () {
     const log = (yield* MainLogger).scoped('electron');
@@ -29,23 +29,23 @@ export const ElectronAppLive: Layer.Layer<ElectronApp, never, MainLogger> = Laye
       Effect.sync((): Listeners => {
         const listeners: Listeners = {
           secondInstance: (_event, argv) => {
-            Queue.unsafeOffer(secondInstance, { argv: [...argv] });
+            Queue.offerUnsafe(secondInstance, { argv: [...argv] });
           },
           openUrl: (event, url) => {
             event.preventDefault();
-            Queue.unsafeOffer(openUrl, { url });
+            Queue.offerUnsafe(openUrl, { url });
           },
           activate: () => {
-            Queue.unsafeOffer(activate, undefined);
+            Queue.offerUnsafe(activate, undefined);
           },
           beforeQuit: event => {
             // Always prevented: the quit path runs through the
             // ShutdownCoordinator → runtime.dispose() → app.exit(0).
             event.preventDefault();
-            Queue.unsafeOffer(beforeQuit, undefined);
+            Queue.offerUnsafe(beforeQuit, undefined);
           },
           windowAllClosed: () => {
-            Queue.unsafeOffer(windowAllClosed, undefined);
+            Queue.offerUnsafe(windowAllClosed, undefined);
           },
         };
         app.on('second-instance', listeners.secondInstance);
@@ -62,7 +62,7 @@ export const ElectronAppLive: Layer.Layer<ElectronApp, never, MainLogger> = Laye
           app.removeListener('activate', listeners.activate);
           app.removeListener('before-quit', listeners.beforeQuit);
           app.removeListener('window-all-closed', listeners.windowAllClosed);
-        }).pipe(Effect.zipRight(log.info('app event streams detached')))
+        }).pipe(Effect.andThen(log.info('app event streams detached')))
     );
 
     // powerMonitor is ready-gated in Electron, so its listener attaches from a
@@ -70,7 +70,7 @@ export const ElectronAppLive: Layer.Layer<ElectronApp, never, MainLogger> = Laye
     // then the finalizer removes the listener — registration can never outlive
     // removal). Same parse+enqueue rule as the app listeners above.
     const powerResumeListener = () => {
-      Queue.unsafeOffer(powerResume, undefined);
+      Queue.offerUnsafe(powerResume, undefined);
     };
     yield* Effect.acquireRelease(Effect.void, () =>
       Effect.sync(() => {
@@ -79,12 +79,12 @@ export const ElectronAppLive: Layer.Layer<ElectronApp, never, MainLogger> = Laye
     );
     yield* Effect.forkScoped(
       Effect.promise(() => app.whenReady()).pipe(
-        Effect.zipRight(
+        Effect.andThen(
           Effect.sync(() => {
             powerMonitor.on('resume', powerResumeListener);
           })
         ),
-        Effect.zipRight(log.info('power monitor stream attached'))
+        Effect.andThen(log.info('power monitor stream attached'))
       )
     );
 

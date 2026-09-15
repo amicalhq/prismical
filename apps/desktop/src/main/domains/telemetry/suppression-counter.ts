@@ -14,17 +14,17 @@ export const makeSuppressionCounter = (log: SyncScopedLog, message: string) =>
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
         closed = true;
-      }).pipe(Effect.zipRight(flush))
+      }).pipe(Effect.andThen(flush))
     );
     yield* Effect.forkScoped(
       Effect.forever(
-        Queue.take(wake).pipe(Effect.zipRight(Effect.sleep('1 second')), Effect.zipRight(flush))
+        Queue.take(wake).pipe(Effect.andThen(Effect.sleep('1 second')), Effect.andThen(flush))
       )
     );
     return (increment = 1) => {
       if (closed) return;
       const waiting = count > 0;
       count += increment;
-      if (!waiting) Queue.unsafeOffer(wake, undefined);
+      if (!waiting) Queue.offerUnsafe(wake, undefined);
     };
   });

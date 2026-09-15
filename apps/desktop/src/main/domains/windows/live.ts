@@ -21,8 +21,8 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { app, BrowserWindow, nativeTheme, net, screen, session, shell } from 'electron';
-import {
-  Effect, ExecutionStrategy, Exit, Fiber, Layer, Option, Queue, Runtime, Scope, SubscriptionRef,
+import { Semaphore,
+  Effect, Exit, FiberMap, FiberSet, Layer, Option, Queue, Scope, SubscriptionRef,
 } from 'effect';
 import { AppConfig } from '../../infra/config/service';
 import { ElectronApp } from '../../infra/electron/service';
@@ -83,7 +83,7 @@ export const WindowRegistryLive: Layer.Layer<
   WindowRegistry,
   WindowError,
   AppConfig | ElectronApp | MainLogger | SettingsService | AppModeService
-> = Layer.scoped(
+> = Layer.effect(
   WindowRegistry,
   Effect.gen(function* () {
     const config = yield* AppConfig;
@@ -115,9 +115,15 @@ export const WindowRegistryLive: Layer.Layer<
     // focus/blur callbacks (below) set it synchronously through this runtime —
     // SubscriptionRef.set completes synchronously, so runSync is safe on the edge.
     const mainWindowFocused = yield* SubscriptionRef.make(false);
-    const runtime = yield* Effect.runtime<never>();
+    const runtime = yield* Effect.context<never>();
+    const forkCallback = yield* FiberSet.makeRuntime();
+    // Register each callback fiber before its work can trigger scope closure.
+    const runCallback = (effect: Effect.Effect<void>) =>
+      forkCallback(Effect.yieldNow.pipe(Effect.andThen(effect)));
+    const boundsFibers = yield* FiberMap.make<number, void>();
+    const runBounds = yield* FiberMap.runtime(boundsFibers)();
     const windowScope = yield* Effect.scope;
-    const mainWindowFocusLock = yield* Effect.makeSemaphore(1);
+    const mainWindowFocusLock = yield* Semaphore.make(1);
 
     const identityKindFor = (webContentsId: number): WindowKind | 'unknown' =>
       registered.get(webContentsId)?.identity.kind ?? 'unknown';
@@ -323,15 +329,15 @@ export const WindowRegistryLive: Layer.Layer<
 
           const windowId = window.id;
           const onClosed = () => {
-            Queue.unsafeOffer(windowEvents, { _tag: 'closed', windowId });
+            Queue.offerUnsafe(windowEvents, { _tag: 'closed', windowId });
           };
           const onFocus = () => {
-            Queue.unsafeOffer(windowEvents, { _tag: 'focused', windowId });
-            Runtime.runSync(runtime)(SubscriptionRef.set(mainWindowFocused, true));
+            Queue.offerUnsafe(windowEvents, { _tag: 'focused', windowId });
+            Effect.runSyncWith(runtime)(SubscriptionRef.set(mainWindowFocused, true));
           };
           const onBlur = () => {
-            Queue.unsafeOffer(windowEvents, { _tag: 'blurred', windowId });
-            Runtime.runSync(runtime)(SubscriptionRef.set(mainWindowFocused, false));
+            Queue.offerUnsafe(windowEvents, { _tag: 'blurred', windowId });
+            Effect.runSyncWith(runtime)(SubscriptionRef.set(mainWindowFocused, false));
           };
           window.on('closed', onClosed);
           window.on('focus', onFocus);
@@ -380,7 +386,7 @@ export const WindowRegistryLive: Layer.Layer<
             window.destroy();
           }
         }).pipe(
-          Effect.zipRight(log.info('main window released', { context: { windowId: acquired.identity.windowId } }))
+          Effect.andThen(log.info('main window released', { context: { windowId: acquired.identity.windowId } }))
         )
     ).pipe(
       Effect.tap(({ window }) =>
@@ -400,17 +406,17 @@ export const WindowRegistryLive: Layer.Layer<
       // Release each closed window promptly, including failed loads. Forking
       // also ties a live window to its caller's shutdown scope.
       const parent = yield* Effect.scope;
-      const scope = yield* Scope.fork(parent, ExecutionStrategy.sequential);
+      const scope = yield* Scope.fork(parent);
       const window = yield* acquireMainWindow.pipe(
-        Scope.extend(scope),
+        Scope.provide(scope),
         Effect.onError(() => Scope.close(scope, Exit.void))
       );
       const onClosed = () => {
-        Runtime.runFork(runtime)(Scope.close(scope, Exit.void));
+        runCallback(Scope.close(scope, Exit.void));
       };
       yield* Effect.addFinalizer(() =>
         Effect.sync(() => { window.removeListener('closed', onClosed); })
-      ).pipe(Scope.extend(scope));
+      ).pipe(Scope.provide(scope));
       window.once('closed', onClosed);
       if (window.isDestroyed()) yield* Scope.close(scope, Exit.void);
       return window;
@@ -492,7 +498,7 @@ export const WindowRegistryLive: Layer.Layer<
             window.setIgnoreMouseEvents(true, { forward: true });
             // Screen-share privacy: self-apply the current setting at create.
             window.setContentProtection(
-              Runtime.runSync(runtime)(settings.get).dockContentProtection
+              Effect.runSyncWith(runtime)(settings.get).dockContentProtection
             );
             // Production panels paint without activation. E2E panels remain
             // hidden and unthrottled so they never overlay the developer's apps.
@@ -523,13 +529,13 @@ export const WindowRegistryLive: Layer.Layer<
 
             const windowId = window.id;
             const onClosed = () => {
-              Queue.unsafeOffer(windowEvents, { _tag: 'closed', windowId });
+              Queue.offerUnsafe(windowEvents, { _tag: 'closed', windowId });
             };
             const onFocus = () => {
-              Queue.unsafeOffer(windowEvents, { _tag: 'focused', windowId });
+              Queue.offerUnsafe(windowEvents, { _tag: 'focused', windowId });
             };
             const onBlur = () => {
-              Queue.unsafeOffer(windowEvents, { _tag: 'blurred', windowId });
+              Queue.offerUnsafe(windowEvents, { _tag: 'blurred', windowId });
             };
             window.on('closed', onClosed);
             window.on('focus', onFocus);
@@ -557,7 +563,7 @@ export const WindowRegistryLive: Layer.Layer<
               window.destroy();
             }
           }).pipe(
-            Effect.zipRight(
+            Effect.andThen(
               log.info(`${options.kind} window released`, { context: { windowId: acquired.identity.windowId } })
             )
           )
@@ -590,7 +596,7 @@ export const WindowRegistryLive: Layer.Layer<
         // SubscriptionRef.get completes synchronously, so runSync is safe on
         // this edge — the same rationale as the focus callbacks below.
         computeBounds: () => {
-          const seeded = Runtime.runSync(runtime)(settings.get);
+          const seeded = Effect.runSyncWith(runtime)(settings.get);
           const display = resolveDockDisplay(
             screen.getAllDisplays(),
             screen.getPrimaryDisplay(),
@@ -608,7 +614,7 @@ export const WindowRegistryLive: Layer.Layer<
 
     // The notify window follows the dock's display (top-right corner).
     const notifyBoundsFromSettings = (): Electron.Rectangle => {
-      const seeded = Runtime.runSync(runtime)(settings.get);
+      const seeded = Effect.runSyncWith(runtime)(settings.get);
       const display = resolveDockDisplay(
         screen.getAllDisplays(),
         screen.getPrimaryDisplay(),
@@ -659,7 +665,7 @@ export const WindowRegistryLive: Layer.Layer<
               Effect.try({
                 try: () => {
                   const darwin = process.platform === 'darwin';
-                  const seeded = Runtime.runSync(runtime)(settings.get);
+                  const seeded = Effect.runSyncWith(runtime)(settings.get);
                   const display = resolveDockDisplay(
                     screen.getAllDisplays(),
                     screen.getPrimaryDisplay(),
@@ -762,7 +768,7 @@ export const WindowRegistryLive: Layer.Layer<
                   // debounce with no raw timers: each event
                   // interrupts the pending sleep+persist fiber and forks anew.
                   const persistEffect = Effect.sleep('500 millis').pipe(
-                    Effect.zipRight(
+                    Effect.andThen(
                       Effect.suspend(() => {
                         if (window.isDestroyed()) return Effect.void;
                         const rect = window.getBounds();
@@ -780,15 +786,13 @@ export const WindowRegistryLive: Layer.Layer<
                               },
                             })
                           ),
-                          Effect.catchAll(() => Effect.void)
+                          Effect.catch(() => Effect.void)
                         );
                       })
                     )
                   );
-                  let persistFiber: Fiber.RuntimeFiber<void> | null = null;
                   const persistBounds = () => {
-                    persistFiber?.unsafeInterruptAsFork(persistFiber.id());
-                    persistFiber = Runtime.runFork(runtime)(persistEffect);
+                    runBounds(window.id, persistEffect);
                   };
                   window.on('moved', persistBounds);
                   window.on('resized', persistBounds);
@@ -796,9 +800,9 @@ export const WindowRegistryLive: Layer.Layer<
                   const windowId = window.id;
                   const webContentsId = window.webContents.id;
                   window.on('closed', () => {
-                    persistFiber?.unsafeInterruptAsFork(persistFiber.id());
+                    runCallback(FiberMap.remove(boundsFibers, windowId));
                     registered.delete(webContentsId);
-                    Queue.unsafeOffer(windowEvents, { _tag: 'closed', windowId });
+                    Queue.offerUnsafe(windowEvents, { _tag: 'closed', windowId });
                     // A stale window's late 'closed' (rapid close+reopen) must
                     // not clobber the coordinator's state for its SUCCESSOR:
                     // only report the close when no newer float window lives.
@@ -857,13 +861,13 @@ export const WindowRegistryLive: Layer.Layer<
           if (nativeTheme.themeSource !== source) nativeTheme.themeSource = source;
         }),
       identityForWebContents: webContentsId =>
-        Effect.sync(() => Option.fromNullable(registered.get(webContentsId)?.identity)),
+        Effect.sync(() => Option.fromNullishOr(registered.get(webContentsId)?.identity)),
       mainWindow: liveMainWindow,
       focusMainWindow: mainWindowFocusLock.withPermits(1)(
         liveMainWindow.pipe(
           Effect.flatMap(
             Option.match({
-              onNone: () => openMainWindow.pipe(Scope.extend(windowScope)),
+              onNone: () => openMainWindow.pipe(Scope.provide(windowScope)),
               onSome: Effect.succeed,
             })
           ),
@@ -875,7 +879,7 @@ export const WindowRegistryLive: Layer.Layer<
               window.focus();
             })
           ),
-          Effect.catchAll(error => log.error('failed to reopen main window', { error }))
+          Effect.catch(error => log.error('failed to reopen main window', { error }))
         )
       ),
       sendToMainWindow: (channel, payload) =>
@@ -963,7 +967,7 @@ export const WindowRegistryLive: Layer.Layer<
             onNone: () => Effect.void,
             onSome: window =>
               Effect.sync(() => {
-                const seeded = Runtime.runSync(runtime)(settings.get);
+                const seeded = Effect.runSyncWith(runtime)(settings.get);
                 const display = resolveDockDisplay(
                   screen.getAllDisplays(),
                   screen.getPrimaryDisplay(),
@@ -985,7 +989,7 @@ export const WindowRegistryLive: Layer.Layer<
             onNone: () => Effect.void,
             onSome: window =>
               Effect.sync(() => {
-                const seeded = Runtime.runSync(runtime)(settings.get);
+                const seeded = Effect.runSyncWith(runtime)(settings.get);
                 const display = resolveDockDisplay(
                   screen.getAllDisplays(),
                   screen.getPrimaryDisplay(),

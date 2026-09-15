@@ -15,12 +15,13 @@ import {
   Duration,
   Effect,
   Exit,
+  Fiber,
   Layer,
   Option,
   Scope,
   SubscriptionRef,
-  TestClock,
 } from 'effect';
+import { TestClock } from 'effect/testing';
 import { beforeEach, vi } from 'vitest';
 import { makeTestLogger } from '../helpers/test-layers';
 import { installFakeSpawn, type FakeSpawnControl } from '../helpers/fake-child-process';
@@ -61,7 +62,7 @@ beforeEach(() => {
 /** Let the forked consumer / supervisor fibers settle WITHOUT advancing the clock. */
 const settle: Effect.Effect<void> = Effect.gen(function* () {
   for (let i = 0; i < 12; i += 1) {
-    yield* Effect.yieldNow();
+    yield* Effect.yieldNow;
     yield* Effect.promise(() => new Promise<void>(resolve => setImmediate(resolve)));
   }
 });
@@ -71,7 +72,7 @@ const poll = (cond: Effect.Effect<boolean, unknown>, label: string): Effect.Effe
     const check = Effect.orDie(cond);
     for (let i = 0; i < 200; i += 1) {
       if (yield* check) return;
-      yield* Effect.yieldNow();
+      yield* Effect.yieldNow;
       yield* Effect.promise(() => new Promise<void>(resolve => setImmediate(resolve)));
     }
     assert.isTrue(yield* check, `poll timed out: ${label}`);
@@ -92,7 +93,7 @@ interface Harness {
   readonly detection: DetectionServiceApi;
   readonly micActivity: MicActivityApi;
   readonly recState: SubscriptionRef.SubscriptionRef<RecordingState>;
-  readonly scope: Scope.CloseableScope;
+  readonly scope: Scope.Scope;
 }
 
 const setup = (): Effect.Effect<Harness> =>
@@ -125,7 +126,7 @@ const setup = (): Effect.Effect<Harness> =>
     );
     const scope = yield* Scope.make();
     const ctx = yield* Layer.build(Layer.merge(micActivityLayer, detectionLayer)).pipe(
-      Scope.extend(scope)
+      Scope.provide(scope)
     );
 
     return {
@@ -375,6 +376,80 @@ describe('MicActivity → DetectionService', () => {
 
         yield* Scope.close(h.scope, Exit.void);
       })
+  );
+
+  it.effect('resets restart backoff after 60 seconds of elapsed retry time, even during a crash loop', () =>
+    Effect.gen(function* () {
+      const h = yield* setup();
+      yield* poll(Effect.sync(() => control.children.length === 1), 'first child spawned');
+      for (const delay of [1, 2, 4, 8, 16, 30, 1, 2, 4]) {
+        const acquired = control.children.length;
+        control.last().simulateExit(1, null);
+        yield* settle;
+        yield* TestClock.adjust(Duration.millis(delay * 1_000 - 1));
+        assert.strictEqual(control.children.length, acquired, 'no restart before the deadline');
+        yield* TestClock.adjust(Duration.millis(1));
+        yield* poll(
+          Effect.sync(() => control.children.length === acquired + 1),
+          `restart after ${delay} seconds`
+        );
+      }
+      yield* Scope.close(h.scope, Exit.void);
+    })
+  );
+
+  it.effect('includes helper runtime and the previous retry wait in the elapsed-time reset', () =>
+    Effect.gen(function* () {
+      const h = yield* setup();
+      yield* poll(Effect.sync(() => control.children.length === 1), 'first child spawned');
+      control.last().simulateExit(1, null);
+      yield* settle;
+      yield* TestClock.adjust(Duration.seconds(1));
+      yield* poll(Effect.sync(() => control.children.length === 2), 'first restart');
+      yield* TestClock.adjust(Duration.seconds(59));
+      control.last().simulateExit(1, null);
+      yield* settle;
+      yield* TestClock.adjust(Duration.millis(999));
+      assert.strictEqual(control.children.length, 2);
+      yield* TestClock.adjust(Duration.millis(1));
+      yield* poll(Effect.sync(() => control.children.length === 3), 'elapsed-time reset to one second');
+      yield* Scope.close(h.scope, Exit.void);
+    })
+  );
+
+  it.effect('closing the owner during backoff cancels the retry and prevents another spawn', () =>
+    Effect.gen(function* () {
+      const h = yield* setup();
+      yield* poll(Effect.sync(() => control.children.length === 1), 'first child spawned');
+      control.last().simulateExit(1, null);
+      yield* settle;
+      yield* Scope.close(h.scope, Exit.void);
+      yield* TestClock.adjust(Duration.minutes(2));
+      assert.strictEqual(control.children.length, 1);
+      assert.isTrue(Option.isNone(yield* SubscriptionRef.get(h.micActivity.latest)));
+    })
+  );
+
+  it.effect('owner close waits for the termination grace, then kills and detaches an unresponsive helper', () =>
+    Effect.gen(function* () {
+      control.configureNext({ autoExitOnSigterm: false });
+      const h = yield* setup();
+      yield* poll(Effect.sync(() => control.children.length === 1), 'first child spawned');
+      const child = control.last();
+      const closing = yield* Effect.forkChild(Scope.close(h.scope, Exit.void));
+      yield* settle;
+      assert.deepStrictEqual(child.killSignals, ['SIGTERM']);
+      yield* TestClock.adjust(Duration.millis(1_499));
+      assert.isUndefined(closing.pollUnsafe());
+      assert.deepStrictEqual(child.killSignals, ['SIGTERM']);
+      yield* TestClock.adjust(Duration.millis(1));
+      yield* Fiber.join(closing);
+      assert.deepStrictEqual(child.killSignals, ['SIGTERM', 'SIGKILL']);
+      assert.strictEqual(child.listenerCount('exit'), 0);
+      assert.isFalse(child.running);
+      yield* TestClock.adjust(Duration.minutes(2));
+      assert.strictEqual(control.children.length, 1);
+    })
   );
 
   it.effect('scope close (sign-out / quit) reaps the child — no orphan, no leaked listeners', () =>

@@ -10,10 +10,9 @@ export interface EventKitBridgeApi {
   readonly refresh: Effect.Effect<AppleCalendarStatus>;
 }
 
-export class EventKitBridge extends Context.Tag('desktop/eventkit/EventKitBridge')<
-  EventKitBridge,
-  EventKitBridgeApi
->() {}
+export class EventKitBridge extends Context.Service<EventKitBridge, EventKitBridgeApi>()(
+  'desktop/eventkit/EventKitBridge'
+) {}
 
 export const EventKitBridgeLive: Layer.Layer<EventKitBridge> = Layer.effect(
   EventKitBridge,

@@ -25,4 +25,4 @@ export interface NativeOsApi {
   readonly relaunch: Effect.Effect<void>;
 }
 
-export class NativeOs extends Context.Tag('desktop/NativeOs')<NativeOs, NativeOsApi>() {}
+export class NativeOs extends Context.Service<NativeOs, NativeOsApi>()('desktop/NativeOs') {}

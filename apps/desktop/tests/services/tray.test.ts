@@ -28,7 +28,7 @@ describe('TrayService', () => {
     Effect.gen(function* () {
       const { layer } = build();
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const tray = Context.get(ctx, TrayService);
 
       const instance = fake.__trayInstances().at(-1);
@@ -57,7 +57,7 @@ describe('TrayService', () => {
     Effect.gen(function* () {
       const { layer, logger } = build();
       const scope = yield* Scope.make();
-      yield* Layer.build(layer).pipe(Scope.extend(scope));
+      yield* Layer.build(layer).pipe(Scope.provide(scope));
       const instance = fake.__trayInstances().at(-1);
       assert.isDefined(instance);
       if (!instance) return;

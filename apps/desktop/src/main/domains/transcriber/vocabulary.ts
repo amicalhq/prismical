@@ -182,7 +182,7 @@ export const makeVocabularySource = ({
     return {
       termsFor: recordingId =>
         loadVocabularyTerms(product).pipe(
-          Effect.catchAll(error =>
+          Effect.catch(error =>
             log
               .warn('vocabulary load failed — transcribing without hints', { context: { recordingId, op: error.op }, error: error.cause })
               .pipe(Effect.as([] as VocabularyTerm[]))
@@ -190,7 +190,7 @@ export const makeVocabularySource = ({
         ),
       bumpUsage: (recordingId, hits) =>
         bumpVocabularyUsage(product, hits).pipe(
-          Effect.catchAll(error =>
+          Effect.catch(error =>
             log.warn('vocabulary usage bump failed', { context: { recordingId, op: error.op }, error: error.cause })
           )
         ),
@@ -219,7 +219,7 @@ export const makeVocabularySource = ({
                 } })
                 .pipe(Effect.as([] as Omit<VocabularyTerm, 'scope'>[]))
         ),
-        Effect.catchAllDefect(defect =>
+        Effect.catchDefect(defect =>
           log
             .warn('vocabulary fetch from core defect — scope empty', { context: { recordingId, path }, error: defect })
             .pipe(Effect.as([] as Omit<VocabularyTerm, 'scope'>[]))

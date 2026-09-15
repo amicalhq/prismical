@@ -11,6 +11,7 @@ import { bindDesktopWorkflowLifecycle } from '../../src/renderer/main/app/ports/
 
 afterEach(() => {
   useSkillDiffStore.setState({ candidatesByNote: new Map() });
+  vi.clearAllMocks();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });

@@ -4,7 +4,7 @@
  * decode, merge/clamp/persist on set, and the observable change stream.
  */
 import { assert, describe, it } from '@effect/vitest';
-import { Context, Effect, Exit, Layer, Scope, Stream } from 'effect';
+import { SubscriptionRef, Context, Effect, Exit, Layer, Scope, Stream } from 'effect';
 import { DEFAULT_DEVICE_SETTINGS, type DeviceSettings } from '@prismical/desktop-contracts';
 import { makeFakeOperationalDb } from '../helpers/fake-operational-db';
 import { makeTestLogger } from '../helpers/test-layers';
@@ -20,9 +20,10 @@ const build = (seed: Record<string, string> = {}) => {
 
 /** Cooperative wait for the forked change collector (no clock involved). */
 const drainUntil = (predicate: () => boolean) =>
-  Effect.iterate(0, {
-    while: n => n < 200 && !predicate(),
-    body: n => Effect.yieldNow().pipe(Effect.as(n + 1)),
+  Effect.gen(function* () {
+    for (let n = 0; n < 200 && !predicate(); n++) {
+      yield* Effect.yieldNow;
+    }
   });
 
 describe('SettingsService', () => {
@@ -30,7 +31,7 @@ describe('SettingsService', () => {
     Effect.gen(function* () {
       const { layer, db } = build();
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const settings = Context.get(ctx, SettingsService);
       const onboarding = {
         step: 'calendar',
@@ -43,7 +44,7 @@ describe('SettingsService', () => {
         Layer.provide(db.layer),
         Layer.provide(makeTestLogger().layer)
       );
-      const next = yield* Layer.build(restored).pipe(Scope.extend(scope));
+      const next = yield* Layer.build(restored).pipe(Scope.provide(scope));
       assert.deepStrictEqual(
         (yield* Context.get(next, SettingsService).get).onboarding,
         onboarding
@@ -55,7 +56,7 @@ describe('SettingsService', () => {
     Effect.gen(function* () {
       const { layer } = build();
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const settings = Context.get(ctx, SettingsService);
       assert.deepStrictEqual(yield* settings.get, DEFAULT_DEVICE_SETTINGS);
       yield* Scope.close(scope, Exit.void);
@@ -71,7 +72,7 @@ describe('SettingsService', () => {
         'pref:language': JSON.stringify('de'),
       });
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const settings = Context.get(ctx, SettingsService);
       const current = yield* settings.get;
       assert.strictEqual(current.widgetVisibility, 'never');
@@ -91,7 +92,7 @@ describe('SettingsService', () => {
       Effect.gen(function* () {
         const { layer, db } = build();
         const scope = yield* Scope.make();
-        const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+        const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
         const settings = Context.get(ctx, SettingsService);
 
         yield* settings.set({ dockVisible: false, widgetNormalizedY: 1.7, updateChannel: 'beta' });
@@ -121,7 +122,7 @@ describe('SettingsService', () => {
       Effect.gen(function* () {
         const { layer, db } = build();
         const scope = yield* Scope.make();
-        const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+        const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
         const settings = Context.get(ctx, SettingsService);
 
         // widgetVisibility is bogus (only reachable via a direct call — the IPC
@@ -148,7 +149,7 @@ describe('SettingsService', () => {
         'pref:dockVisible': JSON.stringify(false), // a good value survives alongside
       });
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const settings = Context.get(ctx, SettingsService);
       const current = yield* settings.get;
       assert.strictEqual(current.widgetVisibility, DEFAULT_DEVICE_SETTINGS.widgetVisibility);
@@ -172,7 +173,7 @@ describe('SettingsService', () => {
         'pref:dockHotkey': JSON.stringify(''),
       });
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const settings = Context.get(ctx, SettingsService);
       const current = yield* settings.get;
       assert.deepStrictEqual(current.dockAnchors, { '1': { nx: 0.5, ny: 0.25 } });
@@ -197,7 +198,7 @@ describe('SettingsService', () => {
         'pref:dockHotkey': JSON.stringify(7), // wrong type
       });
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const settings = Context.get(ctx, SettingsService);
       const current = yield* settings.get;
       assert.deepStrictEqual(current.dockAnchors, {});
@@ -213,7 +214,7 @@ describe('SettingsService', () => {
     Effect.gen(function* () {
       const { layer, db } = build();
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const settings = Context.get(ctx, SettingsService);
 
       yield* settings.set({
@@ -249,7 +250,7 @@ describe('SettingsService', () => {
       Effect.gen(function* () {
         const { layer, db } = build();
         const scope = yield* Scope.make();
-        const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+        const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
         const settings = Context.get(ctx, SettingsService);
 
         yield* settings.set({ dockAnchors: { '1': { nx: 0.5, ny: 0.5 } } });
@@ -266,7 +267,7 @@ describe('SettingsService', () => {
       const { layer, logger, db } = build();
       db.failGet(true);
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const settings = Context.get(ctx, SettingsService);
       assert.deepStrictEqual(yield* settings.get, DEFAULT_DEVICE_SETTINGS);
       assert.isDefined(
@@ -285,7 +286,7 @@ describe('SettingsService', () => {
         'pref:obsoleteSetting': 'true',
       });
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const settings = Context.get(ctx, SettingsService);
       // The seeded values are live before the reset.
       assert.strictEqual((yield* settings.get).launchAtLogin, true);
@@ -303,15 +304,15 @@ describe('SettingsService', () => {
     Effect.gen(function* () {
       const { layer } = build();
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const settings = Context.get(ctx, SettingsService);
 
       const seen: DeviceSettings[] = [];
-      yield* Stream.runForEach(settings.settings.changes, s =>
+      yield* Stream.runForEach(SubscriptionRef.changes(settings.settings), s =>
         Effect.sync(() => {
           seen.push(s);
         })
-      ).pipe(Effect.fork);
+      ).pipe(Effect.forkChild);
 
       // The current value is replayed to the subscriber immediately.
       yield* drainUntil(() => seen.length >= 1);
@@ -332,11 +333,11 @@ describe('SettingsService — transcription engine field', () => {
     Effect.gen(function* () {
       const good = build({ 'pref:transcription': JSON.stringify(LOCAL) });
       const scope = yield* Scope.make();
-      const goodCtx = yield* Layer.build(good.layer).pipe(Scope.extend(scope));
+      const goodCtx = yield* Layer.build(good.layer).pipe(Scope.provide(scope));
       assert.deepStrictEqual((yield* Context.get(goodCtx, SettingsService).get).transcription, LOCAL);
 
       const bad = build({ 'pref:transcription': JSON.stringify({ engine: 'turbo', modelId: null }) });
-      const badCtx = yield* Layer.build(bad.layer).pipe(Scope.extend(scope));
+      const badCtx = yield* Layer.build(bad.layer).pipe(Scope.provide(scope));
       assert.deepStrictEqual(
         (yield* Context.get(badCtx, SettingsService).get).transcription,
         DEFAULT_DEVICE_SETTINGS.transcription
@@ -349,7 +350,7 @@ describe('SettingsService — transcription engine field', () => {
     Effect.gen(function* () {
       const { layer, db } = build();
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const settings = Context.get(ctx, SettingsService);
 
       const byok = { engine: 'byok', modelId: null, byokBaseUrl: 'https://byok.test/v1', byokModel: 'whisper-1' } as const;

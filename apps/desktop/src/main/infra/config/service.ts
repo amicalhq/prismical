@@ -79,4 +79,6 @@ export interface AppConfigService {
   readonly updaterEnabled: boolean;
 }
 
-export class AppConfig extends Context.Tag('desktop/AppConfig')<AppConfig, AppConfigService>() {}
+export class AppConfig extends Context.Service<AppConfig, AppConfigService>()(
+  'desktop/AppConfig'
+) {}

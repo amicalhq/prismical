@@ -152,7 +152,7 @@ interface Harness {
   readonly ai: AiProviderApi;
   readonly api: WorkspaceBackendApi;
   readonly product: ProductDbService;
-  readonly scope: Scope.CloseableScope;
+  readonly scope: Scope.Scope;
   readonly logger: ReturnType<typeof makeTestLogger>;
 }
 
@@ -177,12 +177,12 @@ const buildWith = (
       )
     );
     const scope = yield* Scope.make();
-    const envCtx = yield* Layer.build(env).pipe(Scope.extend(scope));
+    const envCtx = yield* Layer.build(env).pipe(Scope.provide(scope));
     const productDb = makeProductDbLayer({ kind: 'local' });
     const workspace = Layer.mergeAll(productDb, LocalBackendLive.pipe(Layer.provide(productDb)));
     const ctx = yield* Layer.build(workspace).pipe(
       Effect.provide(envCtx),
-      Scope.extend(scope),
+      Scope.provide(scope),
       Effect.orDie
     );
     const harness: Harness = {

@@ -27,7 +27,7 @@ import {
   parseNotifyState,
   type NotifyCard,
 } from '@prismical/desktop-contracts';
-import { Clock, Effect, Option, Ref, Runtime, Stream, SubscriptionRef, type Scope } from 'effect';
+import { Clock, Effect, Option, Ref, FiberSet, Stream, SubscriptionRef, type Scope } from 'effect';
 import { DetectionBridge } from '../../domains/detection/bridge';
 import { DesktopI18n } from '../../domains/i18n/service';
 import {
@@ -88,8 +88,11 @@ export const registerNotifyWindowHandlers: Effect.Effect<
   const pauseNow = recordingBridge.pauseFromPromptActive;
   const log = (yield* MainLogger).scoped('notify-ipc');
 
-  const runtime = yield* Effect.runtime<NotifyHandlerEnv>();
-  const runPromise = Runtime.runPromise(runtime);
+  const runOwned = yield* FiberSet.makeRuntimePromise<NotifyHandlerEnv>();
+  // rc.115 starts a fiber before registering it. Yield before handler work so
+  // a synchronous callback cannot close the owner before the fiber is tracked.
+  const runPromise = <A, E>(effect: Effect.Effect<A, E, NotifyHandlerEnv>) =>
+    runOwned(Effect.andThen(Effect.yieldNow, effect));
 
   const cards = yield* SubscriptionRef.make<readonly NotifyCard[]>([]);
   // The last call-detected card id the SWEEPER expired: the producer must not
@@ -110,7 +113,7 @@ export const registerNotifyWindowHandlers: Effect.Effect<
             ? Effect.void
             : log
                 .warn('notify ipc rejected: unknown sender', { context: { webContentsId: event.sender.id } })
-                .pipe(Effect.zipRight(Effect.fail(new SenderRejected('UNKNOWN_SENDER'))))
+                .pipe(Effect.andThen(Effect.fail(new SenderRejected('UNKNOWN_SENDER'))))
         )
       );
 
@@ -144,7 +147,7 @@ export const registerNotifyWindowHandlers: Effect.Effect<
   // notify:state:get — a guaranteed cold-start snapshot. The initial empty-card
   // push can predate preload evaluation, so renderer boot must not depend on it.
   yield* acquireHandle(NOTIFY_CHANNELS.stateGet, event =>
-    runPromise(validateNotifySender(event).pipe(Effect.zipRight(currentState)))
+    runPromise(validateNotifySender(event).pipe(Effect.andThen(currentState)))
   );
 
   // notify:setInteractive — click-through toggle on card hover, like the
@@ -159,7 +162,7 @@ export const registerNotifyWindowHandlers: Effect.Effect<
           if (!parsed.success) {
             return log
               .warn('notify:setInteractive rejected: invalid payload', { context: { issues: parsed.issues } })
-              .pipe(Effect.zipRight(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
+              .pipe(Effect.andThen(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
           }
           if (!parsed.data.interactive) return windows.setNotifyIgnoreMouse(true);
           return SubscriptionRef.get(cards).pipe(
@@ -181,7 +184,7 @@ export const registerNotifyWindowHandlers: Effect.Effect<
           if (!parsed.success) {
             return log
               .warn('notify:action rejected: invalid payload', { context: { issues: parsed.issues } })
-              .pipe(Effect.zipRight(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
+              .pipe(Effect.andThen(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
           }
           const { cardId, actionId } = parsed.data;
           return SubscriptionRef.get(cards).pipe(
@@ -199,7 +202,7 @@ export const registerNotifyWindowHandlers: Effect.Effect<
                 // A detection card dismiss keeps the old pill-✕ semantics: the
                 // per-app cooldown, so the same call doesn't re-card immediately.
                 return removeCard(cardId).pipe(
-                  Effect.zipRight(card.kind === 'call-detected' ? detection.dismiss : Effect.void)
+                  Effect.andThen(card.kind === 'call-detected' ? detection.dismiss : Effect.void)
                 );
               }
               if (card.kind === 'auto-pause') {
@@ -220,7 +223,7 @@ export const registerNotifyWindowHandlers: Effect.Effect<
                     Effect.flatMap(opened =>
                       opened
                         ? removeCard(cardId).pipe(
-                            Effect.zipRight(log.info('notify take-notes expanded the float'))
+                            Effect.andThen(log.info('notify take-notes expanded the float'))
                           )
                         : log.warn('notify take-notes — float did not open, card kept')
                     )
@@ -245,7 +248,7 @@ export const registerNotifyWindowHandlers: Effect.Effect<
   yield* Effect.forkScoped(
     Stream.zipLatestAll(
       detection.stateChanges,
-      settings.settings.changes.pipe(
+      SubscriptionRef.changes(settings.settings).pipe(
         Stream.map(current => current.meetingNotifications),
         Stream.changes
       )
@@ -304,7 +307,7 @@ export const registerNotifyWindowHandlers: Effect.Effect<
   // persists `dockDisplayId`; the notify window re-anchors to that display's
   // top-right corner (spec: the card layer follows the dock).
   yield* Effect.forkScoped(
-    settings.settings.changes.pipe(
+    SubscriptionRef.changes(settings.settings).pipe(
       Stream.map(current => current.dockDisplayId),
       Stream.changes,
       Stream.runForEach(() => windows.repositionNotifyWindow)
@@ -315,7 +318,7 @@ export const registerNotifyWindowHandlers: Effect.Effect<
   // re-parsed through the schema (an invalid stack is dropped loudly, never
   // sent). Same defect stance as the widget push fibers.
   yield* Effect.forkScoped(
-    cards.changes.pipe(
+    SubscriptionRef.changes(cards).pipe(
       Stream.changesWith(sameCardStack),
       Stream.runForEach(stack => {
         const parsed = parseNotifyState({ locale: i18n.locale, cards: stack });
@@ -325,7 +328,7 @@ export const registerNotifyWindowHandlers: Effect.Effect<
               issues: parsed.issues,
             } });
         return push.pipe(
-          Effect.catchAllDefect(defect =>
+          Effect.catchDefect(defect =>
             log.error('notify:state push failed — fiber continues', { error: defect })
           )
         );

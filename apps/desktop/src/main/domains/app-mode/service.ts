@@ -27,10 +27,9 @@ export interface AppModeApi {
   readonly chosenState: SubscriptionRef.SubscriptionRef<boolean>;
 }
 
-export class AppModeService extends Context.Tag('desktop/app-mode/AppModeService')<
-  AppModeService,
-  AppModeApi
->() {}
+export class AppModeService extends Context.Service<AppModeService, AppModeApi>()(
+  'desktop/app-mode/AppModeService'
+) {}
 
 /** The mode stays immutable; its first durable choice is shared observable state. */
 export const makeAppMode = (mode: AppMode, chosen: boolean): Effect.Effect<AppModeApi> =>

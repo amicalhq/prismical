@@ -13,7 +13,8 @@ import { WorkspaceTransportLive } from '../../src/main/domains/transport/live';
  * Detection uses the notification-window membrane instead; see notify-window-handlers.test.ts.
  */
 import { assert, describe, it } from '@effect/vitest';
-import { Context, Effect, Exit, Layer, Scope, SubscriptionRef, TestClock } from 'effect';
+import { Context, Effect, Exit, Layer, Scope, SubscriptionRef } from 'effect';
+import { TestClock } from 'effect/testing';
 import { vi } from 'vitest';
 import { WIDGET_CHANNELS, type WidgetStateView } from '@prismical/desktop-contracts';
 import type { FakeElectron, FakeBrowserWindow } from '../helpers/fake-electron';
@@ -51,7 +52,7 @@ const fake = (await import('electron')) as unknown as FakeElectron;
 /** Let the forked push fiber settle without advancing any clock. */
 const flush: Effect.Effect<void> = Effect.gen(function* () {
   for (let i = 0; i < 8; i += 1) {
-    yield* Effect.yieldNow();
+    yield* Effect.yieldNow;
     yield* Effect.promise(() => new Promise<void>(resolve => setImmediate(resolve)));
   }
 });
@@ -62,7 +63,7 @@ interface Harness {
   readonly recordingBridge: RecordingBridgeApi;
   readonly settings: SettingsServiceApi;
   readonly widgetWin: FakeBrowserWindow;
-  readonly scope: Scope.CloseableScope;
+  readonly scope: Scope.Scope;
 }
 
 // Signed in as far as the float-open guard cares (accounts + activeSub).
@@ -108,16 +109,16 @@ const setup = (): Effect.Effect<Harness> =>
       ),
       RecordingBridgeLive
     );
-    const ctx = yield* Layer.build(env).pipe(Scope.extend(scope));
+    const ctx = yield* Layer.build(env).pipe(Scope.provide(scope));
     const windows = Context.get(ctx, WindowRegistry);
     const recordingBridge = Context.get(ctx, RecordingBridge);
     const settings = Context.get(ctx, SettingsService);
 
     // The widget window is the send target AND the only valid sender identity.
-    yield* windows.openWidgetWindow.pipe(Scope.extend(scope));
+    yield* windows.openWidgetWindow.pipe(Scope.provide(scope));
     const widgetWin = fake.__windowInstances().at(-1) as FakeBrowserWindow;
 
-    yield* registerWidgetWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+    yield* registerWidgetWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
 
     return {
       logger,
@@ -240,7 +241,7 @@ describe('widget-window IPC handlers', () => {
         pauseFromPrompt: () => Effect.succeed(true),
       };
       const sessionScope = yield* Scope.make();
-      yield* h.recordingBridge.register(recApi).pipe(Scope.extend(sessionScope));
+      yield* h.recordingBridge.register(recApi).pipe(Scope.provide(sessionScope));
 
       assert.strictEqual(
         yield* invoke(WIDGET_CHANNELS.stopRecording, h.widgetWin.webContents.id),
@@ -278,7 +279,7 @@ describe('widget-window IPC handlers', () => {
           pauseFromPrompt: () => Effect.succeed(true),
         };
         const sessionScope = yield* Scope.make();
-        yield* h.recordingBridge.register(recApi).pipe(Scope.extend(sessionScope));
+        yield* h.recordingBridge.register(recApi).pipe(Scope.provide(sessionScope));
 
         assert.strictEqual(
           yield* invoke(WIDGET_CHANNELS.startRecording, h.widgetWin.webContents.id),
@@ -336,7 +337,7 @@ describe('widget-window IPC handlers', () => {
         pauseFromPrompt: () => Effect.succeed(true),
       };
       const sessionScope = yield* Scope.make();
-      yield* h.recordingBridge.register(recApi).pipe(Scope.extend(sessionScope));
+      yield* h.recordingBridge.register(recApi).pipe(Scope.provide(sessionScope));
       yield* flush;
 
       const latest = h.widgetWin.webContents.sent
@@ -499,7 +500,7 @@ describe('widget-window IPC handlers', () => {
           Effect.sync(() => {
             calls.push(`pause:${id}`);
           }).pipe(
-            Effect.zipRight(
+            Effect.andThen(
               SubscriptionRef.update(recState, state => ({ ...state, status: 'paused' as const }))
             ),
             Effect.as(true)
@@ -508,7 +509,7 @@ describe('widget-window IPC handlers', () => {
           Effect.sync(() => {
             calls.push(`resume:${id}`);
           }).pipe(
-            Effect.zipRight(
+            Effect.andThen(
               SubscriptionRef.update(recState, state => ({
                 ...state,
                 status: 'recording' as const,
@@ -518,7 +519,7 @@ describe('widget-window IPC handlers', () => {
           ),
       };
       const sessionScope = yield* Scope.make();
-      yield* h.recordingBridge.register(recApi).pipe(Scope.extend(sessionScope));
+      yield* h.recordingBridge.register(recApi).pipe(Scope.provide(sessionScope));
       const senderId = h.widgetWin.webContents.id;
 
       assert.strictEqual(yield* invoke(WIDGET_CHANNELS.pauseRecording, senderId), 'ok');
@@ -549,7 +550,7 @@ describe('widget-window IPC handlers', () => {
         pauseFromPrompt: () => Effect.succeed(true),
       };
       const sessionScope = yield* Scope.make();
-      yield* h.recordingBridge.register(recApi).pipe(Scope.extend(sessionScope));
+      yield* h.recordingBridge.register(recApi).pipe(Scope.provide(sessionScope));
       yield* flush;
 
       // The throttle rides the TestClock: refill its 80ms token bucket before
@@ -632,7 +633,7 @@ describe('widget-window IPC handlers', () => {
         pauseFromPrompt: () => Effect.succeed(true),
       };
       const sessionScope = yield* Scope.make();
-      yield* h.recordingBridge.register(recApi).pipe(Scope.extend(sessionScope));
+      yield* h.recordingBridge.register(recApi).pipe(Scope.provide(sessionScope));
       // A recording is normally visible (unfocused)... but 'never' hides it outright.
       yield* h.settings.set({ widgetVisibility: 'never' });
       yield* flush;

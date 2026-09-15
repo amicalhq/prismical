@@ -37,12 +37,12 @@ const buildStore = Effect.gen(function* () {
     logger.layer
   );
   const scope = yield* Scope.make();
-  const envCtx = yield* Layer.build(env).pipe(Scope.extend(scope));
+  const envCtx = yield* Layer.build(env).pipe(Scope.provide(scope));
   const productDb = makeProductDbLayer({ kind: 'local' });
   const workspace = Layer.mergeAll(productDb, RecordingStoreLive.pipe(Layer.provide(productDb)));
   const ctx = yield* Layer.build(workspace).pipe(
     Effect.provide(envCtx),
-    Scope.extend(scope),
+    Scope.provide(scope),
     Effect.orDie
   );
   return {

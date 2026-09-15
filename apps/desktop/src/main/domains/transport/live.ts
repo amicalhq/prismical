@@ -7,7 +7,7 @@
  * `Authorization: Bearer <idToken>` + (when present) `x-active-org-id` +
  * `Content-Type` on bodied methods, and map the exchange onto the
  * TransportResponse envelope. Mirrors domains/auth/live.ts's injectable
- * FetchLike + Effect.tryPromise + Effect.timeoutFail pattern (no @effect/platform
+ * FetchLike + Effect.tryPromise + Effect.timeoutOrElse pattern (no @effect/platform
  * in the repo) so the mapping is unit-testable without a socket.
  *
  * Secrets discipline: the id_token is stamped into the outbound
@@ -185,7 +185,7 @@ export const makeOpenAskStream =
             return failureResponse(await response.json().catch(() => null));
           },
           catch: () => new AskStreamError({ reason: 'connect' }),
-        }).pipe(Effect.catchAll(() => Effect.succeed(failureResponse(null))))
+        }).pipe(Effect.catch(() => Effect.succeed(failureResponse(null))))
       )
     );
   };
@@ -231,14 +231,14 @@ export const makeWorkspaceBackendRequest =
           },
           catch: cause => ({ kind: 'network' as const, cause }),
         }).pipe(
-          Effect.timeoutFail({
+          Effect.timeoutOrElse({
             duration: timeout,
-            onTimeout: () => ({ kind: 'timeout' as const }),
+            orElse: () => Effect.fail({ kind: 'timeout' as const }),
           })
         );
       }),
-      Effect.catchAll(() => Effect.succeed(INTERNAL)),
-      Effect.catchAllDefect(() => Effect.succeed(INTERNAL))
+      Effect.catch(() => Effect.succeed(INTERNAL)),
+      Effect.catchDefect(() => Effect.succeed(INTERNAL))
     );
 
 // ---------------------------------------------------------------------------
@@ -371,18 +371,18 @@ const runRecordingCall = <T>(
         },
         catch: (): LaneAbort => ({ kind: 'network' }),
       }).pipe(
-        Effect.timeoutFail({
+        Effect.timeoutOrElse({
           duration: timeout,
-          onTimeout: (): LaneAbort => ({ kind: 'timeout' }),
+          orElse: () => Effect.fail<LaneAbort>({ kind: 'timeout' }),
         })
       );
     }),
     // stale-identity / network / timeout are all transient.
-    Effect.catchAll((abort: LaneAbort) =>
+    Effect.catch((abort: LaneAbort) =>
       Effect.succeed<RecordingLaneResult<T>>({ ok: false, retryable: true, failure: abort })
     ),
     // A defect (e.g. an unexpected body-read blowup) folds transient too — never throws.
-    Effect.catchAllDefect(() =>
+    Effect.catchDefect(() =>
       Effect.succeed<RecordingLaneResult<T>>({
         ok: false,
         retryable: true,
@@ -488,14 +488,17 @@ export const makeCloudBackendLive = (
   never,
   SignedInSession | AppConfig | MainLogger | WorkspaceTransport | DesktopI18n
 > =>
-  Layer.scoped(
+  Layer.effect(
     WorkspaceBackend,
     Effect.gen(function* () {
       const session = yield* SignedInSession;
       const { locale } = yield* DesktopI18n;
       const config = yield* AppConfig;
       const coreTransport = yield* WorkspaceTransport;
-      const fetchFn: FetchLike = options.fetchFn ?? desktopFetch;
+      const fetchFn: FetchLike = options.fetchFn ?? ((url, init) => desktopFetch(url, {
+        ...init,
+        body: init.body instanceof Uint8Array ? new Uint8Array(init.body) : init.body,
+      }));
 
       // Fresh per call: session.idToken runs the StaleSessionError guard then
       // delegates to AuthService.getIdToken; pinned.activeOrgId is constant for
@@ -555,15 +558,7 @@ export const WorkspaceTransportLive: Layer.Layer<WorkspaceTransport> = Layer.eff
     const api: WorkspaceTransportApi = {
       register: client =>
         Effect.acquireRelease(SubscriptionRef.set(currentRef, Option.some(client)), () =>
-          // Compare-and-clear: only deregister if we are still the
-          // current client. A slow old-session close (the disconnect + 5s-timeout
-          // background-drain path in workspace-lifecycle's closeWorkspace) whose
-          // release runs AFTER a successor session has already registered must
-          // NOT clobber the live client to None — that would kill
-          // transport/collab/Ask for a fully valid session until the next auth
-          // change. This was harmless when session finalizers were a log line +
-          // this set, far under 5s, but is load-bearing with slow session-scoped
-          // teardown (recording pipeline / widget window / Hocuspocus disconnect).
+          // A late old-workspace release must not clear a successor's client.
           SubscriptionRef.update(currentRef, cur =>
             Option.exists(cur, c => c === client) ? Option.none() : cur
           )
@@ -573,9 +568,10 @@ export const WorkspaceTransportLive: Layer.Layer<WorkspaceTransport> = Layer.eff
         Effect.gen(function* () {
           if (context.mode === 'local') {
             // The shell can make its first request before the local store has mounted.
-            const backend = yield* currentRef.changes.pipe(
+            const backend = yield* SubscriptionRef.changes(currentRef).pipe(
               Stream.mapEffect(() => SubscriptionRef.get(currentRef)),
-              Stream.filterMap(value => value),
+              Stream.filter(Option.isSome),
+              Stream.map(value => value.value),
               Stream.runHead,
               Effect.timeoutOption(WORKSPACE_READY_TIMEOUT),
               Effect.map(Option.flatten)
@@ -598,8 +594,8 @@ export const WorkspaceTransportLive: Layer.Layer<WorkspaceTransport> = Layer.eff
           // Read both live values after either stream wakes us. Buffered auth or
           // registration events must never dispatch through a stale backend.
           const ready = yield* Stream.merge(
-            currentRef.changes.pipe(Stream.map(() => undefined)),
-            sessionState.changes.pipe(Stream.map(() => undefined))
+            SubscriptionRef.changes(currentRef).pipe(Stream.map(() => undefined)),
+            SubscriptionRef.changes(sessionState).pipe(Stream.map(() => undefined))
           ).pipe(
             Stream.mapEffect(() =>
               Effect.gen(function* () {
@@ -623,7 +619,7 @@ export const WorkspaceTransportLive: Layer.Layer<WorkspaceTransport> = Layer.eff
           // discards its result; a write can never be replayed in another org.
           return yield* Effect.raceFirst(
             ready.value.request(req),
-            sessionState.changes.pipe(
+            SubscriptionRef.changes(sessionState).pipe(
               Stream.filter(state => !matches(identityOf(state))),
               Stream.runHead,
               Effect.as(INTERNAL)
@@ -640,7 +636,7 @@ export const WorkspaceTransportLive: Layer.Layer<WorkspaceTransport> = Layer.eff
             onSome: client =>
               client.collabToken.pipe(
                 Effect.map(Option.some),
-                Effect.catchAll(() => Effect.succeed(Option.none<string>()))
+                Effect.catch(() => Effect.succeed(Option.none<string>()))
               ),
           })
         )

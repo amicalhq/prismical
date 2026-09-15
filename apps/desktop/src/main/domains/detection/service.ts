@@ -32,7 +32,6 @@ export interface DetectionServiceApi {
   readonly dismiss: Effect.Effect<void>;
 }
 
-export class DetectionService extends Context.Tag('desktop/detection/DetectionService')<
-  DetectionService,
-  DetectionServiceApi
->() {}
+export class DetectionService extends Context.Service<DetectionService, DetectionServiceApi>()(
+  'desktop/detection/DetectionService'
+) {}

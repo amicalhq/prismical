@@ -77,7 +77,7 @@ export const makeByokTranscriberLive = (
       const appMode = yield* AppModeService;
       const backend = yield* WorkspaceBackend;
       const log = (yield* MainLogger).scoped('transcriber');
-      const fetchFn: FetchLike = options.fetchFn ?? desktopFetch;
+      const fetchFn = options.fetchFn ?? desktopFetch;
       // The mode-aware term source for the on-device replacement pass.
       const source = makeVocabularySource({ mode: appMode.mode, product, backend, log });
       const warnedUnconfigured = yield* Ref.make(HashSet.empty<string>());
@@ -105,7 +105,7 @@ export const makeByokTranscriberLive = (
       const readKey = (recordingId: string, baseUrl: string | null): Effect.Effect<string | null> =>
         secrets.getSecret(BYOK_API_KEY_SECRET).pipe(
           Effect.map(secret => byokKeyForEndpoint(secret, baseUrl)),
-          Effect.catchAll(error =>
+          Effect.catch(error =>
             log
               .warn('BYOK key unreadable', { context: { recordingId }, error: error._tag })
               .pipe(Effect.as(null))
@@ -174,18 +174,18 @@ export const makeByokTranscriberLive = (
             },
             catch: (): LaneAbort => ({ kind: 'network' }),
           }).pipe(
-            Effect.timeoutFail({
+            Effect.timeoutOrElse({
               duration: BYOK_REQUEST_TIMEOUT,
-              onTimeout: (): LaneAbort => ({ kind: 'timeout' }),
+              orElse: () => Effect.fail<LaneAbort>({ kind: 'timeout' }),
             }),
-            Effect.catchAll((abort: LaneAbort) =>
+            Effect.catch((abort: LaneAbort) =>
               Effect.succeed<RecordingLaneResult<string>>({
                 ok: false,
                 retryable: true,
                 failure: abort,
               })
             ),
-            Effect.catchAllDefect(() =>
+            Effect.catchDefect(() =>
               Effect.succeed<RecordingLaneResult<string>>({
                 ok: false,
                 retryable: true,

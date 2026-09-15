@@ -1,4 +1,4 @@
-import { Clock, Effect, Layer, Option, Queue, Ref, Stream, SubscriptionRef } from 'effect';
+import { Clock, Effect, Filter, Layer, Option, Queue, Ref, Stream, SubscriptionRef } from 'effect';
 import { MicActivity } from '../../infra/mic-detector/service';
 import { RecordingService } from '../recording/service';
 import { DetectionBridge } from './bridge';
@@ -29,7 +29,7 @@ export const DetectionServiceLive: Layer.Layer<
   DetectionService,
   never,
   RecordingService | MicActivity | DetectionBridge
-> = Layer.scoped(
+> = Layer.effect(
   DetectionService,
   Effect.gen(function* () {
     const recording = yield* RecordingService;
@@ -60,13 +60,15 @@ export const DetectionServiceLive: Layer.Layer<
 
     yield* Effect.forkScoped(Stream.fromQueue(events).pipe(Stream.runForEach(applyEvent)));
     yield* Effect.forkScoped(
-      micActivity.latest.changes.pipe(
-        Stream.filterMap(Option.map(({ snapshot }) => ({ _tag: 'snapshot', snapshot }) as const)),
+      SubscriptionRef.changes(micActivity.latest).pipe(
+        Stream.filterMap(
+          Filter.fromPredicateOption(Option.map(({ snapshot }) => ({ _tag: 'snapshot', snapshot }) as const))
+        ),
         Stream.runForEach(event => Queue.offer(events, event).pipe(Effect.asVoid))
       )
     );
     yield* Effect.forkScoped(
-      recording.state.changes.pipe(
+      SubscriptionRef.changes(recording.state).pipe(
         Stream.map(state => isActiveStatus(state.status)),
         Stream.changes,
         Stream.runForEach(active =>

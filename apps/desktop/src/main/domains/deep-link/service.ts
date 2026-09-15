@@ -36,4 +36,6 @@ export interface DeepLinksService {
   readonly pendingOAuth: SubscriptionRef.SubscriptionRef<ReadonlyArray<PendingOAuthEntry>>;
 }
 
-export class DeepLinks extends Context.Tag('desktop/DeepLinks')<DeepLinks, DeepLinksService>() {}
+export class DeepLinks extends Context.Service<DeepLinks, DeepLinksService>()(
+  'desktop/DeepLinks'
+) {}

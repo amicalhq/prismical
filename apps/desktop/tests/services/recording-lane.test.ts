@@ -13,7 +13,8 @@
  * proven in cloud-backend.test.ts's makeCloudWorkspaceLayer integration test.
  */
 import { assert, describe, it } from '@effect/vitest';
-import { Deferred, Duration, Effect, Fiber, Option, TestClock } from 'effect';
+import { Deferred, Duration, Effect, Fiber } from 'effect';
+import { TestClock } from 'effect/testing';
 import {
   isTransientStatus,
   makeCreateRecording,
@@ -385,7 +386,7 @@ describe('makeUploadTranscriptionChunk', () => {
   it.effect('a hung upload stays pending through 59s and times out at 60s', () =>
     Effect.gen(function* () {
       const { fetchFn } = recordingFetch(() => new Promise<Response>(() => {}));
-      const fiber = yield* Effect.fork(
+      const fiber = yield* Effect.forkChild(
         makeUploadTranscriptionChunk(makeDeps({ fetchFn }))(
           'rec_1',
           CHUNK_PARAMS,
@@ -393,7 +394,7 @@ describe('makeUploadTranscriptionChunk', () => {
         )
       );
       yield* TestClock.adjust(Duration.seconds(59));
-      assert.isTrue(Option.isNone(yield* Fiber.poll(fiber)));
+      assert.isTrue(fiber.pollUnsafe() === undefined);
       yield* TestClock.adjust(Duration.seconds(1));
       const res = yield* Fiber.join(fiber);
       assert.deepStrictEqual(res, { ok: false, retryable: true, failure: { kind: 'timeout' } });
@@ -407,10 +408,10 @@ describe('makeUploadTranscriptionChunk', () => {
         let signal: AbortSignal | undefined;
         const response = new Response(null, { status });
         response.json = () => {
-          Deferred.unsafeDone(readingBody, Effect.void);
+          Deferred.doneUnsafe(readingBody, Effect.void);
           return new Promise(() => {});
         };
-        const fiber = yield* Effect.fork(
+        const fiber = yield* Effect.forkChild(
           makeUploadTranscriptionChunk(
             makeDeps({
               fetchFn: (_url, init) => {
@@ -423,7 +424,7 @@ describe('makeUploadTranscriptionChunk', () => {
         yield* Deferred.await(readingBody);
         yield* TestClock.adjust(Duration.minutes(1));
         assert.isTrue(
-          Option.isSome(yield* Fiber.poll(fiber)),
+          fiber.pollUnsafe() !== undefined,
           'the body shares the request deadline'
         );
         assert.deepStrictEqual(yield* Fiber.join(fiber), {
@@ -442,10 +443,10 @@ describe('makeUploadTranscriptionChunk', () => {
       let signal: AbortSignal | undefined;
       const response = new Response();
       response.json = () => {
-        Deferred.unsafeDone(readingBody, Effect.void);
+        Deferred.doneUnsafe(readingBody, Effect.void);
         return new Promise(() => {});
       };
-      const fiber = yield* Effect.fork(
+      const fiber = yield* Effect.forkChild(
         makeUploadTranscriptionChunk(
           makeDeps({
             fetchFn: (_url, init) => {

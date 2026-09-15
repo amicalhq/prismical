@@ -10,6 +10,7 @@
  *  - closing the scope unregisters whatever is held.
  */
 import { assert, describe, it } from '@effect/vitest';
+import { TestClock } from 'effect/testing';
 import { Effect, Exit, Layer, Scope, SubscriptionRef } from 'effect';
 import { vi } from 'vitest';
 import type { FloatStateView } from '@prismical/desktop-contracts';
@@ -27,7 +28,7 @@ const fake = (await import('electron')) as unknown as FakeElectron;
 /** Let the forked settings fiber + runFork'd toggles settle. */
 const flush: Effect.Effect<void> = Effect.gen(function* () {
   for (let i = 0; i < 8; i += 1) {
-    yield* Effect.yieldNow();
+    yield* Effect.yieldNow;
     yield* Effect.promise(() => new Promise<void>(resolve => setImmediate(resolve)));
   }
 });
@@ -38,10 +39,10 @@ interface Harness {
   readonly state: SubscriptionRef.SubscriptionRef<FloatStateView>;
   readonly opens: Array<{ noteId: string | null; options: unknown }>;
   readonly collapses: () => number;
-  readonly scope: Scope.CloseableScope;
+  readonly scope: Scope.Scope;
 }
 
-const setup = (): Effect.Effect<Harness> =>
+const setup = (beforeOpen: Effect.Effect<void> = Effect.void): Effect.Effect<Harness> =>
   Effect.gen(function* () {
     const logger = makeTestLogger();
     const scope = yield* Scope.make();
@@ -51,10 +52,14 @@ const setup = (): Effect.Effect<Harness> =>
     const floatBridge: FloatBridgeApi = {
       state,
       open: (noteId, options) =>
-        Effect.sync(() => {
-          opens.push({ noteId, options });
-          return true;
-        }),
+        beforeOpen.pipe(
+          Effect.andThen(
+            Effect.sync(() => {
+              opens.push({ noteId, options });
+              return true;
+            })
+          )
+        ),
       collapse: Effect.sync(() => {
         collapses += 1;
       }),
@@ -72,7 +77,7 @@ const setup = (): Effect.Effect<Harness> =>
     const settings = yield* Effect.gen(function* () {
       yield* runDockHotkey;
       return yield* SettingsService;
-    }).pipe(Effect.provide(env), Scope.extend(scope));
+    }).pipe(Effect.provide(env), Scope.provide(scope));
     yield* flush;
     return { logger, settings, state, opens, collapses: () => collapses, scope } satisfies Harness;
   }).pipe(Effect.orDie);
@@ -156,3 +161,18 @@ describe('dock hotkey', () => {
     })
   );
 });
+
+
+it.effect('scope close interrupts a pending hotkey toggle and rejects late callbacks', () =>
+  Effect.gen(function* () {
+    const h = yield* setup(Effect.sleep('1 second'));
+    const callback = fake.globalShortcut.__registered().get('Alt+Shift+N')!;
+    callback();
+    yield* TestClock.adjust('500 millis');
+    assert.strictEqual(h.opens.length, 0);
+    yield* Scope.close(h.scope, Exit.void);
+    callback();
+    yield* TestClock.adjust('1 second');
+    assert.strictEqual(h.opens.length, 0);
+  })
+);

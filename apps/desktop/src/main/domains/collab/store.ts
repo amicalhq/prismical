@@ -65,10 +65,9 @@ export interface NoteBodyStoreApi {
   ) => Effect.Effect<void, ProductDbError>;
 }
 
-export class NoteBodyStore extends Context.Tag('desktop/NoteBodyStore')<
-  NoteBodyStore,
-  NoteBodyStoreApi
->() {}
+export class NoteBodyStore extends Context.Service<NoteBodyStore, NoteBodyStoreApi>()(
+  'desktop/NoteBodyStore'
+) {}
 
 /**
  * The boot-scoped store accessor (the exact analogue of WorkspaceTransport):
@@ -82,7 +81,6 @@ export interface CollabBridgeApi {
   readonly current: Effect.Effect<Option.Option<NoteBodyStoreApi>>;
 }
 
-export class CollabBridge extends Context.Tag('desktop/CollabBridge')<
-  CollabBridge,
-  CollabBridgeApi
->() {}
+export class CollabBridge extends Context.Service<CollabBridge, CollabBridgeApi>()(
+  'desktop/CollabBridge'
+) {}

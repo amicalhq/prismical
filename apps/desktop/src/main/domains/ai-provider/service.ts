@@ -90,7 +90,6 @@ export interface AiProviderApi {
   ) => Effect.Effect<void>;
 }
 
-export class AiProvider extends Context.Tag('desktop/ai-provider/AiProvider')<
-  AiProvider,
-  AiProviderApi
->() {}
+export class AiProvider extends Context.Service<AiProvider, AiProviderApi>()(
+  'desktop/ai-provider/AiProvider'
+) {}

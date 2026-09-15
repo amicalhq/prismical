@@ -40,19 +40,19 @@ const makeFakeDetection = (initial: DetectionState) =>
 /** Let the forked stream-collector fiber settle without advancing any clock. */
 const flush: Effect.Effect<void> = Effect.gen(function* () {
   for (let i = 0; i < 8; i += 1) {
-    yield* Effect.yieldNow();
+    yield* Effect.yieldNow;
     yield* Effect.promise(() => new Promise<void>(resolve => setImmediate(resolve)));
   }
 });
 
 const buildBridge = Effect.gen(function* () {
   const scope = yield* Scope.make();
-  const ctx = yield* Layer.build(DetectionBridgeLive).pipe(Scope.extend(scope));
+  const ctx = yield* Layer.build(DetectionBridgeLive).pipe(Scope.provide(scope));
   const bridge = Context.get(ctx, DetectionBridge);
   const seen: DetectionState[] = [];
   yield* Effect.forkScoped(
     Stream.runForEach(bridge.stateChanges, s => Effect.sync(() => seen.push(s)))
-  ).pipe(Scope.extend(scope));
+  ).pipe(Scope.provide(scope));
   return { bridge, seen, scope };
 });
 
@@ -65,7 +65,7 @@ describe('DetectionBridge (boot↔session bridge)', () => {
 
       const fake = yield* makeFakeDetection(detectedState('us.zoom.xos'));
       const sessionScope = yield* Scope.make();
-      yield* bridge.register(fake.api).pipe(Scope.extend(sessionScope));
+      yield* bridge.register(fake.api).pipe(Scope.provide(sessionScope));
       yield* flush;
       assert.strictEqual(seen.at(-1)?.detection?.bundleId, 'us.zoom.xos');
 
@@ -91,7 +91,7 @@ describe('DetectionBridge (boot↔session bridge)', () => {
 
       const fake = yield* makeFakeDetection(idleDetectionState);
       const sessionScope = yield* Scope.make();
-      yield* bridge.register(fake.api).pipe(Scope.extend(sessionScope));
+      yield* bridge.register(fake.api).pipe(Scope.provide(sessionScope));
       yield* bridge.dismiss;
       assert.strictEqual(fake.dismissed.count, 1);
 
@@ -112,12 +112,12 @@ describe('DetectionBridge (boot↔session bridge)', () => {
       const scopeA = yield* Scope.make();
       const scopeB = yield* Scope.make();
 
-      yield* bridge.register(a.api).pipe(Scope.extend(scopeA));
+      yield* bridge.register(a.api).pipe(Scope.provide(scopeA));
       yield* flush;
       assert.strictEqual(seen.at(-1)?.detection?.bundleId, 'us.zoom.xos');
 
       // The successor registers while A's scope is still open.
-      yield* bridge.register(b.api).pipe(Scope.extend(scopeB));
+      yield* bridge.register(b.api).pipe(Scope.provide(scopeB));
       yield* flush;
       assert.strictEqual(seen.at(-1)?.detection?.bundleId, 'com.microsoft.teams2');
 

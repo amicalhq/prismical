@@ -30,7 +30,7 @@
  * `vad: true, vad_model_path` and whisper.cpp decodes only detected speech —
  * timestamps come back already mapped onto the original timeline.
  */
-import { Clock, Effect, Either, HashSet, Layer, Option, Ref } from 'effect';
+import { Clock, Effect, Result, HashSet, Layer, Option, Ref } from 'effect';
 import { applyReplacements, targets } from '@prismical/ai-prompts/transcription';
 import type { TranscriptionLanguage } from '@prismical/api-contracts/apps/v1';
 import type { StreamingLinearResampler } from '../../infra/audio/streaming-linear-resampler';
@@ -241,23 +241,23 @@ export const LocalWhisperLive: Layer.Layer<
         const decoded = yield* whisper
           .ensureModel(installed.value)
           .pipe(
-            Effect.zipRight(
+            Effect.andThen(
               whisper.transcribe(
                 audio16k,
                 localDecodeOptions(prompt, Option.getOrUndefined(vadPath), engine.language)
               )
             ),
-            Effect.either
+            Effect.result
           );
-        if (Either.isLeft(decoded)) {
+        if (Result.isFailure(decoded)) {
           yield* log.warn('local whisper chunk failed', { context: {
             recordingId,
             chunkIndex: params.chunkIndex,
             source: params.source,
-            reason: decoded.left.reason,
-            detail: decoded.left.detail,
+            reason: decoded.failure.reason,
+            detail: decoded.failure.detail,
           } });
-          const result = engineFailureResult(decoded.left);
+          const result = engineFailureResult(decoded.failure);
           if (!result.ok && result.retryable) {
             breaker.consecutive += 1;
             if (breaker.consecutive >= ENGINE_BREAKER_THRESHOLD && breaker.open === null) {
@@ -267,7 +267,7 @@ export const LocalWhisperLive: Layer.Layer<
                 { context: {
                   recordingId,
                   consecutiveFailures: breaker.consecutive,
-                  reason: decoded.left.reason,
+                  reason: decoded.failure.reason,
                 } }
               );
             }
@@ -279,7 +279,7 @@ export const LocalWhisperLive: Layer.Layer<
         }
         breaker.consecutive = 0;
 
-        const replaced = applyReplacements(decoded.right.text, terms);
+        const replaced = applyReplacements(decoded.success.text, terms);
         const now = yield* Clock.currentTimeMillis;
         const segment = mintChunkSegment({
           recordingId,

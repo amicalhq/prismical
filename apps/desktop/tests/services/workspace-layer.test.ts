@@ -22,8 +22,8 @@ import {
   Option,
   Scope,
   SubscriptionRef,
-  TestClock,
 } from 'effect';
+import { TestClock } from 'effect/testing';
 import type { SessionProbe } from '@prismical/desktop-contracts';
 import {
   makeTestLogger,
@@ -123,13 +123,13 @@ const makeAuthStub = Effect.gen(function* () {
 // Probe service the test factories merge into the signed-in layer: counts
 // acquire/release (with the pinned identity) and parks a forkScoped fiber in
 // the session scope so "no live fiber after close" is asserted via its Exit.
-class ProbeReady extends Context.Tag('test/ProbeReady')<ProbeReady, true>() {}
+class ProbeReady extends Context.Service<ProbeReady, true>()('test/ProbeReady') {}
 
 const makeProbe = () => {
   const events: string[] = [];
-  const fibers: Array<Fiber.RuntimeFiber<never, never>> = [];
+  const fibers: Array<Fiber.Fiber<never, never>> = [];
   const layerFor = (pinned: PinnedSession): Layer.Layer<ProbeReady> =>
-    Layer.scoped(
+    Layer.effect(
       ProbeReady,
       Effect.gen(function* () {
         const label = `${pinned.sub}/${pinned.activeOrgId ?? '-'}`;
@@ -172,7 +172,7 @@ const localProbedFactory =
 /** Lets forked lifecycle steps land between test steps. */
 const flush: Effect.Effect<void> = Effect.gen(function* () {
   for (let i = 0; i < 6; i++) {
-    yield* Effect.yieldNow();
+    yield* Effect.yieldNow;
     yield* Effect.promise(() => new Promise<void>(resolve => setImmediate(resolve)));
   }
 });
@@ -245,10 +245,10 @@ const setup = (
       fakeAiProviderLayer()
     );
     const scope = yield* Scope.make();
-    const ctx = yield* Layer.build(env).pipe(Scope.extend(scope));
+    const ctx = yield* Layer.build(env).pipe(Scope.provide(scope));
     yield* Effect.forkScoped(runWorkspaceLifecycle({ makeLayer, ...options })).pipe(
       Effect.provide(ctx),
-      Scope.extend(scope)
+      Scope.provide(scope)
     );
     return {
       logger,
@@ -276,7 +276,7 @@ const awaitProbe = (
   });
 
 const failureOf = (exit: Exit.Exit<unknown, unknown>): unknown =>
-  Exit.isFailure(exit) ? Option.getOrUndefined(Cause.failureOption(exit.cause)) : undefined;
+  Exit.isFailure(exit) ? Option.getOrUndefined(Cause.findErrorOption(exit.cause)) : undefined;
 
 // ---------------------------------------------------------------------------
 // Gate → desired-identity mapping (pure)
@@ -359,7 +359,7 @@ describe('SignedInRuntime lifecycle', () => {
       assert.deepStrictEqual(probe.events, ['acquire:user_1/-', 'release:user_1/-']);
       assert.isDefined(logger.find(e => e.message === 'signed-in scope released'));
       const fiberExit = yield* Fiber.await(probe.fibers[0]);
-      assert.isTrue(Exit.isInterrupted(fiberExit), 'session fiber interrupted on quit');
+      assert.isTrue(Exit.hasInterrupts(fiberExit), 'session fiber interrupted on quit');
     })
   );
 
@@ -408,7 +408,7 @@ describe('SignedInRuntime lifecycle', () => {
         'acquire:user_2/-',
       ]);
       const oldFiber = yield* Fiber.await(probe.fibers[0]);
-      assert.isTrue(Exit.isInterrupted(oldFiber), 'old session fiber interrupted');
+      assert.isTrue(Exit.hasInterrupts(oldFiber), 'old session fiber interrupted');
       yield* Scope.close(scope, Exit.void);
     })
   );
@@ -454,7 +454,7 @@ describe('SignedInRuntime lifecycle', () => {
       assert.deepStrictEqual(probe.events, ['acquire:user_1/-', 'release:user_1/-']);
       // No live fiber after scope close — asserted, not hoped.
       const fiberExit = yield* Fiber.await(probe.fibers[0]);
-      assert.isTrue(Exit.isInterrupted(fiberExit), 'session fiber interrupted on sign-out');
+      assert.isTrue(Exit.hasInterrupts(fiberExit), 'session fiber interrupted on sign-out');
 
       // Torn down stays torn down on repeated signed-out emissions.
       yield* SubscriptionRef.set(stub.sessionState, authState('signed-out', []));
@@ -490,7 +490,7 @@ describe('SignedInRuntime lifecycle', () => {
       const pinned: PinnedSession = { sub: 'user_1', email: 'user_1@example.com' };
       const scope = yield* Scope.make();
       const ctx = yield* Layer.build(makeCloudWorkspaceLayer(pinned).pipe(Layer.provide(env))).pipe(
-        Scope.extend(scope)
+        Scope.provide(scope)
       );
       const session = Context.get(ctx, SignedInSession);
       assert.deepStrictEqual(session.pinned, pinned);
@@ -553,7 +553,7 @@ describe('SignedInRuntime lifecycle', () => {
         Layer.succeed(AuthService, {
           ...stub.api,
           getIdToken: () =>
-            Deferred.succeed(resolving, undefined).pipe(Effect.zipRight(Deferred.await(token))),
+            Deferred.succeed(resolving, undefined).pipe(Effect.andThen(Deferred.await(token))),
         }),
         logger.layer,
         testTelemetryLayer,
@@ -574,8 +574,8 @@ describe('SignedInRuntime lifecycle', () => {
           email: 'user_1@example.com',
           activeOrgId: 'org_a',
         }).pipe(Layer.provide(env))
-      ).pipe(Scope.extend(scope));
-      const pending = yield* Effect.fork(Context.get(ctx, SignedInSession).idToken);
+      ).pipe(Scope.provide(scope));
+      const pending = yield* Effect.forkChild(Context.get(ctx, SignedInSession).idToken);
       yield* Deferred.await(resolving);
       yield* SubscriptionRef.set(
         stub.sessionState,
@@ -623,7 +623,7 @@ describe('SignedInRuntime lifecycle', () => {
       // Rollback: the probe acquired, then released exactly once. Zero runtimes.
       assert.deepStrictEqual(probe.events, ['acquire:user_1/-', 'release:user_1/-']);
       const fiberExit = yield* Fiber.await(probe.fibers[0]);
-      assert.isTrue(Exit.isInterrupted(fiberExit), 'partial acquisition fiber interrupted');
+      assert.isTrue(Exit.hasInterrupts(fiberExit), 'partial acquisition fiber interrupted');
 
       // The gate still claims signed-in; the loop stayed torn down but ALIVE:
       // the next state emission acquires once the failure is gone.
@@ -774,8 +774,12 @@ describe('SignedInRuntime lifecycle', () => {
       const probe = makeProbe();
       // Only user_1's session wedges its release, so end-of-test teardown of
       // the successor stays clean.
-      const hangRelease = Layer.scopedDiscard(
-        Effect.acquireRelease(Effect.void, () => Effect.never)
+      const allowClose = yield* Deferred.make<void>();
+      const closed = yield* Deferred.make<void>();
+      const hangRelease = Layer.effectDiscard(
+        Effect.acquireRelease(Effect.void, () => Deferred.await(allowClose).pipe(
+          Effect.andThen(Deferred.succeed(closed, undefined))
+        ))
       );
       const factory: NonNullable<WorkspaceLifecycleOptions['makeLayer']> = desired =>
         cloudPinned(desired).sub === 'user_1'
@@ -809,6 +813,12 @@ describe('SignedInRuntime lifecycle', () => {
         'close-deadline'
       );
       yield* awaitEvent(probe, 'acquire:user_2/-');
+      // A timed-out close is still allowed to finish; it must not affect the
+      // successor. Release the gate so this test leaves no detached finalizer.
+      yield* Deferred.succeed(allowClose, undefined);
+      yield* Deferred.await(closed);
+      yield* flush;
+      assert.notInclude(probe.events, 'release:user_2/-');
       yield* Scope.close(scope, Exit.void);
       assert.include(probe.events, 'release:user_2/-');
     })
@@ -868,12 +878,12 @@ describe('SignedInRuntime lifecycle', () => {
       assert.deepStrictEqual(probe.events, ['acquire:local/-', 'release:local/-']);
       assert.isDefined(logger.find(e => e.message === 'local workspace scope released'));
       const fiberExit = yield* Fiber.await(probe.fibers[0]);
-      assert.isTrue(Exit.isInterrupted(fiberExit), 'local workspace fiber interrupted on quit');
+      assert.isTrue(Exit.hasInterrupts(fiberExit), 'local workspace fiber interrupted on quit');
       assert.isTrue(Option.isNone(yield* transport.current), 'local backend deregistered');
       assert.isTrue(Option.isNone(yield* collabBridge.current), 'note-body store deregistered');
       const pending = yield* transport
         .request({ method: 'GET', path: '/apps/v1/me/tags' }, { mode: 'local' })
-        .pipe(Effect.fork);
+        .pipe(Effect.forkChild);
       yield* TestClock.adjust(WORKSPACE_READY_TIMEOUT);
       assert.deepStrictEqual(yield* Fiber.join(pending), {
         error: { code: 'INTERNAL' },

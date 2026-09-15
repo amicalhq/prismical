@@ -65,10 +65,9 @@ export interface FloatBridgeApi {
   readonly reset: Effect.Effect<void>;
 }
 
-export class FloatBridge extends Context.Tag('desktop/windows/FloatBridge')<
-  FloatBridge,
-  FloatBridgeApi
->() {}
+export class FloatBridge extends Context.Service<FloatBridge, FloatBridgeApi>()(
+  'desktop/windows/FloatBridge'
+) {}
 
 export const FloatBridgeLive: Layer.Layer<
   FloatBridge,
@@ -195,7 +194,7 @@ export const FloatBridgeLive: Layer.Layer<
         // dockBack/reset destroy (they clear the slot, and a kept-alive
         // window would go stale against it).
         collapse: windows.hideFloatNoteWindow.pipe(
-          Effect.zipRight(
+          Effect.andThen(
             SubscriptionRef.update(state, current => ({ ...current, open: false }))
           )
         ),
@@ -210,7 +209,7 @@ export const FloatBridgeLive: Layer.Layer<
           yield* SubscriptionRef.set(state, { open: false, noteId: null });
         }),
         reset: windows.closeFloatNoteWindow.pipe(
-          Effect.zipRight(SubscriptionRef.set(state, { open: false, noteId: null }))
+          Effect.andThen(SubscriptionRef.set(state, { open: false, noteId: null }))
         ),
       };
       return api;

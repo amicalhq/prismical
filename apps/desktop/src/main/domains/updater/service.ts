@@ -30,7 +30,6 @@ export interface UpdaterServiceApi {
   readonly checkCount: Effect.Effect<number>;
 }
 
-export class UpdaterService extends Context.Tag('desktop/UpdaterService')<
-  UpdaterService,
-  UpdaterServiceApi
->() {}
+export class UpdaterService extends Context.Service<UpdaterService, UpdaterServiceApi>()(
+  'desktop/UpdaterService'
+) {}

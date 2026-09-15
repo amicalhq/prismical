@@ -28,4 +28,6 @@ export interface ProductDbService {
   readonly client: Database.Database;
 }
 
-export class ProductDb extends Context.Tag('desktop/ProductDb')<ProductDb, ProductDbService>() {}
+export class ProductDb extends Context.Service<ProductDb, ProductDbService>()(
+  'desktop/ProductDb'
+) {}

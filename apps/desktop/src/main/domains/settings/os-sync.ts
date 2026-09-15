@@ -13,7 +13,7 @@
  * electron-free and the OS edge stays the single injectable boundary (a fake
  * NativeOs drives the test).
  *
- * Each apply is wrapped in `catchAllDefect` — the NativeOs edge is an
+ * Each apply is wrapped in `catchDefect` — the NativeOs edge is an
  * `Effect.sync` over the `app` singleton (setLoginItemSettings / dock) with no
  * declared error channel, but a native call CAN throw a defect on some OS/version
  * edge; without the guard that defect would kill the forkScoped consumer
@@ -22,7 +22,7 @@
  * settings:changed / auth / recording / widget push fibers all guard defects) —
  * a dropped apply is logged and the consumer lives on.
  */
-import { Effect, Stream, type Scope } from 'effect';
+import { SubscriptionRef, Effect, Stream, type Scope } from 'effect';
 import { MainLogger } from '../../infra/logging/service';
 import { NativeOs } from '../../infra/native-os/service';
 import { SettingsService } from './service';
@@ -39,13 +39,13 @@ export const runOsSync: Effect.Effect<
   // Launch at login → app.setLoginItemSettings (cross-platform).
   yield* Effect.forkScoped(
     Stream.runForEach(
-      settings.settings.changes.pipe(
+      SubscriptionRef.changes(settings.settings).pipe(
         Stream.map(current => current.launchAtLogin),
         Stream.changes
       ),
       openAtLogin =>
         nativeOs.setLoginItem(openAtLogin).pipe(
-          Effect.catchAllDefect(defect =>
+          Effect.catchDefect(defect =>
             log.error('os-sync setLoginItem failed — consumer continues', { error: defect })
           )
         )
@@ -56,13 +56,13 @@ export const runOsSync: Effect.Effect<
   // control drives this today — it stays default-true, applied here on boot.
   yield* Effect.forkScoped(
     Stream.runForEach(
-      settings.settings.changes.pipe(
+      SubscriptionRef.changes(settings.settings).pipe(
         Stream.map(current => current.dockVisible),
         Stream.changes
       ),
       visible =>
         nativeOs.setDockVisible(visible).pipe(
-          Effect.catchAllDefect(defect =>
+          Effect.catchDefect(defect =>
             log.error('os-sync setDockVisible failed — consumer continues', { error: defect })
           )
         )

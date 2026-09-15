@@ -7,7 +7,6 @@ export interface RemoteConfigApi {
   readonly refresh: Effect.Effect<void>;
 }
 
-export class RemoteConfig extends Context.Tag('desktop/RemoteConfig')<
-  RemoteConfig,
-  RemoteConfigApi
->() {}
+export class RemoteConfig extends Context.Service<RemoteConfig, RemoteConfigApi>()(
+  'desktop/RemoteConfig'
+) {}

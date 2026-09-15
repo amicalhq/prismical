@@ -90,7 +90,7 @@ describe('DeepLinks', () => {
     Effect.gen(function* () {
       const { layer } = build();
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const deepLinks = Context.get(ctx, DeepLinks);
 
       fake.app.emit('open-url', new FakeEvent(), 'prismical://app/notes');
@@ -104,12 +104,12 @@ describe('DeepLinks', () => {
     Effect.gen(function* () {
       const { layer, logger, state } = build();
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const deepLinks = Context.get(ctx, DeepLinks);
 
       yield* Effect.forkScoped(runDeepLinkConsumer).pipe(
         Effect.provide(ctx),
-        Scope.extend(scope)
+        Scope.provide(scope)
       );
 
       yield* deepLinks.offerUrl('prismical://oauth/callback?code=c-1&state=s-1');
@@ -119,11 +119,13 @@ describe('DeepLinks', () => {
 
       // Let the consumer drain all four urls (the warn for the last one is
       // the last observable effect).
-      yield* Effect.iterate(0, {
-        while: n =>
-          n < 200 && logger.find(e => e.level === 'warn' && e.message === 'deep link rejected') === undefined,
-        body: n => Effect.yieldNow().pipe(Effect.as(n + 1)),
-      });
+      for (
+        let n = 0;
+        n < 200 && logger.find(e => e.level === 'warn' && e.message === 'deep link rejected') === undefined;
+        n++
+      ) {
+        yield* Effect.yieldNow;
+      }
 
       const pending = yield* SubscriptionRef.get(deepLinks.pendingOAuth);
       assert.deepStrictEqual(
@@ -156,18 +158,20 @@ describe('DeepLinks', () => {
     Effect.gen(function* () {
       const { layer, logger, state } = build({ platform: 'darwin' });
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* Effect.forkScoped(runDeepLinkConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* Effect.forkScoped(runDeepLinkConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
 
       fake.app.emit('open-url', new FakeEvent(), 'prismical://app/settings/calendar');
       fake.app.emit('open-url', new FakeEvent(), 'prismical://app/float/n_1');
       fake.app.emit('open-url', new FakeEvent(), 'prismical://garbage/x');
 
-      yield* Effect.iterate(0, {
-        while: n =>
-          n < 200 && logger.find(e => e.message === 'deep link rejected') === undefined,
-        body: n => Effect.yieldNow().pipe(Effect.as(n + 1)),
-      });
+      for (
+        let n = 0;
+        n < 200 && logger.find(e => e.message === 'deep link rejected') === undefined;
+        n++
+      ) {
+        yield* Effect.yieldNow;
+      }
 
       assert.isDefined(logger.find(e => e.message === 'deep link rejected'));
       assert.strictEqual(state.focusCount, 1);
@@ -185,10 +189,10 @@ describe('DeepLinks', () => {
     Effect.gen(function* () {
       const { layer, logger } = build();
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const deepLinks = Context.get(ctx, DeepLinks);
 
-      yield* Effect.forkScoped(runDeepLinkConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      yield* Effect.forkScoped(runDeepLinkConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
 
       // Duplicated params (param-count) — the URL contains a real code twice.
       yield* deepLinks.offerUrl(
@@ -199,12 +203,13 @@ describe('DeepLinks', () => {
         'prismical://oauth/callback?error=access_denied&code=SECRET-CODE-3&state=SECRET-STATE-2'
       );
 
-      yield* Effect.iterate(0, {
-        while: n =>
-          n < 200 &&
-          logger.entries.filter(e => e.message === 'deep link rejected').length < 2,
-        body: n => Effect.yieldNow().pipe(Effect.as(n + 1)),
-      });
+      for (
+        let n = 0;
+        n < 200 && logger.entries.filter(e => e.message === 'deep link rejected').length < 2;
+        n++
+      ) {
+        yield* Effect.yieldNow;
+      }
 
       const rejections = logger.entries.filter(e => e.message === 'deep link rejected');
       assert.strictEqual(rejections.length, 2, 'both malformed callbacks rejected+logged');
@@ -239,10 +244,10 @@ describe('DeepLinks', () => {
     Effect.gen(function* () {
       const { layer, state } = build();
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const deepLinks = Context.get(ctx, DeepLinks);
 
-      yield* Effect.forkScoped(runSecondInstanceConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      yield* Effect.forkScoped(runSecondInstanceConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
 
       fake.app.emit('second-instance', new FakeEvent(), [
         '/bin/prismical',
@@ -250,10 +255,9 @@ describe('DeepLinks', () => {
         'prismical://oauth/callback?code=x&state=y',
       ]);
 
-      yield* Effect.iterate(0, {
-        while: n => n < 100 && state.focusCount === 0,
-        body: n => Effect.yieldNow().pipe(Effect.as(n + 1)),
-      });
+      for (let n = 0; n < 100 && state.focusCount === 0; n++) {
+        yield* Effect.yieldNow;
+      }
       assert.strictEqual(state.focusCount, 1);
       const queued = yield* Queue.take(deepLinks.urls);
       assert.strictEqual(queued, 'prismical://oauth/callback?code=x&state=y');
@@ -265,9 +269,9 @@ describe('DeepLinks', () => {
     Effect.gen(function* () {
       const { layer, state } = build({ platform: 'win32' });
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const deepLinks = Context.get(ctx, DeepLinks);
-      yield* Effect.forkScoped(runSecondInstanceConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      yield* Effect.forkScoped(runSecondInstanceConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
 
       for (const hook of ['install', 'updated', 'obsolete', 'uninstall', 'firstrun']) {
         fake.app.emit('second-instance', new FakeEvent(), [
@@ -287,7 +291,7 @@ describe('DeepLinks', () => {
     Effect.gen(function* () {
       const { layer } = build({ platform: 'win32', isPackaged: true });
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const deepLinks = Context.get(ctx, DeepLinks);
 
       yield* offerLaunchDeepLinks([
@@ -306,7 +310,7 @@ describe('DeepLinks', () => {
     Effect.gen(function* () {
       const { layer } = build({ platform: 'darwin' });
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const deepLinks = Context.get(ctx, DeepLinks);
 
       yield* offerLaunchDeepLinks([
@@ -323,16 +327,15 @@ describe('DeepLinks', () => {
     Effect.gen(function* () {
       const { layer, state } = build();
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const deepLinks = Context.get(ctx, DeepLinks);
-      yield* Effect.forkScoped(runDeepLinkConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      yield* Effect.forkScoped(runDeepLinkConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
       yield* Scope.close(scope, Exit.void);
 
       yield* deepLinks.offerUrl('prismical://app/after-close');
-      yield* Effect.iterate(0, {
-        while: n => n < 20,
-        body: n => Effect.yieldNow().pipe(Effect.as(n + 1)),
-      });
+      for (let n = 0; n < 20; n++) {
+        yield* Effect.yieldNow;
+      }
       assert.deepStrictEqual(state.sent, []);
     })
   );

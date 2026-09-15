@@ -13,7 +13,7 @@
  * honors the persisted setting, while FloatBridge checks the active plan.
  */
 import { globalShortcut } from 'electron';
-import { Effect, Runtime, Stream, SubscriptionRef, type Scope } from 'effect';
+import { Effect, FiberSet, Stream, SubscriptionRef, type Scope } from 'effect';
 import { SettingsService } from '../../domains/settings/service';
 import { MainLogger } from '../../infra/logging/service';
 import { FloatBridge } from './float-bridge';
@@ -26,7 +26,7 @@ export const runDockHotkey: Effect.Effect<void, never, HotkeyEnv | Scope.Scope> 
     const floatBridge = yield* FloatBridge;
     const log = (yield* MainLogger).scoped('dock-hotkey');
 
-    const runtime = yield* Effect.runtime<never>();
+    const runToggle = yield* FiberSet.makeRuntime();
 
     const toggle = SubscriptionRef.get(floatBridge.state).pipe(
       Effect.flatMap(current =>
@@ -44,7 +44,7 @@ export const runDockHotkey: Effect.Effect<void, never, HotkeyEnv | Scope.Scope> 
 
     const apply = (accelerator: string): Effect.Effect<void> =>
       unregisterCurrent.pipe(
-        Effect.zipRight(
+        Effect.andThen(
           Effect.gen(function* () {
             if (accelerator === '') {
               yield* log.info('dock hotkey disabled');
@@ -53,12 +53,12 @@ export const runDockHotkey: Effect.Effect<void, never, HotkeyEnv | Scope.Scope> 
             const ok = yield* Effect.try({
               try: () =>
                 globalShortcut.register(accelerator, () => {
-                  // Electron callback edge → the Effect runtime (sanctioned
-                  // adapter boundary, like the ipcMain.handle callbacks).
-                  Runtime.runFork(runtime)(toggle);
+                  // Yield until FiberSet registers the callback, so a toggle
+                  // that closes the scope cannot outlive its owner.
+                  runToggle(Effect.yieldNow.pipe(Effect.andThen(toggle)));
                 }),
               catch: () => false as const, // an invalid accelerator throws
-            }).pipe(Effect.catchAll(() => Effect.succeed(false as const)));
+            }).pipe(Effect.catch(() => Effect.succeed(false as const)));
             if (ok) {
               registeredAccelerator = accelerator;
               yield* log.info('dock hotkey registered', { context: { accelerator } });
@@ -73,12 +73,12 @@ export const runDockHotkey: Effect.Effect<void, never, HotkeyEnv | Scope.Scope> 
     // finalizer unregisters whatever is held when the boot scope closes.
     yield* Effect.addFinalizer(() => unregisterCurrent);
     yield* Effect.forkScoped(
-      settings.settings.changes.pipe(
+      SubscriptionRef.changes(settings.settings).pipe(
         Stream.map(current => current.dockHotkey),
         Stream.changes,
         Stream.runForEach(accelerator =>
           apply(accelerator).pipe(
-            Effect.catchAllDefect(defect =>
+            Effect.catchDefect(defect =>
               log.error('dock hotkey apply failed — fiber continues', { error: defect })
             )
           )

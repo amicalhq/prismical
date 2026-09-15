@@ -197,7 +197,6 @@ export interface RecordingServiceApi {
   readonly level: SubscriptionRef.SubscriptionRef<number>;
 }
 
-export class RecordingService extends Context.Tag('desktop/recording/RecordingService')<
-  RecordingService,
-  RecordingServiceApi
->() {}
+export class RecordingService extends Context.Service<RecordingService, RecordingServiceApi>()(
+  'desktop/recording/RecordingService'
+) {}

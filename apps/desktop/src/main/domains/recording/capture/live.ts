@@ -112,11 +112,11 @@ export const CaptureLive: Layer.Layer<
               context: { mode },
               error,
             });
-            Deferred.unsafeDone(terminated, Effect.fail(error));
+            Deferred.doneUnsafe(terminated, Effect.fail(error));
             return;
           }
           for (const frame of decoded) {
-            Queue.unsafeOffer(frames, frame);
+            Queue.offerUnsafe(frames, frame);
           }
         };
 
@@ -132,7 +132,7 @@ export const CaptureLive: Layer.Layer<
             }
             const micEvent = parseMicEvent(line);
             if (micEvent) {
-              Queue.unsafeOffer(micEvents, micEvent);
+              Queue.offerUnsafe(micEvents, micEvent);
               return true;
             }
             if (line.startsWith('mic-event=')) {
@@ -153,7 +153,7 @@ export const CaptureLive: Layer.Layer<
           dead = true;
           reportFailure(error);
           unsafeLog.error('capture child errored', { context: { mode }, error });
-          Deferred.unsafeDone(
+          Deferred.doneUnsafe(
             terminated,
             Effect.fail(new CaptureCrashError({ reason: error.message }))
           );
@@ -161,9 +161,9 @@ export const CaptureLive: Layer.Layer<
 
         const onExit = (code: number | null, signal: NodeJS.Signals | null): void => {
           diagnostics.end();
-          Deferred.unsafeDone(exited, Effect.void);
+          Deferred.doneUnsafe(exited, Effect.void);
           if (dead || stopping) {
-            Deferred.unsafeDone(terminated, Effect.void);
+            Deferred.doneUnsafe(terminated, Effect.void);
             return;
           }
           dead = true;
@@ -171,7 +171,7 @@ export const CaptureLive: Layer.Layer<
           unsafeLog.error('capture child exited unexpectedly', {
             context: { mode, code, signal },
           });
-          Deferred.unsafeDone(terminated, Effect.fail(new CaptureExitError({ code, signal })));
+          Deferred.doneUnsafe(terminated, Effect.fail(new CaptureExitError({ code, signal })));
         };
 
         const release = (proc: CaptureChild): Effect.Effect<void> =>
@@ -195,12 +195,10 @@ export const CaptureLive: Layer.Layer<
                 }
               });
               // Wait up to the grace for a clean exit, then escalate to SIGKILL.
-              // Finalizers run uninterruptibly, so mark the bounded wait
-              // interruptible — otherwise the timeout could not interrupt the
-              // pending await and teardown would hang.
+              // Effect 4 races interruptible child fibers for the timeout while
+              // this finalizer remains protected from owner interruption.
               const graceful = yield* Deferred.await(exited).pipe(
-                Effect.timeoutOption(TERMINATION_GRACE),
-                Effect.interruptible
+                Effect.timeoutOption(TERMINATION_GRACE)
               );
               if (Option.isNone(graceful)) {
                 yield* Effect.sync(() => {
@@ -209,12 +207,10 @@ export const CaptureLive: Layer.Layer<
                 // A SIGKILL'd process is normally reaped in milliseconds, but one
                 // wedged in an uninterruptible kernel wait (D-state — e.g. a stuck
                 // CoreAudio driver call) never returns from its syscall, so `exit`
-                // never fires. Bound this wait too (interruptible, like the grace
-                // above) so a wedged child can't hang teardown/quit forever — we
-                // give up and detach regardless once the grace elapses.
+                // never fires. Bound this wait too so a wedged child can't hang
+                // teardown/quit forever — detach once the grace elapses.
                 yield* Deferred.await(exited).pipe(
-                  Effect.timeoutOption(TERMINATION_GRACE),
-                  Effect.interruptible
+                  Effect.timeoutOption(TERMINATION_GRACE)
                 );
               }
             }

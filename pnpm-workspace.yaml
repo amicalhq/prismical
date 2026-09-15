@@ -28,7 +28,7 @@ catalog:
   react-dom: ^19.1.0
   react-i18next: ^16.5.3
   tsx: ^4.19.4
-  typescript: 5.8.3
+  typescript: 5.9.3
   vitest: ^3.2.1
   zod: ^4.3.5
 

@@ -43,7 +43,6 @@ export interface ElectronAppService {
   };
 }
 
-export class ElectronApp extends Context.Tag('desktop/ElectronApp')<
-  ElectronApp,
-  ElectronAppService
->() {}
+export class ElectronApp extends Context.Service<ElectronApp, ElectronAppService>()(
+  'desktop/ElectronApp'
+) {}

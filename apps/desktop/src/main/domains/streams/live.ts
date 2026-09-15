@@ -22,7 +22,7 @@ interface ResumeMessage {
 }
 
 export const StreamBrokerLive: Layer.Layer<StreamBroker, never, MainLogger | WorkspaceTransport> =
-  Layer.scoped(
+  Layer.effect(
     StreamBroker,
     Effect.gen(function* () {
       const logger = yield* MainLogger;
@@ -45,7 +45,7 @@ export const StreamBrokerLive: Layer.Layer<StreamBroker, never, MainLogger | Wor
        * body ends (or errors — a mid-stream failure just terminates the port).
        */
       const forward = (response: Response, port: MessagePortMain): Effect.Effect<void> =>
-        Effect.async<void>(resume => {
+        Effect.callback<void>(resume => {
           const reader = response.body?.getReader();
           if (reader === undefined) {
             resume(Effect.void);
@@ -97,14 +97,14 @@ export const StreamBrokerLive: Layer.Layer<StreamBroker, never, MainLogger | Wor
                 client.openAskStream(body).pipe(
                   Effect.flatMap(response =>
                     forward(response, port).pipe(
-                      Effect.zipRight(
+                      Effect.andThen(
                         Effect.sync(() => {
                           port.postMessage(DONE);
                         })
                       )
                     )
                   ),
-                  Effect.catchAll(error =>
+                  Effect.catch(error =>
                     log.warn('ask stream open failed — closing', { context: {
                       streamId,
                       reason: error.reason,
@@ -140,13 +140,13 @@ export const StreamBrokerLive: Layer.Layer<StreamBroker, never, MainLogger | Wor
               return;
             }
             if (parsed.data.type === 'abort') {
-              Deferred.unsafeDone(abortSignal, Effect.void);
+              Deferred.doneUnsafe(abortSignal, Effect.void);
             } else {
-              Queue.unsafeOffer(resumes, { parts: parsed.data.parts });
+              Queue.offerUnsafe(resumes, { parts: parsed.data.parts });
             }
           };
           const onClose = () => {
-            Deferred.unsafeDone(abortSignal, Effect.void);
+            Deferred.doneUnsafe(abortSignal, Effect.void);
           };
           port1.on('message', onMessage);
           port1.on('close', onClose);
@@ -161,15 +161,18 @@ export const StreamBrokerLive: Layer.Layer<StreamBroker, never, MainLogger | Wor
           // Abort (renderer message or port close) wins the race and interrupts
           // the producer (which cancels the reader → aborts the fetch); external
           // interruption (scope close) hits both branches.
-          const supervised = Effect.race(
-            producer(streamId, port1, body).pipe(Effect.as('completed' as const)),
-            Deferred.await(abortSignal).pipe(Effect.as('aborted' as const))
-          ).pipe(
+          const supervised = Effect.yieldNow.pipe(
+            // Register with FiberMap before producer callbacks can close the
+            // owner. The outer ensuring also covers cancellation at this yield.
+            Effect.andThen(Effect.race(
+              producer(streamId, port1, body).pipe(Effect.as('completed' as const)),
+              Deferred.await(abortSignal).pipe(Effect.as('aborted' as const))
+            )),
             Effect.flatMap(outcome =>
               outcome === 'completed'
                 ? Ref.update(completed, n => n + 1)
                 : Ref.update(aborted, n => n + 1).pipe(
-                    Effect.zipRight(log.info('stream aborted', { context: { streamId } }))
+                    Effect.andThen(log.info('stream aborted', { context: { streamId } }))
                   )
             ),
             Effect.ensuring(cleanup)

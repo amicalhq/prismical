@@ -141,16 +141,15 @@ export interface SignedInSessionApi {
   readonly idToken: Effect.Effect<string, StaleSessionError | RefreshError | AuthStateError>;
 }
 
-export class SignedInSession extends Context.Tag('desktop/SignedInSession')<
-  SignedInSession,
-  SignedInSessionApi
->() {}
+export class SignedInSession extends Context.Service<SignedInSession, SignedInSessionApi>()(
+  'desktop/SignedInSession'
+) {}
 
 /** Log prefix only — subs are identifiers but full values stay out of logs. */
 const subPrefix = (sub: string): string => sub.slice(0, 6) + '…';
 
 /**
- * The cloud identity for one pinned (account, org). Layer.scoped +
+ * The cloud identity for one pinned (account, org). Layer.effect +
  * acquireRelease so teardown is observable (tests assert the release ran, not
  * hope it did). Cloud-branch only — local mode never has one (its synthetic
  * workspace identity is a renderer concern).
@@ -158,7 +157,7 @@ const subPrefix = (sub: string): string => sub.slice(0, 6) + '…';
 const makeSignedInSessionLayer = (
   pinned: PinnedSession
 ): Layer.Layer<SignedInSession, never, AuthService | MainLogger> =>
-  Layer.scoped(
+  Layer.effect(
     SignedInSession,
     Effect.gen(function* () {
       const auth = yield* AuthService;
@@ -207,7 +206,7 @@ const makeSignedInSessionLayer = (
         pinned,
         // A refresh can outlast an account/org switch. Check again after the
         // await so callers cannot receive a token from a stale workspace.
-        idToken: guard.pipe(Effect.zipRight(auth.getIdToken(pinned.sub)), Effect.zipLeft(guard)),
+        idToken: guard.pipe(Effect.andThen(auth.getIdToken(pinned.sub)), Effect.tap(guard)),
       };
       return api;
     })
@@ -371,7 +370,7 @@ export const makeLocalWorkspaceLayer = (): Layer.Layer<
     Layer.provide(productDb),
     Layer.provide(Layer.succeed(WorkspaceIdentity, { mode: 'local' }))
   );
-  const scopeLog = Layer.scopedDiscard(
+  const scopeLog = Layer.effectDiscard(
     Effect.gen(function* () {
       const log = (yield* MainLogger).scoped('workspace');
       yield* Effect.acquireRelease(log.info('local workspace scope acquired'), () =>

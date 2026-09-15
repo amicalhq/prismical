@@ -26,7 +26,6 @@ export interface TelemetryServiceApi {
     revision?: number
   ) => Effect.Effect<void>;
 }
-export class TelemetryService extends Context.Tag('desktop/telemetry/TelemetryService')<
-  TelemetryService,
-  TelemetryServiceApi
->() {}
+export class TelemetryService extends Context.Service<TelemetryService, TelemetryServiceApi>()(
+  'desktop/telemetry/TelemetryService'
+) {}

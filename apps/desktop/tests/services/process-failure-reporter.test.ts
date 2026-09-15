@@ -38,7 +38,7 @@ describe('process failure ownership', () => {
           yield* SubscriptionRef.update(state, s => ({ ...s, enabled: true, revision: 1 }));
           report(new Error('enabled'));
           yield* SubscriptionRef.update(state, s => ({ ...s, revision: 2 }));
-          for (let i = 0; i < 5; i++) yield* Effect.yieldNow();
+          for (let i = 0; i < 5; i++) yield* Effect.yieldNow;
         }).pipe(Effect.provide(makeTestLogger().layer))
       )
     );

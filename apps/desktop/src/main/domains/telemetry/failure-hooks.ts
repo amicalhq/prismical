@@ -53,7 +53,7 @@ export const registerFailureHooks = (sources: FailureHookSources) =>
                 'main',
                 report.revision
               );
-            }).pipe(Effect.catchAllCause(() => Effect.void))
+            }).pipe(Effect.catchCause(() => Effect.void))
           )
         )
       )
@@ -91,10 +91,10 @@ export const registerFailureHooks = (sources: FailureHookSources) =>
           } catch {
             /* Logging cannot replace the original failure. */
           }
-          const policy = Effect.runSync(SubscriptionRef.get(telemetry.state));
+          const policy = SubscriptionRef.getUnsafe(telemetry.state);
           if (policy.enabled) {
-            if (Option.getOrElse(reports.unsafeSize(), () => 0) >= 32) recordDrop();
-            Queue.unsafeOffer(reports, {
+            if (Queue.sizeUnsafe(reports) >= 32) recordDrop();
+            Queue.offerUnsafe(reports, {
               error: safeError,
               properties,
               webContentsId,

@@ -127,7 +127,4 @@ export interface CaptureApi {
   ) => Effect.Effect<CaptureSession, CaptureSpawnError, Scope.Scope>;
 }
 
-export class Capture extends Context.Tag("desktop/recording/Capture")<
-  Capture,
-  CaptureApi
->() {}
+export class Capture extends Context.Service<Capture, CaptureApi>()('desktop/recording/Capture') {}

@@ -22,8 +22,8 @@ import {
   Queue,
   Scope,
   SubscriptionRef,
-  TestClock,
 } from 'effect';
+import { TestClock } from 'effect/testing';
 import { generateKeyPair, SignJWT } from 'jose';
 import { vi } from 'vitest';
 import type { SessionGateState } from '@prismical/desktop-contracts';
@@ -215,7 +215,7 @@ const makeWindowsStub = () => {
     Effect.gen(function* () {
       const events = yield* Queue.sliding<WindowEvent>(16);
       holder.offer = event => {
-        Queue.unsafeOffer(events, event);
+        Queue.offerUnsafe(events, event);
       };
       const service: WindowRegistryService = {
         openMainWindow: Effect.die('unused in stub'),
@@ -316,7 +316,7 @@ const build = (
 /** Lets real-promise work (fetch stub, jose) land between fiber steps. */
 const flush: Effect.Effect<void> = Effect.gen(function* () {
   for (let i = 0; i < 6; i++) {
-    yield* Effect.yieldNow();
+    yield* Effect.yieldNow;
     yield* Effect.promise(() => new Promise<void>(resolve => setImmediate(resolve)));
   }
 });
@@ -358,7 +358,7 @@ const deliverCallback = (
 const failureReason = (exit: Exit.Exit<unknown, unknown>): string | undefined =>
   Exit.isFailure(exit)
     ? Option.getOrUndefined(
-        Option.map(Cause.failureOption(exit.cause), error =>
+        Option.map(Cause.findErrorOption(exit.cause), error =>
           typeof error === 'object' && error !== null && 'reason' in error
             ? String((error as { reason: unknown }).reason)
             : undefined
@@ -387,7 +387,7 @@ describe('AuthService', () => {
       const stub = makeFetchStub(happyHandler());
       const { layer } = build(stub);
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const shellBase = fake.shell.openExternalCalls.length;
 
@@ -422,8 +422,8 @@ describe('AuthService', () => {
       );
       const { layer } = build(stub);
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const deepLinks = Context.get(ctx, DeepLinks);
 
@@ -464,8 +464,8 @@ describe('AuthService', () => {
         },
       });
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const deepLinks = Context.get(ctx, DeepLinks);
 
@@ -491,8 +491,8 @@ describe('AuthService', () => {
         );
         const { layer } = build(stub);
         const scope = yield* Scope.make();
-        const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-        yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+        const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+        yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
         const auth = Context.get(ctx, AuthService);
         const deepLinks = Context.get(ctx, DeepLinks);
 
@@ -512,7 +512,7 @@ describe('AuthService', () => {
       const stub = makeFetchStub(happyHandler());
       const { layer } = build(stub, { auth: { ...AUTH, oauthClientId: '' } });
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const shellBase = fake.shell.openExternalCalls.length;
 
@@ -537,8 +537,8 @@ describe('AuthService', () => {
       const stub = makeFetchStub(happyHandler());
       const { layer, logger } = build(stub, {}, { auth: { randomSource: varyingRandom } });
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const deepLinks = Context.get(ctx, DeepLinks);
       const shellBase = fake.shell.openExternalCalls.length;
@@ -576,7 +576,7 @@ describe('AuthService', () => {
       const stub = makeFetchStub(happyHandler());
       const { layer } = build(stub);
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const shellBase = fake.shell.openExternalCalls.length;
 
@@ -601,8 +601,8 @@ describe('AuthService', () => {
       const stub = makeFetchStub(happyHandler());
       const { layer } = build(stub);
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const deepLinks = Context.get(ctx, DeepLinks);
       const store = Context.get(ctx, SecureStore);
@@ -642,8 +642,8 @@ describe('AuthService', () => {
       const stub = makeFetchStub(happyHandler());
       const { layer } = build(stub);
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const deepLinks = Context.get(ctx, DeepLinks);
 
@@ -671,8 +671,8 @@ describe('AuthService', () => {
       const stub = makeFetchStub(happyHandler());
       const { layer, logger } = build(stub);
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const deepLinks = Context.get(ctx, DeepLinks);
       const shellBase = fake.shell.openExternalCalls.length;
@@ -699,8 +699,8 @@ describe('AuthService', () => {
       const stub = makeFetchStub(happyHandler());
       const { layer, logger } = build(stub);
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const deepLinks = Context.get(ctx, DeepLinks);
 
@@ -722,8 +722,8 @@ describe('AuthService', () => {
       const stub = makeFetchStub(happyHandler());
       const { layer } = build(stub);
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const deepLinks = Context.get(ctx, DeepLinks);
       const shellBase = fake.shell.openExternalCalls.length;
@@ -750,8 +750,8 @@ describe('AuthService', () => {
       const stub = makeFetchStub(happyHandler());
       const { layer, logger } = build(stub);
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const deepLinks = Context.get(ctx, DeepLinks);
 
@@ -780,8 +780,8 @@ describe('AuthService', () => {
       const stub = makeFetchStub(happyHandler({ exchange: { key: evilKeys.privateKey } }));
       const { layer } = build(stub);
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const deepLinks = Context.get(ctx, DeepLinks);
       yield* completeSignIn(auth, deepLinks, fake.shell.openExternalCalls.length);
@@ -799,8 +799,8 @@ describe('AuthService', () => {
       const stub = makeFetchStub(happyHandler({ exchange: { firstParty: false } }));
       const { layer } = build(stub);
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const deepLinks = Context.get(ctx, DeepLinks);
       const shellBase = fake.shell.openExternalCalls.length;
@@ -823,8 +823,8 @@ describe('AuthService', () => {
       );
       const { layer } = build(stub);
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const deepLinks = Context.get(ctx, DeepLinks);
       const store = Context.get(ctx, SecureStore);
@@ -857,8 +857,8 @@ describe('AuthService', () => {
       );
       const { layer } = build(stub);
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const deepLinks = Context.get(ctx, DeepLinks);
       const store = Context.get(ctx, SecureStore);
@@ -876,8 +876,8 @@ describe('AuthService', () => {
       const stub = makeFetchStub(happyHandler());
       const { layer } = build(stub);
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const deepLinks = Context.get(ctx, DeepLinks);
 
@@ -904,8 +904,8 @@ describe('AuthService', () => {
       );
       const { layer, windows } = build(stub);
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const deepLinks = Context.get(ctx, DeepLinks);
 
@@ -934,8 +934,8 @@ describe('AuthService', () => {
       });
       const { layer } = build(stub);
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const deepLinks = Context.get(ctx, DeepLinks);
       const store = Context.get(ctx, SecureStore);
@@ -971,8 +971,8 @@ describe('AuthService', () => {
       });
       const { layer } = build(stub);
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const deepLinks = Context.get(ctx, DeepLinks);
       const store = Context.get(ctx, SecureStore);
@@ -997,8 +997,8 @@ describe('AuthService', () => {
       const firstStub = makeFetchStub(happyHandler());
       const first = build(firstStub, { operationalDbPath: dbPath });
       const firstScope = yield* Scope.make();
-      const firstCtx = yield* Layer.build(first.layer).pipe(Scope.extend(firstScope));
-      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(firstCtx), Scope.extend(firstScope));
+      const firstCtx = yield* Layer.build(first.layer).pipe(Scope.provide(firstScope));
+      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(firstCtx), Scope.provide(firstScope));
       yield* completeSignIn(
         Context.get(firstCtx, AuthService),
         Context.get(firstCtx, DeepLinks),
@@ -1012,7 +1012,7 @@ describe('AuthService', () => {
       );
       const second = build(secondStub, { operationalDbPath: dbPath });
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(second.layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(second.layer).pipe(Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const store = Context.get(ctx, SecureStore);
 
@@ -1038,8 +1038,8 @@ describe('AuthService', () => {
       const firstStub = makeFetchStub(happyHandler());
       const first = build(firstStub, { operationalDbPath: dbPath });
       const firstScope = yield* Scope.make();
-      const firstCtx = yield* Layer.build(first.layer).pipe(Scope.extend(firstScope));
-      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(firstCtx), Scope.extend(firstScope));
+      const firstCtx = yield* Layer.build(first.layer).pipe(Scope.provide(firstScope));
+      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(firstCtx), Scope.provide(firstScope));
       yield* completeSignIn(
         Context.get(firstCtx, AuthService),
         Context.get(firstCtx, DeepLinks),
@@ -1052,7 +1052,7 @@ describe('AuthService', () => {
       });
       const second = build(offlineStub, { operationalDbPath: dbPath });
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(second.layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(second.layer).pipe(Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const store = Context.get(ctx, SecureStore);
 
@@ -1074,7 +1074,7 @@ describe('AuthService', () => {
         new Promise<void>(resolve => { release = resolve; })
       );
       try {
-        const launch = yield* Effect.fork(auth.signIn());
+        const launch = yield* Effect.forkChild(auth.signIn());
         yield* awaitCallCount(() => browser.mock.calls, 1, 'browser launch is pending');
         yield* auth.signOut();
         release();
@@ -1129,7 +1129,7 @@ describe('AuthService', () => {
           return happyHandler()(url, body);
         };
         yield* auth.signIn();
-        const exchange = yield* Effect.fork(auth.consumePendingEntry(callback));
+        const exchange = yield* Effect.forkChild(auth.consumePendingEntry(callback));
         yield* awaitCallCount(stub.exchangeCalls, alreadySignedIn ? 2 : 1, 'code exchange is in flight');
         yield* auth.signOut();
         release();
@@ -1160,7 +1160,7 @@ describe('AuthService', () => {
         if (url === AUTH.revokeUrl) await blockedRevoke;
         return happyHandler({ exchange: { refreshToken: SENTINEL_REFRESH_2 } })(url, body);
       };
-      const logout = yield* Effect.fork(auth.signOut());
+      const logout = yield* Effect.forkChild(auth.signOut());
       yield* awaitCallCount(stub.revokeCalls, 1, 'old token revocation is pending');
       try {
         yield* auth.signIn();
@@ -1182,8 +1182,8 @@ describe('AuthService', () => {
       const stub = makeFetchStub(happyHandler());
       const { layer } = build(stub);
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const deepLinks = Context.get(ctx, DeepLinks);
       const store = Context.get(ctx, SecureStore);
@@ -1221,8 +1221,8 @@ describe('AuthService', () => {
       );
       const { layer } = build(stub);
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const deepLinks = Context.get(ctx, DeepLinks);
 
@@ -1255,8 +1255,8 @@ describe('AuthService', () => {
       const stub = makeFetchStub(happyHandler());
       const { layer } = build(stub);
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const deepLinks = Context.get(ctx, DeepLinks);
 
@@ -1292,8 +1292,8 @@ describe('AuthService', () => {
       );
       const { layer } = build(stub);
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const deepLinks = Context.get(ctx, DeepLinks);
       const shellBase = fake.shell.openExternalCalls.length;
@@ -1323,8 +1323,8 @@ describe('AuthService', () => {
       );
       const { layer } = build(stub);
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const deepLinks = Context.get(ctx, DeepLinks);
       const store = Context.get(ctx, SecureStore);
@@ -1365,8 +1365,8 @@ describe('AuthService', () => {
       });
       const { layer } = build(stub);
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const deepLinks = Context.get(ctx, DeepLinks);
       const store = Context.get(ctx, SecureStore);
@@ -1404,8 +1404,8 @@ describe('AuthService', () => {
       );
       const { layer } = build(stub);
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const deepLinks = Context.get(ctx, DeepLinks);
       const store = Context.get(ctx, SecureStore);
@@ -1452,14 +1452,14 @@ describe('AuthService', () => {
       );
       const { layer } = build(stub);
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const deepLinks = Context.get(ctx, DeepLinks);
       const store = Context.get(ctx, SecureStore);
 
       yield* completeSignIn(auth, deepLinks, fake.shell.openExternalCalls.length);
-      const caller = yield* Effect.fork(auth.getIdToken());
+      const caller = yield* Effect.forkChild(auth.getIdToken());
       yield* flush;
       assert.strictEqual(stub.refreshCalls().length, 1, 'flight is on the wire');
 
@@ -1480,6 +1480,72 @@ describe('AuthService', () => {
     })
   );
 
+  it.effect('closing auth waits for an active rotation to persist before releasing its store', () =>
+    Effect.gen(function* () {
+      const { stub, release } = gatedRefreshStub(() =>
+        tokenBody({ refreshToken: SENTINEL_REFRESH_2 })
+      );
+      const persisted: string[] = [];
+      const { layer } = build(stub, {}, {
+        decorateSecureStore: real => ({
+          ...real,
+          setSecret: (key, value) => real.setSecret(key, value).pipe(
+            Effect.tap(() => Effect.sync(() => { persisted.push(value); }))
+          ),
+        }),
+      });
+      const scope = yield* Scope.make();
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
+      const auth = Context.get(ctx, AuthService);
+      const deepLinks = Context.get(ctx, DeepLinks);
+      yield* completeSignIn(auth, deepLinks, fake.shell.openExternalCalls.length);
+      const caller = yield* Effect.forkChild(auth.getIdToken());
+      yield* flush;
+      assert.strictEqual(stub.refreshCalls().length, 1);
+
+      const closing = yield* Effect.forkChild(Scope.close(scope, Exit.void));
+      yield* flush;
+      assert.isUndefined(closing.pollUnsafe(), 'auth keeps the store open while rotation runs');
+      release();
+      yield* Fiber.join(closing);
+      yield* Fiber.join(caller);
+      assert.deepStrictEqual(persisted, [SENTINEL_REFRESH_1, SENTINEL_REFRESH_2]);
+    })
+  );
+
+  it.effect('refresh callers settle when auth closes before their flight starts', () =>
+    Effect.gen(function* () {
+      const stub = makeFetchStub(happyHandler({ exchange: { expiresIn: 3_600 } }));
+      const { layer } = build(stub);
+      const scope = yield* Scope.make();
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
+      const auth = Context.get(ctx, AuthService);
+      const deepLinks = Context.get(ctx, DeepLinks);
+      yield* completeSignIn(auth, deepLinks, fake.shell.openExternalCalls.length);
+      yield* Scope.close(scope, Exit.void);
+      yield* TestClock.adjust(Duration.hours(1));
+
+      const callers = yield* Effect.all([
+        Effect.forkChild(auth.getIdToken()),
+        Effect.forkChild(auth.getIdToken()),
+        Effect.forkChild(auth.getIdToken()),
+      ]);
+      yield* flush;
+      for (const caller of callers) {
+        assert.isDefined(caller.pollUnsafe(), 'a flight that never starts still settles every waiter');
+        assert.strictEqual(failureReason(yield* Fiber.await(caller)), 'transient');
+      }
+      // A later call must also complete, without reusing an uncompleted slot.
+      const later = yield* Effect.forkChild(auth.getIdToken());
+      yield* flush;
+      assert.isDefined(later.pollUnsafe());
+      assert.strictEqual(failureReason(yield* Fiber.await(later)), 'transient');
+      assert.strictEqual(stub.refreshCalls().length, 0, 'a closed auth scope starts no token request');
+    })
+  );
+
   it.effect('persist failure after rotation is definitive: new token revoked, account dropped, dead token never replayed', () =>
     Effect.gen(function* () {
       let setSecretAttempts = 0;
@@ -1494,14 +1560,14 @@ describe('AuthService', () => {
               ? Effect.sync(() => {
                   setSecretAttempts += 1;
                 }).pipe(
-                  Effect.zipRight(Effect.fail(new SecureStoreError({ reason: 'unavailable' })))
+                  Effect.andThen(Effect.fail(new SecureStoreError({ reason: 'unavailable' })))
                 )
               : real.setSecret(key, value),
         }),
       });
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const deepLinks = Context.get(ctx, DeepLinks);
       const store = Context.get(ctx, SecureStore);
@@ -1542,14 +1608,14 @@ describe('AuthService', () => {
       );
       const { layer } = build(stub);
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const deepLinks = Context.get(ctx, DeepLinks);
       const store = Context.get(ctx, SecureStore);
 
       yield* completeSignIn(auth, deepLinks, fake.shell.openExternalCalls.length);
-      const caller = yield* Effect.fork(auth.getIdToken());
+      const caller = yield* Effect.forkChild(auth.getIdToken());
       yield* flush;
       assert.strictEqual(stub.refreshCalls().length, 1, 'flight is on the wire');
 
@@ -1588,15 +1654,15 @@ describe('AuthService', () => {
       });
       const { layer, windows } = build(stub);
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const deepLinks = Context.get(ctx, DeepLinks);
       const store = Context.get(ctx, SecureStore);
 
       // Token minted with expires_in 600 s — already inside the skew.
       yield* completeSignIn(auth, deepLinks, fake.shell.openExternalCalls.length);
-      const winner = yield* Effect.fork(auth.getIdToken());
+      const winner = yield* Effect.forkChild(auth.getIdToken());
       yield* flush;
       assert.strictEqual(stub.refreshCalls().length, 1, 'flight is on the wire');
 
@@ -1641,8 +1707,8 @@ describe('AuthService', () => {
         }),
       });
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const deepLinks = Context.get(ctx, DeepLinks);
 
@@ -1669,8 +1735,8 @@ describe('AuthService', () => {
       );
       const { layer } = build(stub);
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const deepLinks = Context.get(ctx, DeepLinks);
 
@@ -1707,8 +1773,8 @@ describe('AuthService', () => {
       });
       const { layer, logger } = build(stub);
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const deepLinks = Context.get(ctx, DeepLinks);
 
@@ -1758,8 +1824,8 @@ describe('AuthService', () => {
       });
       const { layer, logger, windows } = build(stub);
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const deepLinks = Context.get(ctx, DeepLinks);
 
@@ -1808,8 +1874,8 @@ describe('AuthService', () => {
       });
       const { layer } = build(stub);
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const deepLinks = Context.get(ctx, DeepLinks);
 
@@ -1843,7 +1909,7 @@ describe('AuthService', () => {
         }
         if (url === AUTH.tokenUrl && body['grant_type'] === 'refresh_token') {
           if (hang) {
-            // Never settles — only Effect.timeoutFail in postJson can end this.
+            // Never settles — only Effect.timeoutOrElse in postJson can end this.
             return new Promise<Response>(() => {});
           }
           return jsonResponse(await tokenBody({ refreshToken: SENTINEL_REFRESH_2 }));
@@ -1852,14 +1918,14 @@ describe('AuthService', () => {
       });
       const { layer, logger } = build(stub);
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const deepLinks = Context.get(ctx, DeepLinks);
       const store = Context.get(ctx, SecureStore);
 
       yield* completeSignIn(auth, deepLinks, fake.shell.openExternalCalls.length);
-      const caller = yield* Effect.fork(Effect.exit(auth.getIdToken()));
+      const caller = yield* Effect.forkChild(Effect.exit(auth.getIdToken()));
       yield* flush;
       assert.strictEqual(stub.refreshCalls().length, 1, 'flight is on the wire');
 
@@ -1867,7 +1933,7 @@ describe('AuthService', () => {
       const budgetMs = Duration.toMillis(TOKEN_REQUEST_TIMEOUT);
       yield* TestClock.adjust(Duration.millis(budgetMs - 1000));
       yield* flush;
-      assert.isNull(Option.getOrNull(yield* Fiber.poll(caller)), 'caller still parked inside the budget');
+      assert.isUndefined(caller.pollUnsafe(), 'caller still parked inside the budget');
       // …and at the 15 s boundary the budget trips with a TYPED transient failure.
       yield* TestClock.adjust(Duration.seconds(1));
       yield* flush;
@@ -1906,8 +1972,8 @@ describe('AuthService', () => {
       });
       const { layer, logger } = build(stub);
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const deepLinks = Context.get(ctx, DeepLinks);
       const store = Context.get(ctx, SecureStore);
@@ -1944,8 +2010,8 @@ describe('AuthService', () => {
       const stub = makeFetchStub(happyHandler());
       const { layer, logger } = build(stub);
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const deepLinks = Context.get(ctx, DeepLinks);
 
@@ -1985,8 +2051,8 @@ describe('AuthService', () => {
       });
       const { layer, logger } = build(stub);
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const deepLinks = Context.get(ctx, DeepLinks);
 
@@ -2040,15 +2106,15 @@ describe('AuthService', () => {
       });
       const auth = Context.get(yield* Layer.build(layer), AuthService);
       yield* auth.signIn();
-      const exchange = yield* Effect.fork(auth.consumePendingEntry({
+      const exchange = yield* Effect.forkChild(auth.consumePendingEntry({
         _tag: 'OAuthCallback', code: 'code-1', state: expectedState, receivedAt: Date.now(),
       }));
       yield* awaitCallCount(stub.revokeCalls, 1, 'compensation revoke is in flight');
-      const logout = yield* Effect.fork(auth.signOut());
+      const logout = yield* Effect.forkChild(auth.signOut());
       try {
         yield* flush;
         assert.strictEqual((yield* SubscriptionRef.get(auth.sessionState)).gate, 'signed-out');
-        assert.isTrue(Option.isSome(yield* Fiber.poll(logout)), 'sign-out completed before revoke');
+        assert.isTrue(logout.pollUnsafe() !== undefined, 'sign-out completed before revoke');
         yield* auth.signIn();
       } finally {
         release();
@@ -2071,8 +2137,8 @@ describe('AuthService', () => {
         }),
       });
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const deepLinks = Context.get(ctx, DeepLinks);
       const store = Context.get(ctx, SecureStore);
@@ -2114,8 +2180,8 @@ describe('AuthService', () => {
         }),
       });
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const deepLinks = Context.get(ctx, DeepLinks);
       const store = Context.get(ctx, SecureStore);
@@ -2149,8 +2215,8 @@ describe('AuthService', () => {
         }),
       });
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const deepLinks = Context.get(ctx, DeepLinks);
       const db = Context.get(ctx, OperationalDb);
@@ -2189,8 +2255,8 @@ describe('AuthService', () => {
       );
       const { layer } = build(stub);
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const deepLinks = Context.get(ctx, DeepLinks);
       const db = Context.get(ctx, OperationalDb);
@@ -2220,8 +2286,8 @@ describe('AuthService', () => {
       );
       const { layer, logger } = build(stub);
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* Effect.forkScoped(runAuthConsumer).pipe(Effect.provide(ctx), Scope.provide(scope));
       const auth = Context.get(ctx, AuthService);
       const deepLinks = Context.get(ctx, DeepLinks);
 

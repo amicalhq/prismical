@@ -55,7 +55,7 @@ describe('SecureStore', () => {
     Effect.gen(function* () {
       const { layer } = build();
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const store = Context.get(ctx, SecureStore);
       const db = Context.get(ctx, OperationalDb);
 
@@ -83,7 +83,7 @@ describe('SecureStore', () => {
       fake.safeStorage.available = false;
       const { layer } = build();
       const scope = yield* Scope.make();
-      const exit = yield* Effect.exit(Layer.build(layer).pipe(Scope.extend(scope)));
+      const exit = yield* Effect.exit(Layer.build(layer).pipe(Scope.provide(scope)));
       fake.safeStorage.available = true;
       assert.isTrue(Exit.isFailure(exit));
       if (Exit.isFailure(exit)) {
@@ -98,7 +98,7 @@ describe('SecureStore', () => {
       fake.safeStorage.available = false; // must not matter under E2E
       const { layer, logger } = build({ isE2E: true, secureStoreMode: 'e2e-fake' });
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       fake.safeStorage.available = true;
       const store = Context.get(ctx, SecureStore);
       const db = Context.get(ctx, OperationalDb);

@@ -80,7 +80,7 @@ const buildCapture = (
       Layer.provide(testConfigLayer({ platform })),
     ),
   ).pipe(
-    Scope.extend(scope),
+    Scope.provide(scope),
     Effect.map((ctx) => Context.get(ctx, Capture)),
   );
 
@@ -88,7 +88,7 @@ const failureTag = (
   exit: Exit.Exit<unknown, { readonly _tag: string }>,
 ): string | undefined =>
   Exit.isFailure(exit)
-    ? Option.getOrUndefined(Cause.failureOption(exit.cause))?._tag
+    ? Option.getOrUndefined(Cause.findErrorOption(exit.cause))?._tag
     : undefined;
 
 describe("CaptureProvider native audio-capture Effect wrapper", () => {
@@ -100,7 +100,7 @@ describe("CaptureProvider native audio-capture Effect wrapper", () => {
 
       yield* capture
         .capture("dual", { debugArtifactsDir: "/tmp/art", aecRenderHoldbackMs: 40 })
-        .pipe(Scope.extend(scope));
+        .pipe(Scope.provide(scope));
 
       const child = control.last();
       assert.strictEqual(child.command, "/fake/bin/audio-capture");
@@ -122,10 +122,10 @@ describe("CaptureProvider native audio-capture Effect wrapper", () => {
       const scope = yield* Scope.make();
       const capture = yield* buildCapture(logger, scope);
 
-      yield* capture.capture("mic").pipe(Scope.extend(scope));
+      yield* capture.capture("mic").pipe(Scope.provide(scope));
       assert.deepStrictEqual(control.last().args, ["--mode", "mic"]);
 
-      yield* capture.capture("system").pipe(Scope.extend(scope));
+      yield* capture.capture("system").pipe(Scope.provide(scope));
       assert.deepStrictEqual(control.last().args, ["--mode", "system"]);
 
       yield* Scope.close(scope, Exit.void);
@@ -139,7 +139,7 @@ describe("CaptureProvider native audio-capture Effect wrapper", () => {
       const capture = yield* buildCapture(logger, scope);
       const session = yield* capture
         .capture("dual", { micDeviceUid: "mic-b" })
-        .pipe(Scope.extend(scope));
+        .pipe(Scope.provide(scope));
       const child = control.last();
 
       assert.deepStrictEqual(child.args, ["--mode", "dual", "--mic-device", "mic-b"]);
@@ -161,7 +161,7 @@ describe("CaptureProvider native audio-capture Effect wrapper", () => {
       const capture = yield* buildCapture(logger, scope, "win32");
       const session = yield* capture
         .capture("dual", { micDeviceUid: "mic-b" })
-        .pipe(Scope.extend(scope));
+        .pipe(Scope.provide(scope));
       const child = control.last();
 
       assert.deepStrictEqual(child.args, ["--mode", "dual", "--mic-device", "mic-b"]);
@@ -172,8 +172,8 @@ describe("CaptureProvider native audio-capture Effect wrapper", () => {
         '{"cmd":"follow-default","rev":2}\n',
       ]);
 
-      const closing = yield* Effect.fork(Scope.close(scope, Exit.void));
-      yield* Effect.yieldNow();
+      const closing = yield* Effect.forkChild(Scope.close(scope, Exit.void));
+      yield* Effect.yieldNow;
       assert.deepStrictEqual(child.stdin.ended, ["stop\n"]);
       child.simulateExit(0, null);
       yield* Fiber.join(closing);
@@ -185,7 +185,7 @@ describe("CaptureProvider native audio-capture Effect wrapper", () => {
       const logger = makeTestLogger();
       const scope = yield* Scope.make();
       const capture = yield* buildCapture(logger, scope);
-      const session = yield* capture.capture("dual").pipe(Scope.extend(scope));
+      const session = yield* capture.capture("dual").pipe(Scope.provide(scope));
       const child = control.last();
 
       const samples = new Float32Array([0.5, -0.5, 0.125, -0.125]);
@@ -235,7 +235,7 @@ describe("CaptureProvider native audio-capture Effect wrapper", () => {
       const logger = makeTestLogger();
       const scope = yield* Scope.make();
       const capture = yield* buildCapture(logger, scope);
-      const session = yield* capture.capture("dual").pipe(Scope.extend(scope));
+      const session = yield* capture.capture("dual").pipe(Scope.provide(scope));
       const child = control.last();
 
       assert.isTrue(Option.isNone(yield* session.aec), "none before the line");
@@ -253,7 +253,7 @@ describe("CaptureProvider native audio-capture Effect wrapper", () => {
       const logger = makeTestLogger();
       const scope = yield* Scope.make();
       const capture = yield* buildCapture(logger, scope);
-      const session = yield* capture.capture("dual").pipe(Scope.extend(scope));
+      const session = yield* capture.capture("dual").pipe(Scope.provide(scope));
       const child = control.last();
 
       child.stderr.pushData(
@@ -322,7 +322,7 @@ describe("CaptureProvider native audio-capture Effect wrapper", () => {
       const logger = makeTestLogger();
       const scope = yield* Scope.make();
       const capture = yield* buildCapture(logger, scope);
-      const session = yield* capture.capture("dual").pipe(Scope.extend(scope));
+      const session = yield* capture.capture("dual").pipe(Scope.provide(scope));
       const child = control.last();
 
       // Queue more than the former 512-frame cap before the consumer starts.
@@ -351,7 +351,7 @@ describe("CaptureProvider native audio-capture Effect wrapper", () => {
 
       control.configureNext({ binaryError: new Error("binary not found") });
       const exit = yield* Effect.exit(
-        capture.capture("dual").pipe(Scope.extend(scope)),
+        capture.capture("dual").pipe(Scope.provide(scope)),
       );
 
       assert.strictEqual(failureTag(exit), "CaptureSpawnError");
@@ -365,7 +365,7 @@ describe("CaptureProvider native audio-capture Effect wrapper", () => {
       const logger = makeTestLogger();
       const scope = yield* Scope.make();
       const capture = yield* buildCapture(logger, scope);
-      const session = yield* capture.capture("dual").pipe(Scope.extend(scope));
+      const session = yield* capture.capture("dual").pipe(Scope.provide(scope));
       const child = control.last();
 
       // A good frame flows, then the helper dies on its own.
@@ -390,7 +390,7 @@ describe("CaptureProvider native audio-capture Effect wrapper", () => {
       const logger = makeTestLogger();
       const scope = yield* Scope.make();
       const capture = yield* buildCapture(logger, scope);
-      const session = yield* capture.capture("dual").pipe(Scope.extend(scope));
+      const session = yield* capture.capture("dual").pipe(Scope.provide(scope));
       const child = control.last();
 
       child.simulateError(new Error("spawn EACCES"));
@@ -407,7 +407,7 @@ describe("CaptureProvider native audio-capture Effect wrapper", () => {
       const logger = makeTestLogger();
       const scope = yield* Scope.make();
       const capture = yield* buildCapture(logger, scope);
-      const session = yield* capture.capture("dual").pipe(Scope.extend(scope));
+      const session = yield* capture.capture("dual").pipe(Scope.provide(scope));
       const child = control.last();
 
       // Non-conforming header (version 2) — the reader throws; the wrapper
@@ -430,7 +430,7 @@ describe("CaptureProvider native audio-capture Effect wrapper", () => {
       const logger = makeTestLogger();
       const scope = yield* Scope.make();
       const capture = yield* buildCapture(logger, scope);
-      yield* capture.capture("dual").pipe(Scope.extend(scope));
+      yield* capture.capture("dual").pipe(Scope.provide(scope));
       const child = control.last();
 
       assert.strictEqual(child.stdout.listenerCount("data"), 1);
@@ -453,18 +453,18 @@ describe("CaptureProvider native audio-capture Effect wrapper", () => {
       const logger = makeTestLogger();
       const scope = yield* Scope.make();
       const capture = yield* buildCapture(logger, scope);
-      const session = yield* capture.capture("dual").pipe(Scope.extend(scope));
+      const session = yield* capture.capture("dual").pipe(Scope.provide(scope));
       const child = control.last();
 
       // A consumer blocked on an empty queue (recording mid-flight).
-      const consumer = yield* Effect.fork(Queue.take(session.frames));
-      yield* Effect.yieldNow();
+      const consumer = yield* Effect.forkChild(Queue.take(session.frames));
+      yield* Effect.yieldNow;
 
       yield* Scope.close(scope, Exit.void);
 
       const outcome = yield* Fiber.await(consumer);
       assert.isTrue(
-        Exit.isInterrupted(outcome),
+        Exit.hasInterrupts(outcome),
         "the blocked consumer was interrupted by teardown (queue shutdown)",
       );
       assert.isFalse(child.running, "no orphaned process");
@@ -483,7 +483,7 @@ describe("CaptureProvider native audio-capture Effect wrapper", () => {
         const scope = yield* Scope.make();
         const capture = yield* buildCapture(logger, scope);
         control.configureNext({ autoExitOnSigterm: false });
-        yield* capture.capture("dual").pipe(Scope.extend(scope));
+        yield* capture.capture("dual").pipe(Scope.provide(scope));
         const child = control.last();
 
         yield* Scope.close(scope, Exit.void);

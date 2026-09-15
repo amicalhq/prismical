@@ -1,9 +1,10 @@
 /**
  * The Boot program — everything the app does between "runtime exists" and
- * "quit signal". Runs under one Scope (start.ts wraps it in Effect.scoped):
+ * "quit signal". Runs under one Scope owned explicitly by start.ts:
  * closing that scope removes the window, the IPC handlers and every consumer
  * fiber. Layer-owned resources (DB, tray, session handlers, event listeners)
- * are released afterwards by runtime.dispose().
+ * are released afterwards by runtime.dispose(). Both cleanup steps share the
+ * quit deadline, including a stuck callback finalizer in the program scope.
  */
 import { app } from 'electron';
 import { Effect, Queue, type Scope } from 'effect';
@@ -51,10 +52,10 @@ export const bootProgram: Effect.Effect<void, WindowError, BootServices | Scope.
     // back now.
     if (pendingReset.applied !== null) {
       yield* electronApp.clearRendererStorage.pipe(
-        Effect.catchAllDefect(defect =>
+        Effect.catchDefect(defect =>
           log.error('renderer storage clear after reset failed', { error: defect })
         ),
-        Effect.zipRight(log.warn('renderer storage cleared after reset'))
+        Effect.andThen(log.warn('renderer storage cleared after reset'))
       );
     }
     yield* Effect.sync(() => installApplicationMenu(i18n.t));

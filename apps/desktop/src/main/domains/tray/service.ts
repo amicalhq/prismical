@@ -10,4 +10,6 @@ export interface TrayServiceApi {
   readonly commands: Queue.Dequeue<TrayCommand>;
 }
 
-export class TrayService extends Context.Tag('desktop/TrayService')<TrayService, TrayServiceApi>() {}
+export class TrayService extends Context.Service<TrayService, TrayServiceApi>()(
+  'desktop/TrayService'
+) {}

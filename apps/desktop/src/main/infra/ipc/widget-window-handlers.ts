@@ -28,7 +28,7 @@ import {
   parseWidgetState,
   type WidgetStateView,
 } from '@prismical/desktop-contracts';
-import { Deferred, Effect, Option, Ref, Runtime, Stream, type Scope } from 'effect';
+import { SubscriptionRef, Deferred, Effect, Option, Ref, FiberSet, Stream, type Scope } from 'effect';
 import { toWidgetState } from '../../domains/detection/widget-policy';
 import { DesktopI18n } from '../../domains/i18n/service';
 import { RecordingBridge } from '../../domains/recording/bridge';
@@ -95,8 +95,11 @@ export const registerWidgetWindowHandlers: Effect.Effect<
   const i18n = yield* DesktopI18n;
   const log = (yield* MainLogger).scoped('widget-ipc');
 
-  const runtime = yield* Effect.runtime<WidgetHandlerEnv>();
-  const runPromise = Runtime.runPromise(runtime);
+  const runOwned = yield* FiberSet.makeRuntimePromise<WidgetHandlerEnv>();
+  // rc.115 starts a fiber before registering it. Yield before handler work so
+  // a synchronous callback cannot close the owner before the fiber is tracked.
+  const runPromise = <A, E>(effect: Effect.Effect<A, E, WidgetHandlerEnv>) =>
+    runOwned(Effect.andThen(Effect.yieldNow, effect));
   const firstState = yield* Deferred.make<WidgetStateView>();
   const latestState = yield* Ref.make<WidgetStateView | null>(null);
 
@@ -110,7 +113,7 @@ export const registerWidgetWindowHandlers: Effect.Effect<
             ? Effect.void
             : log
                 .warn('widget ipc rejected: unknown sender', { context: { webContentsId: event.sender.id } })
-                .pipe(Effect.zipRight(Effect.fail(new SenderRejected('UNKNOWN_SENDER'))))
+                .pipe(Effect.andThen(Effect.fail(new SenderRejected('UNKNOWN_SENDER'))))
         )
       );
 
@@ -134,7 +137,7 @@ export const registerWidgetWindowHandlers: Effect.Effect<
   yield* acquireHandle(WIDGET_CHANNELS.stateGet, event =>
     runPromise(
       validateWidgetSender(event).pipe(
-        Effect.zipRight(
+        Effect.andThen(
           Ref.get(latestState).pipe(
             Effect.flatMap(state =>
               state === null ? Deferred.await(firstState) : Effect.succeed(state)
@@ -155,7 +158,7 @@ export const registerWidgetWindowHandlers: Effect.Effect<
           if (!parsed.success) {
             return log
               .warn('widget:setInteractive rejected: invalid payload', { context: { issues: parsed.issues } })
-              .pipe(Effect.zipRight(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
+              .pipe(Effect.andThen(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
           }
           return windows.setWidgetIgnoreMouse(!parsed.data.interactive);
         })
@@ -172,7 +175,7 @@ export const registerWidgetWindowHandlers: Effect.Effect<
   yield* acquireHandle(WIDGET_CHANNELS.startRecording, event =>
     runPromise(
       validateWidgetSender(event).pipe(
-        Effect.zipRight(floatBridge.open(null, { fresh: true, autoStart: true })),
+        Effect.andThen(floatBridge.open(null, { fresh: true, autoStart: true })),
         Effect.flatMap(opened =>
           opened
             ? log.info('widget:startRecording expanded the float (fresh + autostart)')
@@ -185,30 +188,30 @@ export const registerWidgetWindowHandlers: Effect.Effect<
   // widget:stopRecording — the pill's "Stop": stop whatever recording is active
   // (the widget never learns the recordingId). A no-op when nothing is in flight.
   yield* acquireHandle(WIDGET_CHANNELS.stopRecording, event =>
-    runPromise(validateWidgetSender(event).pipe(Effect.zipRight(recording.stopActive)))
+    runPromise(validateWidgetSender(event).pipe(Effect.andThen(recording.stopActive)))
   );
 
   // widget:pauseRecording / widget:resumeRecording — the widget never learns
   // the recording id, so the bridge targets the active native recording.
   yield* acquireHandle(WIDGET_CHANNELS.pauseRecording, event =>
-    runPromise(validateWidgetSender(event).pipe(Effect.zipRight(recording.pauseActive)))
+    runPromise(validateWidgetSender(event).pipe(Effect.andThen(recording.pauseActive)))
   );
   yield* acquireHandle(WIDGET_CHANNELS.resumeRecording, event =>
-    runPromise(validateWidgetSender(event).pipe(Effect.zipRight(recording.resumeActive)))
+    runPromise(validateWidgetSender(event).pipe(Effect.andThen(recording.resumeActive)))
   );
 
   // widget:expandNote — the pill's 📓: open the floating note
   // on the slot (the FloatBridge resolves last-floated / fresh-quick-note).
   yield* acquireHandle(WIDGET_CHANNELS.expandNote, event =>
     runPromise(
-      validateWidgetSender(event).pipe(Effect.zipRight(floatBridge.open(null)), Effect.asVoid)
+      validateWidgetSender(event).pipe(Effect.andThen(floatBridge.open(null)), Effect.asVoid)
     )
   );
 
   // widget:openMain — the recording pill's "Open note": focus the main window.
   // MVP focuses only; navigating to the recording's note is a deferred nicety.
   yield* acquireHandle(WIDGET_CHANNELS.openMain, event =>
-    runPromise(validateWidgetSender(event).pipe(Effect.zipRight(windows.focusMainWindow)))
+    runPromise(validateWidgetSender(event).pipe(Effect.andThen(windows.focusMainWindow)))
   );
 
   // widget:dragMove / widget:dragEnd — 2-axis drag-to-reposition. Both apply the
@@ -223,7 +226,7 @@ export const registerWidgetWindowHandlers: Effect.Effect<
     if (!parsed.success) {
       return log
         .warn('widget:drag rejected: invalid payload', { context: { issues: parsed.issues } })
-        .pipe(Effect.zipRight(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
+        .pipe(Effect.andThen(Effect.fail(new PayloadRejected('INVALID_REQUEST'))));
     }
     return windows.dragDockWindow(parsed.data).pipe(
       Effect.flatMap(
@@ -273,11 +276,11 @@ export const registerWidgetWindowHandlers: Effect.Effect<
   yield* Effect.forkScoped(
     Stream.zipLatestAll(
       recording.stateChanges,
-      windows.mainWindowFocused.changes,
+      SubscriptionRef.changes(windows.mainWindowFocused),
       // The user's 3-way visibility setting. Projected down to just the
       // `widgetVisibility` string + deduped so a non-visibility settings change
       // (language, dock, …) never churns the widget push.
-      settings.settings.changes.pipe(
+      SubscriptionRef.changes(settings.settings).pipe(
         Stream.map(current => current.widgetVisibility),
         Stream.changes
       )
@@ -292,8 +295,8 @@ export const registerWidgetWindowHandlers: Effect.Effect<
         const parsed = parseWidgetState(view);
         const push = parsed.success
           ? Ref.set(latestState, parsed.data).pipe(
-              Effect.zipRight(Deferred.succeed(firstState, parsed.data)),
-              Effect.zipRight(
+              Effect.andThen(Deferred.succeed(firstState, parsed.data)),
+              Effect.andThen(
                 windows
                   .sendToWidgetWindow(WIDGET_CHANNELS.stateStream, parsed.data)
                   .pipe(Effect.asVoid)
@@ -303,7 +306,7 @@ export const registerWidgetWindowHandlers: Effect.Effect<
               issues: parsed.issues,
             } });
         return push.pipe(
-          Effect.catchAllDefect(defect =>
+          Effect.catchDefect(defect =>
             log.error('widget:state push failed — fiber continues', { error: defect })
           )
         );
@@ -342,7 +345,7 @@ export const registerWidgetWindowHandlers: Effect.Effect<
                   issues: parsed.issues,
                 } });
           }),
-          Effect.catchAllDefect(defect =>
+          Effect.catchDefect(defect =>
             log.error('widget:level push failed — fiber continues', { error: defect })
           )
         )
@@ -363,7 +366,7 @@ export const registerWidgetWindowHandlers: Effect.Effect<
   // values applied, and a boot-time re-apply RACES a concurrent drag's
   // setBounds — only genuine changes act.
   yield* Effect.forkScoped(
-    settings.settings.changes.pipe(
+    SubscriptionRef.changes(settings.settings).pipe(
       Stream.map(current => ({
         anchors: current.dockAnchors,
         displayId: current.dockDisplayId,
@@ -384,8 +387,8 @@ export const registerWidgetWindowHandlers: Effect.Effect<
       ),
       Stream.runForEach(() =>
         windows.repositionDockWindow.pipe(
-          Effect.zipRight(windows.repositionFloatNoteWindow),
-          Effect.catchAllDefect(defect =>
+          Effect.andThen(windows.repositionFloatNoteWindow),
+          Effect.catchDefect(defect =>
             log.error('dock reposition failed — fiber continues', { error: defect })
           )
         )
@@ -393,13 +396,13 @@ export const registerWidgetWindowHandlers: Effect.Effect<
     )
   );
   yield* Effect.forkScoped(
-    settings.settings.changes.pipe(
+    SubscriptionRef.changes(settings.settings).pipe(
       Stream.map(current => current.dockContentProtection),
       Stream.changes,
       Stream.drop(1),
       Stream.runForEach(enabled =>
         windows.setDockContentProtection(enabled).pipe(
-          Effect.catchAllDefect(defect =>
+          Effect.catchDefect(defect =>
             log.error('dock content protection apply failed — fiber continues', { error: defect })
           )
         )

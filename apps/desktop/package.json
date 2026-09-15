@@ -53,7 +53,7 @@
     "@tanstack/react-router": "^1.95.0",
     "better-sqlite3": "13.0.3",
     "drizzle-orm": "catalog:",
-    "effect": "3.21.2",
+    "effect": "4.0.0-rc.115",
     "electron-log": "^5.4.0",
     "i18next": "catalog:",
     "jose": "^6.1.0",
@@ -71,7 +71,7 @@
     "gleap": "17.0.1"
   },
   "devDependencies": {
-    "@effect/vitest": "^0.29.0",
+    "@effect/vitest": "4.0.0-rc.115",
     "@electron-forge/cli": "7.11.2",
     "@electron-forge/maker-dmg": "7.11.2",
     "@electron-forge/maker-squirrel": "7.11.2",
@@ -99,7 +99,7 @@
     "tsx": "catalog:",
     "typescript": "catalog:",
     "vite": "^7.1.5",
-    "vitest": "catalog:",
+    "vitest": "5.0.0",
     "@posthog/rollup-plugin": "^1.6.0"
   }
 }

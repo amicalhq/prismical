@@ -23,6 +23,7 @@ import {
   Queue,
   Ref,
   Scope,
+  Semaphore,
   SubscriptionRef,
 } from 'effect';
 import { AppConfig } from '../../infra/config/service';
@@ -176,7 +177,7 @@ export const makeAuthLive = (
   never,
   AppConfig | SecureStore | OperationalDb | ElectronApp | WindowRegistry | MainLogger
 > =>
-  Layer.scoped(
+  Layer.effect(
     AuthService,
     Effect.gen(function* () {
       const config = yield* AppConfig;
@@ -193,7 +194,7 @@ export const makeAuthLive = (
       // signed-out — restore must never fail the boot layer.
       const restored = yield* db.getSetting(ACCOUNT_INDEX_KEY).pipe(
         Effect.map(restoreAuthState),
-        Effect.catchAll(cause =>
+        Effect.catch(cause =>
           log
             .error('account index unreadable — starting signed-out', { error: cause })
             .pipe(Effect.as(initialAuthState))
@@ -208,7 +209,7 @@ export const makeAuthLive = (
       const attemptRef = yield* Ref.make<AuthAttempt>(idleAttempt);
       const signInInFlightRef = yield* Ref.make(false);
       // Serialize credential commits with sign-out, without holding a lock over OAuth I/O.
-      const signInCommitLock = yield* Effect.makeSemaphore(1);
+      const signInCommitLock = yield* Semaphore.make(1);
       let signOutGeneration = 0;
       const tokensRef = yield* Ref.make<ReadonlyMap<string, TokenSet>>(new Map());
       const inflightRef = yield* Ref.make<
@@ -239,7 +240,7 @@ export const makeAuthLive = (
           ),
           Effect.timeout(TOKEN_REQUEST_TIMEOUT),
           Effect.ignore,
-          Effect.zipRight(Scope.close(flightScope, Exit.void))
+          Effect.andThen(Scope.close(flightScope, Exit.void))
         )
       );
 
@@ -247,7 +248,7 @@ export const makeAuthLive = (
         Effect.flatMap(state => db.setSetting(ACCOUNT_INDEX_KEY, encodeAccountIndex(state)))
       );
       const persistIndexLogged = persistIndex.pipe(
-        Effect.catchAll(cause => log.error('account index write failed', { error: cause }))
+        Effect.catch(cause => log.error('account index write failed', { error: cause }))
       );
 
       const postJson = (
@@ -270,7 +271,10 @@ export const makeAuthLive = (
             }),
           catch: cause => ({ kind: 'network' as const, cause }),
         }).pipe(
-          Effect.timeoutFail({ duration: timeout, onTimeout: () => ({ kind: 'timeout' as const }) })
+          Effect.timeoutOrElse({
+            duration: timeout,
+            orElse: () => Effect.fail({ kind: 'timeout' as const }),
+          })
         );
 
       const readJson = <E>(response: Response, onError: (cause: unknown) => E) =>
@@ -434,7 +438,7 @@ export const makeAuthLive = (
         Effect.gen(function* () {
           yield* secureStore
             .deleteSecret(refreshTokenKey(sub))
-            .pipe(Effect.catchAll(cause => log.error('secret wipe failed', { error: cause })));
+            .pipe(Effect.catch(cause => log.error('secret wipe failed', { error: cause })));
           yield* Ref.update(tokensRef, map => {
             const next = new Map(map);
             next.delete(sub);
@@ -582,7 +586,7 @@ export const makeAuthLive = (
               if (presentAtPersist) {
                 yield* secureStore
                   .deleteSecret(refreshTokenKey(sub))
-                  .pipe(Effect.catchAll(cause => log.error('secret wipe failed', { error: cause })));
+                  .pipe(Effect.catch(cause => log.error('secret wipe failed', { error: cause })));
               }
             }
             return yield* Effect.fail(
@@ -612,7 +616,7 @@ export const makeAuthLive = (
       /**
        * The single-flight Deferred must settle with a TYPED exit: forwarding a
        * defect (or the pathological teardown interrupt) verbatim would resume
-       * awaiters with a cause their Effect.catchAll cannot handle and kill the
+       * awaiters with a cause their Effect.catch cannot handle and kill the
        * scheduler/resume/focus loops permanently.
        */
       const coerceFlightExit = (
@@ -621,7 +625,7 @@ export const makeAuthLive = (
         Exit.match(exit, {
           onSuccess: () => exit,
           onFailure: cause =>
-            Option.match(Cause.failureOption(cause), {
+            Option.match(Cause.findErrorOption(cause), {
               onSome: () => exit,
               onNone: () => Exit.fail(new RefreshError({ reason: 'transient', cause })),
             }),
@@ -646,27 +650,24 @@ export const makeAuthLive = (
               return [deferred, new Map(map).set(sub, deferred)] as const;
             });
             if (winner === deferred) {
-              // The fork happens INSIDE the mask (an interrupt must not strand
-              // an installed, never-settled Deferred) — but a forked child
-              // inherits the parent's UNINTERRUPTIBLE flag, which would make
-              // TOKEN_REQUEST_TIMEOUT unable to abort a hung socket: the
-              // timeout's internal interrupt would park until the fetch
-              // settled (never), wedging the deferred — and with it every
-              // caller for this sub — for the process lifetime.
-              // So the flight BODY is explicitly interruptible; the rotate→
-              // persist window keeps its own mask inside runRefresh, and the
-              // settle/Deferred.done tail below stays uninterruptible.
-              yield* Effect.interruptible(runRefresh(sub)).pipe(
+              // Install and fork remain atomic. Effect 4 starts the flight
+              // interruptibly, so its HTTP timeout can abort a hung socket.
+              // runRefresh masks rotation persistence. Observe the fiber itself:
+              // a closed scope can interrupt it before any effect finalizer starts.
+              const flight = yield* runRefresh(sub).pipe(
                 Effect.tapError(error => settleRefreshFailure(sub, error)),
-                Effect.onExit(exit =>
-                  Ref.update(inflightRef, map => {
+                Effect.forkIn(flightScope)
+              );
+              yield* Effect.sync(() => {
+                flight.addObserver(exit => {
+                  Effect.runSync(Ref.update(inflightRef, map => {
                     const next = new Map(map);
                     next.delete(sub);
                     return next;
-                  }).pipe(Effect.zipRight(Deferred.done(deferred, coerceFlightExit(exit))))
-                ),
-                Effect.forkIn(flightScope)
-              );
+                  }));
+                  Deferred.doneUnsafe(deferred, coerceFlightExit(exit));
+                });
+              });
             }
             return yield* restore(Deferred.await(winner));
           })
@@ -700,8 +701,8 @@ export const makeAuthLive = (
             due,
             sub =>
               markRefreshingIfActive(sub).pipe(
-                Effect.zipRight(refreshAccount(sub)),
-                Effect.catchAll(error =>
+                Effect.andThen(refreshAccount(sub)),
+                Effect.catch(error =>
                   log.warn('scheduled refresh failed', { context: {
                     sub: subPrefix(sub),
                     reason: error.reason,
@@ -741,8 +742,8 @@ export const makeAuthLive = (
       const immortal = (label: string, step: Effect.Effect<unknown>): Effect.Effect<never> =>
         Effect.forever(
           step.pipe(
-            Effect.catchAllCause(cause =>
-              Cause.isInterruptedOnly(cause)
+            Effect.catchCause(cause =>
+              Cause.hasInterruptsOnly(cause)
                 ? Effect.failCause(cause)
                 : log.error(`${label} step failed — loop continues`, { error: Cause.squash(cause) })
             )
@@ -757,7 +758,7 @@ export const makeAuthLive = (
       yield* Effect.forkScoped(
         immortal(
           'power-resume watcher',
-          Queue.take(electronApp.events.powerResume).pipe(Effect.zipRight(refreshDueAccounts(true)))
+          Queue.take(electronApp.events.powerResume).pipe(Effect.andThen(refreshDueAccounts(true)))
         )
       );
       yield* Effect.forkScoped(
@@ -778,7 +779,7 @@ export const makeAuthLive = (
         const activeSub = restored.activeSub;
         yield* Effect.forkScoped(
           refreshAccount(activeSub).pipe(
-            Effect.catchAll(error =>
+            Effect.catch(error =>
               log.warn('restore refresh failed', { context: { sub: subPrefix(activeSub), reason: error.reason } })
             )
           )
@@ -927,7 +928,7 @@ export const makeAuthLive = (
             case 'Consume':
               return yield* completeExchange(entry.code, match.verifier, generation).pipe(
                 Effect.map(committed => committed ? 'exchanged' as const : 'rejected' as const),
-                Effect.catchAll(error =>
+                Effect.catch(error =>
                   Effect.gen(function* () {
                     // Cleanup from a cancelled exchange cannot roll back a newer login.
                     if (generation === signOutGeneration) yield* revertSigningInGate;
@@ -1084,18 +1085,18 @@ export const makeAuthLive = (
               // resurrection self-heals (the eager restore refresh 401s → drop).
               yield* persistIndex.pipe(
                 Effect.retry({ times: 2 }),
-                Effect.catchAll(cause =>
+                Effect.catch(cause =>
                   log.error('sign-out could not rewrite the account index — may resurrect once', { error: cause })
                 )
               );
               const secret = yield* secureStore
                 .getSecret(refreshTokenKey(target))
-                .pipe(Effect.catchAll(() => Effect.succeed(null)));
+                .pipe(Effect.catch(() => Effect.succeed(null)));
               // Detach the old grant before another login can store its successor.
               // Network revocation below uses only this captured token.
               yield* secureStore.deleteSecret(refreshTokenKey(target)).pipe(
                 Effect.retry({ times: 2 }),
-                Effect.catchAll(cause =>
+                Effect.catch(cause =>
                   // Index-less (removed above), so it can never resurrect an
                   // account — but encrypted ciphertext lingers on disk. Loud and
                   // greppable; the invoke still resolves (state is already gone,
@@ -1114,7 +1115,7 @@ export const makeAuthLive = (
           // and bounded — local sign-out never hangs on the network.
           if (secret !== null) {
             yield* revokeToken(secret).pipe(
-              Effect.catchAll(error =>
+              Effect.catch(error =>
                 log.warn('revoke failed (best-effort)', { context: {
                   reason: error.reason,
                   status: error.status,
@@ -1178,7 +1179,7 @@ export const makeAuthLive = (
               Effect.as(true),
               // A refresh failure leaves membership unproven, which is the same answer as
               // a miss — but log the real cause so it isn't misread as "not a member".
-              Effect.catchAll(cause =>
+              Effect.catch(cause =>
                 log.warn('setActiveOrg: refresh failed, cannot confirm membership', { context: {
                   reason: cause.reason,
                 } }).pipe(Effect.as(false))

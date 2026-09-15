@@ -37,7 +37,7 @@ import { once } from 'node:events';
 import * as fs from 'node:fs';
 import path from 'node:path';
 import { finished } from 'node:stream/promises';
-import { Effect, FiberMap, Layer, Option, Ref, Stream, SubscriptionRef } from 'effect';
+import { Effect, Fiber, FiberMap, Layer, Option, Ref, Stream, SubscriptionRef } from 'effect';
 import type { ModelDownloadView, ModelsStateView } from '@prismical/desktop-contracts';
 import { AppConfig } from '../../infra/config/service';
 import { MainLogger } from '../../infra/logging/service';
@@ -141,7 +141,7 @@ const fsync = async (file: string): Promise<void> => {
 export const makeModelManagerLive = (
   options: ModelManagerOptions = {}
 ): Layer.Layer<ModelManager, never, AppConfig | OperationalDb | MainLogger | PendingReset> =>
-  Layer.scoped(
+  Layer.effect(
     ModelManager,
     Effect.gen(function* () {
       // Ordering, not data: a pending destructive reset purges
@@ -164,7 +164,7 @@ export const makeModelManagerLive = (
       // One download fiber per model id; the map's own scope finalizer interrupts
       // every in-flight download when the boot scope closes (the fiber's
       // interrupt handler removes its `.part`).
-      const fibers = yield* FiberMap.make<string>();
+      const fibers = yield* FiberMap.make<string, void, never>();
 
       // Boot read of the installed rows: a DbError NEVER blocks boot — log and
       // start empty; the forked reconcile below re-reads. Mirrors SettingsService.
@@ -221,7 +221,7 @@ export const makeModelManagerLive = (
           if (view === null) next.delete(modelId);
           else next.set(modelId, view);
           return next;
-        }).pipe(Effect.zipRight(publish));
+        }).pipe(Effect.andThen(publish));
 
       const setRow = (modelId: string, row: LocalModelRow | null) =>
         Ref.update(rowsRef, rows => {
@@ -295,7 +295,7 @@ export const makeModelManagerLive = (
                   exact: declaredLength(response) !== null,
                 })
               : discardBody(response).pipe(
-                  Effect.zipRight(
+                  Effect.andThen(
                     Effect.fail(
                       new ModelError({
                         reason: 'network',
@@ -451,7 +451,7 @@ export const makeModelManagerLive = (
               }
             })
           ).pipe(
-            Effect.zipRight(
+            Effect.andThen(
               Effect.tryPromise({
                 try: async () => {
                   ws.end();
@@ -557,15 +557,15 @@ export const makeModelManagerLive = (
               }
               await unlinkQuiet(partPath(entry));
             }).pipe(
-              Effect.zipRight(
+              Effect.andThen(
                 Ref.update(resumeRef, memory => {
                   const next = new Map(memory);
                   next.delete(entry.id);
                   return next;
                 })
               ),
-              Effect.zipRight(setDownload(entry.id, null)),
-              Effect.zipRight(log.info('model download cancelled', { context: { modelId: entry.id } }))
+              Effect.andThen(setDownload(entry.id, null)),
+              Effect.andThen(log.info('model download cancelled', { context: { modelId: entry.id } }))
             )
           )
         );
@@ -607,8 +607,8 @@ export const makeModelManagerLive = (
       /** The supervised body: every failure lands in `state`, never in the fiber's exit. */
       const supervised = (entry: ModelCatalogueEntry): Effect.Effect<void> =>
         runDownload(entry).pipe(
-          Effect.zipRight(autoDownloadVad(entry)),
-          Effect.catchAll(error =>
+          Effect.andThen(autoDownloadVad(entry)),
+          Effect.catch(error =>
             Effect.gen(function* () {
               const current = (yield* Ref.get(downloadsRef)).get(entry.id);
               yield* log.warn('model download failed', { context: {
@@ -629,11 +629,11 @@ export const makeModelManagerLive = (
               });
             })
           ),
-          Effect.catchAllDefect(defect =>
+          Effect.catchDefect(defect =>
             log
               .error('model download defect', { context: { modelId: entry.id }, error: defect })
               .pipe(
-                Effect.zipRight(
+                Effect.andThen(
                   setDownload(entry.id, {
                     status: 'error',
                     bytesDownloaded: 0,
@@ -653,8 +653,14 @@ export const makeModelManagerLive = (
           if (entry === undefined) {
             return yield* Effect.fail(new ModelError({ reason: 'unknown-model', modelId }));
           }
-          if (yield* FiberMap.has(fibers, modelId)) {
-            return yield* Effect.fail(new ModelError({ reason: 'download-in-progress', modelId }));
+          const running = yield* FiberMap.get(fibers, modelId);
+          if (Option.isSome(running)) {
+            if ((yield* Ref.get(downloadsRef)).get(modelId)?.status !== 'error') {
+              return yield* Effect.fail(new ModelError({ reason: 'download-in-progress', modelId }));
+            }
+            // The terminal state can wake a retry before the supervisor's
+            // final continuation leaves the map. Await that completed attempt.
+            yield* Fiber.join(running.value);
           }
           const row = (yield* Ref.get(rowsRef)).get(modelId);
           if (row !== undefined) {
@@ -719,13 +725,15 @@ export const makeModelManagerLive = (
               })
             );
           }
+          // runDownload installs interruption cleanup and suspends at its first
+          // filesystem read. Register it before observers can cancel this state.
+          yield* FiberMap.run(fibers, modelId, supervised(entry));
           yield* setDownload(modelId, {
             status: 'downloading',
             bytesDownloaded: partSize,
             totalBytes: entry.sizeBytes,
             error: null,
           });
-          yield* FiberMap.run(fibers, modelId, supervised(entry));
           yield* log.info('model download started', { context: { modelId, resumeFrom: partSize } });
         });
 
@@ -778,7 +786,7 @@ export const makeModelManagerLive = (
           try: () => fs.promises.readdir(modelsDir),
           catch: error => error,
         }).pipe(
-          Effect.catchAll(error =>
+          Effect.catch(error =>
             isEnoent(error)
               ? Effect.succeed<string[]>([])
               : log
@@ -885,7 +893,7 @@ export const makeModelManagerLive = (
           Effect.catchTag('DbError', error =>
             log.warn('local model reconcile failed — keeping boot rows', { context: { op: error.op } })
           ),
-          Effect.catchAllDefect(defect =>
+          Effect.catchDefect(defect =>
             log.error('local model reconcile defect', { error: defect })
           )
         )

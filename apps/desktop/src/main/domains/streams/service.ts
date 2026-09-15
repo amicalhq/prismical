@@ -33,4 +33,6 @@ export interface StreamBrokerApi {
   readonly stats: Effect.Effect<StreamStats>;
 }
 
-export class StreamBroker extends Context.Tag('desktop/StreamBroker')<StreamBroker, StreamBrokerApi>() {}
+export class StreamBroker extends Context.Service<StreamBroker, StreamBrokerApi>()(
+  'desktop/StreamBroker'
+) {}

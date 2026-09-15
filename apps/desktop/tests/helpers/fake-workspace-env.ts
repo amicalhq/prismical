@@ -168,7 +168,7 @@ export const fakeModelManagerLayer = (
         cancel: () => Effect.void,
         delete: () => Effect.void,
         reconcile: Effect.succeed({ removed: 0, adopted: 0, partsDeleted: 0 }),
-        installedPath: modelId => Effect.succeed(Option.fromNullable(installed[modelId])),
+        installedPath: modelId => Effect.succeed(Option.fromNullishOr(installed[modelId])),
       };
       return api;
     })

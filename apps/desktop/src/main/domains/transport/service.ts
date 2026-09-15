@@ -203,10 +203,9 @@ export interface WorkspaceBackendApi {
   ) => Effect.Effect<RecordingLaneResult<{ readonly recordingId: string }>>;
 }
 
-export class WorkspaceBackend extends Context.Tag('desktop/WorkspaceBackend')<
-  WorkspaceBackend,
-  WorkspaceBackendApi
->() {}
+export class WorkspaceBackend extends Context.Service<WorkspaceBackend, WorkspaceBackendApi>()(
+  'desktop/WorkspaceBackend'
+) {}
 
 export type WorkspaceRequestContext =
   | { readonly mode: 'local' }
@@ -254,7 +253,7 @@ export interface WorkspaceTransportApi {
   readonly collabToken: Effect.Effect<Option.Option<string>>;
 }
 
-export class WorkspaceTransport extends Context.Tag('desktop/WorkspaceTransport')<
+export class WorkspaceTransport extends Context.Service<
   WorkspaceTransport,
   WorkspaceTransportApi
->() {}
+>()('desktop/WorkspaceTransport') {}

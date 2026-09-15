@@ -12,7 +12,6 @@ export interface DesktopI18nServiceApi {
   readonly t: ApplicationTFunction;
 }
 
-export class DesktopI18n extends Context.Tag('desktop/i18n/DesktopI18n')<
-  DesktopI18n,
-  DesktopI18nServiceApi
->() {}
+export class DesktopI18n extends Context.Service<DesktopI18n, DesktopI18nServiceApi>()(
+  'desktop/i18n/DesktopI18n'
+) {}

@@ -11,7 +11,8 @@
  * completion is polled on REAL time after each virtual-clock advance.
  */
 import { assert, describe as edescribe, it as eit } from '@effect/vitest';
-import { Context, Duration, Effect, Exit, Layer, Scope, SubscriptionRef, TestClock } from 'effect';
+import { Context, Deferred, Duration, Effect, Exit, Layer, Scope, SubscriptionRef } from 'effect';
+import { TestClock } from 'effect/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FakeAutoUpdater, type FakeElectron } from '../helpers/fake-electron';
 import { testTelemetryLayer } from '../helpers/telemetry';
@@ -20,6 +21,7 @@ import { makeTestLogger, testConfigLayer } from '../helpers/test-layers';
 import { UpdaterMachine, type UpdateMetadata } from '../../src/main/domains/updater/machine';
 import { SettingsService } from '../../src/main/domains/settings/service';
 import { SettingsServiceLive } from '../../src/main/domains/settings/live';
+import { TelemetryService } from '../../src/main/domains/telemetry/service';
 import { UpdaterService } from '../../src/main/domains/updater/service';
 import { UpdaterServiceLive } from '../../src/main/domains/updater/live';
 
@@ -277,7 +279,10 @@ describe('UpdaterMachine', () => {
 // Part 2 — layer tests
 // ---------------------------------------------------------------------------
 
-const build = (overrides: Parameters<typeof testConfigLayer>[0]) => {
+const build = (
+  overrides: Parameters<typeof testConfigLayer>[0],
+  telemetryLayer = testTelemetryLayer
+) => {
   const logger = makeTestLogger();
   const config = testConfigLayer(overrides);
   const db = makeFakeOperationalDb();
@@ -287,7 +292,7 @@ const build = (overrides: Parameters<typeof testConfigLayer>[0]) => {
     layer: Layer.mergeAll(
       settings,
       UpdaterServiceLive.pipe(
-        Layer.provide(testTelemetryLayer),
+        Layer.provide(telemetryLayer),
         Layer.provide(config),
         Layer.provide(settings),
         Layer.provide(logger.layer)
@@ -320,7 +325,7 @@ edescribe('UpdaterServiceLive', () => {
     Effect.gen(function* () {
       const { layer } = build({ updaterEnabled: false });
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const updater = Context.get(ctx, UpdaterService);
       assert.isFalse(updater.enabled);
 
@@ -341,7 +346,7 @@ edescribe('UpdaterServiceLive', () => {
     Effect.gen(function* () {
       const { layer } = build({ updaterEnabled: true });
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const updater = Context.get(ctx, UpdaterService);
       assert.isTrue(updater.enabled);
 
@@ -362,7 +367,7 @@ edescribe('UpdaterServiceLive', () => {
     Effect.gen(function* () {
       const { layer } = build({ updaterEnabled: true });
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const updater = Context.get(ctx, UpdaterService);
       const settings = Context.get(ctx, SettingsService);
 
@@ -384,7 +389,7 @@ edescribe('UpdaterServiceLive', () => {
     Effect.gen(function* () {
       const { layer } = build({ updaterEnabled: true });
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const updater = Context.get(ctx, UpdaterService);
 
       const status = yield* updater.checkForUpdates;
@@ -393,6 +398,85 @@ edescribe('UpdaterServiceLive', () => {
       assert.strictEqual(view.status, 'not-available');
       assert.isFalse(view.staged);
       yield* Scope.close(scope, Exit.void);
+    })
+  );
+});
+
+edescribe('UpdaterServiceLive disposal during a check', () => {
+  eit.effect('closing while device identity is pending cannot start a native check', () =>
+    Effect.gen(function* () {
+      const identityStarted = yield* Deferred.make<void>();
+      const identityStopped = yield* Deferred.make<void>();
+      const telemetry = Layer.effect(
+        TelemetryService,
+        Effect.map(TelemetryService, service => ({
+          ...service,
+          getDeviceId: Deferred.succeed(identityStarted, undefined).pipe(
+            Effect.andThen(Effect.never),
+            Effect.ensuring(Deferred.succeed(identityStopped, undefined))
+          ),
+        }))
+      ).pipe(Layer.provide(testTelemetryLayer));
+      const fetch = vi.spyOn(fakeElectron.net, 'fetch').mockResolvedValue(
+        Response.json({ action: 'silent', version: '0.2.0' })
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(() => fetch.mockRestore()));
+      const scope = yield* Effect.acquireRelease(Scope.make(), scope => Scope.close(scope, Exit.void));
+      const { layer } = build({ updaterEnabled: true }, telemetry);
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      const updater = Context.get(ctx, UpdaterService);
+      const feeds = fakeElectron.autoUpdater.feedURLs.length;
+
+      yield* Effect.forkScoped(updater.checkForUpdates);
+      yield* Deferred.await(identityStarted);
+      yield* Scope.close(scope, Exit.void);
+      yield* Deferred.await(identityStopped);
+      const closedState = yield* SubscriptionRef.get(updater.state);
+      // The native Promise continuation must settle before asserting that it
+      // did not fall through to the metadata-failure native-check fallback.
+      yield* awaitReal('cancelled identity check settled', () =>
+        Effect.map(updater.checkCount, count => count === 1)
+      );
+
+      assert.strictEqual(fetch.mock.calls.length, 0);
+      assert.strictEqual(fakeElectron.autoUpdater.checkCalls, 0);
+      assert.strictEqual(fakeElectron.autoUpdater.feedURLs.length, feeds);
+      assert.deepStrictEqual(yield* SubscriptionRef.get(updater.state), closedState);
+    })
+  );
+
+  eit.effect('metadata that resolves after disposal cannot publish or start a native check', () =>
+    Effect.gen(function* () {
+      const metadataStarted = yield* Deferred.make<void>();
+      let releaseMetadata: (response: Response) => void = () => {};
+      const pendingMetadata = new Promise<Response>(resolve => { releaseMetadata = resolve; });
+      const fetch = vi.spyOn(fakeElectron.net, 'fetch').mockImplementation(() => {
+        Effect.runSync(Deferred.succeed(metadataStarted, undefined));
+        return pendingMetadata;
+      });
+      yield* Effect.addFinalizer(() => Effect.sync(() => {
+        releaseMetadata(Response.json({ action: 'none' }));
+        fetch.mockRestore();
+      }));
+      const scope = yield* Effect.acquireRelease(Scope.make(), scope => Scope.close(scope, Exit.void));
+      const { layer } = build({ updaterEnabled: true });
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      const updater = Context.get(ctx, UpdaterService);
+      const feeds = fakeElectron.autoUpdater.feedURLs.length;
+
+      yield* Effect.forkScoped(updater.checkForUpdates);
+      yield* Deferred.await(metadataStarted);
+      yield* Scope.close(scope, Exit.void);
+      const closedState = yield* SubscriptionRef.get(updater.state);
+      releaseMetadata(Response.json({ action: 'force', version: '0.2.0' }));
+      yield* awaitReal('late metadata check settled', () =>
+        Effect.map(updater.checkCount, count => count === 1)
+      );
+
+      assert.strictEqual(fetch.mock.calls.length, 1);
+      assert.strictEqual(fakeElectron.autoUpdater.checkCalls, 0);
+      assert.strictEqual(fakeElectron.autoUpdater.feedURLs.length, feeds);
+      assert.deepStrictEqual(yield* SubscriptionRef.get(updater.state), closedState);
     })
   );
 });

@@ -1,5 +1,5 @@
 import { autoUpdater, net } from 'electron';
-import { Duration, Effect, Layer, Ref, Runtime, Stream, SubscriptionRef } from 'effect';
+import { Duration, Effect, FiberSet, Layer, Ref, Stream, SubscriptionRef } from 'effect';
 import { AppConfig } from '../../infra/config/service';
 import { MainLogger } from '../../infra/logging/service';
 import { SettingsService } from '../settings/service';
@@ -51,7 +51,7 @@ export const UpdaterServiceLive: Layer.Layer<
   UpdaterService,
   never,
   AppConfig | MainLogger | SettingsService | TelemetryService
-> = Layer.scoped(
+> = Layer.effect(
   UpdaterService,
   Effect.gen(function* () {
     const config = yield* AppConfig;
@@ -81,7 +81,8 @@ export const UpdaterServiceLive: Layer.Layer<
     }
 
     const telemetry = yield* TelemetryService;
-    const runtime = yield* Effect.runtime<never>();
+    const runtime = yield* Effect.context<never>();
+    const runCallbackPromise = yield* FiberSet.makeRuntimePromise();
 
     const machine = new UpdaterMachine({
       // The public update endpoints use the server root, with no /apps prefix.
@@ -90,7 +91,9 @@ export const UpdaterServiceLive: Layer.Layer<
       platform: config.platform,
       arch: process.arch,
       native: autoUpdater as NativeUpdaterFacade,
-      getDeviceId: () => Runtime.runPromise(runtime)(telemetry.getDeviceId),
+      // Register callback ownership before device-id work can resume callers.
+      getDeviceId: () =>
+        runCallbackPromise(Effect.yieldNow.pipe(Effect.andThen(telemetry.getDeviceId))),
       fetchFn: (url, init) => net.fetch(url, init),
       log: (level, message, data) => logUnsafe[level](message, data),
       onChanged: () => {
@@ -98,7 +101,7 @@ export const UpdaterServiceLive: Layer.Layer<
         // continuations — bridge into the runtime like the window focus ref
         // (SubscriptionRef.set is sync-safe). `machine` is closure-safe here:
         // no callback fires during construction.
-        Runtime.runSync(runtime)(SubscriptionRef.set(state, machine.getStateView()));
+        Effect.runSyncWith(runtime)(SubscriptionRef.set(state, machine.getStateView()));
       },
     });
 
@@ -110,13 +113,13 @@ export const UpdaterServiceLive: Layer.Layer<
     // the machine no-ops when the channel already matches, so no drop needed.
     yield* Effect.forkScoped(
       Stream.runForEach(
-        settings.settings.changes.pipe(
+        SubscriptionRef.changes(settings.settings).pipe(
           Stream.map(s => s.updateChannel),
           Stream.changes
         ),
         channel => Effect.sync(() => machine.onChannelChanged(channel))
       ).pipe(
-        Effect.catchAllDefect(defect =>
+        Effect.catchDefect(defect =>
           log.error('updater channel subscription died', { error: defect })
         )
       )
@@ -125,7 +128,7 @@ export const UpdaterServiceLive: Layer.Layer<
     // One completed check attempt: machine.checkForUpdates never rejects.
     const runCheck = (userInitiated: boolean) =>
       Effect.promise(() => machine.checkForUpdates(userInitiated)).pipe(
-        Effect.zipRight(Ref.update(count, n => n + 1))
+        Effect.andThen(Ref.update(count, n => n + 1))
       );
 
     // Initial check + periodic loop. The interval is re-read per iteration so a
@@ -144,7 +147,7 @@ export const UpdaterServiceLive: Layer.Layer<
     });
     yield* Effect.forkScoped(
       periodic.pipe(
-        Effect.catchAllDefect(defect =>
+        Effect.catchDefect(defect =>
           log.error('updater check loop died', { error: defect })
         )
       )
@@ -157,18 +160,18 @@ export const UpdaterServiceLive: Layer.Layer<
     // The one-shot IPC check: trigger, then wait for the cycle to settle out of
     // 'checking' (an in-flight download reports 'available'; a bounded timeout
     // returns whatever the view says so the renderer is never left hanging).
-    const settledStatus = state.changes.pipe(
+    const settledStatus = SubscriptionRef.changes(state).pipe(
       Stream.filter(view => view.status !== 'checking'),
       Stream.runHead,
       Effect.map(view => (view._tag === 'Some' ? view.value.status : machine.getStateView().status)),
       Effect.timeout(SETTLE_TIMEOUT),
-      Effect.catchAll(() => Effect.sync(() => machine.getStateView().status))
+      Effect.catch(() => Effect.sync(() => machine.getStateView().status))
     );
 
     const api: UpdaterServiceApi = {
       enabled: true,
       state,
-      checkForUpdates: runCheck(true).pipe(Effect.zipRight(settledStatus)),
+      checkForUpdates: runCheck(true).pipe(Effect.andThen(settledStatus)),
       quitAndInstall: Effect.sync(() => {
         machine.quitAndInstall();
       }),

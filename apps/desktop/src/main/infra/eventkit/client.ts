@@ -126,7 +126,7 @@ export function watchEventKitChanges(
     })
   ).pipe(
     Effect.flatMap(child =>
-      Effect.async<never, EventKitHelperError>(resume => {
+      Effect.callback<never, EventKitHelperError>(resume => {
         let stdout = '';
         let stderr = '';
         const onStdout = (chunk: Buffer) => {

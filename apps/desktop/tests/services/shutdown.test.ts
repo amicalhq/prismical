@@ -1,5 +1,6 @@
 import { assert, describe, it } from '@effect/vitest';
-import { Context, Duration, Effect, Exit, Fiber, Layer, Scope, TestClock } from 'effect';
+import { Context, Duration, Effect, Exit, Fiber, Layer, Scope } from 'effect';
+import { TestClock } from 'effect/testing';
 import { vi } from 'vitest';
 import type { FakeElectron } from '../helpers/fake-electron';
 import { makeTestLogger, testConfigLayer } from '../helpers/test-layers';
@@ -28,10 +29,10 @@ describe('ShutdownCoordinator', () => {
     Effect.gen(function* () {
       const { layer } = build('darwin');
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const shutdown = Context.get(ctx, ShutdownCoordinator);
 
-      const waiter = yield* Effect.fork(shutdown.awaitQuitSignal);
+      const waiter = yield* Effect.forkChild(shutdown.awaitQuitSignal);
       yield* TestClock.adjust(Duration.millis(1));
 
       const before = fake.app.quitCount;
@@ -46,7 +47,7 @@ describe('ShutdownCoordinator', () => {
     Effect.gen(function* () {
       const { layer } = build('win32');
       const scope = yield* Scope.make();
-      yield* Layer.build(layer).pipe(Scope.extend(scope));
+      yield* Layer.build(layer).pipe(Scope.provide(scope));
 
       const before = fake.app.quitCount;
       fake.app.emit('window-all-closed');
@@ -60,7 +61,7 @@ describe('ShutdownCoordinator', () => {
     Effect.gen(function* () {
       const { layer } = build('darwin');
       const scope = yield* Scope.make();
-      yield* Layer.build(layer).pipe(Scope.extend(scope));
+      yield* Layer.build(layer).pipe(Scope.provide(scope));
 
       const before = fake.app.quitCount;
       fake.app.emit('window-all-closed');
@@ -94,7 +95,7 @@ describe('disposeAndExit', () => {
     Effect.gen(function* () {
       const exits: number[] = [];
       let timedOut = false;
-      const fiber = yield* Effect.fork(
+      const fiber = yield* Effect.forkChild(
         disposeAndExit({
           dispose: () => new Promise<void>(() => undefined), // never resolves
           exit: code => {

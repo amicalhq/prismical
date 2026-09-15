@@ -193,7 +193,7 @@ export const makeBootLayer = (
     Layer.provide(i18n),
     Layer.provide(logging)
   );
-  const recordingBridge = Layer.unwrapEffect(
+  const recordingBridge = Layer.unwrap(
     Effect.gen(function* () {
       const remote = yield* RemoteConfig;
       const windows = yield* WindowRegistry;

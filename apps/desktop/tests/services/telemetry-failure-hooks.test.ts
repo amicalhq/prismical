@@ -81,12 +81,12 @@ const withHooks = (
                 f.captureAttempts++;
                 if (f.failTelemetry) throw new Error('SDK failed');
                 if (!f.stallTelemetry) f.reports.push({ error, properties, source, revision });
-              }).pipe(Effect.zipRight(f.stallTelemetry ? Effect.never : Effect.void)),
+              }).pipe(Effect.andThen(f.stallTelemetry ? Effect.never : Effect.void)),
           }),
           Effect.provideService(WindowRegistry, {
             identityForWebContents: id =>
               Effect.succeed(
-                Option.fromNullable(
+                Option.fromNullishOr(
                   f.kinds.has(id)
                     ? { windowId: id, webContentsId: id, kind: f.kinds.get(id)! }
                     : undefined

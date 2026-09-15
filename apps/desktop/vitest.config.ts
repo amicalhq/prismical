@@ -9,10 +9,8 @@ export default defineConfig({
     exclude: ['node_modules', '.vite', 'out', 'e2e', 'tests/integration/**'],
     // Explicit pool config: isolated parallel forks.
     pool: 'forks',
-    poolOptions: {
-      forks: {
-        singleFork: false,
-      },
-    },
+    clearMocks: false,
+    isolate: true,
+    fileParallelism: true,
   },
 });

@@ -16,7 +16,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { assert, describe, it } from '@effect/vitest';
 import { eq } from 'drizzle-orm';
-import { Cause, Context, Effect, Exit, Fiber, Layer, Option, Scope, TestClock } from 'effect';
+import { Cause, Context, Deferred, Effect, Exit, Fiber, Layer, Option, Scope } from 'effect';
+import { TestClock } from 'effect/testing';
 import type { TransportResponse } from '@prismical/desktop-contracts';
 import { LOCAL_FEATURE_FLAGS, LOCAL_WORKSPACE } from '@prismical/desktop-contracts';
 import {
@@ -29,6 +30,7 @@ import { fakeAiProviderLayer } from '../helpers/fake-workspace-env';
 import { makeTestLogger, testConfigLayer, testI18nLayer } from '../helpers/test-layers';
 import { NAME_NOTE_SKILL_ID, SYSTEM_SKILLS } from '@prismical/ai-prompts';
 import { AuthStateError } from '../../src/main/domains/auth/service';
+import { AiProvider } from '../../src/main/domains/ai-provider/service';
 import { LocalBackendLive } from '../../src/main/domains/local-backend/live';
 import { describeDbError, isUniqueViolation } from '../../src/main/domains/local-backend/wire';
 import { WORKSPACE_READY_TIMEOUT, WorkspaceTransportLive } from '../../src/main/domains/transport/live';
@@ -42,7 +44,10 @@ const tempDir = mkdtempSync(path.join(tmpdir(), 'prismical-local-backend-test-')
 let dbSeq = 0;
 
 /** Build the backend graph over a fresh file-backed product store. */
-const buildBackendAt = (localDbPath?: string) => Effect.gen(function* () {
+const buildBackendAt = (
+  localDbPath?: string,
+  aiLayer: Layer.Layer<AiProvider> = fakeAiProviderLayer()
+) => Effect.gen(function* () {
   dbSeq += 1;
   const logger = makeTestLogger();
   const env = Layer.mergeAll(
@@ -50,15 +55,15 @@ const buildBackendAt = (localDbPath?: string) => Effect.gen(function* () {
     logger.layer,
     testI18nLayer(),
     WorkspaceTransportLive,
-    fakeAiProviderLayer()
+    aiLayer
   );
   const scope = yield* Scope.make();
-  const envCtx = yield* Layer.build(env).pipe(Scope.extend(scope));
+  const envCtx = yield* Layer.build(env).pipe(Scope.provide(scope));
   const productDb = makeProductDbLayer({ kind: 'local' });
   const workspace = Layer.mergeAll(productDb, LocalBackendLive.pipe(Layer.provide(productDb)));
   const ctx = yield* Layer.build(workspace).pipe(
     Effect.provide(envCtx),
-    Scope.extend(scope),
+    Scope.provide(scope),
     Effect.orDie
   );
   return {
@@ -81,9 +86,35 @@ const expectOk = (res: TransportResponse, status?: number): { status: number; bo
 };
 
 const failureOf = (exit: Exit.Exit<unknown, unknown>): unknown =>
-  Exit.isFailure(exit) ? Option.getOrUndefined(Cause.failureOption(exit.cause)) : undefined;
+  Exit.isFailure(exit) ? Option.getOrUndefined(Cause.findErrorOption(exit.cause)) : undefined;
 
 describe('LocalBackendLive', () => {
+  it.effect('workspace close interrupts pending AI callbacks and prevents new calls', () =>
+    Effect.gen(function* () {
+      const entered = yield* Deferred.make<void>();
+      const provider = yield* AiProvider.pipe(Effect.provide(fakeAiProviderLayer()));
+      let started = 0;
+      let finalized = 0;
+      const { api, scope } = yield* buildBackendAt(undefined, Layer.succeed(AiProvider, {
+        ...provider,
+        instances: Effect.sync(() => { started += 1; }).pipe(
+          Effect.andThen(Deferred.succeed(entered, undefined)),
+          Effect.andThen(Effect.never),
+          Effect.ensuring(Effect.sync(() => { finalized += 1; }))
+        ),
+      }));
+      const request = { method: 'GET' as const, path: '/apps/v1/me/instances' };
+      const pending = yield* Effect.forkChild(api.request(request));
+      yield* Deferred.await(entered);
+
+      yield* Scope.close(scope, Exit.void);
+      assert.strictEqual(finalized, 1);
+      assert.deepStrictEqual(yield* Fiber.join(pending), { error: { code: 'INTERNAL' } });
+      assert.deepStrictEqual(yield* api.request(request), { error: { code: 'INTERNAL' } });
+      assert.strictEqual(started, 1, 'the closed workspace cannot start another AI call');
+    })
+  );
+
   it.effect('organizations: LEGACY {results} envelope built from LOCAL_WORKSPACE', () =>
     Effect.gen(function* () {
       const { api, scope } = yield* buildBackend;
@@ -380,7 +411,7 @@ describe('LocalBackendLive', () => {
       assert.isTrue(Option.isNone(yield* transport.current), 'cleared on scope close');
       const pending = yield* transport
         .request({ method: 'GET', path: '/apps/v1/me/folders' }, { mode: 'local' })
-        .pipe(Effect.fork);
+        .pipe(Effect.forkChild);
       yield* TestClock.adjust(WORKSPACE_READY_TIMEOUT);
       assert.deepStrictEqual(
         yield* Fiber.join(pending),

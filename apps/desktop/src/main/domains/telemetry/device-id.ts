@@ -15,17 +15,17 @@ export const resolveDeviceId = (read: () => Promise<string>) =>
     return yield* Effect.tryPromise(read).pipe(
       Effect.filterOrFail(id => id.trim().length > 0),
       Effect.timeout('2 seconds'),
-      Effect.catchAll(() =>
+      Effect.catch(() =>
         store.getSetting(DEVICE_ID_KEY).pipe(
           Effect.flatMap(existing => {
             if (existing) return Effect.succeed(existing);
             const id = randomUUID();
             return store.setSetting(DEVICE_ID_KEY, id).pipe(Effect.as(id));
           }),
-          Effect.catchAll(() =>
+          Effect.catch(() =>
             log
               .warn('Persistent device identity unavailable; using temporary identity')
-              .pipe(Effect.zipRight(Effect.sync(randomUUID)))
+              .pipe(Effect.andThen(Effect.sync(randomUUID)))
           )
         )
       )

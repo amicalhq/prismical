@@ -1,6 +1,6 @@
 import { makeSuppressionCounter } from './suppression-counter';
 import os from 'node:os';
-import { Deferred, Effect, Layer, Stream, SubscriptionRef } from 'effect';
+import { Semaphore, Deferred, Effect, Layer, Stream, SubscriptionRef } from 'effect';
 import { AppModeService } from '../app-mode/service';
 import { AuthService } from '../auth/service';
 import { SettingsService } from '../settings/service';
@@ -20,7 +20,7 @@ export const makeTelemetryServiceLive = (
   makeSink: MakePostHogSink,
   machineId: () => Promise<string> = readMachineId
 ) =>
-  Layer.scoped(
+  Layer.effect(
     TelemetryService,
     Effect.gen(function* () {
       const config = yield* AppConfig;
@@ -85,7 +85,7 @@ export const makeTelemetryServiceLive = (
         }
       };
       const state = yield* SubscriptionRef.make({ ...initial.policy, revision });
-      const lock = yield* Effect.makeSemaphore(1);
+      const lock = yield* Semaphore.make(1);
       let active:
         | {
             key: string;
@@ -109,7 +109,7 @@ export const makeTelemetryServiceLive = (
       );
       const bestEffort = <A>(operation: Effect.Effect<A>) =>
         operation.pipe(
-          Effect.catchAllCause(() => log.warn('telemetry operation failed').pipe(Effect.asVoid))
+          Effect.catchCause(() => log.warn('telemetry operation failed').pipe(Effect.asVoid))
         );
       const invalidate = Effect.gen(function* () {
         exceptions.clear();
@@ -175,14 +175,14 @@ export const makeTelemetryServiceLive = (
         return next;
       });
       const getState = lock.withPermits(1)(
-        reconcile.pipe(Effect.zipRight(SubscriptionRef.get(state)))
+        reconcile.pipe(Effect.andThen(SubscriptionRef.get(state)))
       );
       const send = (
         source: TelemetrySource,
         expectedRevision: number | undefined,
         operation: (
           sink: PostHogSink,
-          current: Effect.Effect.Success<typeof snapshot>,
+          current: Effect.Success<typeof snapshot>,
           context: Record<string, unknown>
         ) => void
       ) =>
@@ -290,14 +290,26 @@ export const makeTelemetryServiceLive = (
       };
       yield* Effect.forkScoped(
         Stream.runForEach(
-          Stream.mergeWithTag(
-            {
-              identity: Stream.map(auth.sessionState.changes, value =>
-                identityKey(telemetryIdentity(value, mode))
-              ),
-              preference: Stream.map(settings.settings.changes, value => !value.telemetryOptOut),
-              choice: chosenState.changes,
-            },
+          Stream.mergeAll<
+            | { readonly _tag: 'identity'; readonly value: string }
+            | { readonly _tag: 'preference' | 'choice'; readonly value: boolean },
+            never,
+            never
+          >(
+            [
+              Stream.map(SubscriptionRef.changes(auth.sessionState), value => ({
+                _tag: 'identity' as const,
+                value: identityKey(telemetryIdentity(value, mode)),
+              })),
+              Stream.map(SubscriptionRef.changes(settings.settings), value => ({
+                _tag: 'preference' as const,
+                value: !value.telemetryOptOut,
+              })),
+              Stream.map(SubscriptionRef.changes(chosenState), value => ({
+                _tag: 'choice' as const,
+                value,
+              })),
+            ],
             { concurrency: 'unbounded' }
           ),
           change =>
@@ -349,9 +361,6 @@ export const makeTelemetryServiceLive = (
             const sink = active?.sink;
             if (sink)
               yield* Effect.tryPromise(() => sink.shutdown(2_000)).pipe(
-                // Scope finalizers are uninterruptible by default. The flush
-                // must remain interruptible for this deadline to take effect.
-                Effect.interruptible,
                 Effect.timeout('2 seconds'),
                 Effect.ignore
               );
@@ -359,7 +368,7 @@ export const makeTelemetryServiceLive = (
             Effect.ensuring(
               Effect.sync(() => {
                 closed = true;
-              }).pipe(Effect.zipRight(invalidate))
+              }).pipe(Effect.andThen(invalidate))
             )
           )
         )

@@ -15,11 +15,11 @@
  */
 import path from 'node:path';
 import {
+  Cause,
   Clock,
   Deferred,
   Duration,
   Effect,
-  Either,
   Exit,
   Fiber,
   FiberMap,
@@ -27,7 +27,9 @@ import {
   Option,
   Queue,
   Ref,
+  Result,
   Schedule,
+  Semaphore,
   Stream,
   SubscriptionRef,
 } from 'effect';
@@ -127,13 +129,10 @@ interface PendingMicTransition {
 /** Bounded, signed-in-only restart: exponential 1 s→cap 10 s, up to N attempts,
  * then the recording ends instead of retrying forever at a fixed interval. */
 const MAX_CAPTURE_RESTARTS = 5;
-const RESTART_SCHEDULE = Schedule.intersect(
-  Schedule.either(
-    Schedule.exponential(Duration.seconds(1), 2),
-    Schedule.spaced(Duration.seconds(10))
-  ),
-  Schedule.recurs(MAX_CAPTURE_RESTARTS)
-);
+const RESTART_SCHEDULE = Schedule.min([
+  Schedule.exponential(Duration.seconds(1), 2),
+  Schedule.spaced(Duration.seconds(10)),
+]).pipe(Schedule.upTo({ times: MAX_CAPTURE_RESTARTS }));
 
 interface ActiveRecording {
   readonly recordingId: string;
@@ -180,7 +179,7 @@ export const RecordingServiceLive: Layer.Layer<
   | AppModeService
   | WorkspaceIdentity
   | ModelManager
-> = Layer.scoped(
+> = Layer.effect(
   RecordingService,
   Effect.gen(function* () {
     const coreClient = yield* WorkspaceBackend;
@@ -206,7 +205,7 @@ export const RecordingServiceLive: Layer.Layer<
 
     const state = yield* SubscriptionRef.make<RecordingState>(idleRecordingState);
     const fibers = yield* FiberMap.make<string>();
-    const semaphore = yield* Effect.makeSemaphore(1);
+    const semaphore = yield* Semaphore.make(1);
     const activeRef = yield* Ref.make<Option.Option<ActiveRecording>>(Option.none());
     // Claims survive newer recordings, but never their owning workspace. Map
     // access is synchronous; readiness waits happen outside that atomic access.
@@ -226,7 +225,7 @@ export const RecordingServiceLive: Layer.Layer<
         if (ready) {
           const segments = yield* store.segmentsForRecording(recordingId).pipe(
             Effect.map(rows => Math.max(completion.segments, rows.length)),
-            Effect.catchAll(() => Effect.succeed(completion.segments))
+            Effect.catch(() => Effect.succeed(completion.segments))
           );
           yield* SubscriptionRef.update(state, current => ({
             ...current,
@@ -275,7 +274,7 @@ export const RecordingServiceLive: Layer.Layer<
       effect: Effect.Effect<void, ProductDbError>
     ): Effect.Effect<void> =>
       effect.pipe(
-        Effect.catchAll(error =>
+        Effect.catch(error =>
           log.warn('recording persistence failed', {
             context: { recordingId, op: error.op },
             error: error.cause,
@@ -289,7 +288,7 @@ export const RecordingServiceLive: Layer.Layer<
     ): Effect.Effect<boolean> =>
       effect.pipe(
         Effect.as(true),
-        Effect.catchAll(error =>
+        Effect.catch(error =>
           log
             .warn('recording save failed — audio retained for recovery', {
               context: { recordingId, op: error.op },
@@ -334,7 +333,8 @@ export const RecordingServiceLive: Layer.Layer<
       createInput: CreateRecordingInput,
       engine: RecordingEngine,
       synchronize: ActiveRecording['synchronize'],
-      synchronizeLanguage: ActiveRecording['synchronize']
+      synchronizeLanguage: ActiveRecording['synchronize'],
+      admitted: Deferred.Deferred<void, RecordingStartError>
     ): Effect.Effect<void> => {
       const mode = input.captureMode;
       const noteId = input.noteId ?? null;
@@ -358,7 +358,7 @@ export const RecordingServiceLive: Layer.Layer<
         if (Exit.isSuccess(exit)) return Effect.void;
         // Unexpected capture/storage failures and workspace interruptions retain
         // a recoverable job; only the visible capture outcome differs.
-        const failed = !Exit.isInterrupted(exit);
+        const failed = !Exit.hasInterrupts(exit);
         return db.getRecoveryOutbox(recordingId).pipe(
           Effect.flatMap(row =>
             row === null
@@ -368,31 +368,31 @@ export const RecordingServiceLive: Layer.Layer<
                   lastError: failed ? 'recording-interrupted' : 'interrupted',
                 })
           ),
-          Effect.zipRight(
+          Effect.andThen(
             failed
-              ? captureStopped(recordingId).pipe(Effect.zipRight(setState({ status: 'error' })))
+              ? captureStopped(recordingId).pipe(Effect.andThen(setState({ status: 'error' })))
               : Effect.void
           ),
           // A genuine give-up also fails the product-store row (an
           // interruption stays 'recording' — the drain resolves it later).
-          Effect.zipRight(
+          Effect.andThen(
             failed
               ? persistBestEffort(recordingId, store.recordingFailed(recordingId))
               : Effect.void
           ),
-          Effect.zipRight(
+          Effect.andThen(
             log.info('recording parked for recovery', {
               context: { recordingId, outcome: failed ? 'failed' : 'interrupted' },
             })
           ),
-          Effect.catchAll(() => Effect.void)
+          Effect.catch(() => Effect.void)
         );
       };
 
       const body = Effect.gen(function* () {
         let activeEngine = engine;
         let activeCreateInput = createInput;
-        const languageGate = yield* Effect.makeSemaphore(1);
+        const languageGate = yield* Semaphore.make(1);
         const attemptStarted = yield* Clock.currentTimeNanos;
         let captureSummarized = false;
         let completed = false;
@@ -410,7 +410,7 @@ export const RecordingServiceLive: Layer.Layer<
                 nextAttemptAt: new Date(nextUploadAt).toISOString(),
               })
               .pipe(
-                Effect.catchAll(cause =>
+                Effect.catch(cause =>
                   log.warn('recording retry deadline save failed', {
                     context: { recordingId },
                     error: cause,
@@ -421,7 +421,7 @@ export const RecordingServiceLive: Layer.Layer<
         yield* Effect.addFinalizer(exit =>
           Effect.gen(function* () {
             const durationMs = Number((yield* Clock.currentTimeNanos) - attemptStarted) / 1_000_000;
-            const interrupted = Exit.isInterrupted(exit);
+            const interrupted = Exit.hasInterrupts(exit);
             const outcome = interrupted ? 'interrupted' : completed ? 'success' : 'failure';
             if (!captureSummarized) {
               yield* log.info('Recording capture ended', {
@@ -460,6 +460,10 @@ export const RecordingServiceLive: Layer.Layer<
             )
           )
         );
+        // Complete admission only after recovery cleanup is installed. Start can
+        // resume a caller that immediately closes the workspace.
+        yield* Deferred.succeed(admitted, undefined);
+        yield* Effect.yieldNow;
         yield* setState({
           recordingId,
           status: 'starting',
@@ -528,7 +532,7 @@ export const RecordingServiceLive: Layer.Layer<
         if (!created) failedStage = createRes.ok ? 'storage' : 'create';
         if (created) {
           yield* db.updateRecoveryOutbox(recordingId, { phase: 'chunks' }).pipe(
-            Effect.catchAll(cause =>
+            Effect.catch(cause =>
               log.warn('recovery progress save failed', {
                 context: { recordingId },
                 error: cause,
@@ -546,7 +550,7 @@ export const RecordingServiceLive: Layer.Layer<
         });
         const pipeline = yield* Ref.make(initialPipeline);
         const uploadQueue = yield* Effect.acquireRelease(
-          Queue.unbounded<PendingChunk | null>(),
+          Queue.unbounded<PendingChunk, Cause.Done>(),
           Queue.shutdown
         );
         const alignment = yield* SubscriptionRef.make(initialAlignment);
@@ -578,7 +582,7 @@ export const RecordingServiceLive: Layer.Layer<
             AUTO_PAUSE_DEFAULTS.autoStopAfterPausedMinutes,
           minSessionSeconds: MIN_SESSION_SECONDS_BEFORE_AUTO_PAUSE,
         });
-        const frameGate = yield* Effect.makeSemaphore(1);
+        const frameGate = yield* Semaphore.make(1);
 
         /**
          * Apply what the auto-pause machine emitted. `pause`/`stop` are declared later in this
@@ -644,11 +648,11 @@ export const RecordingServiceLive: Layer.Layer<
               index !== expected
                 ? Effect.void
                 : Ref.set(cursorRef, index).pipe(
-                    Effect.zipRight(Ref.set(expectedNextRef, index + 1)),
-                    Effect.zipRight(
+                    Effect.andThen(Ref.set(expectedNextRef, index + 1)),
+                    Effect.andThen(
                       db
                         .updateRecoveryOutbox(recordingId, { lastChunkIndex: index })
-                        .pipe(Effect.catchAll(() => Effect.void))
+                        .pipe(Effect.catch(() => Effect.void))
                     )
                   )
             )
@@ -734,7 +738,7 @@ export const RecordingServiceLive: Layer.Layer<
                 .updateRecoveryOutbox(recordingId, { pauseCutPoints: nextCuts })
                 .pipe(
                   Effect.as(true),
-                  Effect.catchAll(cause =>
+                  Effect.catch(cause =>
                     log
                       .error('pause cut point persist failed — recording remains live', {
                         context: { recordingId },
@@ -765,7 +769,7 @@ export const RecordingServiceLive: Layer.Layer<
           .pipe(
             Effect.flatMap(paused =>
               paused
-                ? flushComplete.pipe(Effect.zipRight(flushTail), Effect.as(true))
+                ? flushComplete.pipe(Effect.andThen(flushTail), Effect.as(true))
                 : Effect.succeed(false)
             )
           );
@@ -823,7 +827,7 @@ export const RecordingServiceLive: Layer.Layer<
           // Main owns capture termination even when no renderer is mounted.
           // Completion is claimed independently by the owning UI when available.
           stop: setState({ autoStopRequested: true }).pipe(
-            Effect.zipRight(Deferred.succeed(stopSignal, undefined)),
+            Effect.andThen(Deferred.succeed(stopSignal, undefined)),
             Effect.asVoid
           ),
         });
@@ -846,12 +850,12 @@ export const RecordingServiceLive: Layer.Layer<
               };
               const saved = yield* db.updateRecoveryOutbox(recordingId, {
                 engineConfig: nextEngine, createInput: nextInput,
-              }).pipe(Effect.as(true), Effect.catchAll(() => Effect.succeed(false)));
+              }).pipe(Effect.as(true), Effect.catch(() => Effect.succeed(false)));
               if (!saved) return false;
               const result = yield* restore(saveRecordingTranscriptionConfig(coreClient, recordingId, nextInput.transcriptionConfig));
               if (result !== 'saved') {
                 const restored = yield* db.updateRecoveryOutbox(recordingId, previous).pipe(
-                  Effect.as(true), Effect.catchAll(() => Effect.succeed(false))
+                  Effect.as(true), Effect.catch(() => Effect.succeed(false))
                 );
                 // A timeout can follow a committed server write. Confirm the old config there too.
                 const backendRestored = result === 'rejected' || (yield* restore(saveRecordingTranscriptionConfig(
@@ -876,7 +880,7 @@ export const RecordingServiceLive: Layer.Layer<
             })).pipe(Effect.onInterrupt(() => Effect.sync(() => {
               uploadsHalted = true;
               failedStage = 'storage';
-            }).pipe(Effect.zipRight(Deferred.succeed(stopSignal, undefined)))))),
+            }).pipe(Effect.andThen(Deferred.succeed(stopSignal, undefined)))))),
             pause: pauseRecording,
             resume: resumeRecording,
             keepRecording,
@@ -895,16 +899,11 @@ export const RecordingServiceLive: Layer.Layer<
           ).pipe(Effect.delay(AUTO_STOP_POLL), Effect.forever)
         );
 
-        // Upload in order independently of capture. Stop appends a sentinel after
-        // its final chunks; workspace interruption cancels the worker and retains the WAV.
-        const uploadFiber = yield* Effect.forkScoped(
-          Effect.gen(function* () {
-            while (true) {
-              const chunk = yield* Queue.take(uploadQueue);
-              if (chunk === null) return;
-              yield* uploadChunk(chunk);
-            }
-          })
+        // Upload in order independently of capture. Stop ends the queue after its
+        // final chunks; workspace interruption cancels the worker and retains the WAV.
+        const uploadFiber = yield* Stream.fromQueue(uploadQueue).pipe(
+          Stream.runForEach(uploadChunk),
+          Effect.forkScoped
         );
 
         // Frame consumer: route each frame → recovery WAV + chunk buffer. Never uploads.
@@ -920,8 +919,8 @@ export const RecordingServiceLive: Layer.Layer<
                       paused
                         ? Effect.succeed<readonly AutoPauseEffect[]>([])
                         : updateLevel(frame.samples).pipe(
-                            Effect.zipRight(recovery.append(lane, frame.samples)),
-                            Effect.zipRight(
+                            Effect.andThen(recovery.append(lane, frame.samples)),
+                            Effect.andThen(
                               Ref.update(pipeline, s => bufferSamples(s, lane, frame.samples))
                             ),
                             Effect.tap(() =>
@@ -932,7 +931,7 @@ export const RecordingServiceLive: Layer.Layer<
                                   frame.samples.length,
                               }))
                             ),
-                            Effect.zipRight(Ref.modify(pipeline, cutComplete)),
+                            Effect.andThen(Ref.modify(pipeline, cutComplete)),
                             Effect.tap(enqueueChunks),
                             Effect.flatMap(chunks =>
                               chunks.length === 0
@@ -949,7 +948,7 @@ export const RecordingServiceLive: Layer.Layer<
                                     )
                                   )
                             ),
-                            Effect.zipRight(observeSilence(lane, frame.samples))
+                            Effect.andThen(observeSilence(lane, frame.samples))
                           )
                     )
                   )
@@ -1016,7 +1015,7 @@ export const RecordingServiceLive: Layer.Layer<
         // identifiable context changes selection; ambiguity holds the binding.
         if (mode !== 'system') {
           yield* Effect.forkScoped(
-            micActivity.latest.changes.pipe(
+            SubscriptionRef.changes(micActivity.latest).pipe(
               Stream.runForEach(latest =>
                 Option.match(latest, {
                   onNone: () => Effect.void,
@@ -1138,7 +1137,7 @@ export const RecordingServiceLive: Layer.Layer<
               });
 
             yield* Effect.forkScoped(
-              alignment.changes.pipe(
+              SubscriptionRef.changes(alignment).pipe(
                 Stream.map(current => commandFor(current.desired, current.desiredRevision)),
                 Stream.changesWith((previous, next) => previous.rev === next.rev),
                 Stream.runForEach(session.sendMicCommand)
@@ -1162,7 +1161,7 @@ export const RecordingServiceLive: Layer.Layer<
             const frameConsumer = Stream.fromQueue(session.frames).pipe(Stream.runForEach(onFrame));
             yield* Effect.raceFirst(
               session.awaitExit,
-              frameConsumer.pipe(Effect.zipRight(Effect.never))
+              frameConsumer.pipe(Effect.andThen(Effect.never))
             );
           })
         ).pipe(
@@ -1181,12 +1180,12 @@ export const RecordingServiceLive: Layer.Layer<
           (yield* Deferred.isDone(stopSignal))
             ? Effect.void
             : Effect.raceFirst(Deferred.await(stopSignal), captureLoop)
-        ).pipe(Effect.either);
+        ).pipe(Effect.result);
         const stoppingAt = yield* Clock.currentTimeMillis;
-        if (Either.isLeft(captureExit)) {
+        if (Result.isFailure(captureExit)) {
           yield* log.warn('capture ended — completing retained audio', {
             context: { recordingId },
-            error: captureExit.left,
+            error: captureExit.failure,
           });
           yield* Deferred.succeed(stopSignal, undefined);
         }
@@ -1194,7 +1193,7 @@ export const RecordingServiceLive: Layer.Layer<
         yield* Fiber.interrupt(autoPauseFiber);
         yield* synchronizeLanguage(synchronize(
           applyAutoPause(autoPause.noteStopped()).pipe(
-            Effect.zipRight(Ref.set(controlsRef, Option.none()))
+            Effect.andThen(Ref.set(controlsRef, Option.none()))
           )
         ));
 
@@ -1209,17 +1208,17 @@ export const RecordingServiceLive: Layer.Layer<
           context: {
             recordingId,
             operation: 'capture',
-            outcome: Either.isLeft(captureExit) ? 'failure' : 'success',
+            outcome: Result.isFailure(captureExit) ? 'failure' : 'success',
             durationMs: Number((yield* Clock.currentTimeNanos) - attemptStarted) / 1_000_000,
             audioDurationMs: mediaDurationMs(stoppingSamples),
-            ...(Either.isLeft(captureExit)
+            ...(Result.isFailure(captureExit)
               ? {
                   failedStage:
-                    captureExit.left._tag === 'RecoveryWriteError' ? 'storage' : 'capture',
+                    captureExit.failure._tag === 'RecoveryWriteError' ? 'storage' : 'capture',
                 }
               : {}),
           },
-          ...(Either.isLeft(captureExit) ? { error: captureExit.left } : {}),
+          ...(Result.isFailure(captureExit) ? { error: captureExit.failure } : {}),
         });
         yield* SubscriptionRef.set(level, 0);
         yield* setState({
@@ -1233,11 +1232,11 @@ export const RecordingServiceLive: Layer.Layer<
             endedAt: stoppingAt,
             durationMs: mediaDurationMs(stoppingSamples),
           })
-          .pipe(Effect.catchAll(() => Effect.void));
+          .pipe(Effect.catch(() => Effect.void));
         yield* synchronize(
           flushComplete.pipe(
-            Effect.zipRight(flushTail),
-            Effect.zipRight(Queue.offer(uploadQueue, null))
+            Effect.andThen(flushTail),
+            Effect.andThen(Queue.end(uploadQueue))
           )
         );
         yield* recovery.finalizeAndClose.pipe(
@@ -1261,7 +1260,7 @@ export const RecordingServiceLive: Layer.Layer<
                 }
               : {}),
           })).pipe(
-            Effect.zipRight(
+            Effect.andThen(
               Ref.update(activeRef, current =>
                 Option.exists(current, active => active.recordingId === recordingId)
                   ? Option.none()
@@ -1292,7 +1291,7 @@ export const RecordingServiceLive: Layer.Layer<
           })
           .pipe(
             Effect.as(true),
-            Effect.catchAll(cause =>
+            Effect.catch(cause =>
               log
                 .warn('recording stop save failed — audio retained', {
                   context: { recordingId },
@@ -1345,8 +1344,8 @@ export const RecordingServiceLive: Layer.Layer<
                       },
                     });
                   }),
-                  Effect.zipRight(resolveCompletion(recordingId, true)),
-                  Effect.catchAll(cause => {
+                  Effect.andThen(resolveCompletion(recordingId, true)),
+                  Effect.catch(cause => {
                     failedStage ??= 'storage';
                     return log.warn('recording progress save failed — retained for recovery', {
                       context: { recordingId },
@@ -1375,7 +1374,7 @@ export const RecordingServiceLive: Layer.Layer<
         // Observable: idle, retaining the finished id + segments as the last snapshot.
         // (The level reset rides the body finalizer above — every exit path.)
         yield* setState({
-          status: Either.isLeft(captureExit) ? 'error' : 'idle',
+          status: Result.isFailure(captureExit) ? 'error' : 'idle',
           elapsedMs: durationMs,
           elapsedAt: null,
           startedAt: null,
@@ -1387,7 +1386,7 @@ export const RecordingServiceLive: Layer.Layer<
       });
 
       return Effect.scoped(body).pipe(
-        Effect.catchAll((error: CaptureError | RecoveryWriteError) =>
+        Effect.catch((error: CaptureError | RecoveryWriteError) =>
           log.warn('recording stopped with unresolved recovery work', {
             context: { recordingId },
             error: error,
@@ -1474,123 +1473,140 @@ export const RecordingServiceLive: Layer.Layer<
           }
 
           const recordingId = createId('recording');
-          const completionReady = yield* Deferred.make<boolean>();
-          completions.set(recordingId, {
-            ready: completionReady,
-            stopped: false,
-            noteId: input.noteId ?? null,
-            segments: 0,
-          });
-          const createInput: CreateRecordingInput = {
-            recordingId,
-            title: input.title ?? i18n.t('recording.untitledRecording'),
-            captureMode: resolved.mode,
-            noteId: input.noteId ?? null,
-            startedAt: nowMs,
-            transcriptionConfig,
-          };
-          const stopSignal = yield* Deferred.make<void>();
-          const done = yield* Deferred.make<void>();
-          const controls = yield* Ref.make<Option.Option<RecordingControls>>(Option.none());
-          const stopping = yield* Ref.make(false);
-          const commandSemaphore = yield* Effect.makeSemaphore(1);
-          const languageCommands = yield* Effect.makeSemaphore(1);
-          const synchronize: ActiveRecording['synchronize'] = effect =>
-            commandSemaphore.withPermits(1)(effect);
-          const synchronizeLanguage: ActiveRecording['synchronize'] = effect =>
-            languageCommands.withPermits(1)(effect);
-          yield* Ref.set(
-            activeRef,
-            Option.some({
+          const admitted = yield* Deferred.make<void, RecordingStartError>();
+          const program = Effect.gen(function* () {
+            const completionReady = yield* Deferred.make<boolean>();
+            completions.set(recordingId, {
+              ready: completionReady,
+              stopped: false,
+              noteId: input.noteId ?? null,
+              segments: 0,
+            });
+            const createInput: CreateRecordingInput = {
               recordingId,
-              stopSignal,
-              done,
-              controls,
-              stopping,
-              synchronize,
-              synchronizeLanguage,
-            })
-          );
-
-          // Reserve control ownership and publish a complete snapshot before the
-          // durable row becomes visible to recovery or another window can Stop.
-          const previousState = yield* SubscriptionRef.get(state);
-          yield* SubscriptionRef.update(state, current => ({
-            ...idleRecordingState,
-            processingRecordingIds: [...current.processingRecordingIds, recordingId],
-            finalizingRecordingIds: current.finalizingRecordingIds,
-            completedRecordings: current.completedRecordings,
-            status: 'starting' as const,
-            recordingId,
-            captureMode: resolved.mode,
-            requestedCaptureMode: resolved.requested,
-            language,
-            spendsCloudQuota: transcriptionConfig.provider === 'prismical-cloud',
-            quotaRemainingAtStartSeconds: input.quotaRemainingAtStartSeconds ?? null,
-            noteId: createInput.noteId ?? null,
-            startedAt: nowMs,
-            elapsedAt: nowMs,
-            micSource: initialAlignment.micSource,
-          }));
-          yield* db
-            .insertRecoveryOutbox({
-              recordingId,
-              noteId: createInput.noteId ?? null,
+              title: input.title ?? i18n.t('recording.untitledRecording'),
               captureMode: resolved.mode,
-              wavPath: path.join(recoveryRoot, recordingId),
-              engine: engine.engine,
-              status: 'capturing',
-              owner,
-              createInput,
-              engineConfig: engine,
-              phase: 'create',
-            })
-            .pipe(
-              Effect.onError(() =>
-                Ref.set(activeRef, Option.none()).pipe(
-                  Effect.zipRight(resolveCompletion(recordingId, false)),
-                  Effect.zipRight(
-                    SubscriptionRef.update(state, current => ({
-                      ...previousState,
-                      processingRecordingIds: current.processingRecordingIds.filter(id => id !== recordingId),
-                      finalizingRecordingIds: current.finalizingRecordingIds,
-                      completedRecordings: current.completedRecordings,
-                    }))
-                  ),
-                  Effect.zipRight(Deferred.succeed(done, undefined))
-                )
-              ),
-              Effect.mapError(() => new RecordingStartError({ reason: 'storage-unavailable' }))
+              noteId: input.noteId ?? null,
+              startedAt: nowMs,
+              transcriptionConfig,
+            };
+            const stopSignal = yield* Deferred.make<void>();
+            const done = yield* Deferred.make<void>();
+            const controls = yield* Ref.make<Option.Option<RecordingControls>>(Option.none());
+            const stopping = yield* Ref.make(false);
+            const commandSemaphore = yield* Semaphore.make(1);
+            const languageCommands = yield* Semaphore.make(1);
+            const synchronize: ActiveRecording['synchronize'] = effect =>
+              commandSemaphore.withPermits(1)(effect);
+            const synchronizeLanguage: ActiveRecording['synchronize'] = effect =>
+              languageCommands.withPermits(1)(effect);
+            yield* Ref.set(
+              activeRef,
+              Option.some({
+                recordingId,
+                stopSignal,
+                done,
+                controls,
+                stopping,
+                synchronize,
+                synchronizeLanguage,
+              })
             );
 
-          const program = run(
-            recordingId,
-            effectiveInput,
-            resolved.requested,
-            initialAlignment,
-            initialFallbackReason,
-            stopSignal,
-            controls,
-            createInput,
-            engine,
-            synchronize,
-            synchronizeLanguage
-          ).pipe(
-            Effect.ensuring(
-              Ref.update(activeRef, cur =>
-                Option.exists(cur, a => a.recordingId === recordingId) ? Option.none() : cur
-              ).pipe(
-                // Release recovery ownership only after the live scope has closed
-                // its WAVs and finished every upload/finalization attempt.
-                Effect.zipRight(SubscriptionRef.update(state, current => ({
-                  ...current,
+            const previousState = yield* SubscriptionRef.get(state);
+            const prepare = Effect.gen(function* () {
+              // Register this worker and its rollback before state observers can
+              // close the workspace, or the durable row becomes visible.
+              yield* Effect.yieldNow;
+              // Reserve control ownership and publish a complete snapshot before the
+              // durable row becomes visible to recovery or another window can Stop.
+              yield* SubscriptionRef.update(state, current => ({
+                ...idleRecordingState,
+                processingRecordingIds: [...current.processingRecordingIds, recordingId],
+                finalizingRecordingIds: current.finalizingRecordingIds,
+                completedRecordings: current.completedRecordings,
+                status: 'starting' as const,
+                recordingId,
+                captureMode: resolved.mode,
+                requestedCaptureMode: resolved.requested,
+                language,
+                spendsCloudQuota: transcriptionConfig.provider === 'prismical-cloud',
+                quotaRemainingAtStartSeconds: input.quotaRemainingAtStartSeconds ?? null,
+                noteId: createInput.noteId ?? null,
+                startedAt: nowMs,
+                elapsedAt: nowMs,
+                micSource: initialAlignment.micSource,
+              }));
+              yield* db
+                .insertRecoveryOutbox({
+                  recordingId,
+                  noteId: createInput.noteId ?? null,
+                  captureMode: resolved.mode,
+                  wavPath: path.join(recoveryRoot, recordingId),
+                  engine: engine.engine,
+                  status: 'capturing',
+                  owner,
+                  createInput,
+                  engineConfig: engine,
+                  phase: 'create',
+                })
+                .pipe(Effect.mapError(() => new RecordingStartError({ reason: 'storage-unavailable' })));
+            }).pipe(Effect.onError(() =>
+              db.updateRecoveryOutbox(recordingId, {
+                status: 'interrupted', lastError: 'interrupted',
+              }).pipe(
+                Effect.catch(() => Effect.void),
+                Effect.andThen(resolveCompletion(recordingId, false)),
+                Effect.andThen(SubscriptionRef.update(state, current => ({
+                  ...previousState,
                   processingRecordingIds: current.processingRecordingIds.filter(id => id !== recordingId),
-                }))),
-                Effect.zipRight(Deferred.succeed(done, undefined))
+                  finalizingRecordingIds: current.finalizingRecordingIds,
+                  completedRecordings: current.completedRecordings,
+                })))
               )
-            )
-          );
-          yield* FiberMap.run(fibers, recordingId, program);
+            ));
+            yield* prepare.pipe(
+              Effect.andThen(run(
+                recordingId,
+                effectiveInput,
+                resolved.requested,
+                initialAlignment,
+                initialFallbackReason,
+                stopSignal,
+                controls,
+                createInput,
+                engine,
+                synchronize,
+                synchronizeLanguage,
+                admitted
+              )),
+              Effect.ensuring(
+                Ref.update(activeRef, cur =>
+                  Option.exists(cur, a => a.recordingId === recordingId) ? Option.none() : cur
+                ).pipe(
+                  // Release recovery ownership only after the live scope has closed
+                  // its WAVs and finished every upload/finalization attempt.
+                  Effect.andThen(SubscriptionRef.update(state, current => ({
+                    ...current,
+                    processingRecordingIds: current.processingRecordingIds.filter(id => id !== recordingId),
+                  }))),
+                  Effect.andThen(Deferred.succeed(done, undefined))
+                )
+              )
+            );
+          });
+          yield* Effect.uninterruptibleMask(restore => Effect.gen(function* () {
+            const fiber = yield* FiberMap.run(fibers, recordingId, program);
+            // Observe the actual fiber so a closed owner also settles Start.
+            yield* Effect.sync(() => fiber.addObserver(exit => {
+              if (Exit.isFailure(exit)) Deferred.doneUnsafe(admitted, exit);
+            }));
+            yield* restore(Deferred.await(admitted)).pipe(
+              Effect.onInterrupt(() => Deferred.isDone(admitted).pipe(
+                Effect.flatMap(done => done ? Effect.void : Fiber.interrupt(fiber))
+              ))
+            );
+          }));
           yield* log.info('recording started', {
             context: {
               recordingId,
@@ -1610,10 +1626,10 @@ export const RecordingServiceLive: Layer.Layer<
             ? log.warn('stop: no matching active recording', { context: { recordingId } })
             : current.value.synchronize(
                   Ref.set(current.value.stopping, true).pipe(
-                    Effect.zipRight(Deferred.succeed(current.value.stopSignal, undefined))
+                    Effect.andThen(Deferred.succeed(current.value.stopSignal, undefined))
                   )
                 )
-                .pipe(Effect.zipRight(Deferred.await(current.value.done)))
+                .pipe(Effect.andThen(Deferred.await(current.value.done)))
         )
       );
 

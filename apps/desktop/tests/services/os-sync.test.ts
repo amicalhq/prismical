@@ -15,9 +15,10 @@ import { runOsSync } from '../../src/main/domains/settings/os-sync';
 
 /** Cooperative wait for the forked sync fibers (no clock involved). */
 const drainUntil = (predicate: () => boolean) =>
-  Effect.iterate(0, {
-    while: n => n < 200 && !predicate(),
-    body: n => Effect.yieldNow().pipe(Effect.as(n + 1)),
+  Effect.gen(function* () {
+    for (let n = 0; n < 200 && !predicate(); n++) {
+      yield* Effect.yieldNow;
+    }
   });
 
 const build = (seed: Record<string, string> = {}) => {
@@ -39,9 +40,9 @@ describe('runOsSync', () => {
     Effect.gen(function* () {
       const { layer, nativeOs } = build();
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const settings = Context.get(ctx, SettingsService);
-      yield* runOsSync.pipe(Effect.provide(ctx), Scope.extend(scope));
+      yield* runOsSync.pipe(Effect.provide(ctx), Scope.provide(scope));
 
       // Boot reconcile: the defaults are applied once each.
       yield* drainUntil(
@@ -79,8 +80,8 @@ describe('runOsSync', () => {
         'pref:dockVisible': 'false',
       });
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
-      yield* runOsSync.pipe(Effect.provide(ctx), Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* runOsSync.pipe(Effect.provide(ctx), Scope.provide(scope));
 
       yield* drainUntil(
         () => nativeOs.calls.loginItem.length >= 1 && nativeOs.calls.dock.length >= 1
@@ -95,9 +96,9 @@ describe('runOsSync', () => {
     Effect.gen(function* () {
       const { layer, nativeOs } = build();
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const settings = Context.get(ctx, SettingsService);
-      yield* runOsSync.pipe(Effect.provide(ctx), Scope.extend(scope));
+      yield* runOsSync.pipe(Effect.provide(ctx), Scope.provide(scope));
       yield* drainUntil(() => nativeOs.calls.loginItem.length >= 1);
 
       yield* Scope.close(scope, Exit.void);

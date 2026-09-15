@@ -27,7 +27,7 @@ const writeAscii = (view: DataView, offset: number, text: string): void => {
  * web encoder. The returned bytes are a complete, standalone WAV with correct
  * RIFF size (dataBytes + 36) and data size (dataBytes) — no post-hoc fixup.
  */
-export const encodeWavPcm16 = (samples: Float32Array, sampleRate: number): Uint8Array => {
+export const encodeWavPcm16 = (samples: Float32Array, sampleRate: number): Uint8Array<ArrayBuffer> => {
   const dataBytes = samples.length * 2;
   const buffer = new ArrayBuffer(WAV_HEADER_BYTES + dataBytes);
   const view = new DataView(buffer);

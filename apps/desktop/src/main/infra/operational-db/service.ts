@@ -107,7 +107,6 @@ export interface OperationalDbService {
   readonly deleteAllLocalModels: () => Effect.Effect<void, DbError>;
 }
 
-export class OperationalDb extends Context.Tag('desktop/OperationalDb')<
-  OperationalDb,
-  OperationalDbService
->() {}
+export class OperationalDb extends Context.Service<OperationalDb, OperationalDbService>()(
+  'desktop/OperationalDb'
+) {}

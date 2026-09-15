@@ -18,7 +18,8 @@ import { testTelemetryLayer } from '../helpers/telemetry';
 import { makeWire } from '@desktop/logging';
 import { EventEmitter } from 'node:events';
 import { assert, describe, it } from '@effect/vitest';
-import { Context, Duration, Effect, Exit, Fiber, Layer, Scope, TestClock } from 'effect';
+import { Context, Duration, Effect, Exit, Fiber, Layer, Scope } from 'effect';
+import { TestClock } from 'effect/testing';
 import { makeTestLogger, testConfigLayer } from '../helpers/test-layers';
 import {
   TRANSCRIBE_TIMEOUT,
@@ -98,13 +99,13 @@ const build = (options: { throwOnFork?: Error; transcribeTimeout?: Duration.Dura
         forkFn,
         ...(options.transcribeTimeout ? { transcribeTimeout: options.transcribeTimeout } : {}),
       }).pipe(Layer.provide(Layer.mergeAll(testConfigLayer(), logger.layer, testTelemetryLayer)))
-    ).pipe(Scope.extend(scope));
+    ).pipe(Scope.provide(scope));
     return { engine: Context.get(ctx, WhisperEngine), forks, logger, scope };
   });
 
 /** Let forked fibers run up to their next async boundary. */
 const settle = Effect.gen(function* () {
-  for (let i = 0; i < 25; i += 1) yield* Effect.yieldNow();
+  for (let i = 0; i < 25; i += 1) yield* Effect.yieldNow;
 });
 
 const MODEL = '/models/ggml-base.en.bin';
@@ -124,7 +125,7 @@ describe('WhisperEngine host', () => {
         const h = yield* build();
         assert.strictEqual(h.forks.length, 0, 'nothing forked at layer build');
 
-        const first = yield* Effect.fork(h.engine.ensureModel(MODEL));
+        const first = yield* Effect.forkChild(h.engine.ensureModel(MODEL));
         yield* settle;
         assert.strictEqual(h.forks.length, 1);
         const { modulePath, options, child } = h.forks[0];
@@ -146,7 +147,7 @@ describe('WhisperEngine host', () => {
         // Same path → no round trip. Other path → initializeModel again, same worker.
         yield* h.engine.ensureModel(MODEL);
         assert.strictEqual(child.sent.length, 1);
-        const other = yield* Effect.fork(h.engine.ensureModel('/models/ggml-tiny.bin'));
+        const other = yield* Effect.forkChild(h.engine.ensureModel('/models/ggml-tiny.bin'));
         yield* settle;
         assert.deepStrictEqual(child.sent[1], {
           id: 1,
@@ -165,7 +166,7 @@ describe('WhisperEngine host', () => {
     () =>
       Effect.gen(function* () {
         const h = yield* build();
-        const init = yield* Effect.fork(h.engine.ensureModel(MODEL));
+        const init = yield* Effect.forkChild(h.engine.ensureModel(MODEL));
         yield* settle;
         const child = h.forks[0].child;
         child.boot();
@@ -173,7 +174,7 @@ describe('WhisperEngine host', () => {
         yield* Fiber.join(init);
 
         const audio = new Float32Array([0.5, -0.25, 0.125]);
-        const call = yield* Effect.fork(h.engine.transcribe(audio, { ...OPTIONS, vad: true }));
+        const call = yield* Effect.forkChild(h.engine.transcribe(audio, { ...OPTIONS, vad: true }));
         yield* settle;
         assert.deepStrictEqual(child.sent[1], {
           id: 1,
@@ -199,7 +200,7 @@ describe('WhisperEngine host', () => {
         assert.strictEqual(early.reason, 'inference-failed');
         assert.strictEqual(h.forks.length, 0, 'no worker forked for a call that cannot run');
 
-        const init = yield* Effect.fork(h.engine.ensureModel(MODEL));
+        const init = yield* Effect.forkChild(h.engine.ensureModel(MODEL));
         yield* settle;
         const child = h.forks[0].child;
         child.boot();
@@ -217,20 +218,20 @@ describe('WhisperEngine host', () => {
     () =>
       Effect.gen(function* () {
         const h = yield* build();
-        const init = yield* Effect.fork(h.engine.ensureModel(MODEL));
+        const init = yield* Effect.forkChild(h.engine.ensureModel(MODEL));
         yield* settle;
         const first = h.forks[0].child;
         first.boot();
         first.reply(0, undefined);
         yield* Fiber.join(init);
 
-        const call = yield* Effect.fork(h.engine.transcribe(new Float32Array(16_000), OPTIONS));
+        const call = yield* Effect.forkChild(h.engine.transcribe(new Float32Array(16_000), OPTIONS));
         yield* settle;
         first.die(139);
         const error = yield* Fiber.join(call).pipe(Effect.flip);
         assert.strictEqual(error.reason, 'worker-crashed');
 
-        const retry = yield* Effect.fork(h.engine.transcribe(new Float32Array(16_000), OPTIONS));
+        const retry = yield* Effect.forkChild(h.engine.transcribe(new Float32Array(16_000), OPTIONS));
         yield* settle;
         assert.strictEqual(h.forks.length, 2, 're-forked');
         const second = h.forks[1].child;
@@ -251,7 +252,7 @@ describe('WhisperEngine host', () => {
     () =>
       Effect.gen(function* () {
         const h = yield* build();
-        const init = yield* Effect.fork(h.engine.ensureModel(MODEL));
+        const init = yield* Effect.forkChild(h.engine.ensureModel(MODEL));
         yield* settle;
         const child = h.forks[0].child;
         child.emit(
@@ -263,7 +264,7 @@ describe('WhisperEngine host', () => {
         assert.match(error.detail ?? '', /ENOENT/);
 
         // A worker that exits 1 while loading the binding (no message ever) — same class.
-        const again = yield* Effect.fork(h.engine.ensureModel(MODEL));
+        const again = yield* Effect.forkChild(h.engine.ensureModel(MODEL));
         yield* settle;
         h.forks[1].child.die(1);
         assert.strictEqual((yield* Fiber.join(again).pipe(Effect.flip)).reason, 'spawn-failed');
@@ -282,14 +283,14 @@ describe('WhisperEngine host', () => {
     () =>
       Effect.gen(function* () {
         const h = yield* build({ transcribeTimeout: Duration.seconds(60) });
-        const init = yield* Effect.fork(h.engine.ensureModel(MODEL));
+        const init = yield* Effect.forkChild(h.engine.ensureModel(MODEL));
         yield* settle;
         const child = h.forks[0].child;
         child.boot();
         child.reply(0, undefined);
         yield* Fiber.join(init);
 
-        const call = yield* Effect.fork(h.engine.transcribe(new Float32Array(16_000), OPTIONS));
+        const call = yield* Effect.forkChild(h.engine.transcribe(new Float32Array(16_000), OPTIONS));
         yield* settle;
         yield* TestClock.adjust(Duration.seconds(61));
         const error = yield* Fiber.join(call).pipe(Effect.flip);
@@ -303,7 +304,7 @@ describe('WhisperEngine host', () => {
           )
         );
 
-        const next = yield* Effect.fork(h.engine.ensureModel(MODEL));
+        const next = yield* Effect.forkChild(h.engine.ensureModel(MODEL));
         yield* settle;
         assert.strictEqual(h.forks.length, 2);
         h.forks[1].child.boot();
@@ -318,7 +319,7 @@ describe('WhisperEngine host', () => {
     () =>
       Effect.gen(function* () {
         const h = yield* build();
-        const init = yield* Effect.fork(h.engine.ensureModel(MODEL));
+        const init = yield* Effect.forkChild(h.engine.ensureModel(MODEL));
         yield* settle;
         const child = h.forks[0].child;
         child.emit('message', {
@@ -360,7 +361,7 @@ describe('WhisperEngine host', () => {
     () =>
       Effect.gen(function* () {
         const h = yield* build();
-        const init = yield* Effect.fork(h.engine.ensureModel(MODEL));
+        const init = yield* Effect.forkChild(h.engine.ensureModel(MODEL));
         yield* settle;
         const child = h.forks[0].child;
         child.boot();
@@ -371,7 +372,7 @@ describe('WhisperEngine host', () => {
         // fails the new load and REPLIES (an error reply — no crash, no re-fork),
         // so after this the worker holds NO model at all.
         const other = '/models/ggml-large-v3.bin';
-        const switchTo = yield* Effect.fork(h.engine.ensureModel(other));
+        const switchTo = yield* Effect.forkChild(h.engine.ensureModel(other));
         yield* settle;
         assert.deepStrictEqual(child.sent[1], { id: 1, method: 'initializeModel', args: [other] });
         child.fail(1, 'failed to load model');
@@ -381,7 +382,7 @@ describe('WhisperEngine host', () => {
         // transcribe (still requesting `other`) must re-attempt initializeModel
         // first — with the stale cache it would decode straight away and SIGSEGV
         // against the freed instance for the rest of the boot scope.
-        const call = yield* Effect.fork(h.engine.transcribe(new Float32Array(16_000), OPTIONS));
+        const call = yield* Effect.forkChild(h.engine.transcribe(new Float32Array(16_000), OPTIONS));
         yield* settle;
         assert.deepStrictEqual(child.sent[2], { id: 2, method: 'initializeModel', args: [other] });
         child.reply(2, undefined);
@@ -391,7 +392,7 @@ describe('WhisperEngine host', () => {
         assert.deepStrictEqual(yield* Fiber.join(call), { text: 'ok', segments: [] });
 
         // Even re-ensuring the ORIGINAL model reloads — the worker freed it too.
-        const back = yield* Effect.fork(h.engine.ensureModel(MODEL));
+        const back = yield* Effect.forkChild(h.engine.ensureModel(MODEL));
         yield* settle;
         assert.deepStrictEqual(child.sent[4], { id: 4, method: 'initializeModel', args: [MODEL] });
         child.reply(4, undefined);

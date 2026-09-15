@@ -64,14 +64,14 @@ describe('ProductDb', () => {
 
       const first = buildDb({ kind: 'local' }, { localDbPath: dbPath });
       const scopeA = yield* Scope.make();
-      yield* Layer.build(first.layer).pipe(Scope.extend(scopeA));
+      yield* Layer.build(first.layer).pipe(Scope.provide(scopeA));
       yield* Scope.close(scopeA, Exit.void);
       const firstOpen = first.logger.find(entry => entry.message === 'product db opened');
       assert.deepStrictEqual((firstOpen?.data as { migrationsRun: number[] }).migrationsRun, [0, 1, 2, 3]);
 
       const second = buildDb({ kind: 'local' }, { localDbPath: dbPath });
       const scopeB = yield* Scope.make();
-      yield* Layer.build(second.layer).pipe(Scope.extend(scopeB));
+      yield* Layer.build(second.layer).pipe(Scope.provide(scopeB));
       yield* Scope.close(scopeB, Exit.void);
       const secondOpen = second.logger.find(entry => entry.message === 'product db opened');
       assert.deepStrictEqual((secondOpen?.data as { migrationsRun: number[] }).migrationsRun, []);
@@ -92,7 +92,7 @@ describe('ProductDb', () => {
       old.close();
       const { layer, logger } = buildDb({ kind: 'local' }, { localDbPath: dbPath });
       const scope = yield* Scope.make();
-      const svc = Context.get(yield* Layer.build(layer).pipe(Scope.extend(scope)), ProductDb);
+      const svc = Context.get(yield* Layer.build(layer).pipe(Scope.provide(scope)), ProductDb);
       assert.deepStrictEqual((logger.find(entry => entry.message === 'product db opened')?.data as { migrationsRun: number[] }).migrationsRun, [3]);
       assert.strictEqual(svc.db.select().from(schema.note).get()!.title, 'Existing note');
       assert.deepStrictEqual(yield* ftsMatch(svc, 'timelines'), ['nt_upgrade']);
@@ -107,7 +107,7 @@ describe('ProductDb', () => {
       const dbPath = path.join(tempDir, 'local-target', 'local.db');
       const { layer } = buildDb({ kind: 'local' }, { localDbPath: dbPath });
       const scope = yield* Scope.make();
-      yield* Layer.build(layer).pipe(Scope.extend(scope));
+      yield* Layer.build(layer).pipe(Scope.provide(scope));
       assert.isTrue(existsSync(dbPath), 'local.db must exist at localDbPath');
       yield* Scope.close(scope, Exit.void);
     })
@@ -123,14 +123,14 @@ describe('ProductDb', () => {
         { cloudCacheDir }
       );
       const scopeA = yield* Scope.make();
-      yield* Layer.build(withOrg.layer).pipe(Scope.extend(scopeA));
+      yield* Layer.build(withOrg.layer).pipe(Scope.provide(scopeA));
       assert.isTrue(existsSync(path.join(cloudCacheDir, 'user%40example.com__org%2F1.db')));
       yield* Scope.close(scopeA, Exit.void);
 
       // Missing orgId folds to 'default' (the eventkit sequence-key idiom).
       const withoutOrg = buildDb({ kind: 'cloud-cache', sub: 'usr_a' }, { cloudCacheDir });
       const scopeB = yield* Scope.make();
-      yield* Layer.build(withoutOrg.layer).pipe(Scope.extend(scopeB));
+      yield* Layer.build(withoutOrg.layer).pipe(Scope.provide(scopeB));
       assert.isTrue(existsSync(path.join(cloudCacheDir, 'usr_a__default.db')));
       yield* Scope.close(scopeB, Exit.void);
     })
@@ -145,7 +145,7 @@ describe('ProductDb', () => {
         { cloudCacheDir }
       );
       const scope = yield* Scope.make();
-      yield* Layer.build(layer).pipe(Scope.extend(scope));
+      yield* Layer.build(layer).pipe(Scope.provide(scope));
 
       const opened = logger.find(entry => entry.message === 'product db opened');
       const data = (opened?.data ?? {}) as Record<string, unknown>;
@@ -173,11 +173,11 @@ describe('ProductDb', () => {
         { cloudCacheDir }
       );
       const scope = yield* Scope.make();
-      const exit = yield* Effect.exit(Layer.build(layer).pipe(Scope.extend(scope)));
+      const exit = yield* Effect.exit(Layer.build(layer).pipe(Scope.provide(scope)));
 
       assert.isTrue(Exit.isFailure(exit), 'opening a directory as a database must fail');
       const failure = Exit.isFailure(exit)
-        ? Option.getOrNull(Cause.failureOption(exit.cause))
+        ? Option.getOrNull(Cause.findErrorOption(exit.cause))
         : null;
       assert.instanceOf(failure, ProductDbError);
       // Every consumer logs `cause: String(error.cause)` — that is the string
@@ -219,7 +219,7 @@ describe('ProductDb', () => {
       const dbPath = path.join(tempDir, 'fts.db');
       const { layer } = buildDb({ kind: 'local' }, { localDbPath: dbPath });
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const svc = Context.get(ctx, ProductDb);
 
       yield* insertNote(svc, 'nt_1', 'Quarterly planning', 'alpha bravo');
@@ -281,7 +281,7 @@ describe('ProductDb', () => {
       const dbPath = path.join(tempDir, 'close.db');
       const { logger, layer } = buildDb({ kind: 'local' }, { localDbPath: dbPath });
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const svc = Context.get(ctx, ProductDb);
       yield* insertNote(svc, 'nt_close', 'Close me', '');
 
@@ -297,7 +297,7 @@ describe('ProductDb', () => {
     Effect.gen(function* () {
       const { layer } = buildDb({ kind: 'local' });
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const svc = Context.get(ctx, ProductDb);
 
       yield* insertNote(svc, 'nt_mem', 'In memory', 'ephemeral text');
@@ -317,9 +317,9 @@ describe('ProductDb', () => {
       const file = buildDb({ kind: 'local' }, { localDbPath: dbPath });
       const memory = buildDb({ kind: 'local' });
       const scope = yield* Scope.make();
-      const fileSvc = Context.get(yield* Layer.build(file.layer).pipe(Scope.extend(scope)), ProductDb);
+      const fileSvc = Context.get(yield* Layer.build(file.layer).pipe(Scope.provide(scope)), ProductDb);
       const memSvc = Context.get(
-        yield* Layer.build(memory.layer).pipe(Scope.extend(scope)),
+        yield* Layer.build(memory.layer).pipe(Scope.provide(scope)),
         ProductDb
       );
 

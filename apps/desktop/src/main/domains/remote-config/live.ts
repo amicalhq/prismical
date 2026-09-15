@@ -1,4 +1,4 @@
-import { Effect, Layer, Schedule, Stream, SubscriptionRef } from 'effect';
+import { Semaphore, Effect, Layer, Schedule, Stream, SubscriptionRef } from 'effect';
 import { z } from 'zod';
 import { updateRequirementSchema, type UpdateRequirement } from '@prismical/desktop-contracts';
 import { AppConfig } from '../../infra/config/service';
@@ -16,7 +16,7 @@ export const REMOTE_CONFIG_INTERVAL = '15 minutes';
 const envelopeSchema = z.object({ updateRequirement: updateRequirementSchema.optional() });
 
 export const makeRemoteConfigLive = (fetchFn: typeof fetch = desktopFetch) =>
-  Layer.scoped(
+  Layer.effect(
     RemoteConfig,
     Effect.gen(function* () {
       const config = yield* AppConfig;
@@ -30,7 +30,7 @@ export const makeRemoteConfigLive = (fetchFn: typeof fetch = desktopFetch) =>
         value?.required && value.evaluatedVersion === config.appVersion ? value : null;
       const cached = yield* db
         .getSetting(REMOTE_CONFIG_KEY)
-        .pipe(Effect.catchAll(() => Effect.succeed(null)));
+        .pipe(Effect.catch(() => Effect.succeed(null)));
       if (cached) {
         const parsed = yield* Effect.try(() => envelopeSchema.parse(JSON.parse(cached))).pipe(
           Effect.option
@@ -43,8 +43,8 @@ export const makeRemoteConfigLive = (fetchFn: typeof fetch = desktopFetch) =>
       }
 
       let generation = 0;
-      const writeLock = yield* Effect.makeSemaphore(1);
-      let fetchLock = yield* Effect.makeSemaphore(1);
+      const writeLock = yield* Semaphore.make(1);
+      let fetchLock = yield* Semaphore.make(1);
       const request = Effect.gen(function* () {
         const startedGeneration = generation;
         const url = new URL('/apps/v1/remote-config', config.endpoints.coreApiUrl);
@@ -78,7 +78,7 @@ export const makeRemoteConfigLive = (fetchFn: typeof fetch = desktopFetch) =>
           })
         );
       }).pipe(
-        Effect.catchAll(error =>
+        Effect.catch(error =>
           log.warn('Remote config refresh failed; retaining last policy', { error })
         )
       );
@@ -90,7 +90,7 @@ export const makeRemoteConfigLive = (fetchFn: typeof fetch = desktopFetch) =>
       yield* Effect.forkScoped(refresh.pipe(Effect.repeat(Schedule.fixed(REMOTE_CONFIG_INTERVAL))));
       yield* Effect.forkScoped(
         Stream.runForEach(
-          auth.sessionState.changes.pipe(
+          SubscriptionRef.changes(auth.sessionState).pipe(
             Stream.map(state => state.activeSub ?? null),
             Stream.changes,
             Stream.drop(1)
@@ -100,7 +100,7 @@ export const makeRemoteConfigLive = (fetchFn: typeof fetch = desktopFetch) =>
               generation++;
               // Version policy survives sign-out. Coalesce requests within the new identity,
               // without letting an old identity's in-flight request delay this refresh.
-              fetchLock = yield* Effect.makeSemaphore(1);
+              fetchLock = yield* Semaphore.make(1);
               yield* Effect.forkScoped(refresh);
             })
         )

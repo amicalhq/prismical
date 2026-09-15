@@ -76,7 +76,7 @@ const build = (
           Layer.provide(fakeCloud.layer)
         )
       ).pipe(Layer.provide(env))
-    ).pipe(Scope.extend(scope), Effect.orDie);
+    ).pipe(Scope.provide(scope), Effect.orDie);
     const product = Context.get(ctx, ProductDb);
     const seedVocabulary = (
       rows: ReadonlyArray<{ id: string; word: string; replacementWord?: string; deleted?: boolean }>

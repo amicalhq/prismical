@@ -80,7 +80,6 @@ export interface RecordingStoreApi {
   ) => Effect.Effect<void, ProductDbError>;
 }
 
-export class RecordingStore extends Context.Tag('desktop/RecordingStore')<
-  RecordingStore,
-  RecordingStoreApi
->() {}
+export class RecordingStore extends Context.Service<RecordingStore, RecordingStoreApi>()(
+  'desktop/RecordingStore'
+) {}

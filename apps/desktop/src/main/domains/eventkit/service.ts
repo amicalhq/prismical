@@ -7,7 +7,6 @@ export interface EventKitServiceApi {
   readonly refresh: Effect.Effect<AppleCalendarStatus>;
 }
 
-export class EventKitService extends Context.Tag('desktop/eventkit/EventKitService')<
-  EventKitService,
-  EventKitServiceApi
->() {}
+export class EventKitService extends Context.Service<EventKitService, EventKitServiceApi>()(
+  'desktop/eventkit/EventKitService'
+) {}

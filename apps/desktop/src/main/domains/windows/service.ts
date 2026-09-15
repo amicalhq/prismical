@@ -169,7 +169,6 @@ export interface WindowRegistryService {
   readonly mainWindowFocused: SubscriptionRef.SubscriptionRef<boolean>;
 }
 
-export class WindowRegistry extends Context.Tag('desktop/WindowRegistry')<
-  WindowRegistry,
-  WindowRegistryService
->() {}
+export class WindowRegistry extends Context.Service<WindowRegistry, WindowRegistryService>()(
+  'desktop/WindowRegistry'
+) {}

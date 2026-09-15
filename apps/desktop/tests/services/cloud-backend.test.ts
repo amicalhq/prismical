@@ -23,8 +23,8 @@ import {
   Option,
   Scope,
   SubscriptionRef,
-  TestClock,
 } from 'effect';
+import { TestClock } from 'effect/testing';
 import { afterEach, vi } from 'vitest';
 import {
   describeAiError,
@@ -220,7 +220,7 @@ describe('makeWorkspaceBackendRequest (envelope mapping)', () => {
   it.effect('a hung fetch trips the 15s budget → INTERNAL', () =>
     Effect.gen(function* () {
       const { fetchFn } = recordingFetch(() => new Promise<Response>(() => {}));
-      const fiber = yield* Effect.fork(
+      const fiber = yield* Effect.forkChild(
         runRequest({ fetchFn, req: { method: 'GET', path: '/apps/v1/me' } })
       );
       yield* TestClock.adjust(REQUEST_TIMEOUT);
@@ -254,14 +254,14 @@ describe('makeWorkspaceBackendRequest (envelope mapping)', () => {
                 respond = resolve;
               })
           );
-          const fiber = yield* Effect.fork(
+          const fiber = yield* Effect.forkChild(
             runRequest({
               fetchFn,
               req: { method: 'POST', path, body: {} },
             })
           );
           yield* TestClock.adjust(`${serverSeconds + 1} seconds`);
-          assert.isTrue(Option.isNone(yield* Fiber.poll(fiber)));
+          assert.isTrue(fiber.pollUnsafe() === undefined);
           const body = { error: { code: 'PROVIDER_UNAVAILABLE' } };
           respond(jsonResponse(body, 502));
           assert.deepStrictEqual(yield* Fiber.join(fiber), {
@@ -275,7 +275,7 @@ describe('makeWorkspaceBackendRequest (envelope mapping)', () => {
     it.effect(`a hung ${operation} aborts at ${timeoutSeconds}s`, () =>
       Effect.gen(function* () {
         let signal: AbortSignal | undefined;
-        const fiber = yield* Effect.fork(
+        const fiber = yield* Effect.forkChild(
           runRequest({
             fetchFn: (_url, init) => {
               signal = init.signal;
@@ -285,7 +285,7 @@ describe('makeWorkspaceBackendRequest (envelope mapping)', () => {
           })
         );
         yield* TestClock.adjust(`${timeoutSeconds - 1} seconds`);
-        assert.isTrue(Option.isNone(yield* Fiber.poll(fiber)));
+        assert.isTrue(fiber.pollUnsafe() === undefined);
         assert.isFalse(signal?.aborted);
         yield* TestClock.adjust('1 second');
         assert.deepStrictEqual(yield* Fiber.join(fiber), { error: { code: 'INTERNAL' } });
@@ -300,10 +300,10 @@ describe('makeWorkspaceBackendRequest (envelope mapping)', () => {
       let signal: AbortSignal | undefined;
       const response = new Response();
       response.json = () => {
-        Deferred.unsafeDone(readingBody, Effect.void);
+        Deferred.doneUnsafe(readingBody, Effect.void);
         return new Promise(() => {});
       };
-      const fiber = yield* Effect.fork(runRequest({
+      const fiber = yield* Effect.forkChild(runRequest({
         fetchFn: (_url, init) => {
           signal = init.signal;
           return Promise.resolve(response);
@@ -312,7 +312,7 @@ describe('makeWorkspaceBackendRequest (envelope mapping)', () => {
       }));
       yield* Deferred.await(readingBody);
       yield* TestClock.adjust(REQUEST_TIMEOUT);
-      assert.isTrue(Option.isSome(yield* Fiber.poll(fiber)), 'the body shares the request deadline');
+      assert.isTrue(fiber.pollUnsafe() !== undefined, 'the body shares the request deadline');
       assert.deepStrictEqual(yield* Fiber.join(fiber), { error: { code: 'INTERNAL' } });
       assert.isTrue(signal?.aborted);
     })
@@ -590,12 +590,12 @@ describe('WorkspaceTransport (session-current accessor)', () => {
         const ct = yield* WorkspaceTransport;
         const response = { ok: true, status: 200, bodyJson: 'ready' } as const;
         const request = vi.fn(() => Effect.succeed(response));
-        const pending = yield* ct.request(req, { mode: 'local' }).pipe(Effect.fork);
+        const pending = yield* ct.request(req, { mode: 'local' }).pipe(Effect.forkChild);
         yield* TestClock.adjust('1 second');
-        assert.isTrue(Option.isNone(yield* Fiber.poll(pending)));
+        assert.isTrue(pending.pollUnsafe() === undefined);
         assert.strictEqual(request.mock.calls.length, 0);
         const scope = yield* Scope.make();
-        yield* ct.register({ ...stubClient(response), request }).pipe(Scope.extend(scope));
+        yield* ct.register({ ...stubClient(response), request }).pipe(Scope.provide(scope));
         assert.deepStrictEqual(yield* Fiber.join(pending), response);
         assert.strictEqual(request.mock.calls.length, 1);
         assert.deepStrictEqual(request.mock.calls[0], [req]);
@@ -626,15 +626,15 @@ describe('WorkspaceTransport (session-current accessor)', () => {
           identity: account('user_1', 'org_a'),
           request: oldRequest,
         })
-        .pipe(Scope.extend(oldScope));
+        .pipe(Scope.provide(oldScope));
       const pending = yield* ct
         .request(
           { method: 'GET', path: '/apps/v1/me/notes' },
           { mode: 'cloud', sessionState: stub.sessionState }
         )
-        .pipe(Effect.fork);
+        .pipe(Effect.forkChild);
       yield* TestClock.adjust('1 second');
-      assert.isTrue(Option.isNone(yield* Fiber.poll(pending)));
+      assert.isTrue(pending.pollUnsafe() === undefined);
       assert.strictEqual(oldRequest.mock.calls.length, 0);
       yield* Scope.close(oldScope, Exit.void);
       yield* ct
@@ -643,7 +643,7 @@ describe('WorkspaceTransport (session-current accessor)', () => {
           identity: account('user_1', 'org_b'),
           request: nextRequest,
         })
-        .pipe(Scope.extend(nextScope));
+        .pipe(Scope.provide(nextScope));
       assert.deepStrictEqual(yield* Fiber.join(pending), { ok: true, status: 200, bodyJson: 'B' });
       assert.strictEqual(nextRequest.mock.calls.length, 1);
       yield* Scope.close(nextScope, Exit.void);
@@ -663,7 +663,7 @@ describe('WorkspaceTransport (session-current accessor)', () => {
           { method: 'POST', path: '/apps/v1/me/notes', body: { title: 'A' } },
           { mode: 'cloud', sessionState: stub.sessionState }
         )
-        .pipe(Effect.fork);
+        .pipe(Effect.forkChild);
       yield* TestClock.adjust('1 second');
       yield* SubscriptionRef.set(
         stub.sessionState,
@@ -680,7 +680,7 @@ describe('WorkspaceTransport (session-current accessor)', () => {
           identity: account('user_2', 'org_b'),
           request,
         })
-        .pipe(Scope.extend(scope));
+        .pipe(Scope.provide(scope));
       assert.strictEqual(request.mock.calls.length, 0);
       yield* Scope.close(scope, Exit.void);
     }).pipe(Effect.provide(WorkspaceTransportLive))
@@ -697,7 +697,7 @@ describe('WorkspaceTransport (session-current accessor)', () => {
         stub.sessionState,
         authState('signed-in', [account('user_1', 'org_a')], 'user_1')
       );
-      const pending = yield* ct.request(req, context).pipe(Effect.fork);
+      const pending = yield* ct.request(req, context).pipe(Effect.forkChild);
       yield* TestClock.adjust(WORKSPACE_READY_TIMEOUT);
       assert.deepStrictEqual(yield* Fiber.join(pending), { error: { code: 'INTERNAL' } });
     }).pipe(Effect.provide(WorkspaceTransportLive))
@@ -716,7 +716,7 @@ describe('WorkspaceTransport (session-current accessor)', () => {
       const aborted = yield* Deferred.make<void>();
       const request = vi.fn(() =>
         Deferred.succeed(started, undefined).pipe(
-          Effect.zipRight(Effect.never),
+          Effect.andThen(Effect.never),
           Effect.onInterrupt(() => Deferred.succeed(aborted, undefined))
         )
       );
@@ -727,13 +727,13 @@ describe('WorkspaceTransport (session-current accessor)', () => {
           identity,
           request,
         })
-        .pipe(Scope.extend(scope));
+        .pipe(Scope.provide(scope));
       const pending = yield* ct
         .request(
           { method: 'POST', path: '/apps/v1/me/notes', body: { title: 'A' } },
           { mode: 'cloud', sessionState: stub.sessionState }
         )
-        .pipe(Effect.fork);
+        .pipe(Effect.forkChild);
       yield* Deferred.await(started);
       yield* SubscriptionRef.set(stub.sessionState, initialAuthState);
       assert.deepStrictEqual(yield* Fiber.join(pending), { error: { code: 'INTERNAL' } });
@@ -760,7 +760,7 @@ describe('WorkspaceTransport (session-current accessor)', () => {
         const scope = yield* Scope.make();
         yield* ct
           .register({ ...stubClient(response), identity, request })
-          .pipe(Scope.extend(scope));
+          .pipe(Scope.provide(scope));
         assert.deepStrictEqual(
           yield* ct.request(
             { method: 'GET', path: '/apps/v1/me/people' },
@@ -780,9 +780,9 @@ describe('WorkspaceTransport (session-current accessor)', () => {
       assert.isTrue(Option.isNone(yield* ct.current));
       const pending = yield* ct
         .request({ method: 'GET', path: '/apps/v1/me' }, { mode: 'local' })
-        .pipe(Effect.fork);
+        .pipe(Effect.forkChild);
       yield* TestClock.adjust('1 second');
-      assert.isTrue(Option.isNone(yield* Fiber.poll(pending)));
+      assert.isTrue(pending.pollUnsafe() === undefined);
       yield* TestClock.adjust(WORKSPACE_READY_TIMEOUT);
       assert.deepStrictEqual(
         yield* Fiber.join(pending),
@@ -798,7 +798,7 @@ describe('WorkspaceTransport (session-current accessor)', () => {
       const ct = yield* WorkspaceTransport;
       const client = stubClient({ ok: true, status: 200, bodyJson: 'X' });
       const scope = yield* Scope.make();
-      yield* ct.register(client).pipe(Scope.extend(scope));
+      yield* ct.register(client).pipe(Scope.provide(scope));
 
       assert.isTrue(Option.isSome(yield* ct.current));
       assert.deepStrictEqual(
@@ -814,7 +814,7 @@ describe('WorkspaceTransport (session-current accessor)', () => {
       assert.isTrue(Option.isNone(yield* ct.current));
       const pending = yield* ct
         .request({ method: 'GET', path: '/apps/v1/me' }, { mode: 'local' })
-        .pipe(Effect.fork);
+        .pipe(Effect.forkChild);
       yield* TestClock.adjust(WORKSPACE_READY_TIMEOUT);
       assert.deepStrictEqual(
         yield* Fiber.join(pending),
@@ -836,8 +836,8 @@ describe('WorkspaceTransport (session-current accessor)', () => {
         const scopeB = yield* Scope.make();
 
         // A registers, then B registers on top (the swap: the successor is current).
-        yield* ct.register(clientA).pipe(Scope.extend(scopeA));
-        yield* ct.register(clientB).pipe(Scope.extend(scopeB));
+        yield* ct.register(clientA).pipe(Scope.provide(scopeA));
+        yield* ct.register(clientB).pipe(Scope.provide(scopeB));
         assert.deepStrictEqual(
           yield* ct.request({ method: 'GET', path: '/apps/v1/me' }, { mode: 'local' }),
           {
@@ -883,7 +883,7 @@ describe('WorkspaceTransport (session-current accessor)', () => {
         const scope = yield* Scope.make();
         yield* ct
           .register(stubClient({ error: { code: 'INTERNAL' } }, Effect.succeed('FRESH-ID-TOKEN')))
-          .pipe(Scope.extend(scope));
+          .pipe(Scope.provide(scope));
         assert.deepStrictEqual(yield* ct.collabToken, Option.some('FRESH-ID-TOKEN'));
         yield* Scope.close(scope, Exit.void);
         assert.isTrue(Option.isNone(yield* ct.collabToken));
@@ -898,7 +898,7 @@ describe('WorkspaceTransport (session-current accessor)', () => {
               Effect.fail(new StaleSessionError({ pinnedSub: 'user_1', reason: 'org-switched' }))
             )
           )
-          .pipe(Scope.extend(staleScope));
+          .pipe(Scope.provide(staleScope));
         assert.isTrue(Option.isNone(yield* ct.collabToken));
         yield* Scope.close(staleScope, Exit.void);
       }).pipe(Effect.provide(WorkspaceTransportLive))
@@ -964,11 +964,11 @@ describe('makeCloudWorkspaceLayer → WorkspaceBackend (boot↔session bridge)',
         const scope = yield* Scope.make();
         // Build the boot env first so we hold the SAME WorkspaceTransport the session's
         // WorkspaceBackend registers into, then build the session layer under it.
-        const envCtx = yield* Layer.build(env).pipe(Scope.extend(scope));
+        const envCtx = yield* Layer.build(env).pipe(Scope.provide(scope));
         const ct = Context.get(envCtx, WorkspaceTransport);
         const sessionCtx = yield* Layer.build(makeCloudWorkspaceLayer(pinned)).pipe(
           Effect.provide(envCtx),
-          Scope.extend(scope)
+          Scope.provide(scope)
         );
         // The WorkspaceBackend tag is in the session context too (self-published above).
         assert.isDefined(Context.get(sessionCtx, WorkspaceBackend));
@@ -999,7 +999,7 @@ describe('makeCloudWorkspaceLayer → WorkspaceBackend (boot↔session bridge)',
             { method: 'GET', path: '/apps/v1/me/notes' },
             { mode: 'cloud', sessionState: stub.sessionState }
           )
-          .pipe(Effect.fork);
+          .pipe(Effect.forkChild);
         yield* TestClock.adjust(WORKSPACE_READY_TIMEOUT);
         const stale = yield* Fiber.join(pending);
         assert.deepStrictEqual(stale, { error: { code: 'INTERNAL' } });
@@ -1093,10 +1093,10 @@ describe('makeCloudWorkspaceLayer → WorkspaceBackend (boot↔session bridge)',
           activeOrgId: 'org_a',
         };
         const scope = yield* Scope.make();
-        const envCtx = yield* Layer.build(env).pipe(Scope.extend(scope));
+        const envCtx = yield* Layer.build(env).pipe(Scope.provide(scope));
         const sessionCtx = yield* Layer.build(makeCloudWorkspaceLayer(pinned)).pipe(
           Effect.provide(envCtx),
-          Scope.extend(scope)
+          Scope.provide(scope)
         );
         const client = Context.get(sessionCtx, WorkspaceBackend);
 
@@ -1146,7 +1146,7 @@ describe('makeCloudWorkspaceLayer → WorkspaceBackend (boot↔session bridge)',
           wire[1].url,
           'https://core.test/apps/v1/me/recordings/rec_1/transcribe?chunkIndex=0&chunkStartMs=0&source=system'
         );
-        assert.strictEqual(wire[1].body, wav);
+        assert.deepStrictEqual(wire[1].body, wav);
 
         // Org switched away ⇒ the SignedInSession guard fails and the upload never
         // leaves — a stale session must NEVER upload under the wrong org.

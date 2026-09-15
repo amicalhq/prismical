@@ -20,7 +20,7 @@ export const TrayServiceLive: Layer.Layer<
   TrayService,
   never,
   AppConfig | DesktopI18n | ElectronApp | MainLogger
-> = Layer.scoped(
+> = Layer.effect(
   TrayService,
   Effect.gen(function* () {
     const config = yield* AppConfig;
@@ -40,7 +40,7 @@ export const TrayServiceLive: Layer.Layer<
         const tray = new Tray(icon);
         tray.setToolTip(i18n.t('desktop.tray.tooltip'));
         const onClick = () => {
-          Queue.unsafeOffer(commands, 'open');
+          Queue.offerUnsafe(commands, 'open');
         };
         tray.on('click', onClick);
         tray.setContextMenu(
@@ -48,14 +48,14 @@ export const TrayServiceLive: Layer.Layer<
             {
               label: i18n.t('desktop.tray.open'),
               click: () => {
-                Queue.unsafeOffer(commands, 'open');
+                Queue.offerUnsafe(commands, 'open');
               },
             },
             { type: 'separator' },
             {
               label: i18n.t('desktop.tray.quit'),
               click: () => {
-                Queue.unsafeOffer(commands, 'quit');
+                Queue.offerUnsafe(commands, 'quit');
               },
             },
           ])
@@ -72,7 +72,7 @@ export const TrayServiceLive: Layer.Layer<
             tray.removeListener('click', onClick);
             tray.setContextMenu(null);
           }
-        }).pipe(Effect.zipRight(log.info('tray listeners detached (tray intentionally kept)')))
+        }).pipe(Effect.andThen(log.info('tray listeners detached (tray intentionally kept)')))
     );
 
     const service: TrayServiceApi = { commands };

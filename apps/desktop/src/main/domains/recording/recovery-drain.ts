@@ -178,7 +178,7 @@ export const drainRecoveries = (
     const rows = (yield* db
       .listRecoveryOutbox()
       .pipe(
-        Effect.catchAll(error =>
+        Effect.catch(error =>
           log.warn('recovery work could not be listed', { error: error.cause }).pipe(Effect.as([]))
         )
       )).filter(row => sameWorkspace(row.owner, owner));
@@ -192,7 +192,7 @@ export const drainRecoveries = (
     };
     const bestEffort = (effect: Effect.Effect<void, ProductDbError>): Effect.Effect<void> =>
       effect.pipe(
-        Effect.catchAll(error =>
+        Effect.catch(error =>
           log.warn('recovery cache write failed', { context: { op: error.op }, error: error.cause })
         )
       );
@@ -219,7 +219,7 @@ export const drainRecoveries = (
             lastError: reason,
           })
           .pipe(
-            Effect.catchAll(error =>
+            Effect.catch(error =>
               log.warn('recovery retry state could not be saved', {
                 context: { recordingId: row.recordingId },
                 error: error.cause,
@@ -233,16 +233,16 @@ export const drainRecoveries = (
       });
     const fail = (row: RecoveryOutboxRow, reason: string): Effect.Effect<DrainOutcome> =>
       db.updateRecoveryOutbox(row.recordingId, { status: 'failed', lastError: reason }).pipe(
-        Effect.catchAll(error =>
+        Effect.catch(error =>
           log.warn('recovery failure state could not be saved', {
             context: { recordingId: row.recordingId },
             error: error.cause,
           })
         ),
-        Effect.zipRight(
+        Effect.andThen(
           row.phase === 'cleanup' ? Effect.void : resolveCompletion(row.recordingId, false)
         ),
-        Effect.zipRight(
+        Effect.andThen(
           log.warn('recovery rejected — audio retained', {
             context: { recordingId: row.recordingId, reason },
           })
@@ -354,7 +354,7 @@ export const drainRecoveries = (
             const chunks = yield* Effect.try({
               try: () => deriveDrainChunks(mic, system, row.pauseCutPoints),
               catch: () => null,
-            }).pipe(Effect.catchAll(() => Effect.succeed(null)));
+            }).pipe(Effect.catch(() => Effect.succeed(null)));
             if (chunks === null) return yield* fail(row, 'pause-cut-points-invalid');
             const remaining = chunks.filter(chunk => chunk.index > (row.lastChunkIndex ?? -1));
             if (engine.engine === 'local' && remaining.length > 0) {
@@ -442,7 +442,7 @@ export const drainRecoveries = (
           return 'resolved' as const;
         });
         return yield* process.pipe(
-          Effect.catchAll(error =>
+          Effect.catch(error =>
             park(
               row,
               error._tag === 'RecoveryFileError' ? 'recovery-file' : `persistence:${error.op}`
@@ -452,7 +452,7 @@ export const drainRecoveries = (
             Effect.gen(function* () {
               const result = Exit.isSuccess(exit) ? exit.value : undefined;
               const outcome =
-                Exit.isInterrupted(exit) || result === 'deferred'
+                Exit.hasInterrupts(exit) || result === 'deferred'
                   ? 'interrupted'
                   : result === 'resolved'
                     ? 'success'
@@ -504,7 +504,7 @@ export const runRecoveryWorker = (
               : (value.recordingId ?? 'starting'))
         )
       );
-      yield* Stream.runForEach(state.changes, value =>
+      yield* Stream.runForEach(SubscriptionRef.changes(state), value =>
         value.status === 'idle' || value.status === 'error'
           ? Queue.offer(wakeups, undefined)
           : Effect.void
@@ -513,7 +513,7 @@ export const runRecoveryWorker = (
         yield* drainRecoveries(activeId, resolveCompletion);
         const rows = yield* db
           .listRecoveryOutbox()
-          .pipe(Effect.catchAll(() => Effect.succeed(null)));
+          .pipe(Effect.catch(() => Effect.succeed(null)));
         if (rows === null) {
           yield* Queue.take(wakeups).pipe(Effect.raceFirst(Effect.sleep(BACKOFF_BASE_MS)));
           continue;
@@ -539,7 +539,7 @@ export const runRecoveryWorker = (
     })
   );
 
-export const RecoveryDrainLive = Layer.scopedDiscard(
+export const RecoveryDrainLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const recording = yield* RecordingService;
     yield* runRecoveryWorker(recording.state, recording.resolveCompletion).pipe(Effect.forkScoped);

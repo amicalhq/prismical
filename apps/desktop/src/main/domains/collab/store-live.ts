@@ -17,7 +17,7 @@ import {
 } from './store';
 
 export const NoteBodyStoreLive: Layer.Layer<NoteBodyStore, never, ProductDb | CollabBridge> =
-  Layer.scoped(
+  Layer.effect(
     NoteBodyStore,
     Effect.gen(function* () {
       const { db, client } = yield* ProductDb;

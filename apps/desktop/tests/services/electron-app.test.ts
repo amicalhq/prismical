@@ -50,7 +50,7 @@ describe('ElectronApp', () => {
 
       const scope = yield* Scope.make();
       const ctx = yield* Layer.build(ElectronAppLive.pipe(Layer.provide(logger.layer))).pipe(
-        Scope.extend(scope)
+        Scope.provide(scope)
       );
       const service = Context.get(ctx, ElectronApp);
 
@@ -83,7 +83,7 @@ describe('ElectronApp', () => {
     Effect.gen(function* () {
       const logger = makeTestLogger();
       const scope = yield* Scope.make();
-      yield* Layer.build(ElectronAppLive.pipe(Layer.provide(logger.layer))).pipe(Scope.extend(scope));
+      yield* Layer.build(ElectronAppLive.pipe(Layer.provide(logger.layer))).pipe(Scope.provide(scope));
       const event = new FakeEvent();
       fake.app.emit('open-url', event, 'prismical://app/');
       assert.isTrue(event.defaultPrevented);
@@ -96,15 +96,14 @@ describe('ElectronApp', () => {
       const logger = makeTestLogger();
       const scope = yield* Scope.make();
       const ctx = yield* Layer.build(ElectronAppLive.pipe(Layer.provide(logger.layer))).pipe(
-        Scope.extend(scope)
+        Scope.provide(scope)
       );
       const service = Context.get(ctx, ElectronApp);
 
       // Registration is ready-gated (a scoped fiber awaits whenReady) — let it land.
-      yield* Effect.iterate(0, {
-        while: n => n < 100 && fake.powerMonitor.listenerCount('resume') === 0,
-        body: n => Effect.promise(() => Promise.resolve(n + 1)),
-      });
+      for (let n = 0; n < 100 && fake.powerMonitor.listenerCount('resume') === 0; n++) {
+        yield* Effect.yieldNow;
+      }
       assert.strictEqual(fake.powerMonitor.listenerCount('resume'), 1);
 
       fake.powerMonitor.emit('resume');

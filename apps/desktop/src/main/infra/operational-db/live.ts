@@ -40,7 +40,7 @@ const openDatabase = (dbPath: string): Database.Database => {
 };
 
 export const OperationalDbLive: Layer.Layer<OperationalDb, BootError, AppConfig | MainLogger> =
-  Layer.scoped(
+  Layer.effect(
     OperationalDb,
     Effect.gen(function* () {
       const config = yield* AppConfig;
@@ -70,7 +70,7 @@ export const OperationalDbLive: Layer.Layer<OperationalDb, BootError, AppConfig 
         ({ client }) =>
           Effect.sync(() => {
             client.close();
-          }).pipe(Effect.zipRight(log.info('operational db closed')))
+          }).pipe(Effect.andThen(log.info('operational db closed')))
       );
 
       const db = drizzle(handle.client, { schema });

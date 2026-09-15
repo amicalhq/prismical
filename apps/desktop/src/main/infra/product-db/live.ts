@@ -106,7 +106,7 @@ export const redactCause = (target: ProductDbTarget, cause: unknown): unknown =>
 export const makeProductDbLayer = (
   target: ProductDbTarget
 ): Layer.Layer<ProductDb, ProductDbError, AppConfig | MainLogger> =>
-  Layer.scoped(
+  Layer.effect(
     ProductDb,
     Effect.gen(function* () {
       const config = yield* AppConfig;
@@ -137,7 +137,7 @@ export const makeProductDbLayer = (
         ({ client }) =>
           Effect.sync(() => {
             client.close();
-          }).pipe(Effect.zipRight(log.info('product db closed')))
+          }).pipe(Effect.andThen(log.info('product db closed')))
       );
 
       const db = drizzle(handle.client, { schema });

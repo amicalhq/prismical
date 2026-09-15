@@ -1,6 +1,7 @@
 import { assert, describe, it } from '@effect/vitest';
 import { DEFAULT_DEVICE_SETTINGS } from '@prismical/desktop-contracts';
-import { Context, Effect, Exit, Fiber, Layer, Scope, SubscriptionRef, TestClock } from 'effect';
+import { Context, Effect, Exit, Fiber, Layer, Scope, SubscriptionRef } from 'effect';
+import { TestClock } from 'effect/testing';
 import { makeFakeOperationalDb } from '../helpers/fake-operational-db';
 import { makeTestLogger, testConfigLayer } from '../helpers/test-layers';
 import { initialAuthState, type AuthState } from '../../src/main/domains/auth/policy';
@@ -275,11 +276,11 @@ describe('TelemetryService policy and identity', () => {
           const before = yield* f.telemetry.getState;
           yield* f.telemetry.capture('before_choice');
           yield* SubscriptionRef.set(f.appMode.chosenState, false);
-          for (let i = 0; i < 10; i++) yield* Effect.yieldNow();
+          for (let i = 0; i < 10; i++) yield* Effect.yieldNow;
           assert.lengthOf(f.sinks, 0);
           assert.equal(f.machineReads, 0);
           yield* SubscriptionRef.set(f.appMode.chosenState, true);
-          for (let i = 0; i < 10; i++) yield* Effect.yieldNow();
+          for (let i = 0; i < 10; i++) yield* Effect.yieldNow;
           const state = yield* f.telemetry.getState;
           assert.isTrue(state.enabled);
           assert.isTrue(state.signedIn);
@@ -489,7 +490,7 @@ describe('TelemetryService policy and identity', () => {
           Effect.runSync(setPreference(false));
           Effect.runSync(setPreference(true));
         });
-        for (let i = 0; i < 10; i++) yield* Effect.yieldNow();
+        for (let i = 0; i < 10; i++) yield* Effect.yieldNow;
         assert.isTrue(original.discarded);
         yield* telemetry.capture('after_opt_in');
         assert.lengthOf(original.captures, 1);
@@ -507,7 +508,7 @@ describe('TelemetryService policy and identity', () => {
           Effect.runSync(SubscriptionRef.set(sessionState, signedIn('b')));
           Effect.runSync(SubscriptionRef.set(sessionState, signedIn('a')));
         });
-        for (let i = 0; i < 10; i++) yield* Effect.yieldNow();
+        for (let i = 0; i < 10; i++) yield* Effect.yieldNow;
         assert.isTrue(original.discarded);
         assert.isTrue(
           sinks.every(sink => sink.identifies.every(event => event.distinctId === 'a'))
@@ -529,7 +530,7 @@ describe('TelemetryService policy and identity', () => {
           ...current,
           accounts: { a: { ...current.accounts.a!, name: 'new display name' } },
         }));
-        for (let i = 0; i < 10; i++) yield* Effect.yieldNow();
+        for (let i = 0; i < 10; i++) yield* Effect.yieldNow;
         assert.lengthOf(sinks, 1);
         assert.isFalse(sinks[0]!.discarded);
       })
@@ -592,7 +593,7 @@ describe('TelemetryService policy and identity', () => {
             Effect.runSync(anonymous.setPreference(false));
             Effect.runSync(anonymous.setPreference(true));
           });
-          for (let i = 0; i < 10; i++) yield* Effect.yieldNow();
+          for (let i = 0; i < 10; i++) yield* Effect.yieldNow;
           const afterPreference = yield* anonymous.telemetry.getState;
           assert.isAbove(afterPreference.revision, beforePreference.revision);
           assert.equal(afterPreference.enabled, beforePreference.enabled);
@@ -613,7 +614,7 @@ describe('TelemetryService policy and identity', () => {
             Effect.runSync(SubscriptionRef.set(signed.sessionState, signedIn('b')));
             Effect.runSync(SubscriptionRef.set(signed.sessionState, signedIn('a')));
           });
-          for (let i = 0; i < 10; i++) yield* Effect.yieldNow();
+          for (let i = 0; i < 10; i++) yield* Effect.yieldNow;
           const afterIdentity = yield* signed.telemetry.getState;
           assert.isAbove(afterIdentity.revision, beforeIdentity.revision);
           assert.equal(afterIdentity.signedIn, beforeIdentity.signedIn);
@@ -737,7 +738,7 @@ describe('device fallback and lifecycle', () => {
         initial: signedIn(),
         shutdown: () => new Promise(() => {}),
       }).pipe(Effect.provideService(Scope.Scope, scope));
-      const closing = yield* Effect.fork(Scope.close(scope, Exit.void));
+      const closing = yield* Effect.forkChild(Scope.close(scope, Exit.void));
       yield* TestClock.adjust('2 seconds');
       yield* Fiber.join(closing);
       assert.equal(fixture.sinks[0]!.shutdownCalls, 1);

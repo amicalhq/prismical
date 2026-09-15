@@ -86,7 +86,6 @@ export interface ModelManagerApi {
   readonly installedPath: (modelId: string) => Effect.Effect<Option.Option<string>>;
 }
 
-export class ModelManager extends Context.Tag('desktop/ModelManager')<
-  ModelManager,
-  ModelManagerApi
->() {}
+export class ModelManager extends Context.Service<ModelManager, ModelManagerApi>()(
+  'desktop/ModelManager'
+) {}

@@ -33,8 +33,8 @@ import {
   Layer,
   Scope,
   SubscriptionRef,
-  TestClock,
 } from 'effect';
+import { TestClock } from 'effect/testing';
 import { makeTestLogger, testConfigLayer } from '../helpers/test-layers';
 import { fakeSegment, laneFail, laneOk, makeFakeWorkspaceBackend } from '../helpers/fake-recording';
 import { makeFakeSettings, makeTranscriberStack } from '../helpers/fake-workspace-env';
@@ -120,7 +120,7 @@ const poll = (cond: Effect.Effect<boolean, unknown>, label: string): Effect.Effe
     const check = Effect.orDie(cond);
     for (let i = 0; i < 400; i += 1) {
       if (yield* check) return;
-      yield* Effect.yieldNow();
+      yield* Effect.yieldNow;
       yield* Effect.promise(() => new Promise<void>(resolve => setImmediate(resolve)));
     }
     assert.isTrue(yield* check, `poll timed out: ${label}`);
@@ -176,7 +176,7 @@ const buildEnv = (coreLayer: Layer.Layer<WorkspaceBackend>, options: EnvOptions 
       Layer.effect(AppModeService, makeAppMode(options.mode ?? 'cloud', true)),
       logger.layer
     );
-    const ctx = yield* Layer.build(envLayer).pipe(Scope.extend(scope), Effect.orDie);
+    const ctx = yield* Layer.build(envLayer).pipe(Scope.provide(scope), Effect.orDie);
     const db: OperationalDbService = Context.get(ctx, OperationalDb);
     return {
       userDataDir,
@@ -887,7 +887,7 @@ describe('RecoveryDrain (re-chunk retained WAV → resend tail → finalize → 
 
         const fiber = yield* drainRecoveries(Effect.succeed(null), ignoreCompletion).pipe(
           Effect.provide(env.ctx),
-          Effect.fork
+          Effect.forkChild
         );
 
         // Wait until chunk 0 acked (persisted) and chunk 1 recorded + blocked.
@@ -1448,7 +1448,7 @@ describe('RecoveryDrain owned processing lifecycle', () => {
         });
         const worker = yield* runRecoveryWorker(state, ignoreCompletion).pipe(
           Effect.provide(h.ctx),
-          Effect.fork
+          Effect.forkChild
         );
         yield* TestClock.adjust(Duration.seconds(30));
         assert.isNotNull(yield* h.db.getRecoveryOutbox(recordingId));
@@ -1487,7 +1487,7 @@ describe('RecoveryDrain owned processing lifecycle', () => {
       const state = yield* SubscriptionRef.make(idleRecordingState);
       const worker = yield* runRecoveryWorker(state, ignoreCompletion).pipe(
         Effect.provide(h.ctx),
-        Effect.fork
+        Effect.forkChild
       );
       yield* poll(
         h.db.getRecoveryOutbox(recordingId).pipe(Effect.map(row => row?.attemptCount === 1)),
@@ -1669,7 +1669,7 @@ describe('RecoveryDrain processing ownership', () => {
       const state = yield* SubscriptionRef.make(idleRecordingState);
       const worker = yield* runRecoveryWorker(state, ignoreCompletion).pipe(
         Effect.provide(ctx),
-        Effect.fork
+        Effect.forkChild
       );
       yield* poll(
         Effect.sync(() => finalizations === 1),

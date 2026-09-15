@@ -30,7 +30,7 @@ import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { assert, describe, it } from '@effect/vitest';
-import { Context, Deferred, Effect, Exit, Layer, Option, Scope, Stream } from 'effect';
+import { SubscriptionRef, Context, Deferred, Effect, Exit, Fiber, Layer, Option, Scope, Stream } from 'effect';
 import type { ModelsStateView } from '@prismical/desktop-contracts';
 import { makeFakeOperationalDb } from '../helpers/fake-operational-db';
 import { makeTestLogger, testConfigLayer } from '../helpers/test-layers';
@@ -205,7 +205,7 @@ const modelOf = (state: ModelsStateView, id: string) => {
 
 /** Resolve with the first snapshot satisfying `predicate` (the current one replays first). */
 const waitFor = (manager: ModelManagerApi, predicate: (state: ModelsStateView) => boolean) =>
-  manager.state.changes.pipe(
+  SubscriptionRef.changes(manager.state).pipe(
     Stream.filter(predicate),
     Stream.runHead,
     Effect.map(Option.getOrThrow)
@@ -291,18 +291,18 @@ describe('ModelManager download', () => {
     () =>
       Effect.gen(function* () {
         const scope = yield* Scope.make();
-        const fixture = yield* makeFixture().pipe(Scope.extend(scope));
+        const fixture = yield* makeFixture().pipe(Scope.provide(scope));
         const body = makeBody(8 * MB, 1);
         fixture.behaviour.body = body;
         const entry = entryFor(fixture.url, body, { downloadUrl: `${fixture.url}/redirect` });
         const modelsDir = freshDir();
         const { layer, db } = build({ catalogue: [entry], modelsDir });
-        const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+        const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
         const manager = Context.get(ctx, ModelManager);
         assert.isFalse(exists(modelsDir), 'no mkdir at build');
 
         const seen: ModelsStateView[] = [];
-        yield* Stream.runForEach(manager.state.changes, s => Effect.sync(() => seen.push(s))).pipe(
+        yield* Stream.runForEach(SubscriptionRef.changes(manager.state), s => Effect.sync(() => seen.push(s))).pipe(
           Effect.forkIn(scope)
         );
 
@@ -359,13 +359,13 @@ describe('ModelManager download', () => {
   it.effect('a SHA-1 mismatch discards the .part and surfaces a typed error state — never an install', () =>
     Effect.gen(function* () {
       const scope = yield* Scope.make();
-      const fixture = yield* makeFixture().pipe(Scope.extend(scope));
+      const fixture = yield* makeFixture().pipe(Scope.provide(scope));
       const body = makeBody(2 * MB, 2);
       fixture.behaviour.body = body;
       const entry = entryFor(fixture.url, body, { sha1: 'da39a3ee5e6b4b0d3255bfef95601890afd80709' });
       const modelsDir = freshDir();
       const { layer, db, logger } = build({ catalogue: [entry], modelsDir });
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const manager = Context.get(ctx, ModelManager);
 
       yield* manager.download('test-model');
@@ -391,14 +391,14 @@ describe('ModelManager download', () => {
   it.effect('cancel mid-stream interrupts the fiber, removes the .part, leaves no row; a retry starts clean', () =>
     Effect.gen(function* () {
       const scope = yield* Scope.make();
-      const fixture = yield* makeFixture().pipe(Scope.extend(scope));
+      const fixture = yield* makeFixture().pipe(Scope.provide(scope));
       const body = makeBody(4 * MB, 3);
       fixture.behaviour.body = body;
       fixture.behaviour.stallAfter = 1 * MB;
       const entry = entryFor(fixture.url, body);
       const modelsDir = freshDir();
       const { layer, db, logger } = build({ catalogue: [entry], modelsDir });
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const manager = Context.get(ctx, ModelManager);
       const part = path.join(modelsDir, 'test-model.bin.part');
 
@@ -432,7 +432,7 @@ describe('ModelManager download', () => {
   it.effect('scope close interrupts an in-flight download and removes its .part', () =>
     Effect.gen(function* () {
       const scope = yield* Scope.make();
-      const fixture = yield* makeFixture().pipe(Scope.extend(scope));
+      const fixture = yield* makeFixture().pipe(Scope.provide(scope));
       const body = makeBody(4 * MB, 4);
       fixture.behaviour.body = body;
       fixture.behaviour.stallAfter = 1 * MB;
@@ -440,7 +440,7 @@ describe('ModelManager download', () => {
       const modelsDir = freshDir();
       const { layer } = build({ catalogue: [entry], modelsDir });
       const managerScope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(managerScope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(managerScope));
       const manager = Context.get(ctx, ModelManager);
       const part = path.join(modelsDir, 'test-model.bin.part');
 
@@ -458,7 +458,7 @@ describe('ModelManager download', () => {
   it.effect('resumes a cross-boot .part with a Range request through the 302 (206) and hashes the prefix', () =>
     Effect.gen(function* () {
       const scope = yield* Scope.make();
-      const fixture = yield* makeFixture().pipe(Scope.extend(scope));
+      const fixture = yield* makeFixture().pipe(Scope.provide(scope));
       const body = makeBody(3 * MB, 5);
       fixture.behaviour.body = body;
       const entry = entryFor(fixture.url, body, { downloadUrl: `${fixture.url}/redirect` });
@@ -470,7 +470,7 @@ describe('ModelManager download', () => {
       const prefix = 1 * MB + 123;
       fs.writeFileSync(path.join(modelsDir, 'test-model.bin.part'), body.subarray(0, prefix));
       const { layer, logger } = build({ catalogue: [entry], modelsDir });
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const manager = Context.get(ctx, ModelManager);
       yield* awaitBootReconcile(logger);
       assert.isTrue(
@@ -500,7 +500,7 @@ describe('ModelManager download', () => {
   it.effect('a transport failure keeps the .part; the retry resumes, and a changed resource restarts from 0', () =>
     Effect.gen(function* () {
       const scope = yield* Scope.make();
-      const fixture = yield* makeFixture().pipe(Scope.extend(scope));
+      const fixture = yield* makeFixture().pipe(Scope.provide(scope));
       const v1 = makeBody(3 * MB, 6);
       const v2 = makeBody(3 * MB + 777, 7);
       fixture.behaviour.body = v1;
@@ -510,7 +510,7 @@ describe('ModelManager download', () => {
       const entry = entryFor(fixture.url, v2);
       const modelsDir = freshDir();
       const { layer, logger } = build({ catalogue: [entry], modelsDir });
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const manager = Context.get(ctx, ModelManager);
       const part = path.join(modelsDir, 'test-model.bin.part');
 
@@ -548,14 +548,14 @@ describe('ModelManager download', () => {
   it.effect('a server that ignores Range (200) restarts from 0 with that body', () =>
     Effect.gen(function* () {
       const scope = yield* Scope.make();
-      const fixture = yield* makeFixture().pipe(Scope.extend(scope));
+      const fixture = yield* makeFixture().pipe(Scope.provide(scope));
       const body = makeBody(2 * MB, 8);
       fixture.behaviour.body = body;
       fixture.behaviour.supportsRange = false;
       const entry = entryFor(fixture.url, body);
       const modelsDir = freshDir();
       const { layer, logger } = build({ catalogue: [entry], modelsDir });
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const manager = Context.get(ctx, ModelManager);
       yield* awaitBootReconcile(logger);
       fs.mkdirSync(modelsDir, { recursive: true });
@@ -573,7 +573,7 @@ describe('ModelManager download', () => {
   it.effect('a kept .part whose bytes no longer match upstream fails the SHA-1 backstop, is discarded, and the retry installs clean', () =>
     Effect.gen(function* () {
       const scope = yield* Scope.make();
-      const fixture = yield* makeFixture().pipe(Scope.extend(scope));
+      const fixture = yield* makeFixture().pipe(Scope.provide(scope));
       const body = makeBody(2 * MB, 21);
       fixture.behaviour.body = body;
       const entry = entryFor(fixture.url, body);
@@ -584,7 +584,7 @@ describe('ModelManager download', () => {
       fs.mkdirSync(modelsDir, { recursive: true });
       fs.writeFileSync(path.join(modelsDir, 'test-model.bin.part'), makeBody(512 * 1024, 99));
       const { layer, logger } = build({ catalogue: [entry], modelsDir });
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const manager = Context.get(ctx, ModelManager);
       yield* awaitBootReconcile(logger);
       assert.isTrue(exists(path.join(modelsDir, 'test-model.bin.part')));
@@ -612,7 +612,7 @@ describe('ModelManager download', () => {
   it.effect('refuses a download that does not fit (statfs + 10% headroom): typed, published, no request', () =>
     Effect.gen(function* () {
       const scope = yield* Scope.make();
-      const fixture = yield* makeFixture().pipe(Scope.extend(scope));
+      const fixture = yield* makeFixture().pipe(Scope.provide(scope));
       const body = makeBody(1 * MB, 9);
       fixture.behaviour.body = body;
       const entry = entryFor(fixture.url, body);
@@ -620,7 +620,7 @@ describe('ModelManager download', () => {
       // Exactly the file size free: the 10% headroom makes it insufficient.
       let free = body.length;
       const { layer, logger } = build({ catalogue: [entry], modelsDir, freeBytes: () => free });
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const manager = Context.get(ctx, ModelManager);
 
       const refused = yield* Effect.exit(manager.download('test-model'));
@@ -646,13 +646,13 @@ describe('ModelManager download', () => {
   it.effect('delete cancels/unlinks/forgets and republishes; unknown ids are typed', () =>
     Effect.gen(function* () {
       const scope = yield* Scope.make();
-      const fixture = yield* makeFixture().pipe(Scope.extend(scope));
+      const fixture = yield* makeFixture().pipe(Scope.provide(scope));
       const body = makeBody(1 * MB, 10);
       fixture.behaviour.body = body;
       const entry = entryFor(fixture.url, body);
       const modelsDir = freshDir();
       const { layer, db } = build({ catalogue: [entry], modelsDir });
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const manager = Context.get(ctx, ModelManager);
 
       yield* manager.download('test-model');
@@ -677,7 +677,7 @@ describe('ModelManager download', () => {
   it.effect('a whisper install auto-downloads the VAD entry once — an installed VAD is left alone', () =>
     Effect.gen(function* () {
       const scope = yield* Scope.make();
-      const fixture = yield* makeFixture().pipe(Scope.extend(scope));
+      const fixture = yield* makeFixture().pipe(Scope.provide(scope));
       const body = makeBody(1 * MB, 22);
       fixture.behaviour.body = body;
       const whisper = entryFor(fixture.url, body);
@@ -691,7 +691,7 @@ describe('ModelManager download', () => {
       });
       const modelsDir = freshDir();
       const { layer, db, logger } = build({ catalogue: [whisper, vad], modelsDir });
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const manager = Context.get(ctx, ModelManager);
 
       // ONE explicit download; the VAD weights ride along.
@@ -724,7 +724,7 @@ describe('ModelManager download', () => {
   it.effect('a VAD auto-download failure surfaces on the VAD row only — the whisper install stands', () =>
     Effect.gen(function* () {
       const scope = yield* Scope.make();
-      const fixture = yield* makeFixture().pipe(Scope.extend(scope));
+      const fixture = yield* makeFixture().pipe(Scope.provide(scope));
       const body = makeBody(1 * MB, 23);
       fixture.behaviour.body = body;
       const whisper = entryFor(fixture.url, body);
@@ -739,7 +739,7 @@ describe('ModelManager download', () => {
       });
       const modelsDir = freshDir();
       const { layer, db } = build({ catalogue: [whisper, vad], modelsDir });
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const manager = Context.get(ctx, ModelManager);
 
       yield* manager.download('test-model');
@@ -760,7 +760,7 @@ describe('ModelManager download', () => {
   it.effect('cancel while the fiber awaits response headers clears the entry and removes the .part — never a terminal cancelling', () =>
     Effect.gen(function* () {
       const scope = yield* Scope.make();
-      const fixture = yield* makeFixture().pipe(Scope.extend(scope));
+      const fixture = yield* makeFixture().pipe(Scope.provide(scope));
       const body = makeBody(2 * MB, 24);
       fixture.behaviour.body = body;
       fixture.behaviour.stallHeaders = true;
@@ -771,7 +771,7 @@ describe('ModelManager download', () => {
       const part = path.join(modelsDir, 'test-model.bin.part');
       fs.writeFileSync(part, body.subarray(0, prefix));
       const { layer, logger } = build({ catalogue: [entry], modelsDir });
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const manager = Context.get(ctx, ModelManager);
       yield* awaitBootReconcile(logger);
 
@@ -808,7 +808,7 @@ describe('ModelManager download', () => {
   it.effect('a transient 429 to the ranged resume keeps the .part untouched and the retry resumes it', () =>
     Effect.gen(function* () {
       const scope = yield* Scope.make();
-      const fixture = yield* makeFixture().pipe(Scope.extend(scope));
+      const fixture = yield* makeFixture().pipe(Scope.provide(scope));
       const body = makeBody(2 * MB, 25);
       fixture.behaviour.body = body;
       const entry = entryFor(fixture.url, body);
@@ -818,7 +818,7 @@ describe('ModelManager download', () => {
       const part = path.join(modelsDir, 'test-model.bin.part');
       fs.writeFileSync(part, body.subarray(0, prefix));
       const { layer, logger } = build({ catalogue: [entry], modelsDir });
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const manager = Context.get(ctx, ModelManager);
       yield* awaitBootReconcile(logger);
 
@@ -851,7 +851,7 @@ describe('ModelManager download', () => {
   it.effect('a 416 to the ranged resume is definitive: the .part is truncated and the download restarts from 0', () =>
     Effect.gen(function* () {
       const scope = yield* Scope.make();
-      const fixture = yield* makeFixture().pipe(Scope.extend(scope));
+      const fixture = yield* makeFixture().pipe(Scope.provide(scope));
       const body = makeBody(1 * MB, 26);
       fixture.behaviour.body = body;
       const entry = entryFor(fixture.url, body);
@@ -862,7 +862,7 @@ describe('ModelManager download', () => {
       const stale = body.length + 4096;
       fs.writeFileSync(path.join(modelsDir, 'test-model.bin.part'), makeBody(stale, 99));
       const { layer, logger } = build({ catalogue: [entry], modelsDir });
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const manager = Context.get(ctx, ModelManager);
       yield* awaitBootReconcile(logger);
 
@@ -888,7 +888,7 @@ describe('ModelManager download', () => {
       // BEFORE the fiber forks and before any other state is published.
       fs.writeFileSync(modelsDir, 'not a directory');
       const { layer } = build({ catalogue: [entry], modelsDir });
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const manager = Context.get(ctx, ModelManager);
 
       const refused = yield* Effect.exit(manager.download('test-model'));
@@ -946,7 +946,7 @@ describe('ModelManager reconcile', () => {
         ];
         const { layer, db, logger } = build({ catalogue, modelsDir, rows });
         const scope = yield* Scope.make();
-        const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+        const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
         const manager = Context.get(ctx, ModelManager);
 
         // Boot: the rows load as-is (no disk work on the acquire path)…
@@ -990,7 +990,7 @@ describe('ModelManager reconcile', () => {
         rows: [rowFor(catalogue[0], modelsDir, good.length)],
       });
       const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const manager = Context.get(ctx, ModelManager);
       yield* awaitBootReconcile(logger);
       assert.deepStrictEqual(logger.find(e => e.message === RECONCILED)?.data, {
@@ -1008,14 +1008,14 @@ describe('ModelManager reconcile', () => {
   it.effect("leaves a live download's .part alone", () =>
     Effect.gen(function* () {
       const scope = yield* Scope.make();
-      const fixture = yield* makeFixture().pipe(Scope.extend(scope));
+      const fixture = yield* makeFixture().pipe(Scope.provide(scope));
       const body = makeBody(4 * MB, 14);
       fixture.behaviour.body = body;
       fixture.behaviour.stallAfter = 1 * MB;
       const entry = entryFor(fixture.url, body);
       const modelsDir = freshDir();
       const { layer } = build({ catalogue: [entry], modelsDir });
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const manager = Context.get(ctx, ModelManager);
       const part = path.join(modelsDir, 'test-model.bin.part');
 
@@ -1034,7 +1034,7 @@ describe('ModelManager reconcile', () => {
   it.effect('the removed delta spares a row a download installed while reconcile ran (scan → install → apply)', () =>
     Effect.gen(function* () {
       const scope = yield* Scope.make();
-      const fixture = yield* makeFixture().pipe(Scope.extend(scope));
+      const fixture = yield* makeFixture().pipe(Scope.provide(scope));
       const body = makeBody(1 * MB, 31);
       fixture.behaviour.body = body;
       const modelsDir = freshDir();
@@ -1057,19 +1057,22 @@ describe('ModelManager reconcile', () => {
         {},
         { localModels: [rowFor(target, modelsDir, body.length)] }
       );
-      const gatedDb = Layer.map(db.layer, context => {
-        const service = Context.get(context, OperationalDb);
-        return Context.make(OperationalDb, {
-          ...service,
-          upsertLocalModel: row =>
-            row.modelId === 'adoptable'
-              ? Deferred.succeed(reached, undefined).pipe(
-                  Effect.zipRight(Deferred.await(gate)),
-                  Effect.zipRight(service.upsertLocalModel(row))
-                )
-              : service.upsertLocalModel(row),
-        });
-      });
+      const gatedDb = Layer.effect(
+        OperationalDb,
+        Effect.gen(function* () {
+          const service = yield* OperationalDb;
+          return {
+            ...service,
+            upsertLocalModel: row =>
+              row.modelId === 'adoptable'
+                ? Deferred.succeed(reached, undefined).pipe(
+                    Effect.andThen(Deferred.await(gate)),
+                    Effect.andThen(service.upsertLocalModel(row))
+                  )
+                : service.upsertLocalModel(row),
+          };
+        })
+      ).pipe(Layer.provide(db.layer));
       const layer = makeModelManagerLive({
         catalogue: [target, adoptable],
         probe: { freeBytes: async () => Number.MAX_SAFE_INTEGER },
@@ -1079,7 +1082,7 @@ describe('ModelManager reconcile', () => {
         Layer.provide(Layer.succeed(PendingReset, { applied: null })),
         Layer.provide(logger.layer)
       );
-      const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
       const manager = Context.get(ctx, ModelManager);
 
       // The boot reconcile has scanned (the stale row is in its removed delta)
@@ -1109,6 +1112,41 @@ describe('ModelManager reconcile', () => {
         Option.some(path.join(modelsDir, 'test-model.bin'))
       );
       yield* Scope.close(scope, Exit.void);
+    })
+  );
+
+  it.effect('cancel from the first downloading snapshot owns and removes the resumed attempt', () =>
+    Effect.gen(function* () {
+      const fixture = yield* makeFixture();
+      const body = makeBody(2 * MB, 40);
+      fixture.behaviour.body = body;
+      fixture.behaviour.stallHeaders = true;
+      const entry = entryFor(fixture.url, body);
+      const modelsDir = freshDir();
+      const part = path.join(modelsDir, 'test-model.bin.part');
+      fs.mkdirSync(modelsDir, { recursive: true });
+      fs.writeFileSync(part, body.subarray(0, 512 * 1024));
+      const { layer, logger } = build({ catalogue: [entry], modelsDir });
+      const ctx = yield* Layer.build(layer);
+      const manager = Context.get(ctx, ModelManager);
+      yield* awaitBootReconcile(logger);
+      assert.isTrue(exists(part));
+
+      const subscribed = yield* Deferred.make<void>();
+      const cancellation = yield* SubscriptionRef.changes(manager.state).pipe(
+        Stream.tap(() => Deferred.succeed(subscribed, undefined)),
+        Stream.filter(state => modelOf(state, 'test-model').download?.status === 'downloading'),
+        Stream.take(1),
+        Stream.runForEach(() => manager.cancel('test-model')),
+        Effect.forkScoped
+      );
+      yield* Deferred.await(subscribed);
+      yield* manager.download('test-model');
+      yield* Fiber.join(cancellation);
+
+      assert.isNull(modelOf(yield* SubscriptionRef.get(manager.state), 'test-model').download);
+      assert.isFalse(exists(part), 'cancel removed the resumed .part before resolving');
+      assert.isFalse(exists(path.join(modelsDir, 'test-model.bin')));
     })
   );
 });

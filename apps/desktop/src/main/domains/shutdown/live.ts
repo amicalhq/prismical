@@ -8,7 +8,7 @@ export const ShutdownCoordinatorLive: Layer.Layer<
   ShutdownCoordinator,
   never,
   AppConfig | ElectronApp | MainLogger
-> = Layer.scoped(
+> = Layer.effect(
   ShutdownCoordinator,
   Effect.gen(function* () {
     const config = yield* AppConfig;
@@ -22,7 +22,7 @@ export const ShutdownCoordinatorLive: Layer.Layer<
         Effect.flatMap(() =>
           config.platform === 'darwin'
             ? log.info('all windows closed (darwin: staying resident)')
-            : log.info('all windows closed — quitting').pipe(Effect.zipRight(electronApp.quit))
+            : log.info('all windows closed — quitting').pipe(Effect.andThen(electronApp.quit))
         ),
         Effect.forever
       )
@@ -30,7 +30,7 @@ export const ShutdownCoordinatorLive: Layer.Layer<
 
     const service: ShutdownCoordinatorApi = {
       awaitQuitSignal: Queue.take(electronApp.events.beforeQuit).pipe(
-        Effect.zipLeft(log.info('quit signal received')),
+        Effect.tap(log.info('quit signal received')),
         Effect.asVoid
       ),
     };

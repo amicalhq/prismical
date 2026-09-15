@@ -21,7 +21,7 @@
  */
 import * as fs from 'node:fs';
 import path from 'node:path';
-import { Data, Effect, Either, type Scope } from 'effect';
+import { Data, Effect, Result, type Scope } from 'effect';
 import type { MeetingCaptureMode } from '@/types/meeting';
 import { StreamingWavWriter } from '../../infra/audio/streaming-wav-writer';
 import type { ScopedLog, SyncScopedLog } from '../../infra/logging/service';
@@ -92,14 +92,14 @@ export const makeRecoveryWavSet = (params: {
         if (!closed) {
           closed = true;
           for (const [source, writer] of writers) {
-            const result = yield* Effect.either(
+            const result = yield* Effect.result(
               Effect.tryPromise({
                 try: () => writer.finalize(),
                 catch: cause => new RecoveryWriteError({ op: 'finalize', source, cause }),
               })
             );
             // Close every source, including when its sibling failed to close.
-            if (Either.isLeft(result)) closeFailure ??= result.left;
+            if (Result.isFailure(result)) closeFailure ??= result.failure;
           }
         }
         if (closeFailure) yield* Effect.fail(closeFailure);
@@ -120,7 +120,7 @@ export const makeRecoveryWavSet = (params: {
     // On ANY scope close, fix headers + close so an interrupt retains valid WAVs.
     set =>
       set.finalizeAndClose.pipe(
-        Effect.catchAll(error =>
+        Effect.catch(error =>
           params.log.warn('recovery WAV finalize failed', {
             context: {
               source: error.source,

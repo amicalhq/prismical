@@ -6,7 +6,7 @@ import type {
   TransportRequest,
   TransportResponse,
 } from '@prismical/desktop-contracts';
-import { Data, Duration, Effect, Layer, Queue, Ref, Stream } from 'effect';
+import { Semaphore, Data, Duration, Effect, Layer, Queue, Ref, Stream } from 'effect';
 import { WorkspaceBackend } from '../transport/service';
 import { EventKitBridge } from './bridge';
 import { EventKitService, type EventKitServiceApi } from './service';
@@ -94,7 +94,7 @@ export const EventKitServiceLive: Layer.Layer<
   EventKitService,
   never,
   WorkspaceBackend | EventKitBridge | OperationalDb | MainLogger | AppConfig | SignedInSession
-> = Layer.scoped(
+> = Layer.effect(
   EventKitService,
   Effect.gen(function* () {
     const core = yield* WorkspaceBackend;
@@ -113,7 +113,7 @@ export const EventKitServiceLive: Layer.Layer<
           }
         : unavailableAppleCalendarStatus;
     const status = yield* Ref.make<AppleCalendarStatus>(initial);
-    const semaphore = yield* Effect.makeSemaphore(1);
+    const semaphore = yield* Semaphore.make(1);
     const startWatcher = yield* Queue.sliding<void>(1);
     const eventKitChanges = yield* Queue.sliding<void>(1);
 
@@ -121,13 +121,13 @@ export const EventKitServiceLive: Layer.Layer<
       core.request(spec).pipe(Effect.flatMap(response => responseBody<T>(operation, response)));
 
     const getDeviceId = operationalDb.getSetting(DEVICE_ID_SETTING).pipe(
-      Effect.catchAll(() => Effect.succeed(null)),
+      Effect.catch(() => Effect.succeed(null)),
       Effect.flatMap(existing => {
         if (existing) return Effect.succeed(existing);
         const id = randomUUID();
         return operationalDb.setSetting(DEVICE_ID_SETTING, id).pipe(
           Effect.as(id),
-          Effect.catchAll(() => Effect.succeed(id))
+          Effect.catch(() => Effect.succeed(id))
         );
       })
     );
@@ -229,7 +229,7 @@ export const EventKitServiceLive: Layer.Layer<
             const parsed = Number(value);
             return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : -1;
           }),
-          Effect.catchAll(() => Effect.succeed(-1))
+          Effect.catch(() => Effect.succeed(-1))
         );
         const serverSequence =
           typeof configBody.lastSequence === 'number' &&
@@ -239,7 +239,7 @@ export const EventKitServiceLive: Layer.Layer<
         const sequence = Math.max(localSequence, serverSequence) + 1;
         yield* operationalDb
           .setSetting(sequenceKey, String(sequence))
-          .pipe(Effect.catchAll(() => Effect.void));
+          .pipe(Effect.catch(() => Effect.void));
 
         const chunks = chunkEventKitEvents(events);
         const begin = yield* request<{ snapshotId?: unknown }>('begin-snapshot', {
@@ -282,13 +282,13 @@ export const EventKitServiceLive: Layer.Layer<
           })
         );
       }).pipe(
-        Effect.catchAll(error =>
+        Effect.catch(error =>
           log
             .error('Apple Calendar refresh failed', { context: {
               operation: error instanceof EventKitSyncError ? error.operation : 'helper',
             } })
             .pipe(
-              Effect.zipRight(
+              Effect.andThen(
                 Ref.updateAndGet(
                   status,
                   (current): AppleCalendarStatus => ({
@@ -308,7 +308,7 @@ export const EventKitServiceLive: Layer.Layer<
         Effect.gen(function* () {
           if (config.platform !== 'darwin') return unavailableAppleCalendarStatus;
           const capability = yield* getCapability.pipe(
-            Effect.catchAll(() => Effect.succeed({ available: false, enabled: false }))
+            Effect.catch(() => Effect.succeed({ available: false, enabled: false }))
           );
           if (!capability.available) {
             return yield* Ref.updateAndGet(
@@ -321,7 +321,7 @@ export const EventKitServiceLive: Layer.Layer<
             );
           }
           const permission = yield* requestEventKitPermission().pipe(
-            Effect.catchAll(() => Effect.succeed<AppleCalendarPermissionStatus>('unknown'))
+            Effect.catch(() => Effect.succeed<AppleCalendarPermissionStatus>('unknown'))
           );
           yield* setPermissionState(permission);
           if (permission === 'granted') {
@@ -337,13 +337,13 @@ export const EventKitServiceLive: Layer.Layer<
       )
       .pipe(
         Effect.flatMap(result => (result.permission === 'granted' ? sync : Effect.succeed(result))),
-        Effect.catchAll(error =>
+        Effect.catch(error =>
           log
             .error('Apple Calendar connect failed', { context: {
               operation: error instanceof EventKitSyncError ? error.operation : 'enable',
             } })
             .pipe(
-              Effect.zipRight(
+              Effect.andThen(
                 Ref.updateAndGet(
                   status,
                   (current): AppleCalendarStatus => ({
@@ -369,12 +369,12 @@ export const EventKitServiceLive: Layer.Layer<
     if (config.platform === 'darwin') {
       yield* Effect.forkScoped(
         Queue.take(startWatcher).pipe(
-          Effect.zipRight(
+          Effect.andThen(
             watchEventKitChanges(() => {
-              Queue.unsafeOffer(eventKitChanges, undefined);
+              Queue.offerUnsafe(eventKitChanges, undefined);
             })
           ),
-          Effect.catchAll(error =>
+          Effect.catch(error =>
             log.warn('Apple Calendar change watcher stopped', { context: {
               operation: error.operation,
             } })
@@ -389,14 +389,14 @@ export const EventKitServiceLive: Layer.Layer<
       );
       const initialPermission = yield* getEventKitPermission().pipe(
         Effect.flatMap(setPermissionState),
-        Effect.catchAll(() => Ref.get(status))
+        Effect.catch(() => Ref.get(status))
       );
       if (initialPermission.permission === 'granted') {
         yield* Queue.offer(startWatcher, undefined);
       }
       yield* Effect.forkScoped(sync);
       yield* Effect.forkScoped(
-        Effect.sleep(REFRESH_INTERVAL).pipe(Effect.zipRight(sync), Effect.forever)
+        Effect.sleep(REFRESH_INTERVAL).pipe(Effect.andThen(sync), Effect.forever)
       );
     }
     return api;

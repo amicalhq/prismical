@@ -25,11 +25,11 @@
  * `exit` (a worker that dies loading whisper.node exits 1 before any message).
  *
  * Under tests/static-gate.test.ts's infra/whisper exclusion, but Effect-clean
- * anyway: the only timer is Effect.timeoutFail.
+ * anyway: the only timer is Effect.timeoutOrElse.
  */
 import { fork, type ChildProcess, type ForkOptions } from 'node:child_process';
 import path from 'node:path';
-import { Duration, Effect, Layer } from 'effect';
+import { Duration, Effect, Layer, Semaphore } from 'effect';
 import { TelemetryService } from '../../domains/telemetry/service';
 import { makeProcessFailureReporter } from '../../domains/telemetry/process-failure-reporter';
 import { AppConfig } from '../config/service';
@@ -135,7 +135,7 @@ export const makeWhisperEngineLive = (
   never,
   AppConfig | MainLogger | LoggingTransport | TelemetryService
 > =>
-  Layer.scoped(
+  Layer.effect(
     WhisperEngine,
     Effect.gen(function* () {
       const config = yield* AppConfig;
@@ -151,7 +151,7 @@ export const makeWhisperEngineLive = (
       const forkFn: ForkLike = options.forkFn ?? fork;
       const transcribeTimeout = options.transcribeTimeout ?? TRANSCRIBE_TIMEOUT;
       const modelLoadTimeout = options.modelLoadTimeout ?? MODEL_LOAD_TIMEOUT;
-      const semaphore = yield* Effect.makeSemaphore(1);
+      const semaphore = yield* Semaphore.make(1);
 
       // Callback-edge state (single-threaded event loop): mutated only under the
       // semaphore or inside the child's event handlers, read via Effect.suspend/sync.
@@ -290,7 +290,7 @@ export const makeWhisperEngineLive = (
         method: string,
         args: readonly unknown[]
       ): Effect.Effect<T, WhisperEngineError> =>
-        Effect.async<T, WhisperEngineError>(resume => {
+        Effect.callback<T, WhisperEngineError>(resume => {
           if (handle.dead) {
             resume(
               Effect.fail(
@@ -324,9 +324,9 @@ export const makeWhisperEngineLive = (
         what: string
       ): Effect.Effect<T, WhisperEngineError> =>
         effect.pipe(
-          Effect.timeoutFail({
+          Effect.timeoutOrElse({
             duration: budget,
-            onTimeout: () => new WhisperEngineError({ reason: 'timeout', detail: what }),
+            orElse: () => Effect.fail(new WhisperEngineError({ reason: 'timeout', detail: what })),
           }),
           Effect.tapError(error =>
             error.reason === 'timeout'
@@ -334,7 +334,7 @@ export const makeWhisperEngineLive = (
                   .warn('whisper worker call timed out — replacing the worker', {
                     context: { what },
                   })
-                  .pipe(Effect.zipRight(killWorker(`timeout: ${what}`)))
+                  .pipe(Effect.andThen(killWorker(`timeout: ${what}`)))
               : Effect.void
           )
         );

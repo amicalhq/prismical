@@ -8,8 +8,7 @@ import {
   Effect,
   Layer,
   Option,
-  Runtime,
-  Schedule,
+  Result,
   SubscriptionRef,
 } from 'effect';
 import type { MicActivitySnapshotEvent } from '@/types/meeting-start-notifications';
@@ -23,11 +22,6 @@ import { SnapshotMessageSchema } from './native-mic-activity-client';
 import { MicActivity, type LatestMicActivity, type MicActivityApi } from './service';
 
 const TERMINATION_GRACE = Duration.millis(1500);
-
-const RESTART_SCHEDULE = Schedule.either(
-  Schedule.exponential(Duration.seconds(1), 2),
-  Schedule.spaced(Duration.seconds(30))
-).pipe(Schedule.resetAfter(Duration.seconds(60)));
 
 class DetectorSpawnError extends Data.TaggedError('DetectorSpawnError')<{
   readonly reason: string;
@@ -52,7 +46,7 @@ export const MicActivityLive: Layer.Layer<
   MicActivity,
   never,
   MainLogger | LoggingTransport | TelemetryService
-> = Layer.scoped(
+> = Layer.effect(
   MicActivity,
   Effect.gen(function* () {
     const logger = yield* MainLogger;
@@ -64,14 +58,14 @@ export const MicActivityLive: Layer.Layer<
     const log = logger.scoped('mic-activity');
     const unsafeLog = logger.scopedSync('mic-activity');
     const latest = yield* SubscriptionRef.make<Option.Option<LatestMicActivity>>(Option.none());
-    const runtime = yield* Effect.runtime<never>();
+    const context = yield* Effect.context<never>();
 
     const clearLatest = (): void => {
-      Runtime.runSync(runtime)(SubscriptionRef.set(latest, Option.none()));
+      Effect.runSyncWith(context)(SubscriptionRef.set(latest, Option.none()));
     };
 
     const publishSnapshot = (snapshot: MicActivitySnapshotEvent): void => {
-      Runtime.runSync(runtime)(
+      Effect.runSyncWith(context)(
         Clock.currentTimeMillis.pipe(
           Effect.flatMap(receivedAtMs =>
             SubscriptionRef.set(latest, Option.some({ snapshot, receivedAtMs }))
@@ -142,7 +136,7 @@ export const MicActivityLive: Layer.Layer<
           reportFailure(error);
           clearLatest();
           unsafeLog.error('mic-detector child errored', { error });
-          Deferred.unsafeDone(
+          Deferred.doneUnsafe(
             terminated,
             Effect.fail(new DetectorCrashError({ reason: error.message }))
           );
@@ -151,9 +145,9 @@ export const MicActivityLive: Layer.Layer<
         const onExit = (code: number | null, signal: NodeJS.Signals | null): void => {
           clearLatest();
           diagnostics.end();
-          Deferred.unsafeDone(exited, Effect.void);
+          Deferred.doneUnsafe(exited, Effect.void);
           if (dead || stopping) {
-            Deferred.unsafeDone(terminated, Effect.void);
+            Deferred.doneUnsafe(terminated, Effect.void);
             return;
           }
           dead = true;
@@ -161,7 +155,7 @@ export const MicActivityLive: Layer.Layer<
           unsafeLog.error('mic-detector child exited unexpectedly', {
             context: { code, signal },
           });
-          Deferred.unsafeDone(terminated, Effect.fail(new DetectorExitError({ code, signal })));
+          Deferred.doneUnsafe(terminated, Effect.fail(new DetectorExitError({ code, signal })));
         };
 
         const release = (proc: DetectorChild): Effect.Effect<void> =>
@@ -181,14 +175,12 @@ export const MicActivityLive: Layer.Layer<
                 else proc.kill('SIGTERM');
               });
               const graceful = yield* Deferred.await(exited).pipe(
-                Effect.timeoutOption(TERMINATION_GRACE),
-                Effect.interruptible
+                Effect.timeoutOption(TERMINATION_GRACE)
               );
               if (Option.isNone(graceful)) {
                 yield* Effect.sync(() => proc.kill('SIGKILL'));
                 yield* Deferred.await(exited).pipe(
-                  Effect.timeoutOption(TERMINATION_GRACE),
-                  Effect.interruptible
+                  Effect.timeoutOption(TERMINATION_GRACE)
                 );
               }
             }
@@ -223,13 +215,23 @@ export const MicActivityLive: Layer.Layer<
       })
     );
 
-    const supervisor = spawnAndConsume.pipe(
-      Effect.tapError(error =>
-        log.warn('mic-detector terminated — restart per policy', { error: error })
-      ),
-      Effect.retry(RESTART_SCHEDULE),
-      Effect.catchAll(() => Effect.void)
-    );
+    const supervisor = Effect.gen(function* () {
+      let resetAt: number | undefined;
+      let delayMs = 1_000;
+      while (true) {
+        const result = yield* Effect.result(spawnAndConsume);
+        if (Result.isSuccess(result)) return;
+        yield* log.warn('mic-detector terminated — restart per policy', { error: result.failure });
+        const now = yield* Clock.currentTimeMillis;
+        // Preserve the existing elapsed-time reset, including waits and child runtime.
+        if (resetAt === undefined || now - resetAt >= 60_000) {
+          resetAt = now;
+          delayMs = 1_000;
+        }
+        yield* Effect.sleep(delayMs);
+        delayMs = Math.min(delayMs * 2, 30_000);
+      }
+    });
 
     yield* Effect.forkScoped(supervisor);
 

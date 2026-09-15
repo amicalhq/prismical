@@ -7,16 +7,16 @@
  * mounted unconditionally and indifferent to auth emissions.
  *
  * Invariants:
- * - at most ONE workspace scope is ever live: the old scope closes FULLY
- *   (bounded by WORKSPACE_CLOSE_DEADLINE) before a successor is built;
- * - acquire failure rolls back the whole layer — partial acquisitions release,
- *   zero runtimes remain. The auth gate may still claim signed-in; the
+ * - one workspace is current. Closing the old scope has a deadline; a timed-out
+ *   close runs detached while the successor is built;
+ * - acquire failure requests rollback of the whole layer through the same
+ *   bounded close. The auth gate may still claim signed-in; the
  *   fallback is log + stay torn down (never crash boot), retrying on the next
  *   sessionState emission — or, after ACQUIRE_RETRY_DELAY, on a timed wake-up
  *   (local mode may see no further auth emissions, so a failed local.db
  *   open must not brick the workspace until quit);
- * - interrupting the loop (boot scope close / quit) closes any live workspace
- *   scope through the same bounded path, so quit leaves zero workspace fibers.
+ * - interrupting the loop (boot scope close / quit) closes the current workspace
+ *   through the same bounded path. A stuck finalizer can survive until process exit.
  */
 import type { SessionProbe } from '@prismical/desktop-contracts';
 import {
@@ -25,6 +25,7 @@ import {
   Duration,
   Effect,
   Exit,
+  Fiber,
   Layer,
   Option,
   Queue,
@@ -50,8 +51,8 @@ import {
  * Old-scope close budget during swap/teardown (mirrors shutdown's
  * DISPOSE_DEADLINE). A wedged finalizer must not wedge auth transitions or
  * quit: on timeout the close keeps draining in a disconnected fiber while the
- * lifecycle moves on — the abandoned workspace is already deregistered and (in
- * cloud mode) its SignedInSession guard makes it inert.
+ * lifecycle moves on. Bridge registration uses compare-and-clear; cloud calls
+ * also check SignedInSession. This deadline does not guarantee resource release.
  */
 export const WORKSPACE_CLOSE_DEADLINE = Duration.seconds(5);
 
@@ -134,10 +135,10 @@ export interface SessionLifecycleProbeApi {
   readonly recordFailure: Effect.Effect<void>;
 }
 
-export class SessionLifecycleProbe extends Context.Tag('desktop/SessionLifecycleProbe')<
+export class SessionLifecycleProbe extends Context.Service<
   SessionLifecycleProbe,
   SessionLifecycleProbeApi
->() {}
+>()('desktop/SessionLifecycleProbe') {}
 
 export const SessionLifecycleProbeLive: Layer.Layer<SessionLifecycleProbe> = Layer.effect(
   SessionLifecycleProbe,
@@ -187,7 +188,7 @@ export interface WorkspaceLifecycleOptions {
 
 interface LiveWorkspace {
   readonly desired: DesiredWorkspace;
-  readonly scope: Scope.CloseableScope;
+  readonly scope: Scope.Scope;
 }
 
 export const runWorkspaceLifecycle = (
@@ -212,22 +213,29 @@ export const runWorkspaceLifecycle = (
     const retryWakeups = yield* Queue.sliding<void>(1);
     const retryScope = yield* Scope.make();
 
-    // Effect.disconnect lets the deadline fire even against uninterruptible
-    // finalizers (Scope.close cannot be interrupted from the outside).
+    // A finalizer can be uninterruptible. Observe close completion with a
+    // deadline without waiting for an interrupt acknowledgement from that fiber.
+    // A timed-out close can keep running until the process exits.
     const closeWorkspace = (workspace: LiveWorkspace): Effect.Effect<void> =>
-      Scope.close(workspace.scope, Exit.void).pipe(
-        Effect.disconnect,
-        Effect.timeoutFail({ duration: deadline, onTimeout: () => 'close-deadline' as const }),
-        Effect.catchAllCause(cause =>
-          log.error('workspace scope close did not complete cleanly', {
+      Effect.gen(function* () {
+        const closing = yield* Scope.close(workspace.scope, Exit.void).pipe(
+          Effect.catchCause(cause => log.error('workspace scope close did not complete cleanly', {
             context: { ...describeWorkspace(workspace.desired) },
             error: Cause.squash(cause),
-          })
-        )
-      );
+          })),
+          Effect.forkDetach
+        );
+        const completed = yield* Fiber.await(closing).pipe(Effect.timeoutOption(deadline));
+        if (Option.isNone(completed)) {
+          yield* log.error('workspace scope close did not complete cleanly', {
+            context: { ...describeWorkspace(workspace.desired) },
+            error: 'close-deadline',
+          });
+        }
+      });
 
-    // getAndSet empties the slot BEFORE closing: even a timed-out close leaves
-    // the workspace deregistered, so no path can observe two live workspaces.
+    // getAndSet empties the current slot BEFORE closing. A timeout can leave a
+    // retiring scope alive; it is not proof that all its resources were released.
     // Releases count here (a REAL workspace ended) — the acquire-failure
     // rollback below calls closeWorkspace directly and counts as a failure,
     // not a release.
@@ -235,7 +243,7 @@ export const runWorkspaceLifecycle = (
       Effect.flatMap(
         Option.match({
           onNone: () => Effect.void,
-          onSome: workspace => closeWorkspace(workspace).pipe(Effect.zipRight(probe.recordRelease)),
+          onSome: workspace => closeWorkspace(workspace).pipe(Effect.andThen(probe.recordRelease)),
         })
       )
     );
@@ -246,11 +254,11 @@ export const runWorkspaceLifecycle = (
         // Registered BEFORE building: an interrupt mid-acquire still releases
         // the partial acquisition via the loop finalizer below.
         yield* Ref.set(currentRef, Option.some({ desired, scope }));
-        const exit = yield* Effect.exit(Layer.build(makeLayer(desired)).pipe(Scope.extend(scope)));
+        const exit = yield* Effect.exit(Layer.build(makeLayer(desired)).pipe(Scope.provide(scope)));
         if (Exit.isFailure(exit)) {
-          // Atomic acquisition: any acquire failure rolls the whole layer
-          // back (closing the scope releases acquires 1..N-1). Zero runtimes
-          // remain; the loop stays up and retries on the next state change.
+          // Roll back partial acquisitions through the same bounded close.
+          // The loop stays up and retries on the next state change, even if
+          // a failed acquisition left a finalizer running past the deadline.
           yield* Ref.set(currentRef, Option.none());
           yield* closeWorkspace({ desired, scope });
           yield* probe.recordFailure;
@@ -268,7 +276,7 @@ export const runWorkspaceLifecycle = (
           // auth emissions, so without this a failed local.db open would stay
           // torn down until quit. The fiber just sleeps then wakes the loop.
           yield* Effect.sleep(retryDelay).pipe(
-            Effect.zipRight(Queue.offer(retryWakeups, void 0)),
+            Effect.andThen(Queue.offer(retryWakeups, void 0)),
             Effect.forkIn(retryScope)
           );
         } else {
@@ -283,8 +291,8 @@ export const runWorkspaceLifecycle = (
       // Idempotent: equal/duplicate emissions never re-acquire.
       if (desired === null && current === null) return;
       if (desired !== null && current !== null && sameWorkspace(desired, current.desired)) return;
-      // Swap discipline: close FULLY, then build — no instant with two live
-      // workspaces, and a late fiber of the old one cannot outlive it.
+      // Preserve the existing swap policy: wait for close or its deadline before
+      // building the successor. Timed-out finalizers can still be running.
       yield* closeCurrent;
       if (desired !== null) yield* acquire(desired);
     });
@@ -298,7 +306,7 @@ export const runWorkspaceLifecycle = (
     // auth gate says. The merged retry queue is the second wake-up source
     // through a timed poke after an acquire failure, identical to an emission.
     yield* Stream.runForEach(
-      Stream.merge(auth.sessionState.changes, Stream.fromQueue(retryWakeups)),
+      Stream.merge(SubscriptionRef.changes(auth.sessionState), Stream.fromQueue(retryWakeups)),
       () => reconcile
     ).pipe(
       // Quit path: the boot scope interrupts this fiber; the live workspace

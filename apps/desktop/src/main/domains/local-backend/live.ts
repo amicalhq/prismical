@@ -22,7 +22,7 @@
  * upsert that never fails the layer — a seed failure is logged and the lanes
  * simply see no system rows until the next acquire).
  */
-import { Effect, Layer } from 'effect';
+import { Effect, FiberSet, Layer } from 'effect';
 import type { TransportRequest, TransportResponse } from '@prismical/desktop-contracts';
 import { MainLogger } from '../../infra/logging/service';
 import { ProductDb, ProductDbError } from '../../infra/product-db/service';
@@ -76,7 +76,7 @@ export const LocalBackendLive: Layer.Layer<
   WorkspaceBackend,
   never,
   ProductDb | MainLogger | WorkspaceTransport | AiProvider | DesktopI18n
-> = Layer.scoped(
+> = Layer.effect(
   WorkspaceBackend,
   Effect.gen(function* () {
     const { db, client } = yield* ProductDb;
@@ -86,12 +86,13 @@ export const LocalBackendLive: Layer.Layer<
     const coreTransport = yield* WorkspaceTransport;
     const aiProvider = yield* AiProvider;
     const { locale } = yield* DesktopI18n;
-    const runtime = yield* Effect.runtime<never>();
+    const runPromise = yield* FiberSet.makeRuntimePromise();
 
     const ctx: LocalRouteContext = {
       db,
       client,
-      ai: makeLocalAiPort(aiProvider, runtime),
+      // Register the fiber before provider code can resume a caller that closes us.
+      ai: makeLocalAiPort(aiProvider, effect => runPromise(Effect.andThen(Effect.yieldNow, effect))),
       locale,
       log: (message, data) => unsafeLog.info(message, { context: data }),
       titleLock: makeSerialLock(),
@@ -100,7 +101,7 @@ export const LocalBackendLive: Layer.Layer<
 
     // System skills: idempotent, never fatal — see the header.
     yield* Effect.tryPromise(() => seedSystemSkills(db)).pipe(
-      Effect.catchAll(error =>
+      Effect.catch(error =>
         log.error('system skill seed failed', { error: describeDbError(error) })
       )
     );
@@ -126,12 +127,12 @@ export const LocalBackendLive: Layer.Layer<
           })
         ),
         // Token-free logging: only method/path + a stringified cause.
-        Effect.catchAll(error =>
+        Effect.catch(error =>
           log
             .error('local backend request failed', { context: { method: req.method, path: req.path }, error: describeDbError(error.cause) })
             .pipe(Effect.as(INTERNAL))
         ),
-        Effect.catchAllDefect(defect =>
+        Effect.catchDefect(defect =>
           log
             .error('local backend request defect', { context: { method: req.method, path: req.path }, error: describeDbError(defect) })
             .pipe(Effect.as(INTERNAL))
@@ -149,7 +150,7 @@ export const LocalBackendLive: Layer.Layer<
           try: signal => openLocalAskStream({ ...ctx, locale }, body, signal),
           catch: () => undefined,
         }).pipe(
-          Effect.catchAll(() =>
+          Effect.catch(() =>
             log
               .error('local ask stream could not open')
               .pipe(Effect.as(localAskRequestFailure(locale)))

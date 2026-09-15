@@ -167,6 +167,7 @@ export class UpdaterMachine {
 
   /** SettingsService update-channel changes land here (live.ts subscription). */
   onChannelChanged(channel: UpdateChannel): void {
+    if (this.disposed) return;
     if (channel === this.currentChannel && !this.pendingChannel) return;
     if (this.isCheckingOrDownloading) {
       // Can't safely switch while a native cycle is in flight — queue it.
@@ -401,12 +402,14 @@ export class UpdaterMachine {
 
     try {
       const deviceId = await this.opts.getDeviceId();
+      if (this.disposed) return null;
       const response = await this.opts.fetchFn(url, {
         headers: {
           ...getClientHeaders(this.opts),
           'prismical-device-id': deviceId,
         },
       });
+      if (this.disposed) return null;
 
       if (!response.ok) {
         this.opts.log('warn', 'update metadata endpoint returned non-OK status', {
@@ -416,6 +419,7 @@ export class UpdaterMachine {
       }
 
       const raw: unknown = await response.json();
+      if (this.disposed) return null;
       const data = this.parseUpdateMetadata(raw);
       this.opts.log('info', 'update metadata fetched', {
         action: data.action,
@@ -423,6 +427,7 @@ export class UpdaterMachine {
       });
       return data;
     } catch (error) {
+      if (this.disposed) return null;
       this.opts.log('warn', 'failed to fetch update metadata', {
         error: getErrorMessage(error),
       });
@@ -451,6 +456,7 @@ export class UpdaterMachine {
   }
 
   async checkForUpdates(userInitiated = false): Promise<void> {
+    if (this.disposed) return;
     if (this.isCheckingOrDownloading) {
       this.opts.log('info', 'update check already in progress, skipping');
       return;
@@ -473,6 +479,9 @@ export class UpdaterMachine {
       // on success — transient failures preserve the previous policy so a
       // pending prompt/force isn't silently dropped.
       const metadata = await this.fetchUpdateMetadata();
+      // Scope cancellation can reject the device-id callback. It ends this
+      // cycle instead of falling through to a native check after disposal.
+      if (this.disposed) return;
       // A channel change during the fetch supersedes this result. Apply the
       // pending channel and let the next manual or scheduled check use it.
       if (this.applyPendingChannelIfNeeded('metadata_superseded')) {

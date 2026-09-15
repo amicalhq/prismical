@@ -16,7 +16,8 @@
  */
 import { assert, describe, it } from '@effect/vitest';
 import { eq } from 'drizzle-orm';
-import { Context, Duration, Effect, Exit, Fiber, Layer, Scope, TestClock } from 'effect';
+import { Context, Duration, Effect, Exit, Fiber, Layer, Scope } from 'effect';
+import { TestClock } from 'effect/testing';
 import { parseWavHeader } from '@prismical/ai-prompts/transcription';
 import { makeTestLogger, testConfigLayer } from '../helpers/test-layers';
 import { makeFakeWorkspaceBackend } from '../helpers/fake-recording';
@@ -85,7 +86,7 @@ const build = (options: { key?: string | null; mode?: AppMode } = {}) =>
           Layer.provide(logger.layer)
         )
       )
-    ).pipe(Scope.extend(scope), Effect.orDie);
+    ).pipe(Scope.provide(scope), Effect.orDie);
     const store = Context.get(ctx, SecureStore);
     const product = Context.get(ctx, ProductDb);
     const key = options.key === undefined ? KEY : options.key;
@@ -179,7 +180,7 @@ describe('ByokTranscriberLive', () => {
     Effect.gen(function* () {
       const h = yield* build();
       h.setResponder(() => Promise.resolve({ ok: true, status: 200, json: () => new Promise(() => {}) } as Response));
-      const task = yield* Effect.fork(h.lane.transcribeChunk('rec_body', PARAMS, chunk(tone(240_000)), BYOK));
+      const task = yield* Effect.forkChild(h.lane.transcribeChunk('rec_body', PARAMS, chunk(tone(240_000)), BYOK));
       yield* TestClock.adjust(Duration.seconds(31));
       assert.deepStrictEqual(yield* Fiber.join(task), {
         ok: false, retryable: true, failure: { kind: 'timeout' },
@@ -376,7 +377,7 @@ describe('ByokTranscriberLive', () => {
       });
 
       h.setResponder(() => new Promise(() => {}));
-      const hung = yield* Effect.fork(h.lane.transcribeChunk('rec_s', PARAMS, audio, BYOK));
+      const hung = yield* Effect.forkChild(h.lane.transcribeChunk('rec_s', PARAMS, audio, BYOK));
       yield* TestClock.adjust(Duration.seconds(31));
       assert.deepStrictEqual(yield* Fiber.join(hung), {
         ok: false,

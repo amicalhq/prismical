@@ -17,7 +17,7 @@
  * scheme (a real .app bundle owns its id, so LaunchServices routes correctly).
  */
 import { createServer } from 'node:http';
-import { Effect, Runtime } from 'effect';
+import { Effect, FiberSet } from 'effect';
 import { AppConfig } from '../../infra/config/service';
 import { MainLogger } from '../../infra/logging/service';
 import { DeepLinks } from './service';
@@ -36,15 +36,15 @@ export const runDevLoopbackOAuthServer: Effect.Effect<
     yield* log.warn('dev OAuth callback listener requires PORT from portless; start with pnpm dev');
     return;
   }
-  // Node-callback → Effect boundary: fork on THIS runtime, not the default one
-  // The stray Effect.runFork sites were benign only because the services were
-  // already closed over.
-  const runtime = yield* Effect.runtime<never>();
-  const forkHere = Runtime.runFork(runtime);
+  // Callback work belongs to the listener and stops when its scope closes.
+  const runCallback = yield* FiberSet.makeRuntime();
+  // Register the callback fiber before its work can trigger scope closure.
+  const forkHere = (effect: Effect.Effect<void>) =>
+    runCallback(Effect.yieldNow.pipe(Effect.andThen(effect)));
 
   // Held open for the app's lifetime; the async canceller closes the server
   // when the boot scope interrupts the fiber (quit).
-  yield* Effect.async<never>(_resume => {
+  yield* Effect.callback<never>(_resume => {
     const server = createServer((req, res) => {
       const url = new URL(req.url ?? '/', `http://127.0.0.1:${port}`);
       if (url.pathname !== '/oauth/callback') {
@@ -56,7 +56,7 @@ export const runDevLoopbackOAuthServer: Effect.Effect<
       forkHere(
         deepLinks
           .offerUrl(`prismical-dev://oauth/callback${url.search}`)
-          .pipe(Effect.zipRight(log.info('loopback oauth callback offered')))
+          .pipe(Effect.andThen(log.info('loopback oauth callback offered')))
       );
       res.setHeader('content-type', 'text/html; charset=utf-8');
       res.end(
@@ -80,4 +80,4 @@ export const runDevLoopbackOAuthServer: Effect.Effect<
       server.close();
     });
   });
-});
+}).pipe(Effect.scoped);

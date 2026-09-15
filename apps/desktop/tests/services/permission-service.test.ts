@@ -45,7 +45,7 @@ const build = ({ platform = 'darwin', ...permInit }: BuildOpts = {}) => {
 
 const permissionErrorOf = (exit: Exit.Exit<unknown, unknown>): PermissionError | undefined =>
   Exit.isFailure(exit)
-    ? (Option.getOrUndefined(Cause.failureOption(exit.cause)) as PermissionError | undefined)
+    ? (Option.getOrUndefined(Cause.findErrorOption(exit.cause)) as PermissionError | undefined)
     : undefined;
 
 describe('PermissionService — mic gate', () => {

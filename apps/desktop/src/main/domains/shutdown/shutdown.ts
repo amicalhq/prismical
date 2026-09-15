@@ -3,7 +3,7 @@ import { Duration, Effect } from 'effect';
 export const DISPOSE_DEADLINE = Duration.seconds(5);
 
 export interface DisposeAndExitOptions {
-  /** Must be runtime.dispose — start.ts's quit path is the only caller. */
+  /** Close the program scope, then dispose the runtime; start.ts owns this sequence. */
   readonly dispose: () => Promise<void>;
   readonly exit: (code: number) => void;
   readonly onTimeout?: () => void;
@@ -12,7 +12,7 @@ export interface DisposeAndExitOptions {
 }
 
 /**
- * Dispose the runtime with a bounded deadline, then exit(0) — ALWAYS exits,
+ * Run the cleanup sequence with a bounded deadline, then exit(0) — ALWAYS exits,
  * whether dispose succeeded, failed, or timed out (a wedged finalizer must not
  * wedge quit). Clock-driven timeout so tests drive it with TestClock.
  */
@@ -21,9 +21,9 @@ export const disposeAndExit = (options: DisposeAndExitOptions): Effect.Effect<vo
     try: options.dispose,
     catch: cause => cause,
   }).pipe(
-    Effect.timeoutFail({
+    Effect.timeoutOrElse({
       duration: options.deadline ?? DISPOSE_DEADLINE,
-      onTimeout: () => 'dispose-timeout' as const,
+      orElse: () => Effect.fail('dispose-timeout' as const),
     }),
     Effect.tapError(error =>
       Effect.sync(() => {

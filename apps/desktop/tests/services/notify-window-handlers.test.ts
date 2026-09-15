@@ -12,7 +12,8 @@ import { WorkspaceTransportLive } from '../../src/main/domains/transport/live';
  *  - setInteractive maps onto the notify window's click-through.
  */
 import { assert, describe, it } from '@effect/vitest';
-import { Context, Effect, Exit, Layer, Scope, SubscriptionRef, TestClock } from 'effect';
+import { Context, Effect, Exit, Layer, Scope, SubscriptionRef } from 'effect';
+import { TestClock } from 'effect/testing';
 import { vi } from 'vitest';
 import { NOTIFY_CHANNELS, type NotifyStateView } from '@prismical/desktop-contracts';
 import type { FakeElectron, FakeBrowserWindow } from '../helpers/fake-electron';
@@ -57,7 +58,7 @@ const fake = (await import('electron')) as unknown as FakeElectron;
 /** Let the forked fibers settle without advancing any clock. */
 const flush: Effect.Effect<void> = Effect.gen(function* () {
   for (let i = 0; i < 8; i += 1) {
-    yield* Effect.yieldNow();
+    yield* Effect.yieldNow;
     yield* Effect.promise(() => new Promise<void>(resolve => setImmediate(resolve)));
   }
 });
@@ -82,7 +83,7 @@ interface Harness {
   readonly detectionBridge: DetectionBridgeApi;
   readonly settings: SettingsServiceApi;
   readonly notifyWin: FakeBrowserWindow;
-  readonly scope: Scope.CloseableScope;
+  readonly scope: Scope.Scope;
 }
 
 const setup = (): Effect.Effect<Harness> =>
@@ -125,16 +126,16 @@ const setup = (): Effect.Effect<Harness> =>
       RecordingBridgeLive,
       DetectionBridgeLive
     );
-    const ctx = yield* Layer.build(env).pipe(Scope.extend(scope));
+    const ctx = yield* Layer.build(env).pipe(Scope.provide(scope));
     const windows = Context.get(ctx, WindowRegistry);
     const recordingBridge = Context.get(ctx, RecordingBridge);
     const detectionBridge = Context.get(ctx, DetectionBridge);
     const settings = Context.get(ctx, SettingsService);
 
-    yield* windows.openNotifyWindow.pipe(Scope.extend(scope));
+    yield* windows.openNotifyWindow.pipe(Scope.provide(scope));
     const notifyWin = fake.__windowInstances().at(-1) as FakeBrowserWindow;
 
-    yield* registerNotifyWindowHandlers.pipe(Effect.provide(ctx), Scope.extend(scope));
+    yield* registerNotifyWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
 
     return {
       logger,
@@ -179,7 +180,7 @@ const registerDetection = (h: Harness, detectedAt = 4_000) =>
       }),
     };
     const sessionScope = yield* Scope.make();
-    yield* h.detectionBridge.register(detApi).pipe(Scope.extend(sessionScope));
+    yield* h.detectionBridge.register(detApi).pipe(Scope.provide(sessionScope));
     yield* flush;
     return { detState, sessionScope, dismissCount: () => dismissCount };
   });
@@ -356,7 +357,7 @@ describe('notify-window IPC handlers', () => {
         pauseFromPrompt: () => Effect.succeed(true),
       };
       const recScope = yield* Scope.make();
-      yield* h.recordingBridge.register(recApi).pipe(Scope.extend(recScope));
+      yield* h.recordingBridge.register(recApi).pipe(Scope.provide(recScope));
 
       assert.strictEqual(
         yield* invoke(NOTIFY_CHANNELS.action, h.notifyWin.webContents.id, {
@@ -439,7 +440,7 @@ describe('notify-window IPC handlers', () => {
           pauseFromPrompt: () => Effect.succeed(true),
         };
         const recScope = yield* Scope.make();
-        yield* h.recordingBridge.register(recApi).pipe(Scope.extend(recScope));
+        yield* h.recordingBridge.register(recApi).pipe(Scope.provide(recScope));
 
         yield* SubscriptionRef.set(recState, {
           ...idleRecordingState,
@@ -508,7 +509,7 @@ describe('notify-window IPC handlers', () => {
           }),
       };
       const recScope = yield* Scope.make();
-      yield* h.recordingBridge.register(recApi).pipe(Scope.extend(recScope));
+      yield* h.recordingBridge.register(recApi).pipe(Scope.provide(recScope));
       yield* flush;
 
       yield* invoke(NOTIFY_CHANNELS.action, h.notifyWin.webContents.id, {

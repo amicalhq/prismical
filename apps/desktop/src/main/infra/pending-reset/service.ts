@@ -60,7 +60,6 @@ export interface PendingResetApi {
  * Built once, early in the boot layer; the layers that would open the purged
  * paths (ModelManager) depend on this tag so the ordering is explicit.
  */
-export class PendingReset extends Context.Tag('desktop/PendingReset')<
-  PendingReset,
-  PendingResetApi
->() {}
+export class PendingReset extends Context.Service<PendingReset, PendingResetApi>()(
+  'desktop/PendingReset'
+) {}

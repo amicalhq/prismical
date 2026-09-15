@@ -1,6 +1,6 @@
 import { assert, describe, it } from '@effect/vitest';
 import { streamPortChannel, type TransportResponse } from '@prismical/desktop-contracts';
-import { Context, Effect, Exit, Layer, Scope } from 'effect';
+import { Context, Deferred, Effect, Exit, Fiber, Layer, Scope } from 'effect';
 import { vi } from 'vitest';
 import type { FakeElectron, FakeMessagePortMain } from '../helpers/fake-electron';
 import { FakeWebContents } from '../helpers/fake-electron';
@@ -19,7 +19,7 @@ void ((await import('electron')) as unknown as FakeElectron);
 // microtask queue rather than a TestClock.
 const settle = Effect.gen(function* () {
   for (let i = 0; i < 16; i++) {
-    yield* Effect.yieldNow();
+    yield* Effect.yieldNow;
     yield* Effect.promise(() => new Promise<void>(resolve => queueMicrotask(resolve)));
   }
 });
@@ -123,7 +123,7 @@ const buildBroker = (logger: ReturnType<typeof makeTestLogger>, scope: Scope.Sco
       StreamBrokerLive.pipe(Layer.provide(logger.layer), Layer.provide(ct)),
       ct
     );
-    const ctx = yield* Layer.build(layer).pipe(Scope.extend(scope));
+    const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
     return {
       broker: Context.get(ctx, StreamBroker),
       transport: Context.get(ctx, WorkspaceTransport),
@@ -156,7 +156,7 @@ describe('StreamBroker Ask lane', () => {
       const bodies: unknown[] = [];
       yield* transport
         .register(clientReturning(source, body => bodies.push(body)))
-        .pipe(Scope.extend(scope));
+        .pipe(Scope.provide(scope));
 
       yield* broker.open({
         streamId: ID_A,
@@ -194,7 +194,7 @@ describe('StreamBroker Ask lane', () => {
       const { broker, transport } = yield* buildBroker(logger, scope);
       const harness = makeHarness();
       const source = makeSseSource();
-      yield* transport.register(clientReturning(source)).pipe(Scope.extend(scope));
+      yield* transport.register(clientReturning(source)).pipe(Scope.provide(scope));
 
       yield* broker.open({
         streamId: ID_A,
@@ -231,7 +231,7 @@ describe('StreamBroker Ask lane', () => {
       const { broker, transport } = yield* buildBroker(logger, scope);
       const harness = makeHarness();
       const source = makeSseSource();
-      yield* transport.register(clientReturning(source)).pipe(Scope.extend(scope));
+      yield* transport.register(clientReturning(source)).pipe(Scope.provide(scope));
 
       yield* broker.open({
         streamId: ID_B,
@@ -288,7 +288,7 @@ describe('StreamBroker Ask lane', () => {
       const { broker, transport } = yield* buildBroker(logger, scope);
       const harness = makeHarness();
       const source = makeSseSource();
-      yield* transport.register(clientReturning(source)).pipe(Scope.extend(scope));
+      yield* transport.register(clientReturning(source)).pipe(Scope.provide(scope));
 
       yield* broker.open({
         streamId: ID_A,
@@ -322,7 +322,7 @@ describe('StreamBroker Ask lane', () => {
       const { broker, transport } = yield* buildBroker(logger, scope);
       const harness = makeHarness();
       const source = makeSseSource();
-      yield* transport.register(clientReturning(source)).pipe(Scope.extend(scope));
+      yield* transport.register(clientReturning(source)).pipe(Scope.provide(scope));
 
       yield* broker.open({
         streamId: ID_A,
@@ -349,7 +349,7 @@ describe('StreamBroker Ask lane', () => {
       const { broker, transport } = yield* buildBroker(logger, scope);
       const harness = makeHarness();
       const source = makeSseSource();
-      yield* transport.register(clientReturning(source)).pipe(Scope.extend(scope));
+      yield* transport.register(clientReturning(source)).pipe(Scope.provide(scope));
 
       yield* broker.open({
         streamId: ID_A,
@@ -375,7 +375,7 @@ describe('StreamBroker Ask lane', () => {
       const { broker, transport } = yield* buildBroker(logger, scope);
       const harness = makeHarness();
       const source = makeSseSource();
-      yield* transport.register(clientReturning(source)).pipe(Scope.extend(scope));
+      yield* transport.register(clientReturning(source)).pipe(Scope.provide(scope));
 
       yield* broker.open({
         streamId: ID_B,
@@ -396,6 +396,51 @@ describe('StreamBroker Ask lane', () => {
       source.close();
       yield* settle;
       yield* Scope.close(scope, Exit.void);
+    })
+  );
+
+  it.effect('stream startup closes only after its producer is canceled', () =>
+    Effect.gen(function* () {
+      const scope = yield* Scope.make();
+      const { broker, transport } = yield* buildBroker(makeTestLogger(), scope);
+      const harness = makeHarness();
+      const entered = yield* Deferred.make<void>();
+      let finalized = false;
+      yield* transport.register({ ...clientReturning(makeSseSource()),
+        openAskStream: () => Deferred.succeed(entered, undefined).pipe(
+          Effect.andThen(Effect.never),
+          Effect.ensuring(Effect.sync(() => { finalized = true; })))
+      }).pipe(Scope.provide(scope));
+      const opening = yield* Effect.forkChild(broker.open({
+        streamId: ID_A, sender: harness.sender as unknown as StreamPortSender, body: {},
+      }));
+      yield* Deferred.await(entered);
+      yield* Scope.close(scope, Exit.void);
+      assert.isTrue(finalized, 'Scope.close returned before producer cancellation');
+      assert.isTrue(harness.mainPort(ID_A)?.closed);
+      yield* Fiber.join(opening);
+    })
+  );
+
+  it.effect('closes stream port at initial yield before producer work', () =>
+    Effect.gen(function* () {
+      const scope = yield* Scope.make();
+      const { broker, transport } = yield* buildBroker(makeTestLogger(), scope);
+      const harness = makeHarness();
+      let started = false;
+      yield* transport.register({ ...clientReturning(makeSseSource()),
+        openAskStream: () => Effect.sync(() => { started = true; }).pipe(Effect.andThen(Effect.never))
+      }).pipe(Scope.provide(scope));
+      yield* broker.open({
+        streamId: ID_A, sender: harness.sender as unknown as StreamPortSender, body: {},
+      });
+      const startedBeforeClose = started;
+      yield* Scope.close(scope, Exit.void);
+      assert.isFalse(startedBeforeClose);
+      assert.isFalse(started);
+      assert.isTrue(harness.mainPort(ID_A)?.closed);
+      assert.strictEqual(harness.mainPort(ID_A)?.listenerCount('message'), 0);
+      assert.strictEqual(harness.mainPort(ID_A)?.listenerCount('close'), 0);
     })
   );
 });

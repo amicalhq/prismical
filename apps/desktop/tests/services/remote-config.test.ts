@@ -1,5 +1,6 @@
 import { assert, describe, it } from '@effect/vitest';
-import { Context, Effect, Exit, Layer, Scope, SubscriptionRef, TestClock } from 'effect';
+import { Context, Effect, Exit, Layer, Scope, SubscriptionRef } from 'effect';
+import { TestClock } from 'effect/testing';
 import { initialAuthState, type AuthState } from '../../src/main/domains/auth/policy';
 import { AuthService, RefreshError, type AuthApi } from '../../src/main/domains/auth/service';
 import { makeRemoteConfigLive, REMOTE_CONFIG_KEY } from '../../src/main/domains/remote-config/live';
@@ -78,7 +79,7 @@ const setup = (
   });
 
 describe('RemoteConfig', () => {
-  it.scoped('fetches on every startup, even with cache, then every 15 minutes', () =>
+  it.effect('fetches on every startup, even with cache, then every 15 minutes', () =>
     Effect.gen(function* () {
       const f = yield* setup({ cached: { updateRequirement: required }, initial: signedIn });
       assert.isTrue(yield* f.service.isUpdateRequired);
@@ -114,7 +115,7 @@ describe('RemoteConfig', () => {
     })
   );
 
-  it.scoped(
+  it.effect(
     'retains cached policy for missing/invalid/offline responses; explicit false clears it',
     () =>
       Effect.gen(function* () {
@@ -146,7 +147,7 @@ describe('RemoteConfig', () => {
       })
   );
 
-  it.scoped(
+  it.effect(
     'does not apply cached or fetched requirements evaluated for a different app version',
     () =>
       Effect.gen(function* () {
@@ -164,7 +165,7 @@ describe('RemoteConfig', () => {
       })
   );
 
-  it.scoped('retains cached policy when signed-in token resolution fails', () =>
+  it.effect('retains cached policy when signed-in token resolution fails', () =>
     Effect.gen(function* () {
       const f = yield* setup({
         cached: { updateRequirement: required },
@@ -177,7 +178,7 @@ describe('RemoteConfig', () => {
     })
   );
 
-  it.scoped(
+  it.effect(
     'refetches for a changed identity, ignores old responses, and coalesces new-identity refreshes',
     () =>
       Effect.gen(function* () {
@@ -207,7 +208,7 @@ describe('RemoteConfig', () => {
       })
   );
 
-  it.scoped('times out a stalled request, aborts it, and permits the next refresh', () =>
+  it.effect('times out a stalled request, aborts it, and permits the next refresh', () =>
     Effect.gen(function* () {
       const f = yield* setup({
         cached: { updateRequirement: required },
@@ -227,7 +228,7 @@ describe('RemoteConfig', () => {
   it.effect('scope close aborts outstanding requests and stops polling', () =>
     Effect.gen(function* () {
       const scope = yield* Scope.make();
-      const f = yield* setup({ fetch: () => new Promise(() => {}) }).pipe(Scope.extend(scope));
+      const f = yield* setup({ fetch: () => new Promise(() => {}) }).pipe(Scope.provide(scope));
       yield* settle;
       yield* Scope.close(scope, Exit.void);
       assert.isTrue(f.requests[0]!.init!.signal!.aborted);
