@@ -169,6 +169,30 @@ export const recording = sqliteTable(
   t => [index('recording_note_id_idx').on(t.noteId)]
 );
 
+/** Speaker identities are workspace-local; tagging never rewrites transcript segments. */
+export const recordingSpeaker = sqliteTable(
+  'recording_speaker',
+  {
+    id: text('id').primaryKey(),
+    recordingId: text('recording_id').notNull(),
+    speakerKey: text('speaker_key').notNull(),
+    source: text('source').notNull(),
+    displayName: text('display_name'),
+    /** Kept for the shared wire shape; the local workspace has no People directory. */
+    personId: text('person_id'),
+    confidence: integer('confidence'),
+    isOwner: integer('is_owner', { mode: 'boolean' }).notNull().default(false),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  t => [
+    uniqueIndex('recording_speaker_recording_key_idx').on(t.recordingId, t.speakerKey),
+    uniqueIndex('recording_speaker_owner_idx')
+      .on(t.recordingId)
+      .where(sql`${t.isOwner} = 1`),
+  ]
+);
+
 /** Which capture lane a transcript segment came from. */
 export const TRANSCRIPT_SOURCES = ['mic', 'system'] as const;
 

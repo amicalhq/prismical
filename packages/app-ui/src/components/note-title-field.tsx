@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { createPortal } from 'react-dom';
 import { Loader2, Sparkles } from 'lucide-react';
 import { firstNoteLine, markdownToTiptapJson } from '@prismical/editor-markdown';
 import { NAME_NOTE_SKILL_ID, type Note } from '@prismical/app-contracts';
@@ -30,9 +31,13 @@ export function NoteTitleField({
   note,
   compact = false,
   onTitleChange,
+  headerTarget,
+  headerLeading,
 }: {
   note: Note;
   compact?: boolean;
+  headerTarget?: HTMLDivElement | null;
+  headerLeading?: React.ReactNode;
   onTitleChange?: (title: string) => void;
 }) {
   const { t } = useTranslation();
@@ -128,7 +133,7 @@ export function NoteTitleField({
       ? t('notes.titleNeedsContent')
       : t('notes.nameWithAI');
 
-  return (
+  const renderField = (compact: boolean) => (
     <div
       className={`group/title relative flex min-w-0 items-center ${compact ? 'max-w-full gap-1' : 'flex-1'}`}
       style={compact ? ({ WebkitAppRegion: 'no-drag' } as React.CSSProperties) : undefined}
@@ -168,7 +173,7 @@ export function NoteTitleField({
         }}
         className={
           compact
-            ? 'min-w-[4ch] truncate bg-transparent text-[12.5px] font-medium text-dock-ink-3 outline-none focus:text-dock-ink'
+            ? 'min-w-[4ch] truncate bg-transparent text-base font-medium text-foreground outline-none'
             : `min-w-0 flex-1 truncate bg-transparent px-2 pt-1 text-2xl font-semibold leading-tight text-foreground outline-none placeholder:text-muted-foreground md:text-3xl ${namingEnabled ? `group-hover/title:pr-9 group-focus-within/title:pr-9 [@media(hover:none)]:pr-9 ${naming.running ? 'pr-9' : ''}` : ''}`
         }
       />
@@ -197,5 +202,19 @@ export function NoteTitleField({
         </button>
       )}
     </div>
+  );
+
+  return (
+    <>
+      {renderField(compact)}
+      {headerTarget &&
+        createPortal(
+          <>
+            {headerLeading}
+            {renderField(true)}
+          </>,
+          headerTarget
+        )}
+    </>
   );
 }

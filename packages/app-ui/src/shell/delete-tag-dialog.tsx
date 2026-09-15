@@ -41,7 +41,7 @@ export function DeleteTagDialog({
     >
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>
+          <AlertDialogTitle className="wrap-anywhere">
             {t('dialogs.deleteTag.title', { name: tag?.name ?? '' })}
           </AlertDialogTitle>
           <AlertDialogDescription>{t('dialogs.deleteTag.description')}</AlertDialogDescription>

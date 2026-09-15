@@ -421,6 +421,53 @@ describe('ByokTranscriberLive', () => {
     })
   );
 
+  it.effect(
+    'removes provider NULs before replacements and keeps tabs/newlines in mirrored segments',
+    () =>
+      Effect.gen(function* () {
+        const h = yield* build({ mode: 'cloud' });
+        h.fakeCloud.setRequestResponder(req => ({
+          ok: true,
+          status: 200,
+          bodyJson: {
+            results: req.path.endsWith('/team-vocabulary')
+              ? []
+              : [
+                  {
+                    id: 'voc_nul',
+                    word: 'road map',
+                    replacementWord: 'roadmap',
+                    isReplacement: true,
+                  },
+                ],
+          },
+        }));
+        for (const byokModel of ['whisper-1', 'gpt-4o-transcribe']) {
+          h.setResponder(() =>
+            Promise.resolve(jsonResponse({ text: '\u0000road\u0000 map\tready\nnext\u0000' }))
+          );
+          const result = yield* h.lane.transcribeChunk('rec_nul', PARAMS, chunk(tone(240_000)), {
+            ...BYOK,
+            byokModel,
+          });
+          assert.isTrue(result.ok);
+          if (result.ok) assert.strictEqual(result.value[0]?.text, 'roadmap\tready\nnext');
+          h.setResponder(() => Promise.resolve(jsonResponse({ text: '\u0000\u0000' })));
+          assert.deepStrictEqual(
+            yield* h.lane.transcribeChunk('rec_empty', PARAMS, chunk(tone(240_000)), {
+              ...BYOK,
+              byokModel,
+            }),
+            {
+              ok: true,
+              value: [],
+            }
+          );
+        }
+        yield* Scope.close(h.scope, Exit.void);
+      })
+  );
+
   it.effect('local mode: replacements from the ProductDb vocabulary are applied and usage_count bumps', () =>
     Effect.gen(function* () {
       const h = yield* build();

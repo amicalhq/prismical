@@ -161,19 +161,106 @@ export const TRANSCRIPTION_PREFERENCE_DEFAULTS: TranscriptionPreferences = Objec
   language: 'en',
 });
 
+/** Account-wide behavior; hardware choices remain on the device. */
+export const ExperiencePreferencesSchema = z
+  .object({
+    autoEnhance: z.boolean(),
+    autoTranscribeNewNotes: z.boolean(),
+    theme: z.enum(['light', 'dark', 'system']),
+  })
+  .strict();
+export type ExperiencePreferences = z.output<typeof ExperiencePreferencesSchema>;
+export const EXPERIENCE_PREFERENCE_DEFAULTS: ExperiencePreferences = {
+  autoEnhance: true,
+  autoTranscribeNewNotes: false,
+  theme: 'system',
+};
+export const AskSelectionSchema = z
+  .object({
+    instanceId: z.string().min(1).max(200),
+    modelId: z.string().min(1).max(200),
+  })
+  .strict();
+// A patch contains only the changed organization; the server merges these keys atomically.
+export const AskPreferencesSchema = z.record(z.string().min(1).max(200), AskSelectionSchema);
+export const WalkthroughSchema = z.discriminatedUnion('status', [
+  z
+    .object({
+      status: z.literal('offered'),
+      replay: z.boolean().optional(),
+      started: z.boolean().optional(),
+    })
+    .strict(),
+  z.object({ status: z.literal('dismissed') }).strict(),
+  z.object({ status: z.literal('completed') }).strict(),
+  z
+    .object({
+      status: z.literal('active'),
+      orgId: z.string().min(1).max(200),
+      noteId: z.string().min(1).max(200),
+      step: z.enum(['record', 'speak', 'stop', 'transcript', 'enhance', 'result', 'review']),
+      recordingId: z.string().min(1).max(200).optional(),
+    })
+    .strict(),
+]);
+export type AccountWalkthrough = z.output<typeof WalkthroughSchema>;
+export const OnboardingPreferencesSchema = z
+  .object({
+    walkthrough: WalkthroughSchema.nullable(),
+    replayRetired: z.boolean(),
+  })
+  .strict();
+export const ONBOARDING_PREFERENCE_DEFAULTS = { walkthrough: null, replayRetired: false } as const;
+export const PromptPreferencesSchema = z
+  .object({
+    getAppsSeen: z.boolean(),
+    calendarDismissed: z.boolean(),
+  })
+  .strict();
+export const PROMPT_PREFERENCE_DEFAULTS = { getAppsSeen: false, calendarDismissed: false };
+export const AccountExperienceSchema = z.object({
+  experience: ExperiencePreferencesSchema,
+  ask: AskPreferencesSchema,
+  onboarding: OnboardingPreferencesSchema,
+  prompts: PromptPreferencesSchema,
+});
+export type AccountExperience = z.output<typeof AccountExperienceSchema>;
+export const ACCOUNT_EXPERIENCE_DEFAULTS: AccountExperience = {
+  experience: EXPERIENCE_PREFERENCE_DEFAULTS,
+  ask: {},
+  onboarding: ONBOARDING_PREFERENCE_DEFAULTS,
+  prompts: PROMPT_PREFERENCE_DEFAULTS,
+};
+// Native IPC preserves explicit undefined fields; reject them like an invalid JSON request.
+const hasDefinedFields = (value: object) =>
+  Object.keys(value).length > 0 && Object.values(value).every(field => field !== undefined);
+
+const experiencePatch = {
+  experience: ExperiencePreferencesSchema.partial()
+    .refine(hasDefinedFields, 'Choose a preference to update')
+    .optional(),
+  ask: AskPreferencesSchema.optional(),
+  onboarding: OnboardingPreferencesSchema.partial()
+    .refine(hasDefinedFields, 'Choose an onboarding field to update')
+    .optional(),
+  prompts: PromptPreferencesSchema.partial()
+    .refine(hasDefinedFields, 'Choose a prompt to update')
+    .optional(),
+};
+
 /** Every preference group. A single resource, fields exposed directly (apps/v1 convention). */
 export const UserPreferencesSchema = z
   .object({
     language: LanguagePreferencesSchema.nullable(),
+    experience: ExperiencePreferencesSchema.nullable().default(null),
+    ask: AskPreferencesSchema.nullable().default(null),
+    onboarding: OnboardingPreferencesSchema.nullable().default(null),
+    prompts: PromptPreferencesSchema.nullable().default(null),
     transcription: TranscriptionPreferencesSchema.nullable(),
   })
   .strip();
 export type UserPreferences = z.output<typeof UserPreferencesSchema>;
 export const UserPreferencesResponseSchema = UserPreferencesSchema;
-
-// Native IPC preserves explicit undefined fields; reject them like an invalid JSON request.
-const hasDefinedFields = (value: object) =>
-  Object.keys(value).length > 0 && Object.values(value).every(field => field !== undefined);
 
 /**
  * `POST`: seed the groups a device detected, write-once. A group the account already saved is left
@@ -182,6 +269,7 @@ const hasDefinedFields = (value: object) =>
  */
 export const InitializeUserPreferencesRequestSchema = z
   .object({
+    ...experiencePatch,
     language: z.object({ interfaceLanguage: InterfaceLanguageSchema }).strict().optional(),
     transcription: TranscriptionPreferencesSchema.optional(),
   })
@@ -194,6 +282,11 @@ export type InitializeUserPreferencesRequest = z.input<
 /** `PATCH`: merge the given fields into each named group, atomically. */
 export const UpdateUserPreferencesRequestSchema = z
   .object({
+    ...experiencePatch,
+    ask: AskPreferencesSchema.refine(
+      hasDefinedFields,
+      'Choose an organization model to update'
+    ).optional(),
     language: LanguagePreferencesSchema.partial()
       .refine(hasDefinedFields, 'Choose a language preference to update')
       .optional(),
@@ -223,9 +316,20 @@ export function readTranscriptionPreferences(prefs: unknown): TranscriptionPrefe
   return parsed.success ? parsed.data : null;
 }
 
+function readGroup<T>(prefs: unknown, key: string, schema: z.ZodType<T>): T | null {
+  const parsed = schema.safeParse(
+    prefs && typeof prefs === 'object' ? (prefs as Record<string, unknown>)[key] : undefined
+  );
+  return parsed.success ? parsed.data : null;
+}
+
 /** Project the raw `user.prefs` jsonb onto the typed resource; unknown/legacy keys are ignored. */
 export function readUserPreferences(prefs: unknown): UserPreferences {
   return {
+    experience: readGroup(prefs, 'experience', ExperiencePreferencesSchema),
+    ask: readGroup(prefs, 'ask', AskPreferencesSchema),
+    onboarding: readGroup(prefs, 'onboarding', OnboardingPreferencesSchema),
+    prompts: readGroup(prefs, 'prompts', PromptPreferencesSchema),
     language: readLanguagePreferences(prefs),
     transcription: readTranscriptionPreferences(prefs),
   };

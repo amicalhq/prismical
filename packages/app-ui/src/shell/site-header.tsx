@@ -15,9 +15,9 @@ function getStaticPageTitleKey(pathname: string): string | null {
   if (pathname.startsWith('/events')) return 'navigation.pages.events';
   if (/^\/notes\/[^/]+/.test(pathname)) return null; // dynamic — resolved from context
   if (pathname.startsWith('/notes')) return 'navigation.pages.notes';
-  if (pathname.startsWith('/folders')) return 'folders.title';
-  if (pathname.startsWith('/tags')) return 'tags.title';
   if (pathname.startsWith('/shared')) return 'navigation.pages.sharedWithMe';
+  // Accepting a share invitation lands under "Shared with me", not "Settings".
+  if (pathname.startsWith('/share/accept')) return 'navigation.pages.sharedWithMe';
   if (pathname.startsWith('/people')) return 'navigation.pages.people';
   if (pathname.startsWith('/companies')) return 'navigation.pages.companies';
   if (pathname.startsWith('/settings/skills')) return 'navigation.pages.skills';
@@ -41,7 +41,7 @@ function getStaticPageTitleKey(pathname: string): string | null {
 export function SiteHeader() {
   const { t } = useTranslation();
   const pathname = usePathname();
-  const { currentNote } = useCurrentNote();
+  const { currentNote, setHeaderActionsTarget, setHeaderTitleTarget } = useCurrentNote();
   const caps = useDesktopCapabilities();
   const { state, isMobile } = useSidebar();
   const staticTitleKey = getStaticPageTitleKey(pathname);
@@ -80,7 +80,7 @@ export function SiteHeader() {
     >
       <div
         className={cn(
-          'flex w-full items-center gap-1 px-4',
+          'flex min-w-0 w-full items-center gap-1 px-4',
           desktopChrome && 'h-8',
           desktopChrome &&
             (state === 'collapsed' || isMobile) &&
@@ -93,7 +93,18 @@ export function SiteHeader() {
             <Separator orientation="vertical" className="mr-1 h-4" />
           </>
         )}
-        <h1 className="truncate text-sm font-medium">{title}</h1>
+        {staticTitleKey === null && currentNote ? (
+          <div
+            ref={setHeaderTitleTarget}
+            className="flex min-w-0 flex-1 items-center gap-1 [-webkit-app-region:no-drag]"
+          />
+        ) : (
+          <h1 className="min-w-0 flex-1 truncate text-sm font-medium">{title}</h1>
+        )}
+        <div
+          ref={setHeaderActionsTarget}
+          className="flex shrink-0 items-center gap-1 [-webkit-app-region:no-drag]"
+        />
       </div>
     </header>
   );

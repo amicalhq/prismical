@@ -41,7 +41,7 @@ export function DeleteFolderDialog({
     >
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>
+          <AlertDialogTitle className="wrap-anywhere">
             {t('dialogs.deleteFolder.title', { name: folder?.name ?? '' })}
           </AlertDialogTitle>
           <AlertDialogDescription>{t('dialogs.deleteFolder.description')}</AlertDialogDescription>

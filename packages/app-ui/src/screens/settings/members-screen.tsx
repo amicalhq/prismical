@@ -288,7 +288,7 @@ function RemoveMemberDialog({
     <Dialog open={member !== null} onOpenChange={n => !remove.isPending && onOpenChange(n)}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>
+          <DialogTitle className="wrap-anywhere">
             {leaving
               ? t('settings.members.remove.leaveTitle')
               : t('settings.members.remove.removeTitle', {
@@ -348,7 +348,7 @@ function PromoteOwnerDialog({
     <Dialog open={member !== null} onOpenChange={n => !updateRole.isPending && onOpenChange(n)}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>
+          <DialogTitle className="wrap-anywhere">
             {t('settings.members.promote.title', {
               name: member?.name || member?.email,
             })}

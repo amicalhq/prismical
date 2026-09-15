@@ -40,6 +40,7 @@ import { DesktopI18n } from '../i18n/service';
 import { localAskRequestFailure, openLocalAskStream } from './ask';
 import { handleLocalRequest, type LocalRouteContext } from './router';
 import { seedSystemSkills } from './skills';
+import { validateSkillApplication } from './skill-application';
 import { describeDbError } from './wire';
 
 const INTERNAL: TransportResponse = { error: { code: 'INTERNAL' } };
@@ -97,6 +98,8 @@ export const LocalBackendLive: Layer.Layer<
       log: (message, data) => unsafeLog.info(message, { context: data }),
       titleLock: makeSerialLock(),
       recoverableRuns: new Map(),
+      validateSkillApplication: (resultId, update) =>
+        runPromise(Effect.andThen(Effect.yieldNow, validateSkillApplication(resultId, update))),
     };
 
     // System skills: idempotent, never fatal — see the header.

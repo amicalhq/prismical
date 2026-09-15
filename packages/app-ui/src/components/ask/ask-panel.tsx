@@ -38,9 +38,8 @@ import { useDesktopCapabilities, useEntitlements, useInstances } from '@prismica
 import {
   AUTO_SELECTION,
   buildAskModelGroups,
-  loadModelPref,
+  useAccountExperience,
   resolveActiveModel,
-  saveModelPref,
   type AskModelSelection,
 } from '@prismical/app-client';
 import {
@@ -370,33 +369,35 @@ function AskChat({
   // Product analytics via the injected AnalyticsPort.
   const { analytics, auth, env, workflow } = usePorts();
   const platform = env.getEnv().platform;
+  const accountPreferences = useAccountExperience();
+  const instancesQuery = useInstances();
+  const model = (ownerOrgId && accountPreferences.data?.ask[ownerOrgId]) || AUTO_SELECTION;
+  // A failed or unfinished provider lookup is not evidence that the saved model was deleted.
+  const preferencesReady = !!accountPreferences.data && (isAuto(model) || instancesQuery.isSuccess);
   const workflowAllowsAsk = canAsk(useWorkflowSnapshot());
   const isAskAdmitted = React.useCallback(
-    () => !workflow || canAsk(workflow.getSnapshot()),
-    [workflow]
+    () => preferencesReady && (!workflow || canAsk(workflow.getSnapshot())),
+    [preferencesReady, workflow]
   );
   const assertAskAdmitted = React.useCallback(() => {
-    if (!isAskAdmitted()) throw new DOMException('Ask paused for proposal review', 'AbortError');
+    if (!isAskAdmitted())
+      throw new DOMException('Ask is waiting for preferences or proposal review', 'AbortError');
   }, [isAskAdmitted]);
 
   // Model selection: groups built from the user's instances (Prismical Cloud → Auto + each
-  // BYOK instance's curated models). The chosen pick is remembered in localStorage and validated
+  // BYOK instance's curated models). The chosen pick is saved per account/organization and validated
   // against the live groups every render — a deleted instance / removed model falls back to Auto.
   const caps = useDesktopCapabilities();
-  const { data: instances = [] } = useInstances();
   const groups = React.useMemo(
     () =>
       buildAskModelGroups(
-        instances,
+        instancesQuery.data ?? [],
         t('ask.models.auto'),
         // Local mode (the provider capability) runs Auto on the device's own
         // provider — never Prismical's managed cloud.
         caps.has('ai-provider') ? t('ask.models.thisDevice') : undefined
       ),
-    [instances, t, caps]
-  );
-  const [model, setModel] = React.useState<AskModelSelection>(
-    () => loadModelPref() ?? AUTO_SELECTION
+    [instancesQuery.data, t, caps]
   );
   const activeModel = React.useMemo(() => resolveActiveModel(groups, model), [groups, model]);
   const activeModelRef = React.useRef(activeModel);
@@ -404,17 +405,20 @@ function AskChat({
   // "Use Prismical Cloud" on a failed turn: the NEXT request runs on Auto, once. The remembered
   // pick is untouched, so the turn after that is back on the user's own key.
   const cloudOnceRef = React.useRef(false);
-  const chooseModel = React.useCallback((sel: AskModelSelection) => {
-    setModel(sel);
-    saveModelPref(sel);
-  }, []);
+  const updatePreferences = accountPreferences.update;
+  const chooseModel = React.useCallback(
+    (sel: AskModelSelection) => {
+      if (ownerOrgId) updatePreferences?.({ ask: { [ownerOrgId]: sel } });
+    },
+    [ownerOrgId, updatePreferences]
+  );
   const navigation = useNavigation();
 
   // The remembered pick no longer resolves (instance deleted, model removed from its list): the
   // panel silently runs Auto. Say so once per stale pick, with a way to choose again — otherwise
   // the user believes their own key is answering when Prismical Cloud is.
   React.useEffect(() => {
-    if (instances.length === 0 || isAuto(model) || !isAuto(activeModel)) return;
+    if (!instancesQuery.isSuccess || isAuto(model) || !isAuto(activeModel)) return;
     const key = `${model.instanceId}:${model.modelId}`;
     if (fallbackToastedFor === key) return;
     fallbackToastedFor = key;
@@ -424,7 +428,7 @@ function AskChat({
         onClick: () => navigation.push('/settings/ai-models'),
       },
     });
-  }, [instances.length, model, activeModel, t, navigation]);
+  }, [instancesQuery.isSuccess, model, activeModel, t, navigation]);
 
   // Scope travels with the question metadata; model selection is read at request time.
   const transport = React.useMemo(
@@ -534,7 +538,9 @@ function AskChat({
       },
       continue: () => {
         if (isAskAdmitted())
-          void sendMessage(askContinuationMessage(messages, t('ask.errors.continueMessage'))).catch(() => {});
+          void sendMessage(askContinuationMessage(messages, t('ask.errors.continueMessage'))).catch(
+            () => {}
+          );
       },
       // One-off: this turn on Prismical Cloud. The remembered pick is untouched.
       'use-cloud': () => {
@@ -839,6 +845,7 @@ function AskChat({
           onRunSkill={onRunSkill}
           // A chat stream and a composer-started run can overlap; Stop settles the stream first.
           onStop={() => (busy ? void stop() : activeRun?.cancel?.())}
+          preferencesReady={preferencesReady}
           modelGroups={groups}
           modelValue={activeModel}
           onModelChange={chooseModel}

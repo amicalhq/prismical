@@ -12,8 +12,8 @@
  * Data hooks use the same main-owned WorkspaceTransport lane as the shared web UI,
  * while the renderer remains isolated from core addresses and bearer tokens.
  */
-import * as React from "react";
-import { useTranslation } from "react-i18next";
+import * as React from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Outlet,
   createHashHistory,
@@ -21,59 +21,58 @@ import {
   createRoute,
   createRouter,
   redirect,
-} from "@tanstack/react-router";
-import { useLocation, useParams, useSearch } from "@tanstack/react-router";
-import { AccountLanguageProvider, usePorts, useSessionView } from "@prismical/app-client";
-import type { AppModeValue } from "@prismical/desktop-contracts";
-import { useDesktopEnv } from "./desktop-env";
-import { useGleapSupportAction } from "./support/gleap";
-import { FloatErrorFallback, FloatNoteView } from "./float-note-view";
-import { LocalWorkspaceFooter } from "./local-workspace-footer";
-import { AppModeSetting } from "./settings/app-mode-setting";
-import { TelemetrySetting } from "./settings/telemetry-setting";
-import { captureRendererException } from "../../telemetry";
-import { LocalModelsScreen } from "./settings/local-models-screen";
-import { AiProviderSetting } from "./settings/ai-provider-setting";
-import { TranscriptionEngineSetting } from "./settings/transcription-engine-setting";
-import { AppShell } from "@prismical/app-ui/shell/app-shell";
-import { FeatureGate } from "@prismical/app-ui/shell/feature-gate";
-import { HomeScreen } from "@prismical/app-ui/screens/home-screen";
-import { NotesScreen } from "@prismical/app-ui/screens/notes-screen";
-import { FoldersScreen } from "@prismical/app-ui/screens/folders-screen";
-import { TagsScreen } from "@prismical/app-ui/screens/tags-screen";
-import { NoteDetailScreen } from "@prismical/app-ui/screens/note-detail-screen";
-import { SharedScreen } from "@prismical/app-ui/screens/shared-screen";
-import { PeopleScreen } from "@prismical/app-ui/screens/people-screen";
-import { PersonDetailScreen } from "@prismical/app-ui/screens/person-detail-screen";
-import { CompaniesScreen } from "@prismical/app-ui/screens/companies-screen";
-import { CompanyDetailScreen } from "@prismical/app-ui/screens/company-detail-screen";
-import { EventsScreen } from "@prismical/app-ui/screens/events-screen";
-import { AcceptInvitationScreen } from "@prismical/app-ui/screens/accept-invitation-screen";
-import { ShareAcceptScreen } from "@prismical/app-ui/screens/share-accept-screen";
-import { NotFoundScreen } from "@prismical/app-ui/screens/not-found-screen";
-import { AboutScreen } from "@prismical/app-ui/screens/settings/about-screen";
-import { AccountScreen } from "@prismical/app-ui/screens/settings/account-screen";
-import { AdvancedScreen } from "@prismical/app-ui/screens/settings/advanced-screen";
-import { AiModelsScreen } from "@prismical/app-ui/screens/settings/ai-models/ai-models-screen";
-import { ApiMcpScreen } from "@prismical/app-ui/screens/settings/api-mcp/api-mcp-screen";
-import { AutomationDetailScreen } from "@prismical/app-ui/screens/settings/automations/automation-detail-screen";
-import { CalendarScreen } from "@prismical/app-ui/screens/settings/calendar-screen";
-import { BillingHandoffScreen } from "@prismical/app-ui/screens/settings/billing-handoff-screen";
-import { TranscriptionScreen } from "@prismical/app-ui/screens/settings/transcription-screen";
-import { IntegrationsScreen } from "@prismical/app-ui/screens/settings/integrations/integrations-screen";
-import { IntegrationDetailScreen } from "@prismical/app-ui/screens/settings/integrations/integration-detail-screen";
-import { MembersScreen } from "@prismical/app-ui/screens/settings/members-screen";
-import { PreferencesScreen } from "@prismical/app-ui/screens/settings/preferences-screen";
-import { ShortcutsScreen } from "@prismical/app-ui/screens/settings/shortcuts-screen";
-import { SkillsScreen } from "@prismical/app-ui/screens/settings/skills/skills-screen";
-import { SkillNewScreen } from "@prismical/app-ui/screens/settings/skills/skill-new-screen";
-import { SkillEditorScreen } from "@prismical/app-ui/screens/settings/skills/skill-editor-screen";
-import { VocabularyScreen } from "@prismical/app-ui/screens/settings/vocabulary-screen";
-import { SkillsProvider } from "@prismical/app-ui/screens/settings/skills/components/skills-store";
+} from '@tanstack/react-router';
+import { useLocation, useParams, useSearch } from '@tanstack/react-router';
+import { AccountLanguageProvider, usePorts, useSessionView } from '@prismical/app-client';
+import type { AppModeValue } from '@prismical/desktop-contracts';
+import { useDesktopEnv } from './desktop-env';
+import { useGleapSupportAction } from './support/gleap';
+import { FloatErrorFallback, FloatNoteView } from './float-note-view';
+import { LocalWorkspaceFooter } from './local-workspace-footer';
+import { DesktopAccountDetails } from './settings/account-details';
+import { AppModeSetting } from './settings/app-mode-setting';
+import { TelemetrySetting } from './settings/telemetry-setting';
+import { captureRendererException } from '../../telemetry';
+import { LocalModelsScreen } from './settings/local-models-screen';
+import { AiProviderSetting } from './settings/ai-provider-setting';
+import { TranscriptionEngineSetting } from './settings/transcription-engine-setting';
+import { AppShell } from '@prismical/app-ui/shell/app-shell';
+import { FeatureGate } from '@prismical/app-ui/shell/feature-gate';
+import { HomeScreen } from '@prismical/app-ui/screens/home-screen';
+import { NotesScreen } from '@prismical/app-ui/screens/notes-screen';
+import { NoteDetailScreen } from '@prismical/app-ui/screens/note-detail-screen';
+import { SharedScreen } from '@prismical/app-ui/screens/shared-screen';
+import { PeopleScreen } from '@prismical/app-ui/screens/people-screen';
+import { PersonDetailScreen } from '@prismical/app-ui/screens/person-detail-screen';
+import { CompaniesScreen } from '@prismical/app-ui/screens/companies-screen';
+import { CompanyDetailScreen } from '@prismical/app-ui/screens/company-detail-screen';
+import { EventsScreen } from '@prismical/app-ui/screens/events-screen';
+import { AcceptInvitationScreen } from '@prismical/app-ui/screens/accept-invitation-screen';
+import { ShareAcceptScreen } from '@prismical/app-ui/screens/share-accept-screen';
+import { NotFoundScreen } from '@prismical/app-ui/screens/not-found-screen';
+import { AboutScreen } from '@prismical/app-ui/screens/settings/about-screen';
+import { AccountScreen } from '@prismical/app-ui/screens/settings/account-screen';
+import { AdvancedScreen } from '@prismical/app-ui/screens/settings/advanced-screen';
+import { AiModelsScreen } from '@prismical/app-ui/screens/settings/ai-models/ai-models-screen';
+import { ApiMcpScreen } from '@prismical/app-ui/screens/settings/api-mcp/api-mcp-screen';
+import { AutomationDetailScreen } from '@prismical/app-ui/screens/settings/automations/automation-detail-screen';
+import { CalendarScreen } from '@prismical/app-ui/screens/settings/calendar-screen';
+import { BillingHandoffScreen } from '@prismical/app-ui/screens/settings/billing-handoff-screen';
+import { TranscriptionScreen } from '@prismical/app-ui/screens/settings/transcription-screen';
+import { IntegrationsScreen } from '@prismical/app-ui/screens/settings/integrations/integrations-screen';
+import { IntegrationDetailScreen } from '@prismical/app-ui/screens/settings/integrations/integration-detail-screen';
+import { MembersScreen } from '@prismical/app-ui/screens/settings/members-screen';
+import { PreferencesScreen } from '@prismical/app-ui/screens/settings/preferences-screen';
+import { ShortcutsScreen } from '@prismical/app-ui/screens/settings/shortcuts-screen';
+import { SkillsScreen } from '@prismical/app-ui/screens/settings/skills/skills-screen';
+import { SkillNewScreen } from '@prismical/app-ui/screens/settings/skills/skill-new-screen';
+import { SkillEditorScreen } from '@prismical/app-ui/screens/settings/skills/skill-editor-screen';
+import { VocabularyScreen } from '@prismical/app-ui/screens/settings/vocabulary-screen';
+import { SkillsProvider } from '@prismical/app-ui/screens/settings/skills/components/skills-store';
 import {
   AccountSwitcher,
   DESKTOP_ACCOUNT_SWITCHER_TEST_IDS,
-} from "@prismical/app-ui/shell/account-switcher";
+} from '@prismical/app-ui/shell/account-switcher';
 
 // --- Root: the shared shell wraps every routed screen ----------------------
 
@@ -87,13 +86,17 @@ function RootLayout() {
   // The floating note window rides the same router at
   // /float[/:noteId] but renders BARE — no AppShell (sidebar/header/cluster);
   // FloatNoteView carries its own chrome + recording dock.
-  const pathname = useLocation({ select: (location) => location.pathname });
+  const pathname = useLocation({ select: location => location.pathname });
   // Desktop-owned, so the mode is read here: the shell's accountSwitcher
   // slot holds the shared AccountSwitcher in cloud mode and the local-workspace
   // footer in local mode — no shared code learns the mode.
   const { appMode } = useDesktopEnv();
-  if (pathname.startsWith("/float")) {
-    return <AccountLanguageProvider><Outlet /></AccountLanguageProvider>;
+  if (pathname.startsWith('/float')) {
+    return (
+      <AccountLanguageProvider>
+        <Outlet />
+      </AccountLanguageProvider>
+    );
   }
   return (
     <AppShell
@@ -102,10 +105,10 @@ function RootLayout() {
       // timestamp, so they get manual replay without an automatic welcome.
       enableOnboarding
       accountSwitcher={
-        appMode === "local" ? (
+        appMode === 'local' ? (
           <LocalWorkspaceFooter />
         ) : (
-          <AccountSwitcher testIds={DESKTOP_ACCOUNT_SWITCHER_TEST_IDS} />
+          <AccountSwitcher compact testIds={DESKTOP_ACCOUNT_SWITCHER_TEST_IDS} />
         )
       }
     >
@@ -136,7 +139,7 @@ const cloudOnly = (path: string, feature: string | null, component: () => React.
     getParentRoute: () => rootRoute,
     path,
     beforeLoad: ({ context }) => {
-      if (context.appMode === "local") throw redirect({ to: "/home" });
+      if (context.appMode === 'local') throw redirect({ to: '/home' });
     },
     component: function CloudOnlyRoute() {
       const screen = React.createElement(component);
@@ -211,21 +214,34 @@ function AiModelsRoute() {
 // The shared Advanced screen renders the desktop-owned
 // app-mode switch card through its named `modeSettings` slot.
 function AdvancedRoute() {
-  return <AdvancedScreen modeSettings={<><TelemetrySetting /><AppModeSetting /></>} />;
+  return (
+    <AdvancedScreen
+      modeSettings={
+        <>
+          <TelemetrySetting />
+          <AppModeSetting />
+        </>
+      }
+    />
+  );
 }
 
 function useActiveEmail(): string {
   const session = useSessionView();
-  return session.accounts.find((account) => account.sub === session.activeSub)?.email ?? "";
+  return session.accounts.find(account => account.sub === session.activeSub)?.email ?? '';
 }
 
 // The two auth-wired screens: web passes these from AuthProvider; desktop reads
 // the sanitized session view + AuthPort, whose switchOrg/addAccount are the
 // re-scope adapters (fire-and-forget; the session-changed push
-// drives the UI). AccountScreen takes only email + onSignOut.
+// drives the UI). Account details use the main-owned transport and browser handoff.
 function AccountRoute() {
   const { auth } = usePorts();
-  return <AccountScreen email={useActiveEmail()} onSignOut={() => void auth.signOut()} />;
+  return (
+    <AccountScreen email={useActiveEmail()} onSignOut={() => void auth.signOut()}>
+      <DesktopAccountDetails />
+    </AccountScreen>
+  );
 }
 
 function AcceptInvitationRoute() {
@@ -235,7 +251,7 @@ function AcceptInvitationRoute() {
     <AcceptInvitationScreen
       id={id ?? null}
       currentEmail={useActiveEmail()}
-      onSwitchOrg={(orgId) => auth.switchOrg(orgId)}
+      onSwitchOrg={orgId => auth.switchOrg(orgId)}
       onAddAccount={() => void auth.signIn()}
     />
   );
@@ -245,26 +261,26 @@ function AcceptInvitationRoute() {
 
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/",
+  path: '/',
   beforeLoad: () => {
-    throw redirect({ to: "/home" });
+    throw redirect({ to: '/home' });
   },
 });
 
 const automationsRedirectRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "settings/automations",
+  path: 'settings/automations',
   beforeLoad: () => {
-    throw redirect({ to: "/settings/integrations" });
+    throw redirect({ to: '/settings/integrations' });
   },
 });
 
 const automationDetailRedirectRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "settings/automations/$id",
+  path: 'settings/automations/$id',
   beforeLoad: ({ params }) => {
     throw redirect({
-      to: "/settings/integrations/automations/$id",
+      to: '/settings/integrations/automations/$id',
       params: { id: params.id },
     });
   },
@@ -274,7 +290,7 @@ const automationDetailRedirectRoute = createRoute({
 // layout route mirrors the browser client's nested skills-settings route.
 const skillsLayoutRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "settings/skills",
+  path: 'settings/skills',
   component: function SkillsLayout() {
     return (
       <SkillsProvider>
@@ -285,27 +301,34 @@ const skillsLayoutRoute = createRoute({
 });
 const skillsIndexRoute = createRoute({
   getParentRoute: () => skillsLayoutRoute,
-  path: "/",
+  path: '/',
   component: SkillsScreen,
 });
 const skillNewRoute = createRoute({
   getParentRoute: () => skillsLayoutRoute,
-  path: "new",
+  path: 'new',
   component: SkillNewScreen,
 });
 const skillEditorRoute = createRoute({
   getParentRoute: () => skillsLayoutRoute,
-  path: "$skillId",
+  path: '$skillId',
   component: SkillEditorRoute,
 });
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
-  child("home", HomeScreen),
-  child("notes", NotesScreen),
-  child("folders", FoldersScreen),
-  child("tags", TagsScreen),
-  child("notes/$noteId", NoteDetailRoute),
+  child('home', HomeScreen),
+  child('notes', NotesScreen),
+  ...['folders', 'tags'].map(path =>
+    createRoute({
+      getParentRoute: () => rootRoute,
+      path,
+      beforeLoad: () => {
+        throw redirect({ to: '/notes' });
+      },
+    })
+  ),
+  child('notes/$noteId', NoteDetailRoute),
   // The floating note window's routes — bare (no AppShell,
   // see RootLayout). Only the float-note BrowserWindow ever lands here. Their
   // OWN error component: the router default would strip the window chrome
@@ -313,13 +336,13 @@ const routeTree = rootRoute.addChildren([
   // working collapse/dock-back controls and a reload.
   createRoute({
     getParentRoute: () => rootRoute,
-    path: "float",
+    path: 'float',
     component: FloatRoute,
     errorComponent: FloatErrorFallback,
   }),
   createRoute({
     getParentRoute: () => rootRoute,
-    path: "float/$noteId",
+    path: 'float/$noteId',
     component: FloatRoute,
     errorComponent: FloatErrorFallback,
   }),
@@ -327,46 +350,49 @@ const routeTree = rootRoute.addChildren([
   // calendars, organizations/invitations, the account, billing, the public
   // API and automations — redirected home in local mode. The directory is
   // available to every cloud org; other surfaces retain their org feature gates.
-  cloudOnly("shared", "sharing", SharedScreen),
-  cloudOnly("people", null, PeopleScreen),
-  cloudOnly("people/$id", null, PersonDetailRoute),
-  cloudOnly("companies", null, CompaniesScreen),
-  cloudOnly("companies/$id", null, CompanyDetailRoute),
-  cloudOnly("events", "calendar", EventsScreen),
-  cloudOnly("accept-invitation/$id", "organization", AcceptInvitationRoute),
-  cloudOnly("share/accept/$id", "sharing", ShareAcceptRoute),
-  child("settings/about", AboutScreen),
-  cloudOnly("settings/account", "account", AccountRoute),
-  child("settings/advanced", AdvancedRoute),
-  child("settings/ai-models", AiModelsRoute),
-  cloudOnly("settings/api-keys", "publicApi", ApiMcpScreen),
-  cloudOnly("settings/calendar", "calendar", CalendarScreen),
-  cloudOnly("settings/billing", "billing", BillingHandoffScreen),
-  child("settings/transcription", TranscriptionRoute),
-  child("settings/dictation", TranscriptionRoute),
+  cloudOnly('shared', 'sharing', SharedScreen),
+  cloudOnly('people', null, PeopleScreen),
+  cloudOnly('people/$id', null, PersonDetailRoute),
+  cloudOnly('companies', null, CompaniesScreen),
+  cloudOnly('companies/$id', null, CompanyDetailRoute),
+  cloudOnly('events', 'calendar', EventsScreen),
+  cloudOnly('accept-invitation/$id', 'organization', AcceptInvitationRoute),
+  cloudOnly('share/accept/$id', 'sharing', ShareAcceptRoute),
+  child('settings/about', AboutScreen),
+  cloudOnly('settings/account', 'account', AccountRoute),
+  child('settings/advanced', AdvancedRoute),
+  child('settings/ai-models', AiModelsRoute),
+  cloudOnly('settings/api-keys', 'publicApi', ApiMcpScreen),
+  cloudOnly('settings/calendar', 'calendar', CalendarScreen),
+  cloudOnly('settings/billing', 'billing', BillingHandoffScreen),
+  child('settings/transcription', TranscriptionRoute),
+  child('settings/dictation', TranscriptionRoute),
   // Desktop-owned; its nav entry is gated on the 'local-models' capability.
-  child("settings/local-models", LocalModelsScreen),
-  cloudOnly("settings/integrations", "automations", IntegrationsScreen),
-  cloudOnly("settings/integrations/automations/$id", "automations", AutomationDetailRoute),
-  cloudOnly("settings/integrations/$id", "automations", IntegrationDetailRoute),
+  child('settings/local-models', LocalModelsScreen),
+  cloudOnly('settings/integrations', 'automations', IntegrationsScreen),
+  cloudOnly('settings/integrations/automations/$id', 'automations', AutomationDetailRoute),
+  cloudOnly('settings/integrations/$id', 'automations', IntegrationDetailRoute),
   automationsRedirectRoute,
   automationDetailRedirectRoute,
-  cloudOnly("settings/members", "organization", MembersScreen),
-  child("settings/preferences", PreferencesScreen),
-  child("settings/shortcuts", ShortcutsScreen),
+  cloudOnly('settings/members', 'organization', MembersScreen),
+  child('settings/preferences', PreferencesScreen),
+  child('settings/shortcuts', ShortcutsScreen),
   skillsLayoutRoute.addChildren([skillsIndexRoute, skillNewRoute, skillEditorRoute]),
-  child("settings/vocabulary", VocabularyScreen),
+  child('settings/vocabulary', VocabularyScreen),
 ]);
 
 function RouteError({ error }: { error: unknown }) {
-  React.useEffect(() => captureRendererException(window.desktop.telemetry, error, 'react_error_boundary'), [error]);
+  React.useEffect(
+    () => captureRendererException(window.desktop.telemetry, error, 'react_error_boundary'),
+    [error]
+  );
   const { t } = useTranslation();
   // Per-route isolation: a screen that throws shows this instead of blanking
   // the shell.
   return (
     <div className="space-y-1 p-6" data-testid="route-error">
-      <p className="text-sm font-medium">{t("desktop.routeError.title")}</p>
-      <p className="text-sm text-muted-foreground">{t("desktop.routeError.description")}</p>
+      <p className="text-sm font-medium">{t('desktop.routeError.title')}</p>
+      <p className="text-sm text-muted-foreground">{t('desktop.routeError.description')}</p>
     </div>
   );
 }
@@ -376,7 +402,7 @@ export const router = createRouter({
   history: createHashHistory(),
   // Overridden per mount by RouterProvider's `context` (mount.tsx) with the
   // boot-resolved mode; this default only satisfies the type.
-  context: { appMode: "cloud" },
+  context: { appMode: 'cloud' },
   defaultNotFoundComponent: () => <NotFoundScreen />,
   defaultErrorComponent: RouteError,
 });

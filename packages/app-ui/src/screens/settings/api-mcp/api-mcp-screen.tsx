@@ -168,7 +168,7 @@ function RevealKeyDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{t('settings.apiMcp.reveal.title')}</DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="wrap-anywhere">
             {t('settings.apiMcp.reveal.description', { name: created?.name ?? '' })}
           </DialogDescription>
         </DialogHeader>
@@ -176,10 +176,10 @@ function RevealKeyDialog({
           <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
           <span>{t('settings.apiMcp.reveal.warning')}</span>
         </div>
-        <div className="flex items-center gap-2 rounded-lg border border-input bg-background py-2 pl-3 pr-2">
+        <div className="flex min-w-0 items-center gap-2 rounded-lg border border-input bg-background py-2 pl-3 pr-2">
           {/* ph-mask-content: the one-time plaintext secret must not be captured
               by PostHog session replay. */}
-          <code className="ph-mask-content flex-1 overflow-x-auto whitespace-nowrap font-mono text-sm text-foreground">
+          <code className="ph-mask-content min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-sm text-foreground">
             {created?.key}
           </code>
           <Button type="button" size="sm" variant="outline" onClick={handleCopy}>

@@ -47,9 +47,9 @@ it('keeps a pending anchor on the collapsed dock until startup settles', () => {
   view.rerender(<RecordingPillFace {...props} recState="recording" />);
   expect(view.container.querySelector('[data-onboarding="record-pending"]')).toBeNull();
   view.rerender(<RecordingPillFace {...props} recState="idle" />);
-  expect(screen.getByRole('button', { name: 'recording.actions.start' }).dataset.onboarding).toBe(
-    'record-open'
-  );
+  expect(
+    screen.getByRole('button', { name: 'recording.actions.recordAndTranscribe' }).dataset.onboarding
+  ).toBe('record-open');
 });
 
 it('anchors Stop to Stop rather than Pause in the collapsed recording controls', () => {

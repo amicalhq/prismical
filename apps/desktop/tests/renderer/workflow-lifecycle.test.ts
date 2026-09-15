@@ -126,12 +126,15 @@ describe('desktop workflow lifecycle', () => {
     for (const clear of clears) expect(clear).toHaveBeenCalledOnce();
   });
 
-  it('does not clear a replacement proposal owned by another workflow', () => {
+  it('clears recovered candidates from every note, including replacement workflows', () => {
     const { update } = setup();
     const proposal = useSkillDiffStore.getState().getCandidate('note_1')!;
     useSkillDiffStore.getState().stage({ ...proposal, workflowId: 'wf_replacement' });
+    useSkillDiffStore
+      .getState()
+      .stage({ ...proposal, noteId: 'note_2', workflowId: 'wf_recovered' });
     update({ activeSessionKey: 'session_2' });
-    expect(useSkillDiffStore.getState().getCandidate('note_1')?.workflowId).toBe('wf_replacement');
+    expect(useSkillDiffStore.getState().candidatesByNote.size).toBe(0);
   });
 
   it('unsubscribes and disposes ports once when the renderer closes', () => {

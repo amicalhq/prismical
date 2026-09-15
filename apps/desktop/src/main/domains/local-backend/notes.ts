@@ -28,6 +28,7 @@ import {
   SyncNoteUpdateRequestSchema,
 } from '@prismical/api-contracts/apps/v1';
 import * as schema from '../../infra/product-db/schema';
+import { liveFolderExists } from './folders';
 import {
   invalidRequest,
   notFound,
@@ -139,22 +140,8 @@ const resolveNoteTitle = (
 export const bumpUpdatedAt = (current: string, incomingMs: number): string =>
   new Date(Math.max(Date.now(), incomingMs, Date.parse(current) + 1)).toISOString();
 
-const selectNote = async (db: LocalDb, id: string): Promise<NoteRow | undefined> => {
-  const rows = await db.select().from(schema.note).where(eq(schema.note.id, id)).limit(1);
-  return rows[0];
-};
-
-/** Core 404s a write naming a folder the caller cannot write; locally that is
- * "the folder row must exist" (tombstoned still passes, as core's
- * folderWriteAccess ignores the tombstone for the owner). */
-const folderExists = async (db: LocalDb, folderId: string): Promise<boolean> => {
-  const rows = await db
-    .select({ id: schema.folder.id })
-    .from(schema.folder)
-    .where(eq(schema.folder.id, folderId))
-    .limit(1);
-  return rows.length > 0;
-};
+const selectNote = (db: Pick<LocalDb, 'select'>, id: string): NoteRow | undefined =>
+  db.select().from(schema.note).where(eq(schema.note.id, id)).get();
 
 /** GET /apps/v1/me/notes?since&includeDeleted&includeBody — delta + derived fields. */
 export const listNotes = async (
@@ -200,125 +187,147 @@ export const listNotes = async (
 export const createNote = async (db: LocalDb, body: unknown): Promise<RouteResult> => {
   const parsed = SyncNoteCreateRequestSchema.safeParse(body);
   if (!parsed.success) return invalidRequest(issueSummary(parsed.error.issues, body));
-  const { id, updatedAt, title, titleIntent, titleExpectedRevision, timezone: _timezone, ...fields } = parsed.data;
+  const {
+    id,
+    updatedAt,
+    title,
+    titleIntent,
+    titleExpectedRevision,
+    timezone: _timezone,
+    clientCreatedAt: _clientCreatedAt,
+    ...fields
+  } = parsed.data;
   if (id !== undefined && !isValidPrefixedId('note', id)) return invalidNoteId(id);
-  if (typeof fields.folderId === 'string' && !(await folderExists(db, fields.folderId))) {
-    return notFound();
-  }
-  const incomingMs = parseTimestampMs(updatedAt) ?? Date.now();
-  const explicitTitle = cleanTitle(title);
-  const existing = id !== undefined ? await selectNote(db, id) : undefined;
+  return db.transaction(
+    tx => {
+      if (typeof fields.folderId === 'string' && !liveFolderExists(tx, fields.folderId)) {
+        return notFound();
+      }
+      const incomingMs = parseTimestampMs(updatedAt) ?? Date.now();
+      const explicitTitle = cleanTitle(title);
+      const existing = id !== undefined ? selectNote(tx, id) : undefined;
 
-  if (existing !== undefined) {
-    // LWW against the explicit-metadata clock, not the row clock.
-    if (incomingMs < Date.parse(existing.metadataUpdatedAt)) {
-      return ok({ result: rawEcho(existing), applied: false, created: false });
-    }
-    const titlePlan = resolveNoteTitle(
-      existing,
-      {
-        title: titleIntent === 'freeze' ? title : explicitTitle,
-        titleIntent,
-        titleExpectedRevision,
-        rawTitleWasString: explicitTitle !== undefined,
-        nextEventId: fields.eventId,
-      },
-      incomingMs
-    );
-    const [updated] = await db
-      .update(schema.note)
-      .set({
-        ...fields,
-        ...titlePlan,
-        metadataUpdatedAt: new Date(incomingMs).toISOString(),
-        updatedAt: bumpUpdatedAt(existing.updatedAt, incomingMs),
-      })
-      .where(eq(schema.note.id, existing.id))
-      .returning();
-    return ok({ result: rawEcho(updated), applied: true, created: false });
-  }
+      if (existing !== undefined) {
+        // LWW against the explicit-metadata clock, not the row clock.
+        if (incomingMs < Date.parse(existing.metadataUpdatedAt)) {
+          return ok({ result: rawEcho(existing), applied: false, created: false });
+        }
+        const titlePlan = resolveNoteTitle(
+          existing,
+          {
+            title: titleIntent === 'freeze' ? title : explicitTitle,
+            titleIntent,
+            titleExpectedRevision,
+            rawTitleWasString: explicitTitle !== undefined,
+            nextEventId: fields.eventId,
+          },
+          incomingMs
+        );
+        const [updated] = tx
+          .update(schema.note)
+          .set({
+            ...fields,
+            ...titlePlan,
+            metadataUpdatedAt: new Date(incomingMs).toISOString(),
+            updatedAt: bumpUpdatedAt(existing.updatedAt, incomingMs),
+          })
+          .where(eq(schema.note.id, existing.id))
+          .returning()
+          .all();
+        return ok({ result: rawEcho(updated), applied: true, created: false });
+      }
 
-  const titlePlan = resolveNoteTitle(
-    undefined,
-    {
-      title: titleIntent === 'freeze' ? title : explicitTitle,
-      // A brand-new row with no usable title defaults server-side (core's route
-      // stamps titleIntent:'default' before the engine runs).
-      titleIntent: titleIntent === 'freeze' ? titleIntent : explicitTitle === undefined ? 'default' : titleIntent,
-      titleExpectedRevision,
-      rawTitleWasString: explicitTitle !== undefined,
-      nextEventId: fields.eventId,
+      const titlePlan = resolveNoteTitle(
+        undefined,
+        {
+          title: titleIntent === 'freeze' ? title : explicitTitle,
+          // A brand-new row with no usable title defaults server-side (core's route
+          // stamps titleIntent:'default' before the engine runs).
+          titleIntent:
+            titleIntent === 'freeze'
+              ? titleIntent
+              : explicitTitle === undefined
+                ? 'default'
+                : titleIntent,
+          titleExpectedRevision,
+          rawTitleWasString: explicitTitle !== undefined,
+          nextEventId: fields.eventId,
+        },
+        incomingMs
+      );
+      const incomingIso = new Date(incomingMs).toISOString();
+      const [inserted] = tx
+        .insert(schema.note)
+        .values({
+          ...fields,
+          id: id ?? createId('note'),
+          title: titlePlan.title ?? UNTITLED_NOTE,
+          titleSource: titlePlan.titleSource ?? 'placeholder',
+          titleRevision: titlePlan.titleRevision ?? 0,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date(Math.max(Date.now(), incomingMs)).toISOString(),
+          metadataUpdatedAt: incomingIso,
+          deletedAt: null,
+        })
+        .returning()
+        .all();
+      return ok({ result: rawEcho(inserted), applied: true, created: true }, 201);
     },
-    incomingMs
+    { behavior: 'immediate' }
   );
-  const incomingIso = new Date(incomingMs).toISOString();
-  const [inserted] = await db
-    .insert(schema.note)
-    .values({
-      ...fields,
-      id: id ?? createId('note'),
-      title: titlePlan.title ?? UNTITLED_NOTE,
-      titleSource: titlePlan.titleSource ?? 'placeholder',
-      titleRevision: titlePlan.titleRevision ?? 0,
-      createdAt: new Date().toISOString(),
-      updatedAt: incomingIso,
-      metadataUpdatedAt: incomingIso,
-      deletedAt: null,
-    })
-    .returning();
-  return ok({ result: rawEcho(inserted), applied: true, created: true }, 201);
 };
 
 /** PUT /apps/v1/me/notes/:id — LWW metadata update; empty title = reset-to-default. */
-export const updateNote = async (
-  db: LocalDb,
-  id: string,
-  body: unknown
-): Promise<RouteResult> => {
+export const updateNote = async (db: LocalDb, id: string, body: unknown): Promise<RouteResult> => {
   if (!isValidPrefixedId('note', id)) return invalidNoteId(id);
   const parsed = SyncNoteUpdateRequestSchema.safeParse(body);
   if (!parsed.success) return invalidRequest();
   const { updatedAt, title, ...fields } = parsed.data;
-  if (typeof fields.folderId === 'string' && !(await folderExists(db, fields.folderId))) {
-    return notFound();
-  }
-  const existing = await selectNote(db, id);
-  if (existing === undefined) return notFound();
-  const incomingMs = parseTimestampMs(updatedAt) ?? Date.now();
-  if (incomingMs < Date.parse(existing.metadataUpdatedAt)) {
-    return ok({ result: rawEcho(existing), applied: false, created: false });
-  }
-  // A blank title asks for the current default; absent leaves the title alone.
-  const titlePlan = resolveNoteTitle(
-    existing,
-    {
-      title: title === undefined ? undefined : (cleanTitle(title) ?? ''),
-      titleIntent: undefined,
-      rawTitleWasString: title !== undefined,
-      nextEventId: fields.eventId,
+  return db.transaction(
+    tx => {
+      if (typeof fields.folderId === 'string' && !liveFolderExists(tx, fields.folderId)) {
+        return notFound();
+      }
+      const existing = selectNote(tx, id);
+      if (existing === undefined) return notFound();
+      const incomingMs = parseTimestampMs(updatedAt) ?? Date.now();
+      if (incomingMs < Date.parse(existing.metadataUpdatedAt)) {
+        return ok({ result: rawEcho(existing), applied: false, created: false });
+      }
+      // A blank title asks for the current default; absent leaves the title alone.
+      const titlePlan = resolveNoteTitle(
+        existing,
+        {
+          title: title === undefined ? undefined : (cleanTitle(title) ?? ''),
+          titleIntent: undefined,
+          rawTitleWasString: title !== undefined,
+          nextEventId: fields.eventId,
+        },
+        incomingMs
+      );
+      const [updated] = tx
+        .update(schema.note)
+        .set({
+          ...fields,
+          ...titlePlan,
+          metadataUpdatedAt: new Date(incomingMs).toISOString(),
+          updatedAt: bumpUpdatedAt(existing.updatedAt, incomingMs),
+        })
+        .where(eq(schema.note.id, id))
+        .returning()
+        .all();
+      return ok({ result: rawEcho(updated), applied: true, created: false });
     },
-    incomingMs
+    { behavior: 'immediate' }
   );
-  const [updated] = await db
-    .update(schema.note)
-    .set({
-      ...fields,
-      ...titlePlan,
-      metadataUpdatedAt: new Date(incomingMs).toISOString(),
-      updatedAt: bumpUpdatedAt(existing.updatedAt, incomingMs),
-    })
-    .where(eq(schema.note.id, id))
-    .returning();
-  return ok({ result: rawEcho(updated), applied: true, created: false });
 };
 
 /** DELETE /apps/v1/me/notes/:id — tombstone + unpublish; replay → 404 (ack). */
 export const removeNote = async (db: LocalDb, id: string): Promise<RouteResult> => {
-  const existing = await selectNote(db, id);
+  const existing = selectNote(db, id);
   if (existing === undefined || existing.deletedAt !== null) return notFound();
   const nowMs = Date.now();
-  await db
-    .update(schema.note)
+  db.update(schema.note)
     .set({
       deletedAt: new Date(nowMs).toISOString(),
       // The bump carries the delete past cursors ≥ the live row's stamp; the
@@ -330,6 +339,7 @@ export const removeNote = async (db: LocalDb, id: string): Promise<RouteResult> 
       // Deleting a note unpublishes it.
       publishedAt: null,
     })
-    .where(eq(schema.note.id, id));
+    .where(eq(schema.note.id, id))
+    .run();
   return ok(undefined, 204);
 };

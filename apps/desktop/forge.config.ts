@@ -246,7 +246,7 @@ const config: ForgeConfig = {
     // worker's require() walk finds them under app.asar.unpacked/.
     asar: {
       unpack:
-        '{**/*.node,**/*.metal,**/node_modules/@prismical/whisper-wrapper/**,**/.vite/build/whisper-worker-fork.js}',
+        '{**/*.node,**/*.metal,**/node_modules/@prismical/whisper-wrapper/**,**/.vite/build/whisper-worker-fork.js,**/.vite/build/skill-recovery-worker.js}',
     },
     appBundleId: 'com.prismical.desktop',
     executableName: 'Prismical',
@@ -573,6 +573,11 @@ const config: ForgeConfig = {
           // main-process code built with the node/cjs base config.
           entry: 'src/main/infra/whisper/whisper-worker-fork.ts',
           config: 'vite.worker.config.mts',
+          target: 'main',
+        },
+        {
+          entry: 'src/main/domains/local-backend/skill-recovery-worker.ts',
+          config: 'vite.skill-recovery-worker.config.mts',
           target: 'main',
         },
         {

@@ -16,6 +16,7 @@ import {
 import { currentTranscriptionLanguage } from './transcription-language';
 import { ApiError, apiClient } from '../api/client';
 
+vi.mock('./account-experience-provider', () => ({ AccountExperienceProvider: ({ children }: { children: React.ReactNode }) => children }));
 vi.mock('../api/client', async importOriginal => ({
   ...(await importOriginal<typeof import('../api/client')>()),
   ME_PREFIX: '/apps/v1/me',

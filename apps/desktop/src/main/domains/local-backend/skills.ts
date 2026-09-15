@@ -10,7 +10,11 @@
  */
 import type { LogMetadata } from '../../infra/logging/service';
 import { and, desc, eq, isNotNull, isNull, max, sql } from 'drizzle-orm';
-import { describeAiError, SKILL_RUN_ERROR_CODES, type AiErrorDetails } from '@prismical/api-contracts';
+import {
+  describeAiError,
+  SKILL_RUN_ERROR_CODES,
+  type AiErrorDetails,
+} from '@prismical/api-contracts';
 import { LOCAL_FEATURE_FLAGS } from '@prismical/desktop-contracts';
 import {
   AcceptSkillRunRequestSchema,
@@ -57,7 +61,13 @@ import { loadNoteInput, selectNoteRow, skillInputIsEmpty, transcriptBlocker } fr
 import { bumpUpdatedAt, defaultTitle } from './notes';
 import { getLocalPreferences } from './preferences';
 import { runTerminalTool, type RunUsage, type TerminalToolSpec } from './skill-run';
-import { findRecoverableResult, saveRecoverableResult, SuggestionChanged, suggestionChanged } from './skill-recovery';
+import {
+  findRecoverableResult,
+  requiresDurableSkillProtocol,
+  saveRecoverableResult,
+  SuggestionChanged,
+  suggestionChanged,
+} from './skill-recovery';
 import { listEntity, type LocalEntityConfig } from './sync-entities';
 import {
   apiError,
@@ -255,17 +265,26 @@ const usageOf = (usage: RunUsage | null): Record<string, unknown> | undefined =>
 export async function runSkill(
   deps: SkillRunDeps,
   skillId: string,
-  body: unknown
+  body: unknown,
+  durable = false
 ): Promise<RouteResult> {
   const parsed = RunSkillRequestSchema.safeParse(body);
   if (!parsed.success) return invalidRequest('Invalid request');
   const req = parsed.data;
-  if (!req.recoverable || !req.recordingId || req.refineInstruction || req.mode === 'inline-rewrite')
-    return executeSkillRun(deps, skillId, req);
+  if (req.recoveryContext && !durable)
+    return apiError(409, 'INVALID_REQUEST', 'Reload the app before running this skill.');
+  if (!req.recoverable || !req.recordingId || req.refineInstruction)
+    return executeSkillRun(deps, skillId, req, durable);
   const key = JSON.stringify([req.noteId, req.recordingId, skillId]);
   const pending = deps.recoverableRuns.get(key);
-  if (pending) return pending;
-  const running = executeSkillRun(deps, skillId, req);
+  if (pending) {
+    const result = await pending;
+    const saved = RunSkillResultSchema.safeParse(result.body);
+    return !durable && saved.success && requiresDurableSkillProtocol(saved.data)
+      ? apiError(409, 'INVALID_REQUEST', 'Open this suggestion in the app where it was created.')
+      : result;
+  }
+  const running = executeSkillRun(deps, skillId, req, durable);
   deps.recoverableRuns.set(key, running);
   try {
     return await running;
@@ -277,7 +296,8 @@ export async function runSkill(
 async function executeSkillRun(
   deps: SkillRunDeps,
   skillId: string,
-  req: RunSkillRequest
+  req: RunSkillRequest,
+  durable: boolean
 ): Promise<RouteResult> {
   const { db, ai } = deps;
 
@@ -302,28 +322,34 @@ async function executeSkillRun(
       )
       .get();
     const original = saved ? RunSkillResultSchema.parse(saved.result) : null;
+    if (original && requiresDurableSkillProtocol(original) && !durable)
+      return apiError(
+        409,
+        'INVALID_REQUEST',
+        'Open this suggestion in the app where it was created.'
+      );
     if (
       !saved ||
       !original ||
       !req.refineInstruction ||
       titleTarget ||
-      req.mode === 'inline-rewrite' ||
       original.skillId !== skillId ||
       original.recordingId !== req.recordingId
     ) {
       return apiError(404, 'NOT_FOUND', 'Suggestion not found');
     }
-    if (saved.resolvedAt || original.rawMarkdown !== req.previousOutput) return suggestionChanged();
+    if (saved.resolvedAt || saved.acceptedResult || original.rawMarkdown !== req.previousOutput)
+      return suggestionChanged();
     recovery = { id: req.recoveryResultId, result: { ...saved.result, ...original } };
   }
-  if (
-    req.recoverable &&
-    req.recordingId &&
-    !req.refineInstruction &&
-    !titleTarget &&
-    req.mode !== 'inline-rewrite'
-  ) {
+  if (req.recoverable && req.recordingId && !req.refineInstruction && !titleTarget) {
     const recovered = findRecoverableResult(db, req.noteId, req.recordingId, skillId);
+    if (recovered && requiresDurableSkillProtocol(recovered) && !durable)
+      return apiError(
+        409,
+        'INVALID_REQUEST',
+        'Open this suggestion in the app where it was created.'
+      );
     if (recovered) return ok(recovered);
   }
   if (titleTarget && Array.isArray(skill.allowedTools) && skill.allowedTools.length > 0) {
@@ -357,7 +383,9 @@ async function executeSkillRun(
   }
 
   const titleInputEmpty =
-    titleTarget && !firstNoteLine(markdownToTiptapJson(input.noteText)) && !input.transcript?.trim();
+    titleTarget &&
+    !firstNoteLine(markdownToTiptapJson(input.noteText)) &&
+    !input.transcript?.trim();
   if (titleInputEmpty || skillInputIsEmpty(input)) {
     return apiError(
       422,
@@ -458,7 +486,10 @@ async function executeSkillRun(
     });
 
     if (outcome.kind === 'failed') {
-      const status = outcome.code === 'PROVIDER_CALL_FAILED' || outcome.code === 'OUTPUT_NOT_SUBMITTED' ? 502 : 422;
+      const status =
+        outcome.code === 'PROVIDER_CALL_FAILED' || outcome.code === 'OUTPUT_NOT_SUBMITTED'
+          ? 502
+          : 422;
       return apiError(status, outcome.code, MESSAGES[outcome.code], {
         errorType: outcome.errorType,
       });
@@ -529,12 +560,9 @@ async function executeSkillRun(
       runResult.title = title;
       runResult.titleRunId = runId;
     }
-    if (
-      ((req.recoverable && req.recordingId) || req.retainResult || req.recoveryResultId) &&
-      !titleTarget &&
-      mode !== 'inline-rewrite'
-    ) {
+    if ((req.recoverable || req.retainResult || req.recoveryResultId) && !titleTarget) {
       if (req.refineInstruction) runResult.refineInstruction = req.refineInstruction;
+      if (req.recoveryContext) runResult.recoveryContext = req.recoveryContext;
       runResult.resultId = saveRecoverableResult(
         db,
         req.noteId,
@@ -561,106 +589,143 @@ async function executeSkillRun(
 // ── Artifact lanes ─────────────────────────────────────────────────────────
 
 /** POST /me/skill-runs/accept — the audit row for an applied run (content = TipTap children JSON). */
-export async function acceptSkillRun(db: LocalDb, body: unknown): Promise<RouteResult> {
+export async function acceptSkillRun(
+  db: LocalDb,
+  body: unknown,
+  durable: boolean,
+  validateApplication: (resultId: string, update: string) => Promise<boolean>
+): Promise<RouteResult> {
   const parsed = AcceptSkillRunRequestSchema.safeParse(body);
   if (!parsed.success) return invalidRequest('Invalid request');
   const data = parsed.data;
-  // The synchronous SQLite transaction makes artifact creation and resolution indivisible,
+  // The synchronous SQLite transaction makes artifact creation and receipt binding indivisible,
   // including when a lost response causes two windows to deliver the same Keep again.
-  return db.transaction(tx => {
-    const note = tx
-      .select({ id: schema.note.id })
-      .from(schema.note)
-      .where(
-        and(
-          eq(schema.note.id, data.noteId),
-          isNull(schema.note.deletedAt),
-          isNull(schema.note.trashedAt)
-        )
-      )
-      .get();
-    if (!note) return apiError(404, 'NOT_FOUND', 'Note not found');
-    if (data.resultId) {
-      const saved = tx
-        .select()
-        .from(schema.noteSkillResult)
+  const commit = (validated: boolean): RouteResult | null =>
+    db.transaction(tx => {
+      let durableReview = false;
+      const note = tx
+        .select({ id: schema.note.id })
+        .from(schema.note)
         .where(
           and(
-            eq(schema.noteSkillResult.id, data.resultId),
-            eq(schema.noteSkillResult.noteId, data.noteId)
+            eq(schema.note.id, data.noteId),
+            isNull(schema.note.deletedAt),
+            isNull(schema.note.trashedAt)
           )
         )
         .get();
-      if (!saved) return apiError(404, 'NOT_FOUND', 'Suggestion not found');
-      const original = RunSkillResultSchema.parse(saved.result);
-      if (
-        (saved.resolvedAt && !saved.acceptedResult) ||
-        original.rawMarkdown !== data.rawMarkdown ||
-        original.skillId !== data.skillId ||
-        original.mode !== data.mode ||
-        original.recordingId !== (data.recordingId ?? undefined)
-      ) {
-        return suggestionChanged();
-      }
-      if (saved.acceptedResult) {
-        const accepted = AcceptSkillRunResultSchema.parse(saved.acceptedResult);
-        const liveArtifact = tx.select({ id: schema.artifact.id }).from(schema.artifact).where(and(
-          eq(schema.artifact.id, accepted.artifactId),
-          eq(schema.artifact.noteId, data.noteId),
-          isNull(schema.artifact.deletedAt)
-        )).get();
-        return liveArtifact ? ok(accepted) : suggestionChanged();
-      }
-    }
-    let version = 1;
-    if (data.mode === 'append-section') {
-      const row = tx
-        .select({ version: max(schema.artifact.version) })
-        .from(schema.artifact)
-        .where(
-          and(
-            eq(schema.artifact.noteId, data.noteId),
-            eq(schema.artifact.skillId, data.skillId),
-            eq(schema.artifact.mode, data.mode)
+      if (!note) return apiError(404, 'NOT_FOUND', 'Note not found');
+      if (data.resultId) {
+        const saved = tx
+          .select()
+          .from(schema.noteSkillResult)
+          .where(
+            and(
+              eq(schema.noteSkillResult.id, data.resultId),
+              eq(schema.noteSkillResult.noteId, data.noteId)
+            )
           )
+          .get();
+        if (!saved) return apiError(404, 'NOT_FOUND', 'Suggestion not found');
+        const original = RunSkillResultSchema.parse(saved.result);
+        if (requiresDurableSkillProtocol(original) && !durable) return suggestionChanged();
+        durableReview = requiresDurableSkillProtocol(original);
+        if (saved.acceptedResult) {
+          const accepted = AcceptSkillRunResultSchema.parse(saved.acceptedResult);
+          const liveArtifact = tx
+            .select({ id: schema.artifact.id })
+            .from(schema.artifact)
+            .where(
+              and(
+                eq(schema.artifact.id, accepted.artifactId),
+                eq(schema.artifact.noteId, data.noteId),
+                isNull(schema.artifact.deletedAt)
+              )
+            )
+            .get();
+          if (!liveArtifact) return suggestionChanged();
+          if (!data.applicationUpdate || accepted.applicationUpdate) return ok(accepted);
+          if (
+            saved.resolvedAt ||
+            !durableReview ||
+            original.rawMarkdown !== data.rawMarkdown ||
+            original.skillId !== data.skillId ||
+            original.mode !== data.mode
+          )
+            return suggestionChanged();
+          // Validate off-thread before opening the committing transaction. Re-read on return:
+          // another window may have committed the canonical update or discarded this receipt.
+          if (!validated) return null;
+          const prepared = { ...accepted, applicationUpdate: data.applicationUpdate };
+          tx.update(schema.noteSkillResult)
+            .set({ acceptedResult: prepared })
+            .where(eq(schema.noteSkillResult.id, saved.id))
+            .run();
+          return ok(prepared);
+        }
+        if (
+          saved.resolvedAt ||
+          original.rawMarkdown !== data.rawMarkdown ||
+          original.skillId !== data.skillId ||
+          original.mode !== data.mode ||
+          original.recordingId !== (data.recordingId ?? undefined)
         )
-        .get();
-      version = (row?.version ?? 0) + 1;
-    }
-    const now = new Date().toISOString();
-    const id = createId('artifact');
-    tx.insert(schema.artifact)
-      .values({
-        id,
-        noteId: data.noteId,
-        skillId: data.skillId,
-        recordingId: data.recordingId ?? null,
-        mode: data.mode,
-        version,
-        content: data.content,
-        prevContent: data.prevContent ?? null,
-        meta: {
-          generator: 'ai',
-          modelId: data.modelId ?? null,
-          refineInstruction: data.refineInstruction ?? null,
-          selectionText: data.selectionText ?? null,
-          reasoning: data.reasoning ?? null,
-          usage: data.usage ?? null,
-          costUsd: data.costUsd ?? null,
-        },
-        createdAt: now,
-        updatedAt: now,
-        deletedAt: null,
-      })
-      .run();
-    const result = { artifactId: id, version, generatedAt: now };
-    if (data.resultId)
-      tx.update(schema.noteSkillResult)
-        .set({ resolvedAt: now, acceptedResult: result })
-        .where(eq(schema.noteSkillResult.id, data.resultId))
+          return suggestionChanged();
+      }
+      let version = 1;
+      if (data.mode === 'append-section') {
+        const row = tx
+          .select({ version: max(schema.artifact.version) })
+          .from(schema.artifact)
+          .where(
+            and(
+              eq(schema.artifact.noteId, data.noteId),
+              eq(schema.artifact.skillId, data.skillId),
+              eq(schema.artifact.mode, data.mode)
+            )
+          )
+          .get();
+        version = (row?.version ?? 0) + 1;
+      }
+      const now = new Date().toISOString();
+      const id = createId('artifact');
+      tx.insert(schema.artifact)
+        .values({
+          id,
+          noteId: data.noteId,
+          skillId: data.skillId,
+          recordingId: data.recordingId ?? null,
+          mode: data.mode,
+          version,
+          content: data.content,
+          prevContent: data.prevContent ?? null,
+          meta: {
+            generator: 'ai',
+            modelId: data.modelId ?? null,
+            refineInstruction: data.refineInstruction ?? null,
+            selectionText: data.selectionText ?? null,
+            reasoning: data.reasoning ?? null,
+            usage: data.usage ?? null,
+            costUsd: data.costUsd ?? null,
+          },
+          createdAt: now,
+          updatedAt: now,
+          deletedAt: null,
+        })
         .run();
-    return ok(result);
-  });
+      const result = { artifactId: id, version, generatedAt: now };
+      if (data.resultId)
+        tx.update(schema.noteSkillResult)
+          .set({ resolvedAt: durableReview ? null : now, acceptedResult: result })
+          .where(eq(schema.noteSkillResult.id, data.resultId))
+          .run();
+      return ok(result);
+    });
+  const result = commit(false);
+  if (result) return result;
+  if (!(await validateApplication(data.resultId!, data.applicationUpdate!)))
+    return suggestionChanged();
+  return commit(true)!;
 }
 
 /** POST /me/skill-runs/restore — undo the LATEST accept if it kept a snapshot. */
@@ -786,7 +851,8 @@ export async function titleRun(db: LocalDb, undo: boolean, body: unknown): Promi
     .where(and(eq(schema.note.id, current.id), eq(schema.note.titleRevision, expected)))
     .returning();
   const row = updated[0];
-  if (row === undefined) return apiError(409, 'TITLE_CHANGED', 'The title changed. Run the skill again.');
+  if (row === undefined)
+    return apiError(409, 'TITLE_CHANGED', 'The title changed. Run the skill again.');
   const nowIso = new Date(nowMs).toISOString();
   await db
     .update(schema.noteTitleRun)

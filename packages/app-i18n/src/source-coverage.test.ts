@@ -75,6 +75,7 @@ const REVIEWED_VISIBLE_LITERALS = new Map<string, string>([
   ['Cloudflare', 'provider name'],
   ['Cerebras', 'provider name'],
   ['Apple', 'provider name'],
+  ['Discord', 'provider name'],
   ['Apple Calendar', 'provider name'],
   ['Google Calendar', 'provider name'],
   ['Prismical-Signature', 'protocol header name'],
@@ -83,6 +84,13 @@ const REVIEWED_VISIBLE_LITERALS = new Map<string, string>([
   ['https://mcp.example.com/mcp…', 'protocol URL example'],
   ['{"X-Api-Key": "…"}', 'protocol header example'],
   ['Esc', 'keyboard key'],
+  // Next's global-error boundary REPLACES the root layout - it renders its own
+  // <html><body>, so no provider above it is mounted, the i18n one included.
+  // Calling t() there would throw inside the handler for a crash that already
+  // happened. English is the only thing it can safely say.
+  ['Something went wrong', 'root error boundary, rendered outside every provider'],
+  ['Please try again.', 'root error boundary, rendered outside every provider'],
+  ['Try again', 'root error boundary, rendered outside every provider'],
 ]);
 
 function listSourceFiles(root: string): string[] {

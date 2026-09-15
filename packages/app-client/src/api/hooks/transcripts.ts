@@ -4,8 +4,11 @@ import { useQuery } from '@tanstack/react-query';
 import {
   listNoteRecordings,
   listRecordingSpeakers,
+  listSpeakerCandidates,
   listTranscriptSegments,
+  type CoreRecordingSpeaker,
   type CoreTranscriptSegment,
+  type SpeakerTagPatch,
 } from '../transcription';
 import { listEnhancedRecordingIds } from './skill-runs';
 import { useSyncStore } from '../../sync/provider';
@@ -176,6 +179,86 @@ export function useTranscriptSegments(
 }
 
 export const speakersKey = (recordingId: string) => ['recording-speakers', recordingId] as const;
+
+/**
+ * The optimistic shape of a tag: what the registry will look like once the server applies
+ * `patch` to `speakerKey`. A new owner un-flags every other row; a row that does not exist yet
+ * is minted with a placeholder id (the server's row replaces it on success).
+ */
+export function applySpeakerPatch(
+  rows: readonly CoreRecordingSpeaker[],
+  recordingId: string,
+  speakerKey: string,
+  patch: SpeakerTagPatch
+): CoreRecordingSpeaker[] {
+  const existing = rows.find(r => r.speakerKey === speakerKey);
+  // Preserve the mic's implicit owner when a name promotes a finalized row to a user tag.
+  const implicitOwner =
+    speakerKey === 'you' &&
+    existing?.source !== 'user' &&
+    !rows.some(row => row.speakerKey !== speakerKey && row.isOwner);
+  const base: CoreRecordingSpeaker = existing ?? {
+    id: `optimistic:${recordingId}:${speakerKey}`,
+    recordingId,
+    speakerKey,
+    source: 'user',
+    displayName: null,
+    personId: null,
+    isOwner: false,
+  };
+  const merged: CoreRecordingSpeaker = {
+    ...base,
+    source: 'user',
+    ...(patch.displayName !== undefined ? { displayName: patch.displayName } : {}),
+    ...(patch.personId !== undefined ? { personId: patch.personId } : {}),
+    isOwner: patch.isOwner ?? (implicitOwner ? true : base.isOwner),
+  };
+  let others = rows
+    .filter(r => r.speakerKey !== speakerKey)
+    .map(r => (patch.isOwner === true && r.isOwner ? { ...r, isOwner: false } : r));
+  // The mic channel is the owner implicitly (no row needed), so moving the flag elsewhere must
+  // record an explicit "not the owner" on it - the same row the server writes.
+  if (patch.isOwner === true && speakerKey !== 'you') {
+    const you = others.find(r => r.speakerKey === 'you');
+    const unflagged: CoreRecordingSpeaker = {
+      ...(you ?? {
+        id: `optimistic:${recordingId}:you`,
+        recordingId,
+        speakerKey: 'you',
+        displayName: null,
+        personId: null,
+      }),
+      source: 'user',
+      isOwner: false,
+    };
+    others = [...others.filter(r => r.speakerKey !== 'you'), unflagged];
+  }
+  return [...others, merged];
+}
+
+/** Fold the server's returned row into the cached registry (same owner rule as the patch). */
+export function mergeSpeakerRow(
+  rows: readonly CoreRecordingSpeaker[],
+  row: CoreRecordingSpeaker
+): CoreRecordingSpeaker[] {
+  const others = rows
+    .filter(r => r.speakerKey !== row.speakerKey)
+    .map(r => (row.isOwner && r.isOwner ? { ...r, isOwner: false } : r));
+  return [...others, row];
+}
+
+export const speakerCandidatesKey = (recordingId: string) =>
+  ['speaker-candidates', recordingId] as const;
+
+/** People on the recording's calendar event, for the tag picker. Fetched only while a picker is open. */
+export function useSpeakerCandidates(recordingId: string | null, opts?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: speakerCandidatesKey(recordingId ?? 'none'),
+    enabled: !!recordingId && (opts?.enabled ?? true),
+    staleTime: 60_000,
+    queryFn: () => listSpeakerCandidates(recordingId!),
+  });
+}
 
 /** The speaker registry for a recording — rename map and avatar identities. */
 export function useRecordingSpeakers(recordingId: string | null, opts?: { enabled?: boolean }) {

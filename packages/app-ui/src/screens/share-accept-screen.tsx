@@ -76,10 +76,15 @@ export function ShareAcceptScreen({ id }: { id: string }) {
                     title: t('invitations.share.unavailableTitle'),
                     body: t('invitations.share.unavailableBody'),
                   }
-                : {
-                    title: t('invitations.share.genericTitle'),
-                    body: t('invitations.share.genericBody'),
-                  };
+                : invite.reason === 'org-only'
+                  ? {
+                      title: t('invitations.share.orgOnlyTitle'),
+                      body: t('invitations.share.orgOnlyBody'),
+                    }
+                  : {
+                      title: t('invitations.share.genericTitle'),
+                      body: t('invitations.share.genericBody'),
+                    };
     return (
       <Card>
         <MailX className="h-10 w-10 text-muted-foreground" />

@@ -7,32 +7,45 @@ import {
   writeWalkthrough,
   type Walkthrough,
 } from './state';
+const memory = vi.hoisted(() => ({ userId: 'a', state: null as unknown, ready: true }));
+vi.mock('@prismical/app-client', () => ({
+  currentAccountExperience: () => ({
+    userId: memory.userId,
+    getSnapshot: () => ({
+      data: memory.ready ? { onboarding: { walkthrough: memory.state } } : null,
+    }),
+    update: (patch: { onboarding: { walkthrough: unknown } }) => {
+      if (!memory.ready) return false;
+      memory.state = patch.onboarding.walkthrough;
+      return true;
+    },
+  }),
+}));
 const initial: Walkthrough = { status: 'active', orgId: 'org-a', noteId: 'note-a', step: 'record' };
 beforeEach(() => {
+  memory.userId = 'a';
+  memory.state = null;
+  memory.ready = true;
   window.localStorage.clear();
   vi.restoreAllMocks();
 });
 describe('first-note walkthrough persistence and progression', () => {
-  it('isolates identities and retains dismissal and completion across reads', () => {
-    writeWalkthrough(walkthroughKey('a'), { status: 'dismissed' });
-    writeWalkthrough(walkthroughKey('b'), { status: 'completed' });
-    expect(readWalkthrough(walkthroughKey('a'))).toEqual({ status: 'dismissed' });
-    expect(readWalkthrough(walkthroughKey('b'))).toEqual({ status: 'completed' });
-    expect(readWalkthrough(walkthroughKey('c'))).toBeNull();
+  it('rejects reads and writes belonging to a previous account', () => {
+    expect(writeWalkthrough(walkthroughKey('a'), { status: 'completed' })).toBe(true);
+    expect(readWalkthrough(walkthroughKey('a'))).toEqual({ status: 'completed' });
+    memory.userId = 'b';
+    memory.state = null;
+    expect(writeWalkthrough(walkthroughKey('a'), { status: 'dismissed' })).toBe(false);
+    expect(readWalkthrough(walkthroughKey('a'))).toBeNull();
+    expect(readWalkthrough(walkthroughKey('b'))).toBeNull();
   });
-  it('fails closed for broken or unavailable storage', () => {
-    window.localStorage.setItem('broken', '{');
-    expect(readWalkthrough('broken')).toEqual({ status: 'dismissed' });
-    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
-      throw new Error('denied');
-    });
-    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
-      throw new Error('denied');
-    });
-    expect(readWalkthrough('anything')).toEqual({ status: 'dismissed' });
-    expect(writeWalkthrough('anything', initial)).toBe(false);
+  it('waits for the account and never falls back to legacy browser state', () => {
+    memory.ready = false;
+    window.localStorage.setItem(walkthroughKey('a'), JSON.stringify({ status: 'completed' }));
+    expect(readWalkthrough(walkthroughKey('a'))).toBeNull();
+    expect(writeWalkthrough(walkthroughKey('a'), initial)).toBe(false);
   });
-  it('only completes after matching recording, finalization, review and Keep', () => {
+  it('only completes after matching recording, finalization, review and Apply', () => {
     expect(advanceWalkthrough(initial, { type: 'kept', noteId: 'note-a', recordingId: 'r' })).toBe(
       initial
     );
@@ -71,9 +84,9 @@ describe('first-note walkthrough persistence and progression', () => {
   });
   it('retains a resumable note and allows a new recording after interruption', () => {
     const stopped: Walkthrough = { ...initial, step: 'speak', recordingId: 'old' };
-    writeWalkthrough('resume', stopped);
+    writeWalkthrough(walkthroughKey('a'), stopped);
     expect(
-      advanceWalkthrough(readWalkthrough('resume'), {
+      advanceWalkthrough(readWalkthrough(walkthroughKey('a')), {
         type: 'recording',
         noteId: 'note-a',
         recordingId: 'new',

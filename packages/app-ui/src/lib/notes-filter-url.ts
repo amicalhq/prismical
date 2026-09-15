@@ -18,3 +18,13 @@ export function withoutNotesFilter(
   const query = params.toString();
   return query ? `/notes?${query}` : '/notes';
 }
+
+/** The notes list for another folder (`null` for every note), keeping the other filters as they are. */
+export function withNotesFolder(searchParams: AppSearchParams, folderId: string | null): string {
+  const params = new URLSearchParams(searchParams.toString());
+  params.delete('folder');
+  const rest = params.toString();
+  const folder = folderId ? `folder=${encodeURIComponent(folderId)}` : '';
+  const query = [folder, rest].filter(Boolean).join('&');
+  return query ? `/notes?${query}` : '/notes';
+}

@@ -16,8 +16,12 @@ interface NotesListProps {
   groupByDate?: boolean;
   /** Restrict to notes whose folderId is one of these. */
   folderIds?: string[];
+  /** The folder the list is scoped to; each row's folder chip reads relative to it. */
+  folderId?: string | null;
   /** Restrict to notes that carry ALL of these tags. */
   tagIds?: string[];
+  /** Keep only notes whose title or preview contains this, case-insensitively. */
+  query?: string;
   sortBy?: 'updatedAt' | 'createdAt' | 'title';
   sortOrder?: 'asc' | 'desc';
 }
@@ -32,20 +36,25 @@ function sortNotes(
   const collator = new Intl.Collator(locale);
   return [...list].sort((a, b) => {
     if (sortBy === 'title') return collator.compare(a.title, b.title) * dir;
-    const aDate = sortBy === 'createdAt' ? a.createdAt ?? a.updatedAt : a.updatedAt;
-    const bDate = sortBy === 'createdAt' ? b.createdAt ?? b.updatedAt : b.updatedAt;
+    const aDate = sortBy === 'createdAt' ? (a.createdAt ?? a.updatedAt) : a.updatedAt;
+    const bDate = sortBy === 'createdAt' ? (b.createdAt ?? b.updatedAt) : b.updatedAt;
     return (new Date(aDate).getTime() - new Date(bDate).getTime()) * dir;
   });
 }
 
-function EmptyState() {
+function EmptyState({ searching = false }: { searching?: boolean }) {
   const { t } = useTranslation();
   return (
     <div className="space-y-4 rounded-lg border border-dashed p-6 text-center">
       <NotebookText className="mx-auto h-8 w-8 text-muted-foreground" />
       <div className="space-y-2">
-        <p className="text-sm text-muted-foreground">{t('notes.list.emptyTitle')}</p>
-        <p className="text-xs text-muted-foreground">{t('notes.list.emptyDescription')}</p>
+        {/* A search that finds nothing is not an empty workspace; say which it is. */}
+        <p className="text-sm text-muted-foreground">
+          {searching ? t('notes.list.noMatch') : t('notes.list.emptyTitle')}
+        </p>
+        {searching ? null : (
+          <p className="text-xs text-muted-foreground">{t('notes.list.emptyDescription')}</p>
+        )}
       </div>
     </div>
   );
@@ -57,7 +66,9 @@ export function NotesList({
   showPageHeader = true,
   groupByDate = false,
   folderIds,
+  folderId,
   tagIds,
+  query,
   sortBy = 'updatedAt',
   sortOrder = 'desc',
 }: NotesListProps) {
@@ -95,6 +106,7 @@ export function NotesList({
     tagsByNote.set(noteId, arr);
   }
   const allNotes = liveNotes.map(n => ({ ...n, tagIds: tagsByNote.get(n.id) ?? [] }));
+  const needle = query?.trim().toLowerCase() ?? '';
 
   const filtered = allNotes.filter(note => {
     if (folderIds && folderIds.length > 0) {
@@ -102,6 +114,10 @@ export function NotesList({
     }
     if (tagIds && tagIds.length > 0) {
       if (!tagIds.every(id => note.tagIds.includes(id))) return false;
+    }
+    if (needle) {
+      const haystack = `${note.title}\n${note.preview ?? ''}`.toLowerCase();
+      if (!haystack.includes(needle)) return false;
     }
     return true;
   });
@@ -111,10 +127,11 @@ export function NotesList({
   // Date headings only make sense over a date order — a title sort would interleave the buckets
   // and repeat their headings all the way down the list.
   if (groupByDate && sortBy !== 'title') {
-    if (sorted.length === 0) return <EmptyState />;
+    if (sorted.length === 0) return <EmptyState searching={needle.length > 0} />;
     const groups = groupNotesByDate(
       sorted,
-      note => new Date(sortBy === 'createdAt' ? note.createdAt ?? note.updatedAt : note.updatedAt),
+      note =>
+        new Date(sortBy === 'createdAt' ? (note.createdAt ?? note.updatedAt) : note.updatedAt),
       new Date(),
       resolvedLocale,
       t
@@ -130,7 +147,7 @@ export function NotesList({
             <h2 className="px-3 text-sm font-medium text-muted-foreground">{group.label}</h2>
             <div>
               {group.notes.map(note => (
-                <NoteCard key={note.id} note={note} />
+                <NoteCard key={note.id} note={note} pathFrom={folderId} />
               ))}
             </div>
           </section>
@@ -139,7 +156,7 @@ export function NotesList({
     );
   }
 
-  if (sorted.length === 0) return <EmptyState />;
+  if (sorted.length === 0) return <EmptyState searching={needle.length > 0} />;
 
   return (
     <div>
@@ -152,7 +169,7 @@ export function NotesList({
           and filter row above, which carry no horizontal padding. */}
       <div className="-mx-3">
         {sorted.map(note => (
-          <NoteCard key={note.id} note={note} />
+          <NoteCard key={note.id} note={note} pathFrom={folderId} />
         ))}
       </div>
     </div>

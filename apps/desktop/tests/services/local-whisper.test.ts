@@ -361,6 +361,35 @@ describe('LocalWhisperLive', () => {
     })
   );
 
+  it.effect('removes NULs before vocabulary replacement and never emits all-NUL text', () =>
+    Effect.gen(function* () {
+      const h = yield* build();
+      yield* h.seedVocabulary([{ id: 'voc_nul', word: 'road map', replacementWord: 'roadmap' }]);
+      h.whisper.setTranscribeResponder(() => ({
+        text: '\u0000road\u0000 map\tready\nnext\u0000',
+        segments: [],
+      }));
+      const result = yield* h.lane.transcribeChunk('rec_nul', PARAMS, chunk(tone(240_000)), LOCAL);
+      assert.isTrue(result.ok);
+      if (result.ok) assert.strictEqual(result.value[0]?.text, 'roadmap\tready\nnext');
+      assert.strictEqual(yield* h.usageCount('voc_nul'), 1);
+      h.whisper.setTranscribeResponder(() => ({ text: '\u0000\u0000', segments: [] }));
+      assert.deepStrictEqual(
+        yield* h.lane.transcribeChunk(
+          'rec_nul',
+          { ...PARAMS, chunkIndex: 4 },
+          chunk(tone(240_000)),
+          LOCAL
+        ),
+        {
+          ok: true,
+          value: [],
+        }
+      );
+      yield* Scope.close(h.scope, Exit.void);
+    })
+  );
+
   it.effect('replacements are applied to the worker text and usage_count is bumped for the rules that fired', () =>
     Effect.gen(function* () {
       const h = yield* build();

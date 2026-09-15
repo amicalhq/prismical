@@ -87,7 +87,7 @@ export function RecordingPillFace({
     ? t('recording.actions.hideTranscription')
     : startBlockedReason
       ? t('recording.actions.showTranscription')
-      : t('recording.actions.start');
+      : t('recording.actions.recordAndTranscribe');
 
   return (
     <TooltipProvider>

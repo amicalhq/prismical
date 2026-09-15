@@ -10,7 +10,6 @@ export const AUTO_MODEL_ID = "auto";
  * so the web picker is unchanged by their presence here.
  */
 const CATALOG_PROVIDERS = new Set(["openai", "openrouter", "anthropic", "ollama", "openai-compatible"]);
-const PREF_KEY = "ask.model.v1";
 
 export interface AskModelSelection {
   instanceId: string;
@@ -100,27 +99,4 @@ export function resolveActiveModel(
   pref: AskModelSelection | null,
 ): AskModelSelection {
   return findOption(groups, pref) ? pref! : AUTO_SELECTION;
-}
-
-export function loadModelPref(): AskModelSelection | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = window.localStorage.getItem(PREF_KEY);
-    if (!raw) return null;
-    const v = JSON.parse(raw) as Partial<AskModelSelection>;
-    return typeof v?.instanceId === "string" && typeof v?.modelId === "string"
-      ? { instanceId: v.instanceId, modelId: v.modelId }
-      : null;
-  } catch {
-    return null;
-  }
-}
-
-export function saveModelPref(sel: AskModelSelection): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(PREF_KEY, JSON.stringify(sel));
-  } catch {
-    /* localStorage unavailable (private mode / quota) — the pref is best-effort. */
-  }
 }

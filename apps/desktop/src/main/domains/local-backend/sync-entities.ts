@@ -29,6 +29,8 @@
 import { and, asc, eq, getTableColumns, gt, isNull, type SQL } from 'drizzle-orm';
 import type { SQLiteTable } from 'drizzle-orm/sqlite-core';
 import { createId, getEntityPrefix, isValidPrefixedId } from '@prismical/id';
+import { LOCAL_WORKSPACE } from '@prismical/desktop-contracts';
+import { detachFolderContents, validFolderParent } from './folders';
 import {
   SyncArtifactCreateRequestSchema,
   SyncArtifactUpdateRequestSchema,
@@ -131,6 +133,7 @@ export const LOCAL_SYNC_ENTITIES: readonly LocalEntityConfig[] = [
     createSchema: SyncRecordingCreateRequestSchema,
     updateSchema: SyncRecordingUpdateRequestSchema,
     queryFilters: { noteId: 'noteId' },
+    present: row => ({ ...row, orgUserId: LOCAL_WORKSPACE.orgUserId }),
     // Store wire timestamps as ISO text. Fields absent from the local product
     // schema are dropped by the column filter below.
     sanitize: fields => ({
@@ -184,29 +187,29 @@ const pickColumns = (
   return Object.fromEntries(Object.entries(payload).filter(([key]) => keys.has(key)));
 };
 
-const selectById = async (
-  db: LocalDb,
+const selectById = (
+  db: Pick<LocalDb, 'select'>,
   entity: LocalEntityConfig,
   id: string
-): Promise<Record<string, any> | undefined> => {
+): Record<string, any> | undefined => {
   const table = entity.table as any;
-  const rows = await db.select().from(table).where(eq(table.id, id)).limit(1);
-  return rows[0] as Record<string, any> | undefined;
+  return db.select().from(table).where(eq(table.id, id)).get() as Record<string, any> | undefined;
 };
 
 /**
  * The tag lane's case-insensitive uniqueness over LIVE rows. The SQLite
  * product schema has no matching index, so the collision is checked here.
  */
-const findTagCollision = async (
-  db: LocalDb,
+const findTagCollision = (
+  db: Pick<LocalDb, 'select'>,
   name: string,
   excludeId: string | undefined
-): Promise<boolean> => {
-  const rows = await db
+): boolean => {
+  const rows = db
     .select({ id: schema.tag.id, name: schema.tag.name })
     .from(schema.tag)
-    .where(isNull(schema.tag.deletedAt));
+    .where(isNull(schema.tag.deletedAt))
+    .all();
   const lower = name.toLowerCase();
   return rows.some(row => row.id !== excludeId && row.name.toLowerCase() === lower);
 };
@@ -277,49 +280,59 @@ export const upsertEntity = async (
 ): Promise<RouteResult> => {
   const parsed = parseWrite(entity, entity.createSchema, body);
   if (isRouteResult(parsed)) return parsed;
-  const table = entity.table as any;
-  const existing = parsed.id !== undefined ? await selectById(db, entity, parsed.id) : undefined;
-
-  if (
-    entity.route === 'tags' &&
-    typeof parsed.fields.name === 'string' &&
-    (await findTagCollision(db, parsed.fields.name, existing?.id as string | undefined))
-  ) {
-    return conflict();
-  }
-
-  try {
-    if (existing !== undefined) {
-      // LWW: ignore stale writes; the server-winning row rides back.
-      if (parsed.incomingMs < Date.parse(existing.updatedAt as string)) {
-        return ok({ result: echo(entity, existing), applied: false, created: false });
+  return db.transaction(
+    tx => {
+      const table = entity.table as any;
+      const existing = parsed.id !== undefined ? selectById(tx, entity, parsed.id) : undefined;
+      if (entity.route === 'folders' && !validFolderParent(tx, parsed.id, parsed.fields.parentId)) {
+        return notFound();
       }
-      const guarded = entity.guardMutation?.(existing, 'update', parsed.fields);
-      if (guarded) return guarded;
-      const updated = (await db
-        .update(table)
-        .set({ ...parsed.fields, updatedAt: new Date(parsed.incomingMs).toISOString() })
-        .where(eq(table.id, existing.id))
-        .returning()) as Record<string, any>[];
-      return ok({ result: echo(entity, updated[0]), applied: true, created: false });
-    }
-    const inserted = (await db
-      .insert(table)
-      .values({
-        ...parsed.fields,
-        id: parsed.id ?? createId(entity.idEntity),
-        createdAt: new Date().toISOString(),
-        // Client stamps stored VERBATIM — LWW consequences of client clocks
-        // are the writer's problem, exactly as on the cloud lane.
-        updatedAt: new Date(parsed.incomingMs).toISOString(),
-        deletedAt: null,
-      })
-      .returning()) as Record<string, any>[];
-    return ok({ result: echo(entity, inserted[0]), applied: true, created: true }, 201);
-  } catch (error) {
-    if (isUniqueViolation(error)) return conflict();
-    throw error;
-  }
+
+      if (
+        entity.route === 'tags' &&
+        typeof parsed.fields.name === 'string' &&
+        findTagCollision(tx, parsed.fields.name, existing?.id as string | undefined)
+      ) {
+        return conflict();
+      }
+
+      try {
+        if (existing !== undefined) {
+          // LWW: ignore stale writes; the server-winning row rides back.
+          if (parsed.incomingMs < Date.parse(existing.updatedAt as string)) {
+            return ok({ result: echo(entity, existing), applied: false, created: false });
+          }
+          const guarded = entity.guardMutation?.(existing, 'update', parsed.fields);
+          if (guarded) return guarded;
+          const updated = tx
+            .update(table)
+            .set({ ...parsed.fields, updatedAt: new Date(parsed.incomingMs).toISOString() })
+            .where(eq(table.id, existing.id))
+            .returning()
+            .all() as Record<string, any>[];
+          return ok({ result: echo(entity, updated[0]), applied: true, created: false });
+        }
+        const inserted = tx
+          .insert(table)
+          .values({
+            ...parsed.fields,
+            id: parsed.id ?? createId(entity.idEntity),
+            createdAt: new Date().toISOString(),
+            // Client stamps stored VERBATIM — LWW consequences of client clocks
+            // are the writer's problem, exactly as on the cloud lane.
+            updatedAt: new Date(parsed.incomingMs).toISOString(),
+            deletedAt: null,
+          })
+          .returning()
+          .all() as Record<string, any>[];
+        return ok({ result: echo(entity, inserted[0]), applied: true, created: true }, 201);
+      } catch (error) {
+        if (isUniqueViolation(error)) return conflict();
+        throw error;
+      }
+    },
+    { behavior: 'immediate' }
+  );
 };
 
 /** PUT /{route}/:id — LWW partial update of an EXISTING row only. */
@@ -338,33 +351,42 @@ export const updateEntity = async (
   }
   const parsed = parseWrite(entity, entity.updateSchema, body);
   if (isRouteResult(parsed)) return parsed;
-  const table = entity.table as any;
-  const existing = await selectById(db, entity, id);
-  if (existing === undefined) return notFound();
+  return db.transaction(
+    tx => {
+      const table = entity.table as any;
+      const existing = selectById(tx, entity, id);
+      if (existing === undefined) return notFound();
+      if (entity.route === 'folders' && !validFolderParent(tx, id, parsed.fields.parentId)) {
+        return notFound();
+      }
 
-  if (
-    entity.route === 'tags' &&
-    typeof parsed.fields.name === 'string' &&
-    (await findTagCollision(db, parsed.fields.name, id))
-  ) {
-    return conflict();
-  }
-  if (parsed.incomingMs < Date.parse(existing.updatedAt as string)) {
-    return ok({ result: echo(entity, existing), applied: false, created: false });
-  }
-  const guarded = entity.guardMutation?.(existing, 'update', parsed.fields);
-  if (guarded) return guarded;
-  try {
-    const updated = (await db
-      .update(table)
-      .set({ ...parsed.fields, updatedAt: new Date(parsed.incomingMs).toISOString() })
-      .where(eq(table.id, id))
-      .returning()) as Record<string, any>[];
-    return ok({ result: echo(entity, updated[0]), applied: true, created: false });
-  } catch (error) {
-    if (isUniqueViolation(error)) return conflict();
-    throw error;
-  }
+      if (
+        entity.route === 'tags' &&
+        typeof parsed.fields.name === 'string' &&
+        findTagCollision(tx, parsed.fields.name, id)
+      ) {
+        return conflict();
+      }
+      if (parsed.incomingMs < Date.parse(existing.updatedAt as string)) {
+        return ok({ result: echo(entity, existing), applied: false, created: false });
+      }
+      const guarded = entity.guardMutation?.(existing, 'update', parsed.fields);
+      if (guarded) return guarded;
+      try {
+        const updated = tx
+          .update(table)
+          .set({ ...parsed.fields, updatedAt: new Date(parsed.incomingMs).toISOString() })
+          .where(eq(table.id, id))
+          .returning()
+          .all() as Record<string, any>[];
+        return ok({ result: echo(entity, updated[0]), applied: true, created: false });
+      } catch (error) {
+        if (isUniqueViolation(error)) return conflict();
+        throw error;
+      }
+    },
+    { behavior: 'immediate' }
+  );
 };
 
 /** DELETE /{route}/:id — tombstone; absent/already-tombstoned → 404 (client ack). */
@@ -373,12 +395,24 @@ export const removeEntity = async (
   entity: LocalEntityConfig,
   id: string
 ): Promise<RouteResult> => {
-  const table = entity.table as any;
-  const existing = await selectById(db, entity, id);
-  if (existing === undefined || existing.deletedAt) return notFound();
-  const guarded = entity.guardMutation?.(existing, 'delete', {});
-  if (guarded) return guarded;
-  const now = new Date().toISOString();
-  await db.update(table).set({ deletedAt: now, updatedAt: now }).where(eq(table.id, id));
-  return ok(undefined, 204);
+  return db.transaction(
+    tx => {
+      const table = entity.table as any;
+      const existing = selectById(tx, entity, id);
+      if (existing === undefined || existing.deletedAt) return notFound();
+      const guarded = entity.guardMutation?.(existing, 'delete', {});
+      if (guarded) return guarded;
+      const now = new Date().toISOString();
+      const updatedAt =
+        entity.route === 'folders'
+          ? new Date(
+              Math.max(Date.parse(now), Date.parse(existing.updatedAt as string) + 1)
+            ).toISOString()
+          : now;
+      tx.update(table).set({ deletedAt: now, updatedAt }).where(eq(table.id, id)).run();
+      if (entity.route === 'folders') detachFolderContents(tx, id, now);
+      return ok(undefined, 204);
+    },
+    { behavior: 'immediate' }
+  );
 };

@@ -16,6 +16,7 @@ import {
 import { getNoteLogConfig } from "../runtime";
 import { startLoadingTiming } from "../loading-timing";
 import { useSyncStore } from "../sync/provider";
+import { registerNoteDelivery } from "./note-delivery";
 import { BodyCache, registerOpenBody } from './body-cache';
 import { openIndexedDbNoteLog } from './indexeddb-note-log';
 
@@ -125,6 +126,7 @@ export function useNoteCollab(noteId: string, options: { background?: boolean } 
   useEffect(() => {
     const timing = startLoadingTiming(analyticsRef.current, "note_collaboration", noteId);
     const doc = new Y.Doc();
+    const unregisterDelivery = registerNoteDelivery(doc, () => waitForPendingChangesRef.current());
     const identity = `${activeAccountId}:${activeSessionKey}:${activeOrgId}:${noteId}`;
     const sameStartup = logStartup.current?.identity === identity;
     if (!sameStartup) logStartup.current = { identity, startedAt: Date.now() };
@@ -525,6 +527,7 @@ export function useNoteCollab(noteId: string, options: { background?: boolean } 
 
     return () => {
       disposed = true;
+      unregisterDelivery();
       if (logRetryTimer) clearTimeout(logRetryTimer);
       abort.abort();
       unregister?.();

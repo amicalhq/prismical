@@ -32,6 +32,7 @@ const result = {
   mode: "replace-doc",
   modelId: "model",
   rawMarkdown: "Original generated result",
+  recoveryContext: { baseContent: JSON.stringify({ type: "doc", content: [] }) },
   reasoning: null,
   recordingId: "recording",
 };
@@ -47,15 +48,26 @@ beforeEach(() => {
 });
 afterEach(() => vi.restoreAllMocks());
 describe("completed suggestion recovery", () => {
-  it("does not restore pending suggestions in a page workflow", () => {
+  it("restores pending suggestions into a page workflow", async () => {
     mock.workflow = createWorkflowRuntime();
     const hook = renderHook(() => useRecoverSkillResult("note-a", editor));
-    window.dispatchEvent(new Event("focus"));
-    window.dispatchEvent(new Event("online"));
-    expect(mock.list).not.toHaveBeenCalled();
-    expect(useSkillDiffStore.getState().getCandidate("note-a")).toBeUndefined();
+    await waitFor(() => expect(mock.workflow!.getSnapshot()).toMatchObject({ kind: "skill", phase: "review", noteId: "note-a" }));
+    expect(useSkillDiffStore.getState().getCandidate("note-a")?.baseContent).toBe(result.recoveryContext.baseContent);
     hook.unmount();
   });
+  it("restores selection context without adopting current document content", async () => {
+    mock.workflow = createWorkflowRuntime();
+    const recoveryContext = { baseContent: "original document", selectionText: "Original selection",
+      selectionAnchors: { relFrom: { item: { client: 1, clock: 2 } }, relTo: { item: { client: 1, clock: 5 } } } };
+    mock.list.mockResolvedValue([{ ...result, mode: "inline-rewrite", recoveryContext }]);
+    const hook = renderHook(() => useRecoverSkillResult("note-a", editor));
+    await waitFor(() => expect(useSkillDiffStore.getState().getCandidate("note-a")).toMatchObject({
+      mode: "inline-rewrite", baseContent: "original document", selectionText: "Original selection",
+      selectionAnchors: recoveryContext.selectionAnchors,
+    }));
+    hook.unmount();
+  });
+
   it("restores a native suggestion into workflow review and blocks competing work", async () => {
     mock.native = true;
     mock.workflow = createWorkflowRuntime();

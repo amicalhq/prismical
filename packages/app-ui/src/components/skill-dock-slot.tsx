@@ -92,7 +92,7 @@ export function SkillDockSlot({ compact = false }: { compact?: boolean } = {}) {
         editorForNote ? (
           <SkillDiffDockBar editor={editorForNote} noteId={noteId} compact={compact} />
         ) : (
-          <SkillDiffPendingBar noteId={noteId} skillName={candidate.skillName} compact={compact} />
+          <SkillDiffPendingBar noteId={noteId} compact={compact} />
         )
       ) : null}
     </>

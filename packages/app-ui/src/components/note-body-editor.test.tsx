@@ -9,6 +9,7 @@ import { CurrentEditorProvider, useCurrentNoteEditor } from '../shell/current-ed
 
 const collab = vi.hoisted(() => ({ current: {} as Record<string, unknown> }));
 vi.mock('@prismical/app-client', () => ({
+  usePorts: () => ({}),
   useNoteCollab: () => collab.current,
   buildWebEditorExtensions: (...args: Parameters<typeof buildWebEditorExtensions>) =>
     buildWebEditorExtensions(...args),
@@ -16,7 +17,8 @@ vi.mock('@prismical/app-client', () => ({
     startLoadingTiming(...args),
   useSkillDiffDecorations: () => {},
 }));
-vi.mock('./inline-skill-popover', () => ({ InlineSkillPopover: () => null }));
+vi.mock('./note-formatting-toolbar', () => ({ NoteFormattingToolbar: () => null }));
+vi.mock('./note-slash-menu', () => ({ NoteSlashMenu: () => null }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 const { NoteBodyEditor } = await import('./note-body-editor');
 
@@ -102,10 +104,12 @@ it('publishes an editable locally hydrated body before remote sync', async () =>
   const view = render(fixture());
   await waitFor(() => expect(view.container.querySelector('.ProseMirror')?.getAttribute('contenteditable')).toBe('true'));
   expect(view.getByTestId('published').textContent).toBe('published');
-  expect(view.getByText('notes.editor.savedLocally')).toBeTruthy();
+  expect(view.queryByText('notes.editor.savedLocally')).toBeNull();
+  collab.current = { ...collab.current, status: 'connected', synced: true, remotePending: false };
+  view.rerender(fixture());
+  expect(view.queryByText('notes.editor.synced')).toBeNull();
   collab.current = { ...collab.current, localSaveError: 'Disk full', localSaved: false };
   view.rerender(fixture());
   expect(view.getByRole('alert').textContent).toBe('notes.editor.localSaveError');
-  expect(view.queryByText('notes.editor.savedLocally')).toBeNull();
   expect(view.container.querySelector('.ProseMirror')).not.toBeNull();
 });

@@ -21,7 +21,7 @@ function createNoteToken(note: AskNoteContext, removeLabel: string) {
   token.dataset.noteId = note.id;
   token.dataset.noteTitle = note.title;
   const label = document.createElement('span');
-  label.className = 'min-w-0 truncate';
+  label.className = 'min-w-0 max-w-[20ch] truncate';
   label.textContent = `@${note.title}`;
   token.title = note.title;
   token.appendChild(label);
@@ -80,6 +80,7 @@ export const AskComposer = React.forwardRef<
     onStop: () => void;
     /** Collapse the panel (Escape with no menu open). */
     onEscape?: () => void;
+    preferencesReady?: boolean;
     modelGroups: AskModelGroup[];
     modelValue: AskModelSelection;
     onModelChange: (sel: AskModelSelection) => void;
@@ -100,6 +101,7 @@ export const AskComposer = React.forwardRef<
     onRunSkill,
     onStop,
     onEscape,
+    preferencesReady = true,
     modelGroups,
     modelValue,
     onModelChange,
@@ -112,7 +114,12 @@ export const AskComposer = React.forwardRef<
   ref
 ) {
   const { t } = useTranslation();
-  const askAllowed = useEntitlements().entitlements.features.askAi;
+  const { entitlements } = useEntitlements();
+  const askAllowed = entitlements.features.askAi;
+  const isAppsumoPlan = /^plan_appsumo_tier_\d+$/.test(entitlements.planExternalId ?? '');
+  const upgradeHref = isAppsumoPlan
+    ? 'https://appsumo.com/products/prismical/'
+    : '/settings/billing';
   // A refused free-text send swaps the gate line's copy for 8 s (restarted on every refusal).
   const [refusedAt, setRefusedAt] = React.useState<number | null>(null);
   React.useEffect(() => {
@@ -466,10 +473,12 @@ export const AskComposer = React.forwardRef<
         <p role="status" className="px-1.5 pb-1.5 pt-1 text-xs text-dock-ink-3">
           {t(gateKey)}{' '}
           <Link
-            href="/settings/billing"
+            href={upgradeHref}
+            target={isAppsumoPlan ? '_blank' : undefined}
+            rel={isAppsumoPlan ? 'noopener noreferrer' : undefined}
             className="font-medium text-dock-ink-2 underline-offset-2 hover:underline"
           >
-            {t('settings.billing.screen.gateSeePlans')}
+            {t('ask.gate.upgrade')}
           </Link>
         </p>
       ) : null}
@@ -635,6 +644,7 @@ export const AskComposer = React.forwardRef<
           className="ask-composer-input max-h-[120px] min-h-7 overflow-y-auto whitespace-pre-wrap px-1 py-[5px] text-[13px] leading-5 text-dock-ink outline-none [overflow-wrap:anywhere]"
         />
         <AskModelSelector
+          disabled={!preferencesReady}
           groups={modelGroups}
           value={modelValue}
           onChange={onModelChange}
@@ -642,6 +652,7 @@ export const AskComposer = React.forwardRef<
         />
         <button
           type="button"
+          disabled={!busy && !preferencesReady}
           onClick={busy ? onStop : collectAndSend}
           className={DOCK_CTL_PRIMARY}
           aria-label={busy ? t('ask.composer.stop') : t('ask.composer.send')}

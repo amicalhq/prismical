@@ -35,6 +35,7 @@ import { RequiredUpdateGate } from './updater/required-update-gate';
 import { UpdatePrompt } from './updater/update-prompt';
 import { router } from './router';
 import { openNoteLog } from '../collab';
+import { migrateLocalPreferences } from './settings/local-preference-migration';
 import { createDesktopPorts } from './ports/desktop-ports';
 import { bindDesktopWorkflowLifecycle } from './ports/workflow-lifecycle';
 import { DesktopEnvProvider, useDesktopEnv } from './desktop-env';
@@ -237,6 +238,12 @@ export async function mountAppShell(
     askFetch: ports.askFetch,
     syncPersistence: partition => createIndexedDbPersistPlugin(partition),
     noteLog: { open: openNoteLog, remote: desktopEnv.appMode === 'cloud' },
+  });
+
+  await migrateLocalPreferences({
+    appMode: desktopEnv.appMode,
+    getStorage: () => window.localStorage,
+    request: request => ports.transport.request(request),
   });
 
   createRoot(container).render(

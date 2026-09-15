@@ -9,7 +9,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from '../ui/dialog';
-import { Button } from '../ui/button';
+import { OnboardingDownloadActions } from './download-actions';
 export function OnboardingCompletionDialog({
   open,
   onClose,
@@ -25,7 +25,7 @@ export function OnboardingCompletionDialog({
         if (!value) onClose();
       }}
     >
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <span className="mx-auto mb-2 flex size-12 items-center justify-center rounded-2xl bg-primary/10">
             <Check aria-hidden="true" className="size-6" />
@@ -52,9 +52,7 @@ export function OnboardingCompletionDialog({
           {t('onboarding.helpDocs')}
         </a>
         <DialogFooter>
-          <Button className="w-full" onClick={onClose}>
-            {t('onboarding.continueToNote')}
-          </Button>
+          <OnboardingDownloadActions onContinue={onClose} />
         </DialogFooter>
       </DialogContent>
     </Dialog>

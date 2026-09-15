@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   onSend: vi.fn(),
   onRunSkill: vi.fn(),
   askAi: true,
+  planExternalId: 'plan_free',
   notes: [{ id: 'note_b', title: 'Birch plan' }],
 }));
 vi.mock('@prismical/app-client', () => ({
@@ -23,7 +24,13 @@ vi.mock('@prismical/app-client', () => ({
       },
     ],
   }),
-  useEntitlements: () => ({ entitlements: { features: { askAi: mocks.askAi } }, isResolved: true }),
+  useEntitlements: () => ({
+    entitlements: {
+      planExternalId: mocks.planExternalId,
+      features: { askAi: mocks.askAi },
+    },
+    isResolved: true,
+  }),
   useNavigation: () => ({ push: vi.fn() }),
   usePorts: () => ({
     navigation: {
@@ -75,6 +82,7 @@ afterEach(cleanup);
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.askAi = true;
+  mocks.planExternalId = 'plan_free';
   mocks.notes = [{ id: 'note_b', title: 'Birch plan' }];
 });
 
@@ -166,6 +174,21 @@ describe('AskComposer', () => {
     expect(draft().querySelector('.tok-note')?.textContent).toContain('@Cedar plan');
     fireEvent.keyDown(draft(), { key: 'Enter' });
     expect(mocks.onSend).not.toHaveBeenCalled();
+  });
+
+  it('caps a long note title without losing its full context value', () => {
+    const title = 'Different types of intermittent fasting and hormonal fluctuations';
+    render(<WithContext currentNote={{ id: 'note_long', title }} />);
+    const token = draft().querySelector<HTMLElement>('.tok-note')!;
+    const label = token.querySelector<HTMLElement>('span')!;
+    expect(label.classList.contains('max-w-[20ch]')).toBe(true);
+    expect(label.classList.contains('truncate')).toBe(true);
+    expect(token.title).toBe(title);
+    appendDraft('Summarize');
+    fireEvent.keyDown(draft(), { key: 'Enter' });
+    expect(mocks.onSend).toHaveBeenLastCalledWith('Summarize', [
+      { id: 'note_long', title },
+    ]);
   });
 
   it('keeps draft and selected notes through background navigation and renaming', () => {
@@ -306,16 +329,26 @@ describe('AskComposer', () => {
     expect(mocks.onSend).toHaveBeenCalledWith('What changed?', []);
   });
 
-  it('on a plan without Ask: a persistent gate line with the plans link, and the skill placeholder', () => {
+  it('on a non-AppSumo plan without Ask: a benefit line with the billing upgrade link', () => {
     mocks.askAi = false;
     render(composer().ui);
     expect(screen.getByRole('status').textContent).toContain(
-      'Ask AI isn’t included in your plan. Skills still run here.'
+      'Get answers and insights from your notes with Ask AI.'
     );
-    expect(screen.getByRole('link', { name: 'See plans' }).getAttribute('href')).toBe(
+    expect(screen.getByRole('link', { name: 'Upgrade' }).getAttribute('href')).toBe(
       '/settings/billing'
     );
     expect(draft().getAttribute('data-placeholder')).toBe('Type / to run a skill');
+  });
+
+  it('links an AppSumo plan to the Prismical deal page', () => {
+    mocks.askAi = false;
+    mocks.planExternalId = 'plan_appsumo_tier_1';
+    render(composer().ui);
+    const upgrade = screen.getByRole('link', { name: 'Upgrade' });
+    expect(upgrade.getAttribute('href')).toBe('https://appsumo.com/products/prismical/');
+    expect(upgrade.getAttribute('target')).toBe('_blank');
+    expect(upgrade.getAttribute('rel')).toBe('noopener noreferrer');
   });
 
   it('refuses free text, keeps the draft, and swaps the line to the refusal copy for a while', () => {
@@ -326,14 +359,16 @@ describe('AskComposer', () => {
       typeAndEnter('What changed?');
       expect(mocks.onSend).not.toHaveBeenCalled();
       expect(draft().textContent).toBe('What changed?');
-      expect(screen.getByRole('status').textContent).toContain('Type / to run a skill instead.');
+      expect(screen.getByRole('status').textContent).toContain('That message wasn’t sent.');
       // A second refusal restarts the clock: still showing 7 s after the first one.
       act(() => vi.advanceTimersByTime(7000));
       fireEvent.keyDown(draft(), { key: 'Enter' });
       act(() => vi.advanceTimersByTime(7000));
-      expect(screen.getByRole('status').textContent).toContain('Type / to run a skill instead.');
+      expect(screen.getByRole('status').textContent).toContain('That message wasn’t sent.');
       act(() => vi.advanceTimersByTime(1500));
-      expect(screen.getByRole('status').textContent).toContain('Skills still run here.');
+      expect(screen.getByRole('status').textContent).toContain(
+        'Get answers and insights from your notes with Ask AI.'
+      );
     } finally {
       vi.useRealTimers();
     }
@@ -350,14 +385,17 @@ describe('AskComposer', () => {
       { id: 'skl_cleanup', name: 'Cleanup' },
       'keep the headings'
     );
-    expect(screen.getByRole('status').textContent).toContain('Skills still run here.');
+    expect(screen.getByRole('status').textContent).toContain(
+      'Get answers and insights from your notes with Ask AI.'
+    );
   });
 
-  it('off a note there is no skill lane: the line and the placeholder just say Ask is not in the plan', () => {
+  it('off a note keeps a neutral prompt alongside the upgrade line', () => {
     mocks.askAi = false;
     render(composer({ withSkills: false }).ui);
-    expect(draft().getAttribute('data-placeholder')).toBe('Ask AI isn’t in your plan');
-    expect(screen.getByRole('status').textContent).toContain('Ask AI isn’t included in your plan.');
-    expect(screen.getByRole('status').textContent).not.toContain('Skills still run here.');
+    expect(draft().getAttribute('data-placeholder')).toBe('Ask a question…');
+    expect(screen.getByRole('status').textContent).toContain(
+      'Get answers and insights from your notes with Ask AI.'
+    );
   });
 });

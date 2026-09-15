@@ -614,6 +614,7 @@ describe('LocalBackendLive', () => {
 
 describe('local account preferences', () => {
   const preferencesPath = '/apps/v1/me/preferences';
+  const uninitializedExperience = { experience: null, ask: null, onboarding: null, prompts: null };
 
   it.effect('seeds spoken language independently and preserves all groups across edits and restart', () =>
     Effect.gen(function* () {
@@ -624,6 +625,7 @@ describe('local account preferences', () => {
       const seeded = expectOk(yield* first.api.request({ method: 'POST', path: preferencesPath,
         body: { language: { interfaceLanguage: 'ja' }, transcription: { language: 'hi' } } }), 200).bodyJson;
       assert.deepStrictEqual(seeded, {
+        ...uninitializedExperience,
         language: { interfaceLanguage: 'de', aiOutputLanguage: 'source' }, transcription: { language: 'hi' },
       });
       assert.deepStrictEqual(expectOk(yield* first.api.request({ method: 'POST', path: preferencesPath,
@@ -638,6 +640,7 @@ describe('local account preferences', () => {
       yield* Scope.close(second.scope, Exit.void);
       const reopened = yield* buildBackendAt(dbPath);
       assert.deepStrictEqual(expectOk(yield* reopened.api.request({ method: 'GET', path: preferencesPath }), 200).bodyJson, {
+        ...uninitializedExperience,
         language: { interfaceLanguage: 'de', aiOutputLanguage: 'ja' }, transcription: { language: 'fr' },
       });
       yield* Scope.close(reopened.scope, Exit.void);
@@ -647,7 +650,7 @@ describe('local account preferences', () => {
   it.effect('seeds the language group once and preserves unrelated stored preferences', () =>
     Effect.gen(function* () {
       const { api, product, scope } = yield* buildBackend;
-      assert.deepStrictEqual(expectOk(yield* api.request({ method: 'GET', path: preferencesPath }), 200).bodyJson, { language: null, transcription: null });
+      assert.deepStrictEqual(expectOk(yield* api.request({ method: 'GET', path: preferencesPath }), 200).bodyJson, { ...uninitializedExperience, language: null, transcription: null });
       yield* Effect.promise(() => product.db.insert(schema.userPreference).values({
         id: 1, prefs: { appearance: { density: 'compact' }, legacy: true, language: null },
       }));
@@ -655,6 +658,7 @@ describe('local account preferences', () => {
         method: 'POST', path: preferencesPath, body: { language: { interfaceLanguage: 'ja' } },
       }), 200).bodyJson;
       assert.deepStrictEqual(UserPreferencesSchema.parse(seeded), {
+        ...uninitializedExperience,
         language: { interfaceLanguage: 'ja', aiOutputLanguage: 'source' },
         transcription: null,
       });
@@ -665,7 +669,7 @@ describe('local account preferences', () => {
       const patched = expectOk(yield* api.request({
         method: 'PATCH', path: preferencesPath, body: { language: { aiOutputLanguage: 'es' } },
       }), 200).bodyJson;
-      assert.deepStrictEqual(patched, { language: { interfaceLanguage: 'ja', aiOutputLanguage: 'es' }, transcription: null });
+      assert.deepStrictEqual(patched, { ...uninitializedExperience, language: { interfaceLanguage: 'ja', aiOutputLanguage: 'es' }, transcription: null });
       assert.deepStrictEqual(product.db.select().from(schema.userPreference).get()!.prefs, {
         appearance: { density: 'compact' }, legacy: true,
         language: { interfaceLanguage: 'ja', aiOutputLanguage: 'es' },
@@ -681,7 +685,7 @@ describe('local account preferences', () => {
       const saved = expectOk(yield* first.api.request({
         method: 'PATCH', path: preferencesPath, body: { language: { aiOutputLanguage: 'hi' } },
       }), 200).bodyJson;
-      assert.deepStrictEqual(saved, { language: { interfaceLanguage: 'en', aiOutputLanguage: 'hi' }, transcription: null });
+      assert.deepStrictEqual(saved, { ...uninitializedExperience, language: { interfaceLanguage: 'en', aiOutputLanguage: 'hi' }, transcription: null });
       yield* Scope.close(first.scope, Exit.void);
       const second = yield* buildBackendAt(dbPath);
       assert.deepStrictEqual(expectOk(yield* second.api.request({ method: 'GET', path: preferencesPath }), 200).bodyJson, saved);
@@ -689,11 +693,12 @@ describe('local account preferences', () => {
         method: 'PATCH', path: preferencesPath, body: { language: { interfaceLanguage: 'de' } },
       }), 200);
       assert.deepStrictEqual(expectOk(yield* second.api.request({ method: 'GET', path: preferencesPath }), 200).bodyJson, {
+        ...uninitializedExperience,
         language: { interfaceLanguage: 'de', aiOutputLanguage: 'hi' },
         transcription: null,
       });
       const separate = yield* buildBackend;
-      assert.deepStrictEqual(expectOk(yield* separate.api.request({ method: 'GET', path: preferencesPath }), 200).bodyJson, { language: null, transcription: null });
+      assert.deepStrictEqual(expectOk(yield* separate.api.request({ method: 'GET', path: preferencesPath }), 200).bodyJson, { ...uninitializedExperience, language: null, transcription: null });
       yield* Scope.close(second.scope, Exit.void);
       yield* Scope.close(separate.scope, Exit.void);
     })
@@ -717,6 +722,7 @@ describe('local account preferences', () => {
       ], { concurrency: 'unbounded' });
       for (const result of patches) expectOk(result, 200);
       assert.deepStrictEqual(expectOk(yield* first.api.request({ method: 'GET', path: preferencesPath }), 200).bodyJson, {
+        ...uninitializedExperience,
         language: { interfaceLanguage: 'zh-TW', aiOutputLanguage: 'fr' },
         transcription: null,
       });

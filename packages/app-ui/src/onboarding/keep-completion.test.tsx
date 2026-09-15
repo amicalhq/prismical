@@ -20,7 +20,7 @@ vi.mock('@prismical/app-client', () => ({
   usePorts: () => ({}),
   useWorkflowSnapshot: () => ({ kind: 'idle' }),
   resolvePendingSkillResult: vi.fn(),
-  useSkillDiffStore: (selector: (s: unknown) => unknown) =>
+  useSkillDiffStore: Object.assign((selector: (s: unknown) => unknown) =>
     selector({
       candidatesByNote: new Map([
         [
@@ -35,10 +35,11 @@ vi.mock('@prismical/app-client', () => ({
         ],
       ]),
       clear: vi.fn(),
-    }),
+    }), { getState: () => ({ stage: vi.fn() }) }),
   useAcceptArtifact: () => ({ mutateAsync: m.accept }),
   useRunSkill: () => ({ run: vi.fn(), cancel: vi.fn(), running: false }),
   useSkillRunActivityStore: { getState: () => ({ resolveStaged: vi.fn() }) },
+  withEditorHistoryBoundary: (_editor: Editor, apply: () => unknown) => apply(),
   clearDiffDecorations: vi.fn(),
   resolveVerifiedRange: vi.fn(),
   restoreLastSkillRun: vi.fn().mockResolvedValue(undefined),
@@ -73,7 +74,7 @@ beforeEach(() => {
 afterEach(cleanup);
 it('signals only after persisted acceptance and successful editor application', async () => {
   mount();
-  fireEvent.click(screen.getByRole('button', { name: 'Keep' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
   await waitFor(() =>
     expect(m.notify).toHaveBeenCalledWith({
       type: 'kept',
@@ -87,7 +88,7 @@ it('signals only after persisted acceptance and successful editor application', 
 it('does not complete when persistence fails', async () => {
   m.accept.mockRejectedValue(new Error('offline'));
   mount();
-  fireEvent.click(screen.getByRole('button', { name: 'Keep' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
   await waitFor(() => expect(m.accept).toHaveBeenCalledTimes(1));
   expect(m.apply).not.toHaveBeenCalled();
   expect(m.notify).toHaveBeenCalledWith(
@@ -98,7 +99,7 @@ it('does not complete when persistence fails', async () => {
 it('does not complete when the editor rejects the change', async () => {
   m.apply.mockReturnValue(false);
   mount();
-  fireEvent.click(screen.getByRole('button', { name: 'Keep' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
   await waitFor(() => expect(m.apply).toHaveBeenCalledTimes(1));
   expect(m.notify).toHaveBeenCalledWith(
     expect.objectContaining({ type: 'error', code: 'accept_failed' })
@@ -111,7 +112,7 @@ it('does not complete when replacing the document throws', async () => {
     throw new Error('invalid content');
   });
   mount();
-  fireEvent.click(screen.getByRole('button', { name: 'Keep' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
   await waitFor(() => expect(m.apply).toHaveBeenCalledTimes(1));
   expect(m.notify).toHaveBeenCalledWith(
     expect.objectContaining({ type: 'error', code: 'accept_failed' })

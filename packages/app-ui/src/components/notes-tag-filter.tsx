@@ -15,6 +15,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { cn } from '../lib/utils';
 import { TagBadge, TagHash } from '../shell/tag-chip';
 import { useTags } from '@prismical/app-client';
+import { usePendingSelection } from '../hooks/use-pending-selection';
 import { useTranslation } from 'react-i18next';
 
 // How many selected chips to show in the trigger before collapsing the rest
@@ -39,32 +40,7 @@ export function NotesTagFilter({
   const { data: allTags = [] } = useTags();
   const [open, setOpen] = React.useState(false);
 
-  // `selected` comes from the URL, and the host commits a URL change ASYNCHRONOUSLY (a router push
-  // plus its re-render). Between a pick and that commit `selected` still holds the PREVIOUS value,
-  // so a second pick computed from it would replace the first instead of adding to it — picking two
-  // tags quickly used to leave only the last one. Hold the picks made since the last commit here and
-  // compute every toggle from those; the local copy is released the moment the URL catches up (or
-  // changes underneath us: back/forward, a sidebar tag link).
-  const [pending, setPending] = React.useState<string[] | null>(null);
-  const pendingCommits = React.useRef<string[]>([]);
-  const committed = selected.join(',');
-  React.useEffect(() => {
-    const acknowledged = pendingCommits.current.indexOf(committed);
-    if (acknowledged < 0) pendingCommits.current = [];
-    else pendingCommits.current.splice(0, acknowledged + 1);
-    // An earlier URL acknowledgment must not erase picks made after it.
-    // An unrelated value comes from navigation and replaces the pending filter.
-    if (pendingCommits.current.length === 0) setPending(null);
-  }, [committed]);
-  const active = pending ?? selected;
-
-  const apply = (ids: string[]) => {
-    pendingCommits.current.push(ids.join(','));
-    setPending(ids);
-    onChange(ids);
-  };
-  const toggle = (id: string) =>
-    apply(active.includes(id) ? active.filter(x => x !== id) : [...active, id]);
+  const { active, apply, toggle } = usePendingSelection(selected, onChange);
 
   // By name, like the other tag surfaces — the sync lane hands rows back in update order, which
   // reads as random once a user has more than a handful of tags.
@@ -97,12 +73,7 @@ export function NotesTagFilter({
           ) : (
             <span className="flex min-w-0 flex-1 items-center gap-1">
               {visible.map(tag => (
-                <TagBadge
-                  key={tag.id}
-                  color={tag.color}
-                  name={tag.name}
-                  nameClassName="max-w-20"
-                />
+                <TagBadge key={tag.id} color={tag.color} name={tag.name} nameClassName="max-w-20" />
               ))}
               {overflow > 0 && (
                 <span className="shrink-0 px-0.5 text-xs text-muted-foreground">+{overflow}</span>

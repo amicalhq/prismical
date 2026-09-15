@@ -41,6 +41,7 @@ export function AskModelSelector({
   value,
   onChange,
   compact = false,
+  disabled = false,
 }: {
   groups: AskModelGroup[];
   value: AskModelSelection;
@@ -49,6 +50,7 @@ export function AskModelSelector({
    * router, and navigating it to the full settings page strands a 380px
    * always-on-top window inside the AppShell with no way back. */
   compact?: boolean;
+  disabled?: boolean;
 }) {
   const { t } = useTranslation();
   const router = useNavigation();
@@ -62,6 +64,7 @@ export function AskModelSelector({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
+          disabled={disabled}
           type="button"
           aria-label={t('ask.models.select')}
           className="inline-flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-dock-ink-2 transition-colors hover:bg-dock-hover hover:text-dock-ink"

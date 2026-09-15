@@ -1,11 +1,17 @@
 import type { SyncWriteEnvelope } from '@prismical/api-contracts/apps/v1';
-import { RecordingSpeakerResponseSchema } from '@prismical/api-contracts/apps/v1';
+import {
+  RecordingSpeakerResponseSchema,
+  SpeakerCandidatesResponseSchema,
+  type SpeakerCandidate,
+} from '@prismical/api-contracts/apps/v1';
 import { apiClient, ME_PREFIX } from './client';
 
 // Wire shapes from core (sync engine rows / transcribe endpoint).
 export type CoreRecording = {
   id: string;
   noteId: string | null;
+  /** The recording owner (an org user id); "You" in the transcript is this person. */
+  orgUserId?: string;
   title: string;
   status: string;
   startedAt: string | null;
@@ -17,14 +23,23 @@ export type CoreRecording = {
   transcriptionConfig?: Record<string, unknown> | null;
 };
 
-/** One speaker in a recording's registry, minted by the finalize pass. */
+/** One speaker in a recording's registry, minted by the finalize pass or by a user tag. */
 export type CoreRecordingSpeaker = {
   id: string;
   recordingId: string;
   speakerKey: string; // 'you' | 'them' | 'dz:0' | 'dz:1' | …
-  source: string; // 'channel' | 'diarization' | 'enrollment'
+  source: string; // 'channel' | 'diarization' (pass) | 'user' (tag/rename)
   displayName: string | null;
   personId: string | null;
+  /** The recording owner's voice, rendered like the `you` channel. */
+  isOwner?: boolean;
+};
+
+/** A speaker tag: every field optional, `null` clears, at least one must be present. */
+export type SpeakerTagPatch = {
+  displayName?: string | null;
+  personId?: string | null;
+  isOwner?: boolean;
 };
 
 export type CoreTranscriptSegment = {
@@ -155,16 +170,28 @@ export function listRecordingSpeakers(recordingId: string): Promise<CoreRecordin
   return apiClient.list<CoreRecordingSpeaker>(`${ME_PREFIX}/recording-speakers`, { recordingId });
 }
 
-/** Rename a speaker (null resets to the derived "Speaker N" label). Segments never change. */
-export function renameRecordingSpeaker(
-  speakerId: string,
-  displayName: string | null
+/** Tag a speaker by key: name, person link, owner flag. Upserts the registry row; segments never
+ * change (labels and sides resolve through the registry at render time). */
+export function tagRecordingSpeaker(
+  recordingId: string,
+  speakerKey: string,
+  patch: SpeakerTagPatch
 ): Promise<CoreRecordingSpeaker> {
   return apiClient
-    .patchRaw<unknown>(`${ME_PREFIX}/recording-speakers/${speakerId}`, {
-      displayName,
-    })
+    .putRaw<unknown>(
+      `${ME_PREFIX}/recordings/${recordingId}/speakers/${encodeURIComponent(speakerKey)}`,
+      patch
+    )
     .then(response => RecordingSpeakerResponseSchema.parse(response));
+}
+
+export type { SpeakerCandidate };
+
+/** People on the recording's calendar event - the tag picker's "In this meeting" group. */
+export function listSpeakerCandidates(recordingId: string): Promise<SpeakerCandidate[]> {
+  return apiClient
+    .getRaw<unknown>(`${ME_PREFIX}/recordings/${recordingId}/speaker-candidates`)
+    .then(response => SpeakerCandidatesResponseSchema.parse(response).participants);
 }
 
 // The raw-WAV chunk upload is a JSON-apiClient bypass owned by the web RecordingPort adapter. It

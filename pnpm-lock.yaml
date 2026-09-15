@@ -193,6 +193,9 @@ importers:
       '@prismical/mic-detector':
         specifier: workspace:*
         version: link:../../packages/native-helpers/mic-detector
+      '@prismical/note-derive':
+        specifier: workspace:*
+        version: link:../../packages/note-derive
       '@prismical/silence':
         specifier: workspace:*
         version: link:../../packages/silence
@@ -250,6 +253,9 @@ importers:
       split2:
         specifier: ^4.2.0
         version: 4.2.0
+      yjs:
+        specifier: ^13.6.27
+        version: 13.6.31
       zod:
         specifier: 'catalog:'
         version: 4.4.3
@@ -588,9 +594,15 @@ importers:
       '@tanstack/react-query':
         specifier: ^5.101.0
         version: 5.101.0(react@19.2.6)
+      '@tiptap/pm':
+        specifier: 3.24.0
+        version: 3.24.0
       '@tiptap/react':
         specifier: 3.24.0
         version: 3.24.0(@floating-ui/dom@1.8.0)(@tiptap/core@3.24.0(@tiptap/pm@3.24.0))(@tiptap/pm@3.24.0)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@tiptap/suggestion':
+        specifier: 3.24.0
+        version: 3.24.0(@tiptap/core@3.24.0(@tiptap/pm@3.24.0))(@tiptap/pm@3.24.0)
       ai:
         specifier: 'catalog:'
         version: 7.0.73(zod@4.4.3)

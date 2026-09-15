@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
-import { act, createElement, StrictMode } from 'react';
+import type * as React from 'react';
+import { act, cloneElement, createElement, createRef, isValidElement, StrictMode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { SidebarHelpControl } from '@prismical/app-ui/shell/sidebar-foot-controls';
 import type { DesktopEnv } from '../../src/renderer/main/app/desktop-env';
 import { GleapProvider, useGleapSupportAction } from '../../src/renderer/main/app/support/gleap';
 import { publishPlanIdentity } from '../../src/renderer/main/app/analytics/plan-identity';
@@ -21,7 +23,16 @@ const mock = vi.hoisted(() => ({
   },
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
-vi.mock('@prismical/app-client', () => ({ useSessionView: () => mock.session }));
+vi.mock('@prismical/app-client', () => ({
+  useSessionView: () => mock.session,
+  useCloudTranscriptionQuota: () => null,
+  useDesktopCapabilities: () => ({ has: () => true, featureFlags: null }),
+}));
+vi.mock('../../../../packages/app-ui/src/onboarding/first-note-walkthrough', () => ({ useWalkthroughReplay: () => null }));
+vi.mock('@prismical/app-ui/shell/app-link', () => ({
+  AppLink: ({ href, children }: { href: string; children?: React.ReactNode }) =>
+    createElement('a', { href }, children),
+}));
 vi.mock('../../src/renderer/main/app/desktop-env', () => ({ useDesktopEnv: () => mock.env }));
 vi.mock('@prismical/app-ui/ui/sidebar', () => ({ useSidebar: () => ({ setOpenMobile: mock.setOpenMobile }) }));
 vi.mock('@prismical/app-ui/ui/sonner', () => ({ toast: { error: mock.toastError } }));
@@ -59,6 +70,28 @@ const render = (strict = false) => act(async () => {
 const ready = () => act(async () => mock.ready());
 
 describe('cloud-only Gleap lifecycle', () => {
+  it('forwards the sidebar row props, ref and click handler to the support control', async () => {
+    const ref = createRef<HTMLElement>();
+    const onClick = vi.fn();
+    const SlottedSupport = () => {
+      const action = useGleapSupportAction();
+      return isValidElement<React.HTMLAttributes<HTMLElement> & React.RefAttributes<HTMLElement>>(action)
+        ? cloneElement(action, { ref, onClick, className: 'sidebar-support-row', title: 'Support' })
+        : null;
+    };
+    await act(async () => root.render(createElement(GleapProvider, { children: createElement(SlottedSupport) })));
+    await ready();
+    const button = document.querySelector('button')!;
+    expect(ref.current).toBe(button);
+    expect(button.className).toBe('sidebar-support-row');
+    expect(button.title).toBe('Support');
+    expect(button.textContent).toBe('navigation.secondary.chat');
+    await act(async () => button.click());
+    expect(onClick).toHaveBeenCalledOnce();
+    expect(mock.setOpenMobile).toHaveBeenCalledWith(false);
+    expect(mock.sdk.open).toHaveBeenCalledOnce();
+  });
+
   it('falls back to email and reports an error if opening support fails', async () => {
     await render();
     await ready();
@@ -68,6 +101,35 @@ describe('cloud-only Gleap lifecycle', () => {
     expect(mock.toastError).toHaveBeenCalledWith('common.errors.couldNotLoad');
     expect(document.querySelector('a')?.getAttribute('href')).toBe('mailto:help@prismical.ai');
     expect(document.querySelector('button')).toBeNull();
+  });
+
+  it('keeps the email fallback after the real help menu closes and reopens', async () => {
+    const HelpMenu = () => createElement(SidebarHelpControl, {
+      supportAction: useGleapSupportAction(),
+    });
+    await act(async () => root.render(createElement(GleapProvider, {
+      children: createElement(HelpMenu),
+    })));
+    await ready();
+    const trigger = document.querySelector<HTMLButtonElement>(
+      'button[aria-label="navigation.secondary.help"]'
+    )!;
+    const openMenu = () => act(async () => {
+      trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    });
+    await openMenu();
+    mock.sdk.open.mockImplementationOnce(() => { throw new Error('SDK unavailable'); });
+    await act(async () => document.querySelector<HTMLButtonElement>(
+      '[role="menuitem"][aria-label="navigation.secondary.chat"]'
+    )!.click());
+    expect(mock.sdk.open).toHaveBeenCalledOnce();
+    expect(mock.toastError).toHaveBeenCalledWith('common.errors.couldNotLoad');
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+
+    await openMenu();
+    const fallback = document.querySelector('[role="menuitem"][href="mailto:help@prismical.ai"]');
+    expect(fallback?.textContent).toBe('navigation.secondary.chat');
+    expect(document.querySelector('button[aria-label="navigation.secondary.chat"]')).toBeNull();
   });
 
   it('updates a resolved plan on the existing contact and clears it when it becomes unknown', async () => {

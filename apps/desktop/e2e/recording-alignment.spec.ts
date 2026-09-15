@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { test, expect, type Page } from '@playwright/test';
 import { createId } from '@prismical/id';
 import type { RecordingStateView, TransportRequest } from '@prismical/desktop-contracts';
@@ -285,7 +286,7 @@ test.describe('recording dock alignment', () => {
       completedRecordings: [{ recordingId: 'rec_alignment', noteId: owner, segments: 1 }],
     });
     await expect(
-      floating.getByRole('button', { name: 'Start recording', exact: true })
+      floating.getByRole('button', { name: 'Record and transcribe', exact: true })
     ).toBeEnabled();
 
     await page.evaluate(id => window.desktop.float.open(id), other);
@@ -324,7 +325,7 @@ test.describe('recording dock alignment', () => {
     await expect(floating.getByRole('button', { name: 'Dock back into app' })).toBeVisible();
   });
 
-  for (const action of ['Keep', 'Undo'] as const) {
+  for (const action of ['Apply', 'Discard'] as const) {
     test(`recovers completed local output after restart and remembers ${action}`, async () => {
       const otherId = await createNote(page);
       await page.locator('.note-prose').fill('Another note stays unchanged.');
@@ -367,8 +368,16 @@ test.describe('recording dock alignment', () => {
       ).toMatchObject({ ok: true, status: 201 });
       const result = await request(page, {
         method: 'POST',
-        path: '/apps/v1/me/skills/skl_enhance/run',
-        body: { noteId, recordingId, recoverable: true },
+        path: '/apps/v1/me/skills/skl_enhance/run/durable',
+        body: {
+          noteId,
+          recordingId,
+          recoverable: true,
+          recoveryContext: {
+            generationId: randomUUID(),
+            baseContent: JSON.stringify({ type: 'doc', content: [{ type: 'paragraph' }] }),
+          },
+        },
       });
       expect(result).toMatchObject({
         ok: true,
@@ -389,7 +398,7 @@ test.describe('recording dock alignment', () => {
       await page.evaluate(id => {
         window.location.hash = `#/notes/${id}`;
       }, noteId);
-      await expect(page.getByRole('button', { name: 'Keep', exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Apply', exact: true })).toBeVisible();
       await page.getByRole('button', { name: 'Show transcription', exact: true }).click();
       await expect(
         page.getByRole('button', { name: 'Start recording', exact: true })
@@ -399,7 +408,7 @@ test.describe('recording dock alignment', () => {
         window.location.hash = `#/notes/${id}`;
       }, otherId);
       await expect(page.locator('.note-prose')).toHaveText('Another note stays unchanged.');
-      await expect(page.getByRole('button', { name: 'Keep', exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Apply', exact: true })).toBeVisible();
       await expect(page.getByRole('button', { name: 'Ask AI', exact: true })).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Open note', exact: true })).toBeVisible();
       await page.getByRole('button', { name: 'Show transcription', exact: true }).click();
@@ -408,11 +417,11 @@ test.describe('recording dock alignment', () => {
       ).toBeDisabled();
       await page.keyboard.press('Escape');
       await page.getByRole('button', { name: action, exact: true }).click();
-      await expect(page.getByRole('button', { name: 'Keep', exact: true })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'Apply', exact: true })).toHaveCount(0);
       await expect(page.locator('.note-prose')).toHaveText('Another note stays unchanged.');
       await expect.poll(() => page.evaluate(() => window.location.hash)).toBe(`#/notes/${otherId}`);
       await expect(page.getByRole('button', { name: 'Ask AI', exact: true })).toBeVisible();
-      await page.getByRole('button', { name: 'Start recording', exact: true }).click();
+      await page.getByRole('button', { name: 'Record and transcribe', exact: true }).click();
       await expect(
         page.getByRole('button', { name: 'Start recording', exact: true })
       ).toBeEnabled();
@@ -425,17 +434,17 @@ test.describe('recording dock alignment', () => {
       expect(
         await request(page, {
           method: 'GET',
-          path: '/apps/v1/me/skill-runs/pending',
+          path: '/apps/v1/me/skill-runs/pending/durable',
           query: { noteId },
         })
       ).toMatchObject({ ok: true, status: 200, bodyJson: { results: [] } });
-      const expectedBody = action === 'Keep' ? /This is a deterministic local test summary\./ : '';
+      const expectedBody = action === 'Apply' ? /This is a deterministic local test summary\./ : '';
       await expect(page.locator('.note-prose')).toHaveText(expectedBody);
       await page.reload();
       await expect(page.locator('.note-prose')).toHaveAttribute('contenteditable', 'true');
-      await expect(page.getByRole('button', { name: 'Keep', exact: true })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'Apply', exact: true })).toHaveCount(0);
       await expect(page.locator('.note-prose')).toHaveText(expectedBody);
-      const artifactCount = { Keep: 1, Undo: 0 }[action];
+      const artifactCount = { Apply: 1, Discard: 0 }[action];
       const artifacts = await request(page, {
         method: 'GET',
         path: '/apps/v1/me/artifacts',

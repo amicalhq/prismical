@@ -203,7 +203,7 @@ function RevokeDialog({
     <Dialog open={keyItem !== null} onOpenChange={next => !revoke.isPending && onOpenChange(next)}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>
+          <DialogTitle className="wrap-anywhere">
             {t('settings.apiMcp.keys.revokeTitle', { name: keyItem?.name ?? '' })}
           </DialogTitle>
           <DialogDescription>{t('settings.apiMcp.keys.revokeDescription')}</DialogDescription>

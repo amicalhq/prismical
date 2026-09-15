@@ -12,7 +12,10 @@ import {
 } from '../ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { cn } from '../lib/utils';
+import { FolderChipLabel, folderChipClass } from './folder-chip';
 import { useFolders, folderById } from '@prismical/app-client';
+import { moveLeavesSharedFolder } from '../lib/folder-sharing';
+import { MoveOutOfSharedDialog } from '../shell/move-out-of-shared-dialog';
 
 // "Parent / Child" path so same-named siblings disambiguate (mirrors the
 // desktop NoteFolderChip / FolderPicker).
@@ -41,10 +44,16 @@ export function NoteFolderChip({
   const [open, setOpen] = React.useState(false);
   const { data: folders = [] } = useFolders();
   const selected = value ? folderById(folders, value) : null;
+  // A move out of a shared folder takes the team's access to the note with it, so it asks first.
+  const [leaving, setLeaving] = React.useState<{ id: string | null } | null>(null);
 
   const select = (id: string | null) => {
-    onChange(id);
     setOpen(false);
+    if (moveLeavesSharedFolder(folders, value, id)) {
+      setLeaving({ id });
+      return;
+    }
+    onChange(id);
   };
 
   return (
@@ -53,24 +62,15 @@ export function NoteFolderChip({
         <button
           type="button"
           aria-label={selected ? t('notes.folders.change') : t('notes.folders.add')}
+          // The shared folder chip, so the note's folder reads the same as on a note row and the
+          // folders strip; dashed while the note has no folder, like the strip's create chip.
           className={cn(
-            'inline-flex h-[22px] items-center gap-1 rounded-sm border px-2 text-2xs font-medium transition-colors',
-            // Outlined, not filled: a filled chip here was bg-muted + text-muted-foreground
-            // + border-border, which is how disabled controls are drawn — the folder NAME,
-            // real content, was painted in the placeholder colour. Outline + foreground text
-            // also keeps it distinct from the tag badges beside it, which own the fills.
-            // The outline is --border: --surface-raised is #fcfcfd in light, the exact value of
-            // --background, so that chip had no visible edge outside dark.
-            selected
-              ? 'border-border text-foreground hover:bg-surface-raised'
-              : 'border-dashed border-border text-muted-foreground hover:bg-surface-raised hover:text-foreground'
+            folderChipClass('xs', { interactive: true, dashed: !selected }),
+            'cursor-pointer'
           )}
         >
           {selected ? (
-            <>
-              <FolderIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
-              <span className="max-w-40 truncate">{folderPath(folders, selected.id)}</span>
-            </>
+            <FolderChipLabel name={folderPath(folders, selected.id)} nameClassName="max-w-40" />
           ) : (
             <>
               <FolderPlus className="h-3 w-3 shrink-0" />
@@ -115,6 +115,15 @@ export function NoteFolderChip({
           </CommandList>
         </Command>
       </PopoverContent>
+      <MoveOutOfSharedDialog
+        open={leaving !== null}
+        what="note"
+        onCancel={() => setLeaving(null)}
+        onConfirm={() => {
+          if (leaving) onChange(leaving.id);
+          setLeaving(null);
+        }}
+      />
     </Popover>
   );
 }

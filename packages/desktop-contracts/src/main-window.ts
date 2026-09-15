@@ -333,6 +333,8 @@ export const transportRequestSchema = z.object({
   path: z.string().min(1),
   query: z.record(z.string(), z.string()).optional(),
   body: z.unknown().optional(),
+  /** Reject an account-owned write if the renderer's initiating account is no longer active. */
+  expectedAccountId: z.string().min(1).optional(),
 });
 export type TransportRequest = z.infer<typeof transportRequestSchema>;
 
@@ -705,11 +707,13 @@ export const recordingLanguageRequestSchema = stopRecordingRequestSchema.extend(
   language: TranscriptionLanguageSchema,
 });
 export type RecordingLanguageRequest = z.infer<typeof recordingLanguageRequestSchema>;
-export const recordingSkillWorkflowRequestSchema = z.object({
-  active: z.boolean(),
-  ownerSessionKey: z.string().min(1),
-  ownerOrgId: z.string().min(1),
-}).strict();
+export const recordingSkillWorkflowRequestSchema = z
+  .object({
+    active: z.boolean(),
+    ownerSessionKey: z.string().min(1),
+    ownerOrgId: z.string().min(1),
+  })
+  .strict();
 export type RecordingSkillWorkflowRequest = z.infer<typeof recordingSkillWorkflowRequestSchema>;
 
 /**
@@ -746,11 +750,15 @@ export const recordingStateViewSchema = z
   .object({
     recordingId: z.string().nullable(),
     finalizingRecordingIds: z.array(z.string()),
-    completedRecordings: z.array(z.object({
-      recordingId: z.string(),
-      noteId: z.string().nullable(),
-      segments: z.number().int().nonnegative(),
-    }).strict()),
+    completedRecordings: z.array(
+      z
+        .object({
+          recordingId: z.string(),
+          noteId: z.string().nullable(),
+          segments: z.number().int().nonnegative(),
+        })
+        .strict()
+    ),
     status: z.enum(['idle', 'starting', 'recording', 'paused', 'stopping', 'error']),
     captureMode: captureModeSchema.nullable(),
     requestedCaptureMode: captureModeSchema.nullable(),
@@ -1086,12 +1094,14 @@ export const telemetryCaptureRequestSchema = z
 export type TelemetryCaptureRequest = z.infer<typeof telemetryCaptureRequestSchema>;
 
 /** Plan facts are scoped to the renderer's account, organization and telemetry generation. */
-export const telemetryPlanIdentityRequestSchema = z.object({
-  revision: z.number().int().nonnegative(),
-  accountId: z.string().min(1).max(400),
-  orgId: z.string().min(1).max(400),
-  planExternalId: z.string().min(1).max(200).nullable(),
-}).strict();
+export const telemetryPlanIdentityRequestSchema = z
+  .object({
+    revision: z.number().int().nonnegative(),
+    accountId: z.string().min(1).max(400),
+    orgId: z.string().min(1).max(400),
+    planExternalId: z.string().min(1).max(200).nullable(),
+  })
+  .strict();
 export type TelemetryPlanIdentityRequest = z.infer<typeof telemetryPlanIdentityRequestSchema>;
 
 export const telemetryStackFrameSchema = z

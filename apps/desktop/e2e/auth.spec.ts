@@ -106,8 +106,7 @@ const deliverNav = (app: ElectronApplication, appPath: string): Promise<void> =>
   deliverOpenUrl(app, `${NAV_SCHEME}${appPath}`);
 
 /** The hash router's current app path (createHashHistory keeps it in location.hash). */
-const routerHash = (page: Page): Promise<string> =>
-  page.evaluate(() => window.location.hash);
+const routerHash = (page: Page): Promise<string> => page.evaluate(() => window.location.hash);
 
 const openApp = async (
   extraEnv: Record<string, string>
@@ -272,10 +271,10 @@ test.describe('authentication flow (fake OIDC server)', () => {
 
     await completeSignIn(page, launched.app);
 
-    // The trigger is the signed-in surface and shows the active account's email.
+    // The compact trigger shows the account name; the menu retains the email.
     const trigger = page.getByTestId('desktop-account-switcher');
     await expect(trigger).toBeVisible();
-    await expect(trigger).toContainText(server.email);
+    await expect(trigger).toContainText('E2E');
 
     // Open it: sign-out is offered at the top level, and the account list lives
     // one level in — the shared <AccountSwitcher> (app-ui) puts the accounts and
@@ -324,9 +323,7 @@ test.describe('authentication flow (fake OIDC server)', () => {
     expect(result).toEqual({ ok: true, status: 200, bodyJson: { results: [] } });
 
     // Main stamped the Bearer id_token (the renderer never sees a token).
-    const meReq = server.requests.find(
-      r => r.method === 'GET' && r.path === '/apps/v1/me/notes'
-    );
+    const meReq = server.requests.find(r => r.method === 'GET' && r.path === '/apps/v1/me/notes');
     expect(meReq).toBeDefined();
     expect(meReq?.headers['authorization']).toBe(`Bearer ${server.minted[0].idToken}`);
     // A fresh desktop sign-in has no active org yet, so

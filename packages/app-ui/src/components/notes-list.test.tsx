@@ -30,3 +30,11 @@ it.each([
   render(<NotesList showPageHeader={false} sortBy={sortBy} sortOrder={sortOrder} />);
   expect(screen.getAllByTestId('note').map(el => el.textContent)).toEqual(expected);
 });
+
+it('narrows the list to notes whose title contains the search, and says when none do', () => {
+  const { rerender } = render(<NotesList showPageHeader={false} query="alp" />);
+  expect(screen.getAllByTestId('note').map(el => el.textContent)).toEqual(['Alpha']);
+  rerender(<NotesList showPageHeader={false} query="zzz" />);
+  expect(screen.queryAllByTestId('note')).toHaveLength(0);
+  expect(screen.getByText('notes.list.noMatch')).toBeTruthy();
+});

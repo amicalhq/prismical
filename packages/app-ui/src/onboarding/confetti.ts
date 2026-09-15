@@ -19,7 +19,7 @@ export async function celebrateOnboarding(isCurrent: () => boolean): Promise<voi
       disableForReducedMotion: true,
     });
   } catch {
-    /* A decoration must never affect a successful Keep. */
+    /* A decoration must never affect a successful Apply. */
   } finally {
     canvas?.remove();
   }

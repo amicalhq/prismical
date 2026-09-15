@@ -20,6 +20,11 @@ const mocks = vi.hoisted(() => ({
   workflow: undefined as WorkflowRuntime | undefined,
   native: false,
   resolve: vi.fn(),
+  deliver: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock('./diff/skill-result-application', async importOriginal => ({
+  ...await importOriginal<typeof import('./diff/skill-result-application')>(),
+  waitForSkillResultDelivery: mocks.deliver,
 }));
 vi.mock('../sync/provider', () => ({ useSyncStore: () => mocks.store }));
 vi.mock('../api/hooks/skill-runs', () => ({
@@ -29,7 +34,8 @@ vi.mock('../api/hooks/skill-runs', () => ({
 }));
 vi.mock('../api/hooks/model-defaults', () => ({ ensureModelDefault: async () => ({}) }));
 vi.mock('../ports-context', () => ({
-  usePorts: () => ({ analytics: { capture: mocks.capture }, workflow: mocks.workflow, recording: { control: mocks.native ? {} : undefined } }),
+  activeOrgIdOf: () => "org",
+  usePorts: () => ({ auth: { getSession: () => ({ activeSessionKey: "session" }) }, analytics: { capture: mocks.capture }, workflow: mocks.workflow, recording: { control: mocks.native ? {} : undefined } }),
   // The recovery actions ("Open AI models") navigate; the title flow never triggers one.
   useNavigation: () => ({ push: () => {}, replace: () => {}, back: () => {} }),
 }));
@@ -82,7 +88,7 @@ describe('page workflow skill ownership', () => {
     skillId: 'skl_enhance', skillName: 'Enhance', modelId: 'test-model',
     mode: 'replace-doc', rawMarkdown: 'Summary', reasoning: null,
   };
-  const editor = { getJSON: () => ({ type: 'doc', content: [] }) } as unknown as Editor;
+  const editor = { on: vi.fn(), off: vi.fn(), getJSON: () => ({ type: 'doc', content: [] }) } as unknown as Editor;
 
   beforeEach(() => { mocks.workflow = createWorkflowRuntime(); });
 
@@ -109,7 +115,7 @@ describe('page workflow skill ownership', () => {
     const { result: hook, unmount } = renderHook(() => useRunSkill(noteId, editor));
     await act(() => hook.current.run({ skillId: body.skillId, skillName: body.skillName, source: 'auto-enhance' }));
     const proposal = useSkillDiffStore.getState().getCandidate(noteId)!;
-    expect(mocks.request.mock.calls[0]![1]).toMatchObject({ recoverable: false, retainResult: true });
+    expect(mocks.request.mock.calls[0]![1]).toMatchObject({ recoverable: true, retainResult: true });
     expect(mocks.workflow!.getSnapshot()).toMatchObject({
       kind: 'skill', phase: 'review', workflowId: proposal.workflowId, proposalId: proposal.proposalId,
     });
@@ -175,7 +181,7 @@ describe('page workflow skill ownership', () => {
     let doc = original;
     let finish!: (value: typeof body) => void;
     mocks.request.mockReturnValue(new Promise(resolve => { finish = resolve; }));
-    const liveEditor = { getJSON: () => doc } as unknown as Editor;
+    const liveEditor = { on: vi.fn(), off: vi.fn(), getJSON: () => doc } as unknown as Editor;
     const { result: hook } = renderHook(() => useRunSkill(noteId, liveEditor));
     let pending!: Promise<void>;
     act(() => { pending = hook.current.run({ skillId: body.skillId, skillName: body.skillName }); });
@@ -185,10 +191,25 @@ describe('page workflow skill ownership', () => {
     expect(useSkillDiffStore.getState().getCandidate(noteId)?.baseContent).toBe(JSON.stringify(original));
   });
 
+  it('retains the saved input when a recording retry returns an older completed result', async () => {
+    const recoveryContext = { baseContent: '{"type":"doc","content":[]}', selectionText: 'Original selection',
+      selectionAnchors: { relFrom: { item: 1 }, relTo: { item: 2 } } };
+    mocks.request.mockResolvedValue({ ...body, resultId: 'saved', recoveryContext });
+    const changedEditor = { on: vi.fn(), off: vi.fn(), getJSON: () => ({ type: 'doc', content: [
+      { type: 'paragraph', content: [{ type: 'text', text: 'New collaborator edit' }] },
+    ] }) } as unknown as Editor;
+    const { result: hook } = renderHook(() => useRunSkill(noteId, changedEditor));
+    await act(() => hook.current.run({ skillId: body.skillId, skillName: body.skillName, recordingId: 'rec' }));
+    expect(useSkillDiffStore.getState().getCandidate(noteId)).toMatchObject({
+      baseContent: recoveryContext.baseContent, selectionText: recoveryContext.selectionText,
+      selectionAnchors: recoveryContext.selectionAnchors,
+    });
+  });
+
   it('uses the current document for refinement even without caller-supplied markdown', async () => {
     mocks.request.mockResolvedValue(body);
     let text = 'Original local body';
-    const liveEditor = { getJSON: () => ({ type: 'doc', content: [
+    const liveEditor = { on: vi.fn(), off: vi.fn(), getJSON: () => ({ type: 'doc', content: [
       { type: 'paragraph', content: [{ type: 'text', text }] },
     ] }) } as unknown as Editor;
     const { result: hook } = renderHook(() => useRunSkill(noteId, liveEditor));
@@ -210,7 +231,7 @@ describe('page workflow skill ownership', () => {
   ] as const;
 
   it.each(unsendableDocuments)('refuses an %s live body without calling the model', async (_reason, doc) => {
-    const liveEditor = { getJSON: () => doc } as unknown as Editor;
+    const liveEditor = { on: vi.fn(), off: vi.fn(), getJSON: () => doc } as unknown as Editor;
     const { result: hook } = renderHook(() => useRunSkill(noteId, liveEditor));
     await act(() => hook.current.run({ skillId: body.skillId, skillName: body.skillName }));
     expect(mocks.request).not.toHaveBeenCalled();
@@ -222,7 +243,7 @@ describe('page workflow skill ownership', () => {
   it.each(unsendableDocuments)('retains the previous proposal when refinement has an %s body', async (_reason, doc) => {
     mocks.request.mockResolvedValue(body);
     let current: unknown = { type: 'doc', content: [] };
-    const liveEditor = { getJSON: () => current } as unknown as Editor;
+    const liveEditor = { on: vi.fn(), off: vi.fn(), getJSON: () => current } as unknown as Editor;
     const { result: hook } = renderHook(() => useRunSkill(noteId, liveEditor));
     await act(() => hook.current.run({ skillId: body.skillId, skillName: body.skillName }));
     const proposal = useSkillDiffStore.getState().getCandidate(noteId)!;
@@ -237,7 +258,7 @@ describe('page workflow skill ownership', () => {
 
   it.each(unsendableDocuments)('preserves legacy server fallback for an %s body', async (_reason, doc) => {
     mocks.workflow = undefined;
-    const liveEditor = { getJSON: () => doc } as unknown as Editor;
+    const liveEditor = { on: vi.fn(), off: vi.fn(), getJSON: () => doc } as unknown as Editor;
     const { result: hook } = renderHook(() => useRunSkill(noteId, liveEditor));
     await act(() => hook.current.run(args));
     expect(mocks.request).toHaveBeenCalledOnce();
@@ -253,9 +274,9 @@ describe('page workflow skill ownership', () => {
     const proposal = useSkillDiffStore.getState().getCandidate(noteId)!;
     await act(() => hook.current.run({ skillId: body.skillId, skillName: body.skillName,
       source: 'refine', proposalId: proposal.proposalId, refineInstruction: 'Shorter' }));
-    expect(mocks.request.mock.calls[1]![1]).toMatchObject({ retainResult: true, recoverable: false });
-    expect(mocks.request.mock.calls[1]![1].recoveryResultId).toBeUndefined();
-    expect(mocks.resolve).toHaveBeenCalledWith(noteId, 'previous-result', { discardAccepted: true });
+    expect(mocks.request.mock.calls[1]![1]).toMatchObject({ retainResult: true, recoverable: true });
+    expect(mocks.request.mock.calls[1]![1].recoveryResultId).toBe(proposal.resultId);
+    expect(mocks.resolve).not.toHaveBeenCalled();
     expect(useSkillDiffStore.getState().getCandidate(noteId)?.resultId).toBe('refined-result');
   });
 
@@ -272,22 +293,22 @@ describe('page workflow skill ownership', () => {
       recordingId: 'rec', source: 'refine', proposalId: proposal.proposalId,
       refineInstruction: 'Shorter', previousOutput: proposal.rawMarkdown }));
     expect(mocks.request.mock.calls[1]![1]).toMatchObject({ recoverable: true, retainResult: true });
-    expect(mocks.request.mock.calls[1]![1].recoveryResultId).toBeUndefined();
+    expect(mocks.request.mock.calls[1]![1].recoveryResultId).toBe(proposal.resultId);
     expect(useSkillDiffStore.getState().getCandidate(noteId)).toMatchObject({ resultId: 'refined', recoverable: true });
-    expect(mocks.resolve).toHaveBeenCalledWith(noteId, 'original', { discardAccepted: true });
+    expect(mocks.resolve).not.toHaveBeenCalled();
   });
 
-  it('keeps native manual recording receipts out of restart recovery when refined', async () => {
+  it('keeps manual recording suggestions recoverable when refined', async () => {
     mocks.native = true;
     mocks.request.mockResolvedValueOnce({ ...body, recordingId: 'rec', resultId: 'original' })
       .mockResolvedValueOnce({ ...body, recordingId: 'rec', resultId: 'refined' });
     const { result: hook } = renderHook(() => useRunSkill(noteId, editor));
     await act(() => hook.current.run({ skillId: body.skillId, skillName: body.skillName, recordingId: 'rec' }));
     const proposal = useSkillDiffStore.getState().getCandidate(noteId)!;
-    expect(proposal.recoverable).toBe(false);
+    expect(proposal.recoverable).toBe(true);
     await act(() => hook.current.run({ skillId: body.skillId, skillName: body.skillName,
       recordingId: 'rec', source: 'refine', proposalId: proposal.proposalId, refineInstruction: 'Shorter' }));
-    expect(mocks.request.mock.calls[1]![1]).toMatchObject({ retainResult: true, recoverable: false });
+    expect(mocks.request.mock.calls[1]![1]).toMatchObject({ retainResult: true, recoverable: true });
   });
 
   it('takes the reserved enhancement handoff without admitting another workflow', async () => {
@@ -363,7 +384,7 @@ function delayedResult() {
 describe('title skill result dispatch', () => {
   it('records a note-body suggestion only after it is staged', async () => {
     mocks.request.mockResolvedValue({ skillId: 'skl_enhance', skillName: 'Enhance', modelId: 'test-model', mode: 'replace-doc', rawMarkdown: 'Summary', reasoning: null });
-    const editor = { getJSON: () => ({ type: 'doc', content: [] }) } as unknown as Editor;
+    const editor = { on: vi.fn(), off: vi.fn(), getJSON: () => ({ type: 'doc', content: [] }) } as unknown as Editor;
     const { result: hook } = renderHook(() => useRunSkill(noteId, editor));
     await act(() => hook.current.run({ skillId: 'skl_enhance', skillName: 'Enhance' }));
     expect(useSkillDiffStore.getState().getCandidate(noteId)?.rawMarkdown).toBe('Summary');
@@ -401,7 +422,7 @@ describe('title skill result dispatch', () => {
   it('publishes the transcript wait and lets another panel cancel it without retrying', async () => {
     useSkillRunActivityStore.setState({ runsByNote: new Map(), runningByNote: new Map() });
     mocks.request.mockRejectedValue(new ApiError('TRANSCRIPT_FINALIZING', 'Waiting', 409, { retryAfterMs: 30_000 }));
-    const editor = { getJSON: () => ({ type: 'doc', content: [] }) } as unknown as Editor;
+    const editor = { on: vi.fn(), off: vi.fn(), getJSON: () => ({ type: 'doc', content: [] }) } as unknown as Editor;
     const { result: hook } = renderHook(() => useRunSkill(noteId, editor));
     let pending!: Promise<void>;
     act(() => { pending = hook.current.run({ skillId: 'skl_enhance', skillName: 'Enhance', recordingId: 'rec_1' }); });
@@ -455,7 +476,7 @@ describe('title skill result dispatch', () => {
   });
   it('sends the current editor body, before the persisted snapshot catches up', async () => {
     const editor = {
-      getJSON: () => ({
+      on: vi.fn(), off: vi.fn(), getJSON: () => ({
         type: 'doc',
         content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Just typed' }] }],
       }),
@@ -593,11 +614,73 @@ it.each(['NO_TRANSCRIPT', 'NOTE_EMPTY'])('does not retain a recording failure fo
   useSkillRunActivityStore.setState({ runsByNote: new Map(), runningByNote: new Map() });
   useAutoEnhanceStore.getState().markWaiting('rec_silent');
   mocks.request.mockRejectedValue(new ApiError(code, 'Empty input', 400));
-  const editor = { getJSON: () => ({ type: 'doc', content: [] }) } as unknown as Editor;
+  const editor = { on: vi.fn(), off: vi.fn(), getJSON: () => ({ type: 'doc', content: [] }) } as unknown as Editor;
   const { result: hook } = renderHook(() => useRunSkill(noteId, editor));
   await act(() => hook.current.run({ skillId: 'skl_enhance', skillName: 'Enhance', recordingId: 'rec_silent' }));
   expect(useAutoEnhanceStore.getState().failedRecordingId).toBeNull();
   expect(useAutoEnhanceStore.getState().waitingRecordingId).toBeNull();
   expect(useSkillRunActivityStore.getState().runsByNote.get(noteId)?.at(-1)?.status).toBe('skipped');
   expect(hook.current.running).toBe(false);
+});
+
+
+describe('fresh empty enhancement auto-save policy', () => {
+  const empty = { type: 'doc', content: [{ type: 'paragraph' }] };
+  const scratch = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Keep the sapphire deadline.' }] }] };
+  const output = { skillId: 'skl_enhance', skillName: 'Enhance', modelId: 'test',
+    mode: 'replace-doc', resultId: 'result', rawMarkdown: 'Generated summary', reasoning: null };
+  beforeEach(() => {
+    mocks.workflow = createWorkflowRuntime();
+    mocks.deliver.mockReset().mockResolvedValue(undefined);
+  });
+  function editorWith(content = empty) {
+    let current = content;
+    let changed = () => {};
+    return {
+      editor: { getJSON: () => current, on: (_event: string, cb: () => void) => { changed = cb; }, off: vi.fn() } as unknown as Editor,
+      change: (value: typeof empty) => { current = value; changed(); },
+    };
+  }
+  it('grants one-shot permission only after fresh generation from a synced empty note', async () => {
+    const { editor } = editorWith();
+    mocks.request.mockImplementation(async (_skill, body) => ({ ...output, recoveryContext: body.recoveryContext }));
+    const { result } = renderHook(() => useRunSkill(noteId, editor));
+    await act(() => result.current.run({ skillId: output.skillId, skillName: 'Enhance', source: 'auto-enhance' }));
+    expect(mocks.deliver).toHaveBeenCalledWith(editor);
+    expect(useSkillDiffStore.getState().getCandidate(noteId)?.autoApply).toBe(true);
+  });
+  it('preserves scratch input and review', async () => {
+    const { editor } = editorWith(scratch);
+    mocks.request.mockImplementation(async (_skill, body) => ({ ...output, recoveryContext: body.recoveryContext }));
+    const { result } = renderHook(() => useRunSkill(noteId, editor));
+    await act(() => result.current.run({ skillId: output.skillId, skillName: 'Enhance' }));
+    expect(mocks.request.mock.calls[0]?.[1].noteMarkdown).toContain('sapphire deadline');
+    expect(useSkillDiffStore.getState().getCandidate(noteId)?.autoApply).toBe(false);
+  });
+  it.each([false, true])('typing during generation revokes permission even if erased: %s', async erase => {
+    const { editor, change } = editorWith();
+    mocks.request.mockImplementation(async (_skill, body) => {
+      change(scratch);
+      if (erase) change(empty);
+      return { ...output, recoveryContext: body.recoveryContext };
+    });
+    const { result } = renderHook(() => useRunSkill(noteId, editor));
+    await act(() => result.current.run({ skillId: output.skillId, skillName: 'Enhance' }));
+    expect(useSkillDiffStore.getState().getCandidate(noteId)?.autoApply).toBe(false);
+  });
+  it('does not automatically accept a previously pending response returned by the run endpoint', async () => {
+    const { editor } = editorWith();
+    mocks.request.mockResolvedValue({ ...output, recoveryContext: { baseContent: JSON.stringify(empty), generationId: crypto.randomUUID() } });
+    const { result } = renderHook(() => useRunSkill(noteId, editor));
+    await act(() => result.current.run({ skillId: output.skillId, skillName: 'Enhance' }));
+    expect(useSkillDiffStore.getState().getCandidate(noteId)?.autoApply).toBe(false);
+  });
+  it('keeps an unsynced result recoverable in review', async () => {
+    const { editor } = editorWith();
+    mocks.deliver.mockRejectedValue(new Error('offline'));
+    mocks.request.mockImplementation(async (_skill, body) => ({ ...output, recoveryContext: body.recoveryContext }));
+    const { result } = renderHook(() => useRunSkill(noteId, editor));
+    await act(() => result.current.run({ skillId: output.skillId, skillName: 'Enhance' }));
+    expect(useSkillDiffStore.getState().getCandidate(noteId)?.autoApply).toBe(false);
+  });
 });

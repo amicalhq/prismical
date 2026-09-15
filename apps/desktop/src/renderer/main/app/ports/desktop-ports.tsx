@@ -164,15 +164,26 @@ function createEnvPort(desktopEnv: DesktopEnvDescriptor): EnvPort {
  */
 const toWireBody = (body: unknown): unknown => JSON.parse(JSON.stringify(body)) as unknown;
 
-const transportPort: TransportPort = {
-  request: request =>
-    window.desktop.transport.request({
-      method: request.method,
-      path: request.path,
-      ...(request.query ? { query: { ...request.query } } : {}),
-      ...(request.body !== undefined ? { body: toWireBody(request.body) } : {}),
-    }),
-};
+export function createTransportPort(
+  auth: Pick<AuthPort, 'getSession'>,
+  appMode: 'local' | 'cloud'
+): TransportPort {
+  return {
+    request: request => {
+      // Pin the renderer's owner before IPC, including while main is switching accounts.
+      const expectedAccountId = appMode === 'cloud' ? auth.getSession().activeSub : undefined;
+      if (appMode === 'cloud' && !expectedAccountId)
+        return Promise.resolve({ error: { code: 'INTERNAL' } });
+      return window.desktop.transport.request({
+        method: request.method,
+        path: request.path,
+        ...(expectedAccountId ? { expectedAccountId } : {}),
+        ...(request.query ? { query: { ...request.query } } : {}),
+        ...(request.body !== undefined ? { body: toWireBody(request.body) } : {}),
+      });
+    },
+  };
+}
 
 // Ask streaming shim: the AI-SDK transport (DefaultChatTransport) calls this
 // instead of fetch(). It opens a MessagePort stream through main — which stamps
@@ -308,7 +319,8 @@ const recordingPort: RecordingPort = {
           captureMode: DESKTOP_CAPTURE_MODE,
           noteId,
           title,
-          language: language === undefined ? undefined : TranscriptionLanguageSchema.parse(language),
+          language:
+            language === undefined ? undefined : TranscriptionLanguageSchema.parse(language),
           quotaRemainingAtStartSeconds: quotaRemainingAtStartSeconds ?? null,
           // Auto-pause policy: resolved renderer-side from the org gate + tuning and
           // handed over per session, so main runs the same machine web does without looking
@@ -324,9 +336,11 @@ const recordingPort: RecordingPort = {
       }
     },
     stop: recordingId => window.desktop.recording.stop({ recordingId }),
-    setLanguage: (recordingId, language) => window.desktop.recording.setLanguage({
-      recordingId, language: TranscriptionLanguageSchema.parse(language),
-    }),
+    setLanguage: (recordingId, language) =>
+      window.desktop.recording.setLanguage({
+        recordingId,
+        language: TranscriptionLanguageSchema.parse(language),
+      }),
     claimCompletion: recordingId =>
       window.desktop.recording.claimCompletion({ recordingId }).catch(error => {
         log('recording.claimCompletion invoke failed', error);
@@ -659,7 +673,11 @@ export function createDesktopPorts(desktopEnv: DesktopEnvDescriptor): DesktopPor
   const auth = desktopEnv.appMode === 'local' ? createLocalAuthPort() : createAuthPort();
   const workflow = createWorkflowRuntime();
   const releaseSkillWorkflow = reserveNativeSkillWorkflow(auth, workflow);
-  const recordingSession = createNativeRecordingController({ auth, control: recordingPort.control!, workflow });
+  const recordingSession = createNativeRecordingController({
+    auth,
+    control: recordingPort.control!,
+    workflow,
+  });
   const appPorts: AppPorts = {
     navigation: navigationAdapter,
     env,
@@ -672,9 +690,15 @@ export function createDesktopPorts(desktopEnv: DesktopEnvDescriptor): DesktopPor
     workflow,
     recordingSession,
   };
-  return { appPorts, env, transport: transportPort, askFetch, dispose() {
-    releaseSkillWorkflow();
-    recordingSession.dispose();
-    workflow.dispose();
-  } };
+  return {
+    appPorts,
+    env,
+    transport: createTransportPort(auth, desktopEnv.appMode),
+    askFetch,
+    dispose() {
+      releaseSkillWorkflow();
+      recordingSession.dispose();
+      workflow.dispose();
+    },
+  };
 }

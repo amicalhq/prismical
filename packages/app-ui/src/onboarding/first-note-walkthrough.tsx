@@ -3,6 +3,7 @@
 import * as React from 'react';
 import {
   useActiveAccountId,
+  useAccountExperience,
   useActiveOrgId,
   useActiveSessionKey,
   useEnv,
@@ -33,6 +34,15 @@ import {
 import { celebrateOnboarding } from './confetti';
 
 const ReplayContext = React.createContext<(() => void) | null>(null);
+
+/**
+ * Restarts the walkthrough, or null when there is nothing to replay. Exposed so
+ * the sidebar's help menu can offer the tour without rendering the standalone
+ * replay row the footer used to carry.
+ */
+export function useWalkthroughReplay(): (() => void) | null {
+  return React.useContext(ReplayContext);
+}
 export function FirstNoteWalkthroughReplay({
   onReplay,
   compact = false,
@@ -140,6 +150,7 @@ function ScopedWalkthrough({
   }) => void;
 }) {
   const key = walkthroughKey(user);
+  const accountPreferences = useAccountExperience();
   const [state, setState] = React.useState<Walkthrough | null>(null);
   const [doneOpen, setDoneOpen] = React.useState(false);
   const [canReplay, setCanReplay] = React.useState(false);
@@ -180,24 +191,27 @@ function ScopedWalkthrough({
 
   React.useEffect(() => {
     live.current = true;
-    const saved = readWalkthrough(key);
-    setState(saved);
-    resumeNote.current = saved?.status === 'active' && saved.orgId === org ? saved.noteId : null;
-    const sync = (event: StorageEvent) => {
-      if (event.key === `${key}:replay-retired`) setCanReplay(replayAvailable(key, 0));
-      if (event.key === key || event.key === null)
-        setState(readWalkthrough(key) ?? { status: 'dismissed' });
-    };
-    window.addEventListener('storage', sync);
     return () => {
       live.current = false;
-      window.removeEventListener('storage', sync);
     };
-  }, [key, org]);
+  }, []);
+
+  const initialized = React.useRef(false);
+  React.useEffect(() => {
+    if (!accountPreferences.data) return;
+    const saved = accountPreferences.data.onboarding.walkthrough;
+    setState(saved);
+    setCanReplay(!accountPreferences.data.onboarding.replayRetired);
+    if (!initialized.current) {
+      initialized.current = true;
+      resumeNote.current = saved?.status === 'active' && saved.orgId === org ? saved.noteId : null;
+    }
+  }, [accountPreferences.data, org]);
 
   React.useEffect(() => {
     // Wait for the correctly scoped store's settled list. Never interpret a cold pull as empty.
     if (
+      !accountPreferences.data ||
       !notes.isSuccess ||
       !store ||
       store.partition.accountSub !== user ||
@@ -215,7 +229,7 @@ function ScopedWalkthrough({
     };
     const savedInitial = writeWalkthrough(key, initial);
     setState(savedInitial ? initial : { status: 'dismissed' });
-  }, [notes.isSuccess, notes.data, store, user, org, key, auth]);
+  }, [accountPreferences.data, notes.isSuccess, notes.data, store, user, org, key, auth]);
 
   React.useEffect(() => {
     // A persisted recording step belongs to its note, not the landing page after sign-in.
@@ -229,7 +243,7 @@ function ScopedWalkthrough({
       return;
     }
     if (pathname !== `/notes/${noteId}`) navigation.replace(`/notes/${noteId}`);
-  }, [notes.isSuccess, notes.data, key, pathname, navigation, isCurrent]);
+  }, [accountPreferences.data, notes.isSuccess, notes.data, key, pathname, navigation, isCurrent]);
 
   const notify = React.useCallback(
     (event: WalkthroughEvent) => {

@@ -157,15 +157,22 @@ test.describe('cloud desktop controls', () => {
   });
 
   test('shows remaining usage, exhaustion, compact footer and billing navigation', async () => {
-    await expect(page.getByText('1h 40m left', { exact: true })).toBeVisible();
-    await expect(page.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '67');
-    await expect(page.getByRole('link', { name: 'Discord', exact: true })).toBeVisible();
+    await page
+      .getByRole('button', { name: 'Cloud transcription 1 hr 40 min left', exact: true })
+      .click();
+    await expect(page.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '33');
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'Help and support', exact: true }).click();
+    await expect(page.getByRole('menuitem', { name: 'Discord', exact: true })).toBeVisible();
     await expect(page.locator('a[href="mailto:help@prismical.ai"]')).toBeVisible();
     await page.screenshot({ path: test.info().outputPath('sidebar-usage.png') });
     usedSeconds = 18_000;
     await page.reload();
+    await page
+      .getByRole('button', { name: 'Cloud transcription No time left', exact: true })
+      .click();
     await expect(page.getByText('No time left', { exact: true })).toBeVisible();
-    await expect(page.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100');
+    await expect(page.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0');
     await page.getByRole('link', { name: 'Upgrade to unlimited', exact: true }).click();
     await expect.poll(() => page.evaluate(() => window.location.hash)).toBe('#/settings/billing');
   });
@@ -202,7 +209,9 @@ test.describe('cloud desktop controls', () => {
     await composer.press('Enter');
     await expect(composer).toHaveText('Summarize my notes');
     await expect(
-      page.getByText('Ask AI isn’t included in your plan. Type / to run a skill instead.')
+      page
+        .getByRole('status')
+        .filter({ hasText: 'Get answers and insights from your notes with Ask AI.' })
     ).toBeVisible();
     expect(server.requests.filter(request => request.path === '/apps/v1/me/ask')).toHaveLength(0);
   });
@@ -210,7 +219,9 @@ test.describe('cloud desktop controls', () => {
   test('warns only for recordings that spend Cloud quota and raises the next threshold', async () => {
     usedSeconds = 17_400;
     await page.reload();
-    await expect(page.getByText('10m left', { exact: true })).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: 'Cloud transcription 10 min left', exact: true })
+    ).toBeVisible();
     await page.clock.install();
     await page.evaluate(() => {
       window.location.hash = '#/notes/nt_cloud_ui';
@@ -224,7 +235,8 @@ test.describe('cloud desktop controls', () => {
           }),
         {
           recordingId,
-          finalizingRecordingIds: [], completedRecordings: [],
+          finalizingRecordingIds: [],
+          completedRecordings: [],
           status: 'recording',
           captureMode: 'mic',
           requestedCaptureMode: 'mic',
@@ -256,7 +268,9 @@ test.describe('cloud desktop controls', () => {
   test('restoring a paused recording uses its original allowance and capture time', async () => {
     usedSeconds = 17_160;
     await page.reload();
-    await expect(page.getByText('14m left', { exact: true })).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: 'Cloud transcription 14 min left', exact: true })
+    ).toBeVisible();
     await page.evaluate(() => {
       window.location.hash = '#/notes/nt_cloud_ui';
     });
@@ -267,7 +281,8 @@ test.describe('cloud desktop controls', () => {
         kind: 'push',
         view: {
           recordingId: 'rec_restored',
-          finalizingRecordingIds: [], completedRecordings: [],
+          finalizingRecordingIds: [],
+          completedRecordings: [],
           status: 'paused',
           captureMode: 'mic',
           requestedCaptureMode: 'mic',

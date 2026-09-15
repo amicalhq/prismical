@@ -27,9 +27,9 @@ import { EVENTS } from "../../analytics-events";
 import { usePorts } from "../../ports-context";
 import type { Note } from "@prismical/app-contracts";
 import {
-  getRecordingPreferences,
   markPendingAutoTranscribe,
 } from "../../recording/recording-preferences";
+import { currentAccountExperience } from "../../settings/account-experience-store";
 import { formatDefaultNoteTitle } from "../../notes/default-note-title";
 
 /** Read-result shape shared by the synchronized Legend-State hooks ({data,isLoading,error,refetch}). */
@@ -191,7 +191,7 @@ export function useCreateNote(): SyncMutationResult<
       from_folder: !!vars?.folderId,
       from_event: !!vars?.eventId,
     });
-    if (!recording.control && getRecordingPreferences().autoTranscribeNewNotes) {
+    if (!recording.control && currentAccountExperience()?.getSnapshot().data?.experience.autoTranscribeNewNotes) {
       markPendingAutoTranscribe(id);
     }
     const row = store.notes$[id]!.peek() as NoteRow;

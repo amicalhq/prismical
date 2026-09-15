@@ -19,6 +19,7 @@ import {
 } from '@prismical/app-i18n';
 import { ApiError, apiClient, ME_PREFIX } from '../api/client';
 import { useActiveSessionKey, useSessionView } from '../ports-context';
+import { AccountExperienceProvider } from './account-experience-provider';
 import { getRecordingPreferences } from '../recording/recording-preferences';
 import {
   clearTranscriptionLanguage,
@@ -73,6 +74,14 @@ export const useTranscriptionPreference = () => useContext(TranscriptionContext)
  * renders in the account's choice on every device.
  */
 export function AccountPreferencesProvider({ children }: { children: ReactNode }) {
+  return (
+    <AccountExperienceProvider>
+      <AccountLanguagePreferences>{children}</AccountLanguagePreferences>
+    </AccountExperienceProvider>
+  );
+}
+
+function AccountLanguagePreferences({ children }: { children: ReactNode }) {
   const locale = useApplicationLocale();
   const sessionKey = useActiveSessionKey();
   const session = useSessionView();

@@ -237,6 +237,12 @@ describe('makeWorkspaceBackendRequest (envelope mapping)', () => {
       timeoutSeconds: 120,
     },
     {
+      operation: 'durable skill run',
+      path: '/apps/v1/me/skills/skl_cleanup/run/durable',
+      serverSeconds: 90,
+      timeoutSeconds: 120,
+    },
+    {
       operation: 'MCP connection test',
       path: '/apps/v1/me/mcp-servers/mcp_example/test',
       serverSeconds: 30,
@@ -303,13 +309,15 @@ describe('makeWorkspaceBackendRequest (envelope mapping)', () => {
         Deferred.doneUnsafe(readingBody, Effect.void);
         return new Promise(() => {});
       };
-      const fiber = yield* Effect.forkChild(runRequest({
-        fetchFn: (_url, init) => {
-          signal = init.signal;
-          return Promise.resolve(response);
-        },
-        req: { method: 'GET', path: '/apps/v1/me' },
-      }));
+      const fiber = yield* Effect.forkChild(
+        runRequest({
+          fetchFn: (_url, init) => {
+            signal = init.signal;
+            return Promise.resolve(response);
+          },
+          req: { method: 'GET', path: '/apps/v1/me' },
+        })
+      );
       yield* Deferred.await(readingBody);
       yield* TestClock.adjust(REQUEST_TIMEOUT);
       assert.isTrue(fiber.pollUnsafe() !== undefined, 'the body shares the request deadline');
@@ -686,6 +694,46 @@ describe('WorkspaceTransport (session-current accessor)', () => {
     }).pipe(Effect.provide(WorkspaceTransportLive))
   );
 
+  it.effect('rejects a profile write initiated by another account before dispatch', () =>
+    Effect.gen(function* () {
+      const ct = yield* WorkspaceTransport;
+      const stub = yield* makeAuthStub;
+      const identity = account('user_2', 'org_b');
+      yield* SubscriptionRef.set(
+        stub.sessionState,
+        authState('signed-in', [identity], identity.sub)
+      );
+      const request = vi.fn(() => Effect.succeed({ ok: true, status: 200, bodyJson: {} } as const));
+      const scope = yield* Scope.make();
+      yield* ct
+        .register({ ...stubClient({ ok: true, status: 200, bodyJson: {} }), identity, request })
+        .pipe(Scope.provide(scope));
+      const req = {
+        method: 'PATCH' as const,
+        path: '/apps/v1/me/profile',
+        expectedAccountId: 'user_1',
+        body: { name: 'Old account name' },
+      };
+      assert.deepStrictEqual(
+        yield* ct.request(req, { mode: 'cloud', sessionState: stub.sessionState }),
+        { error: { code: 'INTERNAL' } }
+      );
+      assert.deepStrictEqual(yield* ct.request(req, { mode: 'local' }), {
+        error: { code: 'INTERNAL' },
+      });
+      assert.strictEqual(request.mock.calls.length, 0);
+      assert.deepStrictEqual(
+        yield* ct.request(
+          { ...req, expectedAccountId: identity.sub },
+          { mode: 'cloud', sessionState: stub.sessionState }
+        ),
+        { ok: true, status: 200, bodyJson: {} }
+      );
+      assert.strictEqual(request.mock.calls.length, 1);
+      yield* Scope.close(scope, Exit.void);
+    }).pipe(Effect.provide(WorkspaceTransportLive))
+  );
+
   it.effect('bounds readiness waits and immediately refuses signed-out requests', () =>
     Effect.gen(function* () {
       const ct = yield* WorkspaceTransport;
@@ -774,23 +822,22 @@ describe('WorkspaceTransport (session-current accessor)', () => {
     }).pipe(Effect.provide(WorkspaceTransportLive))
   );
 
-  it.effect('with no local workspace: waits until the readiness deadline then settles INTERNAL', () =>
-    Effect.gen(function* () {
-      const ct = yield* WorkspaceTransport;
-      assert.isTrue(Option.isNone(yield* ct.current));
-      const pending = yield* ct
-        .request({ method: 'GET', path: '/apps/v1/me' }, { mode: 'local' })
-        .pipe(Effect.forkChild);
-      yield* TestClock.adjust('1 second');
-      assert.isTrue(pending.pollUnsafe() === undefined);
-      yield* TestClock.adjust(WORKSPACE_READY_TIMEOUT);
-      assert.deepStrictEqual(
-        yield* Fiber.join(pending),
-        {
+  it.effect(
+    'with no local workspace: waits until the readiness deadline then settles INTERNAL',
+    () =>
+      Effect.gen(function* () {
+        const ct = yield* WorkspaceTransport;
+        assert.isTrue(Option.isNone(yield* ct.current));
+        const pending = yield* ct
+          .request({ method: 'GET', path: '/apps/v1/me' }, { mode: 'local' })
+          .pipe(Effect.forkChild);
+        yield* TestClock.adjust('1 second');
+        assert.isTrue(pending.pollUnsafe() === undefined);
+        yield* TestClock.adjust(WORKSPACE_READY_TIMEOUT);
+        assert.deepStrictEqual(yield* Fiber.join(pending), {
           error: { code: 'INTERNAL' },
-        }
-      );
-    }).pipe(Effect.provide(WorkspaceTransportLive))
+        });
+      }).pipe(Effect.provide(WorkspaceTransportLive))
   );
 
   it.effect('register publishes the client; the finalizer clears it on scope close', () =>
@@ -816,12 +863,9 @@ describe('WorkspaceTransport (session-current accessor)', () => {
         .request({ method: 'GET', path: '/apps/v1/me' }, { mode: 'local' })
         .pipe(Effect.forkChild);
       yield* TestClock.adjust(WORKSPACE_READY_TIMEOUT);
-      assert.deepStrictEqual(
-        yield* Fiber.join(pending),
-        {
-          error: { code: 'INTERNAL' },
-        }
-      );
+      assert.deepStrictEqual(yield* Fiber.join(pending), {
+        error: { code: 'INTERNAL' },
+      });
     }).pipe(Effect.provide(WorkspaceTransportLive))
   );
 

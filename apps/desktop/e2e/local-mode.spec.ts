@@ -72,8 +72,7 @@ const deviceSettingsJson = (page: Page): Promise<string> =>
       .get()
       .then(settings => JSON.stringify(settings))
   );
-const readOptional = (file: string): Promise<Buffer> =>
-  readFile(file).catch(() => Buffer.alloc(0));
+const readOptional = (file: string): Promise<Buffer> => readFile(file).catch(() => Buffer.alloc(0));
 
 /** A key that could only be in the DB/log because THIS test put it there. */
 const AI_KEY = 'sk-e2e-local-sentinel-7b2e41';
@@ -217,10 +216,9 @@ test.describe('local mode (seeded app:mode profile, no servers)', () => {
     // initial sync, home-route reads, the note lanes above) rides /apps/v1/me/*
     // — nothing tripped the transport path validator, so it needed NO
     // relaxation for local mode. Rejections are warn-logged with the path.
-    const mainLog = await readFile(
-      path.join(profileDir, 'logs', 'main.jsonl'),
-      'utf8'
-    ).catch(() => '');
+    const mainLog = await readFile(path.join(profileDir, 'logs', 'main.jsonl'), 'utf8').catch(
+      () => ''
+    );
     expect(mainLog.length).toBeGreaterThan(0);
     expect(mainLog).not.toContain('path not allowed');
 
@@ -343,7 +341,9 @@ test.describe('local mode (seeded app:mode profile, no servers)', () => {
           const option = page.getByRole('radio', { name, exact: true });
           await option.click();
           await expect(option).toBeChecked();
-          await expect.poll(() => aiSetting(page)).toEqual({ provider: kind, model: null, baseUrl: null });
+          await expect
+            .poll(() => aiSetting(page))
+            .toEqual({ provider: kind, model: null, baseUrl: null });
           await expect(page.getByTestId('ai-provider-fields')).toBeVisible();
         }
       }
@@ -357,10 +357,16 @@ test.describe('local mode (seeded app:mode profile, no servers)', () => {
 
       // The key rides the capability channel into the secure store: never
       // pre-filled, never in device settings, `has` answers a boolean.
-      await expect(page.getByTestId('ai-provider-key-status')).toHaveAttribute('data-has-key', 'false');
+      await expect(page.getByTestId('ai-provider-key-status')).toHaveAttribute(
+        'data-has-key',
+        'false'
+      );
       await page.getByLabel('API key', { exact: true }).fill(AI_KEY);
       await page.getByRole('button', { name: 'Save key' }).click();
-      await expect(page.getByTestId('ai-provider-key-status')).toHaveAttribute('data-has-key', 'true');
+      await expect(page.getByTestId('ai-provider-key-status')).toHaveAttribute(
+        'data-has-key',
+        'true'
+      );
       await expect(page.getByLabel('API key', { exact: true })).toHaveValue('');
       expect(await deviceSettingsJson(page)).not.toContain(AI_KEY);
       // Public catalogues may load with a bogus key; otherwise the card shows
@@ -375,8 +381,8 @@ test.describe('local mode (seeded app:mode profile, no servers)', () => {
       const instances = await transportGet(page, { path: '/apps/v1/me/instances' });
       expect(instances).toMatchObject({ ok: true, status: 200 });
       const providers = (
-        (instances as { bodyJson: { results: Array<{ provider: string }> } }).bodyJson.results
-      ).map(row => row.provider);
+        instances as { bodyJson: { results: Array<{ provider: string }> } }
+      ).bodyJson.results.map(row => row.provider);
       // A running local Ollama runtime can also appear in the picker.
       expect(providers).toContain(provider);
 
@@ -409,15 +415,26 @@ test.describe('local mode (seeded app:mode profile, no servers)', () => {
         window.location.hash = '#/settings/ai-models';
       });
       await expect(page2.getByRole('radio', { name: label, exact: true })).toBeChecked();
-      await expect.poll(() => aiSetting(page2)).toEqual({ provider, model: 'test-model', baseUrl: null });
-      await expect(page2.getByTestId('ai-provider-key-status')).toHaveAttribute('data-has-key', 'true');
+      await expect
+        .poll(() => aiSetting(page2))
+        .toEqual({ provider, model: 'test-model', baseUrl: null });
+      await expect(page2.getByTestId('ai-provider-key-status')).toHaveAttribute(
+        'data-has-key',
+        'true'
+      );
       await expect(page2.getByLabel('API key', { exact: true })).toHaveValue('');
 
       // Each provider keeps a separate key slot after restart.
-      await page2.getByRole('radio', {
-        name: provider === 'openai' ? 'OpenRouter' : 'OpenAI', exact: true,
-      }).click();
-      await expect(page2.getByTestId('ai-provider-key-status')).toHaveAttribute('data-has-key', 'false');
+      await page2
+        .getByRole('radio', {
+          name: provider === 'openai' ? 'OpenRouter' : 'OpenAI',
+          exact: true,
+        })
+        .click();
+      await expect(page2.getByTestId('ai-provider-key-status')).toHaveAttribute(
+        'data-has-key',
+        'false'
+      );
     });
   }
 
@@ -427,13 +444,20 @@ test.describe('local mode (seeded app:mode profile, no servers)', () => {
     launched = opened.launch;
     const page = opened.page;
 
-    await page.evaluate(() => { window.location.hash = '#/settings/ai-models'; });
+    await page.evaluate(() => {
+      window.location.hash = '#/settings/ai-models';
+    });
     await expect(page.getByTestId('ai-provider')).toBeVisible();
     await page.getByLabel('Model', { exact: true }).fill('test-model');
     await page.getByLabel('Model', { exact: true }).press('Enter');
     await expect.poll(() => aiSetting(page)).toMatchObject({ model: 'test-model' });
-    await expect(page.getByTestId('ai-provider-key-status')).toHaveAttribute('data-has-key', 'false');
-    await page.evaluate(() => { window.location.hash = '#/notes'; });
+    await expect(page.getByTestId('ai-provider-key-status')).toHaveAttribute(
+      'data-has-key',
+      'false'
+    );
+    await page.evaluate(() => {
+      window.location.hash = '#/notes';
+    });
     await createNoteViaUi(page);
     await page.getByRole('button', { name: 'Ask AI', exact: true }).click();
     const composer = page.getByLabel('Ask anything — / for skills, @ to tag notes');
@@ -441,8 +465,12 @@ test.describe('local mode (seeded app:mode profile, no servers)', () => {
     await page.getByRole('button', { name: 'Send', exact: true }).click();
 
     await expect(page.getByText('AI isn’t set up for this workspace yet.')).toBeVisible();
-    await expect(page.getByText('Add an API key or connect a local runtime in Settings → AI models.')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Use Prismical Cloud', exact: true })).toHaveCount(0);
+    await expect(
+      page.getByText('Add an API key or connect a local runtime in Settings → AI models.')
+    ).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: 'Use Prismical Cloud', exact: true })
+    ).toHaveCount(0);
     await expect(page.getByText('prismicalError', { exact: false })).toHaveCount(0);
     await page.getByRole('button', { name: 'Open AI models', exact: true }).click();
     await expect(page.getByTestId('ai-provider')).toBeVisible();
@@ -466,19 +494,17 @@ test.describe('local mode (seeded app:mode profile, no servers)', () => {
     await expect(editor).toContainText('Launch plan for Q3');
 
     // The dock suggests Cleanup (a seeded system skill) — its chip reads
-    // "/ Cleanup"; the run lands in the diff bar and Keep applies the fake
+    // "/ Cleanup"; the run lands in the diff bar and Apply applies the fake
     // output into the live editor.
     await page.getByRole('button', { name: '/ Cleanup', exact: true }).click();
-    await page.getByRole('button', { name: 'Keep', exact: true }).click();
+    await page.getByRole('button', { name: 'Apply', exact: true }).click();
     await expect(editor).toContainText('This is a deterministic local test summary.');
 
     // The accept wrote the artifact row through the local lane.
     await expect
       .poll(async () => {
         const res = await transportGet(page, { path: '/apps/v1/me/artifacts', query: { noteId } });
-        return 'ok' in res && res.ok
-          ? (res.bodyJson as { results: unknown[] }).results.length
-          : -1;
+        return 'ok' in res && res.ok ? (res.bodyJson as { results: unknown[] }).results.length : -1;
       })
       .toBe(1);
 
@@ -515,7 +541,14 @@ test.describe('local mode (seeded app:mode profile, no servers)', () => {
     });
     await expect(page.getByRole('link', { name: 'Local models', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Advanced', exact: true })).toBeVisible();
-    for (const entry of ['Members', 'Account', 'Billing', 'Calendar', 'Integrations', 'API & MCP']) {
+    for (const entry of [
+      'Members',
+      'Account',
+      'Billing',
+      'Calendar',
+      'Integrations',
+      'API & MCP',
+    ]) {
       await expect(page.getByRole('link', { name: entry, exact: true })).toHaveCount(0);
     }
 
@@ -591,11 +624,19 @@ test.describe('local mode (seeded app:mode profile, no servers)', () => {
     await expect(page.getByRole('radio', { name: 'OpenAI', exact: true })).toBeChecked();
     await page.getByLabel('Model', { exact: true }).fill('test-model');
     await page.getByLabel('Model', { exact: true }).press('Enter');
-    await expect.poll(() => aiSetting(page)).toMatchObject({ provider: 'openai', model: 'test-model' });
-    await expect(page.getByTestId('ai-provider-key-status')).toHaveAttribute('data-has-key', 'false');
+    await expect
+      .poll(() => aiSetting(page))
+      .toMatchObject({ provider: 'openai', model: 'test-model' });
+    await expect(page.getByTestId('ai-provider-key-status')).toHaveAttribute(
+      'data-has-key',
+      'false'
+    );
     await page.getByLabel('API key', { exact: true }).fill(AI_KEY);
     await page.getByRole('button', { name: 'Save key' }).click();
-    await expect(page.getByTestId('ai-provider-key-status')).toHaveAttribute('data-has-key', 'true');
+    await expect(page.getByTestId('ai-provider-key-status')).toHaveAttribute(
+      'data-has-key',
+      'true'
+    );
     expect(existsSync(path.join(profileDir, 'local.db'))).toBe(true);
 
     // The switch: confirm → main clears the device state, writes app:mode and

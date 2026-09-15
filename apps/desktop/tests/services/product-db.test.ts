@@ -67,7 +67,7 @@ describe('ProductDb', () => {
       yield* Layer.build(first.layer).pipe(Scope.provide(scopeA));
       yield* Scope.close(scopeA, Exit.void);
       const firstOpen = first.logger.find(entry => entry.message === 'product db opened');
-      assert.deepStrictEqual((firstOpen?.data as { migrationsRun: number[] }).migrationsRun, [0, 1, 2, 3]);
+      assert.deepStrictEqual((firstOpen?.data as { migrationsRun: number[] }).migrationsRun, [0, 1, 2, 3, 4]);
 
       const second = buildDb({ kind: 'local' }, { localDbPath: dbPath });
       const scopeB = yield* Scope.make();
@@ -93,7 +93,7 @@ describe('ProductDb', () => {
       const { layer, logger } = buildDb({ kind: 'local' }, { localDbPath: dbPath });
       const scope = yield* Scope.make();
       const svc = Context.get(yield* Layer.build(layer).pipe(Scope.provide(scope)), ProductDb);
-      assert.deepStrictEqual((logger.find(entry => entry.message === 'product db opened')?.data as { migrationsRun: number[] }).migrationsRun, [3]);
+      assert.deepStrictEqual((logger.find(entry => entry.message === 'product db opened')?.data as { migrationsRun: number[] }).migrationsRun, [3, 4]);
       assert.strictEqual(svc.db.select().from(schema.note).get()!.title, 'Existing note');
       assert.deepStrictEqual(yield* ftsMatch(svc, 'timelines'), ['nt_upgrade']);
       assert.isEmpty(svc.db.select().from(schema.userPreference).all());

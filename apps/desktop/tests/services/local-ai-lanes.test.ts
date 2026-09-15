@@ -533,7 +533,7 @@ describe('skill runs', () => {
       assert.include(system.content, 'You: we ship the roadmap\nThem: agreed');
       assert.include(system.content, '- Distinct voices detected in the audio: 2');
       assert.include(system.content, '- No linked calendar event');
-      assert.include(system.content, 'Rewrite the ENTIRE note');
+      assert.include(system.content, '# Active mode: replace-doc');
 
       // Accept the first Enhance → provenance flips the default to append-section.
       expectOk(
@@ -1408,7 +1408,7 @@ describe('completed recording suggestion recovery', () => {
           }),
           200
         ).bodyJson;
-        assert.strictEqual(refined.resultId, original.resultId);
+        assert.notStrictEqual(refined.resultId, original.resultId);
         assert.strictEqual(refined.rawMarkdown, output.markdown);
         assert.deepStrictEqual(
           expectOk(yield* get(api, pendingPath, { noteId }), 200).bodyJson.results,
@@ -1563,7 +1563,7 @@ describe('completed recording suggestion recovery', () => {
     })
   );
 
-  it.effect('does not recover title, inline, or ordinary manual results', () =>
+  it.effect('does not recover title or ordinary manual results', () =>
     Effect.gen(function* () {
       const { api, product, scope } = yield* build(toolCallingModel());
       const titleSkillId = yield* insertTitleSkill(product);
@@ -1580,16 +1580,6 @@ describe('completed recording suggestion recovery', () => {
         {
           path: `/apps/v1/me/skills/${titleSkillId}/run`,
           body: { noteId, recordingId, recoverable: true },
-        },
-        {
-          path: runPath,
-          body: {
-            noteId,
-            recordingId,
-            recoverable: true,
-            mode: 'inline-rewrite',
-            selectionText: 'A note',
-          },
         },
       ]) {
         const result = expectOk(yield* post(api, request.path, request.body), 200).bodyJson;

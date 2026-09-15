@@ -118,7 +118,7 @@ function ServerGroup({
     <div className="rounded-lg border border-border/60">
       <div className="flex items-center gap-2 border-b border-border/60 bg-muted/50 px-3 py-2">
         <IntegrationLogo directoryKey={server.directoryKey} name={server.name} size="xs" />
-        <span className="flex-1 text-sm font-medium">{server.name}</span>
+        <span className="min-w-0 flex-1 truncate text-sm font-medium">{server.name}</span>
         <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <Checkbox
             checked={grant === '*'}

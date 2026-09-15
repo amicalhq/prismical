@@ -317,7 +317,7 @@ function IntegrationDetailContent({ id }: { id: string }) {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>
+            <AlertDialogTitle className="wrap-anywhere">
               {t('settings.integrations.detail.removeTitle', { name: server.name })}
             </AlertDialogTitle>
             <AlertDialogDescription>

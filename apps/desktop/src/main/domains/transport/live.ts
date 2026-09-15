@@ -201,7 +201,10 @@ export const makeWorkspaceBackendRequest =
     deps.resolveIdentity.pipe(
       Effect.flatMap(identity => {
         let timeout = REQUEST_TIMEOUT;
-        if (req.method === 'POST' && /^\/apps\/v1\/me\/skills\/[^/]+\/run$/.test(req.path)) {
+        if (
+          req.method === 'POST' &&
+          /^\/apps\/v1\/me\/skills\/[^/]+\/run(?:\/durable)?$/.test(req.path)
+        ) {
           timeout = SKILL_RUN_TIMEOUT;
         } else if (
           req.method === 'POST' &&
@@ -352,12 +355,13 @@ const runRecordingCall = <T>(
           }
           const bodyJson: unknown = await response.json().catch(() => null);
           const code = (bodyJson as { error?: { code?: unknown } } | null)?.error?.code;
-          const retryAfterMs = response.status === 429
-            ? recordingRetryAfterMs(
-                (bodyJson as { error?: { details?: { retryAfterMs?: unknown } } } | null)
-                  ?.error?.details?.retryAfterMs
-              )
-            : undefined;
+          const retryAfterMs =
+            response.status === 429
+              ? recordingRetryAfterMs(
+                  (bodyJson as { error?: { details?: { retryAfterMs?: unknown } } } | null)?.error
+                    ?.details?.retryAfterMs
+                )
+              : undefined;
           return {
             ok: false,
             retryable: isTransientStatus(response.status),
@@ -495,10 +499,13 @@ export const makeCloudBackendLive = (
       const { locale } = yield* DesktopI18n;
       const config = yield* AppConfig;
       const coreTransport = yield* WorkspaceTransport;
-      const fetchFn: FetchLike = options.fetchFn ?? ((url, init) => desktopFetch(url, {
-        ...init,
-        body: init.body instanceof Uint8Array ? new Uint8Array(init.body) : init.body,
-      }));
+      const fetchFn: FetchLike =
+        options.fetchFn ??
+        ((url, init) =>
+          desktopFetch(url, {
+            ...init,
+            body: init.body instanceof Uint8Array ? new Uint8Array(init.body) : init.body,
+          }));
 
       // Fresh per call: session.idToken runs the StaleSessionError guard then
       // delegates to AuthService.getIdToken; pinned.activeOrgId is constant for
@@ -567,6 +574,7 @@ export const WorkspaceTransportLive: Layer.Layer<WorkspaceTransport> = Layer.eff
       request: (req, context) =>
         Effect.gen(function* () {
           if (context.mode === 'local') {
+            if (req.expectedAccountId !== undefined) return INTERNAL;
             // The shell can make its first request before the local store has mounted.
             const backend = yield* SubscriptionRef.changes(currentRef).pipe(
               Stream.mapEffect(() => SubscriptionRef.get(currentRef)),
@@ -587,7 +595,11 @@ export const WorkspaceTransportLive: Layer.Layer<WorkspaceTransport> = Layer.eff
               ? undefined
               : state.accounts[state.activeSub];
           const expected = identityOf(yield* SubscriptionRef.get(sessionState));
-          if (expected === undefined) return INTERNAL;
+          if (
+            expected === undefined ||
+            (req.expectedAccountId !== undefined && req.expectedAccountId !== expected.sub)
+          )
+            return INTERNAL;
           const matches = (identity: WorkspaceIdentity | undefined): boolean =>
             identity?.sub === expected.sub && identity.activeOrgId === expected.activeOrgId;
 

@@ -28,6 +28,8 @@ import { setRecordingPreferences } from './recording-preferences';
 import { useSyncStore } from '../sync/provider';
 import type { SyncStore } from '../sync/store';
 
+vi.mock('./auto-enhance-setting', () => ({ getAutoEnhanceEnabled: () => true }));
+
 vi.mock('../sync/provider', () => ({ useSyncStore: vi.fn() }));
 
 let noteStore: Pick<SyncStore, 'requireNoteCreateAck'>;
@@ -1320,8 +1322,11 @@ describe('useRecording — web branch pause/resume', () => {
     });
     await waitFor(() => expect(result.current.error).toBe('recording.errors.completionRecovery'));
     const lock = 'recording-audio-upload:rec_web';
-    await waitFor(() => expect(locks.held.has(lock)).toBe(false));
-    locks.held.add(lock);
+    await waitFor(() => {
+      expect(locks.held.has(lock)).toBe(false);
+      // Claim synchronously: waitFor yields before returning, allowing another sweep to start.
+      locks.held.add(lock);
+    });
     const attempts = locks.request.mock.calls.length;
     await act(async () => {
       window.dispatchEvent(new Event('recording-recovery-pending'));

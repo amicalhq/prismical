@@ -95,6 +95,8 @@ beforeAll(() => {
   } as never;
 });
 beforeEach(() => {
+  // The show-all switches remember themselves per browser; a test must not inherit another's.
+  window.localStorage.clear();
   state.folders = [];
   state.notes = [];
   state.tags = [];
@@ -128,7 +130,7 @@ describe('sidebar collections empty states', () => {
       target: { value: '  Meetings  ' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'dialogs.folder.createAction' }));
-    expect(state.createdFolder).toEqual(['Meetings']);
+    expect(state.createdFolder).toEqual([{ name: 'Meetings', parentId: null }]);
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
@@ -195,5 +197,55 @@ describe('sidebar collections empty states', () => {
     renderGroups();
     expect(screen.queryByText('navigation.collections.createFolder')).toBeNull();
     expect(screen.queryByText('navigation.collections.createTag')).toBeNull();
+  });
+});
+
+describe('sidebar show more', () => {
+  const many = (count: number) =>
+    Array.from({ length: count }, (_, index) => ({
+      id: `fld_${index}`,
+      name: `Folder ${index}`,
+      createdAt: `2026-01-${String(index + 1).padStart(2, '0')}T00:00:00Z`,
+    }));
+
+  const rows = () => screen.getAllByRole('link').filter(el => el.textContent?.startsWith('Folder'));
+  const showMore = () => screen.queryByText('navigation.collections.showMore');
+
+  it('starts at the newest few and reveals a page at a time', () => {
+    state.folders = many(20);
+    renderGroups();
+    expect(rows()).toHaveLength(5);
+    fireEvent.click(showMore()!);
+    expect(rows()).toHaveLength(15);
+    fireEvent.click(showMore()!);
+    expect(rows()).toHaveLength(20);
+  });
+
+  it('stops offering more once everything is on screen', () => {
+    state.folders = many(20);
+    renderGroups();
+    fireEvent.click(showMore()!);
+    fireEvent.click(showMore()!);
+    expect(showMore()).toBeNull();
+  });
+
+  it('offers nothing when the newest few already are all of them', () => {
+    state.folders = many(3);
+    renderGroups();
+    expect(showMore()).toBeNull();
+  });
+
+  it('goes back to the short list when the group is collapsed and reopened', () => {
+    // The reset is the whole reason this needs no storage: collapsing is
+    // something the viewer already does, so the sidebar always returns short.
+    state.folders = many(20);
+    renderGroups();
+    fireEvent.click(showMore()!);
+    expect(rows()).toHaveLength(15);
+
+    const section = screen.getByText('navigation.collections.folders');
+    fireEvent.click(section);
+    fireEvent.click(section);
+    expect(rows()).toHaveLength(5);
   });
 });

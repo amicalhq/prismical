@@ -3,6 +3,8 @@ import * as React from 'react';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 
+const capabilities = vi.hoisted(() => ({ featureFlags: null as Record<string, boolean> | null }));
+
 vi.mock('../onboarding/context', () => ({ useWalkthroughStage: () => null }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -15,12 +17,31 @@ vi.mock('@prismical/app-i18n', () => ({
   formatApplicationDuration: () => '',
 }));
 vi.mock('@prismical/app-client', () => ({
+  useDesktopCapabilities: () => capabilities,
   useSessionView: () => ({ accounts: [], activeSub: null }),
   useViewerProfile: () => ({ data: null }),
   useAutoEnhanceStore: (select: (state: object) => unknown) => select({}),
 }));
 vi.mock('./note-recording-dock', () => ({ formatSessionTimer: () => '0:00' }));
+// Radix menus need pointer capture jsdom lacks; render the menu inline with items as buttons.
+vi.mock('../ui/dropdown-menu', () => ({
+  DropdownMenu: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  DropdownMenuTrigger: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  DropdownMenuContent: ({ children }: { children: React.ReactNode }) => <div role="menu">{children}</div>,
+  DropdownMenuItem: ({ children, onSelect }: { children: React.ReactNode; onSelect?: () => void }) => (
+    <button type="button" role="menuitem" onClick={() => onSelect?.()}>
+      {children}
+    </button>
+  ),
+}));
 vi.mock('./dock-mic-menu', () => ({ DockMicMenu: () => null }));
+vi.mock('./speaker-person-picker', () => ({
+  SpeakerPersonPicker: ({ onPick }: { onPick: (p: { id: string; email: string; name: string | null }) => void }) => (
+    <button type="button" onClick={() => onPick({ id: 'prs_pick', email: 'p@example.com', name: 'Pat' })}>
+      pick-person
+    </button>
+  ),
+}));
 vi.mock('./waveform', () => ({ Waveform: () => null }));
 vi.mock('../ui/message-scroller', () => {
   const Container = ({ children }: { children: React.ReactNode }) => <div>{children}</div>;
@@ -173,7 +194,7 @@ it('does not expose the ready Enhance action while the client is still finishing
 it('shows an inert Start button while a finished recording has a suggestion to review', () => {
   const start = vi.fn();
   render(<TranscriptPanel {...base} onStartRecording={start} finishedRecordingId="review"
-    startBlockedReason="Keep or undo the suggested changes before recording."
+    startBlockedReason="Apply or discard the suggested changes before recording."
     recordings={[{ ...recording('review', 1), linesLoaded: true, processing: false }]} />);
   const button = screen.getByRole('button', { name: 'recording.actions.start' });
   expect(button.getAttribute('aria-disabled')).toBe('true');
@@ -204,4 +225,158 @@ it('provides a waiting target until finalization and a retry target for silent o
   view.rerender(<TranscriptPanel {...base} finishedRecordingId="new" recordings={[{...recording('new',1), linesLoaded:true, processing:false}]} />);
   expect(view.container.querySelector('[data-onboarding="record-retry"]')).not.toBeNull();
   expect(screen.getByRole('button',{name:'recording.actions.start'})).toBeTruthy();
+});
+
+const line = (id: string, speakerKey: string, speaker: string, text = 'hello') => ({
+  id,
+  speaker,
+  speakerKey,
+  at: '',
+  text,
+});
+
+it('renders a flagged owner on the right, named for a viewer who is not the owner', () => {
+  const rec: RecordingLog = {
+    ...recording('rec_1', 1),
+    lines: [line('l1', 'dz:0', 'recording.panel.speakerNumber 1'), line('l2', 'dz:1', 'recording.panel.speakerNumber 2')],
+    speakers: [
+      { id: 's0', speakerKey: 'dz:0', displayName: null },
+      { id: 's1', speakerKey: 'dz:1', displayName: null, isOwner: true, source: 'user' },
+    ],
+    owner: { isViewer: false, name: 'Naomi Chopra', email: null, image: null },
+    canTag: true,
+  };
+  render(<TranscriptPanel {...base} recordings={[rec]} onTagSpeaker={vi.fn()} />);
+  const ownerLabel = screen.getByText('Naomi Chopra');
+  expect(ownerLabel.closest('.self-end')).not.toBeNull();
+  expect(screen.getByText('recording.panel.speakerNumber 1').closest('.self-start')).not.toBeNull();
+  expect(screen.queryByText('recording.panel.you')).toBeNull();
+});
+
+it('offers "This is me" on other speakers and "Not me" on the owner, calling the tag handler by key', () => {
+  const onTagSpeaker = vi.fn();
+  const rec: RecordingLog = {
+    ...recording('rec_1', 1),
+    lines: [line('l1', 'dz:0', 'recording.panel.speakerNumber 1'), line('l2', 'you', 'recording.panel.you')],
+    speakers: [{ id: 's0', speakerKey: 'dz:0', displayName: 'Ana' }],
+    canTag: true,
+  };
+  render(<TranscriptPanel {...base} recordings={[rec]} onTagSpeaker={onTagSpeaker} />);
+  fireEvent.click(screen.getByRole('menuitem', { name: 'recording.panel.thisIsMe' }));
+  expect(onTagSpeaker).toHaveBeenCalledWith('rec_1', 'dz:0', { isOwner: true });
+  fireEvent.click(screen.getByRole('menuitem', { name: 'recording.panel.notMe' }));
+  expect(onTagSpeaker).toHaveBeenCalledWith('rec_1', 'you', { isOwner: false });
+  fireEvent.click(screen.getByRole('menuitem', { name: 'recording.panel.clearName' }));
+  expect(onTagSpeaker).toHaveBeenCalledWith('rec_1', 'dz:0', { displayName: null, personId: null });
+});
+
+it('renames through the menu and commits by key', () => {
+  const onTagSpeaker = vi.fn();
+  const rec: RecordingLog = {
+    ...recording('rec_1', 1),
+    lines: [line('l1', 'dz:0', 'recording.panel.speakerNumber 1')],
+    speakers: [{ id: 's0', speakerKey: 'dz:0', displayName: null }],
+    canTag: true,
+  };
+  render(<TranscriptPanel {...base} recordings={[rec]} onTagSpeaker={onTagSpeaker} />);
+  fireEvent.click(screen.getByRole('menuitem', { name: 'recording.actions.renameSpeaker' }));
+  const input = screen.getByLabelText('recording.panel.speakerName');
+  fireEvent.change(input, { target: { value: '  Robert Ray ' } });
+  fireEvent.keyDown(input, { key: 'Enter' });
+  expect(onTagSpeaker).toHaveBeenCalledWith('rec_1', 'dz:0', { displayName: 'Robert Ray' });
+});
+
+it('hides the menu without write access and honours "Not me" on the mic channel', () => {
+  const rec: RecordingLog = {
+    ...recording('rec_1', 1),
+    lines: [line('l1', 'you', 'recording.panel.you')],
+    speakers: [{ id: 's0', speakerKey: 'you', displayName: 'Guest', isOwner: false, source: 'user' }],
+    canTag: false,
+  };
+  render(<TranscriptPanel {...base} recordings={[rec]} onTagSpeaker={vi.fn()} />);
+  expect(screen.queryByRole('menuitem')).toBeNull();
+  expect(screen.getByText('Guest').closest('.self-start')).not.toBeNull();
+});
+
+it('asks which speaker is you only for an unresolved diarized recording, and can be dismissed', () => {
+  const unresolved: RecordingLog = {
+    ...recording('rec_1', 1),
+    lines: [line('l1', 'dz:0', 'S1'), line('l2', 'dz:1', 'S2')],
+    speakers: [
+      { id: 's0', speakerKey: 'dz:0', displayName: null },
+      { id: 's1', speakerKey: 'dz:1', displayName: null },
+    ],
+    canTag: true,
+  };
+  const { rerender } = render(<TranscriptPanel {...base} recordings={[unresolved]} onTagSpeaker={vi.fn()} />);
+  expect(screen.getByRole('note').textContent).toContain('recording.panel.whichOneIsYou');
+  fireEvent.click(screen.getByRole('button', { name: 'recording.panel.dismissHint' }));
+  expect(screen.queryByRole('note')).toBeNull();
+
+  const resolved: RecordingLog = {
+    ...unresolved,
+    id: 'rec_2',
+    speakers: [...unresolved.speakers!.slice(0, 1), { id: 's1', speakerKey: 'dz:1', displayName: null, isOwner: true }],
+  };
+  rerender(<TranscriptPanel {...base} recordings={[resolved]} onTagSpeaker={vi.fn()} />);
+  expect(screen.queryByRole('note')).toBeNull();
+});
+
+it('opens the person picker from the menu and tags the speaker with the picked person', () => {
+  const onTagSpeaker = vi.fn();
+  const rec: RecordingLog = {
+    ...recording('rec_1', 1),
+    lines: [line('l1', 'dz:0', 'recording.panel.speakerNumber 1')],
+    speakers: [{ id: 's0', speakerKey: 'dz:0', displayName: null }],
+    canTag: true,
+  };
+  render(<TranscriptPanel {...base} recordings={[rec]} onTagSpeaker={onTagSpeaker} />);
+  fireEvent.click(screen.getByRole('menuitem', { name: 'recording.panel.tagPerson' }));
+  fireEvent.click(screen.getByText('pick-person'));
+  expect(onTagSpeaker).toHaveBeenCalledWith('rec_1', 'dz:0', { personId: 'prs_pick' });
+  expect(screen.queryByText('pick-person')).toBeNull();
+});
+
+it('clears a linked person together with the name', () => {
+  const onTagSpeaker = vi.fn();
+  const rec: RecordingLog = {
+    ...recording('rec_1', 1),
+    lines: [line('l1', 'dz:0', 'recording.panel.speakerNumber 1')],
+    speakers: [{ id: 's0', speakerKey: 'dz:0', displayName: 'Ana', personId: 'prs_a' }],
+    canTag: true,
+  };
+  render(<TranscriptPanel {...base} recordings={[rec]} onTagSpeaker={onTagSpeaker} />);
+  fireEvent.click(screen.getByRole('menuitem', { name: 'recording.panel.clearName' }));
+  expect(onTagSpeaker).toHaveBeenCalledWith('rec_1', 'dz:0', { displayName: null, personId: null });
+});
+
+it('never offers "This is me" to a collaborator who is not the recording owner', () => {
+  const rec: RecordingLog = {
+    ...recording('rec_1', 1),
+    lines: [line('l1', 'dz:0', 'S1'), line('l2', 'you', 'You')],
+    speakers: [{ id: 's0', speakerKey: 'dz:0', displayName: null }],
+    owner: { isViewer: false, name: 'Naomi Chopra', email: null, image: null },
+    canTag: true,
+  };
+  render(<TranscriptPanel {...base} recordings={[rec]} onTagSpeaker={vi.fn()} />);
+  expect(screen.queryByRole('menuitem', { name: 'recording.panel.thisIsMe' })).toBeNull();
+  expect(screen.queryByRole('menuitem', { name: 'recording.panel.notMe' })).toBeNull();
+  expect(screen.getAllByRole('menuitem', { name: 'recording.actions.renameSpeaker' }).length).toBeGreaterThan(0);
+});
+
+
+it('keeps local speaker names and owner controls without directory actions', () => {
+  capabilities.featureFlags = { directory: false };
+  try {
+    const rec: RecordingLog = { ...recording('rec_local', 1), lines: [line('local_turn', 'you', 'You')], canTag: true };
+    const onTagSpeaker = vi.fn();
+    render(<TranscriptPanel {...base} recordings={[rec]} onTagSpeaker={onTagSpeaker} />);
+    expect(screen.queryByRole('menuitem', { name: 'recording.panel.tagPerson' })).toBeNull();
+    expect(screen.queryByText('pick-person')).toBeNull();
+    expect(screen.getByRole('menuitem', { name: 'recording.actions.renameSpeaker' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'recording.panel.notMe' }));
+    expect(onTagSpeaker).toHaveBeenCalledWith('rec_local', 'you', { isOwner: false });
+  } finally {
+    capabilities.featureFlags = null;
+  }
 });

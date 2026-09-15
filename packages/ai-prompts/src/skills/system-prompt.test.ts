@@ -76,6 +76,24 @@ describe('buildSkillSystemPrompt', () => {
     expect(inline).not.toContain('# Markdown rules');
   });
 
+  it.each(['replace-doc', 'append-section'] as const)(
+    'leaves editorial policy to the loaded body in %s',
+    mode => {
+      const prompt = buildSkillSystemPrompt({
+        skill: skill(),
+        mode,
+        input: note({ transcript: 'Speaker: A proposal.' }),
+        enhanceLane: true,
+      });
+      expect(prompt).not.toMatch(
+        /Start with a ##|as short as|separate notes section|without losing unique information|never em-dashes/
+      );
+      expect(prompt).toContain('Do not invent facts.');
+      expect(prompt).toContain('Never wrap the whole answer in a code fence');
+      expect(prompt).toContain(SUBMIT_OUTPUT_TOOL);
+    }
+  );
+
   it('passes the note title and the recording context signals', () => {
     const p = buildSkillSystemPrompt({
       skill: skill(),
@@ -202,13 +220,11 @@ describe('buildSkillSystemPrompt', () => {
       for (const prompt of [replacement, addition]) {
         expect(prompt).toContain(input.noteText);
         expect(prompt).toContain(input.transcript);
-        expect(prompt).toContain('unless the sources explicitly connect it');
-        expect(prompt).toContain('Proposed is not approved');
-        expect(prompt).toContain('Action items require a request or commitment');
+        expect(prompt).toContain(ENHANCE_SKILL.body);
       }
-      expect(replacement).toContain('Preserve exact identifiers');
-      expect(replacement).toContain('every distinct original detail still appears');
-      expect(addition).toContain('do not import its unrelated facts, owners, or commitments');
+      expect(replacement).toContain('including exact identifiers and uncertainty');
+      expect(replacement).toContain("Preserve the user's written information");
+      expect(addition).toContain('import unrelated facts, owners, or commitments from it');
       expect(addition).not.toContain('every distinct original detail still appears');
     });
 
@@ -267,8 +283,8 @@ describe('buildSkillSystemPrompt', () => {
         enhanceLane: true,
       });
       expect(p).toContain('# Active mode: replace-doc');
-      expect(p).toContain('Rewrite the ENTIRE note');
-      expect(p).toContain("Do NOT discard the user's notes");
+      expect(p).toContain('Return the complete replacement note body');
+      expect(p).toContain("Preserve the user's written information");
     });
 
     it('append-section: adds a new section for THIS recording without regenerating prior content', () => {
@@ -279,8 +295,8 @@ describe('buildSkillSystemPrompt', () => {
         enhanceLane: true,
       });
       expect(p).toContain('# Active mode: append-section');
-      expect(p).toContain('do NOT regenerate, restate, or');
-      expect(p).toContain('new self-contained section for THIS recording');
+      expect(p).toContain('The existing note stays unchanged');
+      expect(p).toContain('new content from THIS recording to append');
     });
 
     it('uses the same quick-note and thin-content policy in scoped and canonical note-only Enhance', () => {
@@ -297,14 +313,12 @@ describe('buildSkillSystemPrompt', () => {
         input: { ...input, transcript: undefined },
       });
       for (const prompt of [scoped, noteOnly]) {
-        expect(prompt).toContain('QUICK NOTE');
-        expect(prompt).toContain('Never return empty or whitespace-only markdown.');
+        expect(prompt).toContain(ENHANCE_SKILL.body);
         expect(prompt).toContain('Keep reference Q3-71.');
       }
       expect(noteOnly).not.toContain('# Recording transcript');
       expect(scoped.startsWith(ENHANCE_SKILL.body)).toBe(true);
       expect(noteOnly.startsWith(ENHANCE_SKILL.body)).toBe(true);
-      expect(noteOnly).toContain('# Source fidelity');
       expect(scoped).not.toContain('The output is a self-contained note.');
     });
 
@@ -318,9 +332,9 @@ describe('buildSkillSystemPrompt', () => {
       const modeBlock = prompt
         .split('# Active mode: append-section')[1]!
         .split('# Markdown rules')[0]!;
-      expect(modeBlock).toContain('without a heading');
+      expect(modeBlock).not.toMatch(/heading|short sentence|compact list/i);
       expect(modeBlock).not.toContain('Start with');
-      expect(modeBlock).toContain('do not import its unrelated facts');
+      expect(modeBlock).toContain('import unrelated facts');
     });
 
     it('forces the mode block even when the skill is mode-agnostic (Enhance output differs by mode)', () => {

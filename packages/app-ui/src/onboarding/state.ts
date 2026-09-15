@@ -1,3 +1,4 @@
+import { currentAccountExperience } from '@prismical/app-client';
 export type TourStep = 'record' | 'speak' | 'stop' | 'transcript' | 'enhance' | 'result' | 'review';
 export type Walkthrough =
   | { status: 'offered'; replay?: boolean; started?: boolean }
@@ -6,34 +7,17 @@ export type Walkthrough =
 export function walkthroughKey(userId: string) {
   return `prismical:first-note:v1:${encodeURIComponent(userId)}`;
 }
-export function readWalkthrough(key: string): Walkthrough | null {
-  try {
-    const raw = window.localStorage.getItem(key);
-    if (raw === null) return null;
-    const value = JSON.parse(raw);
-    if (['offered', 'dismissed', 'completed'].includes(value?.status)) return value;
-    if (
-      value?.status === 'active' &&
-      typeof value.orgId === 'string' &&
-      typeof value.noteId === 'string' &&
-      ['record', 'speak', 'stop', 'transcript', 'enhance', 'result', 'review'].includes(
-        value.step
-      ) &&
-      (value.recordingId === undefined || typeof value.recordingId === 'string')
-    )
-      return value;
-  } catch {
-    /* Optional guide: unavailable storage must never interrupt the app. */
-  }
-  return { status: 'dismissed' };
+export function readWalkthrough(_key: string): Walkthrough | null {
+  const account = currentAccountExperience();
+  return account && _key === walkthroughKey(account.userId)
+    ? (account.getSnapshot().data?.onboarding.walkthrough ?? null)
+    : null;
 }
-export function writeWalkthrough(key: string, state: Walkthrough): boolean {
-  try {
-    window.localStorage.setItem(key, JSON.stringify(state));
-    return true;
-  } catch {
-    return false;
-  }
+export function writeWalkthrough(_key: string, state: Walkthrough): boolean {
+  const account = currentAccountExperience();
+  return account && _key === walkthroughKey(account.userId)
+    ? account.update({ onboarding: { walkthrough: state } })
+    : false;
 }
 export type WalkthroughEvent =
   | {

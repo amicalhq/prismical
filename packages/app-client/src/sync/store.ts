@@ -113,6 +113,11 @@ export interface FolderRow {
   createdAt?: SyncTimestamp;
   updatedAt: SyncTimestamp;
   deletedAt?: string | null;
+  // Read-side signals from the delta (absent on an optimistic row and on a write echo, which the
+  // store merges rather than replaces): see the note row's isOwner/sharedByName.
+  isOwner?: boolean;
+  sharedByName?: string | null;
+  memberCount?: number;
 }
 
 export interface TagRow {

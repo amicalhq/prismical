@@ -16,9 +16,8 @@ beforeEach(() => {
 });
 
 describe('recording preferences', () => {
-  it('defaults to auto-detect, the system microphone, and manual recording', () => {
+  it('defaults to auto-detect and the system microphone', () => {
     expect(getRecordingPreferences()).toEqual({
-      autoTranscribeNewNotes: false,
       autoDetectLanguage: true,
       language: 'en',
       microphonePriority: [],
@@ -49,11 +48,10 @@ describe('recording preferences', () => {
     expect(consumePendingAutoTranscribe('nt_1')).toBe(false);
   });
 
-  it('clears a pending auto-start when the preference is disabled', () => {
-    setRecordingPreferences({ autoTranscribeNewNotes: true });
+  it('keeps a pending auto-start when the microphone preference changes', () => {
     markPendingAutoTranscribe('nt_1');
-    setRecordingPreferences({ autoTranscribeNewNotes: false });
-    expect(consumePendingAutoTranscribe('nt_1')).toBe(false);
+    setRecordingPreferences({ microphonePriority: [{ deviceId: 'usb', name: 'USB mic' }] });
+    expect(consumePendingAutoTranscribe('nt_1')).toBe(true);
   });
 
   it('resolves the highest-priority connected microphone', () => {

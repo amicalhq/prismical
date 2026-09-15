@@ -49,6 +49,7 @@ import { askErrorResponse } from '../transport/ask-error';
 import * as schema from '../../infra/product-db/schema';
 import type { LocalAiPort } from './ai-port';
 import { searchNotes, type SearchScope } from './search';
+import { loadSpeakerLabeler } from './speakers';
 import { describeDbError, ok, type LocalDb, type RouteResult } from './wire';
 
 export interface AskDeps {
@@ -219,6 +220,7 @@ export const getNoteForAsk = async (db: LocalDb, noteId: string): Promise<AskGet
       asc(schema.transcriptSegment.startTimeMs), asc(schema.transcriptSegment.segmentOrder),
       asc(schema.transcriptSegment.id));
   const body = row.contentMarkdown ?? row.contentText ?? '';
+  const label = loadSpeakerLabeler(db, segments.map(segment => segment.recordingId));
   const transcript: string[] = [];
   let previousRecording: string | undefined;
   for (const segment of segments) {
@@ -226,7 +228,7 @@ export const getNoteForAsk = async (db: LocalDb, noteId: string): Promise<AskGet
       transcript.push(`\n### Recording: ${segment.title}`);
       previousRecording = segment.recordingId;
     }
-    transcript.push(`${segment.speaker === 'you' ? 'You' : 'Them'}: ${segment.text}`);
+    transcript.push(`${label(segment.recordingId, segment.speaker)}: ${segment.text}`);
   }
   return {
     noteId: row.id, title: row.title,

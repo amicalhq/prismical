@@ -1,5 +1,7 @@
 'use client';
 
+import { useAccountExperience } from '@prismical/app-client';
+
 import * as React from 'react';
 import { AppLink as Link } from '../shell/app-link';
 import { CalendarDays, Loader2, Video } from 'lucide-react';
@@ -18,7 +20,6 @@ import { useOpenNoteForEvent } from '@prismical/app-client';
 import { useTranslation } from 'react-i18next';
 
 // "Connect later" dismissal persists across visits.
-const CONNECT_PROMPT_DISMISS_KEY = 'home.connect-calendar-dismissed.v1';
 
 // Shown in place of the meetings section while no calendar is connected.
 function ConnectCalendarPrompt({ onDismiss }: { onDismiss: () => void }) {
@@ -65,20 +66,11 @@ export function UpcomingMeetings({ limit = 3 }: { limit?: number }) {
   const events = useCalendarEvents();
   const noteForEvent = useOpenNoteForEvent();
 
-  // Safe in a lazy initializer: the connect prompt can't render before the
-  // connections query resolves on the client, so SSR/hydration always emit
-  // null here regardless of this value.
-  const [dismissed, setDismissed] = React.useState<boolean>(
-    () => typeof window !== 'undefined' && localStorage.getItem(CONNECT_PROMPT_DISMISS_KEY) === '1'
-  );
-
+  const accountPreferences = useAccountExperience();
+  // Wait for the account before offering a prompt that another device may have dismissed.
+  const dismissed = !accountPreferences.data || accountPreferences.data.prompts.calendarDismissed;
   const dismiss = () => {
-    setDismissed(true);
-    try {
-      localStorage.setItem(CONNECT_PROMPT_DISMISS_KEY, '1');
-    } catch {
-      // Storage may be unavailable (private mode) — dismiss for this visit only.
-    }
+    accountPreferences.update?.({ prompts: { calendarDismissed: true } });
     toast(t('calendar.upcoming.dismissed'));
   };
 

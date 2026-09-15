@@ -4,7 +4,7 @@ import { Card, CardContent } from '../../ui/card';
 import { Label } from '../../ui/label';
 import { Switch } from '../../ui/switch';
 import { Separator } from '../../ui/separator';
-import { useDesktopCapabilities, useRecordingPreferences } from '@prismical/app-client';
+import { useDesktopCapabilities, useAccountExperience } from '@prismical/app-client';
 import { ThemeToggle } from './theme-toggle';
 import { OrganizationDangerZone } from './organization-danger-zone';
 import { AutoEnhanceToggle } from './auto-enhance-toggle';
@@ -19,7 +19,7 @@ import { useTranslation } from 'react-i18next';
 function AutoTranscribeToggle() {
   const { t } = useTranslation();
   const isDesktop = useDesktopCapabilities().has('global-shortcuts');
-  const [preferences, setPreferences] = useRecordingPreferences();
+  const { data, update } = useAccountExperience();
 
   if (isDesktop) return null;
 
@@ -36,8 +36,9 @@ function AutoTranscribeToggle() {
         </div>
         <Switch
           id="auto-transcribe"
-          checked={preferences.autoTranscribeNewNotes}
-          onCheckedChange={on => setPreferences({ autoTranscribeNewNotes: on })}
+          checked={data?.experience.autoTranscribeNewNotes ?? false}
+          disabled={!data}
+          onCheckedChange={on => update?.({ experience: { autoTranscribeNewNotes: on } })}
         />
       </div>
       <Separator />
@@ -46,6 +47,7 @@ function AutoTranscribeToggle() {
 }
 
 export function PreferencesScreen() {
+  const account = useAccountExperience();
   const { t } = useTranslation();
 
   return (
@@ -59,6 +61,12 @@ export function PreferencesScreen() {
       </div>
 
       <div className="space-y-6">
+        {account.error ? (
+          <div role="alert" className="text-sm text-destructive">
+            {t('common.errors.generic')}{' '}
+            <button onClick={() => void account.retry?.()}>{t('common.retry')}</button>
+          </div>
+        ) : null}
         <Card>
           <CardContent className="space-y-4">
             {/* Launch at login — desktop-only; the component

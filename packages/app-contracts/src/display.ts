@@ -40,6 +40,9 @@ export type Folder = {
   parentId: string | null;
   createdAt: string;
   favorite?: boolean;
+  isOwner?: boolean; // false ⇒ this folder was shared with the caller
+  sharedByName?: string; // the folder owner's name (shown on folders shared with the caller)
+  memberCount?: number; // people holding a direct grant on the folder (not inherited ones)
 };
 
 export type CalendarEvent = {

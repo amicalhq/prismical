@@ -113,3 +113,11 @@ export {
   type LanguagePreferences,
   type TranscriptionLanguage,
 } from '@prismical/api-contracts/apps/v1';
+
+export * from './settings/account-experience-provider';
+export * from './settings/account-experience-store';
+
+export { isGenuinelyEmptyNote, waitForSkillResultDelivery, wasSkillResultApplied, prepareSkillResultUpdate, applyPreparedSkillResult } from "./notes/diff/skill-result-application";
+
+export { useNoteCreatedNotice } from "./notes/note-created-notice";
+export { subscribeEditorHistory, withEditorHistoryBoundary } from './notes/editor-history';

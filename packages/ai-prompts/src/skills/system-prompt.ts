@@ -4,23 +4,14 @@ import { SUBMIT_OUTPUT_TOOL, type ArtifactMode } from './types.js';
 import type { RunnableSkill } from './skill.js';
 import type { SkillNoteInput } from './note-input.js';
 
-/**
- * Output-format contract shared by every block-mode run. Without it,
- * models emitted constructs the editor mangles (images, HTML, whole-answer code fences),
- * inconsistent heading depths, and em-dashes (product copy convention is plain hyphens). Only the
- * constructs the TipTap schema + markdown round-trip actually support are allowed. inline-rewrite
- * is exempt — its single-paragraph constraint IS its format contract.
- */
+/** Editor-supported output syntax; editorial choices belong to the loaded skill body. */
 const MARKDOWN_RULES = [
   '# Markdown rules',
-  '- Output GitHub-flavored Markdown using only: paragraphs, headings (## and ###), bullet',
+  '- Output GitHub-flavored Markdown using only: paragraphs, headings (# through ######), bullet',
   '  lists (-), numbered lists, task lists (- [ ] / - [x]), **bold**, *italic*,',
   '  ~~strikethrough~~, `inline code`, fenced code blocks for actual code, > quotes, tables,',
   '  links, and --- dividers.',
   '- Do not emit images or raw HTML. Never wrap the whole answer in a code fence.',
-  '- Prefer starting sections at ## (# only for a document title in a whole-note rewrite) — unless',
-  "  the skill's own rules say to preserve the note's existing heading levels.",
-  '- Use plain hyphens (-), never em-dashes.',
 ].join('\n');
 
 /**
@@ -176,7 +167,7 @@ function captureModeLabel(mode: string): string {
 function modeGuidance(mode: ArtifactMode): string {
   switch (mode) {
     case 'append-section':
-      return 'Produce a new section to append to the note. Start with a ## heading.';
+      return 'Return only the new content to append. Do not include or rewrite the existing note.';
     case 'replace-doc':
       return "Produce a complete replacement for the note's body.";
     case 'inline-rewrite':
@@ -201,30 +192,15 @@ function enhanceModeGuidance(mode: ArtifactMode): string {
   switch (mode) {
     case 'replace-doc':
       return [
-        'Rewrite the ENTIRE note as one clean Markdown note, as short as its content warrants.',
-        'Integrate the user\'s own written notes (under "# Note") with the recording transcript',
-        '(under "# Recording transcript"): keep every distinct fact, constraint, and unresolved point',
-        'the user wrote and add what the recording establishes. Preserve exact identifiers, reference',
-        'codes, URLs, names, and the precision of dates and amounts. Unfamiliar labels and identifiers',
-        'are not filler. Keep standalone fragments with their identifiers in a separate notes section',
-        'when their relationship to the recording is unclear; use a separate line rather than a heading',
-        'for a short note. Do not invent a connecting explanation.',
-        'Drop only filler, true repetition, and transcription noise without losing unique information.',
-        "Do NOT discard the user's notes. Do NOT invent facts that are not present in the note or the",
-        'transcript. Before submitting, check that every distinct original detail still appears in',
-        'the replacement. Return the whole note.',
+        'Return the complete replacement note body, integrating the written note and this recording.',
+        "Preserve the user's written information, including exact identifiers and uncertainty.",
+        'Use the skill instructions to decide how to transform the recording. Do not invent facts.',
       ].join(' ');
     case 'append-section':
       return [
-        'The note already contains earlier content the user has kept — do NOT regenerate, restate, or',
-        'reorder it. Produce ONLY a new self-contained section for THIS recording (under',
-        '"# Recording transcript"), to be appended to the end of the note. For a quick note or thin-content',
-        'result, return a short sentence or compact list without a heading. Use a short ## heading only',
-        'when the new content needs a section. Capture what this recording adds; do not repeat points',
-        'already in the note. If there is no new note content, say so briefly. Do NOT',
-        'invent facts that are not in the transcript. Use the existing note only to avoid duplication',
-        'and resolve explicit references; do not import its unrelated facts, owners, or commitments',
-        'into this recording. Preserve exact identifiers and uncertainty in the new material.',
+        'Return only the new content from THIS recording to append. The existing note stays unchanged.',
+        'Use the existing note only to avoid duplication and resolve explicit references; do not',
+        'import unrelated facts, owners, or commitments from it. Do not invent facts.',
       ].join(' ');
     case 'inline-rewrite':
       return modeGuidance(mode);

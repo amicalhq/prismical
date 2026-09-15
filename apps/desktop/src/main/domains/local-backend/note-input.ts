@@ -3,14 +3,14 @@
  * behavior over the product store. Transcript lines
  * are `Label: text`, chronological (startTimeMs, then segmentOrder), final
  * segments only when scoped to a recording or on the naming lane; the speaker
- * key falls back to You/Them (no local recording-speaker renames — that lane
- * is cloud-only). Attendee emails never enter a prompt: there are no local
+ * registry supplies names and owner identity. Attendee emails never enter a prompt: there are no local
  * events at all (calendar is cloud-only), so `linkedEvent` is always null.
  */
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import type { SkillNoteInput, SkillRunContext } from '@prismical/ai-prompts';
 import * as schema from '../../infra/product-db/schema';
 import type { LocalDb } from './wire';
+import { loadSpeakerLabeler } from './speakers';
 
 export type NoteRow = typeof schema.note.$inferSelect;
 
@@ -23,16 +23,6 @@ export interface LoadNoteInputOptions {
   /** Live editor markdown the client sent; `''` is a real (empty) override. */
   readonly noteMarkdownOverride?: string;
 }
-
-const speakerLabel = (key: string): string => {
-  if (key === 'you') return 'You';
-  if (key === 'them') return 'Them';
-  if (key.startsWith('dz:')) {
-    const n = Number(key.slice(3));
-    return Number.isFinite(n) ? `Speaker ${n + 1}` : 'Speaker';
-  }
-  return key;
-};
 
 export const selectNoteRow = async (db: LocalDb, noteId: string): Promise<NoteRow | undefined> => {
   const rows = await db
@@ -92,7 +82,8 @@ export async function loadNoteInput(
     .orderBy(asc(schema.transcriptSegment.startTimeMs), asc(schema.transcriptSegment.segmentOrder));
 
   if (segments.length > 0) {
-    input.transcript = segments.map(s => `${speakerLabel(s.speaker)}: ${s.text}`).join('\n');
+    const label = loadSpeakerLabeler(db, segments.map(s => s.recordingId));
+    input.transcript = segments.map(s => `${label(s.recordingId, s.speaker)}: ${s.text}`).join('\n');
     // Set ONLY when segments exist — the NO_TRANSCRIPT guard keys on it.
     if (opts.recordingId !== undefined) input.recordingId = opts.recordingId;
   }

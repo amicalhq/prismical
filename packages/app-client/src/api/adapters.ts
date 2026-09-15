@@ -34,6 +34,9 @@ export interface CoreFolder {
   parentId?: string | null;
   isFavorite?: boolean;
   createdAt: string;
+  isOwner?: boolean;
+  sharedByName?: string | null;
+  memberCount?: number;
 }
 export interface CoreTag {
   id: string;
@@ -129,6 +132,11 @@ export function toFolder(c: CoreFolder): Folder {
     parentId: c.parentId ?? null,
     createdAt: c.createdAt,
     favorite: Boolean(c.isFavorite),
+    // Absent until the first delta lands (an optimistic row is the caller's own): left undefined
+    // rather than guessed, so a fresh row does not flash as shared or as someone else's.
+    ...(c.isOwner !== undefined ? { isOwner: c.isOwner } : {}),
+    ...(c.sharedByName ? { sharedByName: c.sharedByName } : {}),
+    ...(c.memberCount !== undefined ? { memberCount: c.memberCount } : {}),
   };
 }
 

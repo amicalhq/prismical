@@ -4,7 +4,7 @@ import * as React from 'react';
 import { AppLink as Link } from './app-link';
 import { usePathname, useSearchParams, useNavigation } from '@prismical/app-client';
 import { withoutNotesFilter } from '../lib/notes-filter-url';
-import { MoreHorizontal, Pencil, Star, Trash2 } from 'lucide-react';
+import { EllipsisVertical, Pencil, Star, Trash2 } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -31,7 +31,10 @@ export function TagSidebarRow({ tag, noteCount, tagNames }: TagSidebarRowProps) 
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useNavigation();
-  const isActive = pathname === '/notes' && searchParams.getAll('tags').includes(tag.id);
+  // Whether this tag is part of the notes list's filter: only so that deleting it can drop it
+  // from the URL. It does NOT light the row. The sidebar highlights where you are, one place at a
+  // time; a tag is a filter, and the toolbar's pills already show which ones are on.
+  const inFilter = pathname === '/notes' && searchParams.getAll('tags').includes(tag.id);
 
   const [editOpen, setEditOpen] = React.useState(false);
   const [deleteOpen, setDeleteOpen] = React.useState(false);
@@ -42,12 +45,10 @@ export function TagSidebarRow({ tag, noteCount, tagNames }: TagSidebarRowProps) 
 
   return (
     <SidebarMenuItem className="group/tag-item">
-      <SidebarMenuButton
-        asChild
-        size="sm"
-        isActive={isActive}
-        className="pr-8 text-sm text-sidebar-foreground"
-      >
+      {/* No `isActive` (main: tag rows no longer light up for the notes
+          filter) and no `pr-8` (this branch: the row reserves no room for a
+          menu that is hidden almost always). */}
+      <SidebarMenuButton asChild size="sm" className="text-sm text-sidebar-foreground">
         <Link href={`/notes?tags=${tag.id}`} aria-label={`#${tag.name}`}>
           <TagHash color={tag.color} name={tag.name} />
         </Link>
@@ -56,13 +57,31 @@ export function TagSidebarRow({ tag, noteCount, tagNames }: TagSidebarRowProps) 
         <DropdownMenuTrigger asChild>
           <button
             type="button"
+            // Marks this as a row action so the row keeps its fill while the
+            // menu is open - Radix puts pointer-events:none on the body while a
+            // menu is up, which ends :hover underneath it.
+            data-sidebar="menu-action"
             aria-label={t('navigation.collections.noteOptions', { title: tag.name })}
-            className="absolute right-1 top-1/2 flex aspect-square w-7 -translate-y-1/2 items-center justify-center rounded-md text-sidebar-foreground opacity-0 outline-hidden transition-opacity hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:opacity-100 group-focus-within/tag-item:opacity-100 group-hover/tag-item:opacity-100 data-[state=open]:opacity-100"
+            // No width is reserved for this: the name runs the full row and
+            // truncates at the edge. When the button appears it sits ON TOP of
+            // the tail of the text, so it needs an opaque fill - and --sidebar,
+            // not --sidebar-accent, which is a 5%-alpha wash that covers
+            // nothing.
+            className="absolute top-1/2 right-1 flex aspect-square w-7 -translate-y-1/2 items-center justify-center rounded-md bg-sidebar text-sidebar-foreground opacity-0 outline-hidden transition-opacity hover:text-sidebar-accent-foreground focus-visible:opacity-100 group-focus-within/tag-item:opacity-100 group-hover/tag-item:opacity-100 data-[state=open]:opacity-100"
           >
-            <MoreHorizontal className="size-4" />
+            <EllipsisVertical className="size-4" />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent className="w-48 rounded-lg" side="right" align="start">
+        {/* Sized to its longest label, not to a number. At a fixed w-48 "Remove
+            from favorites" wrapped onto two lines - which only showed on tags
+            that WERE favorites, so it read as intermittent - and every
+            translation of it is longer still. min-w keeps a short menu from
+            looking cramped, max-w stops a pathological label running away. */}
+        <DropdownMenuContent
+          className="w-max max-w-72 min-w-48 rounded-lg"
+          side="right"
+          align="start"
+        >
           <DropdownMenuItem
             onSelect={() =>
               favoriteTag.mutate({ id: tag.id, patch: { isFavorite: !tag.favorite } })
@@ -105,7 +124,7 @@ export function TagSidebarRow({ tag, noteCount, tagNames }: TagSidebarRowProps) 
         onCancel={() => setDeleteOpen(false)}
         onConfirm={() => {
           // The optimistic delete unmounts this row, so update navigation immediately.
-          if (isActive) router.replace(withoutNotesFilter(searchParams, 'tags', tag.id));
+          if (inFilter) router.replace(withoutNotesFilter(searchParams, 'tags', tag.id));
           setDeleteOpen(false);
           deleteTag.mutate(tag.id);
         }}

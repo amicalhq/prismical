@@ -44,7 +44,6 @@ export function SkillProposalHost(props: Props) {
     return candidate ? (
       <SkillDiffPendingBar
         noteId={props.noteId}
-        skillName={candidate.skillName}
         compact={props.compact}
       />
     ) : null;
@@ -120,7 +119,7 @@ function ProposalEditor({
             restoreEditor={sourceEditor}
           />
         ) : (
-          <SkillDiffPendingBar noteId={noteId} skillName={candidate.skillName} compact={compact} />
+          <SkillDiffPendingBar noteId={noteId} compact={compact} />
         ))}
     </>
   );

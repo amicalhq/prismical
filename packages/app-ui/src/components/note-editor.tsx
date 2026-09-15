@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { tiptapJsonToMarkdown } from '@prismical/editor-markdown';
 import { toast } from 'sonner';
 import {
@@ -38,13 +39,14 @@ import {
 import { NoteFolderChip } from './note-folder-chip';
 import { NoteTagEditor } from './note-tag-editor';
 import { NoteEventChips } from './note-event-chips';
-import { useRegisterCurrentNote } from '../shell/current-note-context';
+import { useCurrentNote, useRegisterCurrentNote } from '../shell/current-note-context';
 import { useCurrentNoteEditor } from '../shell/current-editor-context';
 import type { Note } from '@prismical/app-contracts';
 import { copyToClipboard } from '../lib/clipboard';
 import { useUpdateNote, useDeleteNote } from '@prismical/app-client';
 import { NoteTitleField } from './note-title-field';
 import { NoteBodyEditor } from './note-body-editor';
+import { NoteHistoryControls } from './note-history-controls';
 import { ShareDialog } from '../shell/share-dialog';
 import { useTranslation } from 'react-i18next';
 
@@ -57,12 +59,14 @@ interface NoteEditorProps {
 export function NoteEditor({ note }: NoteEditorProps) {
   const { t } = useTranslation();
   const router = useNavigation();
+  const { headerActionsTarget, headerTitleTarget } = useCurrentNote();
   const caps = useDesktopCapabilities();
   // Floating mode is a plan feature as well as a desktop capability (see the pop-out button).
   const { entitlements } = useEntitlements();
   const canFloat = caps.has('floating-note') && entitlements.features.floatingMode;
   const [title, setTitle] = useState(note.title);
   const [emoji, setEmoji] = useState<string | undefined>(note.emoji);
+  useEffect(() => setEmoji(note.emoji), [note.emoji]);
   const [starred, setStarred] = useState(note.starred);
   const [folderId, setFolderId] = useState<string | null>(note.folderId ?? null);
   const [showDelete, setShowDelete] = useState(false);
@@ -83,6 +87,11 @@ export function NoteEditor({ note }: NoteEditorProps) {
     transcript: note.transcript ?? [],
   });
 
+  const changeEmoji = (value: string | undefined) => {
+    setEmoji(value);
+    update.mutate({ emoji: value });
+  };
+
   const copyAsMarkdown = async () => {
     if (!canCopyMarkdown || !editor) return;
     try {
@@ -99,98 +108,117 @@ export function NoteEditor({ note }: NoteEditorProps) {
 
   return (
     <div className="mx-auto w-full max-w-[45rem] px-4 pb-32 pt-2 md:px-6">
-      {/* ── Header: emoji + title + star + actions ───────────────────── */}
+      {/* ── Title: emoji + editable title ───────────────────── */}
       <div className="mb-2 flex items-start gap-1">
-        <NoteEmojiPicker
-          value={emoji}
-          disabled={note.writable === false}
-          onChange={value => {
-            setEmoji(value);
-            update.mutate({ emoji: value });
-          }}
+        <NoteEmojiPicker value={emoji} disabled={note.writable === false} onChange={changeEmoji} />
+
+        <NoteTitleField
+          key={note.id}
+          note={note}
+          onTitleChange={setTitle}
+          headerTarget={headerTitleTarget}
+          headerLeading={
+            <NoteEmojiPicker
+              compact
+              value={emoji}
+              disabled={note.writable === false}
+              onChange={changeEmoji}
+            />
+          }
         />
+      </div>
 
-        <NoteTitleField key={note.id} note={note} onTitleChange={setTitle} />
-
-        {/* Pop out to the floating note (desktop only).
+      {headerActionsTarget &&
+        createPortal(
+          <>
+            <NoteHistoryControls
+              editor={editorNoteId === note.id ? editor : null}
+              noteId={note.id}
+              writable={note.writable !== false}
+            />
+            {/* Pop out to the floating note (desktop only).
                 Icon semantics (locked): the PiP glyph lives ONLY here. */}
-        {canFloat && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => void caps.openFloatingNote(note.id)}
-            className="mt-1 h-8 w-8 shrink-0 p-0 hover:bg-accent"
-            aria-label={t('notes.actions.popOut')}
-            title={t('notes.actions.popOut')}
-          >
-            <PictureInPicture2 className="h-4 w-4 text-muted-foreground" />
-          </Button>
-        )}
+            {canFloat && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => void caps.openFloatingNote(note.id)}
+                className="h-8 w-8 shrink-0 p-0 hover:bg-accent"
+                aria-label={t('notes.actions.popOut')}
+                title={t('notes.actions.popOut')}
+              >
+                <PictureInPicture2 className="h-4 w-4 text-muted-foreground" />
+              </Button>
+            )}
 
-        {/* Share */}
-        {sharingEnabled && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setShowShare(true)}
-            className="mt-1 h-8 shrink-0 gap-1.5 px-2 hover:bg-accent"
-            aria-label={t('notes.actions.share')}
-          >
-            <UserPlus className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm text-muted-foreground">{t('common.actions.share')}</span>
-          </Button>
-        )}
+            {/* Share */}
+            {sharingEnabled && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowShare(true)}
+                className="h-8 shrink-0 gap-1.5 px-2 hover:bg-accent"
+                aria-label={t('notes.actions.share')}
+              >
+                <UserPlus className="h-4 w-4 text-muted-foreground" />
+                <span className="hidden text-sm text-muted-foreground sm:inline">
+                  {t('common.actions.share')}
+                </span>
+              </Button>
+            )}
 
-        {/* Star toggle */}
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => {
-            const next = !starred;
-            setStarred(next);
-            update.mutate({ starred: next });
-          }}
-          className="mt-1 h-8 w-8 shrink-0 p-0 hover:bg-accent"
-          aria-label={starred ? t('notes.actions.unstar') : t('notes.actions.star')}
-        >
-          <Star
-            className={`h-4 w-4 transition-colors ${
-              starred ? 'fill-yellow-400 text-yellow-400' : 'text-muted-foreground'
-            }`}
-          />
-        </Button>
-
-        {/* Actions menu */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
+            {/* Star toggle */}
             <Button
               variant="ghost"
               size="sm"
-              className="mt-1 h-8 w-8 shrink-0 p-0 hover:bg-accent"
-              aria-label={t('notes.actions.noteActions')}
+              onClick={() => {
+                const next = !starred;
+                setStarred(next);
+                update.mutate({ starred: next });
+              }}
+              className="h-8 w-8 shrink-0 p-0 hover:bg-accent"
+              aria-label={starred ? t('notes.actions.unstar') : t('notes.actions.star')}
             >
-              <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
+              <Star
+                className={`h-4 w-4 transition-colors ${
+                  starred ? 'fill-yellow-400 text-yellow-400' : 'text-muted-foreground'
+                }`}
+              />
             </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem
-              className="gap-2"
-              disabled={!canCopyMarkdown}
-              onSelect={copyAsMarkdown}
-            >
-              <ClipboardCopy className="h-4 w-4" />
-              {t('notes.actions.copyMarkdown')}
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              className="gap-2 text-destructive focus:text-destructive"
-              onSelect={() => setShowDelete(true)}
-            >
-              <Trash2 className="h-4 w-4" />
-              {t('common.actions.delete')}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
+
+            {/* Actions menu */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-8 shrink-0 p-0 hover:bg-accent"
+                  aria-label={t('notes.actions.noteActions')}
+                >
+                  <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  className="gap-2"
+                  disabled={!canCopyMarkdown}
+                  onSelect={copyAsMarkdown}
+                >
+                  <ClipboardCopy className="h-4 w-4" />
+                  {t('notes.actions.copyMarkdown')}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="gap-2 text-destructive focus:text-destructive"
+                  onSelect={() => setShowDelete(true)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  {t('common.actions.delete')}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </>,
+          headerActionsTarget
+        )}
 
       {/* ── Metadata row: folder + tags ──────────────────────────────── */}
       <div className="mb-1.5 flex flex-wrap items-center gap-1.5 px-1">

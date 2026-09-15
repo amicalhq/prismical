@@ -20,7 +20,15 @@ import { useTranslation } from 'react-i18next';
 // Account screen. The web-only auth wiring — the active
 // account's email and sign-out — stays in the thin web wrapper (which reads
 // AuthProvider) and arrives here as props, so the body is framework-free.
-export function AccountScreen({ email, onSignOut }: { email: string; onSignOut: () => void }) {
+export function AccountScreen({
+  email,
+  onSignOut,
+  children,
+}: {
+  email: string;
+  onSignOut: () => void;
+  children?: React.ReactNode;
+}) {
   const { t } = useTranslation();
   const [open, setOpen] = React.useState(false);
   const [confirmText, setConfirmText] = React.useState('');
@@ -59,15 +67,17 @@ export function AccountScreen({ email, onSignOut }: { email: string; onSignOut: 
       </div>
 
       <div className="space-y-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>{t('settings.account.signedInTitle')}</CardTitle>
-            <CardDescription>{t('settings.account.signedInDescription')}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm font-medium text-foreground">{email || '—'}</p>
-          </CardContent>
-        </Card>
+        {children ?? (
+          <Card>
+            <CardHeader>
+              <CardTitle>{t('settings.account.signedInTitle')}</CardTitle>
+              <CardDescription>{t('settings.account.signedInDescription')}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm font-medium text-foreground">{email || '—'}</p>
+            </CardContent>
+          </Card>
+        )}
 
         <Card className="border-destructive/50">
           <CardHeader>

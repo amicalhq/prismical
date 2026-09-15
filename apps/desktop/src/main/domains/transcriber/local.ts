@@ -279,7 +279,8 @@ export const LocalWhisperLive: Layer.Layer<
         }
         breaker.consecutive = 0;
 
-        const replaced = applyReplacements(decoded.success.text, terms);
+        // Native segments bypass core's transcription handler, which removes PostgreSQL NULs.
+        const replaced = applyReplacements(decoded.success.text.replaceAll('\u0000', ''), terms);
         const now = yield* Clock.currentTimeMillis;
         const segment = mintChunkSegment({
           recordingId,

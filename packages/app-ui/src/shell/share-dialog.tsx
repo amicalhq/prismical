@@ -11,7 +11,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
 import { Badge } from '../ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { copyToClipboard } from '../lib/clipboard';
-import { useActiveOrgId } from '@prismical/app-client';
+import { ApiError, FOLDER_SHARE_ORG_ONLY, useActiveOrgId } from '@prismical/app-client';
 import { useEnv } from '@prismical/app-client';
 import { EVENTS, usePorts } from '@prismical/app-client';
 import { useOrgMembers } from '@prismical/app-client';
@@ -119,7 +119,12 @@ function PeoplePanel({
   const [role, setRole] = React.useState<ShareRole>('viewer');
   const [error, setError] = React.useState<string | null>(null);
 
-  const inherited = resourceType === 'note' ? (noteMembers.data?.inherited ?? []) : [];
+  // Access inherits down the folder tree, so both a note and a folder can carry people whose
+  // access is managed from a folder above them.
+  const inherited =
+    resourceType === 'note'
+      ? (noteMembers.data?.inherited ?? [])
+      : (folderMembers.data?.inherited ?? []);
 
   async function onAdd() {
     setError(null);
@@ -131,6 +136,21 @@ function PeoplePanel({
     }
     // An existing org member → grant directly (instant). Otherwise invite by email.
     const member = orgMembers.data?.find(m => m.email.toLowerCase() === v.toLowerCase());
+    if (resourceType === 'folder') {
+      // Folders are org-only, so a folder share can only be resolved against the member list.
+      // While that list is missing (still loading, errored, or no active org yet) we cannot tell
+      // a colleague from an outsider, so say "couldn't share" rather than blaming the invitee.
+      if (!orgMembers.isSuccess) {
+        setError(t('sharing.couldNotShare'));
+        return;
+      }
+      // There is no by-email lane for folders, so say so instead of sending a request core can
+      // only refuse.
+      if (!member) {
+        setError(t('sharing.folderOrgOnly'));
+        return;
+      }
+    }
     try {
       if (member) {
         await updateShare.mutateAsync({ add: [{ orgUserId: member.orgUserId, role }] });
@@ -146,12 +166,21 @@ function PeoplePanel({
         role,
       });
       setValue('');
-    } catch {
-      setError(t('sharing.couldNotShare'));
+    } catch (err) {
+      setError(
+        err instanceof ApiError && err.code === FOLDER_SHARE_ORG_ONLY
+          ? t('sharing.folderOrgOnly')
+          : t('sharing.couldNotShare')
+      );
     }
   }
 
-  const busy = updateShare.isPending || createInvite.isPending;
+  // A folder share cannot be resolved until the org-member list has answered (see onAdd), so
+  // hold the button while it is still pending rather than dead-ending a legitimate colleague.
+  const busy =
+    updateShare.isPending ||
+    createInvite.isPending ||
+    (resourceType === 'folder' && orgMembers.isPending);
 
   return (
     <div className="space-y-4">
@@ -162,7 +191,10 @@ function PeoplePanel({
               className="col-span-2 sm:col-span-1"
               placeholder={t('sharing.addByEmail')}
               value={value}
-              onChange={e => setValue(e.target.value)}
+              onChange={e => {
+                setValue(e.target.value);
+                setError(null);
+              }}
               onKeyDown={e => {
                 if (e.key === 'Enter') void onAdd();
               }}
@@ -181,11 +213,17 @@ function PeoplePanel({
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : t('common.actions.share')}
             </Button>
           </div>
+          {/* The hint steps aside once an error is showing: for a folder they carry the same
+              sentence, and one copy is enough. Typing again clears the error and brings it back. */}
           {isEmail(value) &&
-            !orgMembers.data?.some(m => m.email.toLowerCase() === value.trim().toLowerCase()) && (
+            !error &&
+            orgMembers.isSuccess &&
+            !orgMembers.data.some(m => m.email.toLowerCase() === value.trim().toLowerCase()) && (
               <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Mail className="h-3 w-3" />
-                {t('sharing.notInOrganization')}
+                {resourceType === 'folder'
+                  ? t('sharing.folderOrgOnly')
+                  : t('sharing.notInOrganization')}
               </p>
             )}
           {error && <p className="text-xs text-destructive">{error}</p>}

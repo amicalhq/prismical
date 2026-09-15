@@ -17,7 +17,7 @@ import { useTranslation } from 'react-i18next';
  * state (Drafted a suggestion → Kept / Undone; or Stopped / a friendly skip / an error).
  *
  * The mock's step checkmarks ("Read the transcript", "Drafted…") are deliberately absent: the run
- * endpoint is one POST with no progress stream, so any steps would be invented. Keep / Undo stay
+ * endpoint is one POST with no progress stream, so any steps would be invented. Apply / Discard stay
  * on the review pill (one source of truth); "Review in note" just hands the user to it.
  *
  * Ephemeral: the record lives in the client run feed; persisting it as a conversation turn is

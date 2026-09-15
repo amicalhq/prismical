@@ -7,12 +7,14 @@ import { useWalkthroughEvent, useWalkthroughStage } from '../onboarding/context'
 import * as React from 'react';
 import { useQueryClient, useQueries } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { useRegisterNoteDockActions } from './note-dock-actions';
 import { useCurrentNote } from '../shell/current-note-context';
 import { RECORDING_TROUBLESHOOTING_URL } from '../lib/docs-links';
 import { recordingErrorHintKey } from '../lib/recording-error-help';
 import { X } from 'lucide-react';
 import { RecordingPillFace, recordingPillWidth } from './note-recording-dock';
 import { DockUnit, DockRowmate } from './dock-unit';
+import { SkillNoteCreated } from './skill-note-created';
 import { SkillDockSlot } from './skill-dock-slot';
 import {
   useEntitlements,
@@ -21,7 +23,7 @@ import {
 } from '@prismical/app-client';
 import {
   consumePendingAutoTranscribe,
-  getRecordingPreferences,
+  currentAccountExperience,
   useSyncStore,
 } from '@prismical/app-client';
 import { useTranslation } from 'react-i18next';
@@ -39,9 +41,9 @@ import { RecordingNoticeCard } from './recording-notice-card';
 import { useRecordingDocumentTitle } from '../hooks/use-recording-document-title';
 import { useRecordingElapsed } from '../hooks/use-recording-elapsed';
 import { AnimatedWidth } from './animated-width';
-import { TranscriptPanel, type RecordingLog } from './transcript-panel';
+import { TranscriptPanel, type RecordingLog, type TranscriptOwner } from './transcript-panel';
 import { RecordingSkillStatus } from './recording-skill-status';
-import { AskPillFace, ASK_PILL_WIDTH } from './ask/ask-dock-pill';
+import { AskPillFace } from './ask/ask-dock-pill';
 import type { ComposerSkill } from './ask/ask-composer';
 import { useAskSkillRunStore } from '@prismical/app-client';
 import { useActiveSkillRun, type SkillRunSource } from '@prismical/app-client';
@@ -68,7 +70,16 @@ import {
   noteRecordingsKey,
   speakersKey,
   listRecordingSpeakers,
-  renameRecordingSpeaker,
+  tagRecordingSpeaker,
+  applySpeakerPatch,
+  mergeSpeakerRow,
+  useOrgMembers,
+  useOrganizations,
+  useSessionView,
+  useViewerProfile,
+  type CoreRecording,
+  type CoreRecordingSpeaker,
+  type SpeakerTagPatch,
   type TranscriptPresentationOptions,
 } from '@prismical/app-client';
 
@@ -208,6 +219,44 @@ function RecordingBottomClusterView({
   const recordingAway = !!transcriptNoteId && transcriptNoteId !== noteId;
   const recPillWidth = recordingPillWidth(rec.state, rec.canPause, compact);
   const { data: transcriptNote } = useNote(transcriptNoteId ?? '');
+  // Who the transcript's "You" is. Registry identity says WHICH speaker is the owner; this says
+  // who the owner IS as the viewer sees them, by comparing the recording's owner with the
+  // viewer's own org-user id (from the organizations list, else the roster's self row). A
+  // recording someone else owns is named from the org roster. Unknown (identity still loading,
+  // or a legacy row without an owner id) resolves to null, which the panel renders as the
+  // viewer - the common case - without ever guessing another person's name.
+  const sessionView = useSessionView();
+  const activeOrgId = activeOrgIdOf(sessionView);
+  const me = sessionView.accounts.find(
+    a => (a.sessionKey ?? a.sub) === (sessionView.activeSessionKey ?? sessionView.activeSub)
+  );
+  const organizations = useOrganizations();
+  const members = useOrgMembers(activeOrgId);
+  const viewerProfile = useViewerProfile().data;
+  const viewerOrgUserId =
+    organizations.data?.find(o => o.orgId === activeOrgId)?.orgUserId ??
+    members.data?.find(mb => mb.isSelf)?.orgUserId ??
+    null;
+  const ownerFor = (r: CoreRecording): TranscriptOwner | null => {
+    if (!r.orgUserId || !viewerOrgUserId) return null;
+    if (r.orgUserId === viewerOrgUserId) {
+      return {
+        isViewer: true,
+        name: viewerProfile?.name ?? me?.name ?? null,
+        email: me?.email ?? viewerProfile?.email ?? null,
+        image: viewerProfile?.image ?? null,
+      };
+    }
+    const member = members.data?.find(mb => mb.orgUserId === r.orgUserId);
+    return {
+      isViewer: false,
+      name: member?.name ?? null,
+      email: member?.email ?? null,
+      image: member?.image ?? null,
+    };
+  };
+  // Write access is a property of the loaded note; until it loads, offer nothing.
+  const canTagSpeakers = transcriptNote ? transcriptNote.writable !== false : false;
   const noteName = transcriptNote?.title.trim();
   const customNoteName =
     transcriptNote?.titleSource !== 'placeholder' && noteName && noteName !== t('notes.emptyTitle')
@@ -420,6 +469,8 @@ function RecordingBottomClusterView({
     linesLoaded: transcriptQueries[i]?.isSuccess ?? false,
     folded: folded.data?.has(r.id) ?? false,
     speakers: speakerQueries[i]?.data,
+    owner: ownerFor(r),
+    canTag: canTagSpeakers,
     processing: recordingIsProcessing(finalizePhase(r)),
     finalizeStatus: finalizePhase(r),
   }));
@@ -489,12 +540,35 @@ function RecordingBottomClusterView({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- recs identity churns per fetch; phaseSig captures exactly the transitions we act on
   }, [phaseSig]);
 
-  // Rename a diarized speaker, then refresh every speaker registry (the id → recording mapping
-  // is server-side; the prefix invalidation is cheap and correct).
-  const onRenameSpeaker = (speakerId: string, displayName: string | null) => {
-    void renameRecordingSpeaker(speakerId, displayName)
-      .then(() => qc.invalidateQueries({ queryKey: ['recording-speakers'] }))
-      .catch(() => toast.error(t('recording.errors.renameSpeaker')));
+  // Tag a speaker (name / owner / person) optimistically: the registry cache takes the patch at
+  // once, the server row replaces it on success, a failure rolls back and refetches. A
+  // per-recording sequence keeps an older request from clobbering a newer one: only the latest
+  // tag's outcome may roll back or refetch, an older success just merges its row.
+  const tagSequence = React.useRef(new Map<string, number>());
+  const onTagSpeaker = (recordingId: string, speakerKey: string, patch: SpeakerTagPatch) => {
+    const key = speakersKey(recordingId);
+    const seq = (tagSequence.current.get(recordingId) ?? 0) + 1;
+    tagSequence.current.set(recordingId, seq);
+    const latest = () => tagSequence.current.get(recordingId) === seq;
+    const previous = qc.getQueryData<CoreRecordingSpeaker[]>(key);
+    qc.setQueryData<CoreRecordingSpeaker[]>(key, rows =>
+      applySpeakerPatch(rows ?? [], recordingId, speakerKey, patch)
+    );
+    void tagRecordingSpeaker(recordingId, speakerKey, patch)
+      .then(row => {
+        // A stale success must not overwrite a newer tag's optimistic state; the newest tag's
+        // own refetch brings the server's final rows.
+        if (!latest()) return;
+        qc.setQueryData<CoreRecordingSpeaker[]>(key, rows => mergeSpeakerRow(rows ?? [], row));
+        void qc.invalidateQueries({ queryKey: key });
+      })
+      .catch(() => {
+        if (latest()) {
+          qc.setQueryData(key, previous);
+          void qc.invalidateQueries({ queryKey: key });
+        }
+        toast.error(t('recording.errors.tagSpeaker'));
+      });
   };
 
   // The per-recording wand: enhance THAT recording. Routed through the same request store the
@@ -780,7 +854,7 @@ function RecordingBottomClusterView({
           cancelled ||
           note?.noteId !== noteId ||
           useSkillDiffStore.getState().candidatesByNote.has(noteId) ||
-          !getRecordingPreferences().autoTranscribeNewNotes
+          !currentAccountExperience()?.getSnapshot().data?.experience.autoTranscribeNewNotes
         ) {
           return;
         }
@@ -804,7 +878,7 @@ function RecordingBottomClusterView({
     };
   }, [noteId, rec.state, recording.control, syncStore, t]);
 
-  const onStart = () => {
+  const onStart = React.useCallback(() => {
     if (
       rec.state !== 'idle' ||
       workflowState.kind !== 'idle' ||
@@ -815,7 +889,16 @@ function RecordingBottomClusterView({
     void rec.start(currentNote.noteId, currentNote.title || t('recording.untitledRecording'));
     setExpandedUnit('rec');
     analytics.capture(EVENTS.RECORDING_STARTED, { note_id: currentNote.noteId });
-  };
+  }, [rec, workflowState.kind, currentNote, t, analytics]);
+  const onOpenAsk = React.useCallback(() => {
+    if (!askBlocked) setExpandedUnit('ask');
+  }, [askBlocked]);
+  const noteDockActions = React.useMemo(() => ({
+    startRecording: rec.state === 'idle' && workflowState.kind === 'idle' && !hasStagedCandidate
+      ? onStart : undefined,
+    askAi: !askBlocked ? onOpenAsk : undefined,
+  }), [rec.state, workflowState.kind, hasStagedCandidate, onStart, askBlocked, onOpenAsk]);
+  useRegisterNoteDockActions(currentNote?.noteId, noteDockActions);
   // Both captures gate on the resolved outcome: a guard-rejected double-click or a failed
   // resume must not inflate the pause/resume counts.
   const onPause = () => {
@@ -985,23 +1068,15 @@ function RecordingBottomClusterView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [budgetKey]);
 
-  // Panel footprints: the unit morphs to these when expanded. The inner max()
-  // keeps a usable panel on desktop; below 820px the `--dock-panel-w` custom
-  // property (set by tokens.css on `.dock-narrow-panels`) overrides every
-  // desktop expression with the full-bleed calc(100vw - 24px) — a var()
-  // read inside the inline style is the one thing a media query CAN reach.
-  // Compact (the floating note window): panels take the FULL window width and
-  // a shorter height; compact widths skip the var deliberately.
-  const recPanelWidth = compact
-    ? 'calc(100vw - 16px)'
-    : recMaxi
-      ? 'var(--dock-panel-w, min(760px, max(280px, 100vw - 290px)))'
-      : 'var(--dock-panel-w, min(500px, max(280px, 100vw - 320px)))';
-  const askPanelWidth = compact
-    ? 'calc(100vw - 16px)'
-    : askMaxi
-      ? 'var(--dock-panel-w, min(820px, max(280px, 100vw - 290px)))'
-      : 'var(--dock-panel-w, min(620px, max(280px, 100vw - 320px)))';
+  // Both panels share normal and maximized footprints. The recording controls
+  // borrow width from Ask within the fixed resting row. Container units
+  // keep every footprint inside the content pane, including with the sidebar open.
+  const dockWidth = 'min(600px, calc(100cqw - 24px))';
+  const normalPanelWidth = 'min(620px, calc(100cqw - 24px))';
+  const maximizedWidth = 'min(820px, calc(100cqw - 24px))';
+  const recPanelWidth = compact ? 'calc(100vw - 16px)' : recMaxi ? maximizedWidth : normalPanelWidth;
+  const askPanelWidth = compact ? 'calc(100vw - 16px)' : askMaxi ? maximizedWidth : normalPanelWidth;
+  const restingNeighborWidth = currentNote || recordingAway ? recPillWidth : 52;
   // Compact normal heights differ per unit and are svh-capped so a short
   // window still fits.
   const panelHeight = (maxi: boolean, unit: 'rec' | 'ask') =>
@@ -1175,6 +1250,8 @@ function RecordingBottomClusterView({
               )}
             </div>
           )}
+        {currentNote && workflowState.kind === 'idle' && !hasStagedCandidate && rec.state === 'idle' &&
+          <SkillNoteCreated noteId={currentNote.noteId} />}
         {/* Dock row (v3): two morphing units — Record and Ask — that expand IN PLACE into
             their panels (the sibling collapses out of the row), plus the transient skill
             slot. items-end so an expanding unit grows upward off the shared baseline; the
@@ -1234,7 +1311,7 @@ function RecordingBottomClusterView({
                       )}
                       recordings={recordingLogs}
                       onEnhanceRecording={onEnhanceRecording}
-                      onRenameSpeaker={onRenameSpeaker}
+                      onTagSpeaker={onTagSpeaker}
                       isExpanded={recMaxi}
                       onToggleExpanded={() => setRecMaxi(v => !v)}
                       onClose={() => setExpandedUnit(null)}
@@ -1307,7 +1384,7 @@ function RecordingBottomClusterView({
                     activeRecordingId={sessionVisible ? rec.recordingId : null}
                     recordings={recordingLogs}
                     onEnhanceRecording={onEnhanceRecording}
-                    onRenameSpeaker={onRenameSpeaker}
+                    onTagSpeaker={onTagSpeaker}
                     isExpanded={recMaxi}
                     onToggleExpanded={() => setRecMaxi(v => !v)}
                     onClose={() => setExpandedUnit(null)}
@@ -1364,15 +1441,13 @@ function RecordingBottomClusterView({
             pillWidth={
               compact
                 ? `min(300px, calc(100vw - ${recPillWidth + 26}px))`
-                : `min(${ASK_PILL_WIDTH}px, calc(100vw - ${recordingAway ? recPillWidth + 56 : 106}px))`
+                : `calc(${dockWidth} - ${restingNeighborWidth + 8}px)`
             }
             panelWidth={askPanelWidth}
             panelHeight={panelHeight(askMaxi, 'ask')}
             pill={
               <AskPillFace
-                onClick={() => {
-                  if (!askBlocked) setExpandedUnit('ask');
-                }}
+                onClick={onOpenAsk}
                 onPickSkill={onPickSuggestedSkill}
                 noteId={noteId}
                 activeRun={activeRun}

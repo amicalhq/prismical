@@ -69,6 +69,12 @@ export function deriveNoteContentFromState(
   opts?: DeriveOptions
 ): DerivedNoteContent {
   const ydoc = new Y.Doc();
-  Y.applyUpdate(ydoc, state);
-  return deriveNoteContentFromYDoc(ydoc, opts);
+  try {
+    Y.applyUpdate(ydoc, state);
+    return deriveNoteContentFromYDoc(ydoc, opts);
+  } finally {
+    // The note store is careful to destroy its own temporary doc; callers that derive in a loop
+    // (the projection repair script) get the same treatment here rather than each repeating it.
+    ydoc.destroy();
+  }
 }

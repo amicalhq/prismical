@@ -79,6 +79,35 @@ beforeEach(() => {
 });
 
 describe('NoteTitleField', () => {
+  it('shares header edits and cancellation with the body title and saves once', () => {
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    const view = render(
+      <I18nextProvider i18n={i18n}>
+        <CurrentEditorProvider>
+          <NoteTitleField
+            note={{ ...base, title: 'Original', titleSource: 'manual' }}
+            headerTarget={target}
+          />
+        </CurrentEditorProvider>
+      </I18nextProvider>
+    );
+    const header = target.querySelector('input')!;
+    const body = view.container.querySelector('input')!;
+    act(() => header.focus());
+    fireEvent.change(header, { target: { value: 'Renamed' } });
+    expect(body.value).toBe('Renamed');
+    fireEvent.keyDown(header, { key: 'Enter' });
+    expect(mocks.update).toHaveBeenCalledExactlyOnceWith({ title: 'Renamed' });
+    act(() => header.focus());
+    fireEvent.change(header, { target: { value: 'Cancelled' } });
+    fireEvent.keyDown(header, { key: 'Escape' });
+    expect(header.value).toBe('Original');
+    expect(body.value).toBe('Original');
+    expect(mocks.update).toHaveBeenCalledTimes(1);
+    view.unmount();
+    target.remove();
+  });
   it('settles the latest first line when leaving, but not on effect replay', async () => {
     const view = render(
       <React.StrictMode>{field({ ...base, body: 'First draft' })}</React.StrictMode>

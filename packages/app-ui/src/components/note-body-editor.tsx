@@ -5,11 +5,13 @@ import { useEditor, EditorContent, type Editor } from '@tiptap/react';
 import { Lock } from 'lucide-react';
 import type * as Y from 'yjs';
 import { useNoteCollab } from '@prismical/app-client';
+import { usePorts } from '@prismical/app-client';
 import { startLoadingTiming } from '@prismical/app-client';
 import { buildWebEditorExtensions } from '@prismical/app-client';
 import { useRegisterNoteEditor } from '../shell/current-editor-context';
 import { useSkillDiffDecorations } from '@prismical/app-client';
-import { InlineSkillPopover } from './inline-skill-popover';
+import { NoteFormattingToolbar } from './note-formatting-toolbar';
+import { NoteSlashMenu } from './note-slash-menu';
 import { NoteBodySkeleton } from './skeletons';
 import './note-body-editor.css';
 import './artifact-node.css';
@@ -55,7 +57,7 @@ function Loading() {
 
 export function NoteBodyEditor({ noteId, writable }: NoteBodyEditorProps) {
   const { t } = useTranslation();
-  const { doc, status, synced, ready = synced, scope, error, localSaved, localSaveError, remotePending, loadingAttemptId } = useNoteCollab(noteId);
+  const { doc, status, synced, ready = synced, scope, error, localSaveError, loadingAttemptId } = useNoteCollab(noteId);
 
   if (error) {
     return (
@@ -84,10 +86,6 @@ export function NoteBodyEditor({ noteId, writable }: NoteBodyEditorProps) {
     <div>
       {localSaveError ? (
         <p role="alert" className="mb-2 text-sm text-destructive">{t('notes.editor.localSaveError')}</p>
-      ) : localSaved ? (
-        <p role="status" className="mb-2 text-xs text-muted-foreground">
-          {t(synced && !remotePending ? 'notes.editor.synced' : 'notes.editor.savedLocally')}
-        </p>
       ) : null}
       <NoteBodyEditorInner
         doc={doc}
@@ -117,6 +115,7 @@ function NoteBodyEditorInner({
 }: InnerProps) {
   const { t } = useTranslation();
   const placeholder = t('notes.editor.placeholder');
+  const { workflow } = usePorts();
   const loading = useRef<ReturnType<typeof startLoadingTiming> | null>(null);
   useEffect(() => {
     // Passive browser diagnostics only; this does not add analytics traffic or
@@ -136,14 +135,17 @@ function NoteBodyEditorInner({
   }, [doc, noteId, loadingAttemptId]);
   const editor: Editor | null = useEditor(
     {
-      extensions: buildWebEditorExtensions(doc, noteId, placeholder),
+      extensions: buildWebEditorExtensions(doc, noteId, placeholder, () => {
+        const state = workflow?.getSnapshot();
+        return state?.kind === 'skill' && state.noteId === noteId && state.phase === 'applying';
+      }),
       editable: false, // toggled below once the editor exists
       immediatelyRender: false, // Next.js SSR: avoid a hydration mismatch
       editorProps: {
         attributes: { class: 'note-prose w-full text-note-foreground' },
       },
     },
-    [doc, noteId, placeholder]
+    [doc, noteId, placeholder, workflow]
   );
 
   // Only a hydrated local body is published. Reconnects do not withdraw it.
@@ -188,8 +190,12 @@ function NoteBodyEditorInner({
         <p className="mb-2 text-xs text-warning">{t('notes.editor.reconnecting')}</p>
       )}
       <EditorContent editor={editor} />
-      {/* Selection → inline-rewrite entry point; write access only. */}
-      {writable && <InlineSkillPopover editor={editor} noteId={noteId} />}
+      {writable && (
+        <>
+          <NoteFormattingToolbar editor={editor} noteId={noteId} />
+          <NoteSlashMenu editor={editor} noteId={noteId} />
+        </>
+      )}
     </div>
   );
 }

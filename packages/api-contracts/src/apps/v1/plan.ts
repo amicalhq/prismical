@@ -49,19 +49,54 @@ export const PlanEntitlementFeaturesSchema = z
   .strip();
 export type PlanEntitlementFeatures = z.output<typeof PlanEntitlementFeaturesSchema>;
 
+export const PlanEntitlementLimitsSchema = z
+  .object({
+    seats: z.number().int().nonnegative().nullable(),
+    cloudTranscriptionSeconds: z.number().int().nonnegative().nullable(),
+    aiCredits: z.number().int().nonnegative().nullable(),
+    maxRecordingSeconds: z.number().int().positive().nullable(),
+  })
+  .strip();
+export type PlanEntitlementLimits = z.output<typeof PlanEntitlementLimitsSchema>;
+
+/** Neutral names for the bonuses an organization can hold. Clients map these to their own copy. */
+export const ENTITLEMENT_GRANT_LABEL_KEYS = ['bonus'] as const;
+
+/**
+ * A bonus an organization holds on top of its plan, already reflected in `limits`.
+ *
+ * Copy travels as a `labelKey` the client maps to its own locale catalog, with an optional `label`
+ * override that wins when present — the same convention as the usage meter, so wording can change
+ * without a client release. The server never sends its internal reason for the bonus.
+ */
+export const EntitlementGrantSummarySchema = z
+  .object({
+    labelKey: z.enum(ENTITLEMENT_GRANT_LABEL_KEYS),
+    label: z.string().nullable(),
+    /** ISO-8601, or null for a bonus that does not expire. */
+    expiresAt: z.string().nullable(),
+  })
+  .strip();
+export type EntitlementGrantSummary = z.output<typeof EntitlementGrantSummarySchema>;
+
 export const PlanEntitlementsSchema = z
   .object({
     planExternalId: z.string().nullable(),
     features: PlanEntitlementFeaturesSchema,
     aiModelTier: AiModelTierSchema,
-    limits: z
-      .object({
-        seats: z.number().int().nonnegative().nullable(),
-        cloudTranscriptionSeconds: z.number().int().nonnegative().nullable(),
-        aiCredits: z.number().int().nonnegative().nullable(),
-        maxRecordingSeconds: z.number().int().positive().nullable(),
-      })
-      .strip(),
+    /** EFFECTIVE limits — what every gate enforces, bonuses included. */
+    limits: PlanEntitlementLimitsSchema,
+    /**
+     * What the plan alone grants, before any bonus. Equal to `limits` when there are none, so a
+     * client that wants to show "included + bonus" can subtract without a second request.
+     *
+     * OPTIONAL, like the whole entitlements object one level up, and for the same reason: a client
+     * can reach a server that predates these fields — a web or desktop release that ships ahead of
+     * the backend, or a backend rolled back underneath one. Treat an absent value as `limits`.
+     */
+    limitsBeforeGrants: PlanEntitlementLimitsSchema.optional(),
+    /** Bonuses already folded into `limits`; empty for most organizations, absent on an older server. */
+    grants: z.array(EntitlementGrantSummarySchema).default([]),
     /** true = transcription seconds and credits are pooled across the org, not per member. */
     pooled: z.boolean(),
   })
@@ -82,7 +117,8 @@ export const PLAN_LIMIT_ERROR_CODES = {
   /** Skill run: this period's AI credits are used up (Ask streams the same code). */
   AI_CREDITS_EXHAUSTED: 'AI_CREDITS_EXHAUSTED',
 } as const;
-export type PlanLimitErrorCode = (typeof PLAN_LIMIT_ERROR_CODES)[keyof typeof PLAN_LIMIT_ERROR_CODES];
+export type PlanLimitErrorCode =
+  (typeof PLAN_LIMIT_ERROR_CODES)[keyof typeof PLAN_LIMIT_ERROR_CODES];
 
 /** One metered dimension: what has been used this period against the plan's limit. */
 export const PlanMeterSchema = z

@@ -34,6 +34,7 @@ import {
   useNote,
   useNotes,
   useRecording,
+  useUpdateNote,
 } from '@prismical/app-client';
 import { NoteTitleField } from '@prismical/app-ui/components/note-title-field';
 import { NoteBodyEditor } from '@prismical/app-ui/components/note-body-editor';
@@ -42,7 +43,12 @@ import {
   CurrentNoteProvider,
   useRegisterCurrentNote,
 } from '@prismical/app-ui/shell/current-note-context';
-import { CurrentEditorProvider } from '@prismical/app-ui/shell/current-editor-context';
+import { NoteEmojiPicker } from '@prismical/app-ui/components/note-emoji-picker';
+import { NoteHistoryControls } from '@prismical/app-ui/components/note-history-controls';
+import {
+  CurrentEditorProvider,
+  useCurrentNoteEditor,
+} from '@prismical/app-ui/shell/current-editor-context';
 
 const CHROME_BUTTON_CLASS =
   'flex size-6 items-center justify-center rounded-md text-dock-ink-3 transition-colors hover:bg-dock-hover hover:text-dock-ink';
@@ -75,7 +81,10 @@ const autoStartIntent: { armed: boolean; noteId: string | null } = {
  * before the router and remains available when a route/provider below fails.
  */
 export function FloatErrorFallback({ error }: { error: unknown }) {
-  React.useEffect(() => captureRendererException(window.desktop.telemetry, error, 'react_error_boundary'), [error]);
+  React.useEffect(
+    () => captureRendererException(window.desktop.telemetry, error, 'react_error_boundary'),
+    [error]
+  );
   const { t } = useTranslation();
   return (
     <div className="h-screen w-screen p-0">
@@ -208,6 +217,8 @@ function FloatSlotResolver({ fresh }: { fresh: boolean }) {
 function FloatNoteBody({ noteId }: { noteId: string }) {
   const { t } = useTranslation();
   const note = useNote(noteId);
+  const updateNote = useUpdateNote(noteId);
+  const { editor, editorNoteId } = useCurrentNoteEditor();
   const rec = useRecording();
   const createNote = useCreateNote();
 
@@ -304,8 +315,17 @@ function FloatNoteBody({ noteId }: { noteId: string }) {
             className="flex min-w-0 max-w-[70%] items-center gap-1.5"
             style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
           >
-            <FileText className="size-3.5 shrink-0 text-dock-ink-3" />
-            {note.data && <NoteTitleField key={note.data.id} note={note.data} compact />}
+            {note.data && (
+              <>
+                <NoteEmojiPicker
+                  compact
+                  value={note.data.emoji}
+                  disabled={note.data.writable === false}
+                  onChange={emoji => updateNote.mutate({ emoji })}
+                />
+                <NoteTitleField key={note.data.id} note={note.data} compact />
+              </>
+            )}
           </div>
         </div>
         <span className="w-2 flex-none" />
@@ -313,6 +333,11 @@ function FloatNoteBody({ noteId }: { noteId: string }) {
           className={FLOAT_CLUSTER_CLASS}
           style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
         >
+          <NoteHistoryControls
+            editor={editorNoteId === noteId ? editor : null}
+            noteId={noteId}
+            writable={note.data?.writable !== false}
+          />
           <button
             type="button"
             data-switcher-toggle
@@ -510,7 +535,11 @@ export function FloatNoteView({
               isMac ? '' : 'shadow-2xl'
             }`}
           >
-            {noteId ? <FloatNoteBody key={noteId} noteId={noteId} /> : <FloatSlotResolver fresh={fresh} />}
+            {noteId ? (
+              <FloatNoteBody key={noteId} noteId={noteId} />
+            ) : (
+              <FloatSlotResolver fresh={fresh} />
+            )}
           </div>
         </div>
       </CurrentEditorProvider>

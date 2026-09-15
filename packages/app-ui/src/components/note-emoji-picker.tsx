@@ -10,11 +10,17 @@ const EmojiPickerContent = lazy(() => import('./note-emoji-picker-content'));
 
 interface NoteEmojiPickerProps {
   value?: string;
+  compact?: boolean;
   disabled?: boolean;
   onChange: (emoji: string | undefined) => void;
 }
 
-export function NoteEmojiPicker({ value, disabled, onChange }: NoteEmojiPickerProps) {
+export function NoteEmojiPicker({
+  value,
+  compact = false,
+  disabled,
+  onChange,
+}: NoteEmojiPickerProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
 
@@ -29,14 +35,22 @@ export function NoteEmojiPicker({ value, disabled, onChange }: NoteEmojiPickerPr
         <Button
           variant="ghost"
           size="icon-lg"
-          className="mt-1 size-10 shrink-0 p-0 hover:bg-accent"
+          className={
+            compact
+              ? 'size-7 shrink-0 p-0 hover:bg-accent'
+              : 'mt-1 size-10 shrink-0 p-0 hover:bg-accent'
+          }
           aria-label={t('notes.actions.changeEmoji')}
           disabled={disabled}
         >
           {value ? (
-            <span className="text-[28px] leading-none">{value}</span>
+            <span className={compact ? 'text-base leading-none' : 'text-[28px] leading-none'}>
+              {value}
+            </span>
           ) : (
-            <FileText className="size-6 text-muted-foreground" />
+            <FileText
+              className={compact ? 'size-4 text-muted-foreground' : 'size-6 text-muted-foreground'}
+            />
           )}
         </Button>
       </PopoverTrigger>
@@ -47,7 +61,10 @@ export function NoteEmojiPicker({ value, disabled, onChange }: NoteEmojiPickerPr
       >
         <Suspense
           fallback={
-            <div role="status" className="flex h-80 items-center justify-center text-sm text-muted-foreground">
+            <div
+              role="status"
+              className="flex h-80 items-center justify-center text-sm text-muted-foreground"
+            >
               {t('common.status.loading')}
             </div>
           }

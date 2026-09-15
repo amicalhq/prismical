@@ -22,8 +22,8 @@ export interface ScopeOption {
 }
 
 /**
- * Multi-select combobox for the automation builder's scope filters (folders, tags) in the
- * NotesFolderPicker idiom. Selecting the "Any …" head row clears the selection; selecting any
+ * Multi-select combobox for the automation builder's scope filters (folders, tags): a chip that
+ * opens a searchable command list. Selecting the "Any …" head row clears the selection; selecting any
  * concrete option toggles it. Empty selection === "Any" (no filter dimension).
  */
 export function ScopeMultiPicker({

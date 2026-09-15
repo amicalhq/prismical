@@ -42,7 +42,7 @@ export function DeleteSkillDialog({
     >
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>
+          <AlertDialogTitle className="wrap-anywhere">
             {t('settings.skillLibrary.delete.title', {
               name: skill ? skillDisplayName(skill, t) : '',
             })}

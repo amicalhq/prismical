@@ -28,7 +28,7 @@ import {
   useMessageScroller,
 } from '../ui/message-scroller';
 import { Marker, MarkerContent, MarkerIcon } from '../ui/marker';
-import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 import { formatApplicationDuration, useApplicationLocale } from '@prismical/app-i18n';
 import { RECORDING_TROUBLESHOOTING_URL } from '../lib/docs-links';
@@ -42,16 +42,37 @@ import { DOCK_CTL, DOCK_SCROLL_BUTTON } from './dock-chrome';
 import { formatSessionTimer } from './note-recording-dock';
 import { Avatar, AvatarFallback } from '../ui/avatar';
 import { UserAvatar } from '../ui/user-avatar';
-import { useAutoEnhanceStore, useSessionView, useViewerProfile } from '@prismical/app-client';
-import type { RecState } from '@prismical/app-client';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../ui/dropdown-menu';
+import { isOwnerSpeaker, needsOwnerChoice, resolveSpeakerLabel } from '../lib/speaker-identity';
+import { SpeakerPersonPicker } from './speaker-person-picker';
+import { useAutoEnhanceStore, useSessionView, useViewerProfile, useDesktopCapabilities } from '@prismical/app-client';
+import type { RecState, SpeakerTagPatch } from '@prismical/app-client';
 import type { TranscriptLine } from '@prismical/app-contracts';
 import { useTranslation } from 'react-i18next';
 
-/** One registry entry for a recording's speaker — drives labels + rename. */
+/** One registry entry for a recording's speaker — drives labels, sides, and the tag menu. */
 export interface RecordingSpeakerInfo {
   id: string;
   speakerKey: string; // 'you' | 'them' | 'dz:N'
   displayName: string | null;
+  personId?: string | null;
+  /** The recording owner's voice (set by "This is me"); rendered like the `you` channel. */
+  isOwner?: boolean;
+  /** 'channel' | 'diarization' (pass) | 'user' (tag/rename). */
+  source?: string;
+}
+
+/** The recording owner as the viewer sees them: themselves, or a named member. */
+export interface TranscriptOwner {
+  isViewer: boolean;
+  name: string | null;
+  email: string | null;
+  image: string | null;
 }
 
 // One recording's contribution to the rolling log + its picker metadata.
@@ -69,8 +90,12 @@ export interface RecordingLog {
   linesLoaded?: boolean;
   /** Already folded into the note via a kept Enhance. */
   folded: boolean;
-  /** Speaker registry rows, once the finalize pass has minted them. */
+  /** Speaker registry rows, once the finalize pass or a tag has minted them. */
   speakers?: RecordingSpeakerInfo[];
+  /** Who owns the recording, as seen by the viewer; absent ⇒ the viewer. */
+  owner?: TranscriptOwner | null;
+  /** The viewer may tag speakers (write access on the note). */
+  canTag?: boolean;
   /** Audio upload or transcript processing is still pending. */
   processing?: boolean;
   /** The settled finalize outcome from recording.meta ('done' | 'failed' | 'skipped' | 'stalled'
@@ -99,8 +124,8 @@ type TranscriptPanelProps = {
   /** Enhance THAT recording into the note. */
   /** `auto` = the bar re-firing a parked auto-enhance; stays on the on-stop lane (no Ask pop). */
   onEnhanceRecording: (recordingId: string, opts?: { auto?: boolean }) => void;
-  /** Rename a diarized speaker; absent ⇒ labels are not editable. */
-  onRenameSpeaker?: (speakerId: string, displayName: string | null) => void;
+  /** Tag a speaker (name / owner flag) by key; absent ⇒ labels are not editable. */
+  onTagSpeaker?: (recordingId: string, speakerKey: string, patch: SpeakerTagPatch) => void;
   isExpanded: boolean;
   onToggleExpanded: () => void;
   onClose: () => void;
@@ -137,11 +162,16 @@ type TranscriptPanelProps = {
   finishedRecordingId?: string | null;
 };
 
-/** Registry-resolved labels (renames win) — line.speaker was derived at fetch time. */
-function linesToText(lines: TranscriptLine[], speakers?: RecordingSpeakerInfo[]): string {
-  const names = new Map((speakers ?? []).map(s => [s.speakerKey, s.displayName]));
+/** Copy/export text, labelled by the same rule the bubbles use (owner, registry names, "Them"). */
+function linesToText(
+  lines: TranscriptLine[],
+  speakers: RecordingSpeakerInfo[] | undefined,
+  owner: TranscriptOwner | null | undefined,
+  strings: { you: string; them: string; owner: string }
+): string {
+  const registry = new Map((speakers ?? []).map(s => [s.speakerKey, s]));
   return lines
-    .map(l => `${(l.speakerKey && names.get(l.speakerKey)) || l.speaker}: ${l.text}`)
+    .map(l => `${resolveSpeakerLabel(l.speakerKey, l.speaker, registry, owner, strings)}: ${l.text}`)
     .join('\n');
 }
 
@@ -170,7 +200,7 @@ function TranscriptPanelContent({
   skillStatus,
   recordings,
   onEnhanceRecording,
-  onRenameSpeaker,
+  onTagSpeaker,
   isExpanded,
   onToggleExpanded,
   onClose,
@@ -198,6 +228,10 @@ function TranscriptPanelContent({
   const { resolvedLocale } = useApplicationLocale();
   const { scrollToMessage } = useMessageScroller();
   const [histOpen, setHistOpen] = React.useState(false);
+  // "Which one is you?" hints dismissed this session, per recording.
+  const [ownerHintDismissed, setOwnerHintDismissed] = React.useState<ReadonlySet<string>>(
+    () => new Set()
+  );
   const [histQuery, setHistQuery] = React.useState('');
 
   // "You" turns show the signed-in user's own avatar.
@@ -208,6 +242,14 @@ function TranscriptPanelContent({
     email: me?.email ?? null,
     image: useViewerProfile().data?.image ?? null,
   };
+  const labelStrings = React.useMemo(
+    () => ({
+      you: t('recording.panel.you'),
+      them: t('recording.panel.them'),
+      owner: t('recording.panel.owner'),
+    }),
+    [t]
+  );
 
   // Rolling log renders OLDEST first; the history menu lists NEWEST first (as given).
   const chronological = React.useMemo(() => [...recordings].reverse(), [recordings]);
@@ -222,7 +264,7 @@ function TranscriptPanelContent({
 
   const copyRecording = async (rec: RecordingLog) => {
     setHistOpen(false);
-    if (await copyToClipboard(linesToText(rec.lines, rec.speakers))) {
+    if (await copyToClipboard(linesToText(rec.lines, rec.speakers, rec.owner, labelStrings))) {
       toast.success(t('recording.panel.copied', { number: rec.number }));
     } else {
       toast.error(t('recording.panel.copyBlocked'));
@@ -233,7 +275,7 @@ function TranscriptPanelContent({
   const copyAll = async () => {
     const text = chronological
       .filter(r => r.lines.length > 0)
-      .map(r => linesToText(r.lines, r.speakers))
+      .map(r => linesToText(r.lines, r.speakers, r.owner, labelStrings))
       .join('\n\n');
     if (!text) return;
     if (await copyToClipboard(text)) toast.success(t('recording.actions.copyTranscript'));
@@ -517,11 +559,35 @@ function TranscriptPanelContent({
                       </MarkerContent>
                     </Marker>
                   ) : null}
+                  {rec.canTag &&
+                  !rec.processing &&
+                  !ownerHintDismissed.has(rec.id) &&
+                  needsOwnerChoice(rec.lines, rec.speakers) ? (
+                    <div
+                      role="note"
+                      className="mb-2 flex items-center gap-2 rounded-lg bg-dock-field px-2.5 py-1.5 text-2xs text-dock-ink-2"
+                    >
+                      <span className="min-w-0 flex-1">{t('recording.panel.whichOneIsYou')}</span>
+                      <button
+                        type="button"
+                        aria-label={t('recording.panel.dismissHint')}
+                        onClick={() =>
+                          setOwnerHintDismissed(prev => new Set([...prev, rec.id]))
+                        }
+                        className="flex size-5 shrink-0 items-center justify-center rounded-md text-dock-ink-3 hover:text-dock-ink"
+                      >
+                        <X className="size-3.5" />
+                      </button>
+                    </div>
+                  ) : null}
                   <TranscriptBubbles
                     lines={rec.lines}
                     viewer={viewer}
+                    owner={rec.owner}
                     speakers={rec.speakers}
-                    onRenameSpeaker={onRenameSpeaker}
+                    recordingId={rec.id}
+                    canTag={rec.canTag}
+                    onTagSpeaker={onTagSpeaker}
                   />
                 </MessageScrollerItem>
               ))}
@@ -838,7 +904,25 @@ function groupTurns(lines: TranscriptLine[]): Turn[] {
   return turns;
 }
 
-/** Stable hue for a diarized speaker — same trick as people-display's hueFromString. */
+// Indexed by the stable diarization key, so renaming never changes a speaker's color.
+const SPEAKER_COLORS = [
+  { avatar: 'bg-blue-700', label: 'text-blue-700 dark:text-blue-400' },
+  { avatar: 'bg-orange-700', label: 'text-orange-700 dark:text-orange-400' },
+  { avatar: 'bg-violet-700', label: 'text-violet-700 dark:text-violet-400' },
+  { avatar: 'bg-teal-700', label: 'text-teal-700 dark:text-teal-400' },
+  { avatar: 'bg-rose-700', label: 'text-rose-700 dark:text-rose-400' },
+  { avatar: 'bg-amber-700', label: 'text-amber-700 dark:text-amber-400' },
+  { avatar: 'bg-cyan-700', label: 'text-cyan-700 dark:text-cyan-400' },
+  { avatar: 'bg-lime-700', label: 'text-lime-700 dark:text-lime-400' },
+] as const;
+
+function speakerColor(key: string) {
+  const match = /^dz:(\d+)$/.exec(key);
+  const index = match ? Number(match[1]) : speakerHue(key);
+  return SPEAKER_COLORS[(Number.isSafeInteger(index) ? index : 0) % SPEAKER_COLORS.length]!;
+}
+
+/** Stable hue for live channel labels and nonnumeric speaker keys. */
 function speakerHue(key: string): number {
   let h = 0;
   for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) % 360;
@@ -855,30 +939,41 @@ function speakerInitials(label: string): string {
   return (init || '?').toUpperCase();
 }
 
-// Message-bubble transcript: each turn is a chat message — "them"
-// (and diarized speakers) on the left in a field-toned bubble, "you" on the
-// right in a primary bubble; the head carries avatar + name + clock time.
-// Diarized speakers keep click-to-rename; live channel labels carry the
-// speakers-settle-later explanation as a hover tooltip.
+// Message-bubble transcript: each turn is a chat message — the recording owner on the right in
+// a primary bubble, everyone else on the left in a field-toned bubble; the head carries avatar +
+// name + clock time. Identity resolves through the speaker registry: `you` is the owner unless
+// the user said "Not me"; a numbered speaker is the owner once flagged "This is me". With write
+// access, every settled speaker's name opens the tag menu; live channel labels carry the
+// speakers-settle-later explanation as a hover tooltip instead.
 function TranscriptBubbles({
   lines,
   viewer,
+  owner,
   speakers,
-  onRenameSpeaker,
+  recordingId,
+  canTag = false,
+  onTagSpeaker,
   live = false,
 }: {
   lines: TranscriptLine[];
   viewer: { name: string | null; email: string | null; image: string | null };
+  /** The recording owner as the viewer sees them; absent ⇒ the viewer is the owner. */
+  owner?: TranscriptOwner | null;
   speakers?: RecordingSpeakerInfo[];
-  onRenameSpeaker?: (speakerId: string, displayName: string | null) => void;
+  recordingId?: string;
+  canTag?: boolean;
+  onTagSpeaker?: (recordingId: string, speakerKey: string, patch: SpeakerTagPatch) => void;
   live?: boolean;
 }) {
   const { t } = useTranslation();
+  const caps = useDesktopCapabilities();
+  const directoryEnabled = caps.featureFlags === null || caps.featureFlags.directory === true;
   const turns = React.useMemo(() => groupTurns(lines), [lines]);
   const registry = React.useMemo(
     () => new Map((speakers ?? []).map(s => [s.speakerKey, s])),
     [speakers]
   );
+  const taggable = canTag && !!onTagSpeaker && !!recordingId && !live;
   // Keyed by TURN id, not speaker key: a speaker has many non-consecutive turns, and keying on
   // the speaker would mount one autoFocus input per turn — each later focus blurs the previous,
   // whose onBlur commits + closes, so the editor self-destructed before the user could type.
@@ -887,45 +982,59 @@ function TranscriptBubbles({
     key: string;
     value: string;
   } | null>(null);
-
-  const commitRename = (speakerId: string) => {
-    if (!renaming || !onRenameSpeaker) return setRenaming(null);
+  // The person picker, anchored to one turn's head (same turn-id keying as the rename input).
+  const [picking, setPicking] = React.useState<{ turnId: string; key: string } | null>(null);
+  const tag = (key: string, patch: SpeakerTagPatch) => {
+    if (taggable) onTagSpeaker!(recordingId!, key, patch);
+  };
+  const commitRename = () => {
+    if (!renaming) return;
     const trimmed = renaming.value.trim();
-    onRenameSpeaker(speakerId, trimmed.length ? trimmed : null);
+    tag(renaming.key, { displayName: trimmed.length ? trimmed : null });
     setRenaming(null);
   };
+  const ownerProfile: TranscriptOwner = owner ?? { isViewer: true, ...viewer };
 
   return (
     // ph-mask-content: transcript text is masked in PostHog session recordings.
     <div className="ph-mask-content flex flex-col gap-2.5">
       {turns.map(turn => {
-        const you = turn.key === 'you' || turn.speaker === t('recording.panel.you');
         const entry = registry.get(turn.key);
-        const label = entry?.displayName ?? turn.speaker;
+        const isOwner = isOwnerSpeaker(turn.key, registry);
         const diarized = turn.key.startsWith('dz:');
-        const hue = speakerHue(diarized ? turn.key : label);
-        const renamable = diarized && !!entry && !!onRenameSpeaker;
+        const label = resolveSpeakerLabel(turn.key, turn.speaker, registry, ownerProfile, {
+          you: t('recording.panel.you'),
+          them: t('recording.panel.them'),
+          owner: t('recording.panel.owner'),
+        });
+        const color = diarized ? speakerColor(turn.key) : undefined;
+        const hue = speakerHue(label);
+        const nameClass = `text-2xs font-semibold ${
+          isOwner ? 'text-dock-ink' : color ? color.label : live ? '' : 'text-[var(--speaker-them)]'
+        }`;
+        const nameStyle =
+          !diarized && live && !isOwner ? { color: `hsl(${hue} 45% 52%)` } : undefined;
         return (
           <div
             key={turn.id}
             className={`flex max-w-[78%] flex-col gap-1 ${
-              you ? 'items-end self-end' : 'items-start self-start'
+              isOwner ? 'items-end self-end' : 'items-start self-start'
             }`}
           >
-            <div className={`flex items-center gap-1.5 px-0.5 ${you ? 'flex-row-reverse' : ''}`}>
-              {you ? (
+            <div className={`flex items-center gap-1.5 px-0.5 ${isOwner ? 'flex-row-reverse' : ''}`}>
+              {isOwner ? (
                 <UserAvatar
-                  name={viewer.name}
-                  email={viewer.email}
-                  image={viewer.image}
+                  name={ownerProfile.name}
+                  email={ownerProfile.email}
+                  image={ownerProfile.image}
                   size="sm"
                   fallbackClassName="text-2xs font-semibold"
                 />
               ) : diarized || live ? (
                 <Avatar size="sm">
                   <AvatarFallback
-                    className="text-2xs font-semibold text-white"
-                    style={{ backgroundColor: `hsl(${hue} 52% 38%)` }}
+                    className={`text-2xs font-semibold text-white ${color?.avatar ?? ''}`}
+                    style={color ? undefined : { backgroundColor: `hsl(${hue} 52% 38%)` }}
                   >
                     {speakerInitials(label)}
                   </AvatarFallback>
@@ -937,7 +1046,25 @@ function TranscriptBubbles({
                   </AvatarFallback>
                 </Avatar>
               )}
-              {renamable && renaming?.turnId === turn.id ? (
+              {directoryEnabled && picking?.turnId === turn.id && recordingId ? (
+                <Popover open onOpenChange={open => !open && setPicking(null)}>
+                  <PopoverAnchor asChild>
+                    <span className={nameClass} style={nameStyle}>
+                      {label}
+                    </span>
+                  </PopoverAnchor>
+                  <PopoverContent align={isOwner ? 'end' : 'start'} className="w-72 p-0">
+                    <SpeakerPersonPicker
+                      recordingId={recordingId}
+                      currentPersonId={entry?.personId ?? null}
+                      onPick={person => {
+                        tag(turn.key, { personId: person.id });
+                        setPicking(null);
+                      }}
+                    />
+                  </PopoverContent>
+                </Popover>
+              ) : renaming?.turnId === turn.id ? (
                 <input
                   autoFocus
                   value={renaming.value}
@@ -945,51 +1072,72 @@ function TranscriptBubbles({
                   onChange={e =>
                     setRenaming({ turnId: turn.id, key: turn.key, value: e.target.value })
                   }
-                  onBlur={() => commitRename(entry!.id)}
+                  onBlur={commitRename}
                   onKeyDown={e => {
-                    if (e.key === 'Enter') commitRename(entry!.id);
+                    if (e.key === 'Enter') commitRename();
                     if (e.key === 'Escape') setRenaming(null);
                   }}
                   className="h-5 w-32 rounded-[5px] bg-dock-field px-1.5 text-2xs font-semibold text-dock-ink outline-none"
                   aria-label={t('recording.panel.speakerName')}
                 />
+              ) : taggable ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className={`${nameClass} cursor-pointer underline-offset-2 hover:underline`}
+                      style={nameStyle}
+                      title={t('recording.panel.speakerMenu')}
+                    >
+                      {label}
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align={isOwner ? 'end' : 'start'} className="min-w-40">
+                    {/* Only the recording owner can say which voice is theirs; a collaborator
+                        with write access tags names and people but never moves the owner. */}
+                    {ownerProfile.isViewer ? (
+                      isOwner ? (
+                        <DropdownMenuItem onSelect={() => tag(turn.key, { isOwner: false })}>
+                          {t('recording.panel.notMe')}
+                        </DropdownMenuItem>
+                      ) : (
+                        <DropdownMenuItem onSelect={() => tag(turn.key, { isOwner: true })}>
+                          {t('recording.panel.thisIsMe')}
+                        </DropdownMenuItem>
+                      )
+                    ) : null}
+                    {directoryEnabled && (
+                      <DropdownMenuItem onSelect={() => setPicking({ turnId: turn.id, key: turn.key })}>
+                        {t('recording.panel.tagPerson')}
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem
+                      onSelect={() =>
+                        setRenaming({
+                          turnId: turn.id,
+                          key: turn.key,
+                          value: entry?.displayName ?? '',
+                        })
+                      }
+                    >
+                      {t('recording.actions.renameSpeaker')}
+                    </DropdownMenuItem>
+                    {entry?.displayName || entry?.personId ? (
+                      <DropdownMenuItem
+                        onSelect={() => tag(turn.key, { displayName: null, personId: null })}
+                      >
+                        {t('recording.panel.clearName')}
+                      </DropdownMenuItem>
+                    ) : null}
+                  </DropdownMenuContent>
+                </DropdownMenu>
               ) : (
                 <span
-                  className={`text-2xs font-semibold ${
-                    you ? 'text-dock-ink' : diarized || live ? '' : 'text-[var(--speaker-them)]'
-                  } ${renamable ? 'cursor-pointer underline-offset-2 hover:underline' : ''}`}
-                  style={diarized || (live && !you) ? { color: `hsl(${hue} 45% 52%)` } : undefined}
+                  className={nameClass}
+                  style={nameStyle}
                   // Live channel labels settle into real names after the stop —
                   // the tooltip carries that expectation (was a persistent banner).
-                  title={
-                    renamable
-                      ? t('recording.actions.renameSpeaker')
-                      : live && !you
-                        ? t('recording.panel.liveExpectation')
-                        : undefined
-                  }
-                  {...(renamable
-                    ? {
-                        role: 'button',
-                        tabIndex: 0,
-                        onClick: () =>
-                          setRenaming({
-                            turnId: turn.id,
-                            key: turn.key,
-                            value: entry!.displayName ?? '',
-                          }),
-                        onKeyDown: (e: React.KeyboardEvent) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            setRenaming({
-                              turnId: turn.id,
-                              key: turn.key,
-                              value: entry!.displayName ?? '',
-                            });
-                          }
-                        },
-                      }
-                    : {})}
+                  title={live && !isOwner ? t('recording.panel.liveExpectation') : undefined}
                 >
                   {label}
                 </span>
@@ -1001,7 +1149,7 @@ function TranscriptBubbles({
               <p
                 key={line.id}
                 className={`rounded-xl px-2.5 py-1.5 text-[13px] leading-normal ${
-                  you
+                  isOwner
                     ? 'rounded-tr-[4px] bg-primary text-primary-foreground'
                     : 'rounded-tl-[4px] bg-dock-field text-dock-ink'
                 }`}

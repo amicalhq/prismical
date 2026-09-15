@@ -162,7 +162,14 @@ const parser = new MarkdownParser(
     // markdown-it emits `image` as a self-contained token (nesting: 0), so it needs a single
     // no-op handler (`noCloseToken`) rather than the open/close pair `ignore` defaults to —
     // without this, any markdown containing an image throws "Token type `image` not supported".
-    // The schema has no image node, so images are intentionally dropped (alt text included).
+    //
+    // Images are NOT parsed back into the schema's `image` node, even though that node now exists
+    // for compatibility with bodies written elsewhere. markdown-it emits images INLINE while the
+    // node is a BLOCK node, and every scheme for reconciling the two (promoting image-only
+    // paragraphs, splitting paragraphs around images) mangles neighbouring content in list items,
+    // table cells and headings for the sake of a node nothing in this editor can author. Markdown
+    // in, no image; markdown out, a real image — see the serializer. The asymmetry costs an image
+    // on a skill accept, which is what happened before this node existed too.
     image: { ignore: true, noCloseToken: true },
     em: { mark: "italic" },
     strong: { mark: "bold" },
@@ -233,6 +240,27 @@ const serializerNodes: MarkdownSerializer["nodes"] = {
     state.closeBlock(node);
   },
   hardBreak: (state) => state.write("\\\n"),
+  // NOT `defaultMarkdownSerializer.nodes.image`: that one is written for prosemirror-markdown's
+  // INLINE image and never calls closeBlock, so as a block serializer it glues the image to the
+  // next block ("![a](x.png)# Heading") and the re-parse then destroys both. It also assumes a
+  // non-null `src` and throws on the schema default, which would null the WHOLE note's markdown.
+  image: (state, node) => {
+    // String() every attribute rather than trusting its declared type: these values come from
+    // documents other clients wrote, and a non-string reaching `state.esc` throws
+    // "str.replace is not a function", which nulls the WHOLE note's markdown snapshot.
+    const src = node.attrs.src === null || node.attrs.src === undefined ? "" : String(node.attrs.src);
+    const alt = state.esc(
+      node.attrs.alt === null || node.attrs.alt === undefined ? "" : String(node.attrs.alt)
+    );
+    const title =
+      node.attrs.title === null || node.attrs.title === undefined
+        ? ""
+        : ` ${JSON.stringify(String(node.attrs.title))}`;
+    // Parentheses and whitespace in a URL both break the inline form; angle brackets take either.
+    const href = /[()\s]/.test(src) ? `<${src}>` : src;
+    state.write(`![${alt}](${href}${title})`);
+    state.closeBlock(node);
+  },
   text: defaultMarkdownSerializer.nodes.text!,
   artifact: (state, node) => {
     state.renderContent(node);
@@ -290,9 +318,13 @@ const serializerMarks: MarkdownSerializer["marks"] = {
   italic: { open: "*", close: "*", mixable: true, expelEnclosingWhitespace: true },
   bold: { open: "**", close: "**", mixable: true, expelEnclosingWhitespace: true },
   strike: { open: "~~", close: "~~", mixable: true, expelEnclosingWhitespace: true },
-  // Markdown has no underline syntax. Serialize transparently so the text survives while the
-  // mark drops, and keep an explicit entry so underlined text does not make the serializer throw.
+  // Markdown expresses neither underline nor inline CSS. Both serialize transparently so the text
+  // survives while the mark drops. EVERY mark in the schema needs an entry here, expressible or not:
+  // without one the serializer throws "No mark serializer for <name>" and the whole markdown
+  // snapshot comes back null. The test suite asserts that coverage.
   underline: { open: "", close: "", mixable: true, expelEnclosingWhitespace: true },
+  textStyle: { open: "", close: "", mixable: true, expelEnclosingWhitespace: true },
+  highlight: { open: "", close: "", mixable: true, expelEnclosingWhitespace: true },
   code: defaultMarkdownSerializer.marks.code!,
   link: defaultMarkdownSerializer.marks.link!,
 };

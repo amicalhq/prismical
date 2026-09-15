@@ -4,7 +4,6 @@ import * as React from 'react';
 import { useTranslation } from 'react-i18next';
 
 export interface RecordingPreferences {
-  autoTranscribeNewNotes: boolean;
   /** Legacy device-local language pick. Read once to seed the account preference; not written. */
   autoDetectLanguage: boolean;
   /** Legacy device-local language pick (see above). The account preference is the source now. */
@@ -29,7 +28,6 @@ const PENDING_AUTO_TRANSCRIBE_KEY = 'prismical:pending-auto-transcribe-note';
 export const DEFAULT_MICROPHONE_DEVICE_ID = 'default';
 
 export const DEFAULT_RECORDING_PREFERENCES: RecordingPreferences = {
-  autoTranscribeNewNotes: false,
   autoDetectLanguage: true,
   language: 'en',
   microphonePriority: [],
@@ -65,10 +63,6 @@ function normalize(value: unknown): RecordingPreferences {
   if (!value || typeof value !== 'object') return DEFAULT_RECORDING_PREFERENCES;
   const candidate = value as Partial<RecordingPreferences>;
   return {
-    autoTranscribeNewNotes:
-      typeof candidate.autoTranscribeNewNotes === 'boolean'
-        ? candidate.autoTranscribeNewNotes
-        : DEFAULT_RECORDING_PREFERENCES.autoTranscribeNewNotes,
     autoDetectLanguage:
       typeof candidate.autoDetectLanguage === 'boolean'
         ? candidate.autoDetectLanguage
@@ -100,9 +94,6 @@ export function setRecordingPreferences(
   if (typeof window === 'undefined') return next;
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    if (!next.autoTranscribeNewNotes) {
-      window.sessionStorage.removeItem(PENDING_AUTO_TRANSCRIBE_KEY);
-    }
     window.dispatchEvent(new StorageEvent('storage', { key: STORAGE_KEY }));
   } catch {
     // The current tab still receives `next`; persistence is best-effort when a

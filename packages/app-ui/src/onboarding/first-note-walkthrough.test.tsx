@@ -4,8 +4,11 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { I18nextProvider } from 'react-i18next';
 import { createApplicationI18nSync } from '@prismical/app-i18n';
-import { readWalkthrough, walkthroughKey } from './state';
+import { readWalkthrough, walkthroughKey, type Walkthrough } from './state';
+type TestPreferences = { onboarding: { walkthrough: Walkthrough | null; replayRetired: boolean } };
 const m = vi.hoisted(() => ({
+  preferences: new Map<string, TestPreferences>(),
+  listeners: new Set<() => void>(),
   signupAt: new Date().toISOString() as string | undefined,
   pathname: '/home',
   replace: vi.fn(),
@@ -20,7 +23,42 @@ const m = vi.hoisted(() => ({
   create: vi.fn(),
   candidate: undefined as { recordingId: string } | undefined,
 }));
+function account() {
+  let data = m.preferences.get(m.user);
+  if (!data) {
+    data = { onboarding: { walkthrough: null, replayRetired: false } };
+    m.preferences.set(m.user, data);
+  }
+  return {
+    userId: m.user,
+    getSnapshot: () => data,
+    update: (patch: { onboarding?: Partial<TestPreferences['onboarding']> }) => {
+      m.preferences.set(m.user, {
+        ...data,
+        onboarding: { ...data.onboarding, ...patch.onboarding },
+      });
+      m.listeners.forEach(fn => fn());
+      return true;
+    },
+  };
+}
 vi.mock('@prismical/app-client', () => ({
+  currentAccountExperience: () => {
+    const a = account();
+    return { ...a, getSnapshot: () => ({ data: a.getSnapshot() }) };
+  },
+  useAccountExperience: () => {
+    const data = React.useSyncExternalStore(
+      fn => {
+        m.listeners.add(fn);
+        return () => {
+          m.listeners.delete(fn);
+        };
+      },
+      () => account().getSnapshot()
+    );
+    return { data };
+  },
   EVENTS: {
     ONBOARDING_STARTED: 'onboarding_started',
     ONBOARDING_STEP_COMPLETED: 'onboarding_step_completed',
@@ -34,6 +72,7 @@ vi.mock('@prismical/app-client', () => ({
   useActiveOrgId: () => m.org,
   useActiveSessionKey: () => m.user,
   useEnv: () => ({ platform: m.platform }),
+  useDesktopCapabilities: () => ({ has: () => m.platform !== 'web' }),
   useNavigation: () => ({ push: m.push, replace: m.replace }),
   usePathname: () => m.pathname,
   useNotes: () => ({ isSuccess: m.ready, data: m.notes }),
@@ -112,6 +151,7 @@ function Fixture({ enabled }: { enabled?: boolean } = {}) {
 }
 beforeEach(() => {
   window.localStorage.clear();
+  m.preferences.clear();
   m.signupAt = new Date().toISOString();
   m.pathname = '/home';
   m.replace.mockClear();
@@ -137,7 +177,7 @@ it('waits for settled data and suppresses automatic tours for existing users', (
 });
 it('waits for actual dock creation instead of a tour Next click', () => {
   render(<Fixture />);
-  click('Start walkthrough');
+  click('Continue to web');
   click('Continue tour');
   expect(readWalkthrough(walkthroughKey('a'))?.status).toBe('offered');
   click('created');
@@ -145,7 +185,7 @@ it('waits for actual dock creation instead of a tour Next click', () => {
 });
 it('persists dismissal across reload and isolates accounts', () => {
   render(<Fixture />);
-  click('Start walkthrough');
+  click('Continue to web');
   click('Skip tour');
   cleanup();
   render(<Fixture />);
@@ -153,15 +193,15 @@ it('persists dismissal across reload and isolates accounts', () => {
   cleanup();
   m.user = 'b';
   render(<Fixture />);
-  expect(screen.getByRole('button', { name: 'Start walkthrough' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Continue to web' })).toBeTruthy();
 });
-it('walks actual success events, then shows use cases only once after Keep', () => {
+it('walks actual success events, then shows use cases only once after Apply', () => {
   render(
     <React.StrictMode>
       <Fixture />
     </React.StrictMode>
   );
-  click('Start walkthrough');
+  click('Continue to web');
   click('created');
   click('recording');
   expect(screen.getByText('speak')).toBeTruthy();
@@ -184,7 +224,7 @@ it('walks actual success events, then shows use cases only once after Keep', () 
   expect(
     screen.getByRole('link', { name: 'Need a hand? Read the docs' }).getAttribute('href')
   ).toBe('https://prismical.ai/docs');
-  expect(screen.queryByRole('link', { name: /macOS|iOS|Download/ })).toBeNull();
+  expect(screen.getByRole('link', { name: 'Windows' }).getAttribute('href')).toBe('https://github.com/amicalhq/prismical/releases/latest/download/Prismical-windows-x64.exe');
   expect(m.celebrate).toHaveBeenCalledTimes(1);
   expect(m.capture.mock.calls.filter(([event]) => event === 'onboarding_started')).toHaveLength(1);
   expect(
@@ -195,7 +235,7 @@ it('walks actual success events, then shows use cases only once after Keep', () 
   expect(m.capture.mock.calls.filter(([event]) => event === 'onboarding_completed')).toHaveLength(
     1
   );
-  click('Continue to my note');
+  click('Continue to web');
   click('kept');
   expect(m.capture.mock.calls.filter(([event]) => event === 'onboarding_completed')).toHaveLength(
     1
@@ -208,7 +248,7 @@ it('walks actual success events, then shows use cases only once after Keep', () 
 });
 it('allows rejection and another Enhance without reporting completion', () => {
   render(<Fixture />);
-  click('Start walkthrough');
+  click('Continue to web');
   click('created');
   click('recording');
   click('recorded');
@@ -233,7 +273,7 @@ it('restarts only through an explicit sidebar action and retires at three notes'
 });
 it('does not leak active progress to another org and observes cross-tab dismissal', () => {
   const view = render(<Fixture />);
-  click('Start walkthrough');
+  click('Continue to web');
   click('created');
   m.org = 'other';
   view.rerender(<Fixture />);
@@ -243,26 +283,28 @@ it('does not leak active progress to another org and observes cross-tab dismissa
   view.rerender(<Fixture />);
   expect(screen.getByText('record')).toBeTruthy();
   act(() => {
-    window.localStorage.setItem(walkthroughKey('a'), JSON.stringify({ status: 'dismissed' }));
-    window.dispatchEvent(new StorageEvent('storage', { key: walkthroughKey('a') }));
+    account().update({ onboarding: { walkthrough: { status: 'dismissed' } } });
   });
   expect(screen.queryByRole('region', { name: 'Tour' })).toBeNull();
 });
-it('supports an explicit Electron opt-in without enabling it by default', () => {
-  m.platform = 'desktop';
+it.each(['darwin', 'win32', 'linux'])('supports an explicit %s desktop opt-in without enabling it by default', platform => {
+  m.platform = platform;
   render(<Fixture />);
   expect(screen.queryByRole('region', { name: 'Tour' })).toBeNull();
   cleanup();
   render(<Fixture enabled />);
-  expect(screen.getByRole('button', { name: 'Start walkthrough' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Continue in desktop' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'macOS' })).toBeNull();
+  expect(screen.queryByRole('link', { name: 'Windows' })).toBeNull();
+  expect(screen.getByRole('link', { name: 'iOS' }).getAttribute('href')).toBe('https://apps.apple.com/us/app/prismical-ai-note-taker/id6780624498');
+  expect(screen.getByRole('link', { name: 'Android' }).getAttribute('href')).toBe('https://play.google.com/store/apps/details?id=ai.prismical.app');
 });
 
 it('resumes a saved tour on its note and never spotlights another route', () => {
   m.notes = [{ id: 'note' }];
-  window.localStorage.setItem(
-    walkthroughKey('a'),
-    JSON.stringify({ status: 'active', orgId: 'org', noteId: 'note', step: 'record' })
-  );
+  account().update({
+    onboarding: { walkthrough: { status: 'active', orgId: 'org', noteId: 'note', step: 'record' } },
+  });
   const view = render(<Fixture />);
   expect(m.replace).toHaveBeenCalledWith('/notes/note');
   expect(screen.queryByRole('region', { name: 'Tour' })).toBeNull();
@@ -277,7 +319,7 @@ it('resumes a saved tour on its note and never spotlights another route', () => 
 
 it('reports scoped errors without advancing, and records an exit separately from completion', () => {
   render(<Fixture />);
-  click('Start walkthrough');
+  click('Continue to web');
   click('created');
   click('Unrelated error');
   expect(m.capture.mock.calls.filter(([event]) => event === 'onboarding_error')).toHaveLength(0);
@@ -301,32 +343,33 @@ it('does not let an analytics failure block the real action', () => {
     throw new Error('analytics unavailable');
   });
   render(<Fixture />);
-  click('Start walkthrough');
+  click('Continue to web');
   click('created');
   expect(screen.getByText('record')).toBeTruthy();
 });
 
 it('dismisses a saved tour whose note was deleted instead of opening a missing note', () => {
-  window.localStorage.setItem(
-    walkthroughKey('a'),
-    JSON.stringify({ status: 'active', orgId: 'org', noteId: 'deleted', step: 'record' })
-  );
+  account().update({
+    onboarding: {
+      walkthrough: { status: 'active', orgId: 'org', noteId: 'deleted', step: 'record' },
+    },
+  });
   render(<Fixture />);
   expect(m.replace).not.toHaveBeenCalled();
   expect(readWalkthrough(walkthroughKey('a'))).toEqual({ status: 'dismissed' });
 });
-it('fails closed when progress cannot be saved and ignores repeated callbacks', () => {
+it('does not depend on browser storage for progress and ignores duplicate callbacks', () => {
   render(<Fixture />);
-  click('Start walkthrough');
+  click('Continue to web');
   const blocked = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
     throw new Error('blocked');
   });
   click('created');
   click('created');
-  expect(screen.queryByRole('region', { name: 'Tour' })).toBeNull();
+  expect(screen.getByRole('region', { name: 'Tour' })).toBeTruthy();
   expect(
     m.capture.mock.calls.filter(([event]) => event === 'onboarding_step_completed')
-  ).toHaveLength(0);
+  ).toHaveLength(1);
   blocked.mockRestore();
 });
 

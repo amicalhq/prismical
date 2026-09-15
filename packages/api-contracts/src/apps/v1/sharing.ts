@@ -6,6 +6,14 @@ export type ShareRole = z.output<typeof ShareRoleSchema>;
 export const SharedResourceTypeSchema = z.enum(['note', 'folder']);
 export type SharedResourceType = z.output<typeof SharedResourceTypeSchema>;
 
+/**
+ * Error code returned when a folder would be shared outside its own organization: a member add
+ * whose org user belongs to another org, a by-email folder invitation, or accepting a folder
+ * invitation that predates the rule. Folders are org-only; notes keep every sharing lane.
+ * Clients branch on this code to explain the rejection instead of a generic failure.
+ */
+export const FOLDER_SHARE_ORG_ONLY = 'FOLDER_SHARE_ORG_ONLY' as const;
+
 export const NoteIdParamsSchema = z.object({ noteId: z.string().min(1) });
 export const FolderIdParamsSchema = z.object({ folderId: z.string().min(1) });
 export const ShareInvitationParamsSchema = z.object({ invitationId: z.string().min(1) });
@@ -129,6 +137,9 @@ export const FolderMembersResponseSchema = z
     canManage: z.boolean(),
     owner: ShareOwnerSchema,
     members: z.array(ShareMemberSchema),
+    // People who reach this folder through a parent folder (its members and owner, and so on up
+    // the tree), tagged with the folder the access comes from. Managed from that folder.
+    inherited: z.array(ShareMemberSchema.extend({ folderId: z.string().min(1) })).default([]),
   })
   .strip();
 export type FolderMembersResponse = z.output<typeof FolderMembersResponseSchema>;
@@ -187,8 +198,10 @@ export const ShareInvitationDetailSchema = z
     inviterName: z.string(),
     email: z.string(),
     canAccept: z.boolean(),
+    // 'org-only': a folder invitation; folders are shared with org members only, so it can no
+    // longer be accepted (the sharer adds the person to the organization instead).
     reason: z
-      .enum(['wrong-account', 'already-accepted', 'revoked', 'expired', 'unavailable'])
+      .enum(['wrong-account', 'already-accepted', 'revoked', 'expired', 'unavailable', 'org-only'])
       .nullable()
       .optional(),
   })

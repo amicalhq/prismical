@@ -12,7 +12,7 @@
  *    served from the product store + AiProvider; POST /ask itself is the
  *    stream lane (LocalBackendLive.openAskStream), never a unary request;
  *  - GET-empty lists for the cloud-only/deferred lanes the shell polls
- *    (calendars, events, recording-speakers, note-generation-audits,
+ *    (calendars, events, note-generation-audits,
  *    team-vocabulary) — `{results:[]}` keeps their consumers in
  *    clean empty states instead of error states;
  *  - organizations/profile from the LOCAL_WORKSPACE constants, as a list
@@ -39,6 +39,12 @@ import { createNoteTag, deleteNoteTag, listNoteTags } from './junctions';
 import { createNote, listNotes, removeNote, updateNote } from './notes';
 import { getLocalPreferences, writeLocalPreferences } from './preferences';
 import { handleSearch } from './search';
+import {
+  listRecordingSpeakers,
+  tagRecordingSpeaker,
+  renameRecordingSpeaker,
+  speakerCandidates,
+} from './speakers';
 import { pendingSkillResults, resolveSkillResult } from './skill-recovery';
 import {
   acceptSkillRun,
@@ -73,13 +79,13 @@ export interface LocalRouteContext {
    */
   readonly titleLock: <T>(work: () => Promise<T>) => Promise<T>;
   readonly recoverableRuns: Map<string, Promise<RouteResult>>;
+  readonly validateSkillApplication: (resultId: string, update: string) => Promise<boolean>;
 }
 
 /** Cloud-only/deferred lanes served as permanently-empty lists in local mode. */
 const EMPTY_LIST_ROUTES: ReadonlySet<string> = new Set([
   'calendars',
   'events',
-  'recording-speakers',
   'note-generation-audits',
   'team-vocabulary',
 ]);
@@ -137,7 +143,9 @@ export const handleLocalRequest = async (
   const { db, client, ai } = ctx;
 
   if (route === 'organizations') {
-    return method === 'GET' && rest.length === 0 ? ok({ results: [LOCAL_ORGANIZATION] }) : notFound();
+    return method === 'GET' && rest.length === 0
+      ? ok({ results: [LOCAL_ORGANIZATION] })
+      : notFound();
   }
   if (route === 'profile') {
     return method === 'GET' && rest.length === 0 ? ok(LOCAL_PROFILE) : notFound();
@@ -150,6 +158,19 @@ export const handleLocalRequest = async (
   }
   if (EMPTY_LIST_ROUTES.has(route)) {
     return method === 'GET' && rest.length === 0 ? ok({ results: [] }) : notFound();
+  }
+
+  if (route === 'recording-speakers') {
+    if (method === 'GET' && rest.length === 0) return listRecordingSpeakers(db, query);
+    if (method === 'PATCH' && rest.length === 1)
+      return renameRecordingSpeaker(db, rest[0]!, req.body);
+    return notFound();
+  }
+  if (route === 'recordings' && rest[1] === 'speakers' && rest.length === 3) {
+    return method === 'PUT' ? tagRecordingSpeaker(db, rest[0]!, rest[2]!, req.body) : notFound();
+  }
+  if (route === 'recordings' && rest[1] === 'speaker-candidates' && rest.length === 2) {
+    return method === 'GET' ? speakerCandidates(db, rest[0]!) : notFound();
   }
 
   if (route === 'notes') {
@@ -170,7 +191,8 @@ export const handleLocalRequest = async (
   // ── AI lanes ──
   if (route === 'skills') {
     // Reject before sync's stale-write echo can expose a gated row.
-    const skillId = rest[0] ??
+    const skillId =
+      rest[0] ??
       (method === 'POST' && typeof req.body === 'object' && req.body !== null && 'id' in req.body
         ? req.body.id
         : undefined);
@@ -180,16 +202,32 @@ export const handleLocalRequest = async (
   if (route === 'search') {
     return method === 'GET' && rest.length === 0 ? handleSearch(client, query) : notFound();
   }
-  if (route === 'skills' && rest.length === 2 && rest[1] === 'run') {
+  if (
+    route === 'skills' &&
+    rest[1] === 'run' &&
+    (rest.length === 2 || (rest.length === 3 && rest[2] === 'durable'))
+  ) {
     return method === 'POST'
-      ? runSkill({ db, ai, locale: ctx.locale, log: ctx.log, recoverableRuns: ctx.recoverableRuns }, rest[0]!, req.body)
+      ? runSkill(
+          { db, ai, locale: ctx.locale, log: ctx.log, recoverableRuns: ctx.recoverableRuns },
+          rest[0]!,
+          req.body,
+          rest.length === 3
+        )
       : notFound();
   }
-  if (route === 'skill-runs' && rest.length === 1) {
-    if (method === 'GET' && rest[0] === 'pending') return pendingSkillResults(db, query);
-    if (method === 'POST' && rest[0] === 'resolve') return resolveSkillResult(db, req.body);
-    if (method === 'POST' && rest[0] === 'accept') return acceptSkillRun(db, req.body);
-    if (method === 'POST' && rest[0] === 'restore') return restoreSkillRun(db, req.body);
+  if (
+    route === 'skill-runs' &&
+    (rest.length === 1 || (rest.length === 2 && rest[1] === 'durable'))
+  ) {
+    const durable = rest.length === 2;
+    if (method === 'GET' && rest[0] === 'pending') return pendingSkillResults(db, query, durable);
+    if (method === 'POST' && rest[0] === 'resolve')
+      return resolveSkillResult(db, req.body, durable);
+    if (method === 'POST' && rest[0] === 'accept')
+      return acceptSkillRun(db, req.body, durable, ctx.validateSkillApplication);
+    if (method === 'POST' && rest[0] === 'restore' && !durable)
+      return restoreSkillRun(db, req.body);
     return notFound();
   }
   if (route === 'enhanced-recordings') {

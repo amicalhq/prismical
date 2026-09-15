@@ -1,21 +1,22 @@
 "use client";
 import { useEffect } from "react";
 import type { Editor } from "@tiptap/react";
-import { markdownToChildren } from "@prismical/editor-markdown";
-import { listPendingSkillResults } from "../api/hooks/skill-runs";
+import { markdownToChildren, markdownToInlineChildren } from "@prismical/editor-markdown";
+import { listPendingSkillResults, resolvePendingSkillResult } from "../api/hooks/skill-runs";
 import { useActiveSessionKey, useActiveOrgId, usePorts, activeOrgIdOf } from "../ports-context";
 import { useSkillDiffStore } from "./diff/skill-diff-store";
 
+import { waitForSkillResultDelivery, wasSkillResultApplied } from "./diff/skill-result-application";
 import { useSkillRunActivityStore } from "./skill-run-activity-store";
 
 /** Recover only server-completed suggestions; never regenerate uncertain work. */
 export function useRecoverSkillResult(noteId: string, editor: Editor | null) {
-  const { auth, workflow, recording } = usePorts();
+  const { auth, workflow } = usePorts();
   const session = useActiveSessionKey();
   const org = useActiveOrgId();
   useEffect(() => {
-    // Native recording persists completed suggestions across application restarts.
-    if ((workflow && !recording.control) || !editor || !session || !org) return;
+    // Completed suggestions survive navigation and application restarts.
+    if (!editor || !session || !org) return;
     let disposed = false;
     let busy = false;
     let currentRequest: AbortController | undefined;
@@ -55,11 +56,17 @@ export function useRecoverSkillResult(noteId: string, editor: Editor | null) {
         )
           return;
         const result = results[0];
-        if (!result || result.mode === "inline-rewrite") return;
-        const content = markdownToChildren(result.rawMarkdown);
+        if (!result) return;
+        if (result.acceptance && wasSkillResultApplied(editor, result.resultId!)) {
+          await waitForSkillResultDelivery(editor);
+          if (!stillOwned() || disposed) return;
+          await resolvePendingSkillResult(noteId, result.resultId!, { durable: !!result.recoveryContext });
+          return;
+        }
+        const content = result.mode === "inline-rewrite"
+          ? markdownToInlineChildren(result.rawMarkdown) : markdownToChildren(result.rawMarkdown);
         if (!content.length) return;
-        const baseContent = workflow && result.mode === "replace-doc"
-          ? JSON.stringify(editor.getJSON()) : undefined;
+        const baseContent = result.recoveryContext?.baseContent;
         const admitted = workflow?.dispatch({
           type: "runSkill", workflowId: crypto.randomUUID(), noteId, skillId: result.skillId,
         });
@@ -81,13 +88,15 @@ export function useRecoverSkillResult(noteId: string, editor: Editor | null) {
         useSkillDiffStore.getState().stage({
           ...result,
           recoverable: true,
+          durable: !!result.recoveryContext,
           baseContent,
           workflowId: scope?.workflowId,
           proposalId,
           noteId,
           content,
           refineInstruction: result.refineInstruction ?? null,
-          selectionText: null,
+          selectionText: result.recoveryContext?.selectionText ?? null,
+          selectionAnchors: result.recoveryContext?.selectionAnchors,
         });
       } catch {
         // Offline and older servers leave the note editable; retry on the next poll/focus.
@@ -110,5 +119,5 @@ export function useRecoverSkillResult(noteId: string, editor: Editor | null) {
       window.removeEventListener("focus", recover);
       window.removeEventListener("online", recover);
     };
-  }, [noteId, editor, session, org, auth, workflow, recording.control]);
+  }, [noteId, editor, session, org, auth, workflow]);
 }

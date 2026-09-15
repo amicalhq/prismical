@@ -3,19 +3,27 @@
 import * as React from 'react';
 
 import { AppLink as Link } from '../shell/app-link';
-import { Calendar, File, Folder, Star } from 'lucide-react';
+import { Calendar, File, Star } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { formatApplicationTimeAgoShort, useApplicationLocale } from '@prismical/app-i18n';
 import { useCalendarEvents, useFolders, useNoteEvents, useTags } from '@prismical/app-client';
 import type { Note } from '@prismical/app-contracts';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { TagBadge } from '../shell/tag-chip';
+import { FolderChipLabel, folderChipClass } from './folder-chip';
+import { folderAncestry } from '../lib/folder-tree';
 import { meetingBudget, tagBudget } from '../lib/note-chip-budget';
 import { relativeTickInterval, useNow } from '../hooks/use-now';
 import { useTranslation } from 'react-i18next';
 
 interface NoteCardProps {
   note: Note;
+  /**
+   * The folder the list is scoped to, so the row's folder chip reads relative to it: a note two
+   * levels down shows `Clients / Acme`, a note directly inside shows no chip at all. Omitted (or
+   * `null`) at the root and on lists that are not folder-scoped, where the chip is the full path.
+   */
+  pathFrom?: string | null;
   className?: string;
 }
 
@@ -126,7 +134,7 @@ function MeetingChip({
 // over a metadata line carrying the folder and every meeting, and only when the note has one.
 // Tags sit with the title because they name what the note is about; the folder and the meeting
 // say where it came from, which is the quieter question.
-export function NoteCard({ note, className }: NoteCardProps) {
+export function NoteCard({ note, pathFrom, className }: NoteCardProps) {
   const { t } = useTranslation();
   const { resolvedLocale } = useApplicationLocale();
   // Every meeting on the note, primary first — not `note.eventId`, which is only the PRIMARY link,
@@ -145,12 +153,14 @@ export function NoteCard({ note, className }: NoteCardProps) {
   // tick re-renders the row without changing any of them, and re-scanning per row per tick is what
   // makes a long list expensive.
   //
-  // Just the folder's own name, not its full path: a nested path would spend the row's width on
-  // ancestors, and the metadata line already carries the meetings.
-  const folder = React.useMemo(
-    () => (note.folderId ? folders.find(f => f.id === note.folderId) : undefined),
-    [folders, note.folderId]
-  );
+  // Where the note lives, relative to where the list is: the folders below `pathFrom` down to the
+  // note's own, root-first. Empty when the note sits directly in the scoped folder (the heading
+  // already says where you are) or has no folder.
+  const folderPath = React.useMemo(() => {
+    const chain = note.folderId ? folderAncestry(folders, note.folderId) : [];
+    const from = pathFrom ? chain.findIndex(folder => folder.id === pathFrom) : -1;
+    return chain.slice(from + 1).map(folder => folder.name);
+  }, [folders, note.folderId, pathFrom]);
   // Walk tagIds, don't filter allTags — tagIds is in note-tag link order, while useTags() sorts
   // by each tag's own updatedAt (see note-tag-editor). NotesList hydrates tagIds from the
   // note-tags join; a caller that doesn't simply renders no tags.
@@ -173,7 +183,7 @@ export function NoteCard({ note, className }: NoteCardProps) {
       }),
     [eventLinks, calendarEvents]
   );
-  const hasMeta = Boolean(folder) || events.length > 0;
+  const hasMeta = folderPath.length > 0 || events.length > 0;
   const shownEvents = meetingBudget(events.length);
   const shownTags = tagBudget(tags.length);
   const hiddenEvents = events.slice(shownEvents);
@@ -254,16 +264,19 @@ export function NoteCard({ note, className }: NoteCardProps) {
           // the line, not the chips: what the budget did not plan for still clips at the row's
           // edge rather than wrapping the row to a third line.
           <div className="mt-1 flex gap-1 overflow-hidden">
-            {folder && (
-              // Outlined, matching the note page's folder chip: a filled bg-muted +
-              // text-muted-foreground chip draws the folder NAME in the placeholder colour and
-              // reads as a disabled control. The outline is --border, NOT --surface-raised: in
-              // light that token is #fcfcfd, the exact value of --background, so the chip lost its
-              // shape entirely and only dark kept an edge. Just the folder's own name here, not the
-              // full path the note page shows — a nested path would spend the row on ancestors.
-              <span className={cn(CHIP, 'border-border text-foreground')} title={folder.name}>
-                <Folder className="size-3 shrink-0 text-muted-foreground" />
-                <span className="max-w-32 truncate">{folder.name}</span>
+            {folderPath.length > 0 && (
+              // The shared folder chip, so a folder reads the same here as on the note page and
+              // the folders strip.
+              <span className={folderChipClass('xs')} title={folderPath.join(' / ')}>
+                <FolderChipLabel
+                  name={folderPath.join(' / ')}
+                  // A path that does not fit loses its START: the ancestors are what the heading
+                  // above already says, the note's own folder is the part worth keeping.
+                  nameClassName={cn(
+                    'max-w-48',
+                    folderPath.length > 1 && 'text-left [direction:rtl] [unicode-bidi:plaintext]'
+                  )}
+                />
               </span>
             )}
             {events.slice(0, shownEvents).map(event => (

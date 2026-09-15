@@ -8,11 +8,18 @@ import type { AskMessage } from './ask-message';
 import { createWorkflowRuntime } from '../../../../app-workflow/src/runtime';
 
 const mocks = vi.hoisted(() => ({
-  currentNote: { noteId: 'current-note', title: 'Current note' } as { noteId: string; title: string } | null,
+  currentNote: { noteId: 'current-note', title: 'Current note' } as {
+    noteId: string;
+    title: string;
+  } | null,
   workflow: undefined! as ReturnType<typeof createWorkflowRuntime>,
-  chatOptions: undefined! as { sendAutomaticallyWhen: (options: { messages: unknown[] }) => boolean },
+  chatOptions: undefined! as {
+    sendAutomaticallyWhen: (options: { messages: unknown[] }) => boolean;
+  },
   composer: undefined! as React.ComponentProps<typeof AskComposer>,
   message: undefined! as React.ComponentProps<typeof AskMessage>,
+  instancesReady: true,
+  savedModel: undefined as { instanceId: string; modelId: string } | undefined,
   assertCanSend: undefined as (() => void) | undefined,
   send: vi.fn(async () => {}),
   regenerate: vi.fn(async () => {}),
@@ -20,10 +27,14 @@ const mocks = vi.hoisted(() => ({
   approve: vi.fn(async () => {}),
   status: 'ready',
   empty: [] as never[],
-  messages: [{ id: 'answer', role: 'assistant', parts: [{ type: 'text', text: 'Answer' }] }] as UIMessage[],
+  messages: [
+    { id: 'answer', role: 'assistant', parts: [{ type: 'text', text: 'Answer' }] },
+  ] as UIMessage[],
 }));
 
-vi.mock('../../shell/current-note-context', () => ({ useCurrentNote: () => ({ currentNote: mocks.currentNote }) }));
+vi.mock('../../shell/current-note-context', () => ({
+  useCurrentNote: () => ({ currentNote: mocks.currentNote }),
+}));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('@ai-sdk/react', () => ({
   useChat: (options: typeof mocks.chatOptions) => {
@@ -42,7 +53,8 @@ vi.mock('ai', () => ({ lastAssistantMessageIsCompleteWithApprovalResponses: () =
 vi.mock('@prismical/app-client', async () => {
   const { canAsk } = await import('../../../../app-workflow/src/machine');
   const { contextToScope } = await import('../../../../app-client/src/ask/scope');
-  const { askOriginScope, askContinuationMessage } = await import('../../../../app-client/src/ask/conversation');
+  const { askOriginScope, askContinuationMessage } =
+    await import('../../../../app-client/src/ask/conversation');
   const wrapper = { data: { id: 'conversation', messages: [] }, isLoading: false };
   return {
     canAsk,
@@ -58,17 +70,21 @@ vi.mock('@prismical/app-client', async () => {
       env: { getEnv: () => ({ platform: 'web' }) },
     }),
     useDesktopCapabilities: () => new Set(),
-    useInstances: () => ({ data: mocks.empty }),
+    useInstances: () => ({ data: mocks.empty, isSuccess: mocks.instancesReady }),
     useNavigation: () => ({ push: vi.fn() }),
     useEntitlements: () => ({ entitlements: { features: { askAi: true } } }),
     useSkillRuns: () => mocks.empty,
     useSkillRunActivityStore: () => vi.fn(),
     buildAskModelGroups: () => mocks.empty,
-    loadModelPref: () => null,
+    useAccountExperience: () => ({
+      data: { ask: mocks.savedModel ? { org: mocks.savedModel } : {} },
+      update: vi.fn(),
+    }),
     resolveActiveModel: (_groups: unknown, model: unknown) => model,
     saveModelPref: vi.fn(),
     AUTO_SELECTION: {},
-    isAuto: () => true,
+    isAuto: (model: { instanceId?: string }) =>
+      !model.instanceId || model.instanceId === 'prismical-cloud',
     mintConversationId: () => 'new-conversation',
     toUiMessages: () => mocks.messages,
     uiMessageText: () => 'Answer',
@@ -76,7 +92,13 @@ vi.mock('@prismical/app-client', async () => {
     askOriginScope,
     askContinuationMessage,
     askHeadersForPlatform: async () => ({}),
-    createAskTransport: (_scope: unknown, _id: unknown, _model: unknown, _headers: unknown, guard: () => void) => {
+    createAskTransport: (
+      _scope: unknown,
+      _id: unknown,
+      _model: unknown,
+      _headers: unknown,
+      guard: () => void
+    ) => {
       mocks.assertCanSend = guard;
       return {};
     },
@@ -108,12 +130,22 @@ vi.mock('../dock-panel-actions', () => ({
 }));
 vi.mock('../note-recording-dock', () => ({ formatSessionTimer: () => '' }));
 vi.mock('./ask-composer', () => ({
-  AskComposer: React.forwardRef<never, React.ComponentProps<typeof AskComposer>>(function MockComposer(_props, _ref) {
-    mocks.composer = _props;
-    const [draft, setDraft] = React.useState('');
-    return <><input aria-label="Draft question" value={draft} onChange={event => setDraft(event.target.value)} />
-      <button onClick={() => _props.onSend('Question', [])}>Send question</button></>;
-  }),
+  AskComposer: React.forwardRef<never, React.ComponentProps<typeof AskComposer>>(
+    function MockComposer(_props, _ref) {
+      mocks.composer = _props;
+      const [draft, setDraft] = React.useState('');
+      return (
+        <>
+          <input
+            aria-label="Draft question"
+            value={draft}
+            onChange={event => setDraft(event.target.value)}
+          />
+          <button onClick={() => _props.onSend('Question', [])}>Send question</button>
+        </>
+      );
+    }
+  ),
 }));
 vi.mock('./ask-message', () => ({
   AskMessage: (props: React.ComponentProps<typeof AskMessage>) => {
@@ -139,6 +171,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.workflow = createWorkflowRuntime();
   mocks.status = 'ready';
+  mocks.instancesReady = true;
+  mocks.savedModel = undefined;
   mocks.currentNote = { noteId: 'current-note', title: 'Current note' };
   mocks.messages = [{ id: 'answer', role: 'assistant', parts: [{ type: 'text', text: 'Answer' }] }];
 });
@@ -164,7 +198,12 @@ function review() {
 describe('Ask panel workflow admission', () => {
   it('keeps follow-up scope on its original question after navigation and blocks it during review', () => {
     mocks.messages = [
-      { id: 'question', role: 'user', metadata: { scope: { noteIds: ['original-note'] } }, parts: [{ type: 'text', text: 'Question' }] },
+      {
+        id: 'question',
+        role: 'user',
+        metadata: { scope: { noteIds: ['original-note'] } },
+        parts: [{ type: 'text', text: 'Question' }],
+      },
       { id: 'answer', role: 'assistant', parts: [{ type: 'text', text: 'Answer' }] },
     ];
     startSkill();
@@ -173,7 +212,10 @@ describe('Ask panel workflow admission', () => {
     view.rerender(panel());
     const followup = mocks.message.onFollowup!;
     followup('More details');
-    expect(mocks.send).toHaveBeenCalledWith({ text: 'More details', metadata: { scope: { noteIds: ['original-note'] } } });
+    expect(mocks.send).toHaveBeenCalledWith({
+      text: 'More details',
+      metadata: { scope: { noteIds: ['original-note'] } },
+    });
     mocks.send.mockClear();
     act(review);
     followup('Late details');
@@ -189,7 +231,9 @@ describe('Ask panel workflow admission', () => {
     expect(screen.queryByRole('textbox', { name: 'Draft question' })).toBeNull();
     expect(draft.isConnected).toBe(true);
     expect(mocks.composer.canSubmit!()).toBe(false);
-    act(() => mocks.workflow.dispatch({ type: 'declineProposal', workflowId: 'wf', proposalId: 'proposal' }));
+    act(() =>
+      mocks.workflow.dispatch({ type: 'declineProposal', workflowId: 'wf', proposalId: 'proposal' })
+    );
     expect(screen.getByRole('textbox', { name: 'Draft question' })).toBe(draft);
     expect((draft as HTMLInputElement).value).toBe('My unfinished question');
     expect(mocks.composer.canSubmit!()).toBe(true);
@@ -199,7 +243,10 @@ describe('Ask panel workflow admission', () => {
     mocks.workflow.dispatch({ type: 'startRecording', workflowId: 'wf', noteId: 'another-note' });
     render(panel());
     fireEvent.click(screen.getByRole('button', { name: 'Send question' }));
-    expect(mocks.send).toHaveBeenCalledWith({ text: 'Question', metadata: { scope: { noteIds: ['current-note'] } } });
+    expect(mocks.send).toHaveBeenCalledWith({
+      text: 'Question',
+      metadata: { scope: { noteIds: ['current-note'] } },
+    });
     expect(() => mocks.assertCanSend?.()).not.toThrow();
     act(() => {
       mocks.workflow.dispatch({
@@ -226,7 +273,9 @@ describe('Ask panel workflow admission', () => {
     act(review);
     expect(mocks.stop).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole('button', { name: 'Send question' })).toBeNull();
-    expect(() => mocks.assertCanSend?.()).toThrow('Ask paused for proposal review');
+    expect(() => mocks.assertCanSend?.()).toThrow(
+      'Ask is waiting for preferences or proposal review'
+    );
     staleComposer.onSend('Late question', []);
     await staleMessage.onRegenerate!();
     staleMessage.approval!.respond({ id: 'approval', approved: true });
@@ -249,4 +298,18 @@ describe('Ask panel workflow admission', () => {
     expect(screen.getByRole('button', { name: 'Send question' })).toBeTruthy();
     expect(() => mocks.assertCanSend?.()).not.toThrow();
   });
+});
+
+it('blocks a saved provider until its catalog has successfully loaded', () => {
+  mocks.savedModel = { instanceId: 'saved-provider', modelId: 'saved-model' };
+  mocks.instancesReady = false;
+  const view = render(panel());
+  expect(mocks.composer.canSubmit!()).toBe(false);
+  expect(() => mocks.assertCanSend?.()).toThrow();
+  fireEvent.click(screen.getByRole('button', { name: 'Send question' }));
+  expect(mocks.send).not.toHaveBeenCalled();
+  mocks.instancesReady = true;
+  view.rerender(panel());
+  expect(mocks.composer.canSubmit!()).toBe(true);
+  expect(() => mocks.assertCanSend?.()).not.toThrow();
 });

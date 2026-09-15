@@ -12,6 +12,7 @@ import {
   UsageResponseSchema,
   ViewerProfileResponseSchema,
   InstanceModelsResponseSchema,
+  PlanEntitlementsSchema,
   NotePublicationStateResponseSchema,
   syncListQuerySchema,
   type ParsedPlanCheckoutRequest,
@@ -19,6 +20,36 @@ import {
 } from './index.js';
 
 describe('apps/v1 contracts', () => {
+  it('reads entitlements from a server that predates bonuses', () => {
+    // Exactly what a server without the grants feature sends. A client can meet one whenever a web
+    // or desktop release ships ahead of the backend, or the backend is rolled back underneath it —
+    // and this object gates the app's bootstrap query, so a rejected parse takes the org switcher,
+    // the feature gates and the billing screen down with it.
+    const parsed = PlanEntitlementsSchema.safeParse({
+      planExternalId: 'plan_free',
+      features: {
+        askAi: true,
+        floatingMode: true,
+        byok: false,
+        automations: true,
+        extendedRecording: false,
+      },
+      aiModelTier: 'standard',
+      limits: {
+        seats: 1,
+        cloudTranscriptionSeconds: 18000,
+        aiCredits: null,
+        maxRecordingSeconds: 3600,
+      },
+      pooled: false,
+    });
+    expect(parsed.success).toBe(true);
+    // Absent bonuses read as none, so a consumer never has to null-check the list.
+    expect(parsed.data?.grants).toEqual([]);
+    // Absent plan-only limits mean "same as the effective ones"; consumers fall back to `limits`.
+    expect(parsed.data?.limitsBeforeGrants).toBeUndefined();
+  });
+
   it('preserves domain error details alongside correlation fields', () => {
     const body = {
       error: {

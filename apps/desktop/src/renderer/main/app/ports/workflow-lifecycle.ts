@@ -36,10 +36,8 @@ export function bindDesktopWorkflowLifecycle({
           workflowId: current.workflowId,
           attempt: current.attempt,
         });
-        const proposal = useSkillDiffStore.getState().getCandidate(current.noteId);
-        if (proposal?.workflowId === current.workflowId)
-          useSkillDiffStore.getState().clear(current.noteId);
       }
+      useSkillDiffStore.setState({ candidatesByNote: new Map() });
       useAutoEnhanceStore.getState().clear();
       useAskSkillRunStore.getState().clear();
       useInlineRunStore.getState().clear();

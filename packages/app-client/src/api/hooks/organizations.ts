@@ -187,6 +187,9 @@ export const ENTITLEMENTS_UNGATED: PlanEntitlements = Object.freeze({
     aiCredits: null,
     maxRecordingSeconds: null,
   }),
+  // No bonuses to describe: this object is the client's own "no plan gate" stand-in, not something
+  // a server sent, so there is nothing that could have been granted on top of it.
+  grants: Object.freeze([]) as unknown as PlanEntitlements["grants"],
   pooled: false,
 });
 

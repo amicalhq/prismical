@@ -206,7 +206,8 @@ export const makeByokTranscriberLive = (
           }
           // Run the deterministic replacement pass over the workspace's terms.
           const terms = yield* source.termsFor(recordingId);
-          const replaced = applyReplacements(outcome.value, terms);
+          // Native segments bypass core's transcription handler, which removes PostgreSQL NULs.
+          const replaced = applyReplacements(outcome.value.replaceAll('\u0000', ''), terms);
           const now = yield* Clock.currentTimeMillis;
           const segment = mintChunkSegment({
             recordingId,

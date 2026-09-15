@@ -7,7 +7,7 @@ import { NoteCard } from './note-card';
 // The row's whole job is deciding what to draw and where, so the data hooks are the only things
 // mocked: the chips, the budgets and the layout branches are the code under test.
 const { folders, tags, noteEvents, calendarEvents } = vi.hoisted(() => ({
-  folders: { current: [] as { id: string; name: string }[] },
+  folders: { current: [] as { id: string; name: string; parentId?: string | null }[] },
   tags: { current: [] as { id: string; name: string; color: string | null }[] },
   noteEvents: { current: [] as { eventKey: string; eventId?: string; title: string }[] },
   calendarEvents: { current: [] as { id: string; title: string; calendarColor?: string }[] },
@@ -191,5 +191,35 @@ describe('favorite star', () => {
     const star = screen.getByLabelText('navigation.collections.favorited');
     expect(star.tagName).toBe('SPAN');
     expect(star.closest('button')).toBeNull();
+  });
+});
+
+describe('folder chip', () => {
+  beforeEach(() => {
+    folders.current = [
+      { id: 'fld_sales', name: 'Sales', parentId: null },
+      { id: 'fld_clients', name: 'Clients', parentId: 'fld_sales' },
+      { id: 'fld_acme', name: 'Acme', parentId: 'fld_clients' },
+    ];
+  });
+
+  it('shows the full path at the root', () => {
+    render(<NoteCard note={makeNote({ folderId: 'fld_acme' })} />);
+    expect(screen.getByTitle('Sales / Clients / Acme')).toBeTruthy();
+  });
+
+  it('shows the path relative to the folder the list is scoped to', () => {
+    render(<NoteCard note={makeNote({ folderId: 'fld_acme' })} pathFrom="fld_sales" />);
+    expect(screen.getByTitle('Clients / Acme')).toBeTruthy();
+  });
+
+  it('shows no chip for a note directly inside the scoped folder', () => {
+    render(<NoteCard note={makeNote({ folderId: 'fld_sales' })} pathFrom="fld_sales" />);
+    expect(screen.queryByTitle('Sales')).toBeNull();
+  });
+
+  it('falls back to the full path when the scope is not an ancestor', () => {
+    render(<NoteCard note={makeNote({ folderId: 'fld_acme' })} pathFrom="fld_other" />);
+    expect(screen.getByTitle('Sales / Clients / Acme')).toBeTruthy();
   });
 });

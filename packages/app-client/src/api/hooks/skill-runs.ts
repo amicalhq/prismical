@@ -30,21 +30,22 @@ export function runSkillRequest(
   signal?: AbortSignal,
   onResponse?: (requestId: string | null) => void,
 ): Promise<RunResult> {
+  const durable = !!body.recoveryContext;
   return apiClient
-    .post<unknown>(`${ME_PREFIX}/skills/${skillId}/run`, body, { signal, onResponse })
+    .post<unknown>(`${ME_PREFIX}/skills/${skillId}/run${durable ? "/durable" : ""}`, body, { signal, onResponse })
     .then((response) => RunSkillResultSchema.parse(response));
 }
 
-export type AcceptArtifactBody = AcceptSkillRunRequest;
+export type AcceptArtifactBody = AcceptSkillRunRequest & { durable?: boolean };
 export type AcceptResult = AcceptSkillRunResult;
 
 export function useAcceptArtifact() {
   return useMutation({
     // The diff dock bar wraps mutateAsync in try/catch and toasts itself.
     meta: { suppressErrorToast: true },
-    mutationFn: async (body: AcceptArtifactBody) =>
+    mutationFn: async ({ durable, ...body }: AcceptArtifactBody) =>
       AcceptSkillRunResponseSchema.parse(
-        await apiClient.postRaw<unknown>(`${ME_PREFIX}/skill-runs/accept`, body),
+        await apiClient.postRaw<unknown>(`${ME_PREFIX}/skill-runs/accept${durable ? "/durable" : ""}`, body),
       ),
   });
 }
@@ -75,9 +76,10 @@ export function mutateTitleRun(action: "apply" | "undo", runId: string) {
 
 export async function listPendingSkillResults(noteId: string, signal?: AbortSignal) {
   return PendingSkillResultsSchema.parse(
-    await apiClient.getRaw<unknown>(`${ME_PREFIX}/skill-runs/pending`, { noteId }, { signal }),
+    await apiClient.getRaw<unknown>(`${ME_PREFIX}/skill-runs/pending/durable`, { noteId }, { signal }),
   ).results;
 }
-export async function resolvePendingSkillResult(noteId: string, resultId: string, options?: { discardAccepted?: boolean }) {
-  await apiClient.postRaw(`${ME_PREFIX}/skill-runs/resolve`, { noteId, resultId, ...options });
+export async function resolvePendingSkillResult(noteId: string, resultId: string, options?: { discardAccepted?: boolean; durable?: boolean }) {
+  const { durable, ...body } = options ?? {};
+  await apiClient.postRaw(`${ME_PREFIX}/skill-runs/resolve${durable ? "/durable" : ""}`, { noteId, resultId, ...body });
 }

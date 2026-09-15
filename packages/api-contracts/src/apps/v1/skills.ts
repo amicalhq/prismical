@@ -4,11 +4,21 @@ import { AiUserErrorSchema } from '../../ai-errors.js';
 export const ArtifactModeSchema = z.enum(['append-section', 'replace-doc', 'inline-rewrite']);
 export type ArtifactMode = z.output<typeof ArtifactModeSchema>;
 
+/** Original editor context, saved with output so recovery never adopts a newer body. */
+export const SkillRecoveryContextSchema = z.object({
+  /** Identifies fresh generation; an existing pending result retains its original identity. */
+  generationId: z.string().uuid().optional(),
+  baseContent: z.string().max(2_000_000),
+  selectionText: z.string().max(50_000).optional(),
+  selectionAnchors: z.object({ relFrom: z.unknown(), relTo: z.unknown() }).optional(),
+});
+
 export const RunSkillParamsSchema = z.object({ skillId: z.string().min(1) });
 export const RunSkillRequestSchema = z.object({
   noteId: z.string().min(1),
   recordingId: z.string().min(1).max(64).optional(),
   recoverable: z.boolean().optional(),
+  recoveryContext: SkillRecoveryContextSchema.optional(),
   /** Save a result identity for acceptance retries without replaying a previous run. */
   retainResult: z.boolean().optional(),
   recoveryResultId: z.string().min(1).optional(),
@@ -36,6 +46,7 @@ export const RunSkillResultSchema = z
   .object({
     outputTarget: z.enum(['note-body', 'note-title']).optional(),
     resultId: z.string().optional(),
+    recoveryContext: SkillRecoveryContextSchema.optional(),
     refineInstruction: z.string().optional(),
     titleRunId: z.string().optional(),
     title: z.string().optional(),
@@ -58,6 +69,7 @@ export type RunSkillResult = z.output<typeof RunSkillResultSchema>;
 export const RunSkillResponseSchema = RunSkillResultSchema;
 
 export const AcceptSkillRunRequestSchema = z.object({
+  applicationUpdate: z.string().min(1).max(900_000).regex(/^[A-Za-z0-9+/]+={0,2}$/).optional(),
   resultId: z.string().min(1).optional(),
   noteId: z.string().min(1),
   skillId: z.string().min(1),
@@ -77,6 +89,7 @@ export type AcceptSkillRunRequest = z.input<typeof AcceptSkillRunRequestSchema>;
 
 export const AcceptSkillRunResultSchema = z
   .object({
+    applicationUpdate: z.string().optional(),
     artifactId: z.string().min(1),
     version: z.number().int().positive(),
     generatedAt: z.iso.datetime(),
@@ -113,7 +126,9 @@ export const TitleRunResultSchema = z.object({
 export const TitleRunResponseSchema = TitleRunResultSchema;
 export type TitleRunResult = z.output<typeof TitleRunResultSchema>;
 
-export const PendingSkillResultsSchema = z.object({ results: z.array(RunSkillResultSchema) });
+export const PendingSkillResultsSchema = z.object({ results: z.array(RunSkillResultSchema.extend({
+  acceptance: z.object({ result: AcceptSkillRunResultSchema, prevContent: z.string().optional() }).optional(),
+})) });
 export const ResolveSkillResultSchema = z.object({
   noteId: z.string().min(1),
   resultId: z.string().min(1),

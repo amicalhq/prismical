@@ -11,6 +11,15 @@ import { createLowlight } from 'lowlight';
 import { getSchema, type Extensions } from '@tiptap/core';
 import { ArtifactNode } from './nodes/artifact.js';
 import { ArtifactInlineNode } from './nodes/artifact-inline.js';
+import { TextStyleMark } from './marks/text-style.js';
+import { HighlightMark } from './marks/highlight.js';
+import { ImageNode } from './nodes/image.js';
+import { CompatAttributes } from './extensions/compat-attributes.js';
+
+// Preserve command type augmentation for renderers consuming the built schema package.
+export type { StarterKitOptions } from '@tiptap/starter-kit';
+export type { TaskListOptions } from '@tiptap/extension-task-list';
+export type { TableOptions } from '@tiptap/extension-table';
 
 export { ArtifactNode, ARTIFACT_NODE_NAME } from './nodes/artifact.js';
 export { ArtifactInlineNode, ARTIFACT_INLINE_NODE_NAME } from './nodes/artifact-inline.js';
@@ -34,6 +43,14 @@ export function buildEditorExtensions(opts?: { undoRedo?: boolean }): Extensions
     TableHeader,
     TableCell,
     Emoji.configure({ emojis: gitHubEmojis, enableEmoticons: false }),
+    // Compatibility only — no commands, no parse rules, nothing here applies them. A body carrying
+    // any of these loses the text it covers outright if the schema does not know it; see
+    // marks/text-style.ts for the mechanism. They are written by another client, never by this one.
+    TextStyleMark,
+    HighlightMark,
+    ImageNode,
+    // Attributes another client adds to nodes we already have — silently dropped without this.
+    CompatAttributes,
   ];
 }
 

@@ -155,7 +155,7 @@ export default function ConnectedList({ onEdit }: ConnectedListProps) {
           {removeTarget !== null && (
             <>
               <AlertDialogHeader>
-                <AlertDialogTitle>
+                <AlertDialogTitle className="wrap-anywhere">
                   {t('settings.aiModels.connectedList.removeTitle', {
                     name: removeTarget.instance.label,
                   })}

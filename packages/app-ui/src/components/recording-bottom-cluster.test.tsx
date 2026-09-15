@@ -13,6 +13,9 @@ const state = vi.hoisted(() => ({
   activeRun: null as unknown,
   workflow: { kind: 'idle' } as { kind: string; phase?: string; workflowId?: string; noteId?: string; attempt?: number; proposalId?: string },
   shared: false,
+  autoTranscribe: false,
+  pendingAutoStart: false,
+  syncStore: null as { whenNoteCreateAcked: (id: string) => Promise<void> } | null,
   noop: vi.fn(),
   stop: vi.fn(),
   push: vi.fn(),
@@ -53,7 +56,7 @@ vi.mock('@prismical/app-client', async () => {
       auth: {},
     }),
     useNavigation: () => ({ push: state.push }),
-    useSyncStore: () => null,
+    useSyncStore: () => state.syncStore,
     useAutoEnhanceStore: store,
     useAskSkillRunStore: store,
     useSkillDiffStore: Object.assign(
@@ -64,11 +67,26 @@ vi.mock('@prismical/app-client', async () => {
     useEntitlements: () => ({ entitlements: { limits: { maxRecordingSeconds: null } } }),
     useRecordingBudgetWarning: () => ({ warning: null, dismiss: state.noop }),
     useNote: () => ({ data: state.queriedNote }),
+    useSessionView: () => ({ state: 'signed-in', accounts: [], activeSub: null }),
+    useOrgMembers: () => ({ data: undefined }),
+    useOrganizations: () => ({ data: undefined }),
+    useViewerProfile: () => ({ data: null }),
+    activeOrgIdOf: () => null,
+    tagRecordingSpeaker: () => Promise.resolve({}),
+    applySpeakerPatch: (rows: unknown[]) => rows,
+    mergeSpeakerRow: (rows: unknown[]) => rows,
     useNoteRecordings: () => ({ data: [] }),
     useEnhancedRecordings: () => ({ data: new Set() }),
     segmentToLine: (s: unknown) => s,
     EVENTS: {},
-    getRecordingPreferences: () => ({}),
+    currentAccountExperience: () => ({
+      getSnapshot: () => ({ data: { experience: { autoTranscribeNewNotes: state.autoTranscribe } } }),
+    }),
+    consumePendingAutoTranscribe: () => {
+      const pending = state.pendingAutoStart;
+      state.pendingAutoStart = false;
+      return pending;
+    },
   };
 });
 vi.mock('./transcript-panel', () => ({
@@ -93,6 +111,7 @@ vi.mock('./note-recording-dock', () => ({
   RecordingPillFace: () => null,
   recordingPillWidth: () => 100,
 }));
+vi.mock('./skill-note-created', () => ({ SkillNoteCreated: () => <div role="status">Note created<button>Undo creation</button></div> }));
 vi.mock('./skill-dock-slot', () => ({ SkillDockSlot: () => null }));
 vi.mock('./new-note-dock', () => ({ NewNoteDock: () => null }));
 vi.mock('./auto-pause-prompt', () => ({ AutoPausePrompt: () => null }));
@@ -113,6 +132,9 @@ beforeEach(() => {
   state.toast.mockReset();
   state.activeRun = null;
   state.shared = false;
+  state.autoTranscribe = false;
+  state.pendingAutoStart = false;
+  state.syncStore = null;
   state.workflow = { kind: 'idle' };
   state.note = { noteId: 'note_old', title: 'Old' };
   state.candidates = new Map([['note_old', { skillName: 'Enhance' }]]);
@@ -129,6 +151,30 @@ beforeEach(() => {
   };
 });
 describe('recording dock note ownership', () => {
+  it('starts a new note using the saved account preference after creation is acknowledged', async () => {
+    state.candidates.clear();
+    state.autoTranscribe = true;
+    state.pendingAutoStart = true;
+    let acknowledge!: () => void;
+    state.syncStore = { whenNoteCreateAcked: () => new Promise<void>((resolve) => { acknowledge = resolve; }) };
+    render(<RecordingBottomCluster />);
+    expect(state.noop).not.toHaveBeenCalledWith('note_old', 'Old');
+    await act(async () => { acknowledge(); });
+    expect(state.noop).toHaveBeenCalledWith('note_old', 'Old');
+  });
+
+  it('does not auto-start if the account preference is disabled while awaiting creation', async () => {
+    state.candidates.clear();
+    state.autoTranscribe = true;
+    state.pendingAutoStart = true;
+    let acknowledge!: () => void;
+    state.syncStore = { whenNoteCreateAcked: () => new Promise<void>((resolve) => { acknowledge = resolve; }) };
+    render(<RecordingBottomCluster />);
+    state.autoTranscribe = false;
+    await act(async () => { acknowledge(); });
+    expect(state.noop).not.toHaveBeenCalledWith('note_old', 'Old');
+  });
+
   it('disables the footer Start control during a skill run', () => {
     state.candidates.clear();
     state.activeRun = { status: 'running', skillName: 'Enhance' };
@@ -352,4 +398,41 @@ describe('recording language ownership', () => {
       expect(state.panel.onChangeLanguage).toBe(state.noop);
     }
   );
+});
+
+it('keeps creation Undo visible alongside the instruction dock after review ends', () => {
+  state.candidates = new Map();
+  render(<RecordingBottomCluster />);
+  expect(screen.getByRole('button', { name: 'Undo creation' }).closest('[hidden]')).toBeNull();
+  expect(screen.getByRole('button', { name: 'Ask AI' })).toBeDefined();
+});
+
+const { useNoteDockActions } = await import('./note-dock-actions');
+function DockActionsProbe({ noteId }: { noteId: string }) {
+  const actions = useNoteDockActions(noteId);
+  return <>
+    <button disabled={!actions?.startRecording} onClick={actions?.startRecording}>Start from editor</button>
+    <button disabled={!actions?.askAi} onClick={actions?.askAi}>Ask from editor</button>
+  </>;
+}
+it('shares recording guards and current-note ownership with editor actions', () => {
+  state.candidates.clear();
+  const view = render(<><RecordingBottomCluster /><DockActionsProbe noteId="note_old" /></>);
+  fireEvent.click(screen.getByText('Start from editor'));
+  expect(state.noop).toHaveBeenCalledWith('note_old', 'Old');
+  state.rec.state = 'recording';
+  view.rerender(<><RecordingBottomCluster /><DockActionsProbe noteId="note_old" /></>);
+  expect((screen.getByText('Start from editor') as HTMLButtonElement).disabled).toBe(true);
+  state.note = { noteId: 'note_new', title: 'New' };
+  view.rerender(<><RecordingBottomCluster /><DockActionsProbe noteId="note_old" /></>);
+  expect((screen.getByText('Ask from editor') as HTMLButtonElement).disabled).toBe(true);
+});
+it('opens Ask through the same dock handler and blocks it during review', () => {
+  state.candidates.clear();
+  const view = render(<><RecordingBottomCluster /><DockActionsProbe noteId="note_old" /></>);
+  fireEvent.click(screen.getByText('Ask from editor'));
+  expect(state.askPanel.open).toBe(true);
+  state.candidates.set('note_old', { skillName: 'Cleanup' });
+  view.rerender(<><RecordingBottomCluster /><DockActionsProbe noteId="note_old" /></>);
+  expect((screen.getByText('Ask from editor') as HTMLButtonElement).disabled).toBe(true);
 });

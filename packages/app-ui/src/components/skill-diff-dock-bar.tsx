@@ -1,21 +1,23 @@
 'use client';
-import { apiClient, ME_PREFIX, usePorts, useWorkflowSnapshot, resolvePendingSkillResult, type SkillDiffCandidate } from '@prismical/app-client';
+import { activeOrgIdOf, apiClient, ME_PREFIX, usePorts, useWorkflowSnapshot, resolvePendingSkillResult, type SkillDiffCandidate } from '@prismical/app-client';
 import { useWalkthroughEvent } from '../onboarding/context';
 
 import * as React from 'react';
-import { ArrowUp, Check, Undo2, X } from 'lucide-react';
+import { ArrowUp, Check, X } from 'lucide-react';
 import type { Editor } from '@tiptap/react';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
-import { useSkillDiffStore } from '@prismical/app-client';
+import { isGenuinelyEmptyNote, waitForSkillResultDelivery, wasSkillResultApplied, prepareSkillResultUpdate, applyPreparedSkillResult, useSkillDiffStore, withEditorHistoryBoundary } from '@prismical/app-client';
 import { clearDiffDecorations } from '@prismical/app-client';
 import { resolveVerifiedRange } from '@prismical/app-client';
 import { useAcceptArtifact, restoreLastSkillRun } from '@prismical/app-client';
 import { enhancedRecordingsKey } from '@prismical/app-client';
 import { useRunSkill, useSkillRunActivityStore, useAutoEnhanceStore } from '@prismical/app-client';
+import { useNoteCreatedNotice } from '@prismical/app-client';
 import { DOCK_CTL_PRIMARY, DOCK_PILL_CHROME } from './dock-chrome';
 import { useTranslation } from 'react-i18next';
+import { useReviewShine } from './use-review-shine';
 
 const PILL_OUTER = `${DOCK_PILL_CHROME} gap-1 px-1.5`;
 
@@ -31,7 +33,7 @@ function discardWorkflowProposal(candidate: SkillDiffCandidate, message: string,
   if (!candidate.resultId && !artifactId) return;
   const remove = async () => {
     try {
-      if (candidate.resultId) await resolvePendingSkillResult(candidate.noteId, candidate.resultId, { discardAccepted: true });
+      if (candidate.resultId) await resolvePendingSkillResult(candidate.noteId, candidate.resultId, { discardAccepted: true, durable: candidate.durable });
       else await apiClient.del(`${ME_PREFIX}/artifacts/${encodeURIComponent(artifactId!)}`);
       onDeleted();
     } catch {
@@ -71,7 +73,7 @@ interface Props {
   /** A temporary document host must finish sending edits before the workflow releases it. */
   beforeApplyComplete?: () => Promise<void>;
   canApply?: () => boolean;
-  /** The visible original-note editor can support the existing post-Keep Undo toast. */
+  /** The visible original-note editor can support the existing post-Apply Undo toast. */
   restoreEditor?: Editor | null;
   /** Use two review rows in the floating note window, reserving room for the
    * recording control. The web layout also adapts to the available pane width. */
@@ -80,20 +82,22 @@ interface Props {
 
 /**
  * The review pill: shown in place of the sparkle button while a skill
- * candidate is staged for `noteId` — [/Skill tag] [Describe edits…] [↩ Undo]
- * [✓ Keep], with the refine input always live (typing + Enter re-runs with the
- * instruction). Same staged-diff engine underneath: Keep persists the artifact
- * and applies it to the Yjs-backed editor; Undo discards the suggestion.
+ * candidate is staged for `noteId` — [Review] [Describe changes…] [× Discard]
+ * [✓ Apply], with the refine input always live (typing + Enter re-runs with the
+ * instruction). Same staged-diff engine underneath: Apply persists the artifact
+ * and applies it to the Yjs-backed editor; Discard discards the suggestion.
  * Inline-rewrite accepts resolve the target range from Yjs relative anchors.
  */
 export function SkillDiffDockBar({ editor, noteId, compact = false, beforeApplyComplete, canApply, restoreEditor }: Props) {
   const { t } = useTranslation();
   const walkthroughEvent = useWalkthroughEvent();
-  const { workflow } = usePorts();
+  const { workflow, auth } = usePorts();
   const workflowState = useWorkflowSnapshot();
   const applying = workflowState.kind === 'skill' && workflowState.phase === 'applying';
   const candidate = useSkillDiffStore(s => s.candidatesByNote.get(noteId));
-  const refineBlocked = applying || !!candidate?.acceptance;
+  const actionRef = React.useRef(false);
+  const [discarding, setDiscarding] = React.useState(false);
+  const refineBlocked = applying || discarding || !!candidate?.acceptance;
   const clear = useSkillDiffStore(s => s.clear);
   const accept = useAcceptArtifact();
   const qc = useQueryClient();
@@ -104,6 +108,21 @@ export function SkillDiffDockBar({ editor, noteId, compact = false, beforeApplyC
     void qc.invalidateQueries({ queryKey: enhancedRecordingsKey(noteId) });
 
   const [refineText, setRefineText] = React.useState('');
+  const shineRef = useReviewShine(
+    candidate && `${noteId}:${candidate.resultId ?? candidate.proposalId ?? candidate.workflowId ?? ''}`,
+    !!candidate && !!workflow && workflowState.kind === 'skill' &&
+      workflowState.phase === 'review' && workflowState.workflowId === candidate.workflowId &&
+      workflowState.proposalId === candidate.proposalId && !workflowState.error &&
+      !candidate.autoApply && !candidate.acceptance && !accept.isPending && !refining && !discarding,
+  );
+
+  const acceptRef = React.useRef<(automatic?: boolean) => Promise<void>>(async () => {});
+  React.useEffect(() => {
+    if (!candidate?.autoApply || actionRef.current) return;
+    // Consume before starting: rerenders, failures and reopened review never retry implicitly.
+    useSkillDiffStore.getState().stage({ ...candidate, autoApply: false });
+    void acceptRef.current(true);
+  }, [candidate]);
 
   if (!candidate) return null;
 
@@ -113,10 +132,15 @@ export function SkillDiffDockBar({ editor, noteId, compact = false, beforeApplyC
   // held the accepted content if the client navigated away or the response was lost mid-request: the
   // recording would un-fold, its wand reappear, and clicking it would DUPLICATE the section (with a
   // second undo then over-reverting). The safety floor for a destructive replace-doc accept.
-  const restoreLast = async (snapshot: string, artifactId: string) => {
-    const undoEditor = beforeApplyComplete ? restoreEditor : editor;
+  const restoreLast = async (snapshot: string, artifactId: string, expectedContent?: string, currentEditor?: Editor) => {
+    const undoEditor = currentEditor ?? (beforeApplyComplete ? restoreEditor : editor);
     if (!undoEditor || undoEditor.isDestroyed) {
       toast.info(t('skills.diff.reopenUndo'));
+      return;
+    }
+    if (expectedContent !== undefined && JSON.stringify(undoEditor.getJSON()) !== expectedContent &&
+        JSON.stringify(undoEditor.getJSON()) !== snapshot) {
+      toast.info(t('skills.diff.undoAfterEdit'));
       return;
     }
     const undo = workflow?.dispatch({ type: 'runSkill', workflowId: crypto.randomUUID(), noteId, skillId: candidate.skillId });
@@ -128,13 +152,18 @@ export function SkillDiffDockBar({ editor, noteId, compact = false, beforeApplyC
     // 1) Revert the body from the snapshot first. If parsing/applying throws, bail BEFORE any server
     //    call — we must never soft-delete the artifact when we couldn't put the body back.
     try {
-      const restored = undoEditor.commands.setContent(JSON.parse(snapshot));
+      const restored = JSON.stringify(undoEditor.getJSON()) === snapshot || undoEditor.commands.setContent(JSON.parse(snapshot));
       if (workflow && !restored) throw new Error('The note editor refused the restore.');
     } catch (err) {
       // The parser/editor exception text is for the console, never the toast.
       console.warn('skill undo: could not re-apply the snapshot', err);
       toast.error(t('skills.diff.couldNotUndo'));
       return;
+    }
+    if (expectedContent !== undefined) {
+      useNoteCreatedNotice.setState(s => ({ notice: s.notice?.artifactId === artifactId
+        ? { ...s.notice, undoPending: true } : s.notice }));
+      await waitForSkillResultDelivery(undoEditor);
     }
     // 2) Now drop the artifact server-side so folded-detection un-folds the recording + the mode bias
     //    resets. The body is already reverted, so a failure here is a sync gap (surface + reconcile the
@@ -145,11 +174,18 @@ export function SkillDiffDockBar({ editor, noteId, compact = false, beforeApplyC
     } catch (err) {
       refreshFolded();
       console.warn('skill undo: restore sync failed', err);
-      toast.error(t('skills.diff.restoredLocallySyncFailed'));
+      toast.error(t('skills.diff.restoredLocallySyncFailed'), expectedContent !== undefined ? { action: { label: t('common.actions.retry'), onClick: () => void restoreLast(snapshot, artifactId, expectedContent, currentEditor) } } : undefined);
       return;
+    }
+    if (expectedContent !== undefined) {
+      useNoteCreatedNotice.setState(s => ({ notice: s.notice?.artifactId === artifactId ? null : s.notice }));
     }
     refreshFolded(); // the restored (soft-deleted) Enhance un-folds its recording
     toast.success(t('skills.diff.restoredPrevious'));
+    } catch {
+      toast.error(t('skills.diff.restoredLocallySyncFailed'), { action: {
+        label: t('common.actions.retry'), onClick: () => void restoreLast(snapshot, artifactId, expectedContent, currentEditor),
+      } });
     } finally {
       if (undo?.state.kind === 'skill') workflow?.dispatch({ type: 'skillNoChange', workflowId: undo.state.workflowId, attempt: undo.state.attempt });
     }
@@ -186,39 +222,66 @@ export function SkillDiffDockBar({ editor, noteId, compact = false, beforeApplyC
     return detail;
   };
 
-  const onAccept = async () => {
+  const onAccept = async (automatic = false) => {
+    if (actionRef.current) return;
     const admission = workflow?.dispatch({
       type: 'acceptProposal', workflowId: candidate.workflowId ?? '', proposalId: candidate.proposalId ?? '',
     });
     if (admission && (!admission.accepted || admission.state.kind !== 'skill')) return;
+    actionRef.current = true;
     const scope = admission?.state.kind === 'skill' ? admission.state : undefined;
+    const owner = auth?.getSession();
+    const ownerOrg = owner && activeOrgIdOf(owner);
     const isCurrentApply = () => {
+      const currentOwner = auth?.getSession();
+      if (currentOwner && (currentOwner.activeSessionKey !== owner?.activeSessionKey ||
+          currentOwner.activeSub !== owner?.activeSub || activeOrgIdOf(currentOwner) !== ownerOrg)) return false;
       if (!workflow || !scope) return true;
       const current = workflow.getSnapshot();
       return current.kind === 'skill' && current.phase === 'applying' &&
         current.workflowId === scope.workflowId && current.attempt === scope.attempt &&
         current.proposalId === scope.proposalId;
     };
-    let retryCandidate = candidate;
+    let retryCandidate = { ...candidate, autoApply: false };
+    const deliver = () => beforeApplyComplete ? beforeApplyComplete() : waitForSkillResultDelivery(editor);
     let appliedSuccessfully = false;
-    const successMessage = t(candidate.mode === 'append-section' ? 'skills.diff.newSectionAdded'
+    let automaticAppliedContent: string | undefined;
+    const successMessage = automatic ? t('skills.diff.noteCreated') : t(candidate.mode === 'append-section' ? 'skills.diff.newSectionAdded'
       : candidate.mode === 'inline-rewrite' ? 'skills.diff.selectionUpdated' : 'skills.diff.noteReplaced');
-    const acceptToastOptions = (prevContent: string | undefined, artifactId: string) => ({
+    const acceptToastOptions = (prevContent: string | undefined, artifactId: string) => {
+      const expectedContent = automatic ? automaticAppliedContent : undefined;
+      const undo = (currentEditor?: Editor) => {
+        const current = auth?.getSession();
+        if (automatic && (current?.activeSessionKey !== owner?.activeSessionKey ||
+            current?.activeSub !== owner?.activeSub || (current && activeOrgIdOf(current)) !== ownerOrg)) return;
+        void restoreLast(prevContent!, artifactId, expectedContent, currentEditor);
+      };
+      if (automatic && prevContent) useNoteCreatedNotice.setState({ notice: {
+        noteId, artifactId, ownerKey: owner?.activeSessionKey ?? owner?.activeSub, orgId: ownerOrg,
+        undo,
+      } });
+      return ({
       id: `skill-accept-${noteId}`,
       ...(prevContent && (!beforeApplyComplete || (restoreEditor && !restoreEditor.isDestroyed))
-        ? { action: { label: t('skills.diff.undo'), onClick: () => void restoreLast(prevContent, artifactId) } }
+        ? { action: { label: t('skills.diff.undo'), onClick: () => undo() } }
         : {}),
     });
+    };
     const reportKept = () => {
       if (candidate.recordingId)
         walkthroughEvent({ type: 'kept', noteId, recordingId: candidate.recordingId });
       useSkillRunActivityStore.getState().resolveStaged(noteId, 'kept');
     };
     try {
-    // The body is already applied after a delivery timeout. Keep retries delivery, never insertion.
+    if (automatic) {
+      await deliver();
+      if (!isCurrentApply() || editor.isDestroyed || !isGenuinelyEmptyNote(editor.getJSON())) return;
+    }
+    // The body is already applied after a delivery timeout. Apply retries delivery, never insertion.
     if (canApply && !canApply()) throw new Error('The original note is not writable.');
-    if (candidate.acceptance?.applied) {
-      await beforeApplyComplete?.();
+    if (candidate.acceptance?.applied || (candidate.recoverable && candidate.resultId && wasSkillResultApplied(editor, candidate.resultId))) {
+      await deliver();
+      if (candidate.recoverable && candidate.resultId) await resolvePendingSkillResult(noteId, candidate.resultId, { durable: candidate.durable });
       if (!isCurrentApply()) return;
       clear(noteId);
       reportKept();
@@ -226,14 +289,26 @@ export function SkillDiffDockBar({ editor, noteId, compact = false, beforeApplyC
       refreshFolded();
       appliedSuccessfully = true;
       toast.success(successMessage, acceptToastOptions(
-        candidate.acceptance.prevContent, candidate.acceptance.result.artifactId));
+        candidate.acceptance?.prevContent, candidate.acceptance?.result.artifactId ?? ''));
       return;
+    }
+    let authoritativeAcceptance = candidate.acceptance?.result;
+    if (candidate.acceptance && candidate.recoverable && !authoritativeAcceptance?.applicationUpdate) {
+      authoritativeAcceptance = await accept.mutateAsync({
+        durable: candidate.durable,
+        resultId: candidate.resultId, noteId, skillId: candidate.skillId,
+        mode: candidate.mode, content: JSON.stringify(candidate.content), rawMarkdown: candidate.rawMarkdown,
+        modelId: candidate.modelId, reasoning: candidate.reasoning,
+        refineInstruction: candidate.refineInstruction, selectionText: candidate.selectionText,
+      });
+      retryCandidate = { ...candidate, autoApply: false, acceptance: { ...candidate.acceptance, result: authoritativeAcceptance } };
+      if (!isCurrentApply()) return;
     }
     // Inline-rewrite: verify the target still exists BEFORE persisting the artifact, so a vanished
     // selection (deleted by a collaborator while staged) costs nothing server-side. This is the one
     // place a candidate is discarded on purpose: the user is looking at a loaded document and the
     // text the rewrite targets is gone, so it can never apply.
-    if (candidate.mode === 'inline-rewrite' && !resolveInlineRange()) {
+    if (!authoritativeAcceptance?.applicationUpdate && candidate.mode === 'inline-rewrite' && !resolveInlineRange()) {
       const detail = t('skills.diff.targetMissing');
       toast.error(detail);
       clearDiffDecorations(editor);
@@ -245,12 +320,12 @@ export function SkillDiffDockBar({ editor, noteId, compact = false, beforeApplyC
     // Snapshot the CURRENT doc (the candidate is a diff overlay, not yet applied) so the accept is
     // reversible. Omit above the cap; Undo is then unavailable rather than failing the accept.
     const snapshot = JSON.stringify(editor.getJSON());
-    const targetChanged = (content: string) => !!workflow && candidate.mode === 'replace-doc' &&
-      candidate.baseContent !== undefined && candidate.baseContent !== content;
+    const targetChanged = (content: string) => candidate.mode === 'replace-doc' &&
+      (candidate.baseContent !== undefined ? candidate.baseContent !== content : candidate.recoverable === true);
     const reportTargetChanged = () => toast.info(t('workflow.noteChanged', {
       defaultValue: 'The note changed after this suggestion was generated. Decline it and run the skill again.',
     }));
-    if (targetChanged(snapshot)) {
+    if (!authoritativeAcceptance?.applicationUpdate && targetChanged(snapshot)) {
       reportTargetChanged();
       return;
     }
@@ -258,9 +333,9 @@ export function SkillDiffDockBar({ editor, noteId, compact = false, beforeApplyC
       ? candidate.acceptance.prevContent
       : snapshot.length <= PREV_CONTENT_MAX ? snapshot : undefined;
 
-    let meta: { artifactId: string; version: number; generatedAt: string };
-    try {
-      meta = candidate.acceptance?.result ?? await accept.mutateAsync({
+    let meta: { artifactId: string; version: number; generatedAt: string; applicationUpdate?: string };
+    const acceptBody = {
+        durable: candidate.durable,
         resultId: candidate.resultId,
         noteId,
         skillId: candidate.skillId,
@@ -274,8 +349,10 @@ export function SkillDiffDockBar({ editor, noteId, compact = false, beforeApplyC
         refineInstruction: candidate.refineInstruction,
         selectionText: candidate.selectionText,
         usage: candidate.usage,
-      });
-      retryCandidate = { ...candidate, acceptance: { result: meta, prevContent } };
+      };
+    try {
+      meta = authoritativeAcceptance ?? await accept.mutateAsync(acceptBody);
+      retryCandidate = { ...candidate, autoApply: false, acceptance: { result: meta, prevContent } };
     } catch (err) {
       // Keep the candidate AND its overlay: the save is retryable, and stripping the diff would
       // leave a review bar reviewing nothing (the decoration hook won't rebuild for the same key).
@@ -288,8 +365,50 @@ export function SkillDiffDockBar({ editor, noteId, compact = false, beforeApplyC
 
     if (!isCurrentApply()) return;
     if (editor.isDestroyed || (canApply && !canApply())) throw new Error('The note editor is no longer writable.');
-    if (targetChanged(JSON.stringify(editor.getJSON()))) {
+    if (!meta.applicationUpdate && targetChanged(JSON.stringify(editor.getJSON()))) {
       reportTargetChanged();
+      return;
+    }
+
+    if (candidate.durable && candidate.recoverable && candidate.resultId && candidate.baseContent !== undefined) {
+      if (!meta.applicationUpdate) {
+        const applicationUpdate = prepareSkillResultUpdate(editor, candidate.resultId, draft => {
+          if (candidate.mode === 'replace-doc') return draft.commands.setContent({ type: 'doc', content: candidate.content });
+          if (candidate.mode === 'inline-rewrite') {
+            const range = candidate.selectionAnchors && resolveVerifiedRange(draft.state, candidate.selectionAnchors, candidate.selectionText ?? '');
+            return !!range && draft.commands.insertArtifactInline({ artifactId: meta.artifactId,
+              skillId: candidate.skillId, skillName: candidate.skillName, content: candidate.content, ...range });
+          }
+          return draft.commands.insertArtifactBlock({ ...meta, skillId: candidate.skillId,
+            skillName: candidate.skillName, modelId: candidate.modelId, content: candidate.content });
+        });
+        meta = await accept.mutateAsync({ ...acceptBody, applicationUpdate });
+      }
+      retryCandidate = { ...candidate, autoApply: false, acceptance: { result: meta, prevContent } };
+      if (!isCurrentApply()) return;
+      if (!meta.applicationUpdate) throw new Error('The server did not save the application update.');
+      // A user may have typed while the canonical update was being saved. Keep that
+      // committed work recoverable for explicit review instead of silently approving it.
+      if (automatic) {
+        await deliver();
+        if (!isCurrentApply() || editor.isDestroyed || (canApply && !canApply()) ||
+            !isGenuinelyEmptyNote(editor.getJSON())) return;
+      }
+      applyPreparedSkillResult(editor, meta.applicationUpdate, restoreEditor);
+      if (automatic) automaticAppliedContent = JSON.stringify(editor.getJSON());
+      if (!wasSkillResultApplied(editor, candidate.resultId)) throw new Error('The saved update could not be delivered.');
+      retryCandidate = { ...retryCandidate, acceptance: { result: meta, prevContent, applied: true } };
+      useSkillDiffStore.getState().stage(retryCandidate);
+      await deliver();
+      if (!isCurrentApply()) return;
+      await resolvePendingSkillResult(noteId, candidate.resultId, { durable: candidate.durable });
+      if (!isCurrentApply()) return;
+      clear(noteId);
+      clearDiffDecorations(editor);
+      reportKept();
+      refreshFolded();
+      appliedSuccessfully = true;
+      toast.success(successMessage, acceptToastOptions(prevContent, meta.artifactId));
       return;
     }
 
@@ -306,7 +425,7 @@ export function SkillDiffDockBar({ editor, noteId, compact = false, beforeApplyC
       // The command fails closed on a payload the schema can't materialize. Honour its answer:
       // reporting "Kept" for a body that was never written also folds the recording in, hiding the
       // wand and the Enhance chip for work that did not happen.
-      const inserted = editor.commands.insertArtifactBlock({
+      const inserted = withEditorHistoryBoundary(editor, () => editor.commands.insertArtifactBlock({
         artifactId: meta.artifactId,
         skillId: candidate.skillId,
         skillName: candidate.skillName,
@@ -314,7 +433,7 @@ export function SkillDiffDockBar({ editor, noteId, compact = false, beforeApplyC
         generatedAt: meta.generatedAt,
         modelId: candidate.modelId,
         content: candidate.content,
-      });
+      }), restoreEditor);
       if (inserted) {
         requestAnimationFrame(() => {
           if (editor.isDestroyed) return;
@@ -330,14 +449,14 @@ export function SkillDiffDockBar({ editor, noteId, compact = false, beforeApplyC
       const range = resolveInlineRange();
       const applied =
         range !== null &&
-        editor.commands.insertArtifactInline({
+        withEditorHistoryBoundary(editor, () => editor.commands.insertArtifactInline({
           artifactId: meta.artifactId,
           skillId: candidate.skillId,
           skillName: candidate.skillName,
           content: candidate.content,
           from: range.from,
           to: range.to,
-        });
+        }), restoreEditor);
       if (!applied) {
         // The artifact row was persisted but the body wasn't touched (the target vanished during
         // the await — rare). Same shape as the other unapplied paths, but its own message: the
@@ -352,7 +471,8 @@ export function SkillDiffDockBar({ editor, noteId, compact = false, beforeApplyC
       // setContent replaces the whole doc — guard against an invalid-content throw (parity with the
       // append path's fail-quiet) so a bad candidate can't crash the editor.
       try {
-        const applied = editor.commands.setContent({ type: 'doc', content: candidate.content });
+        const applied = withEditorHistoryBoundary(editor, () =>
+          editor.commands.setContent({ type: 'doc', content: candidate.content }), restoreEditor);
         if (!applied) {
           failureDetail = await reportUnapplied();
         } else {
@@ -375,6 +495,7 @@ export function SkillDiffDockBar({ editor, noteId, compact = false, beforeApplyC
       retryCandidate = { ...retryCandidate, acceptance: { ...retryCandidate.acceptance!, applied: true } };
       useSkillDiffStore.getState().stage(retryCandidate);
       await beforeApplyComplete();
+      if (candidate.recoverable && candidate.resultId) await resolvePendingSkillResult(noteId, candidate.resultId, { durable: candidate.durable });
       if (!isCurrentApply()) return;
       clear(noteId);
     }
@@ -392,8 +513,9 @@ export function SkillDiffDockBar({ editor, noteId, compact = false, beforeApplyC
         ? t('skills.diff.deliveryPending')
         : t('skills.diff.couldNotApply', { name: candidate.skillName }));
     } finally {
+      actionRef.current = false;
+      if (isCurrentApply() && !appliedSuccessfully) useSkillDiffStore.getState().stage(retryCandidate);
       if (workflow && scope && isCurrentApply()) {
-        if (!appliedSuccessfully) useSkillDiffStore.getState().stage(retryCandidate);
         workflow.dispatch({
           type: appliedSuccessfully ? 'applySucceeded' : 'applyFailed',
           workflowId: scope.workflowId, attempt: scope.attempt,
@@ -402,9 +524,22 @@ export function SkillDiffDockBar({ editor, noteId, compact = false, beforeApplyC
     }
   };
 
+  acceptRef.current = onAccept;
+
   const reject = async () => {
-    if (candidate.acceptance?.applied) return;
+    if (actionRef.current || candidate.acceptance?.applied || candidate.acceptance?.result.applicationUpdate ||
+        (candidate.recoverable && candidate.resultId && wasSkillResultApplied(editor, candidate.resultId))) return;
+    actionRef.current = true;
+    setDiscarding(true);
+    try {
     if (workflow) {
+      try {
+        if (candidate.resultId) await resolvePendingSkillResult(noteId, candidate.resultId, { discardAccepted: true, durable: candidate.durable });
+      } catch {
+        toast.error(t('skills.diff.couldNotSave', { name: candidate.skillName }));
+        return;
+      }
+      if (useSkillDiffStore.getState().getCandidate(noteId) !== candidate) return;
       const result = workflow.dispatch({
         type: 'declineProposal', workflowId: candidate.workflowId ?? '', proposalId: candidate.proposalId ?? '',
       });
@@ -412,13 +547,13 @@ export function SkillDiffDockBar({ editor, noteId, compact = false, beforeApplyC
       clearDiffDecorations(editor);
       clear(noteId);
       useSkillRunActivityStore.getState().resolveStaged(noteId, 'undone');
-      discardWorkflowProposal(candidate, t('skills.diff.couldNotSave', { name: candidate.skillName }), t('common.actions.retry'), refreshFolded);
+      if (!candidate.resultId) discardWorkflowProposal(candidate, t('skills.diff.couldNotSave', { name: candidate.skillName }), t('common.actions.retry'), refreshFolded);
       if (candidate.recordingId) walkthroughEvent({ type: 'rejected', noteId, recordingId: candidate.recordingId });
       return;
     }
     if (candidate.resultId) {
       try {
-        await resolvePendingSkillResult(noteId, candidate.resultId);
+        await resolvePendingSkillResult(noteId, candidate.resultId, { discardAccepted: true, durable: candidate.durable });
       } catch {
         toast.error(t('skills.diff.couldNotSave', { name: candidate.skillName }));
         return;
@@ -429,6 +564,10 @@ export function SkillDiffDockBar({ editor, noteId, compact = false, beforeApplyC
     useSkillRunActivityStore.getState().resolveStaged(noteId, 'undone');
     if (candidate.recordingId)
       walkthroughEvent({ type: 'rejected', noteId, recordingId: candidate.recordingId });
+    } finally {
+      actionRef.current = false;
+      setDiscarding(false);
+    }
   };
 
   const submitRefine = () => {
@@ -456,16 +595,15 @@ export function SkillDiffDockBar({ editor, noteId, compact = false, beforeApplyC
     <>
     <SkillDeliveryRecovery noteId={noteId} />
     <div
+      ref={shineRef}
       data-onboarding="review-controls"
       className={`skill-review-bar ${PILL_OUTER}`}
       data-compact={compact}
     >
-      {/* The skill identity tag — slash badge + name, field-toned like a token. */}
-      <span className="skill-review-identity flex h-7 shrink-0 items-center gap-1.5 rounded-lg bg-dock-field pl-1 pr-2 text-[12.5px] font-semibold text-dock-ink">
-        <span className="flex size-[18px] shrink-0 items-center justify-center rounded-[5px] bg-dock-surface text-[11px] font-semibold text-dock-ink-2">
-          /
-        </span>
-        <span className="max-w-[120px] truncate">{candidate.skillName}</span>
+      <span className="skill-review-shine" aria-hidden="true" />
+      {/* Plain review label; actions remain separate controls. */}
+      <span className="skill-review-identity flex h-7 shrink-0 items-center px-2 text-[12.5px] font-medium text-dock-ink">
+        {t('skills.diff.review')}
       </span>
 
       <div className="skill-review-refinement flex min-w-0 items-center gap-1">
@@ -497,7 +635,7 @@ export function SkillDiffDockBar({ editor, noteId, compact = false, beforeApplyC
           <input
             type="text"
             disabled={refineBlocked}
-            placeholder={t('skills.diff.describeEdits')}
+            placeholder={t('skills.diff.describeChanges')}
             value={refineText}
             onChange={e => setRefineText(e.target.value)}
             onKeyDown={e => {
@@ -528,26 +666,26 @@ export function SkillDiffDockBar({ editor, noteId, compact = false, beforeApplyC
         ) : null}
       </div>
 
-      {/* Undo = discard the suggestion (the note never changed); Keep = accept. */}
+      {/* Discard removes the suggestion; Apply accepts it. */}
       <Tooltip>
         <TooltipTrigger asChild>
-          <button type="button" onClick={reject} disabled={accept.isPending || refining || applying || candidate.acceptance?.applied} className={REVIEW_BTN}>
-            <Undo2 className="size-3.5" />
-            {t('skills.diff.undo')}
+          <button type="button" onClick={reject} disabled={accept.isPending || refining || applying || discarding || !!candidate.acceptance?.result.applicationUpdate || candidate.acceptance?.applied} className={REVIEW_BTN}>
+            <X className="size-3.5" />
+            {t('skills.diff.discard')}
           </button>
         </TooltipTrigger>
-        <TooltipContent className="pointer-events-none">{t('skills.diff.reject')}</TooltipContent>
+        <TooltipContent className="pointer-events-none">{t('skills.diff.discardChanges')}</TooltipContent>
       </Tooltip>
       <Tooltip>
         <TooltipTrigger asChild>
           <button
             type="button"
-            onClick={onAccept}
-            disabled={accept.isPending || refining || applying}
+            onClick={() => void onAccept()}
+            disabled={accept.isPending || refining || applying || discarding}
             className={`${REVIEW_BTN} text-success hover:text-success`}
           >
             <Check className="size-3.5" />
-            {t('skills.diff.keep')}
+            {t('skills.diff.apply')}
           </button>
         </TooltipTrigger>
         <TooltipContent className="pointer-events-none">
@@ -568,11 +706,9 @@ export function SkillDiffDockBar({ editor, noteId, compact = false, beforeApplyC
  */
 export function SkillDiffPendingBar({
   noteId,
-  skillName,
   compact = false,
 }: {
   noteId: string;
-  skillName: string;
   compact?: boolean;
 }) {
   const { t } = useTranslation();
@@ -580,16 +716,17 @@ export function SkillDiffPendingBar({
   const state = useWorkflowSnapshot();
   const qc = useQueryClient();
   const clear = useSkillDiffStore(s => s.clear);
-  const applied = useSkillDiffStore(s => s.candidatesByNote.get(noteId)?.acceptance?.applied === true);
-  // Undo needs no editor, and it must be here: when the note fails to open outright the editor
+  const applied = useSkillDiffStore(s => !!s.candidatesByNote.get(noteId)?.acceptance?.result.applicationUpdate || s.candidatesByNote.get(noteId)?.acceptance?.applied === true);
+  // Discard needs no editor, and it must be here: when the note fails to open outright the editor
   // never returns, and this bar is the only skill surface left (the Ask unit is collapsed while a
   // candidate is staged). Without it the dock would sit on "waiting" until a reload.
   const discard = async () => {
     const candidate = useSkillDiffStore.getState().getCandidate(noteId);
-    if (candidate?.acceptance?.applied) return;
-    if (!workflow && candidate?.resultId) {
+    if (candidate?.acceptance?.applied || candidate?.acceptance?.result.applicationUpdate ||
+        (workflow && (state.kind !== 'skill' || state.phase !== 'review'))) return;
+    if (candidate?.resultId) {
       try {
-        await resolvePendingSkillResult(noteId, candidate.resultId);
+        await resolvePendingSkillResult(noteId, candidate.resultId, { discardAccepted: true, durable: candidate.durable });
       } catch {
         toast.error(t('skills.diff.couldNotSave', { name: candidate.skillName }));
         return;
@@ -601,7 +738,7 @@ export function SkillDiffPendingBar({
     }).accepted) return;
     clear(noteId);
     useSkillRunActivityStore.getState().resolveStaged(noteId, 'undone');
-    if (workflow && candidate) {
+    if (workflow && candidate && !candidate.resultId) {
       discardWorkflowProposal(candidate, t('skills.diff.couldNotSave', { name: candidate.skillName }), t('common.actions.retry'), () => {
         void qc.invalidateQueries({ queryKey: enhancedRecordingsKey(noteId) });
       });
@@ -616,11 +753,8 @@ export function SkillDiffPendingBar({
       data-compact={compact}
       role="status"
     >
-      <span className="skill-review-identity flex h-7 shrink-0 items-center gap-1.5 rounded-lg bg-dock-field pl-1 pr-2 text-[12.5px] font-semibold text-dock-ink">
-        <span className="flex size-[18px] shrink-0 items-center justify-center rounded-[5px] bg-dock-surface text-[11px] font-semibold text-dock-ink-2">
-          /
-        </span>
-        <span className="max-w-[120px] truncate">{skillName}</span>
+      <span className="skill-review-identity flex h-7 shrink-0 items-center px-2 text-[12.5px] font-medium text-dock-ink">
+        {t('skills.diff.review')}
       </span>
       <span className="shimmer shimmer-duration-1400 min-w-0 flex-1 truncate px-2 text-[12.5px] text-dock-ink-3">
         {t('skills.diff.waitingForDocument')}
@@ -628,15 +762,15 @@ export function SkillDiffPendingBar({
       <Tooltip>
         <TooltipTrigger asChild>
           <button type="button" onClick={discard} disabled={applied || (!!workflow && (state.kind !== 'skill' || state.phase !== 'review'))} className={REVIEW_BTN}>
-            <Undo2 className="size-3.5" />
-            {t('skills.diff.undo')}
+            <X className="size-3.5" />
+            {t('skills.diff.discard')}
           </button>
         </TooltipTrigger>
-        <TooltipContent className="pointer-events-none">{t('skills.diff.reject')}</TooltipContent>
+        <TooltipContent className="pointer-events-none">{t('skills.diff.discardChanges')}</TooltipContent>
       </Tooltip>
       <button type="button" disabled className={`${REVIEW_BTN} text-success`}>
         <Check className="size-3.5" />
-        {t('skills.diff.keep')}
+        {t('skills.diff.apply')}
       </button>
     </div>
     </>

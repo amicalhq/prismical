@@ -1,11 +1,12 @@
-// A usage threshold avoids guessing signup time from browser-local first access.
-// Once retired, deleting notes or switching organizations must not bring the link back.
-export function replayAvailable(userKey: string, noteCount: number): boolean {
-  try {
-    const key = `${userKey}:replay-retired`;
-    if (noteCount >= 3) window.localStorage.setItem(key, '1');
-    return window.localStorage.getItem(key) !== '1';
-  } catch {
-    return false;
-  }
+import { walkthroughKey } from './state';
+import { currentAccountExperience } from '@prismical/app-client';
+// Retirement follows the user, including when they delete notes or switch organizations.
+export function replayAvailable(_userKey: string, noteCount: number): boolean {
+  const account = currentAccountExperience();
+  if (!account || _userKey !== walkthroughKey(account.userId)) return false;
+  const saved = account?.getSnapshot().data?.onboarding;
+  if (!saved) return false;
+  if (noteCount >= 3 && !saved.replayRetired)
+    account?.update({ onboarding: { replayRetired: true } });
+  return noteCount < 3 && !saved.replayRetired;
 }

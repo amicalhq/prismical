@@ -17,6 +17,8 @@ vi.mock('../../src/renderer/telemetry', () => ({ captureRendererException: vi.fn
 vi.mock('@prismical/app-client', () => ({
   startLoadingTiming: () => ({ mark: vi.fn(), finish: vi.fn() }),
   useDeviceSettings: () => ({ has: () => false }),
+  usePorts: () => ({}),
+  useUpdateNote: () => ({ mutate: vi.fn() }),
   useCreateNote: () => ({ isPending: false, mutate: vi.fn() }),
   useNote: (noteId: string) => ({ data: { id: noteId, title: noteId } }),
   useNotes: () => ({ data: [] }),
@@ -38,9 +40,14 @@ vi.mock('../../../../packages/app-ui/node_modules/@tiptap/react', () => ({
   EditorContent: () => null,
 }));
 vi.mock('@prismical/app-ui/components/note-title-field', () => ({ NoteTitleField: () => null }));
-vi.mock('@prismical/app-ui/components/inline-skill-popover', () => ({
-  InlineSkillPopover: () => null,
+vi.mock('@prismical/app-ui/components/note-emoji-picker', () => ({ NoteEmojiPicker: () => null }));
+vi.mock('@prismical/app-ui/components/note-history-controls', () => ({
+  NoteHistoryControls: () => null,
 }));
+vi.mock('@prismical/app-ui/components/note-formatting-toolbar', () => ({
+  NoteFormattingToolbar: () => null,
+}));
+vi.mock('@prismical/app-ui/components/note-slash-menu', () => ({ NoteSlashMenu: () => null }));
 vi.mock('@prismical/app-ui/components/recording-bottom-cluster', async () => {
   const { useCurrentNoteEditor } = await import('@prismical/app-ui/shell/current-editor-context');
   return {

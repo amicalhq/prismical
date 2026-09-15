@@ -40,7 +40,7 @@ export function DeleteNoteDialog({
     >
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>
+          <AlertDialogTitle className="wrap-anywhere">
             {t('dialogs.deleteNote.title', {
               title: note?.title || t('dialogs.deleteNote.untitled'),
             })}

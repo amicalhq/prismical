@@ -13,6 +13,7 @@ import { artifactBlockCommands } from "./artifact-node-commands";
 import { artifactInlineCommands } from "./artifact-inline-node-commands";
 import { SkillDiffPlugin } from "./diff/diff-plugin";
 import { SkillDiffEditorLock } from "./diff/skill-diff-editor-lock";
+import { useSkillDiffStore } from "./diff/skill-diff-store";
 
 // The shared schema ships the artifact nodes as SCHEMA-ONLY (so the collaboration service stays in
 // parity). Attach the renderer-coupled insert commands via `.extend()` — that adds commands
@@ -30,6 +31,7 @@ export function buildWebEditorExtensions(
   doc: Y.Doc,
   noteId: string,
   placeholder: string,
+  historyBlocked: () => boolean = () => false,
 ): Extensions {
   const base = buildEditorExtensions({ undoRedo: false }).map((ext) => {
     if (ext.name === ARTIFACT_NODE_NAME) return WebArtifactNode;
@@ -38,7 +40,17 @@ export function buildWebEditorExtensions(
   });
   return [
     ...base,
-    Collaboration.configure({ document: doc, field: "default" }),
+    Collaboration.extend({
+      addCommands() {
+        const commands = this.parent!();
+        const allowed = () => !this.editor.isDestroyed && this.editor.isEditable &&
+          !useSkillDiffStore.getState().candidatesByNote.has(noteId) && !historyBlocked();
+        return {
+          undo: () => props => allowed() && commands.undo!()(props),
+          redo: () => props => allowed() && commands.redo!()(props),
+        };
+      },
+    }).configure({ document: doc, field: "default" }),
     Placeholder.configure({ placeholder }),
     SkillDiffPlugin,
     SkillDiffEditorLock.configure({ noteId }),

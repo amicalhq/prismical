@@ -59,6 +59,9 @@ export const resourceInvitationsKey = (type: ResourceType, id: string) =>
   ["resource-invitations", type, id] as const;
 export const shareInvitationKey = (id: string) => ["share-invitation", id] as const;
 
+/** Error code core returns when a folder would be shared outside its org (folders are org-only). */
+export { FOLDER_SHARE_ORG_ONLY } from "@prismical/api-contracts/apps/v1";
+
 export const ROLE_TO_PERMISSIONS: Record<ShareRole, string[]> = {
   viewer: ["read"],
   editor: ["write"],
