@@ -28,7 +28,7 @@ interface Session {
   ownerOrgId: string;
   claiming?: Promise<void>;
   startingNative?: boolean;
-  segments?: number;
+  finalSegmentCount?: number;
 }
 
 const emptySnapshot = (): RecordingSessionSnapshot => ({
@@ -97,8 +97,8 @@ export function createNativeRecordingController(options: {
     }
     if (current?.phase === 'draining') workflow.dispatch({ type: 'inputDrained', ...current });
   }
-  function complete(s: Session, segments: number) {
-    s.segments = Math.max(s.segments ?? 0, segments);
+  function complete(s: Session, finalSegmentCount?: number) {
+    if (finalSegmentCount !== undefined) s.finalSegmentCount = finalSegmentCount;
     if (s.claiming || !s.recordingId) return;
     drained(s);
     s.claiming = control.claimCompletion(s.recordingId).then(claimed => {
@@ -110,7 +110,7 @@ export function createNativeRecordingController(options: {
       session = undefined;
       if (claimed) publish({ completedRecording: {
         recordingId: s.recordingId!, noteId: s.noteId,
-        segments: s.segments ?? 0,
+        segments: s.finalSegmentCount ?? snapshot.liveSegments.length,
         ownerSessionKey: s.ownerSessionKey, ownerOrgId: s.ownerOrgId,
         ...(autoSkill ? { workflowId: s.workflowId } : {}),
       } });
@@ -176,7 +176,7 @@ export function createNativeRecordingController(options: {
     hadAutoPausePrompt = state.autoPausePrompt != null;
     if ((state.status === 'idle' || state.status === 'error') && s.recordingId) {
       const result = state.completedRecordings?.find(row => row.recordingId === s.recordingId);
-      complete(s, result?.segments ?? state.segments.length);
+      complete(s, result?.segments);
     }
   }
   function project() {

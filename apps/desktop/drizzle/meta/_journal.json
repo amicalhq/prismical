@@ -57,6 +57,13 @@
       "when": 1788777590229,
       "tag": "0007_server_staging_only",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1789571544739,
+      "tag": "0008_recording_stream",
+      "breakpoints": true
     }
   ]
 }

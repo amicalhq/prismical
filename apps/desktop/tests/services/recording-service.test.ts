@@ -35,6 +35,7 @@ import {
 } from 'effect';
 import { TestClock } from 'effect/testing';
 import { makeTestLogger, testConfigLayer, testI18nLayer } from '../helpers/test-layers';
+import { fakeStreamOrganization, fakeStreamSegment, makeFakeRecordingStream } from '../helpers/fake-recording-stream';
 import {
   fakeFrame,
   fakeSegment,
@@ -106,6 +107,15 @@ import {
 } from '../../src/main/infra/product-db/service';
 
 const CHUNK_INTERVAL = Duration.seconds(15);
+
+const streamBackend = (peer: ReturnType<typeof makeFakeRecordingStream>, enabled = () => true) =>
+  (api: WorkspaceBackendApi): WorkspaceBackendApi => ({
+    ...api, identity: { sub: 'user-one', activeOrgId: 'org_stream' },
+    openRecordingSocket: peer.openSocket,
+    request: req => req.path === '/apps/v1/me/organizations'
+      ? Effect.succeed({ ok: true, status: 200, bodyJson: { results: [fakeStreamOrganization('org_stream', enabled())] } })
+      : api.request(req),
+  });
 
 /** Poll a boolean Effect while letting real async (fs writes, the frame fiber)
  * settle — WITHOUT advancing the (Test) Clock. The budget is WALL-CLOCK time
@@ -652,6 +662,7 @@ describe('RecordingService (capture → recovery WAV → chunked upload → outb
         recordingCompleted: () => dbError('recording-completed'),
         recordingFailed: () => dbError('recording-failed'),
         segmentsReceived: () => dbError('segments-received'),
+        recordingFinalized: () => dbError('recording-finalized'),
         segmentsForRecording: () => Effect.succeed([]),
         recordingMetaMerged: () => dbError('recording-meta-merged'),
       };
@@ -3559,5 +3570,328 @@ describe('RecordingService — spoken language', () => {
       assert.notStrictEqual(row.phase, 'cleanup');
       yield* Scope.close(h.sessionScope, Exit.void);
     })
+  );
+});
+
+describe('RecordingService WSS', () => {
+  it.live(
+    'an uncertain language rollback parks WSS until recovery restores the durable configuration',
+    () =>
+      Effect.gen(function* () {
+        const peer = makeFakeRecordingStream();
+        const h = yield* setup({}, undefined, { backendTransform: streamBackend(peer) });
+        const id = yield* h.service.start({ captureMode: 'mic' });
+        yield* poll(
+          SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')),
+          'capture ready'
+        );
+        yield* poll(
+          Effect.sync(
+            () => peer.sockets[0]?.commands.some(command => command.type === 'start') === true
+          ),
+          'stream ready'
+        );
+        peer.reply(0, {
+          type: 'transcript',
+          source: 'mic',
+          chunkIndex: 600000,
+          results: [fakeStreamSegment(id, 'mic', 1, 'Provisional')],
+        });
+        yield* poll(
+          SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.segments.length === 1)),
+          'provisional text'
+        );
+        h.fakeCloud.setRequestResponder(() => ({ error: { code: 'INTERNAL' } }));
+        assert.isFalse(yield* h.service.setLanguage(id, 'ja'));
+        yield* poll(
+          Effect.sync(() => peer.sockets[0]!.closed),
+          'uncertain stream closed'
+        );
+        yield* settle;
+        assert.isFalse(peer.sockets[0]!.commands.some(command => command.type === 'stop'));
+        assert.strictEqual((yield* h.db.getRecoveryOutbox(id))!.phase, 'chunks');
+        h.fakeCloud.setRequestResponder(req => ({
+          ok: true,
+          status: 200,
+          bodyJson: { result: req.body, applied: true },
+        }));
+        assert.strictEqual((yield* h.drain).resolved, 1);
+        assert.strictEqual(peer.sockets[1]!.commands[0]!.connectionAttempt, 2);
+        const completed = yield* SubscriptionRef.get(h.service.state);
+        assert.isEmpty(
+          completed.segments,
+          'empty final snapshot replaces live text during recovery'
+        );
+        assert.strictEqual(
+          completed.completedRecordings.find(recording => recording.recordingId === id)?.segments,
+          0
+        );
+        assert.isEmpty(yield* productSegments(h, id));
+        assert.isEmpty(h.fakeCloud.finalizeCalls);
+        yield* Scope.close(h.sessionScope, Exit.void);
+      }).pipe(Effect.scoped)
+  );
+
+  it.live('keeps audio and final text when terminal transcription fails', () =>
+    Effect.gen(function* () {
+      const peer = makeFakeRecordingStream();
+      peer.autoFinalize = false;
+      const h = yield* setup({}, undefined, { backendTransform: streamBackend(peer) });
+      const id = yield* h.service.start({ captureMode: 'mic' });
+      yield* poll(
+        SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')),
+        'capture ready'
+      );
+      yield* Queue.offer(h.fakeCapture.current().frames, fakeFrame('mic_raw', oneSecond()));
+      yield* poll(
+        Effect.sync(() => peer.checkpoints.mic === 48_000),
+        'audio saved'
+      );
+      const stop = yield* Effect.forkChild(h.service.stop(id));
+      yield* poll(
+        Effect.sync(() => peer.sockets[0]!.commands.some(command => command.type === 'stop')),
+        'stop sent'
+      );
+      peer.reply(0, { type: 'stopped', checkpoints: peer.checkpoints, durationMs: 1000 });
+      peer.reply(0, {
+        type: 'finalized',
+        status: 'failed',
+        reason: 'transcription_incomplete',
+        results: [fakeStreamSegment(id, 'mic', 1, 'Available text')],
+      });
+      yield* Fiber.join(stop);
+      assert.isFalse(yield* h.service.claimCompletion(id));
+      assert.strictEqual((yield* h.db.getRecoveryOutbox(id))!.status, 'failed');
+      assert.strictEqual(
+        (yield* SubscriptionRef.get(h.service.state)).segments[0]?.text,
+        'Available text'
+      );
+      const row = h.product.db
+        .select()
+        .from(productSchema.recording)
+        .where(eq(productSchema.recording.id, id))
+        .get()!;
+      assert.strictEqual(row.status, 'completed');
+      assert.isNotNull(row.endedAt);
+      assert.strictEqual(row.durationMs, 1000);
+      assert.deepStrictEqual(row.meta?.finalize, {
+        status: 'failed',
+        reason: 'transcription_incomplete',
+      });
+      yield* h.drain;
+      assert.isTrue(fs.existsSync(h.recoveryDir(id)));
+      assert.strictEqual((yield* productSegments(h, id))[0]?.text, 'Available text');
+      yield* Scope.close(h.sessionScope, Exit.void);
+    }).pipe(Effect.scoped)
+  );
+
+  it.live('retains a quota-truncated tail after server completion and recovery', () =>
+    Effect.gen(function* () {
+      const peer = makeFakeRecordingStream();
+      peer.recordingLimitMs = 500;
+      const h = yield* setup({}, undefined, { backendTransform: streamBackend(peer) });
+      const id = yield* h.service.start({ captureMode: 'mic' });
+      yield* poll(
+        SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')),
+        'capture ready'
+      );
+      yield* Queue.offer(h.fakeCapture.current().frames, fakeFrame('mic_raw', oneSecond()));
+      yield* poll(
+        Effect.sync(() => peer.checkpoints.mic === 24_000),
+        'quota reached'
+      );
+      yield* h.service.stop(id);
+      assert.isFalse(yield* h.service.claimCompletion(id));
+      const row = (yield* h.db.getRecoveryOutbox(id))!;
+      assert.strictEqual(row.status, 'failed');
+      assert.strictEqual(row.lastError, 'stream:unsaved-audio');
+      assert.deepStrictEqual(row.streamFinalSamples, { mic: 48_000, system: 0 });
+      yield* h.drain;
+      assert.strictEqual(
+        fs.statSync(path.join(h.recoveryDir(id), 'mic.wav')).size,
+        44 + 48_000 * 2
+      );
+      yield* Scope.close(h.sessionScope, Exit.void);
+    }).pipe(Effect.scoped)
+  );
+
+  it.live('retries a failed terminal cache transaction before releasing retained audio', () =>
+    Effect.gen(function* () {
+      const peer = makeFakeRecordingStream();
+      const h = yield* setup({}, undefined, { backendTransform: streamBackend(peer) });
+      const id = yield* h.service.start({ captureMode: 'mic' });
+      yield* poll(
+        SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')),
+        'capture ready'
+      );
+      yield* poll(
+        Effect.sync(
+          () => peer.sockets[0]?.commands.some(command => command.type === 'start') === true
+        ),
+        'stream ready'
+      );
+      peer.reply(0, {
+        type: 'transcript',
+        source: 'mic',
+        chunkIndex: 600000,
+        results: [fakeStreamSegment(id, 'mic', 1, 'Provisional')],
+      });
+      yield* poll(
+        productSegments(h, id).pipe(Effect.map(rows => rows.length === 1)),
+        'provisional cache saved'
+      );
+      h.product.client.exec(
+        "CREATE TRIGGER fail_completion BEFORE UPDATE OF status ON recording WHEN NEW.status = 'completed' BEGIN SELECT RAISE(ABORT, 'storage unavailable'); END"
+      );
+      yield* h.service.stop(id);
+      assert.strictEqual((yield* h.db.getRecoveryOutbox(id))!.phase, 'chunks');
+      assert.strictEqual(
+        (yield* productSegments(h, id))[0]?.text,
+        'Provisional',
+        'failed replacement transaction rolls back the text deletion'
+      );
+      assert.isEmpty((yield* SubscriptionRef.get(h.service.state)).completedRecordings);
+      assert.isTrue(fs.existsSync(h.recoveryDir(id)));
+      h.product.client.exec('DROP TRIGGER fail_completion');
+      peer.status = 'completed';
+      assert.strictEqual((yield* h.drain).resolved, 1);
+      assert.isEmpty(yield* productSegments(h, id));
+      assert.isEmpty((yield* SubscriptionRef.get(h.service.state)).segments);
+      assert.isTrue(yield* h.service.claimCompletion(id));
+      assert.isFalse(fs.existsSync(h.recoveryDir(id)));
+      yield* Scope.close(h.sessionScope, Exit.void);
+    }).pipe(Effect.scoped)
+  );
+
+  it.live('streams native dual capture and freezes the lane until the next recording', () =>
+    Effect.gen(function* () {
+      const peer = makeFakeRecordingStream();
+      let enabled = true;
+      const h = yield* setup({}, undefined, {
+        backendTransform: streamBackend(peer, () => enabled),
+      });
+      const id = yield* h.service.start({ captureMode: 'dual' });
+      yield* poll(
+        SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')),
+        'WSS capturing'
+      );
+      enabled = false;
+      yield* Queue.offer(h.fakeCapture.current().frames, fakeFrame('mic_processed', oneSecond()));
+      yield* Queue.offer(h.fakeCapture.current().frames, fakeFrame('system', oneSecond()));
+      yield* poll(
+        Effect.sync(() => peer.checkpoints.mic === 48_000 && peer.checkpoints.system === 48_000),
+        'both lanes durable'
+      );
+      yield* h.service.stop(id);
+      assert.isEmpty(h.fakeCloud.uploadCalls);
+      assert.isEmpty(h.fakeCloud.finalizeCalls);
+      assert.strictEqual((yield* h.db.getRecoveryOutbox(id))!.phase, 'cleanup');
+      const wav = fs.readFileSync(path.join(h.recoveryDir(id), 'mic.wav')).subarray(44);
+      assert.deepStrictEqual(
+        Buffer.concat(
+          peer.sockets[0]!.frames.filter(frame => frame[0] === 0).map(frame => frame.subarray(5))
+        ),
+        wav
+      );
+      yield* h.drain;
+      assert.isFalse(fs.existsSync(h.recoveryDir(id)));
+      const next = yield* h.service.start({ captureMode: 'mic' });
+      yield* poll(
+        SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')),
+        'HTTP capturing'
+      );
+      yield* h.service.stop(next);
+      assert.strictEqual(h.fakeCloud.finalizeCalls.length, 1);
+      assert.strictEqual(peer.sockets.length, 1);
+      yield* Scope.close(h.sessionScope, Exit.void);
+    }).pipe(Effect.scoped)
+  );
+
+  it.live('holds completion until finalized and replaces provisional cached segments', () =>
+    Effect.gen(function* () {
+      const peer = makeFakeRecordingStream();
+      peer.autoFinalize = false;
+      const h = yield* setup({}, undefined, { backendTransform: streamBackend(peer) });
+      const id = yield* h.service.start({ captureMode: 'mic' });
+      yield* poll(
+        SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')),
+        'capture ready'
+      );
+      yield* poll(
+        Effect.sync(
+          () => peer.sockets[0]?.commands.some(command => command.type === 'start') === true
+        ),
+        'stream ready'
+      );
+      const provisional = fakeStreamSegment(id, 'mic', 1, 'Provisional');
+      peer.reply(0, {
+        type: 'transcript',
+        source: 'mic',
+        chunkIndex: 600000,
+        results: [provisional],
+      });
+      yield* poll(
+        SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.segments.length === 1)),
+        'provisional text'
+      );
+      const stop = yield* Effect.forkChild(h.service.stop(id));
+      yield* poll(
+        Effect.sync(() => peer.sockets[0]!.commands.some(command => command.type === 'stop')),
+        'stop sent'
+      );
+      peer.reply(0, { type: 'stopped', checkpoints: peer.checkpoints, durationMs: 0 });
+      yield* settle;
+      assert.strictEqual((yield* h.db.getRecoveryOutbox(id))!.phase, 'chunks');
+      assert.isEmpty((yield* SubscriptionRef.get(h.service.state)).completedRecordings);
+      const final = fakeStreamSegment(id, 'mic', 2, 'Final replacement');
+      peer.reply(0, { type: 'finalized', status: 'done', results: [final] });
+      yield* Fiber.join(stop);
+      const rows = h.product.db
+        .select()
+        .from(productSchema.transcriptSegment)
+        .where(eq(productSchema.transcriptSegment.recordingId, id))
+        .all();
+      assert.deepStrictEqual(
+        rows.map(row => row.text),
+        ['Final replacement']
+      );
+      assert.strictEqual((yield* h.db.getRecoveryOutbox(id))!.phase, 'cleanup');
+      assert.isEmpty(h.fakeCloud.finalizeCalls);
+      yield* Scope.close(h.sessionScope, Exit.void);
+    }).pipe(Effect.scoped)
+  );
+
+  it.live(
+    'recovers a WSS recording after creation was unavailable without sending HTTP chunks',
+    () =>
+      Effect.gen(function* () {
+        const peer = makeFakeRecordingStream();
+        const h = yield* setup({}, undefined, { backendTransform: streamBackend(peer) });
+        h.fakeCloud.setCreateResponder(() => laneFail(true, { kind: 'network' }));
+        const id = yield* h.service.start({ captureMode: 'mic' });
+        yield* poll(
+          SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')),
+          'offline capture'
+        );
+        yield* Queue.offer(h.fakeCapture.current().frames, fakeFrame('mic_raw', oneSecond()));
+        yield* poll(
+          SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.elapsedMs === 1000)),
+          'audio retained'
+        );
+        yield* h.service.stop(id);
+        assert.isEmpty(peer.sockets);
+        assert.isEmpty(h.fakeCloud.uploadCalls);
+        assert.strictEqual((yield* h.db.getRecoveryOutbox(id))!.phase, 'create');
+        h.fakeCloud.setCreateResponder(input => ({
+          ok: true,
+          value: { recordingId: input.recordingId },
+        }));
+        assert.strictEqual((yield* h.drain).resolved, 1);
+        assert.strictEqual(peer.checkpoints.mic, 48_000);
+        assert.isEmpty(h.fakeCloud.uploadCalls);
+        assert.isEmpty(h.fakeCloud.finalizeCalls);
+        assert.isNull(yield* h.db.getRecoveryOutbox(id));
+        yield* Scope.close(h.sessionScope, Exit.void);
+      }).pipe(Effect.scoped)
   );
 });

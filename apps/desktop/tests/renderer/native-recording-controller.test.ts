@@ -188,6 +188,22 @@ describe('native recording workflow', () => {
     expect(f.client.getSnapshot().completedRecording).toBeNull();
   });
 
+  it('replaces a provisional count with an authoritative empty terminal transcript', async () => {
+    const f = fixture(capturing);
+    const claim = deferred<boolean>();
+    vi.mocked(f.control.claimCompletion).mockReturnValue(claim.promise);
+    f.push({ ...capturing, status: 'idle', finalizingRecordingIds: ['rec_1'], segments: [{
+      id: 'tsg_provisional', recordingId: 'rec_1', source: 'mic', speaker: 'you',
+      text: 'Provisional', segmentOrder: 1, startTimeMs: 0, endTimeMs: 1000,
+    }] });
+    f.push({ ...capturing, status: 'idle', completedRecordings: [{ recordingId: 'rec_1', noteId: 'note_1', segments: 0 }] });
+    // Main removes the claimed completion before the claim IPC returns.
+    f.push({ ...capturing, status: 'idle' });
+    claim.resolve(true);
+    await vi.waitFor(() => expect(f.client.getSnapshot().completedRecording).toMatchObject({ recordingId: 'rec_1', segments: 0 }));
+    expect(f.client.getSnapshot().liveSegments).toEqual([]);
+  });
+
   it('restores queued completion even when main has cleared the current recording', async () => {
     const f = fixture({ ...idle, completedRecordings: [{ recordingId: 'rec_old', noteId: 'note_old', segments: 4 }] });
     await vi.waitFor(() => expect(f.client.getSnapshot().completedRecording).toMatchObject({ recordingId: 'rec_old', segments: 4 }));

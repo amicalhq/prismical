@@ -19,6 +19,7 @@ export type RecoveryOutboxStatus = RecoveryOutboxRow['status'];
  * status → 'capturing'; attemptCount defaults to 0 and the drain cursors start null.
  */
 export interface NewRecoveryOutbox {
+  readonly streamConfig?: NonNullable<RecoveryOutboxRow['streamConfig']>;
   readonly recordingId: string;
   readonly owner: NonNullable<RecoveryOutboxRow['owner']>;
   readonly createInput: NonNullable<RecoveryOutboxRow['createInput']>;
@@ -39,6 +40,8 @@ export interface NewRecoveryOutbox {
  * `null` explicitly to clear a nullable column. updatedAt is re-stamped each call.
  */
 export interface RecoveryOutboxPatch {
+  readonly streamFinalSamples?: NonNullable<RecoveryOutboxRow['streamFinalSamples']>;
+  readonly streamConfig?: NonNullable<RecoveryOutboxRow['streamConfig']>;
   readonly createInput?: NonNullable<RecoveryOutboxRow['createInput']>;
   readonly engineConfig?: NonNullable<RecoveryOutboxRow['engineConfig']>;
   readonly phase?: NonNullable<RecoveryOutboxRow['phase']>;

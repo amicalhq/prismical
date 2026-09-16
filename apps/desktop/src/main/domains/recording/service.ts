@@ -168,7 +168,11 @@ export interface RecordingServiceApi {
   /** Wait for a stopped recording's required work, then claim completion once across windows. */
   readonly claimCompletion: (recordingId: string) => Effect.Effect<boolean>;
   /** Main-only recovery handoff; false refuses completion after a terminal processing failure. */
-  readonly resolveCompletion: (recordingId: string, ready: boolean) => Effect.Effect<void>;
+  readonly resolveCompletion: (
+    recordingId: string,
+    ready: boolean,
+    finalSegments?: readonly RecordingSegment[]
+  ) => Effect.Effect<void>;
   /** Pause the matching active recording without finalizing it. */
   readonly pause: (recordingId: string) => Effect.Effect<boolean>;
   /**

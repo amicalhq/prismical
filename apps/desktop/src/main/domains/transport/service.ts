@@ -3,6 +3,7 @@ import { Context, Data, type Effect, type Option, type Scope, type SubscriptionR
 import type { AuthStateError, RefreshError } from '../auth/service';
 import type { AuthState } from '../auth/policy';
 import type { StaleSessionError } from '../../runtime/workspace-layer';
+import type { RecordingSocket, RecordingStreamError } from './recording-socket';
 
 /**
  * The Ask streaming lane failed to open: either no guarded identity
@@ -144,6 +145,8 @@ export interface WorkspaceIdentity {
  * reserved `{error:{code:'INTERNAL'}}` arm.
  */
 export interface WorkspaceBackendApi {
+  /** Cloud-only, scoped WSS connection with freshly guarded credentials. */
+  readonly openRecordingSocket?: (recordingId: string) => Effect.Effect<RecordingSocket, RecordingStreamError, Scope.Scope>;
   /** Cloud backend ownership; absent for the accountless local backend. */
   readonly identity?: WorkspaceIdentity;
   readonly request: (req: TransportRequest) => Effect.Effect<TransportResponse>;

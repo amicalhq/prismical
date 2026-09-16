@@ -5,14 +5,14 @@
  */
 import * as fs from 'node:fs';
 import path from 'node:path';
-import { Exit, Clock, Data, Effect, Layer, Queue, Stream, SubscriptionRef } from 'effect';
+import { Exit, Clock, Data, Effect, Layer, Queue, Result, Stream, SubscriptionRef } from 'effect';
 import { MainLogger } from '../../infra/logging/service';
 import { OperationalDb, type RecoveryOutboxRow } from '../../infra/operational-db/service';
 import type { RecoveryPauseCutPoint } from '../../infra/operational-db/schema';
 import type { ProductDbError } from '../../infra/product-db/service';
 import { detectedSpeakerCountFor } from '../transcriber/segment';
 import { Transcriber } from '../transcriber/service';
-import { WorkspaceBackend, type RecordingLaneFailure } from '../transport/service';
+import { WorkspaceBackend, type RecordingLaneFailure, type RecordingSegment } from '../transport/service';
 import { recordingRetryAfterMs } from '../transport/recording-retry';
 import { mirrorSegmentsToCore } from './segment-mirror';
 import {
@@ -30,6 +30,7 @@ import { RecordingService, type RecordingServiceApi, type RecordingState } from 
 import { saveRecordingTranscriptionConfig } from './language';
 import { WorkspaceIdentity, sameWorkspace } from '../../runtime/workspace-identity';
 import { RecordingStore } from './store';
+import { makeRecordingStreamControl, runRecordingStream } from './stream';
 
 /** Exponential backoff between drain attempts (per row), capped. Clock-driven —
  * a row's `nextAttemptAt` gates it until the delay for its attempt has elapsed. */
@@ -278,7 +279,9 @@ export const drainRecoveries = (
             return yield* fail(row, 'recovery-metadata-missing');
           }
           if (row.phase === 'cleanup') {
-            yield* resolveCompletion(row.recordingId, true);
+            yield* resolveCompletion(row.recordingId, true, row.streamConfig
+              ? yield* store.segmentsForRecording(row.recordingId)
+              : undefined);
             yield* fileOperation(() => fs.rmSync(row.wavPath, { recursive: true, force: true }));
             yield* db.deleteRecoveryOutbox(row.recordingId);
             return 'resolved' as const;
@@ -286,7 +289,28 @@ export const drainRecoveries = (
           const engine = { ...row.engineConfig, language: row.engineConfig.language ?? 'en' };
           const mirrorToCore = appMode === 'cloud' && engine.engine !== 'cloud';
           const sources = sourcesForMode(row.captureMode);
+          const streamControl = makeRecordingStreamControl();
           const { mic, system, mediaDuration, lastWriteAt } = yield* fileOperation(() => {
+            if (row.streamConfig) {
+              let lastWriteAt = row.createInput!.startedAt;
+              for (const source of sources) {
+                const file = path.join(row.wavPath, wavFileName[source]);
+                if (!fs.existsSync(file)) continue;
+                const stat = fs.statSync(file);
+                streamControl.samples[source] = Math.max(0, Math.floor((stat.size - 44) / 2));
+                lastWriteAt = Math.max(lastWriteAt, Math.round(stat.mtimeMs));
+              }
+              return {
+                mic: null,
+                system: null,
+                lastWriteAt,
+                mediaDuration: Math.round(
+                  (Math.max(streamControl.samples.mic, streamControl.samples.system) /
+                    CAPTURE_SAMPLE_RATE) *
+                    1000
+                ),
+              };
+            }
             // Completed transcription uses its durable stop metadata; no audio decode is needed.
             if (row.phase === 'finalize' && row.endedAt !== null && row.durationMs !== null) {
               return {
@@ -316,13 +340,16 @@ export const drainRecoveries = (
           });
           // Graceful stop writes exact metadata. For a crash, freeze the last media
           // write time once, so retries never move endedAt to a later session.
-          if (row.endedAt === null || row.durationMs === null) {
+          if (row.endedAt === null || row.durationMs === null || (row.streamConfig && !row.streamFinalSamples)) {
             yield* update({
               endedAt: row.endedAt ?? lastWriteAt,
               durationMs: row.durationMs ?? mediaDuration,
+              ...(row.streamConfig && !row.streamFinalSamples
+                ? { streamFinalSamples: { ...streamControl.samples } }
+                : {}),
             });
           }
-          if (row.durationMs !== mediaDuration) {
+          if (!row.streamConfig && row.durationMs !== mediaDuration) {
             return yield* fail(row, 'recovery-audio-incomplete');
           }
           if (row.phase === 'create') {
@@ -332,7 +359,7 @@ export const drainRecoveries = (
               noteId: row.createInput.noteId ?? null,
               status: 'recording',
             });
-            yield* engine.engine === 'cloud' ? bestEffort(startWrite) : startWrite;
+            yield* engine.engine === 'cloud' && !row.streamConfig ? bestEffort(startWrite) : startWrite;
             const created = yield* backend.createRecording(row.createInput);
             if (!created.ok)
               return yield* created.retryable
@@ -350,7 +377,47 @@ export const drainRecoveries = (
             );
             if (saved !== 'saved') return yield* park(row, 'transcription-config-save');
           }
-          if (row.phase === 'chunks') {
+          let finalSegments: readonly RecordingSegment[] | undefined;
+          if (row.streamConfig) {
+            streamControl.stopping = true;
+            const result = yield* runRecordingStream({
+              recordingId: row.recordingId,
+              wavDir: row.wavPath,
+              captureMode: row.captureMode,
+              config: row.streamConfig,
+              control: streamControl,
+              expectedSamples: row.streamFinalSamples!,
+              onTranscript: segments => bestEffort(store.segmentsReceived(segments)),
+              onLimit: Effect.void,
+            }).pipe(
+              Effect.provideService(WorkspaceBackend, backend),
+              Effect.provideService(OperationalDb, db),
+              Effect.result
+            );
+            if (Result.isFailure(result)) {
+              if (result.failure.retryable) return yield* park(row, `stream:${result.failure.code}`);
+              yield* bestEffort(store.recordingFailed(row.recordingId));
+              return yield* fail(row, `stream:${result.failure.code}`);
+            }
+            const receipt = result.success;
+            // Commit the authoritative replacement before cleanup or a terminal failure.
+            yield* store.recordingFinalized(
+              row.recordingId,
+              {
+                endedAt: row.endedAt!,
+                durationMs: receipt.durationMs,
+              },
+              receipt
+            );
+            yield* update({ durationMs: receipt.durationMs });
+            finalSegments = receipt.segments;
+            if (receipt.status === 'failed') {
+              yield* resolveCompletion(row.recordingId, false, finalSegments);
+              return yield* fail(row, `stream:${receipt.reason ?? 'finalization-failed'}`);
+            }
+          }
+
+          if (!row.streamConfig && row.phase === 'chunks') {
             const chunks = yield* Effect.try({
               try: () => deriveDrainChunks(mic, system, row.pauseCutPoints),
               catch: () => null,
@@ -401,7 +468,7 @@ export const drainRecoveries = (
             }
             yield* transition('finalize');
           }
-          if (row.phase === 'finalize') {
+          if (!row.streamConfig && row.phase === 'finalize') {
             if (engine.engine !== 'cloud') {
               const segments = yield* store.segmentsForRecording(row.recordingId);
               yield* store.recordingMetaMerged(row.recordingId, {
@@ -433,7 +500,7 @@ export const drainRecoveries = (
               audioDurationMs: row.durationMs,
             },
           });
-          yield* resolveCompletion(row.recordingId, true);
+          yield* resolveCompletion(row.recordingId, true, finalSegments);
           yield* fileOperation(() => fs.rmSync(row.wavPath, { recursive: true, force: true }));
           yield* db.deleteRecoveryOutbox(row.recordingId);
           yield* log.info('recovery resolved — WAV + outbox row deleted', {

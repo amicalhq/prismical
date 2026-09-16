@@ -93,6 +93,7 @@
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
     "@types/split2": "^4.2.3",
+    "@types/ws": "8.18.1",
     "@vitejs/plugin-react": "^4.7.0",
     "bumpp": "10.2.3",
     "dotenv": "^16.5.0",
@@ -103,6 +104,7 @@
     "typescript": "catalog:",
     "vite": "^7.1.5",
     "vitest": "5.0.0",
+    "ws": "8.20.1",
     "@posthog/rollup-plugin": "^1.6.0"
   }
 }

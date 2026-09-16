@@ -30,6 +30,7 @@ import {
 } from '@prismical/api-contracts/apps/v1';
 import { askErrorResponse } from './ask-error';
 import { recordingRetryAfterMs } from './recording-retry';
+import { makeOpenRecordingSocket } from './recording-socket';
 import { DesktopI18n } from '../i18n/service';
 import { Duration, Effect, Layer, Option, Stream, SubscriptionRef } from 'effect';
 import type { TransportRequest, TransportResponse } from '@prismical/desktop-contracts';
@@ -522,6 +523,7 @@ export const makeCloudBackendLive = (
       };
 
       const api: WorkspaceBackendApi = {
+        openRecordingSocket: makeOpenRecordingSocket(deps),
         identity: session.pinned,
         request: makeWorkspaceBackendRequest(deps),
         openAskStream: makeOpenAskStream(deps),

@@ -133,7 +133,7 @@ describe('OperationalDb', () => {
       const firstOpen = first.logger.find(entry => entry.message === 'operational db opened');
       assert.deepStrictEqual(
         (firstOpen?.data as { migrationsRun: number[] }).migrationsRun,
-        [0, 1, 2, 3, 4, 5, 6, 7]
+        [0, 1, 2, 3, 4, 5, 6, 7, 8]
       );
 
       const second = buildDb(dbPath);
@@ -174,7 +174,7 @@ describe('OperationalDb', () => {
       const opened = logger.find(entry => entry.message === 'operational db opened');
       assert.deepStrictEqual(
         (opened?.data as { migrationsRun: number[] }).migrationsRun,
-        [1, 2, 3, 4, 5, 6, 7]
+        [1, 2, 3, 4, 5, 6, 7, 8]
       );
       // Pre-existing setting survived the upgrade (no data loss).
       assert.strictEqual(yield* db.getSetting('widget.geometry'), '{"y":0.5}');
@@ -303,8 +303,13 @@ describe('OperationalDb', () => {
           captureMode: 'system',
           wavPath: '/tmp/kill.wav',
           status: 'capturing',
+          streamConfig: { captureId: 'capture-test', connectionAttempt: 1 },
         })
       );
+      yield* dbA.updateRecoveryOutbox('rec_kill', {
+        streamFinalSamples: { mic: 0, system: 48_001 },
+        streamConfig: { captureId: 'capture-test', connectionAttempt: 2 },
+      });
       // Close = the process dying mid-capture (kill -9 leaves the 'capturing' row).
       yield* Scope.close(scopeA, Exit.void);
 
@@ -316,6 +321,8 @@ describe('OperationalDb', () => {
       assert.deepStrictEqual((reopened?.data as { migrationsRun: number[] }).migrationsRun, []);
       const survivor = yield* dbB.getRecoveryOutbox('rec_kill');
       assert.strictEqual(survivor?.status, 'capturing');
+      assert.deepStrictEqual(survivor?.streamConfig, { captureId: 'capture-test', connectionAttempt: 2 });
+      assert.deepStrictEqual(survivor?.streamFinalSamples, { mic: 0, system: 48_001 });
 
       assert.strictEqual(survivor?.wavPath, '/tmp/kill.wav');
       assert.strictEqual((yield* dbB.listRecoveryOutbox()).length, 1);

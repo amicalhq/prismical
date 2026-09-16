@@ -57,6 +57,14 @@ export interface RecoveryPauseCutPoint {
   readonly systemSamples: number;
 }
 
+/** WSS ownership survives reconnects and restarts; null selects the HTTP lane. */
+export interface RecoveryStreamConfig {
+  readonly captureId: string;
+  readonly connectionAttempt: number;
+}
+
+export type RecordingStreamSamples = Readonly<Record<'mic' | 'system', number>>;
+
 /**
  * Durable, workspace-owned recording work. The create intent and stop metadata
  * let recovery replay unfinished operations without inventing a different
@@ -72,6 +80,9 @@ export const recoveryOutbox = sqliteTable('recovery_outbox', {
   createInput: text('create_input', { mode: 'json' }).$type<CreateRecordingInput>(),
   /** Private frozen engine choices; no credentials, and never sent as cloud metadata. */
   engineConfig: text('engine_config', { mode: 'json' }).$type<RecordingEngine>(),
+  streamConfig: text('stream_config', { mode: 'json' }).$type<RecoveryStreamConfig>(),
+  /** Exact retained samples per lane, frozen when capture ends or recovery first opens its WAVs. */
+  streamFinalSamples: text('stream_final_samples', { mode: 'json' }).$type<RecordingStreamSamples>(),
   /** Next unfinished processing operation; independent of capture status and diagnostics. */
   phase: text('phase', { enum: ['create', 'chunks', 'finalize', 'cleanup'] }),
   /** Fixed at stop, or inferred once from retained media after an abrupt interruption. */

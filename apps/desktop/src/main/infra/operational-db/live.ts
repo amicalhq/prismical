@@ -131,6 +131,7 @@ export const OperationalDbLive: Layer.Layer<OperationalDb, BootError, AppConfig 
                 owner: row.owner,
                 createInput: row.createInput,
                 engineConfig: row.engineConfig,
+                streamConfig: row.streamConfig ?? null,
                 phase: row.phase ?? 'create',
                 noteId: row.noteId ?? null,
                 captureMode: row.captureMode,
@@ -151,6 +152,8 @@ export const OperationalDbLive: Layer.Layer<OperationalDb, BootError, AppConfig 
             if (patch.status !== undefined) set.status = patch.status;
             if (patch.createInput !== undefined) set.createInput = patch.createInput;
             if (patch.engineConfig !== undefined) set.engineConfig = patch.engineConfig;
+            if (patch.streamConfig !== undefined) set.streamConfig = patch.streamConfig;
+            if (patch.streamFinalSamples !== undefined) set.streamFinalSamples = patch.streamFinalSamples;
             if (patch.phase !== undefined) set.phase = patch.phase;
             if (patch.endedAt !== undefined) set.endedAt = patch.endedAt;
             if (patch.durationMs !== undefined) set.durationMs = patch.durationMs;

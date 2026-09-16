@@ -17,6 +17,7 @@ import migration0004 from '../../../../drizzle/0004_recovery_engine.sql?raw';
 import migration0005 from '../../../../drizzle/0005_recovery_lifecycle.sql?raw';
 import migration0006 from '../../../../drizzle/0006_recovery_staging_mode.sql?raw';
 import migration0007 from '../../../../drizzle/0007_server_staging_only.sql?raw';
+import migration0008 from '../../../../drizzle/0008_recording_stream.sql?raw';
 
 export interface Migration {
   readonly version: number;
@@ -33,6 +34,7 @@ export const MIGRATIONS: ReadonlyArray<Migration> = [
   { version: 5, name: 'recovery_lifecycle', sql: migration0005 },
   { version: 6, name: 'recovery_staging_mode', sql: migration0006 },
   { version: 7, name: 'server_staging_only', sql: migration0007 },
+  { version: 8, name: 'recording_stream', sql: migration0008 },
 ];
 
 const STATEMENT_BREAKPOINT = '--> statement-breakpoint';

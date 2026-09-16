@@ -166,6 +166,41 @@ export const RecordingStoreLive: Layer.Layer<RecordingStore, never, ProductDb> =
             .where(eq(schema.recording.id, id));
         }),
 
+      recordingFinalized: (recordingId, end, finalized) =>
+        tryDb('recording-finalized', async () => {
+          const now = new Date().toISOString();
+          db.transaction(tx => {
+            const row = tx
+              .select({ meta: schema.recording.meta })
+              .from(schema.recording)
+              .where(eq(schema.recording.id, recordingId))
+              .get();
+            tx.delete(schema.transcriptSegment)
+              .where(eq(schema.transcriptSegment.recordingId, recordingId))
+              .run();
+            if (finalized.segments.length > 0)
+              tx.insert(schema.transcriptSegment)
+                .values(finalized.segments.map(segment => normalizeSegment(segment, now)))
+                .run();
+            tx.update(schema.recording)
+              .set({
+                status: 'completed',
+                endedAt: new Date(end.endedAt).toISOString(),
+                durationMs: end.durationMs,
+                updatedAt: now,
+                meta: {
+                  ...row?.meta,
+                  finalize: {
+                    status: finalized.status,
+                    ...(finalized.reason ? { reason: finalized.reason } : {}),
+                  },
+                },
+              })
+              .where(eq(schema.recording.id, recordingId))
+              .run();
+          });
+        }),
+
       segmentsReceived: segments => {
         if (segments.length === 0) return Effect.void;
         return tryDb('segments-received', async () => {

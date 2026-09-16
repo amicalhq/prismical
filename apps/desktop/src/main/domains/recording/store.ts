@@ -67,6 +67,16 @@ export interface RecordingStoreApi {
   readonly segmentsReceived: (
     segments: readonly RecordingSegment[]
   ) => Effect.Effect<void, ProductDbError>;
+  /** Atomically settle the recording and replace provisional text with its terminal snapshot. */
+  readonly recordingFinalized: (
+    recordingId: string,
+    end: RecordingEndFields,
+    finalized: {
+      readonly segments: readonly RecordingSegment[];
+      readonly status: 'done' | 'skipped' | 'failed';
+      readonly reason?: string;
+    }
+  ) => Effect.Effect<void, ProductDbError>;
   /**
    * Merge `patch` into the row's `meta`: numeric keys take
    * the MAX of stored and patched (the server's detectedSpeakerCount rule —

@@ -94,6 +94,20 @@ const segmentRows = (product: ProductDbService, recordingId: string) =>
   );
 
 describe('RecordingStore', () => {
+  it.effect('an empty terminal transcript removes provisional rows only for its recording', () => Effect.gen(function* () {
+    const { scope, store } = yield* buildStore;
+    yield* store.recordingStarted(START);
+    yield* store.recordingStarted({ ...START, id: 'rec_other' });
+    yield* store.segmentsReceived([
+      laneSegment({ id: 'tsg_live', segmentOrder: 1 }),
+      laneSegment({ id: 'tsg_other', segmentOrder: 1, recordingId: 'rec_other' }),
+    ]);
+    yield* store.recordingFinalized(START.id, { endedAt: START.startedAt + 5000, durationMs: 5000 }, { status: 'done', segments: [] });
+    assert.isEmpty(yield* store.segmentsForRecording(START.id));
+    assert.strictEqual((yield* store.segmentsForRecording('rec_other')).length, 1);
+    yield* Scope.close(scope, Exit.void);
+  }));
+
   it.effect('recordingStarted persists the create fields with ISO startedAt; the upsert replaces on re-entry and keeps createdAt', () =>
     Effect.gen(function* () {
       const { scope, store, product } = yield* buildStore;
