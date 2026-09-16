@@ -223,13 +223,28 @@ export const RecordingServiceLive: Layer.Layer<
     const resolveCompletion: RecordingServiceApi['resolveCompletion'] = (
       recordingId,
       ready,
-      finalSegments
+      finalSegments,
+      failureReason
     ) =>
       Effect.gen(function* () {
-        if (finalSegments !== undefined) {
-          yield* SubscriptionRef.update(state, current =>
-            current.recordingId === recordingId ? { ...current, segments: finalSegments } : current
-          );
+        if (finalSegments !== undefined || (!ready && failureReason !== undefined)) {
+          const reason = ready || failureReason === undefined ? undefined
+            : failureReason === 'transcription_incomplete' || failureReason === 'unsaved-audio'
+              ? 'transcription-incomplete' as const : 'processing-failed' as const;
+          yield* SubscriptionRef.updateSome(state, current => {
+            if (current.recordingId !== recordingId) return Option.none();
+            const changedFailure = reason !== undefined &&
+              (current.failure?.recordingId !== recordingId || current.failure.reason !== reason);
+            const changedSegments = finalSegments !== undefined && current.segments !== finalSegments;
+            // Retained failed jobs are revisited by recovery. Publishing the same idle
+            // state would wake that worker again, so unchanged results must not emit.
+            if (!changedFailure && !changedSegments) return Option.none();
+            return Option.some({
+              ...current,
+              ...(changedSegments ? { segments: finalSegments } : {}),
+              ...(changedFailure ? { failure: { recordingId, reason } } : {}),
+            });
+          });
         }
         const completion = completions.get(recordingId);
         if (!completion || (yield* Deferred.isDone(completion.ready))) return;
@@ -1364,7 +1379,10 @@ export const RecordingServiceLive: Layer.Layer<
                     lastError: ready ? null : `stream:${receipt.reason ?? 'finalization-failed'}`,
                   })
                   .pipe(
-                    Effect.andThen(resolveCompletion(recordingId, ready, receipt.segments)),
+                    Effect.andThen(resolveCompletion(
+                      recordingId, ready, receipt.segments,
+                      ready ? undefined : receipt.reason ?? 'finalization-failed'
+                    )),
                     Effect.tap(() =>
                       Effect.sync(() => {
                         completed = ready;
@@ -1383,7 +1401,7 @@ export const RecordingServiceLive: Layer.Layer<
                 .pipe(Effect.catch(() => Effect.void));
               if (!result.failure.retryable) {
                 yield* persistBestEffort(recordingId, store.recordingFailed(recordingId));
-                yield* resolveCompletion(recordingId, false);
+                yield* resolveCompletion(recordingId, false, undefined, result.failure.code);
               }
             }
           }

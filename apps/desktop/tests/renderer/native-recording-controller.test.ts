@@ -186,6 +186,101 @@ describe('native recording workflow', () => {
     f.push({ ...capturing, status: 'idle' });
     await vi.waitFor(() => expect(f.workflow.getSnapshot()).toEqual({ kind: 'idle' }));
     expect(f.client.getSnapshot().completedRecording).toBeNull();
+    expect(f.client.getSnapshot().error).toBeNull();
+  });
+
+  it.each([
+    ['transcription-incomplete', 'recording.errors.someAudioNotTranscribed'],
+    ['processing-failed', 'recording.errors.endedUnexpectedly'],
+  ] as const)('reports %s without claiming completion or enhancing', (reason, error) => {
+    const f = fixture(capturing);
+    const segment = {
+      id: 'tsg_final', recordingId: 'rec_1', source: 'mic' as const, speaker: 'you',
+      text: 'Available text', segmentOrder: 1, startTimeMs: 0, endTimeMs: 1000,
+    };
+    f.push({ ...capturing, status: 'idle', segments: [segment],
+      failure: { recordingId: 'rec_1', reason } });
+    expect(f.client.getSnapshot()).toMatchObject({ error, completedRecording: null, liveSegments: [segment] });
+    expect(f.control.claimCompletion).not.toHaveBeenCalled();
+    expect(f.workflow.getSnapshot()).toEqual({ kind: 'idle' });
+  });
+
+  it('restores a terminal failure after renderer reload', () => {
+    const f = fixture({ ...capturing, status: 'idle',
+      failure: { recordingId: 'rec_1', reason: 'transcription-incomplete' } });
+    expect(f.client.getSnapshot()).toMatchObject({
+      error: 'recording.errors.someAudioNotTranscribed', completedRecording: null,
+    });
+    expect(f.control.claimCompletion).not.toHaveBeenCalled();
+    expect(f.workflow.getSnapshot()).toEqual({ kind: 'idle' });
+  });
+
+  it('keeps a newer capture active when an older recording fails', () => {
+    const f = fixture(capturing);
+    f.push({ ...capturing, failure: { recordingId: 'rec_old', reason: 'transcription-incomplete' } });
+    expect(f.client.getSnapshot()).toMatchObject({ isRecording: true, error: null });
+    expect(f.workflow.getSnapshot()).toMatchObject({ kind: 'recording', phase: 'capturing' });
+  });
+
+  it('claims an earlier completed recording while the current failure is replayed', async () => {
+    const failed: NativeRecordingState = { ...capturing, status: 'idle',
+      failure: { recordingId: 'rec_1', reason: 'transcription-incomplete' } };
+    const f = fixture(failed);
+    f.push({ ...failed, completedRecordings: [
+      { recordingId: 'rec_old', noteId: 'note_old', segments: 3 },
+    ] });
+    await vi.waitFor(() => expect(f.control.claimCompletion).toHaveBeenCalledWith('rec_old'));
+    expect(f.client.getSnapshot().completedRecording).toMatchObject({ recordingId: 'rec_old', segments: 3 });
+  });
+
+  it('keeps a dismissed failure dismissed when the same native snapshot repeats', () => {
+    const failed: NativeRecordingState = { ...capturing, status: 'idle',
+      failure: { recordingId: 'rec_1', reason: 'transcription-incomplete' } };
+    const f = fixture(failed);
+    expect(f.client.getSnapshot().error).toBe('recording.errors.someAudioNotTranscribed');
+    f.client.clearError();
+    const changed = vi.fn();
+    f.workflow.subscribe(changed);
+    f.push(failed);
+    expect(f.client.getSnapshot().error).toBeNull();
+    expect(changed).not.toHaveBeenCalled();
+    expect(f.control.claimCompletion).not.toHaveBeenCalled();
+  });
+
+  it('clears a settled failure and retained transcript when the workspace changes', () => {
+    const segment = {
+      id: 'tsg_final', recordingId: 'rec_1', source: 'mic' as const, speaker: 'you',
+      text: 'Previous workspace transcript', segmentOrder: 1, startTimeMs: 0, endTimeMs: 1000,
+    };
+    const f = fixture({ ...capturing, status: 'idle', segments: [segment],
+      failure: { recordingId: 'rec_1', reason: 'transcription-incomplete' } });
+    expect(f.client.getSnapshot().liveSegments).toEqual([segment]);
+    f.switchOrg();
+    expect(f.client.getSnapshot()).toMatchObject({
+      error: null, noteId: null, recordingId: null, liveSegments: [], completedRecording: null,
+    });
+    expect(f.workflow.getSnapshot()).toEqual({ kind: 'idle' });
+  });
+
+  it('ignores a stale failure while a new start waits for its language preference', async () => {
+    const failed: NativeRecordingState = { ...capturing, status: 'idle',
+      failure: { recordingId: 'rec_1', reason: 'transcription-incomplete' } };
+    const f = fixture(failed);
+    const language = deferred<'hi'>();
+    vi.mocked(resolveTranscriptionLanguage).mockReturnValueOnce(language.promise);
+    vi.mocked(f.control.start).mockResolvedValueOnce({ ok: true, recordingId: 'rec_2' });
+    const starting = f.client.start('note_2', 'Next meeting');
+    await Promise.resolve();
+    f.push(failed);
+    language.resolve('hi');
+    await starting;
+    expect(f.control.start).toHaveBeenCalledWith(expect.objectContaining({
+      noteId: 'note_2', language: 'hi',
+    }));
+    f.push({ ...capturing, recordingId: 'rec_2', noteId: 'note_2', language: 'hi' });
+    expect(f.client.getSnapshot()).toMatchObject({ isRecording: true, error: null, recordingId: 'rec_2' });
+    expect(f.control.stop).not.toHaveBeenCalled();
+    expect(f.control.claimCompletion).not.toHaveBeenCalled();
   });
 
   it('replaces a provisional count with an authoritative empty terminal transcript', async () => {

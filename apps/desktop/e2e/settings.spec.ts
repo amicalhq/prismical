@@ -139,6 +139,66 @@ test.describe('native settings UI', () => {
     server = undefined;
   });
 
+  test('shows and retries a failed account interface-language save', async () => {
+    const preferences = {
+      language: { interfaceLanguage: 'en', aiOutputLanguage: 'source' },
+      transcription: { language: 'hi' },
+    };
+    const responses: Record<string, () => { status: number; body: unknown }> = {
+      'GET /apps/v1/me/preferences': () => ({ status: 200, body: preferences }),
+      'PATCH /apps/v1/me/preferences': () => ({
+        status: 500,
+        body: { error: 'Injected save failure' },
+      }),
+    };
+    server = await startFakeOAuthServer({
+      appResponse: (url, request) => responses[`${request.method} ${url.pathname}`]?.(),
+    });
+    const opened = await openApp(server);
+    launched = opened.launch;
+    const page = opened.page;
+    await signIn(page, launched.app);
+    await openPreferences(page);
+    const interfaceLanguage = page.getByRole('combobox', { name: 'Interface language' });
+    await expect(interfaceLanguage).toBeEnabled();
+    await interfaceLanguage.selectOption('de');
+    const error = page.getByRole('alert').filter({
+      hasText: 'Could not load or save your language preferences. Please try again.',
+    });
+    await expect(error).toBeVisible();
+    await expect(interfaceLanguage).toHaveValue('en');
+    await expect(page.getByRole('alertdialog')).toHaveCount(0);
+    const reads = () =>
+      server!.requests.filter(
+        request => request.path === '/apps/v1/me/preferences' && request.method === 'GET'
+      ).length;
+    const readsBeforeRetry = reads();
+    await error.getByRole('button', { name: 'Try again', exact: true }).click();
+    await expect.poll(reads).toBeGreaterThan(readsBeforeRetry);
+    await expect(error).toHaveCount(0);
+    await expect(interfaceLanguage).toHaveValue('en');
+
+    responses['PATCH /apps/v1/me/preferences'] = () => {
+      preferences.language.interfaceLanguage = 'de';
+      return { status: 200, body: preferences };
+    };
+    await interfaceLanguage.selectOption('de');
+    await expect(page.getByRole('alertdialog')).toContainText('Restart to change language');
+    await page.getByRole('button', { name: 'Later', exact: true }).click();
+    await expect(interfaceLanguage).toHaveValue('de');
+    await expect(error).toHaveCount(0);
+    await expect(page.getByText(/Currently Hindi\./)).toBeVisible();
+    await page.screenshot({ path: test.info().outputPath('language-preferences.png') });
+    expect(
+      server.requests
+        .filter(request => request.path === '/apps/v1/me/preferences' && request.method === 'PATCH')
+        .map(request => request.body)
+    ).toEqual([
+      { language: { interfaceLanguage: 'de' } },
+      { language: { interfaceLanguage: 'de' } },
+    ]);
+  });
+
   test('preferences and updater controls round-trip through IPC and persist across restart', async () => {
     server = await startFakeOAuthServer();
     const opened = await openApp(server);

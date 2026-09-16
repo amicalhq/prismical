@@ -3662,6 +3662,9 @@ describe('RecordingService WSS', () => {
       yield* Fiber.join(stop);
       assert.isFalse(yield* h.service.claimCompletion(id));
       assert.strictEqual((yield* h.db.getRecoveryOutbox(id))!.status, 'failed');
+      assert.deepStrictEqual((yield* SubscriptionRef.get(h.service.state)).failure, {
+        recordingId: id, reason: 'transcription-incomplete',
+      });
       assert.strictEqual(
         (yield* SubscriptionRef.get(h.service.state)).segments[0]?.text,
         'Available text'
@@ -3706,6 +3709,9 @@ describe('RecordingService WSS', () => {
       assert.strictEqual(row.status, 'failed');
       assert.strictEqual(row.lastError, 'stream:unsaved-audio');
       assert.deepStrictEqual(row.streamFinalSamples, { mic: 48_000, system: 0 });
+      assert.deepStrictEqual((yield* SubscriptionRef.get(h.service.state)).failure, {
+        recordingId: id, reason: 'transcription-incomplete',
+      });
       yield* h.drain;
       assert.strictEqual(
         fs.statSync(path.join(h.recoveryDir(id), 'mic.wav')).size,
@@ -3893,5 +3899,61 @@ describe('RecordingService WSS', () => {
         assert.isNull(yield* h.db.getRecoveryOutbox(id));
         yield* Scope.close(h.sessionScope, Exit.void);
       }).pipe(Effect.scoped)
+  );
+
+  it.live('reports terminal recovery failure once without waking the worker repeatedly, then clears it for a new capture', () =>
+    Effect.gen(function* () {
+      const peer = makeFakeRecordingStream();
+      peer.autoFinalize = false;
+      const h = yield* setup({}, undefined, { backendTransform: streamBackend(peer) });
+      h.fakeCloud.setCreateResponder(() => laneFail(true, { kind: 'network' }));
+      const id = yield* h.service.start({ captureMode: 'mic' });
+      yield* poll(
+        SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')),
+        'offline capture'
+      );
+      yield* Queue.offer(h.fakeCapture.current().frames, fakeFrame('mic_raw', oneSecond()));
+      yield* poll(
+        SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.elapsedMs === 1000)),
+        'audio retained'
+      );
+      yield* h.service.stop(id);
+      h.fakeCloud.setCreateResponder(input => ({ ok: true, value: { recordingId: input.recordingId } }));
+      const drain = yield* Effect.forkChild(h.drain);
+      yield* poll(
+        Effect.sync(() => peer.sockets[0]?.commands.some(command => command.type === 'stop') === true),
+        'recovery stopped'
+      );
+      peer.reply(0, { type: 'stopped', checkpoints: peer.checkpoints, durationMs: 1000 });
+      peer.reply(0, {
+        type: 'finalized', status: 'failed', reason: 'transcription_incomplete',
+        results: [fakeStreamSegment(id, 'mic', 1, 'Recovered partial text')],
+      });
+      yield* Fiber.join(drain);
+      const failed = yield* SubscriptionRef.get(h.service.state);
+      assert.deepStrictEqual(failed.failure, { recordingId: id, reason: 'transcription-incomplete' });
+      assert.strictEqual(failed.segments[0]?.text, 'Recovered partial text');
+      assert.isFalse(yield* h.service.claimCompletion(id));
+      assert.strictEqual((yield* h.db.getRecoveryOutbox(id))!.status, 'failed');
+      assert.isTrue(fs.existsSync(h.recoveryDir(id)));
+      let failurePushes = 0;
+      yield* Stream.runForEach(SubscriptionRef.changes(h.service.state), state =>
+        Effect.sync(() => {
+          if (state.failure?.recordingId === id) failurePushes += 1;
+        })
+      ).pipe(Effect.forkChild);
+      yield* poll(Effect.sync(() => failurePushes === 1), 'initial failure replay');
+      const worker = yield* Effect.forkChild(h.recoveryWorker);
+      yield* Effect.sleep(50);
+      yield* Fiber.interrupt(worker);
+      assert.strictEqual(failurePushes, 1, 'a retained failed row must not wake its own worker');
+      const nextId = yield* h.service.start({ captureMode: 'mic' });
+      assert.isUndefined((yield* SubscriptionRef.get(h.service.state)).failure);
+      yield* h.service.resolveCompletion(id, false, [], 'transcription_incomplete');
+      const current = yield* SubscriptionRef.get(h.service.state);
+      assert.strictEqual(current.recordingId, nextId);
+      assert.isUndefined(current.failure);
+      yield* Scope.close(h.sessionScope, Exit.void);
+    }).pipe(Effect.scoped)
   );
 });

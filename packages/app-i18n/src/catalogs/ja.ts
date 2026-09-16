@@ -2362,6 +2362,8 @@ const ja = {
         retry: '再試行',
       },
       language: {
+        saveError: '言語設定を読み込み、または保存できませんでした。もう一度お試しください。',
+        retry: '再試行',
         description:
           'アプリ自体の言語です - メニュー、ボタン、設定、メッセージに使われます。ノートや文字起こしには影響しません。',
         label: 'インターフェース言語',
@@ -2375,7 +2377,7 @@ const ja = {
       },
       spokenLanguage: {
         current: '現在は{{language}}です。',
-        description: '録音で話す言語です。ライブ文字起こしと最終的な文字起こしに使われます。',
+        description: '録音で話す言語です。ライブ文字起こしと最終的な文字起こしに使われます。Enhance、Cleanupなどのスキルもこの言語で出力します。',
         open: '文字起こしの設定',
       },
       theme: {

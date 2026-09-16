@@ -241,7 +241,10 @@ export const drainRecoveries = (
           })
         ),
         Effect.andThen(
-          row.phase === 'cleanup' ? Effect.void : resolveCompletion(row.recordingId, false)
+          row.phase === 'cleanup' ? Effect.void : resolveCompletion(
+            row.recordingId, false, undefined,
+            row.streamConfig ? reason.replace(/^stream:/, '') : undefined
+          )
         ),
         Effect.andThen(
           log.warn('recovery rejected — audio retained', {
@@ -254,7 +257,10 @@ export const drainRecoveries = (
     const drainRow = (original: RecoveryOutboxRow): Effect.Effect<DrainOutcome> =>
       Effect.gen(function* () {
         if (original.status === 'failed') {
-          yield* resolveCompletion(original.recordingId, original.phase === 'cleanup');
+          yield* resolveCompletion(
+            original.recordingId, original.phase === 'cleanup', undefined,
+            original.streamConfig ? original.lastError?.replace(/^stream:/, '') : undefined
+          );
           return 'skipped' as const;
         }
         if (
@@ -412,7 +418,9 @@ export const drainRecoveries = (
             yield* update({ durationMs: receipt.durationMs });
             finalSegments = receipt.segments;
             if (receipt.status === 'failed') {
-              yield* resolveCompletion(row.recordingId, false, finalSegments);
+              yield* resolveCompletion(
+                row.recordingId, false, finalSegments, receipt.reason ?? 'finalization-failed'
+              );
               return yield* fail(row, `stream:${receipt.reason ?? 'finalization-failed'}`);
             }
           }

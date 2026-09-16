@@ -2,6 +2,7 @@
 
 import { useState, type ChangeEvent } from 'react';
 import { useApplicationLocale, type LocalePreference } from '@prismical/app-i18n';
+import { useAccountLanguage } from '@prismical/app-client';
 import { useTranslation } from 'react-i18next';
 import {
   AlertDialog,
@@ -13,6 +14,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '../../ui/alert-dialog';
+import { Button } from '../../ui/button';
 import { Label } from '../../ui/label';
 
 const localeOptions = [
@@ -35,6 +37,9 @@ export function InterfaceLanguageSetting() {
     changePreference,
     restartApplication,
   } = useApplicationLocale();
+  // The account language group's save state is shared by every write to it, and this row is the
+  // only one left on this screen that makes one — so a failed save has to surface here or nowhere.
+  const language = useAccountLanguage();
   const [dismissedPreference, setDismissedPreference] = useState<LocalePreference | null>(null);
   const [isRestarting, setIsRestarting] = useState(false);
   const dialogOpen =
@@ -82,6 +87,15 @@ export function InterfaceLanguageSetting() {
             ))}
         </select>
       </div>
+
+      {language?.error && (
+        <div role="alert" className="text-sm text-destructive">
+          {t('settings.preferences.language.saveError')}
+          <Button variant="ghost" size="sm" onClick={language.retry}>
+            {t('settings.preferences.language.retry')}
+          </Button>
+        </div>
+      )}
 
       <AlertDialog
         open={dialogOpen}

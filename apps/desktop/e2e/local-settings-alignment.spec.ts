@@ -44,21 +44,19 @@ test.describe('local settings alignment', () => {
     await expect(page.getByRole('button', { name: 'Name with AI', exact: true })).toHaveCount(0);
   });
 
-  test('persists independent interface, AI output, and spoken languages across a local restart', async () => {
+  test('removes the AI output control and persists interface and spoken languages across a local restart', async () => {
     await page.getByRole('link', { name: 'Settings', exact: true }).click();
-    const outputLanguage = page.getByRole('combobox', { name: 'AI output language', exact: true });
     const interfaceLanguage = page.getByRole('combobox', {
       name: 'Interface language',
       exact: true,
     });
-    await expect(outputLanguage).toBeEnabled();
-    await expect(outputLanguage).toContainText('Same as the note');
-    await outputLanguage.click();
     await expect(
-      page.getByRole('option', { name: 'Same as the note', exact: true })
-    ).toHaveAccessibleDescription('Each note stays in the language it was written in.');
-    await page.getByRole('option', { name: 'Español', exact: true }).click();
-    await expect(outputLanguage).toContainText('Español');
+      page.getByRole('combobox', { name: 'AI output language', exact: true })
+    ).toHaveCount(0);
+    await expect(page.getByText('AI output language', { exact: true })).toHaveCount(0);
+    await expect(
+      page.getByText(/Enhance, Cleanup and other skills also write in it\./)
+    ).toBeVisible();
     await expect(interfaceLanguage).toHaveValue('en');
 
     await page.getByRole('link', { name: 'Transcription settings', exact: true }).click();
@@ -67,8 +65,14 @@ test.describe('local settings alignment', () => {
     await spokenLanguage.click();
     await page.getByRole('option', { name: 'Hindi', exact: true }).click();
     await expect(spokenLanguage).toContainText('Hindi');
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          window.desktop.transport.request({ method: 'GET', path: '/apps/v1/me/preferences' })
+        )
+      )
+      .toMatchObject({ bodyJson: { transcription: { language: 'hi' } } });
     await page.getByRole('link', { name: 'Preferences', exact: true }).click();
-    await expect(outputLanguage).toContainText('Español');
     await expect(interfaceLanguage).toHaveValue('en');
     await expect(page.getByText(/Currently Hindi\./)).toBeVisible();
 
@@ -80,8 +84,8 @@ test.describe('local settings alignment', () => {
       )
       .toBe('de');
     await page.getByRole('button', { name: 'Later', exact: true }).click();
-    await expect(outputLanguage).toContainText('Español');
     await expect(interfaceLanguage).toHaveValue('de');
+    await expect(page.getByText(/Currently Hindi\./)).toBeVisible();
 
     keptProfile = launched!.userDataDir;
     await closePrismical(launched, { keepProfile: true });
@@ -96,8 +100,21 @@ test.describe('local settings alignment', () => {
     ).toHaveValue('de');
     await expect(
       page.getByRole('combobox', { name: 'KI-Ausgabesprache', exact: true })
-    ).toContainText('Español');
+    ).toHaveCount(0);
+    await expect(page.getByText('KI-Ausgabesprache', { exact: true })).toHaveCount(0);
     await expect(page.getByText(/Aktuell Hindi\./)).toBeVisible();
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          window.desktop.transport.request({ method: 'GET', path: '/apps/v1/me/preferences' })
+        )
+      )
+      .toMatchObject({
+        bodyJson: {
+          language: { interfaceLanguage: 'de' },
+          transcription: { language: 'hi' },
+        },
+      });
     await expect(page.getByRole('alertdialog')).toHaveCount(0);
   });
 });

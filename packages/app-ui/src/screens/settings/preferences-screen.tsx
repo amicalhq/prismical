@@ -11,7 +11,6 @@ import { AutoEnhanceToggle } from './auto-enhance-toggle';
 import { DockSettings } from './dock-settings';
 import { LaunchAtLoginSetting } from './launch-at-login-setting';
 import { PermissionsSetting } from './permissions-setting';
-import { AiOutputLanguageSetting } from './ai-output-language-setting';
 import { InterfaceLanguageSetting } from './interface-language-setting';
 import { SpokenLanguageLink } from './spoken-language-link';
 import { useTranslation } from 'react-i18next';
@@ -89,12 +88,8 @@ export function PreferencesScreen() {
             <Separator />
 
             {/* Spoken language lives in Transcription; this row shows it and links there.
-                The component owns its trailing separator and renders nothing on desktop. */}
+                The component owns its trailing separator. */}
             <SpokenLanguageLink />
-
-            <AiOutputLanguageSetting />
-
-            <Separator />
 
             {/* Theme */}
             <div className="flex items-center justify-between">

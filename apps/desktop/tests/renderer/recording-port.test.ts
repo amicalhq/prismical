@@ -60,11 +60,13 @@ describe('desktop recording port', () => {
     };
     push!(paused);
     push!({ ...paused, status: 'idle', autoStopRequested: false, autoPausePrompt: null,
-      quotaRemainingAtStartSeconds: undefined });
+      quotaRemainingAtStartSeconds: undefined,
+      failure: { recordingId: 'rec_1', reason: 'transcription-incomplete' } });
     expect(seen.map(state => state.autoStopRequested)).toEqual([true, false]);
     expect(seen[0].autoPausePrompt).toEqual(paused.autoPausePrompt);
     expect(seen[0].spendsCloudQuota).toBe(false);
     expect(seen.map(state => state.quotaRemainingAtStartSeconds)).toEqual([600, null]);
+    expect(seen[1].failure).toEqual({ recordingId: 'rec_1', reason: 'transcription-incomplete' });
     detach();
     expect(unsubscribe).toHaveBeenCalledOnce();
   });

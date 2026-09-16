@@ -46,6 +46,10 @@ export interface RecordingState {
   /** Actual active transcription configuration; older snapshots default to English. */
   readonly language?: TranscriptionLanguage;
   readonly recordingId: string | null;
+  readonly failure?: {
+    readonly recordingId: string;
+    readonly reason: 'transcription-incomplete' | 'processing-failed';
+  };
   /** Live pipelines that still own their audio, including uploads after capture closes. */
   readonly processingRecordingIds: readonly string[];
   /** Stopped recordings awaiting completion from live processing or recovery. */
@@ -171,7 +175,8 @@ export interface RecordingServiceApi {
   readonly resolveCompletion: (
     recordingId: string,
     ready: boolean,
-    finalSegments?: readonly RecordingSegment[]
+    finalSegments?: readonly RecordingSegment[],
+    failureReason?: string
   ) => Effect.Effect<void>;
   /** Pause the matching active recording without finalizing it. */
   readonly pause: (recordingId: string) => Effect.Effect<boolean>;

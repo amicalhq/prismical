@@ -281,6 +281,7 @@ const DESKTOP_CAPTURE_MODE = 'dual' as const;
 // shared useRecording consumes. Structurally identical; mapped for clarity.
 const toNativeState = (view: RecordingStateView): NativeRecordingState => ({
   recordingId: view.recordingId,
+  failure: view.failure,
   finalizingRecordingIds: view.finalizingRecordingIds,
   completedRecordings: view.completedRecordings,
   status: view.status,

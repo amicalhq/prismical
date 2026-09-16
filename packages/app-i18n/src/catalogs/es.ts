@@ -2432,6 +2432,8 @@ const es = {
         retry: 'Reintentar',
       },
       language: {
+        saveError: 'No se pudieron cargar o guardar tus preferencias de idioma. Inténtalo de nuevo.',
+        retry: 'Reintentar',
         description:
           'El idioma de la propia app - menús, botones, ajustes y mensajes. Tus notas y transcripciones no cambian.',
         label: 'Idioma de la interfaz',
@@ -2446,7 +2448,7 @@ const es = {
       spokenLanguage: {
         current: 'Actualmente {{language}}.',
         description:
-          'El idioma que hablas en tus grabaciones; lo usan la transcripción en vivo y la final.',
+          'El idioma que hablas en tus grabaciones; lo usan la transcripción en vivo y la final. Enhance, Cleanup y otras habilidades también escriben en él.',
         open: 'Ajustes de transcripción',
       },
       theme: {

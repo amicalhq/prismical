@@ -54,6 +54,11 @@ export type NativeRecordingStatus =
  */
 export interface NativeRecordingState {
   readonly recordingId: string | null;
+  /** Terminal processing failure for this recording; completion claims can also be false in other windows. */
+  readonly failure?: {
+    readonly recordingId: string;
+    readonly reason: 'transcription-incomplete' | 'processing-failed';
+  };
   readonly finalizingRecordingIds: readonly string[];
   readonly completedRecordings: readonly {
     readonly recordingId: string;

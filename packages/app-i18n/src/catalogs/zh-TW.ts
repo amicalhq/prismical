@@ -2281,6 +2281,8 @@ const zhTW = {
         retry: '重試',
       },
       language: {
+        saveError: '無法載入或儲存語言偏好設定，請重試。',
+        retry: '重試',
         description: '應用程式本身的語言 - 選單、按鈕、設定與訊息。不會影響你的筆記或逐字稿。',
         label: '介面語言',
         restart: {
@@ -2293,7 +2295,7 @@ const zhTW = {
       },
       spokenLanguage: {
         current: '目前為 {{language}}。',
-        description: '你在錄音中說的語言，即時與最終逐字稿都會使用。',
+        description: '你在錄音中說的語言，即時與最終逐字稿都會使用。Enhance、Cleanup 和其他技能也會以此語言輸出。',
         open: '轉錄設定',
       },
       theme: {

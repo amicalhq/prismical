@@ -2459,6 +2459,8 @@ const de = {
         retry: 'Erneut versuchen',
       },
       language: {
+        saveError: 'Die Spracheinstellungen konnten nicht geladen oder gespeichert werden. Bitte erneut versuchen.',
+        retry: 'Erneut versuchen',
         description:
           'Die Sprache der App selbst - Menüs, Buttons, Einstellungen und Meldungen. Notizen und Transkripte bleiben unverändert.',
         label: 'Oberflächensprache',
@@ -2473,7 +2475,7 @@ const de = {
       spokenLanguage: {
         current: 'Aktuell {{language}}.',
         description:
-          'Die Sprache, die du in deinen Aufnahmen sprichst; Live-Transkription und finales Transkript verwenden sie.',
+          'Die Sprache, die du in deinen Aufnahmen sprichst; Live-Transkription und finales Transkript verwenden sie. Enhance, Cleanup und andere Skills schreiben ebenfalls in dieser Sprache.',
         open: 'Transkriptionseinstellungen',
       },
       theme: {

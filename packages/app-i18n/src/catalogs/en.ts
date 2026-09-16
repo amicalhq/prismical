@@ -2417,6 +2417,8 @@ const en = {
         retry: 'Try again',
       },
       language: {
+        saveError: 'Could not load or save your language preferences. Please try again.',
+        retry: 'Try again',
         description:
           'The language of the app itself - menus, buttons, settings, and messages. Your notes and transcripts are not affected.',
         label: 'Interface language',
@@ -2431,7 +2433,7 @@ const en = {
       spokenLanguage: {
         current: 'Currently {{language}}.',
         description:
-          'The language you speak in your recordings, used for live and final transcription.',
+          'The language you speak in your recordings, used for live and final transcription. Enhance, Cleanup and other skills also write in it.',
         open: 'Transcription settings',
       },
       theme: {

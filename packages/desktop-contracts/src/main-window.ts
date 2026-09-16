@@ -749,6 +749,10 @@ export type RecordingSegmentView = z.infer<typeof recordingSegmentSchema>;
 export const recordingStateViewSchema = z
   .object({
     recordingId: z.string().nullable(),
+    failure: z.object({
+      recordingId: z.string(),
+      reason: z.enum(['transcription-incomplete', 'processing-failed']),
+    }).strict().optional(),
     finalizingRecordingIds: z.array(z.string()),
     completedRecordings: z.array(
       z

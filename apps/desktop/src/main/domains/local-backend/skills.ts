@@ -21,10 +21,10 @@ import {
   AcceptSkillRunResultSchema,
   ApplyTitleRunRequestSchema,
   EnhancedRecordingsQuerySchema,
+  OutputLanguageSchema,
   RestoreSkillRunRequestSchema,
   RunSkillRequestSchema,
   RunSkillResultSchema,
-  resolveOutputLanguage,
   type RunSkillRequest,
   type RunSkillResult,
   SyncSkillCreateRequestSchema,
@@ -78,6 +78,9 @@ import {
   type LocalDb,
   type RouteResult,
 } from './wire';
+
+// Keep transcription codes aligned with core's skill output-language resolver.
+const OUTPUT_LANGUAGE_ALIASES: Record<string, string> = { zh: 'zh-CN', no: 'nb' };
 
 // ── /me/skills as a sync entity ────────────────────────────────────────────
 
@@ -418,14 +421,15 @@ async function executeSkillRun(
   }
   const resolved = resolvedResult.value;
 
-  const preferences = getLocalPreferences(db).language;
-  const outputLanguage = preferences ? resolveOutputLanguage(preferences) : 'source';
+  const spoken = getLocalPreferences(db).transcription?.language;
+  const parsedLanguage = OutputLanguageSchema.safeParse(spoken && (OUTPUT_LANGUAGE_ALIASES[spoken] ?? spoken));
+  const outputLanguage = parsedLanguage.success ? parsedLanguage.data : 'source';
   const system = titleTarget
     ? buildTitleSystemPrompt({
         skillBody: skill.body,
         noteText: input.noteText,
         transcript: input.transcript,
-        outputLanguage,
+        outputLanguage: 'source',
         refineInstruction: req.refineInstruction,
       })
     : buildSkillSystemPrompt({

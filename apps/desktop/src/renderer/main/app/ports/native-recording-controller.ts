@@ -48,6 +48,8 @@ export function createNativeRecordingController(options: {
   const { auth, control, workflow } = options;
   const listeners = new Set<() => void>();
   let snapshot = emptySnapshot();
+  let snapshotOwner: Pick<Session, 'ownerSessionKey' | 'ownerOrgId'> | undefined;
+  let reportedFailureId: string | undefined;
   let session: Session | undefined;
   let nativeState: NativeRecordingState | undefined;
   let queryClient: QueryClient | undefined;
@@ -84,6 +86,7 @@ export function createNativeRecordingController(options: {
     const s = { workflowId: crypto.randomUUID(), noteId, recordingId, ownerSessionKey, ownerOrgId };
     if (!workflow.dispatch({ type: 'startRecording', ...s }).accepted) return;
     session = s;
+    snapshotOwner = { ownerSessionKey, ownerOrgId };
     hadAutoPausePrompt = false;
     publish({ ...emptySnapshot(), state: 'starting', noteId, recordingId: recordingId ?? null });
     return s;
@@ -124,6 +127,11 @@ export function createNativeRecordingController(options: {
     nativeState = state;
     const active = state.status !== 'idle' && state.status !== 'error';
     const completed = state.completedRecordings?.find(row => row.noteId !== null);
+    // A settled failure can be replayed while recovery or another window updates state.
+    // Report it once per controller, and do not attach an old result to a pending Start.
+    if (!active && state.failure?.recordingId === state.recordingId &&
+      ((reportedFailureId === state.recordingId && !completed) ||
+        (session && !session.recordingId && !session.startingNative))) return;
     const recordingId = active ? state.recordingId : completed?.recordingId ?? state.recordingId;
     const noteId = active ? state.noteId : completed?.noteId ?? state.noteId;
     // Main can advance while a renderer misses terminal pushes. Its new active ID
@@ -134,7 +142,8 @@ export function createNativeRecordingController(options: {
     }
     // Replay adopts main's current capture or unclaimed completion after reload/navigation.
     if (!session && recordingId && noteId &&
-      (active || completed || state.finalizingRecordingIds?.includes(recordingId))) {
+      (active || completed || state.finalizingRecordingIds?.includes(recordingId) ||
+        state.failure?.recordingId === recordingId)) {
       admit(noteId, recordingId);
     }
     const s = session;
@@ -174,6 +183,12 @@ export function createNativeRecordingController(options: {
     });
     // Main's notify window owns the prompt actions; the app only projects pause attribution.
     hadAutoPausePrompt = state.autoPausePrompt != null;
+    if (state.failure && state.failure.recordingId === s.recordingId) {
+      reportedFailureId = s.recordingId;
+      fail(s, state.failure.reason === 'transcription-incomplete'
+        ? 'recording.errors.someAudioNotTranscribed' : 'recording.errors.endedUnexpectedly');
+      return;
+    }
     if ((state.status === 'idle' || state.status === 'error') && s.recordingId) {
       const result = state.completedRecordings?.find(row => row.recordingId === s.recordingId);
       complete(s, result?.segments);
@@ -193,8 +208,13 @@ export function createNativeRecordingController(options: {
     if (disconnect || disposed) return;
     const offWorkflow = workflow.subscribe(project);
     const offAuth = auth.onSessionChanged(view => {
-      if (view.state !== 'refreshing' && session && !owns(session)) {
-        fail(session, null);
+      if (view.state !== 'refreshing' && snapshotOwner &&
+        ((view.activeSessionKey ?? view.activeSub) !== snapshotOwner.ownerSessionKey ||
+          activeOrgIdOf(view) !== snapshotOwner.ownerOrgId)) {
+        if (session) fail(session, null);
+        snapshotOwner = undefined;
+        reportedFailureId = undefined;
+        nativeState = undefined;
         publish(emptySnapshot());
       }
     });
