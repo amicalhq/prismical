@@ -61,6 +61,19 @@ describe('isPermissionAllowed', () => {
 });
 
 describe('buildCsp', () => {
+  it.each([null, 'http://localhost:5173'])(
+    'allows note emoji data with devServerUrl=%s without allowing the whole CDN',
+    devServerUrl => {
+      const csp = buildCsp({ devServerUrl, noteWsUrl: 'wss://note.test', analyticsKey: null });
+      const connect = csp.split('; ').find(directive => directive.startsWith('connect-src '));
+      expect(connect?.split(' ')).toContain('https://cdn.jsdelivr.net/npm/emojibase-data@17.0.0/');
+      expect(connect?.split(' ')).not.toContain('https://cdn.jsdelivr.net');
+      expect(csp.split('; ').find(directive => directive.startsWith('script-src '))).not.toContain(
+        'jsdelivr'
+      );
+    }
+  );
+
   it('allows Gleap resources with a nonce, without permitting arbitrary inline scripts', () => {
     const csp = buildCsp({ devServerUrl: null, noteWsUrl: 'wss://note.test', analyticsKey: null, gleapNonce: 'test-nonce' });
     expect(csp).toContain("script-src 'self' 'nonce-test-nonce' https://*.gleap.io;");
@@ -72,7 +85,7 @@ describe('buildCsp', () => {
     expect(csp).toContain("script-src 'self' 'unsafe-inline' https://*.gleap.io;");
     expect(csp).not.toContain('nonce-');
   });
-  it('packaged: self + note WSS only in connect-src, no analytics without a key', () => {
+  it('packaged: self + note WSS + emoji data in connect-src, no analytics without a key', () => {
     const csp = buildCsp({
       devServerUrl: null,
       noteWsUrl: 'wss://note.prismical.ai/collaboration',

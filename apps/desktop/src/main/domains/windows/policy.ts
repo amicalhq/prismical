@@ -147,8 +147,8 @@ const originOf = (url: string): string | null => {
 };
 
 /**
- * Strict per-renderer CSP: connect-src reduces to self + the note WSS +
- * analytics ingestion (when configured) — core is unreachable from the
+ * Strict per-renderer CSP: connect-src permits self, the note WSS, emoji data,
+ * and configured analytics/support services — core is unreachable from the
  * renderer by construction. Dev adds the Vite HMR websocket ('self'
  * does not cover ws: scheme upgrades in Chromium).
  */
@@ -158,6 +158,8 @@ export function buildCsp(options: CspOptions): string {
   if (gleap) connect.push('https://*.gleap.io', 'wss://*.gleap.io');
   const noteOrigin = originOf(options.noteWsUrl);
   if (noteOrigin !== null) connect.push(noteOrigin);
+  // Match NoteEmojiPickerContent's dataset; the trailing slash permits each locale's JSON files.
+  connect.push('https://cdn.jsdelivr.net/npm/emojibase-data@17.0.0/');
   if (options.analyticsKey !== null && options.analyticsOrigin) {
     connect.push(options.analyticsOrigin);
   }
