@@ -94,13 +94,20 @@ describe('genuinely empty note eligibility', () => {
   it.each([
     { type: 'doc', content: [] },
     { type: 'doc', content: [{ type: 'paragraph' }] },
+    { type: 'doc', content: [{ type: 'paragraph' }, { type: 'paragraph' }] },
+    { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: ' \t\n\u00a0' }] }] },
+    { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'hardBreak' }] }] },
+    { type: 'doc', content: [{ type: 'paragraph' }, { type: 'paragraph', content: [
+      { type: 'text', text: ' ', marks: [{ type: 'bold' }] }, { type: 'hardBreak' },
+    ] }] },
   ])('admits an empty document %j', doc => { expect(isGenuinelyEmptyNote(doc)).toBe(true); });
   it.each([
-    { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: ' ' }] }] },
     { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Scratch' }] }] },
+    { type: 'doc', content: [{ type: 'paragraph' }, { type: 'paragraph', content: [{ type: 'text', text: ' x ' }] }] },
+    { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'image', attrs: { src: 'image' } }] }] },
     { type: 'doc', content: [{ type: 'heading' }] },
     { type: 'doc', content: [{ type: 'image', attrs: { src: 'image' } }] },
     { type: 'doc', content: [{ type: 'artifactBlock' }] },
-    { type: 'doc', content: [{ type: 'paragraph' }, { type: 'paragraph' }] },
+    { type: 'doc', content: [{ type: 'bulletList', content: [{ type: 'listItem', content: [{ type: 'paragraph' }] }] }] },
   ])('keeps existing content in review %j', doc => { expect(isGenuinelyEmptyNote(doc)).toBe(false); });
 });

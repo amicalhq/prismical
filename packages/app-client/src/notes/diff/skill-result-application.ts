@@ -63,9 +63,10 @@ export async function waitForSkillResultDelivery(editor: Editor): Promise<void> 
   await waitForNoteDelivery(doc);
 }
 
-/** Be conservative: whitespace, structure, media and artifacts are existing content. */
+/** Blank paragraphs and whitespace are empty; preserve other structure, media and artifacts. */
 export function isGenuinelyEmptyNote(content: import("@tiptap/core").JSONContent): boolean {
-  return content.type === "doc" && (!content.content?.length ||
-    (content.content.length === 1 && content.content[0]?.type === "paragraph" &&
-      !content.content[0].content?.length));
+  return content.type === "doc" && (content.content ?? []).every(paragraph =>
+    paragraph.type === "paragraph" && (paragraph.content ?? []).every(node =>
+      node.type === "hardBreak" || (node.type === "text" && typeof node.text === "string" &&
+        node.text.trim().length === 0)));
 }

@@ -84,6 +84,8 @@ export interface FakeOAuthOptions {
   readonly idTokenTtlSeconds?: number;
   /** When set, serve one organization with this effective integrations flag. */
   readonly integrationsEnabled?: boolean;
+  /** Enable the optional first-note tour for its acceptance tests. Defaults to false. */
+  readonly userTourEnabled?: boolean;
   /** Role returned by the organization endpoint when it is enabled. Default: owner. */
   readonly organizationRole?: 'owner' | 'admin' | 'member';
   /** Optional app API fixtures, served through the real desktop transport. */
@@ -406,7 +408,11 @@ export async function startFakeOAuthServer(
               slug: 'e2e-organization',
               role: organizationRole,
               allowPublicSharing: false,
-              features: { integrations: integrationsEnabled, customMcpServers: true },
+              features: {
+                integrations: integrationsEnabled,
+                customMcpServers: true,
+                userTour: options.userTourEnabled ?? false,
+              },
               memberCount: 1,
             },
           ],

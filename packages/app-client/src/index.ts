@@ -121,3 +121,5 @@ export { isGenuinelyEmptyNote, waitForSkillResultDelivery, wasSkillResultApplied
 
 export { useNoteCreatedNotice } from "./notes/note-created-notice";
 export { subscribeEditorHistory, withEditorHistoryBoundary } from './notes/editor-history';
+
+export * from './notes/skill-run-feedback';

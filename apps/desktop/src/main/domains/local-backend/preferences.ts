@@ -70,10 +70,9 @@ export function writeLocalPreferences(
             const status = objectFields(saved.walkthrough).status;
             const replay = incoming.status === 'offered' && incoming.replay === true;
             if (
-              (replay && saved.replayRetired === true) ||
-              (!replay &&
-                incoming.status !== 'completed' &&
-                (status === 'completed' || status === 'dismissed'))
+              !replay &&
+              incoming.status !== 'completed' &&
+              (status === 'completed' || status === 'dismissed')
             ) {
               merged.walkthrough = saved.walkthrough;
             }

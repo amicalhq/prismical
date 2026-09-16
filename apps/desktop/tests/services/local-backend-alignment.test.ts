@@ -21,6 +21,7 @@ import {
   upsertEntity,
 } from '../../src/main/domains/local-backend/sync-entities';
 import { createNote, listNotes, updateNote } from '../../src/main/domains/local-backend/notes';
+import { loadNoteInput } from '../../src/main/domains/local-backend/note-input';
 import type { LocalDb } from '../../src/main/domains/local-backend/wire';
 import { migrateLocalPreferences } from '../../src/renderer/main/app/settings/local-preference-migration';
 
@@ -236,7 +237,10 @@ describe('local account experience preferences', () => {
       writeLocalPreferences(db, 'PATCH', {
         onboarding: { walkthrough: { status: 'offered', replay: true } },
       });
-      expect(getLocalPreferences(db).onboarding?.walkthrough).toEqual({ status: 'completed' });
+      expect(getLocalPreferences(db).onboarding).toMatchObject({
+        walkthrough: { status: 'offered', replay: true },
+        replayRetired: true,
+      });
     }
   );
 
@@ -249,6 +253,69 @@ describe('local account experience preferences', () => {
     expect(writeLocalPreferences(db, 'PATCH', patch).status).toBe(400);
     expect(db.select().from(schema.userPreference).all()).toEqual([]);
   });
+});
+
+describe('local recording capture context', () => {
+  it('uses the requested recording language without borrowing the latest recording language', async () => {
+    const noteId = await addNote();
+    db.insert(schema.recording)
+      .values([
+        {
+          id: 'rec_selected',
+          title: 'Selected recording',
+          noteId,
+          captureMode: 'mic',
+          transcriptionConfig: { language: 'ja' },
+          startedAt: OLD,
+          createdAt: OLD,
+          updatedAt: OLD,
+        },
+        {
+          id: 'rec_latest',
+          title: 'Latest recording',
+          noteId,
+          captureMode: 'dual',
+          transcriptionConfig: { language: 'en' },
+          startedAt: NOW,
+          createdAt: NOW,
+          updatedAt: NOW,
+        },
+      ])
+      .run();
+    expect(
+      await loadNoteInput(db, noteId, { includeTranscript: true, recordingId: 'rec_selected' })
+    ).toMatchObject({ context: { captureMode: 'mic', spokenLanguage: 'ja' } });
+    const unscoped = await loadNoteInput(db, noteId, { includeTranscript: true });
+    expect(unscoped?.context).toMatchObject({ captureMode: 'dual' });
+    expect(unscoped?.context).not.toHaveProperty('spokenLanguage');
+    expect(
+      (await loadNoteInput(db, noteId, { includeTranscript: false, recordingId: 'rec_selected' }))
+        ?.context
+    ).toBeUndefined();
+  });
+
+  it.each([null, {}, { language: '' }, { language: 42 }])(
+    'does not invent a capture language for transcription config %j',
+    async transcriptionConfig => {
+      const noteId = await addNote();
+      db.insert(schema.recording)
+        .values({
+          id: 'rec_no_language',
+          title: 'Recording',
+          noteId,
+          captureMode: 'mic',
+          transcriptionConfig,
+          createdAt: NOW,
+          updatedAt: NOW,
+        })
+        .run();
+      const input = await loadNoteInput(db, noteId, {
+        includeTranscript: true,
+        recordingId: 'rec_no_language',
+      });
+      expect(input?.context).not.toHaveProperty('spokenLanguage');
+    }
+  );
 });
 
 describe('local folder hierarchy', () => {

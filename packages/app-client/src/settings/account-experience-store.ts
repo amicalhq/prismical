@@ -38,10 +38,9 @@ function merge(data: AccountExperience, patch: ExperiencePatch): AccountExperien
   const incoming = patch.onboarding?.walkthrough;
   const replay = incoming?.status === 'offered' && incoming.replay === true;
   if (
-    ((previous?.status === 'completed' || previous?.status === 'dismissed') &&
-      !replay &&
-      incoming?.status !== 'completed') ||
-    (replay && data.onboarding.replayRetired)
+    (previous?.status === 'completed' || previous?.status === 'dismissed') &&
+    !replay &&
+    incoming?.status !== 'completed'
   ) {
     next.onboarding = { ...next.onboarding, walkthrough: previous };
   }

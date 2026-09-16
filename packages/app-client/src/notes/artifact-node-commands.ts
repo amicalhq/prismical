@@ -1,5 +1,16 @@
+import type { Node as PMNode } from "@tiptap/pm/model";
 import type { CommandProps } from "@tiptap/core";
 import { ARTIFACT_NODE_NAME } from "@prismical/editor-schema";
+
+/** Replace only the editor's sole default paragraph; all other structure is authored content. */
+export function artifactInsertionRange(doc: PMNode): { from: number; to: number } {
+  const first = doc.firstChild;
+  const defaultParagraph = first?.type.name === "paragraph" && first.eq(first.type.create());
+  return {
+    from: doc.childCount === 1 && defaultParagraph ? 0 : doc.content.size,
+    to: doc.content.size,
+  };
+}
 
 // Metadata mirrors the cloud `artifact` row plus the human-readable skill name (so the card chrome
 // renders without a separate skills lookup). `generatedAt` is an ISO 8601 string.
@@ -84,8 +95,8 @@ export const artifactBlockCommands = {
             }
           }
 
-          // No existing block; append to the end of the doc.
-          return commands.insertContentAt(state.doc.content.size, newNode.toJSON());
+          // Keep the trailing editing paragraph, without retaining the initial placeholder above it.
+          return commands.insertContentAt(artifactInsertionRange(state.doc), newNode.toJSON());
         },
     };
   },

@@ -1,5 +1,5 @@
 import { cn } from '../../lib/utils';
-import type { HTMLAttributes } from 'react';
+import { useId, type HTMLAttributes } from 'react';
 import { useTranslation } from 'react-i18next';
 
 type LoaderIconProps = {
@@ -8,6 +8,8 @@ type LoaderIconProps = {
 
 const LoaderIcon = ({ size = 16 }: LoaderIconProps) => {
   const { t } = useTranslation();
+  // Hidden dock faces stay mounted; never share their SVG clipping resource.
+  const clipId = useId();
   return (
     <svg
       height={size}
@@ -17,7 +19,7 @@ const LoaderIcon = ({ size = 16 }: LoaderIconProps) => {
       width={size}
     >
       <title>{t('common.status.loading')}</title>
-      <g clipPath="url(#clip0_2393_1490)">
+      <g clipPath={`url(#${clipId})`}>
         <path d="M8 0V4" stroke="currentColor" strokeWidth="1.5" />
         <path d="M8 16V12" opacity="0.5" stroke="currentColor" strokeWidth="1.5" />
         <path
@@ -70,7 +72,7 @@ const LoaderIcon = ({ size = 16 }: LoaderIconProps) => {
         />
       </g>
       <defs>
-        <clipPath id="clip0_2393_1490">
+        <clipPath id={clipId}>
           <rect fill="white" height="16" width="16" />
         </clipPath>
       </defs>

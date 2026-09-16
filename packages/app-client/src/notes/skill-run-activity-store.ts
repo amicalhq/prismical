@@ -100,6 +100,9 @@ interface SkillRunActivityState {
     status: "kept" | "undone" | "superseded" | "error",
     detail?: string,
   ) => void;
+  /** Update the exact accepted run when its edit is restored. */
+  undoAccepted: (id: string) => void;
+  resolveRun: (id: string, status: "kept" | "error", detail?: string) => void;
   /** Place a record in the thread (the Ask chat calls this when it adopts the record). */
   anchor: (id: string, anchor: NonNullable<SkillRunRecord["anchor"]>) => void;
 }
@@ -211,6 +214,19 @@ export const useSkillRunActivityStore = create<SkillRunActivityState>((set) => (
       next.set(noteId, copy);
       return { runsByNote: next };
     }),
+
+  resolveRun: (id, status, detail) => set((s) => {
+    const next = updateRecord(s.runsByNote, id, (r) =>
+      r.status === "staged" || r.status === "error"
+        ? { ...r, status, detail, body: undefined, actions: undefined, endedAt: Date.now() } : null);
+    return next ? { runsByNote: next } : s;
+  }),
+
+  undoAccepted: (id) => set((s) => {
+    const next = updateRecord(s.runsByNote, id, (r) =>
+      r.status === "kept" ? { ...r, status: "undone", detail: undefined, body: undefined, actions: undefined } : null);
+    return next ? { runsByNote: next } : s;
+  }),
 
   // A RUNNING record may be re-anchored (New chat / org switch mid-run remounts the thread: the
   // run follows the user into the new conversation instead of locking a composer it isn't in).

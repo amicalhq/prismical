@@ -13,6 +13,12 @@ export interface SkillRunContext {
   detectedSpeakerCount?: number;
   /** null = definitively no linked event (itself a signal, distinct from "unknown"). */
   linkedEvent: { title: string; attendeeCount?: number } | null;
+  /**
+   * The language the recording was captured in, as picked by the user before recording. Used only
+   * to resolve "keep the note's language" when the note body is still empty — see
+   * `effectiveOutputLanguage`. Not a prompt context line: it never reaches the model directly.
+   */
+  spokenLanguage?: string;
 }
 
 export interface SkillNoteInput {

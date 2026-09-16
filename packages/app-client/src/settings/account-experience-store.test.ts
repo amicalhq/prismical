@@ -254,3 +254,15 @@ it('acknowledges an in-flight save even after the account switches', async () =>
   await restored.refresh();
   expect(restored.getSnapshot().data?.experience.theme).toBe('light');
 });
+
+it('allows an explicit tour replay for an account with retired onboarding', async () => {
+  const api = server({ onboarding: { walkthrough: { status: 'completed' }, replayRetired: true } });
+  const store = new AccountExperienceStore('user', api);
+  await store.refresh();
+  const walkthrough = { status: 'offered', replay: true, started: true } as const;
+  expect(store.update({ onboarding: { walkthrough } })).toBe(true);
+  expect(store.getSnapshot().data?.onboarding.walkthrough).toEqual(walkthrough);
+  await settled(store);
+  expect(store.getSnapshot().data?.onboarding.walkthrough).toEqual(walkthrough);
+  store.dispose();
+});

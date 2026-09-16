@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Editor } from "@tiptap/react";
 import { toast } from "sonner";
+import { skillRunFeedback } from "./skill-run-feedback";
+import { useNoteCreatedNotice } from "./note-created-notice";
 import { useQueryClient } from "@tanstack/react-query";
 import { ApiError } from "../api/client";
 import { onChangeRemote } from "@legendapp/state/sync";
@@ -256,6 +258,7 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
       // run is in flight on this note, whichever surface started it.
       const activity = useSkillRunActivityStore.getState();
       activity.start(noteId);
+      useNoteCreatedNotice.setState(s => ({ notice: s.notice?.undoPending ? s.notice : null }));
       const source = args.source ?? "dock";
       const recoverable = args.outputTarget !== "note-title";
       // Note-body runs also open a run-feed record: the Ask thread renders it as a turn
@@ -278,6 +281,7 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
                 }
               },
             });
+      const feedback = skillRunFeedback(feedId);
       // Idempotent: the first terminal status wins, so the explicit calls below beat the
       // catch-all in `finally`.
       const finish = (
@@ -451,7 +455,7 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
             : markdownToChildren(result.rawMarkdown);
         if (content.length === 0) {
           const msg = t("skills.run.noUsableContent", { name: args.skillName });
-          toast.error(msg);
+          feedback.error(msg);
           finish("error", msg);
           return;
         }
@@ -460,6 +464,7 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
           type: "proposalReady", ...workflowScope, proposalId: proposalId!,
         }).accepted) return;
         stage({
+          activityId: feedId ?? undefined,
           autoApply: args.skillId === ENHANCE_SKILL_ID && args.source !== "refine" &&
             !args.previousOutput && result.mode === "replace-doc" && !!result.resultId &&
             result.recoveryContext?.generationId === generationId &&
@@ -565,9 +570,9 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
             description: aiErrorToastBody(user.body, more),
             ...(primary ? { action: { label: primary.label, onClick: primary.onClick } } : {}),
           };
-          if (user.severity === "info") toast.info(user.title, toastOpts);
-          else if (user.severity === "warning") toast.warning(user.title, toastOpts);
-          else toast.error(user.title, toastOpts);
+          if (user.severity === "info") feedback.info(user.title, toastOpts);
+          else if (user.severity === "warning") feedback.warning(user.title, toastOpts);
+          else feedback.error(user.title, toastOpts);
           finish(user.severity === "info" ? "skipped" : "error", user.title, {
             body: user.body,
             actions,
@@ -576,7 +581,7 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
         }
         if (isNetworkFailure(err)) {
           const msg = t("skills.run.offline");
-          toast.error(msg, {
+          feedback.error(msg, {
             description: t("skills.run.offlineBody"),
             action: {
               label: t("common.actions.retry"),
@@ -597,7 +602,7 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
         }
         if (err instanceof ApiError && err.code === "TITLE_CHANGED") {
           const msg = t("notes.titleConflict");
-          toast.error(msg);
+          feedback.error(msg);
           finish("error", msg);
           return;
         }
@@ -611,7 +616,7 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
             includesTranscript ? "skills.run.noteAndTranscriptEmpty" : "skills.run.noteEmpty",
             { name: args.skillName },
           );
-          toast.info(msg);
+          feedback.info(msg);
           finish("skipped", msg);
           return;
         }
@@ -620,20 +625,21 @@ export function useRunSkill(noteId: string, editor: Editor | null) {
         // this is the server backstop, so keep the message neutral.)
         if (err instanceof ApiError && err.code === "NO_TRANSCRIPT") {
           const msg = t("skills.run.noTranscript");
-          toast.info(msg);
+          feedback.info(msg);
           finish("skipped", msg);
           return;
         }
         if (parked) {
           const msg = t("skills.run.transcriptFinalizing");
-          toast.info(msg);
+          feedback.info(msg);
           finish("skipped", msg);
           return;
         }
         console.error("skill run failed", err);
         const msg = t("skills.run.failed", { name: args.skillName });
-        toast.error(msg);
-        finish("error", msg);
+        const retry = { kind: 'retry', label: t('common.actions.retry'), onClick: () => retryRun() };
+        feedback.error(msg, { action: retry });
+        finish("error", msg, { actions: [retry] });
       } finally {
         // Once staged, only review actions can release ownership. A failed refine
         // returns to its previous proposal instead of freeing the workflow.

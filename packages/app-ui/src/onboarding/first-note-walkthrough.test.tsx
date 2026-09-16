@@ -22,6 +22,7 @@ const m = vi.hoisted(() => ({
   capture: vi.fn(),
   create: vi.fn(),
   candidate: undefined as { recordingId: string } | undefined,
+  tourFlag: true,
 }));
 function account() {
   let data = m.preferences.get(m.user);
@@ -72,6 +73,10 @@ vi.mock('@prismical/app-client', () => ({
   useActiveOrgId: () => m.org,
   useActiveSessionKey: () => m.user,
   useEnv: () => ({ platform: m.platform }),
+  useFeatureFlag: (key: string) => ({
+    enabled: key === 'userTour' ? m.tourFlag : false,
+    isResolved: true,
+  }),
   useDesktopCapabilities: () => ({ has: () => m.platform !== 'web' }),
   useNavigation: () => ({ push: m.push, replace: m.replace }),
   usePathname: () => m.pathname,
@@ -163,9 +168,30 @@ beforeEach(() => {
   m.candidate = undefined;
   m.celebrate.mockClear();
   m.capture.mockReset();
+  m.tourFlag = true;
 });
 afterEach(cleanup);
 const click = (name: string) => fireEvent.click(screen.getByRole('button', { name }));
+it('shows nothing and writes nothing while the userTour flag is off', () => {
+  m.tourFlag = false;
+  render(<Fixture />);
+  // Not just the coach marks: the welcome dialog that carries the download buttons is gone too,
+  // and the replay row with it, because all three hang off the same scope.
+  expect(screen.queryByRole('button', { name: 'Continue to web' })).toBeNull();
+  expect(screen.queryByRole('region', { name: 'Tour' })).toBeNull();
+  expect(screen.queryByRole('button', { name: /replay/i })).toBeNull();
+  // A gated-off tour must not bank a decision for the account: `dismissed` would persist and
+  // suppress the tour for good once the flag is turned back on.
+  expect(readWalkthrough(walkthroughKey('a'))).toBeNull();
+  expect(m.capture).not.toHaveBeenCalled();
+});
+it('restores the tour when the userTour flag is turned on', () => {
+  m.tourFlag = false;
+  const view = render(<Fixture />);
+  m.tourFlag = true;
+  view.rerender(<Fixture />);
+  expect(screen.getByRole('button', { name: 'Continue to web' })).toBeTruthy();
+});
 it('waits for settled data and suppresses automatic tours for existing users', () => {
   m.ready = false;
   const view = render(<Fixture />);
@@ -257,19 +283,21 @@ it('allows rejection and another Enhance without reporting completion', () => {
   expect(screen.getByText('enhance')).toBeTruthy();
   expect(m.celebrate).not.toHaveBeenCalled();
 });
-it('restarts only through an explicit sidebar action and retires at three notes', () => {
+it('allows explicit replay even after three notes and previous retirement', () => {
   m.notes = [{ id: 'one' }];
   render(<Fixture />);
-  fireEvent.click(screen.getByRole('button', { name: /Getting started/ }));
+  fireEvent.click(screen.getByRole('button', { name: /Quick start tour/ }));
   expect(screen.getByText('create')).toBeTruthy();
   cleanup();
   m.notes = [{ id: '1' }, { id: '2' }, { id: '3' }];
+  account().update({ onboarding: { walkthrough: { status: 'completed' }, replayRetired: true } });
   render(<Fixture />);
-  expect(screen.queryByRole('button', { name: /Getting started/ })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: /Quick start tour/ }));
+  expect(screen.getByText('create')).toBeTruthy();
   cleanup();
   m.notes = [];
   render(<Fixture />);
-  expect(screen.queryByRole('button', { name: /Getting started/ })).toBeNull();
+  expect(screen.getByRole('button', { name: /Quick start tour/ })).toBeTruthy();
 });
 it('does not leak active progress to another org and observes cross-tab dismissal', () => {
   const view = render(<Fixture />);

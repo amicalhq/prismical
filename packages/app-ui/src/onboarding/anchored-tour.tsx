@@ -132,11 +132,6 @@ export function AnchoredTour({
               onPopoverRender: popover => {
                 popover.closeButton.setAttribute('aria-label', t('onboarding.close'));
                 popover.wrapper.setAttribute('aria-label', t('onboarding.title'));
-                // Visible on every action step: denied microphone, plan gates and errors always have an exit.
-                const hint = document.createElement('p');
-                hint.className = 'prismical-tour-hint';
-                hint.textContent = t('onboarding.recovery');
-                popover.description.append(hint);
               },
             },
           });

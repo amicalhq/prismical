@@ -1,4 +1,4 @@
-import { outputLanguageInstruction } from './output-language.js';
+import { effectiveOutputLanguage, outputLanguageInstruction } from './output-language.js';
 import type { SkillOutputLanguage } from '@prismical/api-contracts/apps/v1';
 import { SUBMIT_OUTPUT_TOOL, type ArtifactMode } from './types.js';
 import type { RunnableSkill } from './skill.js';
@@ -133,7 +133,7 @@ export function buildSkillSystemPrompt(args: {
   }
 
   out.push('');
-  out.push(outputLanguageInstruction(args.outputLanguage));
+  out.push(outputLanguageInstruction(effectiveOutputLanguage(args.outputLanguage, input)));
   out.push('');
   out.push('# Output');
   out.push(

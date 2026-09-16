@@ -94,6 +94,7 @@ export async function loadNoteInput(
     .select({
       captureMode: schema.recording.captureMode,
       meta: schema.recording.meta,
+      transcriptionConfig: schema.recording.transcriptionConfig,
     })
     .from(schema.recording)
     .where(
@@ -113,6 +114,10 @@ export async function loadNoteInput(
     ...(typeof detected === 'number' ? { detectedSpeakerCount: detected } : {}),
     linkedEvent: null,
   };
+  const language = recording?.transcriptionConfig?.language;
+  if (opts.recordingId !== undefined && typeof language === 'string' && language.length > 0) {
+    context.spokenLanguage = language;
+  }
   input.context = context;
   return input;
 }

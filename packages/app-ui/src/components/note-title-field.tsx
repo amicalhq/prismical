@@ -173,7 +173,7 @@ export function NoteTitleField({
         }}
         className={
           compact
-            ? 'min-w-[4ch] truncate bg-transparent text-base font-medium text-foreground outline-none'
+            ? 'min-w-[4ch] truncate bg-transparent text-sm font-medium text-foreground outline-none'
             : `min-w-0 flex-1 truncate bg-transparent px-2 pt-1 text-2xl font-semibold leading-tight text-foreground outline-none placeholder:text-muted-foreground md:text-3xl ${namingEnabled ? `group-hover/title:pr-9 group-focus-within/title:pr-9 [@media(hover:none)]:pr-9 ${naming.running ? 'pr-9' : ''}` : ''}`
         }
       />

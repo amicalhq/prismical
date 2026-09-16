@@ -9,6 +9,7 @@ import { Collaboration } from "@tiptap/extension-collaboration";
 import { Placeholder } from "@tiptap/extensions";
 import type { Extensions } from "@tiptap/core";
 import type * as Y from "yjs";
+import { EmptyArtifactCleanup } from "./empty-artifact-cleanup";
 import { artifactBlockCommands } from "./artifact-node-commands";
 import { artifactInlineCommands } from "./artifact-inline-node-commands";
 import { SkillDiffPlugin } from "./diff/diff-plugin";
@@ -52,6 +53,7 @@ export function buildWebEditorExtensions(
       },
     }).configure({ document: doc, field: "default" }),
     Placeholder.configure({ placeholder }),
+    EmptyArtifactCleanup,
     SkillDiffPlugin,
     SkillDiffEditorLock.configure({ noteId }),
   ];

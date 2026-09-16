@@ -65,16 +65,17 @@ export function DockUnit({
         width,
         height,
         ...(compact ? { borderRadius: 12 } : {}),
-        ...(collapsed ? { borderWidth: 0 } : {}),
+        ...(collapsed ? { borderWidth: 0, visibility: 'hidden' as const } : {}),
       }}
       {...(collapsed ? { inert: true } : {})}
       aria-hidden={collapsed}
     >
-      {/* Pill face */}
+      {/* Hidden faces remain mounted, but do not paint outside the morphing unit. */}
       <div
         className={`absolute inset-0 transition-opacity duration-[120ms] ease-out ${
           expanded ? 'pointer-events-none opacity-0' : 'opacity-100 delay-100'
         }`}
+        style={{ visibility: expanded || collapsed ? 'hidden' : 'visible' }}
         {...(expanded ? { inert: true } : {})}
         aria-hidden={expanded}
       >
@@ -86,6 +87,7 @@ export function DockUnit({
         className={`group/panel absolute inset-0 flex flex-col transition-opacity duration-[120ms] ease-out ${
           expanded ? 'opacity-100 delay-100' : 'pointer-events-none opacity-0'
         }`}
+        style={{ visibility: !expanded || collapsed ? 'hidden' : 'visible' }}
         {...(expanded ? {} : { inert: true })}
         aria-hidden={!expanded}
       >

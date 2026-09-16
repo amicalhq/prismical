@@ -9,7 +9,8 @@ import {
 } from '@prismical/app-client';
 import { CLEANUP_SKILL_ID } from '@prismical/app-contracts';
 import { skillDisplayDescription, skillDisplayName } from '../../lib/skill-presentation';
-import { SkillRunStatus } from './ask-skill-run-turn';
+import { Loader } from '../ai-elements/loader';
+import { DOCK_CTL_PRIMARY } from '../dock-chrome';
 import type { ComposerSkill } from './ask-composer';
 import { useTranslation } from 'react-i18next';
 
@@ -71,17 +72,32 @@ export function AskPillFace({
 
   if (activeRun) {
     return (
-      <div className="flex h-full w-full items-center gap-1 pl-2 pr-1.5" data-skill-run="running">
-        <div className="min-w-0 flex-1 [&_[data-slot=marker]]:text-xs">
-          <SkillRunStatus compact run={activeRun} t={t} onReviewInNote={onClick} />
-        </div>
+      <div className="flex h-full w-full items-center gap-1 pl-2 pr-1.5" data-skill-run="running" data-onboarding="skill-status">
         <button
           type="button"
           onClick={onClick}
           aria-label={t('ask.title')}
-          className="shrink-0 rounded-lg p-2 text-dock-ink-2 hover:bg-dock-hover"
+          className="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
         >
-          <Sparkles className="size-4" />
+          <Loader size={15} className="shrink-0 text-dock-ink-2" />
+          {/* No live region here: ARIA flattens button descendants, and the thread's turn already
+              announces the same run. */}
+          <span className="shimmer shimmer-duration-1400 min-w-0 flex-1 truncate text-[13px] text-dock-ink">
+            {activeRun.phase === 'waiting-transcript'
+              ? `${activeRun.skillName} · ${t('recording.panel.waitingForTranscription')}`
+              : t('ask.skillRun.running', { name: activeRun.skillName })}
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={activeRun.cancel}
+          aria-label={t('ask.skillRun.stop', { name: activeRun.skillName })}
+          title={t('ask.skillRun.stop', { name: activeRun.skillName })}
+          className={DOCK_CTL_PRIMARY}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <rect width="12" height="12" x="6" y="6" rx="2.5" />
+          </svg>
         </button>
       </div>
     );

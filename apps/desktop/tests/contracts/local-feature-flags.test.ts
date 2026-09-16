@@ -38,6 +38,8 @@ describe('LOCAL_FEATURE_FLAGS', () => {
     // The server-registered operational flags stay off locally too.
     expect(LOCAL_FEATURE_FLAGS.integrations).toBe(false);
     expect(LOCAL_FEATURE_FLAGS.eventkitCalendar).toBe(false);
+    expect(LOCAL_FEATURE_FLAGS.userTour).toBe(false);
+    expect(LOCAL_FEATURE_FLAGS.getAppsPrompt).toBe(false);
   });
 
   it('enables every supported local AI provider without rollout access', () => {

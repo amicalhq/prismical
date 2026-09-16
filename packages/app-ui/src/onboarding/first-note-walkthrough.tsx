@@ -7,6 +7,7 @@ import {
   useActiveOrgId,
   useActiveSessionKey,
   useEnv,
+  useFeatureFlag,
   useNavigation,
   usePathname,
   useNotes,
@@ -81,7 +82,13 @@ export function FirstNoteWalkthroughProvider({
   const org = useActiveOrgId();
   const session = useActiveSessionKey();
   const { platform } = useEnv();
-  const scope = (enabled ?? platform === 'web') && user && org ? `${session}:${org}` : null;
+  // The `userTour` gate is ANDed in rather than replacing `enabled`, so it stays a true kill
+  // switch: a platform that opts in (desktop passes `enabled`) still cannot show the tour while
+  // the flag is off. An unresolved flag reads false, which is the right direction here — a late
+  // welcome dialog beats one that flashes and is withdrawn.
+  const { enabled: tourEnabled } = useFeatureFlag('userTour');
+  const scope =
+    (enabled ?? platform === 'web') && tourEnabled && user && org ? `${session}:${org}` : null;
   const handlers = React.useRef<{
     notify: (event: WalkthroughEvent) => void;
     restart: () => void;
@@ -201,12 +208,12 @@ function ScopedWalkthrough({
     if (!accountPreferences.data) return;
     const saved = accountPreferences.data.onboarding.walkthrough;
     setState(saved);
-    setCanReplay(!accountPreferences.data.onboarding.replayRetired);
+    setCanReplay(replayAvailable(key));
     if (!initialized.current) {
       initialized.current = true;
       resumeNote.current = saved?.status === 'active' && saved.orgId === org ? saved.noteId : null;
     }
-  }, [accountPreferences.data, org]);
+  }, [accountPreferences.data, org, key]);
 
   React.useEffect(() => {
     // Wait for the correctly scoped store's settled list. Never interpret a cold pull as empty.
@@ -218,7 +225,7 @@ function ScopedWalkthrough({
       store.partition.orgId !== org
     )
       return;
-    setCanReplay(replayAvailable(key, notes.data?.length ?? 0));
+    setCanReplay(replayAvailable(key));
     const saved = readWalkthrough(key);
     if (saved !== null) return;
     const account = auth.getSession().accounts.find(a => a.sub === user);
@@ -301,7 +308,7 @@ function ScopedWalkthrough({
   }, [failedRecording, active?.recordingId, active?.noteId, notify]);
 
   const restart = () => {
-    if (!isCurrent() || !notes.isSuccess || !replayAvailable(key, notes.data?.length ?? 0)) return;
+    if (!isCurrent() || !notes.isSuccess || !replayAvailable(key)) return;
     const next: Walkthrough = { status: 'offered', replay: true, started: true };
     if (!writeWalkthrough(key, next)) return;
     setState(next);

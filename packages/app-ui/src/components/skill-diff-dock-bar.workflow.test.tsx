@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
   sessionKey: "session",
   walkthrough: vi.fn(),
   successToast: vi.fn(),
+  undoAccepted: vi.fn(),
+  resolveRun: vi.fn(),
   errorToast: vi.fn(),
   save: vi.fn(),
   apply: vi.fn(),
@@ -34,6 +36,7 @@ vi.mock('@prismical/app-client', async () => {
   return {
     withEditorHistoryBoundary: (_editor: unknown, apply: () => unknown) => apply(),
     isGenuinelyEmptyNote, useNoteCreatedNotice,
+    skillRunFeedback: () => ({ error: mocks.errorToast }),
     wasSkillResultApplied: mocks.wasApplied,
     prepareSkillResultUpdate: mocks.prepare,
     applyPreparedSkillResult: mocks.apply,
@@ -46,7 +49,7 @@ vi.mock('@prismical/app-client', async () => {
     useSkillDiffStore,
     useAcceptArtifact: () => ({ mutateAsync: mocks.save, isPending: false }),
     useRunSkill: () => ({ run: mocks.run, cancel: vi.fn(), running: false }),
-    useSkillRunActivityStore: { getState: () => ({ resolveStaged: mocks.resolveStaged }) },
+    useSkillRunActivityStore: { getState: () => ({ resolveStaged: mocks.resolveStaged, runsByNote: new Map(), undoAccepted: mocks.undoAccepted, resolveRun: mocks.resolveRun }) },
     useAutoEnhanceStore: { getState: () => ({ markFailed: vi.fn() }) },
     clearDiffDecorations: vi.fn(),
     resolveVerifiedRange: vi.fn(),
@@ -58,6 +61,7 @@ vi.mock('@prismical/app-client', async () => {
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => ({ invalidateQueries: vi.fn() }) }));
 vi.mock('../onboarding/context', () => ({ useWalkthroughEvent: () => mocks.walkthrough }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+const { useNoteCreatedNotice } = await import('../../../app-client/src/notes/note-created-notice');
 vi.mock('sonner', () => ({ toast: { success: mocks.successToast, error: mocks.errorToast, info: vi.fn() } }));
 vi.mock('../ui/tooltip', () => ({
   Tooltip: ({ children }: { children: React.ReactNode }) => children,
@@ -184,7 +188,8 @@ describe('skill review workflow integration', () => {
     fireEvent.click(screen.getByRole('button', { name: 'skills.diff.apply' }));
     await waitFor(() => expect(mocks.resolveStaged).toHaveBeenCalledWith('note', 'kept'));
     expect(mocks.apply).toHaveBeenCalledOnce();
-    expect(mocks.successToast).toHaveBeenCalledOnce();
+    expect(mocks.successToast).not.toHaveBeenCalled();
+    expect(useNoteCreatedNotice.getState().notice?.message).toBe('skills.diff.newSectionAdded');
   });
 
   it('does not apply an old account response after its candidates are cleared', async () => {
@@ -228,13 +233,37 @@ describe('skill review workflow integration', () => {
     fireEvent.click(screen.getByRole('button', { name: 'skills.diff.apply' }));
     await waitFor(() => expect(runtime().getSnapshot()).toEqual({ kind: 'idle' }));
     expect(mocks.walkthrough).toHaveBeenCalledWith({ type: 'kept', noteId: 'note', recordingId: 'recording' });
-    expect(mocks.successToast).toHaveBeenCalledWith('skills.diff.newSectionAdded', expect.objectContaining({
-      action: expect.objectContaining({ label: 'skills.diff.undo', onClick: expect.any(Function) }),
-    }));
+    expect(mocks.successToast).not.toHaveBeenCalled();
+    expect(useNoteCreatedNotice.getState().notice).toMatchObject({ message: 'skills.diff.newSectionAdded', undo: expect.any(Function) });
     expect(deliver).toHaveBeenCalledTimes(2);
     expect(mocks.save).toHaveBeenCalledTimes(1);
     expect(mocks.apply).toHaveBeenCalledTimes(1);
     expect(mocks.resolveStaged).toHaveBeenCalledWith('note', 'kept');
+  });
+
+  it('preserves the first apply baseline across delivery retries and updates the exact run on Undo', async () => {
+    const original = { type: 'doc', content: [{ type: 'paragraph' }] };
+    const applied = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Applied' }] }] };
+    const newer = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Collaborator edit' }] }] };
+    mocks.getDocument.mockReturnValue(original);
+    mocks.apply.mockImplementation(() => { mocks.getDocument.mockReturnValue(applied); return true; });
+    mocks.deliver.mockRejectedValueOnce(new Error('offline')).mockResolvedValue(undefined);
+    useSkillDiffStore.getState().stage({ ...candidate, activityId: 'specific-run' });
+    mount({ beforeApplyComplete: mocks.deliver });
+    fireEvent.click(screen.getByRole('button', { name: 'skills.diff.apply' }));
+    await waitFor(() => expect(runtime().getSnapshot()).toMatchObject({ phase: 'review' }));
+    expect(useSkillDiffStore.getState().getCandidate('note')?.acceptance?.appliedContent).toBe(JSON.stringify(applied));
+    mocks.getDocument.mockReturnValue(newer);
+    fireEvent.click(screen.getByRole('button', { name: 'skills.diff.apply' }));
+    await waitFor(() => expect(runtime().getSnapshot()).toEqual({ kind: 'idle' }));
+    expect(mocks.resolveRun).toHaveBeenCalledWith('specific-run', 'kept');
+    const restore = vi.fn().mockReturnValue(true);
+    const reopened = { isDestroyed: false, getJSON: () => newer, commands: { setContent: restore } } as unknown as Editor;
+    await act(async () => { useNoteCreatedNotice.getState().notice!.undo!(reopened); });
+    expect(restore).not.toHaveBeenCalled();
+    expect(useNoteCreatedNotice.getState().notice?.message).toBe('skills.diff.undoAfterEdit');
+    await act(async () => { useNoteCreatedNotice.getState().notice!.undo!({ ...reopened, getJSON: () => applied } as Editor); });
+    await waitFor(() => expect(mocks.undoAccepted).toHaveBeenCalledWith('specific-run'));
   });
 
   it('ends an applied workflow with unavailable document without deleting the accepted artifact', async () => {
@@ -475,7 +504,8 @@ describe('empty enhancement automatic application', () => {
     expect(mocks.apply).toHaveBeenCalledOnce();
     expect(mocks.resolvePending).toHaveBeenCalledOnce();
     expect(mocks.deliver).toHaveBeenCalledTimes(3);
-    expect(mocks.successToast).toHaveBeenCalledWith('skills.diff.noteCreated', expect.objectContaining({ action: expect.anything() }));
+    expect(mocks.successToast).not.toHaveBeenCalled();
+    expect(useNoteCreatedNotice.getState().notice).toMatchObject({ message: 'skills.diff.noteCreated', undo: expect.any(Function) });
   });
   it('rechecks the synced document before accepting', async () => {
     prepareAuto();
@@ -532,12 +562,12 @@ describe('empty enhancement automatic application', () => {
     const restore = vi.fn().mockReturnValue(true);
     const reopened = { isDestroyed: false, getJSON: () => empty, commands: { setContent: restore } } as unknown as Editor;
     mocks.deliver.mockRejectedValueOnce(new Error('offline'));
-    await act(async () => { notice.undo(reopened); });
-    await waitFor(() => expect(mocks.errorToast).toHaveBeenCalledWith('skills.diff.restoredLocallySyncFailed', expect.objectContaining({ action: expect.anything() })));
+    await act(async () => { notice.undo!(reopened); });
+    await waitFor(() => expect(useNoteCreatedNotice.getState().notice).toMatchObject({ message: 'skills.diff.undoSyncFailed', description: 'skills.diff.restoredOnDevice', error: true }));
     expect(useNoteCreatedNotice.getState().notice?.undoPending).toBe(true);
     expect(mocks.deleteArtifact).not.toHaveBeenCalled();
-    await act(async () => { notice.undo(reopened); });
-    await waitFor(() => expect(useNoteCreatedNotice.getState().notice).toBeNull());
+    await act(async () => { notice.undo!(reopened); });
+    await waitFor(() => expect(useNoteCreatedNotice.getState().notice).toMatchObject({ message: 'skills.diff.restoredPrevious', undo: undefined }));
     expect(mocks.deleteArtifact).toHaveBeenCalledOnce();
     expect(restore).not.toHaveBeenCalled();
   });
@@ -551,7 +581,7 @@ describe('empty enhancement automatic application', () => {
     await waitFor(() => expect(runtime().getSnapshot()).toEqual({ kind: 'idle' }));
     const restore = vi.fn();
     const edited = { isDestroyed: false, getJSON: () => typed, commands: { setContent: restore } } as unknown as Editor;
-    await act(async () => { useNoteCreatedNotice.getState().notice!.undo(edited); });
+    await act(async () => { useNoteCreatedNotice.getState().notice!.undo!(edited); });
     expect(restore).not.toHaveBeenCalled();
     expect(mocks.deleteArtifact).not.toHaveBeenCalled();
   });
@@ -562,7 +592,7 @@ describe('empty enhancement automatic application', () => {
     await waitFor(() => expect(runtime().getSnapshot()).toEqual({ kind: 'idle' }));
     const restore = vi.fn();
     const edited = { isDestroyed: false, getJSON: () => typed, commands: { setContent: restore } } as unknown as Editor;
-    await act(async () => { useNoteCreatedNotice.getState().notice!.undo(edited); });
+    await act(async () => { useNoteCreatedNotice.getState().notice!.undo!(edited); });
     expect(restore).not.toHaveBeenCalled();
     expect(mocks.deleteArtifact).not.toHaveBeenCalled();
   });

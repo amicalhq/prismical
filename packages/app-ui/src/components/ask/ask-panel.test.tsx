@@ -3,6 +3,7 @@ import * as React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { UIMessage } from 'ai';
+import type { SkillRunRecord } from '@prismical/app-client';
 import type { AskComposer } from './ask-composer';
 import type { AskMessage } from './ask-message';
 import { createWorkflowRuntime } from '../../../../app-workflow/src/runtime';
@@ -26,6 +27,9 @@ const mocks = vi.hoisted(() => ({
   stop: vi.fn(async () => {}),
   approve: vi.fn(async () => {}),
   status: 'ready',
+  runs: [] as SkillRunRecord[],
+  registerFeedback: vi.fn(),
+  releaseFeedback: vi.fn(),
   empty: [] as never[],
   messages: [
     { id: 'answer', role: 'assistant', parts: [{ type: 'text', text: 'Answer' }] },
@@ -73,7 +77,8 @@ vi.mock('@prismical/app-client', async () => {
     useInstances: () => ({ data: mocks.empty, isSuccess: mocks.instancesReady }),
     useNavigation: () => ({ push: vi.fn() }),
     useEntitlements: () => ({ entitlements: { features: { askAi: true } } }),
-    useSkillRuns: () => mocks.empty,
+    useSkillRuns: () => mocks.runs,
+    registerSkillFeedbackSurface: mocks.registerFeedback,
     useSkillRunActivityStore: () => vi.fn(),
     buildAskModelGroups: () => mocks.empty,
     useAccountExperience: () => ({
@@ -157,9 +162,9 @@ vi.mock('./ask-skill-run-turn', () => ({ AskSkillRunTurn: () => null }));
 vi.mock('./ask-suggestions', () => ({ AskSuggestions: () => null }));
 
 const { AskPanel } = await import('./ask-panel');
-const panel = () => (
+const panel = (open = true) => (
   <AskPanel
-    open
+    open={open}
     isMaximized={false}
     onToggleMaximized={() => {}}
     onClose={() => {}}
@@ -169,6 +174,8 @@ const panel = () => (
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.runs = [];
+  mocks.registerFeedback.mockReturnValue(mocks.releaseFeedback);
   mocks.workflow = createWorkflowRuntime();
   mocks.status = 'ready';
   mocks.instancesReady = true;
@@ -312,4 +319,20 @@ it('blocks a saved provider until its catalog has successfully loaded', () => {
   view.rerender(panel());
   expect(mocks.composer.canSubmit!()).toBe(true);
   expect(() => mocks.assertCanSend?.()).not.toThrow();
+});
+
+it('suppresses feedback only for runs in the open conversation and releases it when closed', () => {
+  const run = { noteId: 'current-note', skillId: 'cleanup', skillName: 'Cleanup', source: 'chip' as const,
+    status: 'error' as const, startedAt: 1 };
+  mocks.runs = [
+    { ...run, id: 'visible', anchor: { conversationId: 'conversation', afterMessageId: '' } },
+    { ...run, id: 'elsewhere', anchor: { conversationId: 'other-conversation', afterMessageId: '' } },
+  ];
+  const view = render(panel());
+  expect(mocks.registerFeedback).toHaveBeenLastCalledWith(['visible']);
+  view.rerender(panel(false));
+  expect(mocks.releaseFeedback).toHaveBeenCalled();
+  mocks.registerFeedback.mockClear();
+  view.rerender(panel(false));
+  expect(mocks.registerFeedback).not.toHaveBeenCalled();
 });

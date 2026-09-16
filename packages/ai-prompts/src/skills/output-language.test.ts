@@ -78,3 +78,78 @@ describe('skill output language', () => {
     expect(prompt).not.toContain('Use the content language');
   });
 });
+
+describe('empty note with a captured spoken language', () => {
+  const recordingOnly = {
+    noteId: 'note',
+    title: 'Standup',
+    noteText: '',
+    transcript: 'Ship the draft by Friday. कल तक भेज देंगे।',
+    recordingId: 'rec',
+    context: { linkedEvent: null, spokenLanguage: 'en' },
+  };
+  const enhance = { ...ENHANCE_SKILL, allowedTools: null };
+
+  it.each([undefined, 'source'] as const)(
+    'writes in the capture language rather than mirroring a mixed transcript (%s)',
+    outputLanguage => {
+      const prompt = buildSkillSystemPrompt({
+        skill: enhance,
+        mode: 'replace-doc',
+        input: recordingOnly,
+        enhanceLane: true,
+        outputLanguage,
+      });
+      expect(prompt).toContain('preferred output language is English (en)');
+      expect(prompt).not.toContain('Write in the same language as the note and transcript');
+    }
+  );
+
+  it('keeps the note language once the note has any text', () => {
+    const prompt = buildSkillSystemPrompt({
+      skill: enhance,
+      mode: 'replace-doc',
+      input: { ...recordingOnly, noteText: 'कल तक भेज देंगे।' },
+      enhanceLane: true,
+      outputLanguage: 'source',
+    });
+    expect(prompt).toContain('Write in the same language as the note and transcript');
+    expect(prompt).not.toContain('preferred output language is');
+  });
+
+  it('still honours an explicit account language over the capture language', () => {
+    const prompt = buildSkillSystemPrompt({
+      skill: enhance,
+      mode: 'replace-doc',
+      input: recordingOnly,
+      enhanceLane: true,
+      outputLanguage: 'fr',
+    });
+    expect(prompt).toContain('preferred output language is French (fr)');
+  });
+
+  it.each(['', 'multi', 'zz'])(
+    'falls back to the note language for an unusable capture language (%s)',
+    spokenLanguage => {
+      const prompt = buildSkillSystemPrompt({
+        skill: enhance,
+        mode: 'replace-doc',
+        input: { ...recordingOnly, context: { linkedEvent: null, spokenLanguage } },
+        enhanceLane: true,
+        outputLanguage: 'source',
+      });
+      expect(prompt).toContain('Write in the same language as the note and transcript');
+    }
+  );
+
+  it('falls back to the note language when there is no recording context', () => {
+    const prompt = buildSkillSystemPrompt({
+      skill: enhance,
+      mode: 'replace-doc',
+      input: { noteId: 'note', title: 'Standup', noteText: '', transcript: 'Hello.' },
+      enhanceLane: true,
+      outputLanguage: 'source',
+    });
+    expect(prompt).toContain('Write in the same language as the note and transcript');
+  });
+});

@@ -30,6 +30,14 @@ export function useToastDockClearance(ref: React.RefObject<HTMLDivElement | null
     const measure = () => {
       const toaster = host.querySelector<HTMLElement>('[data-sonner-toaster]');
       if (!toaster) return;
+      const anchor = document.querySelector<HTMLElement>('[data-toast-anchor]');
+      const anchorBounds = anchor?.getBoundingClientRect();
+      host.style.setProperty(
+        '--toast-dock-center',
+        anchorBounds && anchorBounds.width > 0
+          ? `${(anchorBounds.left + anchorBounds.right) / 2}px`
+          : '50vw'
+      );
       const obstacles = [...document.querySelectorAll<HTMLElement>('[data-toast-obstacle]')];
       const toasts = [...toaster.querySelectorAll<HTMLElement>('[data-sonner-toast]')];
       const targets = [toaster, ...toasts, ...obstacles, ...obstacles.map(el => el.parentElement!)];
@@ -57,7 +65,7 @@ export function useToastDockClearance(ref: React.RefObject<HTMLDivElement | null
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ['data-toast-obstacle'],
+      attributeFilter: ['data-toast-obstacle', 'data-toast-anchor'],
     });
     window.addEventListener('resize', schedule);
     measure();

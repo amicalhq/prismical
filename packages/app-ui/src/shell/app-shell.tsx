@@ -42,11 +42,20 @@ function AppShellContent({
   children,
   accountSwitcher,
   enableOnboarding,
+  overlays,
   supportAction,
 }: {
   children: React.ReactNode;
   accountSwitcher?: React.ReactNode;
   supportAction?: React.ReactNode;
+  /**
+   * Platform dialogs that belong to the ACCOUNT rather than to a page — one-time prompts, mostly.
+   * They render inside the shell's account-preferences provider but outside the pathname-keyed
+   * page wrapper, so a route change cannot unmount a prompt mid-view. Passing one as a child
+   * instead would remount it on every navigation, and a one-time prompt that records itself as
+   * seen the moment it opens would be spent without ever having been read.
+   */
+  overlays?: React.ReactNode;
   /** Defaults to web; Electron may opt in after native verification. */
   enableOnboarding?: boolean;
 }) {
@@ -141,6 +150,7 @@ function AppShellContent({
                       <RecordingBottomCluster />
                     </div>
                   </SidebarInset>
+                  {overlays}
                   {/* LAST in the shell on purpose: Chromium resolves overlapping
               app-region rects by DOM paint order (last wins, z-blind), so the
               strip's no-drag toggle must paint after every other drag rect. */}

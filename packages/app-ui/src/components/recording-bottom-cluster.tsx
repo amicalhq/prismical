@@ -275,7 +275,7 @@ function RecordingBottomClusterView({
     if (!rec.micSilent) return;
     // Standard sonner action button; the description stays short so the toast keeps
     // one-line height — the full fix steps live behind the button, in the docs.
-    toast.warning(t('recording.errors.deadMicTitle'), {
+    const id = toast.warning(t('recording.errors.deadMicTitle'), {
       description: t('recording.errors.deadMicDescription'),
       duration: Infinity,
       closeButton: true,
@@ -289,6 +289,7 @@ function RecordingBottomClusterView({
           ),
       },
     });
+    return () => { toast.dismiss(id); };
   }, [rec.micSilent, t]);
 
   // ---- Auto-pause on silence ---------------------------------------------------------------
@@ -1250,8 +1251,8 @@ function RecordingBottomClusterView({
               )}
             </div>
           )}
-        {currentNote && workflowState.kind === 'idle' && !hasStagedCandidate && rec.state === 'idle' &&
-          <SkillNoteCreated noteId={currentNote.noteId} />}
+        {currentNote && <SkillNoteCreated noteId={currentNote.noteId}
+          active={workflowState.kind === 'idle' && !hasStagedCandidate && rec.state === 'idle'} />}
         {/* Dock row (v3): two morphing units — Record and Ask — that expand IN PLACE into
             their panels (the sibling collapses out of the row), plus the transient skill
             slot. items-end so an expanding unit grows upward off the shared baseline; the
@@ -1262,6 +1263,7 @@ function RecordingBottomClusterView({
             navigating does not replace the active proposal's controls. */}
         <div
           data-toast-obstacle=""
+          data-toast-anchor=""
           className={`pointer-events-auto relative flex items-end ${compact ? 'gap-1.5' : 'gap-2'}`}
           style={{ '--skill-review-neighbor-width': `${recPillWidth}px` } as React.CSSProperties}
         >

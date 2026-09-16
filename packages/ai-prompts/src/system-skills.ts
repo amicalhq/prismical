@@ -1,4 +1,4 @@
-import { ENHANCE_NOTE_GUIDANCE, ENHANCE_SOURCE_FIDELITY } from './skills/enhance-guidance.js';
+import { ADAPTIVE_ENHANCE_BODY } from './skills/enhance-body.js';
 /**
  * Canonical definitions for the three built-in system skills (Cleanup, Enhance, Name note).
  * The ids are fixed and stable across environments: seeders upsert by these ids, so they must
@@ -86,15 +86,7 @@ export const CLEANUP_SKILL: SystemSkill = {
  * a whole room "you", so transcript content and `# Context` are the reliable
  * signals. The same stored body drives recording-scoped and note-only runs.
  */
-export const ENHANCE_SKILL_BODY = [
-  ENHANCE_NOTE_GUIDANCE,
-  '',
-  ENHANCE_SOURCE_FIDELITY,
-  '',
-  'Follow the active mode when present: it determines which sources to use and what to return.',
-  'When there is no active mode, work from the note and transcript together, or the note alone',
-  'when there is no transcript. Return a self-contained note the user can append or use as a replacement.',
-].join('\n');
+export const ENHANCE_SKILL_BODY = ADAPTIVE_ENHANCE_BODY;
 
 // Dock-only: the old ['dock','inline'] surface was a trap — inline-rewrite
 // demands a single paragraph while the old body demanded multi-section output, so every inline Enhance

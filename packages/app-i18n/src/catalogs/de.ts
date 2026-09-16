@@ -114,7 +114,7 @@ const de = {
         body: 'Im Dock kannst du den Entwurf anwenden, verwerfen oder Änderungen im Textfeld beschreiben. Klicke auf Anwenden, um deine erste Notiz fertigzustellen.',
       },
     },
-    replayTitle: 'Erste Schritte',
+    replayTitle: 'Schnellstart-Tour',
     replayBody: 'Kurze Einführung wiederholen',
     title: 'Deine erste Notiz',
     recovery:
@@ -1100,6 +1100,7 @@ const de = {
       newSectionAdded: 'Neuer Abschnitt hinzugefügt',
       noteCreated: 'Notiz erstellt',
       undoAfterEdit: 'Die Notiz wurde geändert. Mache zuerst deine letzten Änderungen im Editor rückgängig.',
+      undoing: 'Wird rückgängig gemacht…',
       undoPending: 'Rückgängig muss noch gespeichert werden',
       noteReplaced: 'Notiz ersetzt',
       previewRewriteFailed:
@@ -1112,8 +1113,10 @@ const de = {
       refining: 'Wird verfeinert',
       discardChanges: 'Vorschlag verwerfen',
       reopenUndo: 'Öffne die Notiz erneut, um rückgängig zu machen',
+      undoSyncFailed: 'Rückgängig nicht synchronisiert',
+      restoredOnDevice: 'Auf diesem Gerät wiederhergestellt.',
       restoredLocallySyncFailed:
-        'Hier wiederhergestellt, aber das Rückgängigmachen konnte nicht synchronisiert werden. Es wird erneut versucht.',
+        'Hier wiederhergestellt, aber das Rückgängigmachen konnte nicht synchronisiert werden.',
       restoredPrevious: 'Vorherige Version wiederhergestellt',
       selectionUpdated: 'Auswahl aktualisiert',
       submitRefinement: 'Verfeinerung senden',

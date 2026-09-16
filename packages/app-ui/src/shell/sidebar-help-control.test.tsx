@@ -18,7 +18,8 @@ vi.mock('@prismical/app-client', () => ({
   useDesktopCapabilities: () => ({ has: () => false, featureFlags: null }),
 }));
 
-vi.mock('../onboarding/first-note-walkthrough', () => ({ useWalkthroughReplay: () => null }));
+const replay = vi.hoisted(() => vi.fn());
+vi.mock('../onboarding/first-note-walkthrough', () => ({ useWalkthroughReplay: () => replay }));
 
 vi.mock('./app-link', () => ({
   AppLink: ({ href, children }: { href: string; children?: React.ReactNode }) => (
@@ -62,4 +63,12 @@ describe('help menu support action', () => {
     expect(labels).toContain('Discord');
     expect(labels).toContain('navigation.secondary.downloadApps');
   });
+});
+
+it('starts the quick start tour from Help', () => {
+  openMenu(<SidebarHelpControl />);
+  const labels = screen.getAllByRole('menuitem').map(item => item.textContent?.trim());
+  expect(labels.indexOf('onboarding.replayTitle') + 1).toBe(labels.indexOf('navigation.secondary.downloadApps'));
+  fireEvent.click(screen.getByRole('menuitem', { name: 'onboarding.replayTitle' }));
+  expect(replay).toHaveBeenCalledOnce();
 });

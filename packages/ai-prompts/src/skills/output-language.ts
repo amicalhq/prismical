@@ -1,6 +1,33 @@
 import { OutputLanguageSchema, type SkillOutputLanguage } from '@prismical/api-contracts/apps/v1';
+import type { SkillNoteInput } from './note-input.js';
 
 export type { SkillOutputLanguage };
+
+/**
+ * The language a run actually writes in, given the caller's preference and what it has to work from.
+ *
+ * `'source'` means "keep the note's language", which needs a note to read it off. The first run on a
+ * fresh recording has none: the body is empty and the transcript is the only source, so `'source'`
+ * silently degrades to "whatever languages were spoken" — and a speaker who switches languages
+ * mid-sentence gets a note that switches with them. In that one case the recording's own capture
+ * language is the better answer: the user picked it before speaking, so it states the intended
+ * language of the note rather than inferring one from the audio.
+ *
+ * Deliberately narrow. Once the note has any text, `'source'` keeps its exact prior meaning and the
+ * existing text — not a preference — decides, so no run over written content changes behaviour. An
+ * unrecognized capture language falls back to `'source'` rather than guessing.
+ */
+export function effectiveOutputLanguage(
+  language: SkillOutputLanguage = 'source',
+  input: Pick<SkillNoteInput, 'noteText' | 'context'>
+): SkillOutputLanguage {
+  if (language !== 'source') return language;
+  if (input.noteText.trim().length > 0) return 'source';
+  const spoken = input.context?.spokenLanguage;
+  if (spoken === undefined) return 'source';
+  const parsed = OutputLanguageSchema.safeParse(spoken);
+  return parsed.success ? parsed.data : 'source';
+}
 
 /**
  * The output-language section of a skill prompt.

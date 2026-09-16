@@ -11,7 +11,7 @@ import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { Transform } from "@tiptap/pm/transform";
 import type { EditorState, Transaction } from "@tiptap/pm/state";
 import { ARTIFACT_NODE_NAME, ARTIFACT_INLINE_NODE_NAME } from "@prismical/editor-schema";
-import type { ArtifactNodeMetadata } from "../artifact-node-commands";
+import { artifactInsertionRange, type ArtifactNodeMetadata } from "../artifact-node-commands";
 import type { SkillDiffCandidate } from "./skill-diff-store";
 
 // Materialize a transaction that *would* commit the candidate. We never dispatch this tr — we use
@@ -58,7 +58,8 @@ export function buildCandidateTransaction(
         }
       } else {
         const artifactNode = artifactType.create(pickBlockMetadata(candidate), children);
-        tr.insert(state.doc.content.size, artifactNode);
+        const { from, to } = artifactInsertionRange(state.doc);
+        tr.replaceWith(from, to, artifactNode);
       }
       return tr;
     }
@@ -268,7 +269,10 @@ export function buildDiffDecorations(
           end = newBlocks[newBlocks.length - 1]!.to;
         // Complete top-level nodes only: lists, tables, headings and artifact wrappers retain their
         // structure, and a block widget always lands between blocks, never inside a paragraph.
-        const position = original[toA]?.from ?? originalDoc.content.size;
+        // Place a replacement for the default paragraph above its caret host.
+        const position = artifactInsertionRange(originalDoc).from === 0
+          ? 0
+          : original[toA]?.from ?? originalDoc.content.size;
         insert(position, candidateTr.doc.slice(start, end).content, true);
       }
     }

@@ -19,7 +19,9 @@ const Toaster = ({ ...props }: ToasterProps) => {
   return (
     <div ref={host} data-dock-aware-toaster>
       <Sonner
-        position="bottom-right"
+        position="bottom-center"
+        duration={5000}
+        closeButton
         // Vertical gestures scroll long messages; horizontal gestures still dismiss.
         swipeDirections={['left', 'right']}
         offset={{
@@ -38,6 +40,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
         className="toaster group"
         style={
           {
+            '--width': '356px',
             '--normal-bg': 'var(--popover)',
             '--normal-text': 'var(--popover-foreground)',
             '--normal-border': 'var(--border)',

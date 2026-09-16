@@ -49,6 +49,7 @@ export const LOCAL_FEATURE_FLAGS: Readonly<Record<string, boolean>> = {
   customMcpServers: false,
   directory: false,
   eventkitCalendar: false,
+  getAppsPrompt: false,
   openaiByok: true,
   anthropicByok: true,
   groqByok: false,
@@ -69,4 +70,5 @@ export const LOCAL_FEATURE_FLAGS: Readonly<Record<string, boolean>> = {
   sharing: false,
   skillMcpTools: false,
   skillAdvancedSettings: false,
+  userTour: false,
 };

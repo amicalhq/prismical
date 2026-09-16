@@ -22,7 +22,7 @@ import { AskComposer, type AskComposerHandle, type ComposerSkill } from './ask-c
 import { AskMessage } from './ask-message';
 import { AskSkillRunTurn } from './ask-skill-run-turn';
 import { AskSuggestions } from './ask-suggestions';
-import { useSkillRunActivityStore, useSkillRuns, type SkillRunRecord } from '@prismical/app-client';
+import { useSkillRunActivityStore, useSkillRuns, registerSkillFeedbackSurface, type SkillRunRecord } from '@prismical/app-client';
 import { useLatestConversation } from '@prismical/app-client';
 import { useActiveOrgId, useActiveSessionKey } from '@prismical/app-client';
 import { askHeadersForPlatform, createAskTransport } from '@prismical/app-client';
@@ -301,6 +301,7 @@ export function AskPanel({
       chatOrgId === activeOrgId &&
       activeSessionKey ? (
         <AskChat
+          open={open}
           key={`${activeSessionKey}:${activeOrgId ?? ''}:${chatId}`}
           conversationId={chatId}
           initialMessages={seed}
@@ -340,6 +341,7 @@ function AskScrollerItem(props: React.ComponentProps<typeof MessageScrollerItem>
  * changes, so the hook state never bleeds between threads.
  */
 function AskChat({
+  open,
   conversationId,
   initialMessages,
   ownerSessionKey,
@@ -351,6 +353,7 @@ function AskChat({
   backgroundNote,
   noteContext,
 }: {
+  open: boolean;
   conversationId: string;
   backgroundNote: AskNoteContext | null;
   noteContext: ReturnType<typeof useAskNoteContext>;
@@ -612,6 +615,10 @@ function AskChat({
     }
     return map;
   }, [runs, conversationId, messageIds]);
+  React.useEffect(() => {
+    if (!open) return;
+    return registerSkillFeedbackSurface([...runsAfter.values()].flat().map(run => run.id));
+  }, [open, runsAfter]);
   const runTurns = (afterMessageId: string) =>
     (runsAfter.get(afterMessageId) ?? []).map(r => (
       <AskScrollerItem key={`run:${r.id}`} messageId={`run:${r.id}`} scrollAnchor>

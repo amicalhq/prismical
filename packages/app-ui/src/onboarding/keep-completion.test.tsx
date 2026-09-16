@@ -16,7 +16,8 @@ const m = vi.hoisted(() => ({
 vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({ invalidateQueries: vi.fn() }),
 }));
-vi.mock('@prismical/app-client', () => ({
+vi.mock('@prismical/app-client', async () => ({
+  ...await vi.importActual<typeof import('@prismical/app-client')>('@prismical/app-client'),
   usePorts: () => ({}),
   useWorkflowSnapshot: () => ({ kind: 'idle' }),
   resolvePendingSkillResult: vi.fn(),
@@ -38,7 +39,7 @@ vi.mock('@prismical/app-client', () => ({
     }), { getState: () => ({ stage: vi.fn() }) }),
   useAcceptArtifact: () => ({ mutateAsync: m.accept }),
   useRunSkill: () => ({ run: vi.fn(), cancel: vi.fn(), running: false }),
-  useSkillRunActivityStore: { getState: () => ({ resolveStaged: vi.fn() }) },
+  useSkillRunActivityStore: { getState: () => ({ resolveStaged: vi.fn(), runsByNote: new Map() }) },
   withEditorHistoryBoundary: (_editor: Editor, apply: () => unknown) => apply(),
   clearDiffDecorations: vi.fn(),
   resolveVerifiedRange: vi.fn(),
@@ -51,6 +52,8 @@ const { SkillDiffDockBar } = await import('../components/skill-diff-dock-bar');
 function mount() {
   const editor = {
     getJSON: () => ({}),
+    state: {},
+    extensionManager: { extensions: [] },
     commands: { insertArtifactBlock: m.apply, setContent: m.apply },
     isDestroyed: false,
     view: { dom: {} },

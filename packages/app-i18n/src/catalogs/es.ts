@@ -114,7 +114,7 @@ const es = {
         body: 'El dock permite aplicar el borrador, descartarlo o describir cambios en el campo de texto. Haz clic en Aplicar para terminar tu primera nota.',
       },
     },
-    replayTitle: 'Primeros pasos',
+    replayTitle: 'Recorrido de inicio rápido',
     replayBody: 'Repetir la guía rápida',
     title: 'Tu primera nota',
     recovery: 'Puedes reintentar una acción fallida o usar × para salir del recorrido.',
@@ -1092,6 +1092,7 @@ const es = {
       newSectionAdded: 'Se añadió una sección nueva',
       noteCreated: 'Nota creada',
       undoAfterEdit: 'La nota ha cambiado. Usa Deshacer en el editor para deshacer primero los cambios recientes.',
+      undoing: 'Deshaciendo…',
       undoPending: 'Falta guardar la acción de deshacer',
       noteReplaced: 'Nota reemplazada',
       previewRewriteFailed:
@@ -1104,8 +1105,10 @@ const es = {
       refining: 'Ajustando',
       discardChanges: 'Descartar sugerencia',
       reopenUndo: 'Vuelve a abrir la nota para deshacer',
+      undoSyncFailed: 'No se sincronizó Deshacer',
+      restoredOnDevice: 'Restaurado en este dispositivo.',
       restoredLocallySyncFailed:
-        'Se restauró aquí, pero la acción de deshacer no se pudo sincronizar. Se volverá a intentar.',
+        'Se restauró aquí, pero la acción de deshacer no se pudo sincronizar.',
       restoredPrevious: 'Se restauró la versión anterior',
       selectionUpdated: 'Selección actualizada',
       submitRefinement: 'Enviar ajuste',

@@ -12,6 +12,8 @@ export interface SkillDiffCandidate {
   /** Page-session workflow and proposal identities used by review commands. */
   /** One-shot permission from a fresh empty-note generation; never inferred on recovery. */
   autoApply?: boolean;
+  /** The exact session run represented by this proposal, including after retries. */
+  activityId?: string;
   workflowId?: string;
   proposalId?: string;
   /** Original body for a replace-doc proposal; applying must reject newer edits. */
@@ -22,7 +24,7 @@ export interface SkillDiffCandidate {
   /** The result requires server-coordinated document application. */
   durable?: boolean;
   /** Reuse a saved artifact when its editor application needs a same-session retry. */
-  acceptance?: { result: AcceptSkillRunResult; prevContent?: string; applied?: true };
+  acceptance?: { result: AcceptSkillRunResult; prevContent?: string; applied?: true; appliedContent?: string };
   noteId: string;
   skillId: string;
   skillName: string;

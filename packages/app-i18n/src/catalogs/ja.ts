@@ -114,7 +114,7 @@ const ja = {
         body: 'ドックで下書きを適用・破棄したり、テキスト欄で変更を依頼できます。「適用」をクリックして最初のノートを完成させましょう。',
       },
     },
-    replayTitle: 'はじめに',
+    replayTitle: 'クイックスタートツアー',
     replayBody: 'クイックガイドをもう一度',
     title: '最初のノート',
     recovery: '失敗した操作は再試行できます。× でガイドを終了できます。',
@@ -1054,6 +1054,7 @@ const ja = {
       newSectionAdded: '新しいセクションを追加しました',
       noteCreated: 'ノートを作成しました',
       undoAfterEdit: 'ノートが変更されています。まずエディターの「元に戻す」で最近の編集を取り消してください。',
+      undoing: '元に戻しています…',
       undoPending: '元に戻す操作の保存が必要です',
       noteReplaced: 'ノートを置き換えました',
       previewRewriteFailed:
@@ -1066,8 +1067,10 @@ const ja = {
       refining: '調整中',
       discardChanges: '提案を破棄',
       reopenUndo: '元に戻すにはノートを開き直してください',
+      undoSyncFailed: '元に戻す操作を同期できません',
+      restoredOnDevice: 'このデバイスでは復元済みです。',
       restoredLocallySyncFailed:
-        'ここでは復元しましたが、元に戻す操作を同期できませんでした。再試行します。',
+        'ここでは復元しましたが、元に戻す操作を同期できませんでした。',
       restoredPrevious: '前のバージョンを復元しました',
       selectionUpdated: '選択範囲を更新しました',
       submitRefinement: '調整を送信',

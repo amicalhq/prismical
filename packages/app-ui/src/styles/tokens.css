@@ -611,51 +611,75 @@ ul[data-type="taskList"] li[data-checked="true"] > div {
   container-type: inline-size;
 }
 
-/* The narrow review bar fits beside the recording unit and uses two rows. */
+/* Keep Review and its refinement input in reading order on one row until
+ * the content pane is genuinely narrow. Leave room for the recording unit. */
 .skill-review-bar {
   isolation: isolate;
   display: var(--skill-review-layout, flex);
-  width: var(--skill-review-width, auto);
+  width: min(560px, calc(100cqw - 56px - var(--skill-review-neighbor-width, 0px)));
   height: var(--skill-review-height, 42px);
   padding-block: var(--skill-review-padding, 0px);
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
 }
 
 .skill-review-identity {
   min-width: 0;
-}
-
-.skill-review-refinement {
-  grid-column: 1 / -1;
+  white-space: nowrap;
+  grid-column: 1;
   grid-row: 1;
 }
 
-.skill-review-refinement input {
-  width: var(--skill-review-input-width, 150px);
-  flex: var(--skill-review-input-flex, none);
+.skill-review-refinement {
+  flex: 1;
+  grid-column: 2 / -1;
+  grid-row: 1;
 }
 
+.skill-review-refinement input,
 .skill-review-refinement input:focus {
-  width: var(--skill-review-input-width, 230px);
+  width: 0;
+  flex: 1;
+  text-overflow: ellipsis;
+}
+
+.skill-review-bar > button {
+  white-space: nowrap;
 }
 
 .skill-review-bar[data-compact="true"] {
   --skill-review-layout: grid;
-  --skill-review-width: calc(100cqw - 28px - var(--skill-review-neighbor-width, 0px));
+  width: calc(100cqw - 28px - var(--skill-review-neighbor-width, 0px));
   --skill-review-height: auto;
   --skill-review-padding: 5px;
-  --skill-review-input-width: 0px;
-  --skill-review-input-flex: 1;
 }
 
-@container note-dock (max-width: 820px) {
+@container note-dock (max-width: 540px) {
   .skill-review-bar {
     --skill-review-layout: grid;
-    --skill-review-width: calc(100cqw - 32px - var(--skill-review-neighbor-width, 0px));
     --skill-review-height: auto;
     --skill-review-padding: 5px;
-    --skill-review-input-width: 0px;
-    --skill-review-input-flex: 1;
+  }
+}
+
+/* On two rows, keep actions together at the trailing edge. */
+.skill-review-bar > button:nth-of-type(1) {
+  grid-column: 3;
+  grid-row: 2;
+}
+.skill-review-bar > button:nth-of-type(2) {
+  grid-column: 4;
+  grid-row: 2;
+}
+
+/* Follow the content dock when the sidebar shifts its center. On narrow screens,
+   Sonner already uses the available width with safe side margins. */
+@media (min-width: 601px) {
+  [data-dock-aware-toaster] [data-sonner-toaster][data-x-position='center'] {
+    left: clamp(
+      calc(var(--width) / 2 + 16px),
+      var(--toast-dock-center, 50vw),
+      calc(100vw - var(--width) / 2 - 16px)
+    );
   }
 }
 
@@ -680,10 +704,10 @@ ul[data-type="taskList"] li[data-checked="true"] > div {
   padding-right: 40px;
 }
 [data-dock-aware-toaster] [data-sonner-toaster] [data-sonner-toast] [data-close-button] {
-  top: 8px;
+  top: 50%;
   right: 8px;
   left: auto;
-  transform: none;
+  transform: translateY(-50%);
 }
 
 /* Compact Markdown rhythm for Ask answers, including restored and streaming turns. */
@@ -759,4 +783,38 @@ ul[data-type="taskList"] li[data-checked="true"] > div {
 }
 @media (prefers-reduced-motion: reduce) {
   [data-review-shine] > .skill-review-shine::after { animation: none; }
+}
+
+/* Let toast actions move as a whole below long text on narrow surfaces. */
+[data-dock-aware-toaster] [data-sonner-toast] {
+  flex-wrap: wrap;
+}
+[data-dock-aware-toaster] [data-sonner-toast] [data-content] {
+  flex: 1 1 max-content;
+  max-width: calc(100% - 32px);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+[data-dock-aware-toaster] [data-sonner-toast] [data-button] {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+[data-dock-aware-toaster] [data-sonner-toast].note-edit-toast[data-type='success'] {
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 25%, var(--border));
+}
+[data-dock-aware-toaster] [data-sonner-toast].note-edit-toast[data-type='error'] {
+  color: var(--destructive);
+  border-color: color-mix(in srgb, var(--destructive) 25%, var(--border));
+}
+[data-dock-aware-toaster] [data-sonner-toaster] [data-sonner-toast] [data-close-button] {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  color: var(--muted-foreground);
+}
+
+/* Title and description share a column beside the standard Sonner action. */
+[data-dock-aware-toaster] [data-sonner-toast].note-edit-toast [data-content] {
+  flex: 1 1 120px;
 }

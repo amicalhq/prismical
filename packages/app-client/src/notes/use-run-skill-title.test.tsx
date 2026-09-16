@@ -235,7 +235,9 @@ describe('page workflow skill ownership', () => {
     const { result: hook } = renderHook(() => useRunSkill(noteId, liveEditor));
     await act(() => hook.current.run({ skillId: body.skillId, skillName: body.skillName }));
     expect(mocks.request).not.toHaveBeenCalled();
-    expect(mocks.error).toHaveBeenCalledWith('skills.run.failed');
+    expect(mocks.error).toHaveBeenCalledWith('skills.run.failed', expect.objectContaining({
+      action: expect.objectContaining({ label: 'common.actions.retry', onClick: expect.any(Function) }),
+    }));
     expect(mocks.workflow!.getSnapshot()).toEqual({ kind: 'idle' });
     expect(useSkillDiffStore.getState().getCandidate(noteId)).toBeUndefined();
   });
@@ -251,7 +253,9 @@ describe('page workflow skill ownership', () => {
     await act(() => hook.current.run({ skillId: body.skillId, skillName: body.skillName,
       source: 'refine', proposalId: proposal.proposalId, refineInstruction: 'Shorter' }));
     expect(mocks.request).toHaveBeenCalledOnce();
-    expect(mocks.error).toHaveBeenCalledWith('skills.run.failed');
+    expect(mocks.error).toHaveBeenCalledWith('skills.run.failed', expect.objectContaining({
+      action: expect.objectContaining({ label: 'common.actions.retry', onClick: expect.any(Function) }),
+    }));
     expect(useSkillDiffStore.getState().getCandidate(noteId)).toBe(proposal);
     expect(mocks.workflow!.getSnapshot()).toMatchObject({ phase: 'review', proposalId: proposal.proposalId });
   });
@@ -641,8 +645,12 @@ describe('fresh empty enhancement auto-save policy', () => {
       change: (value: typeof empty) => { current = value; changed(); },
     };
   }
-  it('grants one-shot permission only after fresh generation from a synced empty note', async () => {
-    const { editor } = editorWith();
+  it.each([
+    empty,
+    { type: 'doc', content: [{ type: 'paragraph' }, { type: 'paragraph' }] },
+    { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: ' \t\u00a0' }, { type: 'hardBreak' }] }] },
+  ])('grants one-shot permission after fresh generation from a synced blank note: %j', async content => {
+    const { editor } = editorWith(content);
     mocks.request.mockImplementation(async (_skill, body) => ({ ...output, recoveryContext: body.recoveryContext }));
     const { result } = renderHook(() => useRunSkill(noteId, editor));
     await act(() => result.current.run({ skillId: output.skillId, skillName: 'Enhance', source: 'auto-enhance' }));

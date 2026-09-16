@@ -245,8 +245,7 @@ export function SidebarHelpControl({
 }) {
   const { t } = useTranslation();
   const caps = useDesktopCapabilities();
-  // Null while the walkthrough has nothing to replay, which is also when the
-  // footer's standalone replay row used to hide itself.
+  // Available once the account's walkthrough controller is ready.
   const replay = useWalkthroughReplay();
   return (
     <DropdownMenu>
@@ -295,15 +294,6 @@ export function SidebarHelpControl({
             </a>
           </DropdownMenuItem>
         )}
-        {/* Web only, as before: on desktop you are already in the app. */}
-        {!caps.has('global-shortcuts') ? (
-          <DropdownMenuItem asChild>
-            <a href="https://prismical.ai/apps" target="_blank" rel="noreferrer">
-              <Download className="size-4" />
-              <span>{t('navigation.secondary.downloadApps')}</span>
-            </a>
-          </DropdownMenuItem>
-        ) : null}
         {replay ? (
           <>
             <DropdownMenuSeparator />
@@ -312,6 +302,15 @@ export function SidebarHelpControl({
               <span>{t('onboarding.replayTitle')}</span>
             </DropdownMenuItem>
           </>
+        ) : null}
+        {/* Web only, as before: on desktop you are already in the app. */}
+        {!caps.has('global-shortcuts') ? (
+          <DropdownMenuItem asChild>
+            <a href="https://prismical.ai/apps" target="_blank" rel="noreferrer">
+              <Download className="size-4" />
+              <span>{t('navigation.secondary.downloadApps')}</span>
+            </a>
+          </DropdownMenuItem>
         ) : null}
         {updateHref ? (
           <>

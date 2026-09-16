@@ -75,6 +75,30 @@ describe('skill run feed (useSkillRunActivityStore)', () => {
     expect(runs().map(r => r.status)).toEqual(['kept', 'undone']);
   });
 
+  it('updates only the accepted edit being undone, leaving newer runs alone', () => {
+    const store = useSkillRunActivityStore.getState();
+    const accepted = begin();
+    store.finish(accepted, 'staged');
+    store.resolveStaged(NOTE, 'kept');
+    const newer = begin();
+    store.undoAccepted(accepted);
+    expect(runs().map(run => [run.id, run.status])).toEqual([[accepted, 'undone'], [newer, 'running']]);
+    store.undoAccepted(newer);
+    expect(runs()[1]?.status).toBe('running');
+  });
+
+  it('resolves a failed apply retry by identity without touching a newer run', () => {
+    const store = useSkillRunActivityStore.getState();
+    const accepted = begin();
+    store.finish(accepted, 'staged');
+    store.resolveRun(accepted, 'error', 'Could not apply');
+    const newer = begin();
+    store.resolveRun(accepted, 'kept');
+    expect(runs()[0]).toMatchObject({ status: 'kept', detail: undefined });
+    store.undoAccepted(accepted);
+    expect(runs().map(run => [run.id, run.status])).toEqual([[accepted, 'undone'], [newer, 'running']]);
+  });
+
   it('settles a staged run that failed to apply into a visible error, not silence', () => {
     const a = begin();
     useSkillRunActivityStore.getState().finish(a, 'staged');

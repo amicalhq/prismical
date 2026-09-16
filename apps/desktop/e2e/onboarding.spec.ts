@@ -25,7 +25,10 @@ test.describe('first-note onboarding', () => {
     return page;
   };
 
-  const openCloudApp = async (signupAt?: string): Promise<Page> => {
+  const openCloudApp = async (
+    signupAt?: string,
+    { userTour = true, replayRetired = false } = {}
+  ): Promise<Page> => {
     const {
       ACCOUNT_EXPERIENCE_DEFAULTS,
       LANGUAGE_PREFERENCE_DEFAULTS,
@@ -35,12 +38,14 @@ test.describe('first-note onboarding', () => {
     } = await import('@prismical/api-contracts/apps/v1');
     let preferences = UserPreferencesSchema.parse({
       ...ACCOUNT_EXPERIENCE_DEFAULTS,
+      onboarding: { ...ACCOUNT_EXPERIENCE_DEFAULTS.onboarding, replayRetired },
       language: LANGUAGE_PREFERENCE_DEFAULTS,
       transcription: TRANSCRIPTION_PREFERENCE_DEFAULTS,
     });
     server = await startFakeOAuthServer({
       signupAt,
       integrationsEnabled: false,
+      userTourEnabled: userTour,
       appResponse: (url, request) => {
         if (url.pathname !== '/apps/v1/me/preferences') return undefined;
         if (request.method === 'PATCH') {
@@ -86,7 +91,7 @@ test.describe('first-note onboarding', () => {
 
   const startReplay = async (page: Page) => {
     await page.getByRole('button', { name: 'Help and support', exact: true }).click();
-    await page.getByRole('menuitem', { name: 'Getting started', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Quick start tour', exact: true }).click();
     await expect(page.locator('.prismical-tour')).toContainText('Create a note from the dock');
   };
 
@@ -119,17 +124,53 @@ test.describe('first-note onboarding', () => {
     });
   }
 
-  test('local mode can start the guide manually and floating notes do not duplicate it', async () => {
+  test('Cloud accounts do not show the welcome or Help replay when the tour is disabled', async () => {
+    const page = await openCloudApp(new Date(Date.now() - 60_000).toISOString(), {
+      userTour: false,
+    });
+    await expect(page.getByRole('dialog', { name: 'Welcome to your AI Note taker' })).toHaveCount(
+      0
+    );
+    await page.getByRole('button', { name: 'Help and support', exact: true }).click();
+    await expect(page.getByRole('menuitem', { name: 'Quick start tour', exact: true })).toHaveCount(
+      0
+    );
+    await expect(page.locator('.prismical-tour')).toHaveCount(0);
+  });
+
+  test('enabled Cloud replay remains available after completion and prior retirement', async () => {
+    const page = await openCloudApp(undefined, { replayRetired: true });
+    await startReplay(page);
+    await page.getByRole('button', { name: 'Exit walkthrough' }).click();
+    const completed = await page.evaluate(() =>
+      window.desktop.transport.request({
+        method: 'PATCH',
+        path: '/apps/v1/me/preferences',
+        body: { onboarding: { walkthrough: { status: 'completed' } } },
+      })
+    );
+    expect(completed).toMatchObject({ ok: true });
+    await page.reload();
+    await startReplay(page);
+    await page.getByRole('button', { name: 'Exit walkthrough' }).click();
+    await expect(page.locator('.prismical-tour')).toHaveCount(0);
+  });
+
+  test('local mode and floating notes keep the optional tour disabled', async () => {
     launched = await launchPrismical({}, { seedMode: 'local' });
     const page = await mainPage();
     await expect(page.getByTestId('desktop-shell')).toBeVisible();
     await expect(page.getByRole('dialog', { name: 'Welcome to your AI Note taker' })).toHaveCount(
       0
     );
-    await startReplay(page);
+    await page.getByRole('button', { name: 'Help and support', exact: true }).click();
+    await expect(page.getByRole('menuitem', { name: 'Quick start tour', exact: true })).toHaveCount(
+      0
+    );
+    await page.keyboard.press('Escape');
     await page.getByRole('button', { name: 'New note', exact: true }).click();
     await expect(page).toHaveURL(/#\/notes\/nt_/);
-    await expect(page.locator('.prismical-tour')).toContainText('Start recording');
+    await expect(page.locator('.prismical-tour')).toHaveCount(0);
     const noteId = new URL(page.url()).hash.replace('#/notes/', '');
 
     await page.evaluate(id => window.desktop.float.open(id), noteId);
@@ -147,44 +188,9 @@ test.describe('first-note onboarding', () => {
     ).toHaveCount(0);
 
     await floatPage.getByRole('button', { name: 'Dock back into app' }).click();
-    await page.getByRole('button', { name: 'Exit walkthrough' }).click();
-    for (let noteCount = 2; noteCount <= 3; noteCount += 1) {
-      await page.getByRole('button', { name: 'Help and support', exact: true }).click();
-      await expect(
-        page.getByRole('menuitem', { name: 'Getting started', exact: true })
-      ).toBeVisible();
-      await page.keyboard.press('Escape');
-      await page.evaluate(() => {
-        window.location.hash = '#/home';
-      });
-      await page.getByRole('button', { name: 'New note', exact: true }).click();
-      await expect(page).toHaveURL(/#\/notes\/nt_/);
-    }
     await page.reload();
     await page.getByRole('button', { name: 'Help and support', exact: true }).click();
-    await expect(page.getByRole('menuitem', { name: 'Getting started', exact: true })).toHaveCount(
-      0
-    );
-    await expect
-      .poll(() =>
-        page.evaluate(() =>
-          window.desktop.transport.request({ method: 'GET', path: '/apps/v1/me/preferences' })
-        )
-      )
-      .toMatchObject({ ok: true, bodyJson: { onboarding: { replayRetired: true } } });
-    const deleted = await page.evaluate(() =>
-      window.desktop.transport.request({
-        method: 'DELETE',
-        path: `/apps/v1/me/notes/${window.location.hash.replace('#/notes/', '')}`,
-      })
-    );
-    expect(deleted).toMatchObject({ ok: true });
-    await page.evaluate(() => {
-      window.location.hash = '#/home';
-    });
-    await page.reload();
-    await page.getByRole('button', { name: 'Help and support', exact: true }).click();
-    await expect(page.getByRole('menuitem', { name: 'Getting started', exact: true })).toHaveCount(
+    await expect(page.getByRole('menuitem', { name: 'Quick start tour', exact: true })).toHaveCount(
       0
     );
   });

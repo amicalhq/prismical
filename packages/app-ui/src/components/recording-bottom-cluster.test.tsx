@@ -111,7 +111,7 @@ vi.mock('./note-recording-dock', () => ({
   RecordingPillFace: () => null,
   recordingPillWidth: () => 100,
 }));
-vi.mock('./skill-note-created', () => ({ SkillNoteCreated: () => <div role="status">Note created<button>Undo creation</button></div> }));
+vi.mock('./skill-note-created', () => ({ SkillNoteCreated: ({ active }: { active: boolean }) => active ? <div role="status">Note created<button>Undo creation</button></div> : null }));
 vi.mock('./skill-dock-slot', () => ({ SkillDockSlot: () => null }));
 vi.mock('./new-note-dock', () => ({ NewNoteDock: () => null }));
 vi.mock('./auto-pause-prompt', () => ({ AutoPausePrompt: () => null }));

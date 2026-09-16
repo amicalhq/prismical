@@ -16,7 +16,6 @@
 }
 .prismical-tour .driver-popover-title { font-size: 16px; font-weight: 600; line-height: 1.4; }
 .prismical-tour .driver-popover-description { font-size: 14px; line-height: 1.6; margin-top: 8px; }
-.prismical-tour-hint { color: var(--muted-foreground); font-size: 12px; margin-top: 12px; }
 .prismical-tour .driver-popover-footer { margin-top: 16px; }
 .prismical-tour .driver-popover-footer button {
   font-family: inherit; font-size: 12px; padding: 8px 12px;
