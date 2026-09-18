@@ -16,6 +16,7 @@ import path from 'node:path';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { Effect, Layer } from 'effect';
+import { EXPERIENCE_PREFERENCE_DEFAULTS } from '@prismical/api-contracts/apps/v1';
 import { AppConfig, type AppConfigService } from '../config/service';
 import { MainLogger } from '../logging/service';
 import { applyProductMigrations } from './migrations';
@@ -118,7 +119,21 @@ export const makeProductDbLayer = (
           try: () => {
             const client = openDatabase(dbPath);
             try {
-              const ran = applyProductMigrations(client);
+              // Migration 0 identifies a new store; missing preferences alone
+              // also occur in existing profiles whose implicit default stays on.
+              // Commit the seed with initialization so retries cannot miss it.
+              const ran = client.transaction(() => {
+                const versions = applyProductMigrations(client);
+                if (target.kind === 'local' && versions.includes(0)) {
+                  drizzle(client, { schema }).insert(schema.userPreference).values({
+                    id: 1,
+                    prefs: {
+                      experience: { ...EXPERIENCE_PREFERENCE_DEFAULTS, autoEnhance: false },
+                    },
+                  }).run();
+                }
+                return versions;
+              }).immediate();
               return { client, ran };
             } catch (error) {
               client.close();

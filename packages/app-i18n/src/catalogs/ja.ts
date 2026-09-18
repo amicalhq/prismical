@@ -103,7 +103,7 @@ const ja = {
       },
       enhance: {
         title: '音声をノートに整理',
-        body: '録音パネルの整理をクリックします。下書きができるまで待ちましょう。承認するまではノートを置き換えません。',
+        body: '録音パネルの「ノートを生成」をクリックします。下書きができるまで待ちましょう。承認するまではノートを置き換えません。',
       },
       result: {
         title: '整理されたノートを確認',
@@ -766,8 +766,13 @@ const ja = {
   },
   recording: {
     untitledRecording: '無題の録音',
+    skill: {
+      enhanceHint: 'この録音でノートを補う',
+      enhanceLabel: 'ノートを強化',
+      generateHint: 'この録音からノートを書く',
+      generateLabel: 'ノートを生成',
+    },
     actions: {
-      addToNote: 'この録音をノートに追加',
       closeTranscription: '文字起こしを閉じる',
       collapsePanel: 'パネルを縮小',
       copyTranscript: '文字起こしをコピー',
@@ -824,6 +829,7 @@ const ja = {
         '録音を保存できませんでした。ディスクの空き容量を確認して、もう一度お試しください。',
       currentSuggestion: '現在の提案を確認または破棄してください。',
       deadMicDescription: 'システムがブラウザのマイクアクセスをブロックしている可能性があります。',
+      deadMicNativeDescription: 'マイク、ミュートスイッチ、システムの権限を確認してください。',
       deadMicHelp: '解決方法',
       deadMicTitle: 'マイクに音声が届いていません',
       limitSoon: 'この録音は残り {{minutes}} 分未満です',
@@ -867,7 +873,7 @@ const ja = {
       language: '言語',
       languageChip: '文字起こしの言語: {{language}}',
       latestEnhanced: '最新の録音を整えました ✓',
-      enhanceChip: 'この録音をエンハンス',
+      addedToNote: 'ノートに追加済み',
       listening: '聞き取りと文字起こし中…',
       listeningInitial: '聞き取り中…まもなく文字起こしが表示されます。',
       liveExpectation: 'ライブ文字起こし — 録音停止後に話者を識別します',
@@ -2124,7 +2130,8 @@ const ja = {
         cleanupName: 'クリーンアップ',
         decisionsDescription: '最近の決定と、それぞれの理由を確認します。',
         decisionsName: '何を決めた？',
-        enhanceDescription: '録音とラフなノートを、明確で構造化された要約に整えます。',
+        enhanceDescription:
+          '録音をノートに整えます。メモを取っていた場合はそれを残し、聞き逃した内容を補います。',
         enhanceName: '強化',
         summarizeDescription: '最近のノートから主要なテーマ、決定、要点をまとめます。',
         summarizeName: 'ノートを要約',
@@ -2340,7 +2347,8 @@ const ja = {
     },
     preferences: {
       autoEnhance: {
-        description: '録音を停止するとノートを自動で整え、確認用に変更内容を表示します。',
+        description:
+          '録音を停止すると、録音をノートに整えるか、取っていたメモに組み込み、確認用に変更内容を表示します。オフの場合は、文字起こしが完了すると「ノートを生成」または「ノートを強化」ボタンが表示されます。',
         label: '録音後に自動で整える',
       },
       autoTranscribe: {

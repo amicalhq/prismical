@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import * as React from 'react';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 
 const capabilities = vi.hoisted(() => ({ featureFlags: null as Record<string, boolean> | null }));
@@ -186,9 +186,9 @@ it('does not expose the ready Enhance action while the client is still finishing
     lines: [{ id: 'line', at: '20:53', speaker: 'You', text: 'Transcript' }] };
   const view = render(<TranscriptPanel {...base} isFinishing finishedRecordingId="new"
     recordings={[ready]} />);
-  expect(screen.queryByRole('button', { name: /recording.panel.enhanceChip/ })).toBeNull();
+  expect(screen.queryByRole('button', { name: /recording.skill.enhanceLabel/ })).toBeNull();
   view.rerender(<TranscriptPanel {...base} finishedRecordingId="new" recordings={[ready]} />);
-  expect(screen.getByRole('button', { name: /recording.panel.enhanceChip/ })).toBeTruthy();
+  expect(screen.getByRole('button', { name: /recording.skill.enhanceLabel/ })).toBeTruthy();
 });
 
 it('shows an inert Start button while a finished recording has a suggestion to review', () => {
@@ -379,4 +379,46 @@ it('keeps local speaker names and owner controls without directory actions', () 
   } finally {
     capabilities.featureFlags = null;
   }
+});
+
+it('keeps the recording chip after the post-stop bar returns to Start', () => {
+  vi.useFakeTimers();
+  try {
+    const ready = { ...recording('new', 1), processing: false, linesLoaded: true,
+      lines: [{ id: 'line', at: '20:53', speaker: 'You', text: 'Transcript' }] };
+    render(<TranscriptPanel {...base} finishedRecordingId="new" recordings={[ready]} />);
+    expect(screen.getByText('recording.panel.transcriptReady')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /recording.skill.enhanceLabel/ })).toBeTruthy();
+    act(() => { vi.advanceTimersByTime(9_000); });
+    expect(screen.queryByText('recording.panel.transcriptReady')).toBeNull();
+    expect(screen.getByRole('button', { name: 'recording.actions.start' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /recording.skill.enhanceLabel/ })).toBeTruthy();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('offers the chip on a revisit, from the newest pending recording alone', () => {
+  const onEnhanceRecording = vi.fn();
+  const ready = (id: string, number: number, folded = false) => ({ ...recording(id, number),
+    processing: false, linesLoaded: true, folded,
+    lines: [{ id: `${id}-line`, at: '20:53', speaker: 'You', text: 'Transcript' }] });
+  const view = render(<TranscriptPanel {...base} onEnhanceRecording={onEnhanceRecording}
+    recordings={[ready('new', 2), ready('old', 1)]} />);
+  fireEvent.click(screen.getByRole('button', { name: /recording.skill.enhanceLabel/ }));
+  expect(onEnhanceRecording).toHaveBeenCalledWith('new');
+  view.rerender(<TranscriptPanel {...base} onEnhanceRecording={onEnhanceRecording}
+    recordings={[ready('new', 2, true), ready('old', 1)]} />);
+  expect(screen.queryByRole('button', { name: /recording.skill/ })).toBeNull();
+});
+
+it('says Generate notes on an empty body and hides while a suggestion blocks recording', () => {
+  const ready = { ...recording('new', 1), processing: false, linesLoaded: true,
+    lines: [{ id: 'line', at: '20:53', speaker: 'You', text: 'Transcript' }] };
+  const view = render(<TranscriptPanel {...base} recordings={[ready]} noteBodyEmpty />);
+  const chip = screen.getByRole('button', { name: /recording.skill.generateLabel/ });
+  expect(chip.getAttribute('title')).toBe('recording.skill.generateHint');
+  view.rerender(<TranscriptPanel {...base} recordings={[ready]} noteBodyEmpty={false}
+    startBlockedReason="Apply or discard the suggested changes before recording." />);
+  expect(screen.queryByRole('button', { name: /recording.skill/ })).toBeNull();
 });

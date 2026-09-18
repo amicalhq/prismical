@@ -75,6 +75,8 @@ export interface NativeRecordingState {
   /** Cached allowance captured before Start; shared by every native window. */
   readonly quotaRemainingAtStartSeconds?: number | null;
   readonly micSource: 'meeting-app' | 'system-default' | 'unavailable';
+  /** The active microphone capture is producing no signal; clears when audio returns. */
+  readonly micSilent?: boolean;
   readonly noteId: string | null;
   readonly segments: readonly RecordingTranscriptSegment[];
   readonly elapsedMs: number;

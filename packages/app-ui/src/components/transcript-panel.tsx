@@ -38,7 +38,7 @@ import { DockMicMenu } from './dock-mic-menu';
 import type { TranscriptionLanguage } from '@prismical/app-client';
 import { PxOrbitLoader } from './px-orbit-loader';
 import { Waveform } from './waveform';
-import { DOCK_CTL, DOCK_SCROLL_BUTTON } from './dock-chrome';
+import { DOCK_CHIP_ACCENT, DOCK_CHIP_ACCENT_BADGE, DOCK_CTL, DOCK_SCROLL_BUTTON } from './dock-chrome';
 import { formatSessionTimer } from './note-recording-dock';
 import { Avatar, AvatarFallback } from '../ui/avatar';
 import { UserAvatar } from '../ui/user-avatar';
@@ -51,6 +51,7 @@ import {
 import { isOwnerSpeaker, needsOwnerChoice, resolveSpeakerLabel } from '../lib/speaker-identity';
 import { SpeakerPersonPicker } from './speaker-person-picker';
 import { useAutoEnhanceStore, useSessionView, useViewerProfile, useDesktopCapabilities } from '@prismical/app-client';
+import { pendingRecording, recordingSkillCopy } from '../lib/recording-skill';
 import type { RecState, SpeakerTagPatch } from '@prismical/app-client';
 import type { TranscriptLine } from '@prismical/app-contracts';
 import { useTranslation } from 'react-i18next';
@@ -124,6 +125,8 @@ type TranscriptPanelProps = {
   /** Enhance THAT recording into the note. */
   /** `auto` = the bar re-firing a parked auto-enhance; stays on the on-stop lane (no Ask pop). */
   onEnhanceRecording: (recordingId: string, opts?: { auto?: boolean }) => void;
+  /** Whether the note body has no text: picks "Generate notes" over "Enhance notes". `null` = unknown. */
+  noteBodyEmpty?: boolean | null;
   /** Tag a speaker (name / owner flag) by key; absent ⇒ labels are not editable. */
   onTagSpeaker?: (recordingId: string, speakerKey: string, patch: SpeakerTagPatch) => void;
   isExpanded: boolean;
@@ -200,6 +203,7 @@ function TranscriptPanelContent({
   skillStatus,
   recordings,
   onEnhanceRecording,
+  noteBodyEmpty = null,
   onTagSpeaker,
   isExpanded,
   onToggleExpanded,
@@ -394,25 +398,29 @@ function TranscriptPanelContent({
       .includes(q);
   });
 
-  // Background transcript/skill work must not take away the next capture action.
+  // The recording→note chip. Keyed off the newest recording that is ready and not yet folded in,
+  // NOT off the post-stop bar sequence, so it outlives the bar's timer: the left side goes back
+  // to Start after a few seconds while the chip stays until the recording is used, a new
+  // recording starts, or a suggestion is staged (startBlockedReason). The Ask pill offers the
+  // same action while this panel is collapsed. Background transcript/skill work must not take
+  // away the next capture action, so the slot below still yields to those states first.
+  const pending = pendingRecording(recordings);
+  const skillCopy = recordingSkillCopy(noteBodyEmpty ?? false, t);
   const enhanceAction =
-    doneMode && finished ? (
-      doneReady && !finished.folded && finished.lines.length > 0 ? (
-        <button
-          type="button"
-          data-onboarding="enhance"
-          onClick={() => {
-            setDoneDismissed(true);
-            onEnhanceRecording(finished.id);
-          }}
-          className="flex h-7 items-center gap-1.5 rounded-lg bg-dock-field px-2 pl-1 text-xs font-medium text-dock-ink transition-colors hover:bg-dock-hover"
-        >
-          <span className="flex size-[18px] items-center justify-center rounded-[5px] bg-dock-surface text-[11px] font-semibold text-dock-ink-2">
-            /
-          </span>
-          {t('recording.panel.enhanceChip')}
-        </button>
-      ) : null
+    pending && !isRecording && recState === 'idle' && !startBlockedReason ? (
+      <button
+        type="button"
+        data-onboarding="enhance"
+        title={skillCopy.hint}
+        onClick={() => {
+          setDoneDismissed(true);
+          onEnhanceRecording(pending.id);
+        }}
+        className={DOCK_CHIP_ACCENT}
+      >
+        <span className={DOCK_CHIP_ACCENT_BADGE}>/</span>
+        {skillCopy.label}
+      </button>
     ) : null;
 
   return (
@@ -476,6 +484,11 @@ function TranscriptPanelContent({
                       {[rec.day, rec.time].filter(Boolean).join(' · ')}
                     </span>
                   </button>
+                  {rec.folded ? (
+                    <span className="shrink-0 text-[11px] text-dock-ink-3 group-hover/row:hidden">
+                      {t('recording.panel.addedToNote')}
+                    </span>
+                  ) : null}
                   <span className="shrink-0 text-xs tabular-nums text-dock-ink-3 group-hover/row:hidden">
                     {formatApplicationDuration(rec.durationMs, resolvedLocale, t)}
                   </span>
@@ -494,11 +507,7 @@ function TranscriptPanelContent({
                     </MiniAction>
                     {!rec.folded && rec.lines.length > 0 && (
                       <MiniAction
-                        label={
-                          rec.processing
-                            ? t('recording.panel.waitingFinal')
-                            : t('recording.actions.addToNote')
-                        }
+                        label={rec.processing ? t('recording.panel.waitingFinal') : skillCopy.hint}
                         disabled={rec.processing}
                         onClick={() => {
                           setHistOpen(false);

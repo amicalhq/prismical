@@ -10,19 +10,30 @@ import {
 import { CLEANUP_SKILL_ID } from '@prismical/app-contracts';
 import { skillDisplayDescription, skillDisplayName } from '../../lib/skill-presentation';
 import { Loader } from '../ai-elements/loader';
-import { DOCK_CTL_PRIMARY } from '../dock-chrome';
+import { DOCK_CHIP, DOCK_CHIP_ACCENT, DOCK_CHIP_ACCENT_BADGE, DOCK_CHIP_BADGE, DOCK_CTL_PRIMARY } from '../dock-chrome';
 import type { ComposerSkill } from './ask-composer';
 import { useTranslation } from 'react-i18next';
 
 /** Ask pill-face width — the DockUnit animates to it. */
 export const ASK_PILL_WIDTH = 332;
 
+/** The recording→note action offered on the chip instead of the default skill. */
+export interface RecordingSuggestion {
+  /** "Generate notes" / "Enhance notes" (see `recordingSkillCopy`). */
+  label: string;
+  /** Tooltip saying what the run does to this note. */
+  hint: string;
+  onPick: () => void;
+}
+
 /**
  * The Ask unit's pill face: a composer-shaped placeholder — sparkle
  * icon + "Ask anything…" — that expands the unit into the Ask panel on click,
  * plus (on a note) the suggested-skill chip: the default dock skill with a
  * slash badge — ONE CLICK runs it. Hidden off-note (skills edit the note in
- * focus).
+ * focus). A recording whose transcript is ready but not yet in the note takes
+ * the chip over (`recordingSuggestion`), so the action stays on screen after
+ * the transcript panel collapses.
  *
  * While a skill run is in flight on the note the SAME face morphs into its
  * running state — spinner + "Running Cleanup…" + a Stop control — the way it
@@ -36,10 +47,13 @@ export function AskPillFace({
   onPickSkill,
   noteId = null,
   activeRun = null,
+  recordingSuggestion = null,
 }: {
   onClick: () => void;
   /** Run this skill immediately (one click — no seed-then-send step). */
   onPickSkill?: (skill: ComposerSkill) => void;
+  /** Takes precedence over the default skill while the note has a recording to fold in. */
+  recordingSuggestion?: RecordingSuggestion | null;
   /** The note in focus, if any — gates the suggested-skill chip. */
   noteId?: string | null;
   /** The note-body run currently in flight on this note (run feed) — the pill
@@ -68,6 +82,21 @@ export function AskPillFace({
         dockSkills.find(s => s.id === CLEANUP_SKILL_ID) ??
         dockSkills[0] ??
         null)
+      : null;
+  // A pending recording outranks the default skill: it is the one thing the user most likely
+  // came back to do. Same gates as the skill chip (no chip while a diff is staged or a run is in
+  // flight).
+  const recordingChip =
+    noteId && recordingSuggestion && !hasStagedCandidate && !activeRun ? recordingSuggestion : null;
+  const chip = recordingChip
+    ? { kind: 'recording' as const, label: recordingChip.label, hint: recordingChip.hint, onClick: recordingChip.onPick }
+    : suggested
+      ? {
+          kind: 'skill' as const,
+          label: skillDisplayName(suggested, t),
+          hint: skillDisplayDescription(suggested, t) || undefined,
+          onClick: () => onPickSkill?.({ id: suggested.id, name: skillDisplayName(suggested, t) }),
+        }
       : null;
 
   if (activeRun) {
@@ -119,17 +148,16 @@ export function AskPillFace({
           {t(askAllowed ? 'ask.pillPlaceholder' : 'ask.gate.pill')}
         </span>
       </button>
-      {suggested ? (
+      {chip ? (
         <button
           type="button"
-          title={skillDisplayDescription(suggested, t) || undefined}
-          onClick={() => onPickSkill?.({ id: suggested.id, name: skillDisplayName(suggested, t) })}
-          className="flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-lg bg-dock-field pl-1 pr-2.5 text-xs font-medium text-dock-ink transition-[background-color,scale] hover:bg-dock-hover active:scale-[0.96]"
+          title={chip.hint}
+          data-dock-chip={chip.kind}
+          onClick={chip.onClick}
+          className={chip.kind === 'recording' ? DOCK_CHIP_ACCENT : DOCK_CHIP}
         >
-          <span className="flex size-[18px] items-center justify-center rounded-[5px] bg-dock-surface text-[11px] font-semibold text-dock-ink-2">
-            /
-          </span>
-          <span className="max-w-[110px] truncate">{skillDisplayName(suggested, t)}</span>
+          <span className={chip.kind === 'recording' ? DOCK_CHIP_ACCENT_BADGE : DOCK_CHIP_BADGE}>/</span>
+          <span className="max-w-[110px] truncate">{chip.label}</span>
         </button>
       ) : null}
     </div>

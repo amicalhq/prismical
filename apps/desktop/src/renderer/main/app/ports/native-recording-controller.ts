@@ -76,7 +76,7 @@ export function createNativeRecordingController(options: {
     const current = scope(s);
     if (session === s) session = undefined;
     if (current) workflow.dispatch({ type: 'recordingFailed', ...current, captureClosed: true });
-    publish({ error, autoStopRequested: false });
+    publish({ error, autoStopRequested: false, micSilent: false });
   }
   function admit(noteId: string, recordingId?: string): Session | undefined {
     const view = auth.getSession();
@@ -180,6 +180,7 @@ export function createNativeRecordingController(options: {
       pauseReason: state.status === 'paused'
         ? snapshot.pauseReason ?? (hadAutoPausePrompt ? 'silence' : 'user') : null,
       autoStopRequested: state.autoStopRequested ?? false,
+      micSilent: scope(s)?.phase === 'capturing' && state.status === 'recording' && (state.micSilent ?? false),
     });
     // Main's notify window owns the prompt actions; the app only projects pause attribution.
     hadAutoPausePrompt = state.autoPausePrompt != null;
@@ -202,6 +203,7 @@ export function createNativeRecordingController(options: {
         : phase === 'draining' || phase === 'finalizing' ? 'stopping' : phase,
       isRecording: phase === 'capturing', isPaused: phase === 'paused',
       isFinalizing: phase === 'draining' || phase === 'finalizing',
+      micSilent: phase === 'capturing' && snapshot.micSilent,
     });
   }
   function connect() {

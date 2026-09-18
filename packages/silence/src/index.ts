@@ -1,5 +1,5 @@
 /**
- * @prismical/silence — auto-pause on silence.
+ * @prismical/silence — auto-pause on silence, plus dead-mic detection.
  *
  * Zero runtime dependencies, framework-free, DOM-free: the SAME code runs in the Next.js browser
  * bundle (web capture), the desktop renderer, and the desktop MAIN process (native capture). That
@@ -14,6 +14,12 @@
  *             `combinedSilentSeconds` below — a dual recording is only silent when BOTH lanes are.
  *             System audio alone (a video playing, the far side talking while your mic is muted)
  *             is emphatically not silence and must never pause.
+ *
+ * DeadMicWatcher is a separate question from all of the above and must not be confused with it:
+ * SilenceWatcher asks whether anyone is TALKING (relative to a tracked noise floor, so a quiet
+ * room reads as silent), while DeadMicWatcher asks whether the stream carries ANY signal at all
+ * (absolute, so only exact zeros qualify). A quiet room is silence; it is never a dead mic. Both
+ * run off the same frames — see dead-mic-watcher.ts.
  */
 
 export {
@@ -25,6 +31,13 @@ export {
   FLOOR_BUCKET_S,
   type SilenceWatcherOptions,
 } from './silence-watcher';
+
+export {
+  DeadMicWatcher,
+  DEAD_MIC_PEAK,
+  DEAD_MIC_SECONDS,
+  DEAD_MIC_RECOVERY_SECONDS,
+} from './dead-mic-watcher';
 
 export {
   AutoPauseMachine,

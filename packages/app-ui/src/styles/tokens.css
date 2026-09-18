@@ -182,6 +182,12 @@ body {
    * accent, not a new brand colour; "You" stays neutral. */
   --speaker-them: oklch(0.5 0.18 274);
   --speaker-them-soft: oklch(0.5 0.18 274 / 0.12);
+  /* Dock accent: the same indigo, reserved for the ONE chip the dock wants noticed — the
+   * recording→note action (Generate notes / Enhance notes). Default skill chips stay neutral so
+   * the accent keeps its meaning. */
+  --dock-accent: var(--speaker-them);
+  --dock-accent-soft: var(--speaker-them-soft);
+  --dock-accent-hover: oklch(0.5 0.18 274 / 0.2);
   /* Dock surface system.
    * The dock's two morphing units are OPAQUE raised surfaces — a step brighter
    * than --background with a hairline + layered shadow. Opaque on purpose: no backdrop-filter means no
@@ -287,6 +293,9 @@ body {
   /* Same indigo accent, lifted for dark surfaces. */
   --speaker-them: oklch(0.74 0.16 274);
   --speaker-them-soft: oklch(0.74 0.16 274 / 0.16);
+  --dock-accent: var(--speaker-them);
+  --dock-accent-soft: var(--speaker-them-soft);
+  --dock-accent-hover: oklch(0.74 0.16 274 / 0.26);
   /* Dark dock surfaces are derived from the app theme tokens; the mix
    * ratios keep them distinct from the surrounding surface. The white hairline ring is carried
    * inside the shadow stack. */
@@ -379,6 +388,9 @@ body {
   --color-dock-ink-2: var(--dock-ink-2);
   --color-dock-ink-3: var(--dock-ink-3);
   --color-dock-inset: var(--dock-inset);
+  --color-dock-accent: var(--dock-accent);
+  --color-dock-accent-soft: var(--dock-accent-soft);
+  --color-dock-accent-hover: var(--dock-accent-hover);
   --color-rec: var(--rec);
   --color-rec-soft: var(--rec-soft);
 }

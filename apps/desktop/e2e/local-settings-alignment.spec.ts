@@ -30,6 +30,40 @@ test.describe('local settings alignment', () => {
     keptProfile = undefined;
   });
 
+  for (const autoEnhance of [false, true]) {
+    test(`starts a fresh local profile with auto-enhance off and retains ${autoEnhance ? 'a saved on choice' : 'the untouched off default'} after restart`, async () => {
+      await page.getByRole('link', { name: 'Settings', exact: true }).click();
+      const toggle = () => page.getByRole('switch', { name: 'Auto-enhance after recording', exact: true });
+      const savedPreferences = () => page.evaluate(() =>
+        window.desktop.transport.request({ method: 'GET', path: '/apps/v1/me/preferences' })
+      );
+      await expect(toggle()).toBeEnabled();
+      await expect(toggle()).not.toBeChecked();
+      await expect.poll(savedPreferences).toMatchObject({
+        bodyJson: { experience: { autoEnhance: false } },
+      });
+      await toggle().setChecked(autoEnhance);
+      await expect(toggle()).toBeChecked({ checked: autoEnhance });
+      await expect.poll(savedPreferences).toMatchObject({
+        bodyJson: { experience: { autoEnhance } },
+      });
+
+      keptProfile = launched!.userDataDir;
+      await closePrismical(launched, { keepProfile: true });
+      launched = undefined;
+      launched = await launchPrismical({ PRISMICAL_E2E_USER_DATA_DIR: keptProfile });
+      page = await launched.app.firstWindow({ timeout: 60_000 });
+      assertNotStaleDevBundle(page.url());
+      await expect(page.getByTestId('desktop-shell')).toBeVisible();
+      await page.getByRole('link', { name: 'Settings', exact: true }).click();
+      await expect(toggle()).toBeEnabled();
+      await expect(toggle()).toBeChecked({ checked: autoEnhance });
+      await expect.poll(savedPreferences).toMatchObject({
+        bodyJson: { experience: { autoEnhance } },
+      });
+    });
+  }
+
   test('keeps the Name note rollout disabled while other skills remain available', async () => {
     await page.getByRole('link', { name: 'Settings', exact: true }).click();
     await page.getByRole('link', { name: 'Skills', exact: true }).click();

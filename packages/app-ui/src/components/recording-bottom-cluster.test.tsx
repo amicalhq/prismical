@@ -16,13 +16,19 @@ const state = vi.hoisted(() => ({
   autoTranscribe: false,
   pendingAutoStart: false,
   syncStore: null as { whenNoteCreateAcked: (id: string) => Promise<void> } | null,
+  recordings: [] as Array<Record<string, unknown>>,
+  transcripts: {} as Record<string, unknown[]>,
+  capabilities: { has: vi.fn(() => false), openSystemSettings: vi.fn() },
   noop: vi.fn(),
   stop: vi.fn(),
   push: vi.fn(),
   toast: vi.fn(),
+  dismiss: vi.fn(),
   t: (key: string, params?: { name?: string }) => params?.name ? `${key}:${params.name}` : key,
 }));
-vi.mock('sonner', () => ({ toast: { info: state.toast, warning: state.toast } }));
+vi.mock('sonner', () => ({
+  toast: { info: state.toast, warning: state.toast, dismiss: state.dismiss },
+}));
 vi.mock('../shell/current-note-context', () => ({
   useCurrentNote: () => ({ currentNote: state.note }),
 }));
@@ -32,10 +38,21 @@ vi.mock('../onboarding/context', () => ({
 }));
 vi.mock('../hooks/use-recording-document-title', () => ({ useRecordingDocumentTitle: () => {} }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: state.t }) }));
-vi.mock('@prismical/app-i18n', () => ({ useApplicationLocale: () => ({ resolvedLocale: 'en' }) }));
+vi.mock('@prismical/app-i18n', () => ({
+  useApplicationLocale: () => ({ resolvedLocale: 'en' }),
+  formatApplicationRelativeDay: () => 'Today',
+  formatApplicationTime: () => '9:41 AM',
+  formatApplicationDurationCompact: () => '1:00',
+}));
 vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({ invalidateQueries: state.noop }),
-  useQueries: () => [],
+  // One entry per recording, keyed off the recording id inside the query key; transcript and
+  // speaker queries both resolve to the same fixture rows (the panel is mocked).
+  useQueries: ({ queries }: { queries: Array<{ queryKey: unknown[] }> }) =>
+    queries.map(({ queryKey }) => {
+      const id = queryKey.find(part => typeof part === 'string' && part.startsWith('rec_')) as string | undefined;
+      return { data: id ? (state.transcripts[id] ?? []) : [], isSuccess: true };
+    }),
 }));
 vi.mock('@prismical/app-client', async () => {
   const { canAsk } = await import('@prismical/app-workflow');
@@ -52,6 +69,7 @@ vi.mock('@prismical/app-client', async () => {
       analytics: { capture: state.noop },
       workflow: state.shared ? { getSnapshot: () => state.workflow } : undefined,
       recording: {},
+      desktopCapabilities: state.capabilities,
       env: { getEnv: () => ({ platform: 'web' }) },
       auth: {},
     }),
@@ -75,7 +93,13 @@ vi.mock('@prismical/app-client', async () => {
     tagRecordingSpeaker: () => Promise.resolve({}),
     applySpeakerPatch: (rows: unknown[]) => rows,
     mergeSpeakerRow: (rows: unknown[]) => rows,
-    useNoteRecordings: () => ({ data: [] }),
+    useNoteRecordings: () => ({ data: state.recordings }),
+    transcriptKey: (id: string) => ['transcript', id],
+    speakersKey: (id: string) => ['speakers', id],
+    noteRecordingsKey: (id: string) => ['recordings', id],
+    listTranscriptSegments: () => Promise.resolve([]),
+    listRecordingSpeakers: () => Promise.resolve([]),
+    byTranscriptTime: () => 0,
     useEnhancedRecordings: () => ({ data: new Set() }),
     segmentToLine: (s: unknown) => s,
     EVENTS: {},
@@ -116,7 +140,15 @@ vi.mock('./skill-dock-slot', () => ({ SkillDockSlot: () => null }));
 vi.mock('./new-note-dock', () => ({ NewNoteDock: () => null }));
 vi.mock('./auto-pause-prompt', () => ({ AutoPausePrompt: () => null }));
 vi.mock('./recording-notice-card', () => ({ RecordingNoticeCard: () => null }));
-vi.mock('./ask/ask-dock-pill', () => ({ AskPillFace: ({ onClick }: { onClick: () => void }) => <button onClick={onClick}>Ask AI</button>, ASK_PILL_WIDTH: 100 }));
+vi.mock('./ask/ask-dock-pill', () => ({
+  AskPillFace: ({ onClick, recordingSuggestion }: { onClick: () => void; recordingSuggestion?: { label: string } | null }) => (
+    <>
+      <button onClick={onClick}>Ask AI</button>
+      {recordingSuggestion ? <span data-testid="recording-chip">{recordingSuggestion.label}</span> : null}
+    </>
+  ),
+  ASK_PILL_WIDTH: 100,
+}));
 vi.mock('./ask/ask-panel', () => ({ AskPanel: (props: Record<string, unknown>) => {
   state.askPanel = props;
   return null;
@@ -126,15 +158,20 @@ const { RecordingBottomCluster } = await import('./recording-bottom-cluster');
 afterEach(cleanup);
 beforeEach(() => {
   state.queriedNote = undefined;
+  state.capabilities.has.mockReturnValue(false);
+  state.capabilities.openSystemSettings.mockReset();
   state.noop.mockClear();
   state.stop.mockReset();
   state.push.mockReset();
   state.toast.mockReset();
+  state.dismiss.mockReset();
   state.activeRun = null;
   state.shared = false;
   state.autoTranscribe = false;
   state.pendingAutoStart = false;
   state.syncStore = null;
+  state.recordings = [];
+  state.transcripts = {};
   state.workflow = { kind: 'idle' };
   state.note = { noteId: 'note_old', title: 'Old' };
   state.candidates = new Map([['note_old', { skillName: 'Enhance' }]]);
@@ -435,4 +472,177 @@ it('opens Ask through the same dock handler and blocks it during review', () => 
   state.candidates.set('note_old', { skillName: 'Cleanup' });
   view.rerender(<><RecordingBottomCluster /><DockActionsProbe noteId="note_old" /></>);
   expect((screen.getByText('Ask from editor') as HTMLButtonElement).disabled).toBe(true);
+});
+
+describe('dead-mic warning', () => {
+  /** The options sonner was handed for the Nth dead-mic toast. */
+  const toastOptions = (n = 0) =>
+    state.toast.mock.calls[n]![1] as { onDismiss?: () => void; description: string };
+
+  beforeEach(() => {
+    state.rec.state = 'recording';
+    state.rec.isRecording = true;
+  });
+
+  it('raises the toast while the stream is dead and withdraws it when audio returns', () => {
+    const view = render(<RecordingBottomCluster />);
+    expect(state.toast).not.toHaveBeenCalled();
+
+    state.rec.micSilent = true;
+    view.rerender(<RecordingBottomCluster />);
+    expect(state.toast).toHaveBeenCalledWith(
+      'recording.errors.deadMicTitle',
+      expect.objectContaining({ description: 'recording.errors.deadMicDescription' })
+    );
+
+    state.rec.micSilent = false;
+    view.rerender(<RecordingBottomCluster />);
+    expect(state.dismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers microphone system settings and native guidance on desktop', () => {
+    state.capabilities.has.mockReturnValue(true);
+    state.rec.micSilent = true;
+    render(<RecordingBottomCluster />);
+    expect(state.toast).toHaveBeenCalledWith(
+      'recording.errors.deadMicTitle',
+      expect.objectContaining({ description: 'recording.errors.deadMicNativeDescription' })
+    );
+    const options = state.toast.mock.calls[0]![1] as {
+      action: { label: string; onClick: () => void };
+    };
+    expect(options.action.label).toBe('settings.permissions.openSystemSettings');
+    options.action.onClick();
+    expect(state.capabilities.openSystemSettings).toHaveBeenCalledWith('microphone');
+  });
+
+  it('does not treat its own withdrawal as the user dismissing it', () => {
+    // sonner fires onDismiss for a programmatic dismiss too. If that counted as a user gesture,
+    // the warning would be suppressed for the rest of a recording that is still broken.
+    const view = render(<RecordingBottomCluster />);
+    state.rec.micSilent = true;
+    view.rerender(<RecordingBottomCluster />);
+    const { onDismiss } = toastOptions();
+
+    state.rec.micSilent = false;
+    view.rerender(<RecordingBottomCluster />);
+    act(() => onDismiss?.()); // sonner's callback, fired by OUR toast.dismiss
+
+    state.rec.micSilent = true;
+    view.rerender(<RecordingBottomCluster />);
+    expect(state.toast).toHaveBeenCalledTimes(2);
+  });
+
+  it('stays quiet when there is no recording to warn about', () => {
+    // micSilent can outlive a session: an abnormal teardown clears the id without clearing the
+    // flag. A null id must also never be mistaken for the dismissal ref's own initial value.
+    state.rec.recordingId = null;
+    const view = render(<RecordingBottomCluster />);
+    state.rec.micSilent = true;
+    view.rerender(<RecordingBottomCluster />);
+    expect(state.toast).not.toHaveBeenCalled();
+
+    // It surfaces as soon as a recording owns it.
+    state.rec.recordingId = 'rec_new';
+    view.rerender(<RecordingBottomCluster />);
+    expect(state.toast).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not resurrect a dismissed toast when the recording ends mid-warning', () => {
+    const view = render(<RecordingBottomCluster />);
+    state.rec.micSilent = true;
+    view.rerender(<RecordingBottomCluster />);
+    act(() => toastOptions().onDismiss?.()); // user closes it
+
+    // Teardown drops the id but leaves micSilent set.
+    state.rec.recordingId = null;
+    view.rerender(<RecordingBottomCluster />);
+    expect(state.toast).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not re-open a toast the user closed, until the next recording', () => {
+    const view = render(<RecordingBottomCluster />);
+    state.rec.micSilent = true;
+    view.rerender(<RecordingBottomCluster />);
+    act(() => toastOptions().onDismiss?.()); // user closes it while it is still up
+
+    // The stream recovers and dies again — same recording, so stay quiet.
+    state.rec.micSilent = false;
+    view.rerender(<RecordingBottomCluster />);
+    state.rec.micSilent = true;
+    view.rerender(<RecordingBottomCluster />);
+    expect(state.toast).toHaveBeenCalledTimes(1);
+
+    // A new recording is a new decision: a mic they gave up on before is still worth flagging.
+    state.rec.micSilent = false;
+    view.rerender(<RecordingBottomCluster />);
+    state.rec.recordingId = 'rec_new';
+    state.rec.micSilent = true;
+    view.rerender(<RecordingBottomCluster />);
+    expect(state.toast).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('Ask pill recording chip', () => {
+  const ready = (id: string, startedAt: string) => ({
+    id,
+    startedAt,
+    endedAt: startedAt,
+    durationMs: 60_000,
+    meta: { finalize: { status: 'done' } },
+  });
+  const line = (id: string) => ({ id: `${id}-line`, at: '', speaker: 'You', text: 'Transcript' });
+
+  it('offers the newest ready recording on a revisit', () => {
+    state.candidates.clear();
+    state.rec = { ...state.rec, recordingId: null };
+    state.recordings = [ready('rec_b', '2026-09-17T01:00:00.000Z'), ready('rec_a', '2026-09-17T00:00:00.000Z')];
+    state.transcripts = { rec_a: [line('rec_a')], rec_b: [line('rec_b')] };
+    render(<RecordingBottomCluster />);
+    expect(screen.getByTestId('recording-chip').textContent).toBe('recording.skill.enhanceLabel');
+  });
+
+  it('waits for a just-stopped recording to be listed instead of offering the older one', () => {
+    state.candidates.clear();
+    state.recordings = [ready('rec_old', '2026-09-17T00:00:00.000Z')];
+    state.transcripts = { rec_old: [line('rec_old')] };
+    // rec_new is being captured, so nothing is offered yet.
+    state.rec = { ...state.rec, recordingId: 'rec_new', state: 'recording', isRecording: true };
+    const view = render(<RecordingBottomCluster />);
+    expect(screen.queryByTestId('recording-chip')).toBeNull();
+    // Stop: capture is idle again, but the list still only holds the older recording.
+    state.rec = { ...state.rec, state: 'idle', isRecording: false, isFinalizing: false };
+    view.rerender(<RecordingBottomCluster />);
+    expect(screen.queryByTestId('recording-chip')).toBeNull();
+    // Finalize + refetch land the finished recording at the top of the list.
+    state.recordings = [ready('rec_new', '2026-09-17T01:00:00.000Z'), ...state.recordings];
+    state.transcripts = { ...state.transcripts, rec_new: [line('rec_new')] };
+    view.rerender(<RecordingBottomCluster />);
+    expect(screen.getByTestId('recording-chip').textContent).toBe('recording.skill.enhanceLabel');
+  });
+
+  it('does not carry another note’s post-stop guard or panel state across navigation', () => {
+    state.candidates.clear();
+    state.rec = { ...state.rec, recordingId: 'rec_new', state: 'recording', isRecording: true };
+    const view = render(<RecordingBottomCluster />);
+    state.rec = { ...state.rec, state: 'idle', isRecording: false, isFinalizing: false };
+    view.rerender(<RecordingBottomCluster />);
+    expect(state.panel.finishedRecordingId).toBe('rec_new');
+    state.note = { noteId: 'note_other', title: 'Other' };
+    state.recordings = [ready('rec_other', '2026-09-17T00:00:00.000Z')];
+    state.transcripts = { rec_other: [line('rec_other')] };
+    view.rerender(<RecordingBottomCluster />);
+    expect(screen.getByTestId('recording-chip')).toBeTruthy();
+    expect(state.panel.finishedRecordingId).toBeNull();
+  });
+
+  it('hides the chip while a suggestion is staged for the note', () => {
+    state.rec = { ...state.rec, recordingId: null };
+    state.recordings = [ready('rec_a', '2026-09-17T00:00:00.000Z')];
+    state.transcripts = { rec_a: [line('rec_a')] };
+    render(<RecordingBottomCluster />);
+    expect(state.candidates.has('note_old')).toBe(true);
+    expect(state.panel.startBlockedReason).toBe('recording.actions.reviewBeforeRecording');
+    expect(screen.getByTestId('recording-chip')).toBeTruthy();
+  });
 });

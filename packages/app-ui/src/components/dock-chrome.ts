@@ -35,6 +35,20 @@ export const DOCK_CTL =
 export const DOCK_CTL_INK2 =
   'flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-lg text-dock-ink-2 transition-[background-color,color,scale] duration-150 hover:bg-dock-hover hover:text-dock-ink active:scale-[0.94] disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent';
 
+/** The one-click skill chip (Ask pill, transcript bar): neutral field, slash badge, label. */
+export const DOCK_CHIP =
+  'flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-lg bg-dock-field pl-1 pr-2.5 text-xs font-medium text-dock-ink transition-[background-color,scale] hover:bg-dock-hover active:scale-[0.96]';
+export const DOCK_CHIP_BADGE =
+  'flex size-[18px] items-center justify-center rounded-[5px] bg-dock-surface text-[11px] font-semibold text-dock-ink-2';
+
+/** Indigo variant of the chip, reserved for the recording→note action (Generate notes /
+ * Enhance notes) so it stands out from the default skill chip. Full literals, not derivations,
+ * so Tailwind's scanner sees every class. */
+export const DOCK_CHIP_ACCENT =
+  'flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-lg bg-dock-accent-soft pl-1 pr-2.5 text-xs font-medium text-dock-accent transition-[background-color,scale] hover:bg-dock-accent-hover active:scale-[0.96]';
+export const DOCK_CHIP_ACCENT_BADGE =
+  'flex size-[18px] items-center justify-center rounded-[5px] bg-dock-surface text-[11px] font-semibold text-dock-accent';
+
 /** Filled primary variant of the control atom (send buttons). */
 export const DOCK_CTL_PRIMARY =
   'flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-primary text-primary-foreground transition-[opacity,scale] duration-150 hover:opacity-90 active:scale-[0.94] disabled:cursor-default disabled:opacity-35';

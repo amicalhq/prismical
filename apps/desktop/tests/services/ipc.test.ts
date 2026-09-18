@@ -1875,6 +1875,7 @@ describe('registerMainWindowHandlers', () => {
           startedAt: 1_700_000_000_000,
           pausedAccumMs: 0,
           micSource: 'system-default',
+          micSilent: true,
           autoPausePrompt: null,
           autoStopRequested: false,
         };

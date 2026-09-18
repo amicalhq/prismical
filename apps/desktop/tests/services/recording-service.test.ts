@@ -3283,6 +3283,223 @@ describe('RecordingService — lifecycle ownership and durability', () => {
   );
 });
 
+describe('RecordingService — dead microphone', () => {
+  const startCapture = (h: Harness, captureMode: 'mic' | 'dual' | 'system' = 'mic') =>
+    h.service.start({ captureMode }).pipe(
+      Effect.tap(() => poll(
+        SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')),
+        'capture ready'
+      ))
+    );
+  const feed = (
+    h: Harness,
+    source: Parameters<typeof fakeFrame>[0],
+    duration: number,
+    amplitude = 0
+  ) => Queue.offer(
+    h.fakeCapture.current().frames,
+    fakeFrame(source, new Float32Array(duration * 48_000).fill(amplitude))
+  ).pipe(
+    Effect.andThen(poll(
+      Queue.size(h.fakeCapture.current().frames).pipe(Effect.map(size => size === 0)),
+      'frame dequeued'
+    )),
+    Effect.andThen(settle)
+  );
+  const expectSilent = (h: Harness, expected: boolean) =>
+    poll(
+      SubscriptionRef.get(h.service.state).pipe(Effect.map(state => state.micSilent === expected)),
+      `micSilent became ${expected}`
+    );
+
+  it.effect('warns after four seconds of zeros and publishes only sustained recovery transitions', () =>
+    Effect.gen(function* () {
+      const h = yield* setup();
+      const id = yield* startCapture(h);
+      yield* settle;
+      const snapshots: boolean[] = [];
+      const observer = yield* SubscriptionRef.changes(h.service.state).pipe(
+        Stream.runForEach(state => Effect.sync(() => { snapshots.push(state.micSilent); })),
+        Effect.forkChild
+      );
+      yield* settle;
+      yield* feed(h, 'mic_raw', 3.75);
+      yield* expectSilent(h, false);
+      yield* feed(h, 'mic_raw', 0.25);
+      yield* expectSilent(h, true);
+      yield* feed(h, 'mic_raw', 0.5);
+      yield* feed(h, 'mic_raw', 0.25, 0.001);
+      yield* expectSilent(h, true);
+      yield* feed(h, 'mic_raw', 0.25);
+      yield* feed(h, 'mic_raw', 0.25, 0.001);
+      yield* expectSilent(h, true);
+      yield* feed(h, 'mic_raw', 0.25, 0.001);
+      yield* expectSilent(h, false);
+      assert.deepStrictEqual(snapshots, [false, true, false]);
+      yield* Fiber.interrupt(observer);
+      yield* h.service.stop(id);
+      yield* Scope.close(h.sessionScope, Exit.void);
+    })
+  );
+
+  it.effect('treats quiet real microphone input as live', () =>
+    Effect.gen(function* () {
+      const h = yield* setup();
+      const id = yield* startCapture(h);
+      yield* feed(h, 'mic_raw', 6, 0.00001);
+      yield* expectSilent(h, false);
+      yield* feed(h, 'mic_raw', 3);
+      yield* feed(h, 'mic_raw', 0.25, 0.00001);
+      yield* feed(h, 'mic_raw', 3);
+      yield* expectSilent(h, false);
+      yield* h.service.stop(id);
+      yield* Scope.close(h.sessionScope, Exit.void);
+    })
+  );
+
+  it.effect('ignores system-only capture, including stray microphone frames', () =>
+    Effect.gen(function* () {
+      const h = yield* setup();
+      const id = yield* startCapture(h, 'system');
+      yield* feed(h, 'system', 5);
+      yield* feed(h, 'mic_raw', 5);
+      yield* feed(h, 'mic_processed', 5);
+      yield* expectSilent(h, false);
+      yield* h.service.stop(id);
+      yield* Scope.close(h.sessionScope, Exit.void);
+    })
+  );
+
+  it.effect('observes raw dual mic independently of system audio and post-AEC silence', () =>
+    Effect.gen(function* () {
+      const h = yield* setup();
+      const id = yield* startCapture(h, 'dual');
+      // AEC may remove all microphone output while the raw device is healthy.
+      yield* feed(h, 'mic_raw', 5, 0.001);
+      yield* feed(h, 'mic_processed', 5);
+      yield* feed(h, 'system', 5);
+      yield* expectSilent(h, false);
+      yield* feed(h, 'mic_raw', 3.75);
+      yield* feed(h, 'mic_processed', 1, 0.25);
+      yield* feed(h, 'system', 1, 0.25);
+      yield* expectSilent(h, false);
+      yield* feed(h, 'mic_raw', 0.25);
+      yield* expectSilent(h, true);
+      yield* feed(h, 'system', 1, 0.25);
+      yield* feed(h, 'mic_processed', 1, 0.25);
+      yield* expectSilent(h, true);
+      yield* feed(h, 'mic_raw', 0.5, 0.001);
+      yield* expectSilent(h, false);
+      yield* h.service.stop(id);
+      yield* Scope.close(h.sessionScope, Exit.void);
+      assert.strictEqual(h.fakeCloud.uploadCalls.length, 2, 'raw dual mic was not also transcribed');
+      for (const call of h.fakeCloud.uploadCalls) assertWav(call.wav, 7 * 16_000);
+    })
+  );
+
+  it.effect('clears warning and accumulated zeros across pause/resume and ignores paused frames', () =>
+    Effect.gen(function* () {
+      const h = yield* setup();
+      const id = yield* startCapture(h);
+      yield* feed(h, 'mic_raw', 3);
+      assert.isTrue(yield* h.service.pause(id));
+      yield* feed(h, 'mic_raw', 5);
+      yield* expectSilent(h, false);
+      assert.isTrue(yield* h.service.resume(id));
+      yield* feed(h, 'mic_raw', 1);
+      yield* expectSilent(h, false);
+      yield* feed(h, 'mic_raw', 3);
+      yield* expectSilent(h, true);
+      assert.isTrue(yield* h.service.pause(id));
+      yield* expectSilent(h, false);
+      assert.isTrue(yield* h.service.resume(id));
+      yield* feed(h, 'mic_raw', 0.5);
+      yield* expectSilent(h, false);
+      yield* feed(h, 'mic_raw', 3.5);
+      yield* expectSilent(h, true);
+      yield* h.service.stop(id);
+      yield* Scope.close(h.sessionScope, Exit.void);
+    })
+  );
+
+  it.effect('starts a fresh zero-signal window after each capture restart', () =>
+    Effect.gen(function* () {
+      const h = yield* setup();
+      const id = yield* startCapture(h);
+      yield* feed(h, 'mic_raw', 3);
+      for (const delay of [1, 2]) {
+        const session = h.fakeCapture.current();
+        yield* Deferred.fail(session.terminated, new CaptureExitError({ code: 1, signal: null }));
+        yield* poll(Effect.sync(() => session.released), 'failed capture released');
+        yield* settle;
+        yield* expectSilent(h, false);
+        yield* TestClock.adjust(Duration.seconds(delay));
+        yield* poll(Effect.sync(() => h.fakeCapture.current() !== session), 'capture restarted');
+        yield* feed(h, 'mic_raw', 1);
+        yield* expectSilent(h, false);
+        yield* feed(h, 'mic_raw', 3);
+        yield* expectSilent(h, true);
+      }
+      yield* h.service.stop(id);
+      yield* Scope.close(h.sessionScope, Exit.void);
+    })
+  );
+
+  it.effect('resets on microphone selection and binding changes but ignores stale acknowledgements', () =>
+    Effect.gen(function* () {
+      const h = yield* setup();
+      const id = yield* startCapture(h);
+      const session = h.fakeCapture.current();
+      yield* Queue.offer(session.micEvents, { kind: 'bound', uid: 'mic-a', rev: 1 });
+      yield* settle;
+      yield* feed(h, 'mic_raw', 4);
+      yield* expectSilent(h, true);
+      yield* SubscriptionRef.set(h.micActivityLatest, zoomMicActivity('mic-b', 0));
+      yield* poll(Effect.sync(() => session.commands.at(-1)?.rev === 2), 'new mic selected');
+      yield* expectSilent(h, false);
+      yield* feed(h, 'mic_raw', 3);
+      yield* Queue.offer(session.micEvents, { kind: 'bound', uid: 'mic-b', rev: 2 });
+      yield* settle;
+      yield* feed(h, 'mic_raw', 1);
+      yield* expectSilent(h, false);
+      yield* feed(h, 'mic_raw', 3);
+      yield* expectSilent(h, true);
+      yield* Queue.offer(session.micEvents, { kind: 'bound', uid: 'mic-a', rev: 1 });
+      yield* settle;
+      yield* expectSilent(h, true);
+      yield* Queue.offer(session.micEvents, { kind: 'unavailable', rev: 2 });
+      yield* settle;
+      yield* expectSilent(h, false);
+      yield* feed(h, 'mic_raw', 3);
+      yield* Queue.offer(session.micEvents, { kind: 'recovered', uid: 'mic-b', rev: 2 });
+      yield* settle;
+      yield* feed(h, 'mic_raw', 1);
+      yield* expectSilent(h, false);
+      yield* h.service.stop(id);
+      yield* Scope.close(h.sessionScope, Exit.void);
+    })
+  );
+
+  it.effect('clears warnings on stop, new recording, and workspace interruption', () =>
+    Effect.gen(function* () {
+      const h = yield* setup();
+      yield* expectSilent(h, false);
+      const first = yield* startCapture(h);
+      yield* feed(h, 'mic_raw', 4);
+      yield* expectSilent(h, true);
+      yield* h.service.stop(first);
+      yield* expectSilent(h, false);
+      yield* startCapture(h);
+      yield* feed(h, 'mic_raw', 1);
+      yield* expectSilent(h, false);
+      yield* feed(h, 'mic_raw', 3);
+      yield* expectSilent(h, true);
+      yield* Scope.close(h.sessionScope, Exit.void);
+      yield* expectSilent(h, false);
+    })
+  );
+});
+
 describe('RecordingService — spoken language', () => {
   afterEach(() => vi.restoreAllMocks());
 

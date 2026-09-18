@@ -39,6 +39,7 @@ import { PendingSkillResultsSchema, UserPreferencesSchema, type TranscriptionLan
 import {
   AUTO_PAUSE_DEFAULTS,
   AutoPauseMachine,
+  DeadMicWatcher,
   SilenceWatcher,
   combinedSilentSeconds,
   type AutoPauseEffect,
@@ -374,6 +375,12 @@ export const RecordingServiceLive: Layer.Layer<
         SubscriptionRef.update(state, current =>
           current.recordingId === recordingId ? { ...current, ...patch } : current
         );
+      const setMicSilent = (micSilent: boolean): Effect.Effect<void> =>
+        SubscriptionRef.updateSome(state, current =>
+          current.recordingId === recordingId && current.micSilent !== micSilent
+            ? Option.some({ ...current, micSilent })
+            : Option.none()
+        );
       const publishSegments = (segments: RecordingState['segments']): Effect.Effect<void> =>
         Effect.suspend(() => {
           liveSegments = segments;
@@ -483,6 +490,7 @@ export const RecordingServiceLive: Layer.Layer<
         const mirrorToCore = appMode === 'cloud' && engine.engine !== 'cloud';
 
         yield* Effect.addFinalizer(parkOnExit);
+        yield* Effect.addFinalizer(() => setMicSilent(false));
         // Reset the level on EVERY exit path (graceful stop, capture give-up,
         // interruption) — the next recording must not inherit a dead one's EMA.
         yield* Effect.addFinalizer(() =>
@@ -511,6 +519,7 @@ export const RecordingServiceLive: Layer.Layer<
           startedAt,
           pausedAccumMs: 0,
           micSource: initialAlignment.micSource,
+          micSilent: false,
           autoPausePrompt: null,
           autoStopRequested: false,
         });
@@ -648,6 +657,20 @@ export const RecordingServiceLive: Layer.Layer<
           minSessionSeconds: MIN_SESSION_SECONDS_BEFORE_AUTO_PAUSE,
         });
         const frameGate = yield* Semaphore.make(1);
+        let deadMic = new DeadMicWatcher();
+        const resetDeadMic = Effect.suspend(() => {
+          deadMic = new DeadMicWatcher();
+          return setMicSilent(false);
+        });
+        const observeDeadMic = (frame: AudioFrame): Effect.Effect<void> => {
+          // Dual also emits raw mic, though only post-AEC audio is transcribed.
+          // AEC zeros and system silence are not evidence of a dead microphone.
+          if (mode === 'system' || frame.source !== 'mic_raw') return Effect.void;
+          return Effect.suspend(() => {
+            const transition = deadMic.push(frame.samples, frame.sampleRate);
+            return transition === null ? Effect.void : setMicSilent(transition);
+          });
+        };
 
         /**
          * Apply what the auto-pause machine emitted. `pause`/`stop` are declared later in this
@@ -818,6 +841,7 @@ export const RecordingServiceLive: Layer.Layer<
               yield* Ref.set(pauseCutPointsRef, nextCuts);
               yield* Ref.set(pausedRef, true);
               yield* Ref.set(pausedAtRef, now);
+              yield* resetDeadMic;
               // Starts the auto-stop clock — for a USER pause too, because a session someone
               // paused and then abandoned deserves finalizing into a real note just as much as one
               // we paused ourselves. Also retracts the prompt if it happens to be up.
@@ -853,6 +877,7 @@ export const RecordingServiceLive: Layer.Layer<
             const pausedMs = pausedAt === null ? 0 : Math.max(0, now - pausedAt);
             yield* Ref.set(pausedRef, false);
             yield* Ref.set(pausedAtRef, null);
+            yield* resetDeadMic;
             // Back to listening, and the silent run that caused the pause is cleared from both
             // lanes — otherwise the frames arriving right after a resume still carry it and the
             // user is asked again seconds after coming back.
@@ -974,51 +999,53 @@ export const RecordingServiceLive: Layer.Layer<
         // Frame consumer: route each frame → recovery WAV + chunk buffer. Never uploads.
         const onFrame = (frame: AudioFrame): Effect.Effect<void, RecoveryWriteError> => {
           const lane = laneForFrame(mode, frame.source);
-          if (lane === null) return Effect.void;
+          if (lane === null && (mode !== 'dual' || frame.source !== 'mic_raw')) return Effect.void;
           return synchronize(
             frameGate
               .withPermits(1)(
                 Effect.uninterruptible(
                   Ref.get(pausedRef).pipe(
-                    Effect.flatMap(paused =>
-                      paused
-                        ? Effect.succeed<readonly AutoPauseEffect[]>([])
-                        : updateLevel(frame.samples).pipe(
-                            Effect.andThen(recovery.append(lane, frame.samples)),
-                            Effect.andThen(
-                              streamConfig
-                                ? Effect.sync(() => { streamControl.samples[lane] += frame.samples.length; })
-                                : Ref.update(pipeline, s => bufferSamples(s, lane, frame.samples))
-                            ),
-                            Effect.tap(() =>
-                              Ref.update(acceptedSamplesRef, current => ({
-                                ...current,
-                                [lane === 'mic' ? 'micSamples' : 'systemSamples']:
-                                  current[lane === 'mic' ? 'micSamples' : 'systemSamples'] +
-                                  frame.samples.length,
-                              }))
-                            ),
-                            Effect.andThen(streamConfig ? Effect.succeed<readonly PendingChunk[]>([]) : Ref.modify(pipeline, cutComplete)),
-                            Effect.tap(chunks => streamConfig ? Effect.void : enqueueChunks(chunks)),
-                            Effect.flatMap(chunks =>
-                              chunks.length === 0 && (!streamConfig || Math.max(streamControl.samples.mic, streamControl.samples.system) < nextStreamElapsedSample)
-                                ? Effect.void
-                                : Effect.all([
-                                    Ref.get(acceptedSamplesRef),
-                                    Clock.currentTimeMillis,
-                                  ]).pipe(
-                                    Effect.flatMap(([samples, now]) => {
-                                      nextStreamElapsedSample = Math.max(streamControl.samples.mic, streamControl.samples.system) + CAPTURE_SAMPLE_RATE;
-                                      return setState({
-                                        elapsedMs: mediaDurationMs(samples),
-                                        elapsedAt: now,
-                                      });
-                                    })
-                                  )
-                            ),
-                            Effect.andThen(observeSilence(lane, frame.samples))
-                          )
-                    )
+                    Effect.flatMap(paused => {
+                      if (paused) return Effect.succeed<readonly AutoPauseEffect[]>([]);
+                      if (lane === null)
+                        return observeDeadMic(frame).pipe(Effect.as<readonly AutoPauseEffect[]>([]));
+                      return observeDeadMic(frame).pipe(
+                        Effect.andThen(updateLevel(frame.samples)),
+                        Effect.andThen(recovery.append(lane, frame.samples)),
+                        Effect.andThen(
+                          streamConfig
+                            ? Effect.sync(() => { streamControl.samples[lane] += frame.samples.length; })
+                            : Ref.update(pipeline, s => bufferSamples(s, lane, frame.samples))
+                        ),
+                        Effect.tap(() =>
+                          Ref.update(acceptedSamplesRef, current => ({
+                            ...current,
+                            [lane === 'mic' ? 'micSamples' : 'systemSamples']:
+                              current[lane === 'mic' ? 'micSamples' : 'systemSamples'] +
+                              frame.samples.length,
+                          }))
+                        ),
+                        Effect.andThen(streamConfig ? Effect.succeed<readonly PendingChunk[]>([]) : Ref.modify(pipeline, cutComplete)),
+                        Effect.tap(chunks => streamConfig ? Effect.void : enqueueChunks(chunks)),
+                        Effect.flatMap(chunks =>
+                          chunks.length === 0 && (!streamConfig || Math.max(streamControl.samples.mic, streamControl.samples.system) < nextStreamElapsedSample)
+                            ? Effect.void
+                            : Effect.all([
+                                Ref.get(acceptedSamplesRef),
+                                Clock.currentTimeMillis,
+                              ]).pipe(
+                                Effect.flatMap(([samples, now]) => {
+                                  nextStreamElapsedSample = Math.max(streamControl.samples.mic, streamControl.samples.system) + CAPTURE_SAMPLE_RATE;
+                                  return setState({
+                                    elapsedMs: mediaDurationMs(samples),
+                                    elapsedAt: now,
+                                  });
+                                })
+                              )
+                        ),
+                        Effect.andThen(observeSilence(lane, frame.samples))
+                      );
+                    })
                   )
                 )
               )
@@ -1053,6 +1080,15 @@ export const RecordingServiceLive: Layer.Layer<
             const next = reduceMicAlignment(previous, event, nowMs);
             return [{ ignored, previous, next }, next] as const;
           }).pipe(
+            Effect.tap(({ ignored, previous, next }) =>
+              !ignored && (
+                previous.actualUid !== next.actualUid ||
+                !sameDesiredBinding(previous.desired, next.desired) ||
+                (previous.micSource === 'unavailable') !== (next.micSource === 'unavailable')
+              )
+                ? frameGate.withPermits(1)(resetDeadMic)
+                : Effect.void
+            ),
             Effect.tap(({ ignored, previous, next }) => {
               if (
                 ignored ||
@@ -1233,6 +1269,7 @@ export const RecordingServiceLive: Layer.Layer<
             );
           })
         ).pipe(
+          Effect.ensuring(frameGate.withPermits(1)(resetDeadMic)),
           Effect.tapError((error: CaptureError | RecoveryWriteError) => {
             if (error._tag === 'RecoveryWriteError') failedStage ??= 'storage';
             return log.warn('capture interrupted', { context: { recordingId }, error });

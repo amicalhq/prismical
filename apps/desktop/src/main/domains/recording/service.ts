@@ -87,6 +87,8 @@ export interface RecordingState {
   readonly pausedAccumMs: number;
   /** Current microphone-selection mode; unavailable keeps the session alive. */
   readonly micSource: MicSource;
+  /** Raw microphone capture has delivered sustained zero signal while recording. */
+  readonly micSilent: boolean;
   /**
    * The live "Still there?" countdown, or null when none is running. The decision is
    * made in @prismical/silence inside the capture fiber — this field only publishes it, so the
@@ -122,6 +124,7 @@ export const idleRecordingState: RecordingState = {
   startedAt: null,
   pausedAccumMs: 0,
   micSource: 'system-default',
+  micSilent: false,
   autoPausePrompt: null,
   autoStopRequested: false,
 };

@@ -101,7 +101,7 @@ const zhTW = {
       },
       enhance: {
         title: '把語音整理成筆記',
-        body: '點擊錄音面板的整理。請等待草稿完成；接受前不會取代筆記。',
+        body: '點擊錄音面板的「產生筆記」。請等待草稿完成；接受前不會取代筆記。',
       },
       result: {
         title: '檢閱整理後的筆記',
@@ -737,8 +737,13 @@ const zhTW = {
   },
   recording: {
     untitledRecording: '未命名錄音',
+    skill: {
+      enhanceHint: '用此錄音補足你的筆記',
+      enhanceLabel: '強化筆記',
+      generateHint: '根據此錄音撰寫筆記',
+      generateLabel: '產生筆記',
+    },
     actions: {
-      addToNote: '將此錄音加入筆記',
       closeTranscription: '關閉轉錄',
       collapsePanel: '收合面板',
       copyTranscript: '複製轉錄',
@@ -792,6 +797,7 @@ const zhTW = {
       storageUnavailable: '無法儲存錄音。請檢查可用磁碟空間後再試一次。',
       currentSuggestion: '請先檢閱或關閉目前的建議。',
       deadMicDescription: '你的系統可能封鎖了此瀏覽器的麥克風存取權。',
+      deadMicNativeDescription: '請檢查麥克風、靜音開關及系統權限。',
       deadMicHelp: '如何修正',
       deadMicTitle: '麥克風未收到音訊',
       limitSoon: '這段錄音剩餘不到 {{minutes}} 分鐘',
@@ -833,7 +839,7 @@ const zhTW = {
       language: '語言',
       languageChip: '逐字稿語言：{{language}}',
       latestEnhanced: '已強化最新錄音 ✓',
-      enhanceChip: '增強此錄音',
+      addedToNote: '已加入筆記',
       listening: '正在聆聽並轉錄…',
       listeningInitial: '正在聆聽…逐字稿即將顯示。',
       liveExpectation: '即時轉錄 — 錄音停止後會識別講者',
@@ -2049,7 +2055,8 @@ const zhTW = {
         cleanupName: '清理',
         decisionsDescription: '近期決策及每項決策背後的理由。',
         decisionsName: '我做了哪些決定？',
-        enhanceDescription: '將錄音與草稿筆記整理成清楚、有結構的摘要。',
+        enhanceDescription:
+          '將錄音整理成筆記。若你有做筆記，會保留你的內容並補上遺漏的部分。',
         enhanceName: '強化',
         summarizeDescription: '整理近期筆記中的主要主題、決策與重點。',
         summarizeName: '摘要我的筆記',
@@ -2259,7 +2266,8 @@ const zhTW = {
     },
     preferences: {
       autoEnhance: {
-        description: '停止錄音後自動強化筆記，並顯示變更供你檢閱。',
+        description:
+          '停止錄音後，會將錄音整理成筆記，或併入你做的筆記，並顯示變更供你檢閱。關閉時，逐字稿完成後會顯示「產生筆記」或「強化筆記」按鈕。',
         label: '錄音後自動強化',
       },
       autoTranscribe: {

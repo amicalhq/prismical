@@ -103,7 +103,7 @@ const es = {
       },
       enhance: {
         title: 'Convierte tu voz en una nota',
-        body: 'Haz clic en Mejorar en el panel de grabación. Esperaremos el borrador; no reemplazará tu nota hasta que lo aceptes.',
+        body: 'Haz clic en «Generar notas» en el panel de grabación. Esperaremos el borrador; no reemplazará tu nota hasta que lo aceptes.',
       },
       result: {
         title: 'Revisa tu nota mejorada',
@@ -794,8 +794,13 @@ const es = {
   },
   recording: {
     untitledRecording: 'Grabación sin título',
+    skill: {
+      enhanceHint: 'Completar tus notas con esta grabación',
+      enhanceLabel: 'Mejorar notas',
+      generateHint: 'Escribir notas a partir de esta grabación',
+      generateLabel: 'Generar notas',
+    },
     actions: {
-      addToNote: 'Añadir esta grabación a la nota',
       closeTranscription: 'Cerrar transcripción',
       collapsePanel: 'Contraer panel',
       copyTranscript: 'Copiar transcripción',
@@ -854,6 +859,7 @@ const es = {
       currentSuggestion: 'Revisa o descarta primero la sugerencia actual.',
       deadMicDescription:
         'Es posible que el sistema esté bloqueando el acceso del navegador al micrófono.',
+      deadMicNativeDescription: 'Comprueba el micrófono, el interruptor de silencio y los permisos del sistema.',
       deadMicHelp: 'Cómo solucionarlo',
       deadMicTitle: 'El micrófono no recibe audio',
       limitSoon: 'Quedan menos de {{minutes}} minutos en esta grabación',
@@ -901,7 +907,7 @@ const es = {
       language: 'Idioma',
       languageChip: 'Idioma de transcripción: {{language}}',
       latestEnhanced: 'Última grabación mejorada ✓',
-      enhanceChip: 'Mejorar esta grabación',
+      addedToNote: 'Añadida a la nota',
       listening: 'Escuchando y transcribiendo…',
       listeningInitial: 'Escuchando… Tu transcripción aparecerá en breve.',
       liveExpectation:
@@ -2187,7 +2193,7 @@ const es = {
         decisionsDescription: 'Decisiones recientes y el razonamiento de cada una.',
         decisionsName: '¿Qué decidí?',
         enhanceDescription:
-          'Convierte la grabación y tus notas preliminares en un resumen claro y estructurado.',
+          'Convierte una grabación en notas. Si tomaste notas, las conserva y completa lo que te faltó.',
         enhanceName: 'Mejorar',
         summarizeDescription: 'Temas, decisiones y conclusiones clave de tus notas recientes.',
         summarizeName: 'Resumir mis notas',
@@ -2409,7 +2415,7 @@ const es = {
     preferences: {
       autoEnhance: {
         description:
-          'Al terminar una grabación, mejora la nota automáticamente y muestra los cambios para revisarlos.',
+          'Al terminar una grabación, la convierte en notas o la integra en las notas que tomaste, y muestra los cambios para revisarlos. Desactivado: aparece un botón «Generar notas» o «Mejorar notas» cuando la transcripción está lista.',
         label: 'Mejorar automáticamente después de grabar',
       },
       autoTranscribe: {

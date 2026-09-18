@@ -103,7 +103,7 @@ const de = {
       },
       enhance: {
         title: 'Sprache in eine Notiz verwandeln',
-        body: 'Klicke im Aufnahmefenster auf Verbessern. Wir warten auf den Entwurf — er ersetzt deine Notiz erst, wenn du ihn annimmst.',
+        body: 'Klicke im Aufnahmefenster auf „Notizen erstellen“. Wir warten auf den Entwurf — er ersetzt deine Notiz erst, wenn du ihn annimmst.',
       },
       result: {
         title: 'Verbesserte Notiz prüfen',
@@ -801,8 +801,13 @@ const de = {
   },
   recording: {
     untitledRecording: 'Unbenannte Aufnahme',
+    skill: {
+      enhanceHint: 'Deine Notizen mit dieser Aufnahme ergänzen',
+      enhanceLabel: 'Notizen verbessern',
+      generateHint: 'Notizen aus dieser Aufnahme schreiben',
+      generateLabel: 'Notizen erstellen',
+    },
     actions: {
-      addToNote: 'Diese Aufnahme zur Notiz hinzufügen',
       closeTranscription: 'Transkription schließen',
       collapsePanel: 'Bereich einklappen',
       copyTranscript: 'Transkript kopieren',
@@ -862,6 +867,7 @@ const de = {
       currentSuggestion: 'Prüfe oder verwirf zuerst den aktuellen Vorschlag.',
       deadMicDescription:
         'Dein System blockiert möglicherweise den Mikrofonzugriff dieses Browsers.',
+      deadMicNativeDescription: 'Prüfe dein Mikrofon, den Stummschalter und die Systemberechtigungen.',
       deadMicHelp: 'Problem beheben',
       deadMicTitle: 'Dein Mikrofon liefert kein Audiosignal',
       limitSoon: 'Weniger als {{minutes}} Minuten für diese Aufnahme',
@@ -909,7 +915,7 @@ const de = {
       language: 'Sprache',
       languageChip: 'Transkriptionssprache: {{language}}',
       latestEnhanced: 'Neueste Aufnahme verbessert ✓',
-      enhanceChip: 'Diese Aufnahme aufbereiten',
+      addedToNote: 'Zur Notiz hinzugefügt',
       listening: 'Wird angehört und transkribiert…',
       listeningInitial: 'Ich höre zu… Dein Transkript erscheint in Kürze.',
       liveExpectation: 'Live-Transkript — Sprecher werden nach dem Ende der Aufnahme erkannt',
@@ -2210,7 +2216,7 @@ const de = {
         decisionsDescription: 'Letzte Entscheidungen und die jeweilige Begründung.',
         decisionsName: 'Was habe ich entschieden?',
         enhanceDescription:
-          'Verwandelt die Aufnahme und deine groben Notizen in eine klare, strukturierte Zusammenfassung.',
+          'Verwandelt eine Aufnahme in Notizen. Hast du mitgeschrieben, bleiben deine Notizen erhalten und werden um das ergänzt, was dir entgangen ist.',
         enhanceName: 'Verbessern',
         summarizeDescription:
           'Wichtige Themen, Entscheidungen und Erkenntnisse aus deinen letzten Notizen.',
@@ -2435,7 +2441,7 @@ const de = {
     preferences: {
       autoEnhance: {
         description:
-          'Verbessere die Notiz automatisch nach einer Aufnahme und zeige die Änderungen zur Prüfung an.',
+          'Wenn eine Aufnahme endet, wird sie in Notizen verwandelt oder in deine mitgeschriebenen Notizen eingearbeitet, und die Änderungen werden zur Prüfung angezeigt. Ausgeschaltet: Sobald das Transkript fertig ist, erscheint ein Button „Notizen erstellen“ oder „Notizen verbessern“.',
         label: 'Nach der Aufnahme automatisch verbessern',
       },
       autoTranscribe: {

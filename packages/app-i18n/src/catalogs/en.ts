@@ -100,7 +100,7 @@ const en = {
       },
       enhance: {
         title: 'Turn speech into a note',
-        body: 'Click Enhance in the recording panel. We’ll wait for the draft — it won’t replace your note until you accept it.',
+        body: 'Click Generate notes in the recording panel. We’ll wait for the draft — it won’t replace your note until you accept it.',
       },
       result: {
         title: 'Review your enhanced note',
@@ -813,8 +813,13 @@ const en = {
   },
   recording: {
     untitledRecording: 'Untitled recording',
+    skill: {
+      enhanceHint: 'Fill in your notes from this recording',
+      enhanceLabel: 'Enhance notes',
+      generateHint: 'Write notes from this recording',
+      generateLabel: 'Generate notes',
+    },
     actions: {
-      addToNote: 'Add this recording to the note',
       closeTranscription: 'Close transcription',
       collapsePanel: 'Collapse panel',
       copyTranscript: 'Copy transcript',
@@ -871,6 +876,7 @@ const en = {
       storageUnavailable: 'Recording could not be saved. Check available disk space and try again.',
       currentSuggestion: 'Review or dismiss the current suggestion first.',
       deadMicDescription: 'Your system may be blocking this browser’s microphone access.',
+      deadMicNativeDescription: 'Check your microphone, mute switch, and system permissions.',
       deadMicHelp: 'How to fix',
       deadMicTitle: 'No audio is reaching your microphone',
       limitSoon: 'Less than {{minutes}} minutes left on this recording',
@@ -915,7 +921,7 @@ const en = {
       language: 'Language',
       languageChip: 'Transcription language: {{language}}',
       latestEnhanced: 'Latest recording enhanced ✓',
-      enhanceChip: 'Enhance this recording',
+      addedToNote: 'Added to note',
       listening: 'Listening and transcribing…',
       listeningInitial: 'Listening… Your transcript will appear shortly.',
       liveExpectation: 'Live transcript - speakers are identified after recording stops',
@@ -2176,7 +2182,7 @@ const en = {
         decisionsDescription: 'Recent decisions and the reasoning behind each.',
         decisionsName: 'What did I decide?',
         enhanceDescription:
-          'Turn the recording and your rough notes into a clean, structured summary.',
+          'Turns a recording into notes. If you took notes, it keeps them and fills in what you missed.',
         enhanceName: 'Enhance',
         summarizeDescription: 'Key themes, decisions, and takeaways from your recent notes.',
         summarizeName: 'Summarize my notes',
@@ -2395,7 +2401,7 @@ const en = {
     preferences: {
       autoEnhance: {
         description:
-          'When you stop a recording, automatically enhance the note and show the changes for review.',
+          'When a recording stops, turn it into notes, or fold it into the notes you took, and stage the changes for review. Off: a Generate notes or Enhance notes button appears when the transcript is ready.',
         label: 'Auto-enhance after recording',
       },
       autoTranscribe: {

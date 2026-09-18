@@ -5,11 +5,17 @@ import { assert, describe, it } from '@effect/vitest';
 import { eq } from 'drizzle-orm';
 import Database from 'better-sqlite3';
 import { Cause, Context, Effect, Exit, Layer, Option, Scope } from 'effect';
+import { EXPERIENCE_PREFERENCE_DEFAULTS } from '@prismical/api-contracts/apps/v1';
 import { makeTestLogger, testConfigLayer } from '../helpers/test-layers';
 import type { AppConfigService } from '../../src/main/infra/config/service';
 import { makeProductDbLayer, redactCause } from '../../src/main/infra/product-db/live';
 import * as schema from '../../src/main/infra/product-db/schema';
-import { MIGRATIONS } from '../../src/main/infra/product-db/migrations';
+import { applyProductMigrations, MIGRATIONS } from '../../src/main/infra/product-db/migrations';
+import {
+  getLocalPreferences,
+  writeLocalPreferences,
+} from '../../src/main/domains/local-backend/preferences';
+import { migrateLocalPreferences } from '../../src/renderer/main/app/settings/local-preference-migration';
 import {
   ProductDb,
   ProductDbError,
@@ -58,6 +64,94 @@ const ftsMatch = (svc: ProductDbService, query: string) =>
   );
 
 describe('ProductDb', () => {
+  it.effect('a fresh local profile starts with auto-enhance off and retains it across reopen', () =>
+    Effect.gen(function* () {
+      const dbPath = path.join(tempDir, 'fresh-preferences.db');
+      for (let open = 0; open < 2; open++) {
+        const { layer } = buildDb({ kind: 'local' }, { localDbPath: dbPath });
+        const scope = yield* Scope.make();
+        const svc = Context.get(yield* Layer.build(layer).pipe(Scope.provide(scope)), ProductDb);
+        assert.isFalse(
+          (getLocalPreferences(svc.db).experience ?? EXPERIENCE_PREFERENCE_DEFAULTS).autoEnhance
+        );
+        assert.deepStrictEqual(svc.db.select().from(schema.userPreference).get()!.prefs, {
+          experience: { autoEnhance: false, autoTranscribeNewNotes: false, theme: 'system' },
+        });
+        yield* Scope.close(scope, Exit.void);
+      }
+    })
+  );
+
+  for (const autoEnhance of [undefined, true, false]) {
+    it.effect(`preserves an existing local profile with auto-enhance ${autoEnhance ?? 'implicit true'}`, () =>
+      Effect.gen(function* () {
+        const dbPath = path.join(tempDir, `existing-preferences-${autoEnhance}.db`);
+        // The previous release initialized the schema without a preference seed.
+        const old = new Database(dbPath);
+        applyProductMigrations(old);
+        const prefs = autoEnhance === undefined ? undefined : {
+          experience: { autoEnhance, autoTranscribeNewNotes: true, theme: 'dark' },
+          language: { interfaceLanguage: 'ja', aiOutputLanguage: 'source' },
+          legacy: { keep: true },
+        };
+        if (prefs) old.prepare('INSERT INTO user_preference (id, prefs) VALUES (1, ?)')
+          .run(JSON.stringify(prefs));
+        old.close();
+
+        for (let open = 0; open < 2; open++) {
+          const { layer } = buildDb({ kind: 'local' }, { localDbPath: dbPath });
+          const scope = yield* Scope.make();
+          const svc = Context.get(yield* Layer.build(layer).pipe(Scope.provide(scope)), ProductDb);
+          assert.strictEqual(
+            (getLocalPreferences(svc.db).experience ?? EXPERIENCE_PREFERENCE_DEFAULTS).autoEnhance,
+            autoEnhance ?? true
+          );
+          assert.deepStrictEqual(svc.db.select().from(schema.userPreference).get()?.prefs, prefs);
+          yield* Scope.close(scope, Exit.void);
+        }
+      })
+    );
+  }
+
+  for (const autoEnhance of [true, false]) {
+    it.effect(`migrates legacy localStorage auto-enhance ${autoEnhance} after opening an old local profile`, () =>
+      Effect.gen(function* () {
+        const dbPath = path.join(tempDir, `legacy-preferences-${autoEnhance}.db`);
+        const old = new Database(dbPath);
+        for (const migration of MIGRATIONS.filter(migration => migration.version <= 2)) {
+          old.exec(migration.sql);
+          old.prepare('INSERT INTO schema_meta (version, name, applied_at) VALUES (?, ?, ?)')
+            .run(migration.version, migration.name, new Date().toISOString());
+        }
+        old.close();
+
+        const { layer } = buildDb({ kind: 'local' }, { localDbPath: dbPath });
+        const scope = yield* Scope.make();
+        const svc = Context.get(yield* Layer.build(layer).pipe(Scope.provide(scope)), ProductDb);
+        assert.isEmpty(svc.db.select().from(schema.userPreference).all());
+        yield* Effect.promise(() => migrateLocalPreferences({
+          appMode: 'local',
+          getStorage: () => ({
+            getItem: key => key === 'prismical:auto-enhance' ? (autoEnhance ? '1' : '0') : null,
+            setItem: () => {},
+          }),
+          request: async request => {
+            const result = writeLocalPreferences(svc.db, 'POST', request.body);
+            return { ok: true, status: result.status, bodyJson: result.body };
+          },
+        }));
+        assert.strictEqual(getLocalPreferences(svc.db).experience!.autoEnhance, autoEnhance);
+        yield* Scope.close(scope, Exit.void);
+
+        const reopened = buildDb({ kind: 'local' }, { localDbPath: dbPath });
+        const nextScope = yield* Scope.make();
+        const next = Context.get(yield* Layer.build(reopened.layer).pipe(Scope.provide(nextScope)), ProductDb);
+        assert.strictEqual(getLocalPreferences(next.db).experience!.autoEnhance, autoEnhance);
+        yield* Scope.close(nextScope, Exit.void);
+      })
+    );
+  }
+
   it.effect('migrations are recorded once and never re-applied', () =>
     Effect.gen(function* () {
       const dbPath = path.join(tempDir, 'idempotent.db');
@@ -97,6 +191,9 @@ describe('ProductDb', () => {
       assert.strictEqual(svc.db.select().from(schema.note).get()!.title, 'Existing note');
       assert.deepStrictEqual(yield* ftsMatch(svc, 'timelines'), ['nt_upgrade']);
       assert.isEmpty(svc.db.select().from(schema.userPreference).all());
+      assert.isTrue(
+        (getLocalPreferences(svc.db).experience ?? EXPERIENCE_PREFERENCE_DEFAULTS).autoEnhance
+      );
       yield* Scope.close(scope, Exit.void);
     })
   );
@@ -123,15 +220,17 @@ describe('ProductDb', () => {
         { cloudCacheDir }
       );
       const scopeA = yield* Scope.make();
-      yield* Layer.build(withOrg.layer).pipe(Scope.provide(scopeA));
+      const withOrgSvc = Context.get(yield* Layer.build(withOrg.layer).pipe(Scope.provide(scopeA)), ProductDb);
       assert.isTrue(existsSync(path.join(cloudCacheDir, 'user%40example.com__org%2F1.db')));
+      assert.isEmpty(withOrgSvc.db.select().from(schema.userPreference).all());
       yield* Scope.close(scopeA, Exit.void);
 
       // Missing orgId folds to 'default' (the eventkit sequence-key idiom).
       const withoutOrg = buildDb({ kind: 'cloud-cache', sub: 'usr_a' }, { cloudCacheDir });
       const scopeB = yield* Scope.make();
-      yield* Layer.build(withoutOrg.layer).pipe(Scope.provide(scopeB));
+      const withoutOrgSvc = Context.get(yield* Layer.build(withoutOrg.layer).pipe(Scope.provide(scopeB)), ProductDb);
       assert.isTrue(existsSync(path.join(cloudCacheDir, 'usr_a__default.db')));
+      assert.isEmpty(withoutOrgSvc.db.select().from(schema.userPreference).all());
       yield* Scope.close(scopeB, Exit.void);
     })
   );

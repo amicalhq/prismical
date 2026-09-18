@@ -64,6 +64,46 @@ function fixture(initial = idle) {
 }
 
 describe('native recording workflow', () => {
+  it('projects microphone signal loss and recovery, and clears it outside capture', async () => {
+    const f = fixture({ ...capturing, micSilent: true });
+    expect(f.client.getSnapshot().micSilent).toBe(true);
+    f.push({ ...capturing, micSilent: false });
+    expect(f.client.getSnapshot().micSilent).toBe(false);
+    f.push({ ...capturing, micSilent: true });
+    expect(await f.client.pause()).toBe(true);
+    expect(f.client.getSnapshot().micSilent).toBe(false);
+    f.push({ ...capturing, status: 'paused', micSilent: true });
+    expect(f.client.getSnapshot().micSilent).toBe(false);
+    f.push({ ...capturing, micSilent: true });
+    expect(f.client.getSnapshot().micSilent).toBe(true);
+    await f.client.stop();
+    expect(f.client.getSnapshot().micSilent).toBe(false);
+    f.push({ ...capturing, status: 'idle', micSilent: true });
+    expect(f.client.getSnapshot().micSilent).toBe(false);
+  });
+
+  it('keeps microphone feedback cleared when a late capture update arrives during Stop', async () => {
+    const stopped = deferred<void>();
+    const f = fixture({ ...capturing, micSilent: true });
+    vi.mocked(f.control.stop).mockReturnValueOnce(stopped.promise);
+    const stopping = f.client.stop();
+    expect(f.client.getSnapshot()).toMatchObject({ state: 'stopping', micSilent: false });
+    f.push({ ...capturing, micSilent: true });
+    expect(f.client.getSnapshot()).toMatchObject({ state: 'stopping', micSilent: false });
+    stopped.resolve();
+    await stopping;
+  });
+
+  it('resets microphone feedback for a new recording or workspace', () => {
+    const f = fixture({ ...capturing, micSilent: true });
+    expect(f.client.getSnapshot().micSilent).toBe(true);
+    f.push({ ...capturing, recordingId: 'rec_next' });
+    expect(f.client.getSnapshot().micSilent).toBe(false);
+    f.push({ ...capturing, recordingId: 'rec_next', micSilent: true });
+    f.switchOrg();
+    expect(f.client.getSnapshot().micSilent).toBe(false);
+  });
+
   it('waits for spoken preferences and passes the chosen language to native Start', async () => {
     const language = deferred<'hi'>();
     vi.mocked(resolveTranscriptionLanguage).mockReturnValueOnce(language.promise);

@@ -58,6 +58,116 @@ test.describe('recording dock alignment', () => {
     await closePrismical(launched);
   });
 
+  test('shows microphone signal loss and recovery in main and floating windows', async () => {
+    const noteId = await createNote(page);
+    await page.evaluate(id => window.desktop.float.open(id), noteId);
+    await expect
+      .poll(() => launched.app.windows().filter(window => window.url().includes('#/float')).length)
+      .toBe(1);
+    const floating = launched.app.windows().find(window => window.url().includes('#/float'))!;
+    await expect(floating.locator('.note-prose')).toBeVisible();
+    const view = { ...recordingView(noteId), micSilent: true };
+    await page.evaluate(state => window.desktop.e2e!.recording({ kind: 'push', view: state }), view);
+    for (const surface of [page, floating]) {
+      const warning = surface.locator('[data-sonner-toast]').filter({
+        hasText: 'No audio is reaching your microphone',
+      });
+      await expect(warning).toContainText('Check your microphone, mute switch, and system permissions.');
+      await expect(warning.getByRole('button', { name: 'Open System Settings' })).toBeVisible();
+      await expect.poll(() => warning.evaluate(element => {
+        const toast = element.getBoundingClientRect();
+        return [...document.querySelectorAll('[data-toast-obstacle]')]
+          .map(obstacle => obstacle.getBoundingClientRect())
+          .filter(rect => rect.width > 0 && rect.height > 0 && rect.left < toast.right && rect.right > toast.left)
+          .every(rect => toast.bottom <= rect.top - 8);
+      })).toBe(true);
+    }
+    await floating.screenshot({ path: test.info().outputPath('float-dead-microphone.png') });
+    await page.evaluate(state => window.desktop.e2e!.recording({ kind: 'push', view: state }), {
+      ...view, micSilent: false,
+    });
+    for (const surface of [page, floating]) {
+      await expect(surface.getByText('No audio is reaching your microphone', { exact: true })).toHaveCount(0);
+    }
+    await page.evaluate(state => window.desktop.e2e!.recording({ kind: 'push', view: state }), view);
+    const mainWarning = page.locator('[data-sonner-toast]').filter({
+      hasText: 'No audio is reaching your microphone',
+    });
+    await mainWarning.getByRole('button', { name: 'Close toast', exact: true }).click();
+    await page.evaluate(state => window.desktop.e2e!.recording({ kind: 'push', view: state }), {
+      ...view, status: 'paused' as const, micSilent: false,
+    });
+    await expect(floating.getByText('No audio is reaching your microphone', { exact: true })).toHaveCount(0);
+    await page.evaluate(state => window.desktop.e2e!.recording({ kind: 'push', view: state }), view);
+    await expect(mainWarning).toHaveCount(0);
+    await expect(floating.getByText('No audio is reaching your microphone', { exact: true })).toBeVisible();
+    await page.evaluate(state => window.desktop.e2e!.recording({ kind: 'push', view: state }), {
+      ...view, recordingId: 'rec_alignment_next',
+    });
+    await expect(mainWarning).toBeVisible();
+  });
+
+  for (const surfaceKind of ['main', 'floating'] as const) {
+    test(`keeps recording-to-note actions available and reviews changes in the ${surfaceKind} window`, async () => {
+      const noteId = await createNote(page);
+      const recordingId = createId('recording');
+      expect(await request(page, {
+        method: 'POST', path: '/apps/v1/me/recordings',
+        body: { id: recordingId, noteId, title: 'Completed recording', captureMode: 'mic', status: 'completed' },
+      })).toMatchObject({ ok: true, status: 201 });
+      expect(await request(page, {
+        method: 'POST', path: '/apps/v1/me/transcript-segments',
+        body: {
+          id: createId('transcriptSegment'), recordingId, source: 'mic', speaker: 'you',
+          text: 'Prepare the launch plan for Friday.', startTimeMs: 0, endTimeMs: 5_000, isFinal: true,
+        },
+      })).toMatchObject({ ok: true, status: 201 });
+      await page.reload();
+      await expect(page.locator('.note-prose')).toHaveAttribute('contenteditable', 'true');
+      const surfaces = {
+        main: async () => page,
+        floating: async () => {
+          await page.evaluate(id => window.desktop.float.open(id), noteId);
+          await expect
+            .poll(() => launched.app.windows().filter(window => window.url().includes('#/float')).length)
+            .toBe(1);
+          return launched.app.windows().find(window => window.url().includes('#/float'))!;
+        },
+      };
+      const surface = await surfaces[surfaceKind]();
+      await expect(surface.getByRole('button', { name: /Generate notes$/ })).toBeVisible();
+      await surface.getByRole('button', { name: 'Record and transcribe', exact: true }).click();
+      await expect(surface.getByRole('button', { name: /Generate notes$/ })).toBeVisible();
+      await surface.getByRole('button', { name: 'Hide transcription', exact: true }).click();
+      await expect(surface.getByRole('button', { name: /Generate notes$/ })).toBeVisible();
+      await surface.locator('.note-prose').fill('My draft notes.');
+      const enhance = surface.getByRole('button', { name: /Enhance notes$/ });
+      await expect(enhance).toBeVisible();
+      await expect(enhance).toHaveAttribute('data-dock-chip', 'recording');
+      await enhance.click();
+      const apply = surface.getByRole('button', { name: 'Apply', exact: true });
+      await expect(apply).toBeVisible();
+      await expect(apply).toBeEnabled();
+      for (const colorScheme of ['light', 'dark'] as const) {
+        await surface.emulateMedia({ colorScheme });
+        await expect.poll(() => surface.locator('html').evaluate(element => element.classList.contains('dark')))
+          .toBe(colorScheme === 'dark');
+        await expect.poll(() => apply.evaluate(button => getComputedStyle(button).backgroundColor))
+          .not.toBe('rgba(0, 0, 0, 0)');
+        await expect(apply).toBeInViewport({ ratio: 1 });
+        await surface.screenshot({
+          path: test.info().outputPath(`${surfaceKind}-apply-${colorScheme}.png`),
+          animations: 'disabled',
+        });
+      }
+      await apply.click();
+      await expect(surface.locator('.note-prose')).toContainText('deterministic local test summary');
+      await expect(surface.getByRole('button', { name: /Enhance notes$/ })).toHaveCount(0);
+      await surface.reload();
+      await expect(surface.locator('.note-prose')).toContainText('deterministic local test summary');
+    });
+  }
+
   test('shows the active language in both windows when saving a default cannot update capture', async () => {
     await page.getByRole('link', { name: 'Settings', exact: true }).click();
     await page.getByRole('link', { name: 'Transcription settings', exact: true }).click();

@@ -58,6 +58,11 @@ export function useCurrentNoteEditor() {
   return ctx;
 }
 
+/** Same as `useCurrentNoteEditor`, but `null` outside the provider (hosts that never mount a body editor). */
+export function useCurrentNoteEditorIfAvailable() {
+  return React.useContext(CurrentEditorContext);
+}
+
 /** Publish the editor for `noteId` to the dock; clears it on unmount or when the editor changes. */
 export function useRegisterNoteEditor(noteId: string, editor: Editor | null) {
   const { setActiveEditor, clearActiveEditor } = useCurrentNoteEditor();

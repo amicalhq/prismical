@@ -771,6 +771,7 @@ export const recordingStateViewSchema = z
     spendsCloudQuota: z.boolean().nullable().optional(),
     quotaRemainingAtStartSeconds: z.number().finite().nonnegative().nullable().optional(),
     micSource: z.enum(['meeting-app', 'system-default', 'unavailable']),
+    micSilent: z.boolean().optional(),
     noteId: z.string().nullable(),
     segments: z.array(recordingSegmentSchema),
     elapsedMs: z.number(),

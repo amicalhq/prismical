@@ -44,6 +44,8 @@ import { AnimatedWidth } from './animated-width';
 import { TranscriptPanel, type RecordingLog, type TranscriptOwner } from './transcript-panel';
 import { RecordingSkillStatus } from './recording-skill-status';
 import { AskPillFace } from './ask/ask-dock-pill';
+import { pendingRecording, recordingSkillCopy } from '../lib/recording-skill';
+import { useNoteBodyEmpty } from '../lib/use-note-body-empty';
 import type { ComposerSkill } from './ask/ask-composer';
 import { useAskSkillRunStore } from '@prismical/app-client';
 import { useActiveSkillRun, type SkillRunSource } from '@prismical/app-client';
@@ -165,7 +167,7 @@ function RecordingBottomClusterView({
   const { currentNote } = useCurrentNote();
   const qc = useQueryClient();
   // Product analytics via the injected AnalyticsPort.
-  const { analytics, recording, env, auth, workflow } = usePorts();
+  const { analytics, recording, env, auth, workflow, desktopCapabilities } = usePorts();
   const router = useNavigation();
   const syncStore = useSyncStore();
 
@@ -266,31 +268,62 @@ function RecordingBottomClusterView({
     ? t('workflow.openNamedNote', { name: customNoteName })
     : t('workflow.openNote');
 
-  // Dead-mic capture (micSilent): the OS is feeding the browser pure silence — usually a
-  // revoked/wedged system-level mic permission, which getUserMedia does NOT error on (the
-  // tab happily "records" zeros). Without this the user only learns via an empty
-  // transcript. Toast-only (the dock's red error pill is too subtle for something this
-  // actionable); it stays up until dismissed, and the fix steps live in the docs.
+  // Zero-signal microphone capture needs a visible warning, separate from the dock error pill.
+  // Native capture reports the same transitions through its recording controller.
+  //
+  // micSilent tracks the stream rather than latching, so the cleanup doubles as the recovery
+  // path: if audio comes back the flag clears and the toast goes with it. That is deliberate —
+  // the copy is present-tense, and a recovered stream is not blocked.
+  //
+  // Because it can therefore be raised MORE THAN ONCE per recording, a dismissal has to be
+  // remembered, or a stream that keeps cutting out re-opens a toast the user already closed on
+  // every cycle. It is remembered per RECORDING, not per mount: this component outlives a
+  // session, and a mic the user gave up on in one recording is still worth flagging in the next.
+  const deadMicDismissedRef = React.useRef<string | null>(null);
+  const deadMicRecordingId = rec.recordingId;
+  const nativeMicSettings = desktopCapabilities.has('mic-devices');
   React.useEffect(() => {
     if (!rec.micSilent) return;
-    // Standard sonner action button; the description stays short so the toast keeps
-    // one-line height — the full fix steps live behind the button, in the docs.
+    // No recording, no warning. micSilent can outlive a session — an abnormal teardown clears the
+    // id without clearing the flag — and a microphone warning for a recording that is already over
+    // is noise. This also keeps the `null` id out of the dismissal comparison below, where it would
+    // otherwise match the ref's own "never dismissed" initial value and suppress the first toast.
+    // The window before a new id lands costs nothing: the effect re-runs when it arrives.
+    if (!deadMicRecordingId) return;
+    if (deadMicDismissedRef.current === deadMicRecordingId) return;
+    // sonner fires onDismiss for a PROGRAMMATIC toast.dismiss too, not just a user gesture (same
+    // trap as the auto-pause prompt below) — so without this flag our own withdrawal on recovery
+    // would be recorded as "the user closed it" and suppress the warning for the rest of the
+    // recording. The close button and a swipe DO count; the action button does not, because it
+    // closes the toast through its own path — reading the fix is not the same as waving it off.
+    let withdrawnByMachine = false;
+    // Keep the warning brief and offer the appropriate recovery action for the host.
     const id = toast.warning(t('recording.errors.deadMicTitle'), {
-      description: t('recording.errors.deadMicDescription'),
+      description: t(nativeMicSettings
+        ? 'recording.errors.deadMicNativeDescription' : 'recording.errors.deadMicDescription'),
       duration: Infinity,
       closeButton: true,
+      onDismiss: () => {
+        if (withdrawnByMachine) return;
+        deadMicDismissedRef.current = deadMicRecordingId;
+      },
       action: {
-        label: t('recording.errors.deadMicHelp'),
-        onClick: () =>
-          window.open(
+        label: t(nativeMicSettings
+          ? 'settings.permissions.openSystemSettings' : 'recording.errors.deadMicHelp'),
+        onClick: () => nativeMicSettings
+          ? void desktopCapabilities.openSystemSettings('microphone')
+          : window.open(
             'https://prismical.ai/docs/troubleshooting#recording-runs-but-nothing-is-transcribed',
             '_blank',
             'noopener'
           ),
       },
     });
-    return () => { toast.dismiss(id); };
-  }, [rec.micSilent, t]);
+    return () => {
+      withdrawnByMachine = true;
+      toast.dismiss(id);
+    };
+  }, [rec.micSilent, deadMicRecordingId, t, nativeMicSettings, desktopCapabilities]);
 
   // ---- Auto-pause on silence ---------------------------------------------------------------
   // The grace prompt. Rendered as a custom toast so it can carry the notification-card anatomy
@@ -608,6 +641,34 @@ function RecordingBottomClusterView({
     );
     if (!opts?.auto) setExpandedUnit('ask');
   };
+
+  // The recording→note action, state-aware: "Generate notes" on an empty body, "Enhance notes"
+  // once the user typed. The transcript bar shows it while that panel is open; the Ask pill's
+  // chip carries the same action while the panel is collapsed, so stopping a recording never
+  // leaves the action off-screen. Only for the note in view (recording-away keeps the pill on the
+  // visible note, whose recordings these are not) and only once the capture side is idle again.
+  const noteBodyEmpty = useNoteBodyEmpty(noteId);
+  const pendingLog = pendingRecording(recordingLogs);
+  // Right after a stop the finished recording is not in `recordingLogs` yet (finalize, then a
+  // two-hop refetch), so the newest LISTED row can be an older pending recording. Mirror the
+  // panel's settle window instead of offering the wrong one; bounded like the panel's bridge so a
+  // recording that never surfaces (offline, empty) can't hide the chip for good.
+  const finishedUnlisted =
+    !!recentlyFinished &&
+    !recordingLogs.some(r => r.id === recentlyFinished.id) &&
+    Date.now() - recentlyFinished.at < 120_000;
+  const recordingSuggestion =
+    pendingLog &&
+    !recordingAway &&
+    !captureActive &&
+    !finishedUnlisted &&
+    rec.state === 'idle' &&
+    !rec.isFinalizing
+      ? {
+          ...recordingSkillCopy(noteBodyEmpty ?? false, t),
+          onPick: () => onEnhanceRecording(pendingLog.id),
+        }
+      : null;
 
   React.useEffect(() => {
     if (tour?.noteId !== noteId) return;
@@ -1313,6 +1374,7 @@ function RecordingBottomClusterView({
                       )}
                       recordings={recordingLogs}
                       onEnhanceRecording={onEnhanceRecording}
+                    noteBodyEmpty={noteBodyEmpty}
                       onTagSpeaker={onTagSpeaker}
                       isExpanded={recMaxi}
                       onToggleExpanded={() => setRecMaxi(v => !v)}
@@ -1386,6 +1448,7 @@ function RecordingBottomClusterView({
                     activeRecordingId={sessionVisible ? rec.recordingId : null}
                     recordings={recordingLogs}
                     onEnhanceRecording={onEnhanceRecording}
+                    noteBodyEmpty={null}
                     onTagSpeaker={onTagSpeaker}
                     isExpanded={recMaxi}
                     onToggleExpanded={() => setRecMaxi(v => !v)}
@@ -1453,6 +1516,7 @@ function RecordingBottomClusterView({
                 onPickSkill={onPickSuggestedSkill}
                 noteId={noteId}
                 activeRun={activeRun}
+                recordingSuggestion={recordingSuggestion}
               />
             }
             panel={

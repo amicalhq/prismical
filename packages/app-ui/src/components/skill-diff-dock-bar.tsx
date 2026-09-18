@@ -27,6 +27,12 @@ const PREV_CONTENT_MAX = 2_000_000;
 
 const REVIEW_BTN =
   'flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-[12.5px] font-medium text-dock-ink-2 transition-colors hover:bg-dock-hover hover:text-dock-ink active:scale-95 disabled:cursor-not-allowed disabled:opacity-60';
+/** The review bar's one filled action. Apply is the safe default, so it carries the fill; Discard
+ * stays a quiet text button whose hover fill must not read as the primary. Full literal, not a
+ * derivation, so Tailwind's scanner sees every class. The dark success token is a light green,
+ * hence the dark ink on it. */
+const REVIEW_BTN_PRIMARY =
+  'flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-lg bg-success px-2.5 text-[12.5px] font-semibold text-white transition-[opacity,scale] hover:opacity-90 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 dark:text-background';
 
 function discardWorkflowProposal(candidate: SkillDiffCandidate, message: string, retryLabel: string, onDeleted: () => void) {
   const artifactId = candidate.acceptance?.result.artifactId;
@@ -671,7 +677,7 @@ export function SkillDiffDockBar({ editor, noteId, compact = false, beforeApplyC
             type="button"
             onClick={() => void onAccept()}
             disabled={accept.isPending || refining || applying || discarding}
-            className={`${REVIEW_BTN} text-success hover:text-success`}
+            className={REVIEW_BTN_PRIMARY}
           >
             {applying || accept.isPending ? <LoaderCircle className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
             {t(applying || accept.isPending ? 'workflow.applying' : 'skills.diff.apply')}

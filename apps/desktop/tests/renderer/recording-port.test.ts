@@ -1,5 +1,5 @@
 import type { NativeRecordingState } from '@prismical/app-contracts';
-import type { EnvDescriptor, RecordingStateView } from '@prismical/desktop-contracts';
+import { recordingStateViewSchema, type EnvDescriptor, type RecordingStateView } from '@prismical/desktop-contracts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createDesktopPorts } from '../../src/renderer/main/app/ports/desktop-ports';
 
@@ -57,11 +57,14 @@ describe('desktop recording port', () => {
       spendsCloudQuota: false,
       quotaRemainingAtStartSeconds: 600,
       autoStopRequested: true, autoPausePrompt: { graceMs: 5_000, deadlineMs: 35_000 },
+      micSilent: true,
     };
-    push!(paused);
+    push!(recordingStateViewSchema.parse(paused));
     push!({ ...paused, status: 'idle', autoStopRequested: false, autoPausePrompt: null,
       quotaRemainingAtStartSeconds: undefined,
+      micSilent: false,
       failure: { recordingId: 'rec_1', reason: 'transcription-incomplete' } });
+    expect(seen.map(state => state.micSilent)).toEqual([true, false]);
     expect(seen.map(state => state.autoStopRequested)).toEqual([true, false]);
     expect(seen[0].autoPausePrompt).toEqual(paused.autoPausePrompt);
     expect(seen[0].spendsCloudQuota).toBe(false);

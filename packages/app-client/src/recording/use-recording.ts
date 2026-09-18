@@ -24,7 +24,12 @@ import {
   removePendingRecordingCompletion,
   type PendingRecordingCompletion,
 } from './recording-completion';
-import { AutoPauseMachine, SilenceWatcher, type AutoPauseEffect } from '@prismical/silence';
+import {
+  AutoPauseMachine,
+  DeadMicWatcher,
+  SilenceWatcher,
+  type AutoPauseEffect,
+} from '@prismical/silence';
 import { ensureAutoPausePolicy } from '../api/hooks/organizations';
 import { usageKey, usageKeyPrefix, type Usage } from '../api/hooks/usage';
 import { useQueryClient } from '@tanstack/react-query';
@@ -53,14 +58,6 @@ import {
 } from './recording-preferences';
 
 const SAMPLE_RATE = 16000; // mirrors desktop useAudioCapture
-// Dead-mic detection: a capture stream whose samples are exactly
-// zero is broken — most commonly macOS revoking the browser's mic permission (a Chrome
-// update can wedge it), where getUserMedia still "succeeds" and the tab shows recording
-// but CoreAudio delivers pure digital silence. A real mic in a dead-quiet room never
-// reads 0 — its noise floor sits around 1e-3 — so exact zeros for several seconds can
-// only be a dead stream (or a hardware-muted mic, which deserves the same warning).
-const SILENT_MIC_PEAK = 1e-6;
-const SILENT_MIC_SECONDS = 4;
 // Auto-pause never fires in the opening seconds of a session: pausing right
 // after the user pressed record reads as "the button is broken", and the chunker's warm-up window
 // is where cadence is least representative anyway.
@@ -322,9 +319,10 @@ export interface UseRecording {
   state: RecState;
   isRecording: boolean;
   isPaused: boolean;
-  /** The capture stream is delivering pure digital silence (dead mic — usually the OS
-   * blocking the browser's mic access while the recording UI looks live). Set once per
-   * session after SILENT_MIC_SECONDS of exact-zero samples; the dock surfaces the fix. */
+  /** The capture stream is CURRENTLY delivering pure digital silence (dead mic — usually the OS
+   * blocking the browser's mic access while the recording UI looks live). Tracks the stream
+   * rather than latching for the session, so it clears again once audio returns; the dock
+   * surfaces the fix while it is raised. Thresholds live in `DeadMicWatcher`. */
   micSilent: boolean;
   /** Pause/resume is available for this session's capture path. True on the web pipeline;
    * false while the desktop native pipeline drives recording, so the dock hides the pause button. */
@@ -515,26 +513,16 @@ export function useRecording({
   // the session went silent while the waveform kept animating).
   const pauseEpochRef = React.useRef(0);
   const [micSilent, setMicSilent] = React.useState(false);
-  // Consecutive exact-zero samples seen; -1 once warned (stop re-checking this session).
-  const silentRunRef = React.useRef(0);
+  // Built per session (below) like watcherRef, so a fresh recording re-arms the detector. The rule
+  // itself lives in @prismical/silence, shared with the web controller's own capture path. The
+  // desktop native path observes frames in main and projects the warning through its controller.
+  const deadMicRef = React.useRef<DeadMicWatcher | null>(null);
   const detectSilentMic = React.useCallback((frame: Float32Array) => {
-    if (silentRunRef.current < 0) return;
-    let peak = 0;
-    for (let i = 0; i < frame.length; i++) {
-      const a = Math.abs(frame[i] ?? 0);
-      if (a > peak) peak = a;
-    }
-    if (peak > SILENT_MIC_PEAK) {
-      silentRunRef.current = 0;
-      return;
-    }
-    silentRunRef.current += frame.length;
-    if (silentRunRef.current >= SAMPLE_RATE * SILENT_MIC_SECONDS) {
-      silentRunRef.current = -1;
-      // No setError: the dock's red pill is too subtle for something this
-      // actionable — the cluster surfaces micSilent as a toast with the fix link.
-      setMicSilent(true);
-    }
+    // Frames arrive ~31x a second for the whole recording, so only the transitions become state.
+    // No setError either: the dock's red pill is too subtle for something this actionable — the
+    // cluster surfaces micSilent as a toast with the fix link.
+    const next = deadMicRef.current?.push(frame, SAMPLE_RATE) ?? null;
+    if (next !== null) setMicSilent(next);
   }, []);
   // Segments produced this session, counted synchronously as chunks land (not derived from the
   // debounced React state) so stop() can report a race-free "had speech" signal. Reset on start.
@@ -1040,7 +1028,7 @@ export function useRecording({
       setCompletedRecording(null);
       setError(null);
       setMicSilent(false);
-      silentRunRef.current = 0;
+      deadMicRef.current = new DeadMicWatcher();
       setState('starting');
       let openingStream: MediaStream | null = null;
       let openingContext: AudioContext | null = null;
@@ -1198,6 +1186,10 @@ export function useRecording({
                 void stopRef.current();
               }
             });
+          // Deliberately AFTER the storage bails above, unlike the web controller's equivalent,
+          // which observes before its backlog bail. Both bails end the recording, but these two
+          // also set a more specific error ("storage unavailable") and stop immediately — a
+          // dead-mic warning stacked on top of that would only mislead.
           detectSilentMic(frame);
           const s = session.current;
           if (!s) return;

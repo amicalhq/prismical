@@ -291,6 +291,7 @@ const toNativeState = (view: RecordingStateView): NativeRecordingState => ({
   spendsCloudQuota: view.spendsCloudQuota ?? null,
   quotaRemainingAtStartSeconds: view.quotaRemainingAtStartSeconds ?? null,
   micSource: view.micSource,
+  micSilent: view.micSilent ?? false,
   noteId: view.noteId,
   segments: view.segments,
   elapsedMs: view.elapsedMs,

@@ -966,10 +966,11 @@ class FakeMediaRecorder {
 }
 
 /** Deliver one silent worklet frame of `samples` samples to the hook's pipeline. */
-function pushFrame(samples: number) {
+/** Feed one captured frame. `fill` is the sample value: 0 is the dead-mic signature. */
+function pushFrame(samples: number, fill = 0) {
   act(() => {
     FakeWorkletNode.last?.port.onmessage?.({
-      data: { type: 'audioFrame', frame: new Float32Array(samples) },
+      data: { type: 'audioFrame', frame: new Float32Array(samples).fill(fill) },
     } as MessageEvent);
   });
 }
@@ -2065,12 +2066,7 @@ describe('useRecording — web branch pause/resume', () => {
     expect(result.current.micSilent).toBe(false);
 
     // A quiet-but-real frame (noise floor ~1e-3) resets the run: never flag a working mic.
-    act(() => {
-      const noise = new Float32Array(16000).fill(0.001);
-      FakeWorkletNode.last?.port.onmessage?.({
-        data: { type: 'audioFrame', frame: noise },
-      } as MessageEvent);
-    });
+    pushFrame(16000, 0.001);
     pushFrame(48000); // 3s of zeros again after the reset — still under threshold
     expect(result.current.micSilent).toBe(false);
 
@@ -2088,6 +2084,34 @@ describe('useRecording — web branch pause/resume', () => {
       await result.current.start('note_1', 'Standup');
     });
     expect(result.current.micSilent).toBe(false);
+  });
+
+  it('clears the dead-mic flag when audio comes back, but not on a brief blip', async () => {
+    const audible = (samples: number) => pushFrame(samples, 0.05);
+    const { result } = renderWeb();
+    await act(async () => {
+      await result.current.start('note_1', 'Standup');
+    });
+    pushFrame(64000); // 4s of zeros — dead stream
+    expect(result.current.micSilent).toBe(true);
+
+    // A blip shorter than the recovery window must NOT clear it: an intermittent stream
+    // flapping the present-tense warning on and off is worse than leaving it up.
+    audible(4000); // 0.25s
+    expect(result.current.micSilent).toBe(true);
+
+    // Silence resets the recovery run, so the earlier blip cannot accumulate toward it.
+    pushFrame(16000);
+    audible(4000);
+    expect(result.current.micSilent).toBe(true);
+
+    // Sustained audio proves the stream is alive — the warning clears without a restart.
+    audible(8000); // 0.5s in one run
+    expect(result.current.micSilent).toBe(false);
+
+    // And it can be raised again in the same session, which the old one-shot latch could not do.
+    pushFrame(64000);
+    expect(result.current.micSilent).toBe(true);
   });
 
   it('stop from paused finalizes with the sample-based duration', async () => {
