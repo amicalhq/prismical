@@ -616,7 +616,7 @@ describe('local account preferences', () => {
   const preferencesPath = '/apps/v1/me/preferences';
   const initialExperience = {
     experience: { autoEnhance: false, autoTranscribeNewNotes: false, theme: 'system' },
-    ask: null, onboarding: null, prompts: null,
+    ask: null, onboarding: null, prompts: null, welcome: null,
   } as const;
 
   it.effect('seeds spoken language independently and preserves all groups across edits and restart', () =>

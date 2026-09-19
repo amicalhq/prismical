@@ -21,6 +21,7 @@ import { NavShortcuts } from './nav-shortcuts';
 import { CurrentNoteProvider } from './current-note-context';
 import { CurrentEditorProvider } from './current-editor-context';
 import { FirstNoteWalkthroughProvider } from '../onboarding/first-note-walkthrough';
+import { WelcomeVideoDialog } from '../onboarding/welcome-video-dialog';
 import { RecordingBottomCluster } from '../components/recording-bottom-cluster';
 
 // The shared app shell. The web and desktop renderers mount
@@ -150,6 +151,11 @@ function AppShellContent({
                       <RecordingBottomCluster />
                     </div>
                   </SidebarInset>
+                  {/* Account-scoped, like `overlays`, and mounted by the shell rather than passed
+              in because every platform wants it: it renders inside the account-preferences
+              provider and outside the pathname-keyed page wrapper, so a navigation cannot
+              unmount it mid-view and spend its one showing unread. */}
+                  <WelcomeVideoDialog />
                   {overlays}
                   {/* LAST in the shell on purpose: Chromium resolves overlapping
               app-region rects by DOM paint order (last wins, z-blind), so the

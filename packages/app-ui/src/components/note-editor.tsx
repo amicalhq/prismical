@@ -107,7 +107,10 @@ export function NoteEditor({ note }: NoteEditorProps) {
   };
 
   return (
-    <div className="mx-auto w-full max-w-[45rem] px-4 pb-32 pt-2 md:px-6">
+    <div
+      data-onboarding="screen-note"
+      className="mx-auto w-full max-w-[45rem] px-4 pb-32 pt-2 md:px-6"
+    >
       {/* ── Title: emoji + editable title ───────────────────── */}
       <div className="mb-2 flex items-start gap-1">
         <NoteEmojiPicker value={emoji} disabled={note.writable === false} onChange={changeEmoji} />
@@ -157,6 +160,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
                 variant="ghost"
                 size="sm"
                 onClick={() => setShowShare(true)}
+                data-onboarding="note-share"
                 className="h-8 shrink-0 gap-1.5 px-2 hover:bg-accent"
                 aria-label={t('notes.actions.share')}
               >
@@ -176,6 +180,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
                 setStarred(next);
                 update.mutate({ starred: next });
               }}
+              data-onboarding="note-star"
               className="h-8 w-8 shrink-0 p-0 hover:bg-accent"
               aria-label={starred ? t('notes.actions.unstar') : t('notes.actions.star')}
             >
@@ -192,6 +197,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
                 <Button
                   variant="ghost"
                   size="sm"
+                  data-onboarding="note-actions"
                   className="h-8 w-8 shrink-0 p-0 hover:bg-accent"
                   aria-label={t('notes.actions.noteActions')}
                 >

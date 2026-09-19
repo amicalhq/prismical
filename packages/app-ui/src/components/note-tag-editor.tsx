@@ -127,6 +127,7 @@ export function NoteTagEditor({ noteId, selected }: { noteId: string; selected: 
           <button
             type="button"
             aria-label={t('notes.tags.add')}
+            data-onboarding="note-tags"
             className="inline-flex h-[22px] items-center gap-1 rounded-sm border border-dashed border-border px-2 text-2xs font-medium text-muted-foreground transition-colors hover:bg-accent"
           >
             <Plus className="h-3 w-3 shrink-0" />

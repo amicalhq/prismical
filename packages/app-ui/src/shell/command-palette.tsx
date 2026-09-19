@@ -74,6 +74,7 @@ export function CommandPaletteTrigger() {
     <SidebarMenuButton
       onClick={() => setOpen(true)}
       size="sm"
+      data-onboarding="sidebar-search"
       className="cursor-pointer text-sm text-sidebar-foreground"
     >
       <Search className="size-4" />

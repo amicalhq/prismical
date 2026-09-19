@@ -283,6 +283,7 @@ export function AccountSwitcher({
     <button
       type="button"
       data-testid={testIds.trigger}
+      data-onboarding="sidebar-account"
       // The plan beside it reads this to close the gap once the name clamps.
       data-name-clamped={nameClamped || undefined}
       className="group/account-name flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-0.5 text-left hover:bg-sidebar-accent data-[state=open]:bg-sidebar-accent"
@@ -311,6 +312,7 @@ export function AccountSwitcher({
     <SidebarMenuButton
       size="lg"
       data-testid={testIds.trigger}
+      data-onboarding="sidebar-account"
       className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
     >
       <Avatar className="h-8 w-8 rounded-lg">

@@ -62,6 +62,7 @@ export function NoteFolderChip({
         <button
           type="button"
           aria-label={selected ? t('notes.folders.change') : t('notes.folders.add')}
+          data-onboarding="note-folder"
           // The shared folder chip, so the note's folder reads the same as on a note row and the
           // folders strip; dashed while the note has no folder, like the strip's create chip.
           className={cn(

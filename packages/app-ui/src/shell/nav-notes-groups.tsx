@@ -397,7 +397,10 @@ export function NavNotesGroups() {
         onOpenChange={setFavoritesOpen}
         className="group/favorites-collapsible"
       >
-        <SidebarGroup className="pb-0 group-data-[collapsible=icon]:hidden">
+        <SidebarGroup
+          data-onboarding="sidebar-favorites"
+          className="pb-0 group-data-[collapsible=icon]:hidden"
+        >
           <SidebarGroupLabel
             asChild
             className="cursor-pointer gap-1 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
@@ -471,7 +474,10 @@ export function NavNotesGroups() {
         onOpenChange={setFoldersOpen}
         className="group/folders-collapsible"
       >
-        <SidebarGroup className="group/folders pb-0 pt-0 group-data-[collapsible=icon]:hidden">
+        <SidebarGroup
+          data-onboarding="sidebar-folders"
+          className="group/folders pb-0 pt-0 group-data-[collapsible=icon]:hidden"
+        >
           <SidebarGroupLabel
             asChild
             className="cursor-pointer gap-1 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"

@@ -28,7 +28,7 @@ async function withPreferenceLock<T>(key: string, run: () => Promise<T>): Promis
     if (localLocks.get(key) === current) localLocks.delete(key);
   }
 }
-const groups = ['experience', 'ask', 'onboarding', 'prompts'] as const;
+const groups = ['experience', 'ask', 'onboarding', 'prompts', 'welcome'] as const;
 function merge(data: AccountExperience, patch: ExperiencePatch): AccountExperience {
   const next = { ...data };
   for (const key of groups) {
@@ -48,10 +48,20 @@ function merge(data: AccountExperience, patch: ExperiencePatch): AccountExperien
     ...next.onboarding,
     replayRetired: data.onboarding.replayRetired || next.onboarding.replayRetired,
   };
-  next.prompts = {
-    getAppsSeen: data.prompts.getAppsSeen || next.prompts.getAppsSeen,
-    calendarDismissed: data.prompts.calendarDismissed || next.prompts.calendarDismissed,
-  };
+  // Every prompt field is latch-once: a patch may set it true, never back to false. Derived from
+  // the group's own keys rather than listed, and that matters more than it looks: the contract
+  // DEFAULTS each field, so a patch naming one prompt parses into all of them, carrying `false` for
+  // the others. A field missing from this latch would therefore be actively CLEARED by an unrelated
+  // prompt's write, not merely left unmerged. The server applies the same rule to the stored row.
+  // Same latch-once rule as `prompts`, in its own group for compatibility reasons the contract
+  // explains: a shipped client rejects an unknown FIELD but discards an unknown GROUP.
+  next.welcome = { seen: data.welcome.seen || next.welcome.seen };
+  next.prompts = Object.fromEntries(
+    (Object.keys(data.prompts) as (keyof AccountExperience['prompts'])[]).map(field => [
+      field,
+      data.prompts[field] || next.prompts[field],
+    ])
+  ) as AccountExperience['prompts'];
   return next;
 }
 function project(raw: unknown): AccountExperience {
@@ -81,6 +91,8 @@ export class AccountExperienceStore {
   private listeners = new Set<() => void>();
   private queue: { id: string; patch: ExperiencePatch; durable: boolean }[] = [];
   private running = false;
+  /** A write arrived mid-pass; the queue must be drained again once this one finishes. */
+  private missedWrite = false;
   private disposed = false;
   private sequence = 0;
   private confirmed: AccountExperience | null = null;
@@ -147,8 +159,19 @@ export class AccountExperienceStore {
     return true;
   };
   refresh = async () => {
-    if (this.running || this.disposed) return;
+    if (this.disposed) return;
+    if (this.running) {
+      // A write made DURING a pass would otherwise sit unsent until some later trigger, because
+      // this early return is all its own `refresh()` call does. That is not hypothetical: a write
+      // made in reaction to the load itself lands after the in-flight pass has already checked the
+      // queue and found it empty, so nothing would deliver it for up to a full refresh interval,
+      // and another device signing in meanwhile would read the stale value.
+      this.missedWrite = true;
+      return;
+    }
     this.running = true;
+    this.missedWrite = false;
+    let failed = false;
     try {
       await withPreferenceLock(this.outbox, async () => {
         if (this.disposed) return;
@@ -186,10 +209,14 @@ export class AccountExperienceStore {
         }
       });
     } catch {
+      failed = true;
       if (!this.disposed) this.publish(true);
     } finally {
       this.running = false;
     }
+    // Success only: a failed pass keeps its queue, and retrying it straight away would spin. The
+    // periodic and focus/online triggers already cover that case.
+    if (!failed && this.missedWrite && this.queue.length && !this.disposed) void this.refresh();
   };
   dispose() {
     this.disposed = true;

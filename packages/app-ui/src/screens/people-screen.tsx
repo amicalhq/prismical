@@ -37,7 +37,11 @@ export function PeopleScreen() {
   const people = data ?? [];
 
   return (
-    <div className="mx-auto w-full" style={{ maxWidth: 'var(--content-width-browse)' }}>
+    <div
+      data-onboarding="screen-people"
+      className="mx-auto w-full"
+      style={{ maxWidth: 'var(--content-width-browse)' }}
+    >
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-bold">{t('directory.people.title')}</h1>
         <DirectoryTabs />

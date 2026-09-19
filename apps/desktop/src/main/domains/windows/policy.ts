@@ -182,7 +182,9 @@ export function buildCsp(options: CspOptions): string {
     "style-src 'self' 'unsafe-inline'" + gleap,
     "img-src 'self' data:" + (gleap ? `${gleap} blob:` : ''),
     "font-src 'self' data:" + gleap,
-    ...(gleap ? [`frame-src 'self'${gleap}`, `media-src 'self'${gleap} blob:`] : []),
+    // The welcome player's document owns its subresource policy.
+    `frame-src 'self' https://livid.com${gleap}`,
+    ...(gleap ? [`media-src 'self'${gleap} blob:`] : []),
     `connect-src ${connect.join(' ')}`,
     // rrweb (session replay) may spawn a web worker from a blob: URL; allow it
     // only when analytics is configured (else default-src 'self' keeps blocking).

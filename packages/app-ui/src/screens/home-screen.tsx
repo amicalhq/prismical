@@ -12,7 +12,11 @@ export function HomeScreen() {
   // Calendars are an org feature (off in the desktop local workspace).
   const { enabled: calendarEnabled } = useFeatureFlag('calendar');
   return (
-    <div className="mx-auto w-full" style={{ maxWidth: 'var(--content-width-browse)' }}>
+    <div
+      data-onboarding="screen-home"
+      className="mx-auto w-full"
+      style={{ maxWidth: 'var(--content-width-browse)' }}
+    >
       <div className="mb-8">
         <HomeGreeting />
       </div>

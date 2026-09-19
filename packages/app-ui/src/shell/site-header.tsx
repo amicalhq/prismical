@@ -68,6 +68,7 @@ export function SiteHeader() {
   // The "New note" action lives in the bottom dock (NewNoteDock), not the header.
   return (
     <header
+      data-onboarding="page-header"
       className={cn(
         'flex h-[var(--header-height)] w-full shrink-0 gap-2',
         // Desktop frameless chrome: the inset card sits ~8px below the window

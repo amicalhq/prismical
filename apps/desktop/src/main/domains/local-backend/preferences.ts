@@ -24,6 +24,11 @@ const defaults = {
   transcription: TRANSCRIPTION_PREFERENCE_DEFAULTS,
 };
 const groups = Object.keys(defaults) as (keyof UpdateUserPreferencesRequest)[];
+const latchOnce: Partial<Record<keyof UpdateUserPreferencesRequest, readonly string[]>> = {
+  prompts: Object.keys(ACCOUNT_EXPERIENCE_DEFAULTS.prompts),
+  welcome: Object.keys(ACCOUNT_EXPERIENCE_DEFAULTS.welcome),
+  onboarding: ['replayRetired'],
+};
 
 const objectFields = (value: unknown): Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -58,11 +63,7 @@ export function writeLocalPreferences(
         };
         if (method === 'PATCH') {
           // Prompt acknowledgments cannot be undone by a stale renderer's retry.
-          for (const field of group === 'prompts'
-            ? ['getAppsSeen', 'calendarDismissed']
-            : group === 'onboarding'
-              ? ['replayRetired']
-              : []) {
+          for (const field of latchOnce[group] ?? []) {
             merged[field] = saved[field] === true || objectFields(patch)[field] === true;
           }
           if (group === 'onboarding' && 'walkthrough' in patch) {

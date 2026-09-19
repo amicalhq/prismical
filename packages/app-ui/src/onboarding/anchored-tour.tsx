@@ -4,6 +4,7 @@ import * as React from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Driver } from 'driver.js';
 import type { TourStep } from './state';
+import { anchorSelector } from './anchors';
 
 export type AnchorStep = 'create' | TourStep;
 const anchors: Record<AnchorStep, string[]> = {
@@ -25,9 +26,7 @@ const anchors: Record<AnchorStep, string[]> = {
 };
 export function findTourAnchor(step: AnchorStep): HTMLElement | undefined {
   for (const name of anchors[step]) {
-    const elements = Array.from(
-      document.querySelectorAll<HTMLElement>(`[data-onboarding="${name}"]`)
-    );
+    const elements = Array.from(document.querySelectorAll<HTMLElement>(anchorSelector(name)));
     // Retry turns append to Ask; guide the newest status, never a previous failed attempt.
     if (name === 'skill-status') elements.reverse();
     for (const element of elements) {

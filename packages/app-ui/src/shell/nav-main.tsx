@@ -11,6 +11,7 @@ import {
 } from "../ui/sidebar";
 import type { SidebarNavItem } from "./sidebar-nav";
 import { ShortcutHint } from "./shortcut-hint";
+import { navAnchor } from "../onboarding/anchors";
 
 export function NavMain({ items }: { items: SidebarNavItem[] }) {
   const pathname = usePathname();
@@ -27,7 +28,7 @@ export function NavMain({ items }: { items: SidebarNavItem[] }) {
                 tooltip={item.title}
                 isActive={pathname.startsWith(item.url)}
               >
-                <Link href={item.url} aria-label={item.title}>
+                <Link href={item.url} aria-label={item.title} data-onboarding={navAnchor(item.url)}>
                   <item.icon /> <span>{item.title}</span>
                   {item.shortcut && <ShortcutHint shortcut={item.shortcut} />}
                 </Link>

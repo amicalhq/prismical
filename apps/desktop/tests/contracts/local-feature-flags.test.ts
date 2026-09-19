@@ -40,6 +40,7 @@ describe('LOCAL_FEATURE_FLAGS', () => {
     expect(LOCAL_FEATURE_FLAGS.eventkitCalendar).toBe(false);
     expect(LOCAL_FEATURE_FLAGS.userTour).toBe(false);
     expect(LOCAL_FEATURE_FLAGS.getAppsPrompt).toBe(false);
+    expect(LOCAL_FEATURE_FLAGS.welcomeVideo).toBe(false);
   });
 
   it('enables every supported local AI provider without rollout access', () => {

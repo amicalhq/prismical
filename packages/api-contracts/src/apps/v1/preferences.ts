@@ -211,18 +211,48 @@ export const OnboardingPreferencesSchema = z
   })
   .strict();
 export const ONBOARDING_PREFERENCE_DEFAULTS = { walkthrough: null, replayRetired: false } as const;
+/**
+ * One-way acknowledgments: each field records that the account has been shown something, and a
+ * write may only ever latch it true.
+ *
+ * Every field is DEFAULTED rather than required, and that is load-bearing. The group is `.strict()`
+ * and read with `safeParse`, so a field added as required would make a group stored before it
+ * existed fail to parse and read back as `null` - and a null group is filled from defaults, which
+ * silently re-arms every prompt the account had already acknowledged. Defaults let an older stored
+ * group parse as itself, with the unknown prompt simply unseen. Add the next prompt the same way.
+ */
 export const PromptPreferencesSchema = z
   .object({
-    getAppsSeen: z.boolean(),
-    calendarDismissed: z.boolean(),
+    getAppsSeen: z.boolean().default(false),
+    calendarDismissed: z.boolean().default(false),
   })
   .strict();
 export const PROMPT_PREFERENCE_DEFAULTS = { getAppsSeen: false, calendarDismissed: false };
+
+/**
+ * The `welcome` group: whether the account has been shown the welcome dialog.
+ *
+ * Its own GROUP rather than a fourth field on `prompts`, and that is a compatibility requirement,
+ * not taste. Every group above is `.strict()`, but the resource itself is `.strip()` - so a client
+ * built before this existed DISCARDS an unknown top-level group and keeps working, while an
+ * unknown FIELD inside a group it does know makes it reject the whole response. Shipped desktop
+ * builds parse this resource with their own vendored copy of these schemas and cannot be updated
+ * in step with the server, so anything new has to arrive as a group they can ignore.
+ */
+export const WelcomePreferencesSchema = z
+  .object({
+    /** Set the moment the welcome dialog opens, and never cleared: it is shown once per account. */
+    seen: z.boolean().default(false),
+  })
+  .strict();
+export type WelcomePreferences = z.output<typeof WelcomePreferencesSchema>;
+export const WELCOME_PREFERENCE_DEFAULTS = { seen: false };
 export const AccountExperienceSchema = z.object({
   experience: ExperiencePreferencesSchema,
   ask: AskPreferencesSchema,
   onboarding: OnboardingPreferencesSchema,
   prompts: PromptPreferencesSchema,
+  welcome: WelcomePreferencesSchema,
 });
 export type AccountExperience = z.output<typeof AccountExperienceSchema>;
 export const ACCOUNT_EXPERIENCE_DEFAULTS: AccountExperience = {
@@ -230,6 +260,7 @@ export const ACCOUNT_EXPERIENCE_DEFAULTS: AccountExperience = {
   ask: {},
   onboarding: ONBOARDING_PREFERENCE_DEFAULTS,
   prompts: PROMPT_PREFERENCE_DEFAULTS,
+  welcome: WELCOME_PREFERENCE_DEFAULTS,
 };
 // Native IPC preserves explicit undefined fields; reject them like an invalid JSON request.
 const hasDefinedFields = (value: object) =>
@@ -246,6 +277,9 @@ const experiencePatch = {
   prompts: PromptPreferencesSchema.partial()
     .refine(hasDefinedFields, 'Choose a prompt to update')
     .optional(),
+  welcome: WelcomePreferencesSchema.partial()
+    .refine(hasDefinedFields, 'Choose a welcome field to update')
+    .optional(),
 };
 
 /** Every preference group. A single resource, fields exposed directly (apps/v1 convention). */
@@ -256,6 +290,7 @@ export const UserPreferencesSchema = z
     ask: AskPreferencesSchema.nullable().default(null),
     onboarding: OnboardingPreferencesSchema.nullable().default(null),
     prompts: PromptPreferencesSchema.nullable().default(null),
+    welcome: WelcomePreferencesSchema.nullable().default(null),
     transcription: TranscriptionPreferencesSchema.nullable(),
   })
   .strip();
@@ -330,6 +365,7 @@ export function readUserPreferences(prefs: unknown): UserPreferences {
     ask: readGroup(prefs, 'ask', AskPreferencesSchema),
     onboarding: readGroup(prefs, 'onboarding', OnboardingPreferencesSchema),
     prompts: readGroup(prefs, 'prompts', PromptPreferencesSchema),
+    welcome: readGroup(prefs, 'welcome', WelcomePreferencesSchema),
     language: readLanguagePreferences(prefs),
     transcription: readTranscriptionPreferences(prefs),
   };

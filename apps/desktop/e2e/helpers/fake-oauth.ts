@@ -86,6 +86,8 @@ export interface FakeOAuthOptions {
   readonly integrationsEnabled?: boolean;
   /** Enable the optional first-note tour for its acceptance tests. Defaults to false. */
   readonly userTourEnabled?: boolean;
+  /** Enable the one-time welcome video for its acceptance tests. Defaults to false. */
+  readonly welcomeVideoEnabled?: boolean;
   /** Role returned by the organization endpoint when it is enabled. Default: owner. */
   readonly organizationRole?: 'owner' | 'admin' | 'member';
   /** Optional app API fixtures, served through the real desktop transport. */
@@ -412,6 +414,7 @@ export async function startFakeOAuthServer(
                 integrations: integrationsEnabled,
                 customMcpServers: true,
                 userTour: options.userTourEnabled ?? false,
+                welcomeVideo: options.welcomeVideoEnabled ?? false,
               },
               memberCount: 1,
             },

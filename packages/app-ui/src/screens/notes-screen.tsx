@@ -119,7 +119,11 @@ export function NotesScreen() {
   const folderIds = folderId ? folderSubtreeIds(folders, folderId) : undefined;
 
   return (
-    <div className="mx-auto w-full pb-8" style={{ maxWidth: 'var(--content-width-browse)' }}>
+    <div
+      data-onboarding="screen-notes"
+      className="mx-auto w-full pb-8"
+      style={{ maxWidth: 'var(--content-width-browse)' }}
+    >
       <NotesHeading folderId={folderId} />
 
       {/* The folders at this level come before the filters: they are the next step down from the

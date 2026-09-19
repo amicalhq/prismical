@@ -61,6 +61,26 @@ describe('isPermissionAllowed', () => {
 });
 
 describe('buildCsp', () => {
+  it.each([undefined, 'test-nonce'])(
+    'allows the welcome player frame with support nonce=%s without granting script access',
+    gleapNonce => {
+      const csp = buildCsp({
+        devServerUrl: null,
+        noteWsUrl: 'wss://note.test',
+        analyticsKey: null,
+        gleapNonce,
+      });
+      const directives = csp.split('; ');
+      expect(directives.find(value => value.startsWith('frame-src '))?.split(' ')).toContain(
+        'https://livid.com'
+      );
+      expect(directives.filter(value => !value.startsWith('frame-src ')).join('; ')).not.toContain(
+        'livid.com'
+      );
+      expect(csp).not.toContain('https://*.livid.com');
+    }
+  );
+
   it.each([null, 'http://localhost:5173'])(
     'allows note emoji data with devServerUrl=%s without allowing the whole CDN',
     devServerUrl => {
@@ -78,7 +98,7 @@ describe('buildCsp', () => {
     const csp = buildCsp({ devServerUrl: null, noteWsUrl: 'wss://note.test', analyticsKey: null, gleapNonce: 'test-nonce' });
     expect(csp).toContain("script-src 'self' 'nonce-test-nonce' https://*.gleap.io;");
     expect(csp).toContain("connect-src 'self' https://*.gleap.io wss://*.gleap.io");
-    expect(csp).toContain("frame-src 'self' https://*.gleap.io;");
+    expect(csp).toContain("frame-src 'self' https://livid.com https://*.gleap.io;");
   });
   it('keeps Vite inline scripts working when support is configured in development', () => {
     const csp = buildCsp({ devServerUrl: 'http://localhost:5173', noteWsUrl: 'wss://note.test', analyticsKey: null, gleapNonce: 'test-nonce' });

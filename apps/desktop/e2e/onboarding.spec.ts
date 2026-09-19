@@ -27,7 +27,7 @@ test.describe('first-note onboarding', () => {
 
   const openCloudApp = async (
     signupAt?: string,
-    { userTour = true, replayRetired = false } = {}
+    { userTour = true, replayRetired = false, welcomeVideo = false } = {}
   ): Promise<Page> => {
     const {
       ACCOUNT_EXPERIENCE_DEFAULTS,
@@ -46,6 +46,7 @@ test.describe('first-note onboarding', () => {
       signupAt,
       integrationsEnabled: false,
       userTourEnabled: userTour,
+      welcomeVideoEnabled: welcomeVideo,
       appResponse: (url, request) => {
         if (url.pathname !== '/apps/v1/me/preferences') return undefined;
         if (request.method === 'PATCH') {
@@ -68,6 +69,13 @@ test.describe('first-note onboarding', () => {
       PRISMICAL_CLIENT_ID: 'desktop-e2e-client',
     });
     const page = await mainPage();
+    // A real cross-origin frame request exercises Electron's CSP without depending on the player.
+    await page.route('https://livid.com/embed/**', route =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: '<html><body style="background:#101827;color:white">Getting started player</body></html>',
+      })
+    );
     await page.getByTestId('auth-sign-in').click();
     await expect
       .poll(() => page.evaluate(() => window.desktop.e2e!.authPendingState()))
@@ -96,9 +104,12 @@ test.describe('first-note onboarding', () => {
   };
 
   test('recent Cloud account uses its verified signup date for the welcome', async () => {
-    const page = await openCloudApp(new Date(Date.now() - 60_000).toISOString());
+    const page = await openCloudApp(new Date(Date.now() - 60_000).toISOString(), {
+      welcomeVideo: true,
+    });
     const welcome = page.getByRole('dialog', { name: 'Welcome to your AI Note taker' });
     await expect(welcome).toBeVisible();
+    await expect(page.getByRole('dialog', { name: "Here's how Prismical works" })).toHaveCount(0);
     await expect(welcome.getByRole('button', { name: 'Continue in desktop' })).toBeVisible();
     await expect(welcome.getByRole('button', { name: 'macOS', exact: true })).toHaveCount(0);
     await welcome.getByRole('button', { name: 'Maybe later' }).click();
@@ -136,6 +147,98 @@ test.describe('first-note onboarding', () => {
       0
     );
     await expect(page.locator('.prismical-tour')).toHaveCount(0);
+    await expect(page.getByRole('dialog', { name: "Here's how Prismical works" })).toHaveCount(0);
+  });
+
+  test('existing Cloud account sees the video once, loads its frame, and can watch again from Help', async () => {
+    const page = await openCloudApp('2025-01-01T00:00:00.000Z', {
+      userTour: false,
+      welcomeVideo: true,
+    });
+    const welcome = page.getByRole('dialog', { name: "Here's how Prismical works" });
+    await expect(welcome).toBeVisible();
+    await expect(page.frameLocator('iframe').getByText('Getting started player')).toBeVisible();
+    await expect(welcome.getByRole('link', { name: 'iOS', exact: true })).toBeVisible();
+    await expect(welcome.getByRole('link', { name: 'Android', exact: true })).toBeVisible();
+    await expect(welcome.getByRole('button', { name: 'macOS', exact: true })).toHaveCount(0);
+    await expect(welcome.getByRole('link', { name: 'Windows', exact: true })).toHaveCount(0);
+    await expect
+      .poll(() =>
+        server!.requests.some(
+          request =>
+            request.method === 'PATCH' &&
+            request.path === '/apps/v1/me/preferences' &&
+            (request.body as { welcome?: { seen?: boolean } })?.welcome?.seen === true
+        )
+      )
+      .toBe(true);
+
+    await launched!.app.evaluate(({ BrowserWindow }) => {
+      BrowserWindow.getAllWindows()
+        .find(window => window.webContents.getURL().includes('#/home'))!
+        .setSize(800, 480);
+    });
+    for (const theme of ['light', 'dark'] as const) {
+      await page.emulateMedia({ colorScheme: theme });
+      await expect
+        .poll(() => page.locator('html').evaluate(element => element.classList.contains('dark')))
+        .toBe(theme === 'dark');
+      await expect(welcome.getByRole('button', { name: 'Close', exact: true })).toBeInViewport({
+        ratio: 1,
+      });
+      await expect(welcome.getByRole('link', { name: 'Android', exact: true })).toBeInViewport({
+        ratio: 1,
+      });
+      await page.screenshot({
+        path: test.info().outputPath(`welcome-${theme}.png`),
+        animations: 'disabled',
+      });
+    }
+    await page.keyboard.press('Escape');
+    await expect(welcome).toHaveCount(0);
+    await page.reload();
+    await expect(page.getByTestId('desktop-shell')).toBeVisible();
+    await expect(welcome).toHaveCount(0);
+
+    const userDataDir = launched!.userDataDir;
+    await closePrismical(launched, { keepProfile: true });
+    launched = await launchPrismical({
+      PRISMICAL_CORE_API_URL: server!.origin,
+      PRISMICAL_CLIENT_ID: 'desktop-e2e-client',
+      PRISMICAL_E2E_USER_DATA_DIR: userDataDir,
+    });
+    const restored = await mainPage();
+    await expect(restored.getByTestId('desktop-shell')).toBeVisible();
+    await expect(restored.getByRole('dialog', { name: "Here's how Prismical works" })).toHaveCount(
+      0
+    );
+    await launched.app.evaluate(({ shell }) => {
+      const urls: string[] = [];
+      (globalThis as unknown as { welcomeUrls: string[] }).welcomeUrls = urls;
+      shell.openExternal = async url => {
+        urls.push(url);
+      };
+    });
+    await restored.getByRole('button', { name: 'Help and support', exact: true }).click();
+    await restored.getByRole('menuitem', { name: 'Watch quick start', exact: true }).click();
+    await expect
+      .poll(() =>
+        launched!.app.evaluate(
+          () => (globalThis as unknown as { welcomeUrls: string[] }).welcomeUrls
+        )
+      )
+      .toEqual(['https://link.prismical.ai/watch-getting-started']);
+  });
+
+  test('new Cloud account can close the welcome video with its close control', async () => {
+    const page = await openCloudApp(new Date(Date.now() - 60_000).toISOString(), {
+      userTour: false,
+      welcomeVideo: true,
+    });
+    const welcome = page.getByRole('dialog', { name: "Here's how Prismical works" });
+    await expect(welcome).toBeVisible();
+    await welcome.getByRole('button', { name: 'Close', exact: true }).click();
+    await expect(welcome).toHaveCount(0);
   });
 
   test('enabled Cloud replay remains available after completion and prior retirement', async () => {
@@ -160,10 +263,14 @@ test.describe('first-note onboarding', () => {
     launched = await launchPrismical({}, { seedMode: 'local' });
     const page = await mainPage();
     await expect(page.getByTestId('desktop-shell')).toBeVisible();
+    await expect(page.getByRole('dialog', { name: "Here's how Prismical works" })).toHaveCount(0);
     await expect(page.getByRole('dialog', { name: 'Welcome to your AI Note taker' })).toHaveCount(
       0
     );
     await page.getByRole('button', { name: 'Help and support', exact: true }).click();
+    await expect(
+      page.getByRole('menuitem', { name: 'Watch quick start', exact: true })
+    ).toBeVisible();
     await expect(page.getByRole('menuitem', { name: 'Quick start tour', exact: true })).toHaveCount(
       0
     );

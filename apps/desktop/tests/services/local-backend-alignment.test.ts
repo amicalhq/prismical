@@ -90,7 +90,7 @@ describe('local account experience preferences', () => {
     expect(getLocalPreferences(db)).toEqual(before);
   });
 
-  it('reads all six groups without seeding and persists partial groups across reopen', () => {
+  it('reads all preference groups without seeding and persists partial groups across reopen', () => {
     expect(getLocalPreferences(db)).toEqual({
       language: null,
       transcription: null,
@@ -98,6 +98,7 @@ describe('local account experience preferences', () => {
       ask: null,
       onboarding: null,
       prompts: null,
+      welcome: null,
     });
     expect(db.select().from(schema.userPreference).all()).toEqual([]);
     const result = writeLocalPreferences(db, 'PATCH', {
@@ -109,6 +110,7 @@ describe('local account experience preferences', () => {
         walkthrough: { status: 'active', orgId: 'org_a', noteId: 'nt_a', step: 'speak' },
       },
       prompts: { getAppsSeen: true },
+      welcome: { seen: true },
     });
     expect(result.status).toBe(200);
     expect(UserPreferencesSchema.parse(result.body)).toMatchObject({
@@ -118,6 +120,7 @@ describe('local account experience preferences', () => {
       ask: { org_a: { instanceId: 'local-ai', modelId: 'model-a' } },
       onboarding: { walkthrough: { status: 'active', step: 'speak' }, replayRetired: false },
       prompts: { getAppsSeen: true, calendarDismissed: false },
+      welcome: { seen: true },
     });
     client.close();
     client = new Database(dbPath);
@@ -205,6 +208,22 @@ describe('local account experience preferences', () => {
       prompts: { getAppsSeen: true, calendarDismissed: true },
       onboarding: { replayRetired: true },
     });
+  });
+
+  it('keeps the welcome acknowledgment after restart and stale initialization or patches', () => {
+    expect(writeLocalPreferences(db, 'POST', { welcome: { seen: false } }).status).toBe(200);
+    expect(getLocalPreferences(db).welcome).toEqual({ seen: false });
+    expect(writeLocalPreferences(db, 'PATCH', { welcome: { seen: true } }).status).toBe(200);
+    client.close();
+    client = new Database(dbPath);
+    db = drizzle(client, { schema });
+
+    expect(writeLocalPreferences(db, 'POST', { welcome: { seen: false } }).status).toBe(200);
+    expect(getLocalPreferences(db).welcome).toEqual({ seen: true });
+    expect(writeLocalPreferences(db, 'PATCH', { welcome: { seen: false } }).status).toBe(200);
+    expect(getLocalPreferences(db).welcome).toEqual({ seen: true });
+    expect(writeLocalPreferences(db, 'PATCH', { prompts: { getAppsSeen: true } }).status).toBe(200);
+    expect(getLocalPreferences(db).welcome).toEqual({ seen: true });
   });
 
   it.each(['dismissed', 'completed'] as const)(

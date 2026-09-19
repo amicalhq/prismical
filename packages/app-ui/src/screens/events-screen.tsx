@@ -97,7 +97,11 @@ export function EventsScreen() {
   );
 
   return (
-    <div className="mx-auto w-full" style={{ maxWidth: 'var(--content-width-browse)' }}>
+    <div
+      data-onboarding="screen-events"
+      className="mx-auto w-full"
+      style={{ maxWidth: 'var(--content-width-browse)' }}
+    >
       {/* Heading */}
       <div className="mb-8">
         <h1 className="text-xl font-bold">{t('calendar.events.title')}</h1>

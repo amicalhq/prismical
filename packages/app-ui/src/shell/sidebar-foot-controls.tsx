@@ -143,6 +143,7 @@ export function SidebarUsageControl() {
         <button
           type="button"
           aria-label={`${label ?? ''} ${remainingLabel}`.trim()}
+          data-onboarding="sidebar-usage"
           className="flex size-6 shrink-0 items-center justify-center rounded-md hover:bg-sidebar-accent"
         >
           <UsageRing ratio={limit === 0 ? 0 : remaining / limit} tone={tone} />
@@ -222,6 +223,7 @@ export function SidebarDownloadControl() {
       rel="noreferrer"
       aria-label={t('navigation.secondary.downloadApps')}
       title={t('navigation.secondary.downloadApps')}
+      data-onboarding="sidebar-download"
       className="flex size-6 shrink-0 items-center justify-center rounded-md text-sidebar-foreground-muted hover:bg-sidebar-accent hover:text-sidebar-foreground"
     >
       <Download className="size-4" />
@@ -253,6 +255,7 @@ export function SidebarHelpControl({
         <button
           type="button"
           aria-label={t('navigation.secondary.help')}
+          data-onboarding="sidebar-help"
           className="flex size-6 shrink-0 items-center justify-center rounded-md text-sidebar-foreground-muted hover:bg-sidebar-accent hover:text-sidebar-foreground"
         >
           <CircleHelp className="size-4" />
@@ -303,6 +306,20 @@ export function SidebarHelpControl({
             </DropdownMenuItem>
           </>
         ) : null}
+        {/* Every platform, unlike the download row below: the video is as useful on desktop, and
+            this is the only way back to it once the welcome dialog has been dismissed. A shortened
+            link on purpose - an ordinary outbound link can be re-pointed without shipping a build,
+            and nothing here frames it, so no content policy is involved. */}
+        <DropdownMenuItem asChild>
+          <a
+            href="https://link.prismical.ai/watch-getting-started"
+            target="_blank"
+            rel="noreferrer"
+          >
+            <PlayCircle className="size-4" />
+            <span>{t('navigation.secondary.watchQuickStart')}</span>
+          </a>
+        </DropdownMenuItem>
         {/* Web only, as before: on desktop you are already in the app. */}
         {!caps.has('global-shortcuts') ? (
           <DropdownMenuItem asChild>

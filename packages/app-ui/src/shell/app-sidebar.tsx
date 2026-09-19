@@ -36,6 +36,7 @@ import {
   SidebarUsageControl,
 } from './sidebar-foot-controls';
 import { useHomeNavItems, useSettingsNavItems } from './sidebar-nav';
+import { navAnchor } from '../onboarding/anchors';
 import { SettingsNavigation } from './settings-navigation';
 import { ShortcutHint } from './shortcut-hint';
 import { useTranslation } from 'react-i18next';
@@ -151,7 +152,10 @@ export function AppSidebar({
               {/* Brand */}
               <SidebarMenuItem>
                 <SidebarMenuButton asChild>
-                  <div className="inline-flex w-full items-center gap-2 font-semibold">
+                  <div
+                    data-onboarding="sidebar-brand"
+                    className="inline-flex w-full items-center gap-2 font-semibold"
+                  >
                     {/* The mark sits in the SAME 16px box every leading icon
                         uses and overflows it evenly, so it centres on the icon
                         column instead of hanging off to the left - and the
@@ -223,7 +227,11 @@ export function AppSidebar({
                         className="text-sm text-sidebar-foreground"
                         isActive={item.url === '/notes' ? isAllNotesView : pathname === item.url}
                       >
-                        <Link href={item.url} aria-label={item.title}>
+                        <Link
+                          href={item.url}
+                          aria-label={item.title}
+                          data-onboarding={navAnchor(item.url)}
+                        >
                           <item.icon /> <span>{item.title}</span>
                           {item.shortcut && <ShortcutHint shortcut={item.shortcut} />}
                         </Link>
@@ -244,7 +252,11 @@ export function AppSidebar({
                           pathname.startsWith('/people') || pathname.startsWith('/companies')
                         }
                       >
-                        <Link href="/people" aria-label={t('navigation.pages.people')}>
+                        <Link
+                          href="/people"
+                          aria-label={t('navigation.pages.people')}
+                          data-onboarding={navAnchor('/people')}
+                        >
                           <Contact /> <span>{t('navigation.pages.people')}</span>
                         </Link>
                       </SidebarMenuButton>
@@ -260,7 +272,11 @@ export function AppSidebar({
                         className="text-sm text-sidebar-foreground"
                         isActive={pathname.startsWith('/shared')}
                       >
-                        <Link href="/shared" aria-label={t('navigation.pages.sharedWithMe')}>
+                        <Link
+                          href="/shared"
+                          aria-label={t('navigation.pages.sharedWithMe')}
+                          data-onboarding={navAnchor('/shared')}
+                        >
                           <Users /> <span>{t('navigation.pages.sharedWithMe')}</span>
                         </Link>
                       </SidebarMenuButton>
@@ -276,7 +292,11 @@ export function AppSidebar({
                         className="text-sm text-sidebar-foreground"
                         isActive={pathname === settingsNavItem.url}
                       >
-                        <Link href={settingsNavItem.url} aria-label={settingsNavItem.title}>
+                        <Link
+                          href={settingsNavItem.url}
+                          aria-label={settingsNavItem.title}
+                          data-onboarding={navAnchor(settingsNavItem.url)}
+                        >
                           <settingsNavItem.icon /> <span>{settingsNavItem.title}</span>
                           {settingsNavItem.shortcut && (
                             <ShortcutHint shortcut={settingsNavItem.shortcut} />

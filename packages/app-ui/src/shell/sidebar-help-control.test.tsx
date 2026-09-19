@@ -68,7 +68,21 @@ describe('help menu support action', () => {
 it('starts the quick start tour from Help', () => {
   openMenu(<SidebarHelpControl />);
   const labels = screen.getAllByRole('menuitem').map(item => item.textContent?.trim());
-  expect(labels.indexOf('onboarding.replayTitle') + 1).toBe(labels.indexOf('navigation.secondary.downloadApps'));
+  // Replay, then the video, then the downloads: the two ways to learn the app sit together above
+  // the unrelated download row.
+  expect(labels.indexOf('onboarding.replayTitle') + 1).toBe(
+    labels.indexOf('navigation.secondary.watchQuickStart')
+  );
+  expect(labels.indexOf('navigation.secondary.watchQuickStart') + 1).toBe(
+    labels.indexOf('navigation.secondary.downloadApps')
+  );
   fireEvent.click(screen.getByRole('menuitem', { name: 'onboarding.replayTitle' }));
   expect(replay).toHaveBeenCalledOnce();
+});
+
+it('links to the getting-started video for every platform, desktop included', () => {
+  openMenu(<SidebarHelpControl />);
+  const row = screen.getByRole('menuitem', { name: 'navigation.secondary.watchQuickStart' });
+  expect(row.getAttribute('href')).toBe('https://link.prismical.ai/watch-getting-started');
+  expect(row.getAttribute('target')).toBe('_blank');
 });

@@ -61,7 +61,10 @@ export function NavTagsGroup() {
 
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="group/tags-collapsible">
-      <SidebarGroup className="group/tags pt-0 group-data-[collapsible=icon]:hidden">
+      <SidebarGroup
+        data-onboarding="sidebar-tags"
+        className="group/tags pt-0 group-data-[collapsible=icon]:hidden"
+      >
         <SidebarGroupLabel
           asChild
           className="cursor-pointer gap-1 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"

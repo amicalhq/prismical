@@ -71,4 +71,5 @@ export const LOCAL_FEATURE_FLAGS: Readonly<Record<string, boolean>> = {
   skillMcpTools: false,
   skillAdvancedSettings: false,
   userTour: false,
+  welcomeVideo: false,
 };

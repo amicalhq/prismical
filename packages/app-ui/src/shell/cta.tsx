@@ -350,7 +350,7 @@ export function CtaSidebarButton() {
   if (!cta?.content.sidebar) return null;
   const Icon = icons[cta.content.icon];
   return (
-    <div className="px-2 pb-1">
+    <div data-onboarding="sidebar-cta" className="px-2 pb-1">
       <button
         type="button"
         disabled={controller?.busy}
