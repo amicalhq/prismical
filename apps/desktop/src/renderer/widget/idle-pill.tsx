@@ -9,8 +9,7 @@ import { useTranslation } from 'react-i18next';
 import { NotesIconButton, RecordButton } from './widget-buttons';
 
 // Floating dock surface pill:
-// opaque raised surface + hairline + deep drop, system-theme aware via the
-// widget.css token subset.
+// opaque raised surface + hairline + deep drop, always dark via widget.css.
 export const PILL_SHELL_CLASS =
   'relative pointer-events-auto bg-[var(--dock-surface)] border border-[var(--dock-line)] [box-shadow:var(--dock-shadow-raised),0_16px_40px_-12px_rgba(0,0,0,0.4)]';
 
