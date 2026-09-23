@@ -26,7 +26,8 @@ import { makeTestLogger, testConfigLayer } from '../helpers/test-layers';
 import { makeFakeWorkspaceBackend } from '../helpers/fake-recording';
 import { fakeModelManagerLayer } from '../helpers/fake-workspace-env';
 import { AppModeService, makeAppMode } from '../../src/main/domains/app-mode/service';
-import { RECOMMENDED_MODEL_ID, VAD_MODEL_ID } from '../../src/main/domains/models/catalogue';
+import { DEFAULT_LOCAL_MODEL_ID } from '@prismical/desktop-contracts';
+import { VAD_MODEL_ID } from '../../src/main/domains/models/catalogue';
 import { CAPTURE_SAMPLE_RATE, CHUNK_SAMPLES } from '../../src/main/domains/recording/chunker';
 import { RecordingStore } from '../../src/main/domains/recording/store';
 import { RecordingStoreLive } from '../../src/main/domains/recording/store-live';
@@ -143,7 +144,7 @@ const noiseChunk = (samples: number, amplitude: number): Float32Array => {
 
 const ENGINE: RecordingEngine = {
   engine: 'local',
-  modelId: RECOMMENDED_MODEL_ID,
+  modelId: DEFAULT_LOCAL_MODEL_ID,
   byokBaseUrl: null,
   byokModel: null,
 };
@@ -175,7 +176,7 @@ describe('local whisper end to end (sidecar → worker → whisper.node → prod
         LocalWhisperLive.pipe(
           Layer.provide(productDb),
           Layer.provide(engineLayer),
-          Layer.provide(fakeModelManagerLayer({ [RECOMMENDED_MODEL_ID]: modelPath })),
+          Layer.provide(fakeModelManagerLayer({ [DEFAULT_LOCAL_MODEL_ID]: modelPath })),
           Layer.provide(Layer.effect(AppModeService, makeAppMode('local', true))),
           Layer.provide(makeFakeWorkspaceBackend().layer)
         )
@@ -305,7 +306,7 @@ describe('local whisper end to end (sidecar → worker → whisper.node → prod
             // the worker process (mapped to a retryable worker-crashed).
             Layer.provide(
               fakeModelManagerLayer({
-                [RECOMMENDED_MODEL_ID]: modelPath,
+                [DEFAULT_LOCAL_MODEL_ID]: modelPath,
                 [VAD_MODEL_ID]: vadModelPath,
               })
             ),

@@ -17,7 +17,6 @@ const idle: ModelsStateView = {
       filename: 'ggml-base.en.bin',
       sizeBytes: 147_964_211,
       kind: 'whisper',
-      recommended: true,
       installed: false,
       installedAt: null,
       download: null,

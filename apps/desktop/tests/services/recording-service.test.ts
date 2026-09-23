@@ -63,7 +63,7 @@ import { AppModeService, makeAppMode, type AppMode } from '../../src/main/domain
 import type { DeviceSettings } from '@prismical/desktop-contracts';
 import type { RecordingEngine } from '../../src/main/domains/transcriber/engine';
 import { SyncTranscriptSegmentCreateRequestSchema } from '@prismical/api-contracts';
-import { RECOMMENDED_MODEL_ID } from '../../src/main/domains/models/catalogue';
+import { DEFAULT_LOCAL_MODEL_ID } from '@prismical/desktop-contracts';
 import { TRANSCRIPT_SEGMENTS_PATH } from '../../src/main/domains/recording/segment-mirror';
 import { mintChunkSegment } from '../../src/main/domains/transcriber/segment';
 import {
@@ -256,7 +256,7 @@ const setup = (
         Layer.provide(
           fakeModelManagerLayer(
             options.installedModels ?? {
-              [options.transcription?.modelId ?? RECOMMENDED_MODEL_ID]: '/models/fixture.bin',
+              [options.transcription?.modelId ?? DEFAULT_LOCAL_MODEL_ID]: '/models/fixture.bin',
             }
           )
         ),
@@ -2126,7 +2126,7 @@ describe('RecordingService — transcription engine', () => {
   );
 
   it.effect(
-    'replays quota usage and baseline fixed at Start despite later device settings changes',
+    'keeps quota usage fixed at Start and retires a later direct-API preference',
     () =>
       Effect.gen(function* () {
         const h = yield* setup();
@@ -2167,7 +2167,7 @@ describe('RecordingService — transcription engine', () => {
           900
         );
         const nextId = yield* h.service.start({ captureMode: 'mic' });
-        assert.strictEqual((yield* SubscriptionRef.get(h.service.state)).spendsCloudQuota, false);
+        assert.strictEqual((yield* SubscriptionRef.get(h.service.state)).spendsCloudQuota, true);
         assert.isNull((yield* SubscriptionRef.get(h.service.state)).quotaRemainingAtStartSeconds);
         yield* h.service.stop(nextId);
         yield* Scope.close(h.sessionScope, Exit.void);
@@ -2227,14 +2227,14 @@ describe('RecordingService — transcription engine', () => {
           Effect.sync(() => h.fakeCloud.createCalls.length === 1),
           'createRecording'
         );
-        // The frozen config names the recommended model (no modelId preference) — never an instanceId.
+        // The frozen config names the default model (no modelId preference) — never an instanceId.
         assert.deepStrictEqual(
           h.fakeCloud.createCalls[0].transcriptionConfig,
-          LOCAL_CONFIG(RECOMMENDED_MODEL_ID)
+          LOCAL_CONFIG(DEFAULT_LOCAL_MODEL_ID)
         );
         assert.deepStrictEqual(
           h.logger.find(e => e.message === 'recording engine resolved')?.data,
-          { recordingId, engine: 'local', modelId: RECOMMENDED_MODEL_ID }
+          { recordingId, engine: 'local', modelId: DEFAULT_LOCAL_MODEL_ID }
         );
         yield* poll(
           SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')),
@@ -2269,7 +2269,7 @@ describe('RecordingService — transcription engine', () => {
         assert.isFalse(h.fakeCloud.requestCalls.some(call => call.path === TRANSCRIPT_SEGMENTS_PATH), 'nothing to mirror (no segments)');
         const row = (yield* productRecording(h, recordingId))!;
         assert.strictEqual(row.status, 'completed');
-        assert.deepStrictEqual(row.transcriptionConfig, LOCAL_CONFIG(RECOMMENDED_MODEL_ID));
+        assert.deepStrictEqual(row.transcriptionConfig, LOCAL_CONFIG(DEFAULT_LOCAL_MODEL_ID));
         assert.deepStrictEqual(row.meta, { detectedSpeakerCount: 1 });
         yield* Scope.close(h.sessionScope, Exit.void);
       })
@@ -2367,7 +2367,7 @@ describe('RecordingService — transcription engine', () => {
         );
         assert.deepStrictEqual(
           h.fakeCloud.createCalls[0].transcriptionConfig,
-          LOCAL_CONFIG(RECOMMENDED_MODEL_ID)
+          LOCAL_CONFIG(DEFAULT_LOCAL_MODEL_ID)
         );
         assert.strictEqual(
           (
@@ -2395,7 +2395,7 @@ describe('RecordingService — transcription engine', () => {
 
         assert.strictEqual((yield* productSegments(h, recordingId)).length, 1);
         const row = (yield* productRecording(h, recordingId))!;
-        assert.deepStrictEqual(row.transcriptionConfig, LOCAL_CONFIG(RECOMMENDED_MODEL_ID));
+        assert.deepStrictEqual(row.transcriptionConfig, LOCAL_CONFIG(DEFAULT_LOCAL_MODEL_ID));
         assert.deepStrictEqual(row.meta, { detectedSpeakerCount: 1 });
         yield* Scope.close(h.sessionScope, Exit.void);
       })

@@ -217,7 +217,6 @@ test.describe('main-window preload contract', () => {
     const typed = state as {
       models: Array<{
         id: string;
-        recommended: boolean;
         installed: boolean;
         download: unknown;
         kind: string;
@@ -236,7 +235,6 @@ test.describe('main-window preload contract', () => {
       'whisper-large-v3-turbo',
       'silero-vad-v5',
     ]);
-    expect(typed.models.filter(m => m.recommended).map(m => m.id)).toEqual(['whisper-base-en']);
     expect(typed.models.every(m => !m.installed && m.download === null)).toBe(true);
     // Seven whisper rows plus the one VAD entry (the settings screen
     // filters on kind, so its list still shows exactly the seven).

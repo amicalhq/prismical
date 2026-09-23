@@ -12,7 +12,7 @@
 import type { TranscriptionEngine, TranscriptionSetting } from '@prismical/desktop-contracts';
 import type { TranscriptionLanguage } from '@prismical/api-contracts/apps/v1';
 import type { AppMode } from '../app-mode/service';
-import { RECOMMENDED_MODEL_ID } from '../models/catalogue';
+import { DEFAULT_LOCAL_MODEL_ID } from '@prismical/desktop-contracts';
 import { MANAGED_TRANSCRIPTION_CONFIG } from '../transport/live';
 
 /** The frozen per-recording engine: what the lanes need to run a chunk. */
@@ -20,29 +20,29 @@ export interface RecordingEngine {
   readonly engine: TranscriptionEngine;
   /** Missing on historical recordings, which used English. */
   readonly language?: TranscriptionLanguage;
-  /** Local whisper catalogue id — the preference, or the recommended default. */
+  /** Local whisper catalogue id — the preference, or the default model. */
   readonly modelId: string;
   readonly byokBaseUrl: string | null;
   readonly byokModel: string | null;
 }
 
 /**
- * Local mode has no cloud transcriber, so a stored 'cloud' preference (the
- * default) coerces to 'local' there; every other combination is the stored
- * choice verbatim (cloud mode may run local whisper or BYOK — axis B is
- * orthogonal to axis A). The caller checks model readiness before capture;
- * the local lane retains recoverable work if its model later disappears.
+ * Local mode runs Whisper or direct BYOK. Cloud mode runs Whisper or account
+ * transcription through the backend; a stored direct-BYOK preference cannot
+ * bypass account entitlement checks. The caller checks local model readiness.
  */
 export const resolveRecordingEngine = (
   mode: AppMode,
   setting: TranscriptionSetting,
   language: TranscriptionLanguage = 'en'
 ): RecordingEngine => ({
-  engine: mode === 'local' && setting.engine === 'cloud' ? 'local' : setting.engine,
+  engine: mode === 'local'
+    ? setting.engine === 'cloud' ? 'local' : setting.engine
+    : setting.engine === 'byok' ? 'cloud' : setting.engine,
   language,
-  modelId: setting.modelId ?? RECOMMENDED_MODEL_ID,
-  byokBaseUrl: setting.byokBaseUrl,
-  byokModel: setting.byokModel,
+  modelId: setting.modelId ?? DEFAULT_LOCAL_MODEL_ID,
+  byokBaseUrl: mode === 'local' && setting.engine === 'byok' ? setting.byokBaseUrl : null,
+  byokModel: mode === 'local' && setting.engine === 'byok' ? setting.byokModel : null,
 });
 
 /** The English-only local model cannot honor another spoken language. */

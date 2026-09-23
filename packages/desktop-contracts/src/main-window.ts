@@ -877,14 +877,17 @@ export const DEFAULT_DOCK_HOTKEY = 'Alt+Shift+N';
 // API key is NOT here — it lives in the SecureStore and never crosses to the
 // renderer; only the non-secret base URL + model name ride the settings.
 
+export const DEFAULT_LOCAL_MODEL_ID = 'whisper-base-en';
+
 export const transcriptionEngineSchema = z.enum(['cloud', 'local', 'byok']);
 export type TranscriptionEngine = z.infer<typeof transcriptionEngineSchema>;
 
 /**
- * `modelId` is a local-model catalogue id (null = the recommended default);
+ * `modelId` is a local-model catalogue id (null = the default model);
  * `byokBaseUrl`/`byokModel` describe an OpenAI-compatible endpoint. Main
  * resolves the EFFECTIVE engine per recording (local mode coerces 'cloud' →
- * 'local'); the stored preference is what the user picked.
+ * 'local'; cloud mode coerces direct 'byok' → 'cloud'). The stored preference
+ * is what the user picked.
  */
 export const transcriptionSettingSchema = z
   .object({
@@ -1373,7 +1376,6 @@ export const modelViewSchema = z
     filename: z.string(),
     sizeBytes: z.number().int().nonnegative(),
     kind: modelKindSchema,
-    recommended: z.boolean(),
     installed: z.boolean(),
     installedAt: z.string().nullable(),
     download: modelDownloadViewSchema.nullable(),
@@ -1675,13 +1677,13 @@ export interface MainWindowCapabilitiesApi {
   readonly getAppleCalendarStatus: () => Promise<AppleCalendarStatus>;
   readonly enableAppleCalendar: () => Promise<AppleCalendarStatus>;
   readonly refreshAppleCalendar: () => Promise<AppleCalendarStatus>;
-  /** Store the BYOK transcription API key in main's secure store. */
+  /** Local mode only: store the BYOK transcription API key in main's secure store. */
   readonly setTranscriptionByokKey: (request: TranscriptionByokKeyRequest) => Promise<void>;
   /** Remove the stored BYOK key. */
   readonly clearTranscriptionByokKey: () => Promise<void>;
   /** Whether a BYOK key is stored — the key itself never crosses back. */
   readonly hasTranscriptionByokKey: () => Promise<boolean>;
-  /** Store an AI provider's API key in main's secure store. */
+  /** Local mode only: store an AI provider's API key in main's secure store. */
   readonly setAiProviderKey: (request: AiProviderKeyRequest) => Promise<void>;
   /** Remove a provider's stored key. */
   readonly clearAiProviderKey: (request: AiProviderRequest) => Promise<void>;

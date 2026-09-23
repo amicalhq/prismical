@@ -1,5 +1,7 @@
 'use client';
 
+import { useDialogSession } from './use-dialog-session';
+
 import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import { ChevronDown, Loader2, Sparkles } from 'lucide-react';
 
@@ -46,6 +48,7 @@ interface InstanceFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   mode: InstanceFormMode | null;
+  onTranscriptionSelected?: () => void;
 }
 
 const FIELD_LABEL_KEYS = {
@@ -80,7 +83,7 @@ function stepsForProvider(provider: ProviderType): WizardStep[] {
   return steps;
 }
 
-export default function InstanceFormDialog({ open, onOpenChange, mode }: InstanceFormDialogProps) {
+export default function InstanceFormDialog({ open, onOpenChange, mode, onTranscriptionSelected }: InstanceFormDialogProps) {
   const { getInstance } = useAIModels();
   const { isEnabled } = useFeatureFlags();
   const provider = mode?.kind === 'create' ? mode.provider : mode ? getInstance(mode.id)?.provider : null;
@@ -92,7 +95,7 @@ export default function InstanceFormDialog({ open, onOpenChange, mode }: Instanc
   ) return null;
 
   if (mode?.kind === 'edit') {
-    return <EditInstanceDialog open={open} onOpenChange={onOpenChange} id={mode.id} />;
+    return <EditInstanceDialog open={open} onOpenChange={onOpenChange} id={mode.id} onTranscriptionSelected={onTranscriptionSelected} />;
   }
   return (
     <CreateInstanceWizard
@@ -100,6 +103,7 @@ export default function InstanceFormDialog({ open, onOpenChange, mode }: Instanc
       open={open}
       onOpenChange={onOpenChange}
       provider={provider}
+      onTranscriptionSelected={onTranscriptionSelected}
     />
   );
 }
@@ -109,11 +113,14 @@ function CreateInstanceWizard({
   open,
   onOpenChange,
   provider,
+  onTranscriptionSelected,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   provider: ProviderType;
+  onTranscriptionSelected?: () => void;
 }) {
+  const { captureSession, changeOpen } = useDialogSession(open, onOpenChange, provider);
   const { t } = useTranslation();
   const createM = useCreateInstance();
   const updateM = useUpdateInstance();
@@ -183,7 +190,7 @@ function CreateInstanceWizard({
       setCreatedId(created.id);
       setConfig(cfg);
       if (steps.length === 1) {
-        onOpenChange(false); // connect-only provider (no catalog steps)
+        changeOpen(false); // connect-only provider (no catalog steps)
         return;
       }
       setStepIdx(1);
@@ -206,6 +213,7 @@ function CreateInstanceWizard({
   };
 
   const advance = async () => {
+    const isCurrent = captureSession();
     setBusy(true);
     setError(null);
     try {
@@ -223,21 +231,24 @@ function CreateInstanceWizard({
           instanceId: createdId,
           modelId: transcribeModel,
         });
+        if (!isCurrent()) return;
+        onTranscriptionSelected?.();
       }
+      if (!isCurrent()) return;
       if (isLast) {
-        onOpenChange(false);
+        changeOpen(false);
         return;
       }
       setStepIdx(i => i + 1);
     } catch {
-      setError('save');
+      if (isCurrent()) setError('save');
     } finally {
-      setBusy(false);
+      if (isCurrent()) setBusy(false);
     }
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={changeOpen}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -373,7 +384,7 @@ function CreateInstanceWizard({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
+          <Button variant="outline" onClick={() => changeOpen(false)} disabled={busy}>
             {t('common.actions.cancel')}
           </Button>
           {step === 'connect' ? (
@@ -450,11 +461,14 @@ function EditInstanceDialog({
   open,
   onOpenChange,
   id,
+  onTranscriptionSelected,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   id: string;
+  onTranscriptionSelected?: () => void;
 }) {
+  const { captureSession, changeOpen } = useDialogSession(open, onOpenChange, id);
   const { t } = useTranslation();
   const { getInstance } = useAIModels();
   const updateM = useUpdateInstance();
@@ -497,7 +511,7 @@ function EditInstanceDialog({
 
   if (!existing || !provider) {
     return (
-      <Dialog open={open} onOpenChange={onOpenChange}>
+      <Dialog open={open} onOpenChange={changeOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t('common.status.loading')}</DialogTitle>
@@ -540,17 +554,18 @@ function EditInstanceDialog({
   };
 
   const handleSave = async () => {
+    const isCurrent = captureSession();
     setIsSaving(true);
     try {
       await updateM.mutateAsync({
         id,
         patch: { label: label.trim(), config: buildConfig(), credentials: buildCredentials() },
       });
-      onOpenChange(false);
+      if (isCurrent()) changeOpen(false);
     } catch {
       // The shared mutation error handler shows a toast; keep the dialog open so the user can retry.
     } finally {
-      setIsSaving(false);
+      if (isCurrent()) setIsSaving(false);
     }
   };
 
@@ -561,11 +576,18 @@ function EditInstanceDialog({
       ? d.modelId
       : t('settings.aiModels.managedAutoShort');
   };
-  const setDefaultFor = (uc: UseCase, modelId: string) =>
-    setDefaultM.mutate({ useCase: uc, instanceId: id, modelId });
+  const setDefaultFor = async (uc: UseCase, modelId: string) => {
+    const isCurrent = captureSession();
+    try {
+      await setDefaultM.mutateAsync({ useCase: uc, instanceId: id, modelId });
+      if (isCurrent() && uc === 'transcription') onTranscriptionSelected?.();
+    } catch {
+      // The shared mutation error handler reports the failed save.
+    }
+  };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={changeOpen}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -648,7 +670,7 @@ function EditInstanceDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSaving}>
+          <Button variant="outline" onClick={() => changeOpen(false)} disabled={isSaving}>
             {t('common.actions.cancel')}
           </Button>
           <Button onClick={handleSave} disabled={isSaving}>

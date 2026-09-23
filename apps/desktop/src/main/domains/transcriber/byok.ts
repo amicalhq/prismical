@@ -1,5 +1,5 @@
 /**
- * ByokTranscriberLive — the bring-your-own-key lane: the
+ * ByokTranscriberLive — the local-mode bring-your-own-key lane: the
  * chunk goes to an OpenAI-compatible `POST {baseUrl}/audio/transcriptions`
  * (OpenAI, Groq, a self-hosted whisper server…) with the user's key, and the
  * device mints the segment from the answer's `text`. The multipart request
@@ -119,6 +119,9 @@ export const makeByokTranscriberLive = (
         engine
       ) =>
         Effect.gen(function* () {
+          // Recovery replays a frozen engine, so enforce the mode here as well
+          // as at recording start. Retain old audio without sending it directly.
+          if (appMode.mode !== 'local') return NOT_CONFIGURED;
           const key = yield* readKey(recordingId, engine.byokBaseUrl);
           const hasKey = key !== null && key !== '';
           const hasBaseUrl = engine.byokBaseUrl !== null && engine.byokBaseUrl !== '';

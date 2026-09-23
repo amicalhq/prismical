@@ -1173,6 +1173,14 @@ const ja = {
           'インスタンスと、それを参照するすべての既定値を削除します。いつでも再度追加できます。',
         removeTitle: '{{name}} を削除しますか？',
       },
+      deviceTranscription: {
+        title: 'デバイス内の文字起こし',
+        onDevice: 'このデバイス上',
+        manage: 'ローカルモデルを管理',
+        missingTitle: 'デバイス内モデルが利用できません',
+        missingDescription: 'このモデルをダウンロードするか、インストール済みの別のモデルを選択してください。',
+        noModels: 'デバイス内モデルがインストールされていません。',
+      },
       defaultCard: {
         change: 'モデルを変更',
         managedBy: 'Prismical が管理',
@@ -2815,7 +2823,7 @@ const ja = {
       deleteConfirm: 'モデルファイルをこのデバイスから削除します。いつでも再ダウンロードできます。',
       deleteConfirmTitle: '{{name}} を削除しますか？',
       description:
-        '音声認識モデルをダウンロードして、このデバイス上で録音を文字起こしします。モデルは Hugging Face から取得し、使用前に検証します。',
+        '音声認識モデルをダウンロードして、このデバイス上で録音を文字起こしします。選択中は音声がこのデバイスから送信されません。モデルは Hugging Face から取得し、使用前に検証します。',
       dismiss: '閉じる',
       download: 'ダウンロード',
       downloading: '{{downloaded}} / {{total}} · {{percent}}%',
@@ -2828,7 +2836,6 @@ const ja = {
       },
       installed: 'インストール済み',
       loading: 'モデルを読み込んでいます…',
-      recommended: 'おすすめ',
       retry: '再試行',
       storageLocation: '保存先: {{path}}',
       title: 'ローカルモデル',
@@ -2978,26 +2985,12 @@ const ja = {
         modelPlaceholder: 'whisper-1',
         saveKey: 'キーを保存',
       },
-      description: 'このデバイスで作成した録音の文字起こし方法を選択します。',
-      engines: {
-        byok: {
-          description:
-            '自分の API キーで OpenAI 互換の文字起こしエンドポイントに音声を送信します。',
-          label: '自分の API',
-        },
-        cloud: {
-          description:
-            'Prismical アカウントで文字起こしします。ローカルモードでは代わりにデバイス内エンジンを使用します。',
-          label: 'Prismical Cloud',
-        },
-        local: {
-          description:
-            'ダウンロードした Whisper モデルでオフライン文字起こしします。音声はこのコンピューターの外に出ません。',
-          label: 'このデバイス上',
-        },
-      },
-      manageModels: 'ローカルモデルを管理',
-      title: '文字起こしエンジン',
+    },
+    transcriptionProvider: {
+      title: '自分のAPIで文字起こし',
+      description: '音声はこのデバイスからプロバイダーに直接送信されます。Prismicalのサーバーは経由しません。',
+      useModel: 'このモデルを使用',
+      active: '使用中',
     },
     tray: {
       open: 'Prismical を開く',

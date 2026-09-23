@@ -198,7 +198,6 @@ export const makeModelManagerLive = (
             filename: entry.filename,
             sizeBytes: entry.sizeBytes,
             kind: entry.kind,
-            recommended: entry.recommended === true,
             installed: row !== undefined,
             installedAt: row?.downloadedAt ?? null,
             download: downloads.get(entry.id) ?? null,

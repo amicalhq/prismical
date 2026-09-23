@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
   plan: 'plan_free',
   flags: {} as Record<string, boolean>,
   update: vi.fn(),
+  create: vi.fn(),
+  setDefaultMutation: vi.fn(),
   setDefault: vi.fn(),
   models: vi.fn((..._args: unknown[]) => ({
     data: [{ id: 'gpt-5', name: 'GPT 5', type: 'language' }],
@@ -27,10 +29,10 @@ vi.mock('@prismical/app-client', () => ({
     isResolved: true,
   }),
   useInstanceModels: (...args: unknown[]) => mocks.models(...args),
-  useCreateInstance: () => ({}),
+  useCreateInstance: () => ({ mutateAsync: mocks.create }),
   useUpdateInstance: () => ({ mutateAsync: mocks.update }),
   useModelDefaults: () => ({ data: {} }),
-  useSetModelDefault: () => ({}),
+  useSetModelDefault: () => ({ mutateAsync: mocks.setDefaultMutation }),
   AUTO_SELECTION: { instanceId: 'prismical-cloud', modelId: 'auto' },
   PRISMICAL_CLOUD_INSTANCE_ID: 'prismical-cloud',
 }));
@@ -46,6 +48,7 @@ vi.mock('./ai-models-store', () => {
     }),
   };
 });
+vi.mock('../../../../shell/app-link', () => ({ AppLink: 'a' }));
 vi.mock('./default-card', () => ({ default: () => null }));
 vi.mock('./connected-list', () => ({
   default: ({ onEdit }: { onEdit: (id: string) => void }) => (
@@ -53,7 +56,13 @@ vi.mock('./connected-list', () => ({
   ),
 }));
 vi.mock('./model-curation', () => ({ ModelCuration: () => null }));
-vi.mock('./single-model-picker', () => ({ SingleModelPicker: () => null }));
+vi.mock('./single-model-picker', () => ({
+  SingleModelPicker: ({ modelType, onChange }: { modelType: string; onChange: (modelId: string) => void }) => (
+    <button onClick={() => onChange(modelType === 'transcription' ? 'whisper-1' : 'gpt-5')}>
+      Choose {modelType} model
+    </button>
+  ),
+}));
 beforeEach(() =>
   vi.stubGlobal(
     'ResizeObserver',
@@ -101,6 +110,48 @@ it('drops a selected model source when its provider flag is revoked', async () =
   expect(screen.queryByText('GPT 5')).toBeNull();
   expect(screen.queryByRole('button', { name: /Saved OpenAI/ })).toBeNull();
   expect(mocks.setDefault).not.toHaveBeenCalled();
+});
+
+it('activates account transcription when an account model is selected', async () => {
+  let finishSave!: () => void;
+  mocks.setDefault.mockImplementationOnce(() => new Promise<void>(resolve => { finishSave = resolve; }));
+  const onTranscriptionSelected = vi.fn();
+  await mount(
+    <ChangeDefaultDialog
+      open
+      onOpenChange={vi.fn()}
+      useCase="transcription"
+      byokAccess="allowed"
+      onLocked={vi.fn()}
+      onTranscriptionSelected={onTranscriptionSelected}
+    />
+  );
+  fireEvent.click(screen.getByRole('button', { name: /Prismical Cloud/ }));
+  expect(mocks.setDefault).toHaveBeenCalledWith('transcription', {
+    instanceId: 'prismical-cloud',
+    modelId: 'auto',
+  });
+  expect(onTranscriptionSelected).not.toHaveBeenCalled();
+  await act(async () => finishSave());
+  expect(onTranscriptionSelected).toHaveBeenCalledOnce();
+});
+
+it('keeps on-device transcription active when saving the account model fails', async () => {
+  mocks.setDefault.mockRejectedValueOnce(new Error('save failed'));
+  const onTranscriptionSelected = vi.fn();
+  await mount(
+    <ChangeDefaultDialog
+      open
+      onOpenChange={vi.fn()}
+      useCase="transcription"
+      byokAccess="allowed"
+      onLocked={vi.fn()}
+      onTranscriptionSelected={onTranscriptionSelected}
+    />
+  );
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: /Prismical Cloud/ })));
+  expect(screen.getByRole('dialog')).toBeTruthy();
+  expect(onTranscriptionSelected).not.toHaveBeenCalled();
 });
 
 it.each(['create', 'edit'] as const)(
@@ -207,4 +258,137 @@ it('badges a locked instance with the tier on a lifetime-deal plan', async () =>
   const row = screen.getByRole('button', { name: /Saved OpenAI/ });
   expect(row.textContent).toContain('Higher tier');
   expect(row.textContent).not.toContain('Pro');
+});
+
+
+it.each(['close and reopen', 'unmount and reopen'] as const)(
+  'ignores a pending transcription selection after %s',
+  async dismissal => {
+    let finishSave!: () => void;
+    mocks.setDefault.mockImplementationOnce(() => new Promise<void>(resolve => { finishSave = resolve; }));
+    const onTranscriptionSelected = vi.fn();
+    const onOpenChange = vi.fn();
+    const dialog = (
+      <ChangeDefaultDialog
+        open
+        onOpenChange={onOpenChange}
+        useCase="transcription"
+        byokAccess="allowed"
+        onLocked={vi.fn()}
+        onTranscriptionSelected={onTranscriptionSelected}
+      />
+    );
+    const { rerender, view } = await mount(dialog);
+    fireEvent.click(screen.getByRole('button', { name: /Prismical Cloud/ }));
+    expect(mocks.setDefault).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    rerender(view(dismissal === 'close and reopen' ? React.cloneElement(dialog, { open: false }) : <></>));
+    rerender(view(dialog));
+    const reopened = screen.getByRole('dialog');
+    onOpenChange.mockClear();
+    await act(async () => finishSave());
+    expect(onTranscriptionSelected).not.toHaveBeenCalled();
+    expect(onOpenChange).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog')).toBe(reopened);
+  }
+);
+
+it('does not activate transcription when a dismissed provider wizard finishes saving', async () => {
+  mocks.create.mockResolvedValueOnce({ id: 'inst_new' });
+  let finishSave!: () => void;
+  mocks.setDefaultMutation.mockImplementationOnce(() => new Promise<void>(resolve => { finishSave = resolve; }));
+  const onTranscriptionSelected = vi.fn();
+  const onOpenChange = vi.fn();
+  const { unmount } = await mount(
+    <InstanceFormDialog
+      open
+      mode={{ kind: 'create', provider: 'deepgram' }}
+      onOpenChange={onOpenChange}
+      onTranscriptionSelected={onTranscriptionSelected}
+    />
+  );
+  fireEvent.change(screen.getByLabelText('Label'), { target: { value: 'Meeting transcription' } });
+  fireEvent.change(screen.getByLabelText(/API key/), { target: { value: 'test-key' } });
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Connect' })));
+  fireEvent.click(screen.getByRole('button', { name: 'Choose transcription model' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Finish' }));
+  expect(mocks.setDefaultMutation).toHaveBeenCalledWith({
+    useCase: 'transcription', instanceId: 'inst_new', modelId: 'whisper-1',
+  });
+  unmount();
+  await act(async () => finishSave());
+  expect(onTranscriptionSelected).not.toHaveBeenCalled();
+  expect(onOpenChange).not.toHaveBeenCalled();
+});
+
+it.each([false, true])(
+  'keeps transcription activation independent of a later formatting save (dismissed: %s)',
+  async dismissed => {
+    let finishTranscription!: () => void;
+    let finishFormatting!: () => void;
+    mocks.setDefaultMutation
+      .mockImplementationOnce(() => new Promise<void>(resolve => { finishTranscription = resolve; }))
+      .mockImplementationOnce(() => new Promise<void>(resolve => { finishFormatting = resolve; }));
+    const onTranscriptionSelected = vi.fn();
+    const { unmount } = await mount(
+      <InstanceFormDialog
+        open
+        mode={{ kind: 'edit', id: 'inst_saved' }}
+        onOpenChange={vi.fn()}
+        onTranscriptionSelected={onTranscriptionSelected}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: /^Transcription default/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Choose transcription model' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Text generation \(Skills\) default/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Choose language model' }));
+    expect(mocks.setDefaultMutation).toHaveBeenNthCalledWith(1, {
+      useCase: 'transcription', instanceId: 'inst_saved', modelId: 'whisper-1',
+    });
+    expect(mocks.setDefaultMutation).toHaveBeenNthCalledWith(2, {
+      useCase: 'formatting', instanceId: 'inst_saved', modelId: 'gpt-5',
+    });
+    if (dismissed) unmount();
+    await act(async () => finishFormatting());
+    expect(onTranscriptionSelected).not.toHaveBeenCalled();
+    await act(async () => finishTranscription());
+    expect(onTranscriptionSelected).toHaveBeenCalledTimes(dismissed ? 0 : 1);
+  }
+);
+
+
+it.each(['locked', 'pending'] as const)('selects installed on-device models without account mutations when BYOK is %s', async byokAccess => {
+  const onSelect = vi.fn();
+  const onOpenChange = vi.fn();
+  const onTranscriptionSelected = vi.fn();
+  const onLocked = vi.fn();
+  await mount(
+    <ChangeDefaultDialog
+      open
+      useCase="transcription"
+      byokAccess={byokAccess}
+      onLocked={onLocked}
+      onOpenChange={onOpenChange}
+      onTranscriptionSelected={onTranscriptionSelected}
+      deviceTranscription={{
+        models: [
+          { id: 'base-en', name: 'Whisper Base (English)', installed: true },
+          { id: 'large', name: 'Whisper Large', installed: false },
+        ],
+        active: false,
+        loading: false,
+        selectedModelId: null,
+        onSelect,
+      }}
+    />
+  );
+  expect(screen.queryByRole('button', { name: /Whisper Large/ })).toBeNull();
+  expect(screen.getByRole('link', { name: 'Manage local models' }).getAttribute('href')).toBe('/settings/local-models');
+  fireEvent.click(screen.getByRole('button', { name: /Whisper Base \(English\)/ }));
+  expect(onSelect).toHaveBeenCalledWith('base-en');
+  expect(onOpenChange).toHaveBeenCalledWith(false);
+  expect(mocks.setDefault).not.toHaveBeenCalled();
+  expect(onTranscriptionSelected).not.toHaveBeenCalled();
+  expect(onLocked).not.toHaveBeenCalled();
 });

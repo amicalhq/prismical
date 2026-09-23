@@ -50,10 +50,9 @@ describe('TranscriptionScreen', () => {
     expect(state.microphoneDevices).toHaveBeenCalledWith(true);
   });
 
-  it('shows the desktop spoken choice and engine settings without the web microphone picker', async () => {
+  it('shows the desktop spoken choice without the web microphone picker', async () => {
     state.desktop = true;
-    render(<TranscriptionScreen engineSettings={<div>Native engine controls</div>} />);
-    expect(screen.getByText('Native engine controls')).toBeTruthy();
+    render(<TranscriptionScreen />);
     expect(screen.getByText('settings.transcription.nextRecording')).toBeTruthy();
     expect(screen.queryByLabelText('settings.transcription.microphoneLabel')).toBeNull();
     expect(state.microphoneDevices).toHaveBeenCalledWith(false);

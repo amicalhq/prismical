@@ -9,6 +9,7 @@ import { type ProviderType } from '../../../lib/providers';
 
 import { AIModelsProvider } from './components/ai-models-store';
 import DefaultCard from './components/default-card';
+import { DeviceTranscriptionChoices, DeviceTranscriptionSummary, type DeviceTranscription } from './components/device-transcription';
 import ChangeDefaultDialog from './components/change-default-dialog';
 import ConnectedList from './components/connected-list';
 import AvailableTiles from './components/available-tiles';
@@ -18,11 +19,19 @@ import { useTranslation } from 'react-i18next';
 type ChangeTarget = 'transcription' | 'formatting' | null;
 
 /**
- * `providerSettings`: the platform's AI-provider card — the
- * desktop router passes its desktop-owned card (BYO key / local runtime); web
+ * `providerSettings`: the platform's local AI controls — the
+ * desktop router passes its direct provider configuration; web
  * passes nothing. A named slot, not a capability branch in this screen.
  */
-function AIModelsSettingsContent({ providerSettings }: { providerSettings?: ReactNode }) {
+function AIModelsSettingsContent({
+  providerSettings,
+  deviceTranscription,
+  onAccountTranscriptionSelected,
+}: {
+  providerSettings?: ReactNode;
+  deviceTranscription?: DeviceTranscription;
+  onAccountTranscriptionSelected?: () => void;
+}) {
   const { t } = useTranslation();
   // The page owns each dialog's open state so children can trigger them via
   // callback (avoids prop-drilling open/close all the way down).
@@ -50,6 +59,14 @@ function AIModelsSettingsContent({ providerSettings }: { providerSettings?: Reac
 
       {providerSettings ? <section className="mb-6">{providerSettings}</section> : null}
 
+      {!byokInstances && deviceTranscription && (
+        <section className="mb-6 space-y-3">
+          <h2 className="text-sm font-semibold">{t('settings.aiModels.deviceTranscription.title')}</h2>
+          {deviceTranscription.active && <DeviceTranscriptionSummary device={deviceTranscription} />}
+          <DeviceTranscriptionChoices device={deviceTranscription} />
+        </section>
+      )}
+
       {byokInstances && (
         <>
           <section className="mb-6">
@@ -59,6 +76,7 @@ function AIModelsSettingsContent({ providerSettings }: { providerSettings?: Reac
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
               <DefaultCard
                 useCase="transcription"
+                deviceTranscription={deviceTranscription}
                 title={t('settings.aiModels.useCases.transcription.title')}
                 description={t('settings.aiModels.useCases.transcription.description')}
                 Icon={AudioLines}
@@ -105,11 +123,13 @@ function AIModelsSettingsContent({ providerSettings }: { providerSettings?: Reac
                 if (!open) setChangeTarget(null);
               }}
               useCase={changeTarget}
+              deviceTranscription={changeTarget === 'transcription' ? deviceTranscription : undefined}
               byokAccess={byokAccess}
               onLocked={() => {
                 setChangeTarget(null);
                 showUpgrade();
               }}
+              onTranscriptionSelected={onAccountTranscriptionSelected}
             />
           )}
 
@@ -120,6 +140,7 @@ function AIModelsSettingsContent({ providerSettings }: { providerSettings?: Reac
                 if (!open) setFormMode(current => current === formMode ? null : current);
               }}
               mode={formMode}
+              onTranscriptionSelected={onAccountTranscriptionSelected}
             />
           )}
 
@@ -131,10 +152,22 @@ function AIModelsSettingsContent({ providerSettings }: { providerSettings?: Reac
   );
 }
 
-export function AiModelsScreen({ providerSettings }: { providerSettings?: ReactNode } = {}) {
+export function AiModelsScreen({
+  providerSettings,
+  deviceTranscription,
+  onAccountTranscriptionSelected,
+}: {
+  providerSettings?: ReactNode;
+  deviceTranscription?: DeviceTranscription;
+  onAccountTranscriptionSelected?: () => void;
+} = {}) {
   return (
     <AIModelsProvider>
-      <AIModelsSettingsContent providerSettings={providerSettings} />
+      <AIModelsSettingsContent
+        providerSettings={providerSettings}
+        deviceTranscription={deviceTranscription}
+        onAccountTranscriptionSelected={onAccountTranscriptionSelected}
+      />
     </AIModelsProvider>
   );
 }

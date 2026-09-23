@@ -1226,6 +1226,14 @@ const de = {
           'Die Instanz und alle darauf verweisenden Standardwerte werden entfernt. Du kannst sie jederzeit erneut hinzufügen.',
         removeTitle: '{{name}} entfernen?',
       },
+      deviceTranscription: {
+        title: 'Transkription auf diesem Gerät',
+        onDevice: 'Auf diesem Gerät',
+        manage: 'Lokale Modelle verwalten',
+        missingTitle: 'Lokales Modell nicht verfügbar',
+        missingDescription: 'Lade dieses Modell herunter oder wähle ein anderes installiertes Modell.',
+        noModels: 'Keine lokalen Modelle installiert.',
+      },
       defaultCard: {
         change: 'Modell ändern',
         managedBy: 'Von Prismical verwaltet',
@@ -2922,7 +2930,7 @@ const de = {
         'Die Modelldatei wird von diesem Gerät entfernt. Du kannst sie jederzeit erneut herunterladen.',
       deleteConfirmTitle: '{{name}} löschen?',
       description:
-        'Lade Spracherkennungsmodelle herunter, um Aufnahmen auf diesem Gerät zu transkribieren. Die Modelle werden von Hugging Face geladen und vor der Verwendung geprüft.',
+        'Lade Spracherkennungsmodelle herunter, um Aufnahmen auf diesem Gerät zu transkribieren. Mit einem lokalen Modell bleibt das Audio auf diesem Gerät. Die Modelle werden von Hugging Face geladen und vor der Verwendung geprüft.',
       dismiss: 'Ausblenden',
       download: 'Herunterladen',
       downloading: '{{downloaded}} von {{total}} · {{percent}} %',
@@ -2935,7 +2943,6 @@ const de = {
       },
       installed: 'Installiert',
       loading: 'Modelle werden geladen…',
-      recommended: 'Empfohlen',
       retry: 'Erneut versuchen',
       storageLocation: 'Gespeichert unter {{path}}',
       title: 'Lokale Modelle',
@@ -3087,26 +3094,12 @@ const de = {
         modelPlaceholder: 'whisper-1',
         saveKey: 'Schlüssel speichern',
       },
-      description: 'Lege fest, wie Aufnahmen auf diesem Gerät transkribiert werden.',
-      engines: {
-        byok: {
-          description:
-            'Sendet Audio mit deinem eigenen API-Schlüssel an einen OpenAI-kompatiblen Transkriptionsendpunkt.',
-          label: 'Eigene API',
-        },
-        cloud: {
-          description:
-            'Transkribiert mit deinem Prismical-Konto. Im lokalen Modus verwenden Aufnahmen stattdessen die Engine auf diesem Gerät.',
-          label: 'Prismical Cloud',
-        },
-        local: {
-          description:
-            'Transkribiert offline mit einem heruntergeladenen Whisper-Modell. Audio verlässt diesen Computer nie.',
-          label: 'Auf diesem Gerät',
-        },
-      },
-      manageModels: 'Lokale Modelle verwalten',
-      title: 'Transkriptions-Engine',
+    },
+    transcriptionProvider: {
+      title: 'Transkription mit deiner eigenen API',
+      description: 'Audio wird direkt von diesem Gerät an deinen Anbieter gesendet. Es wird nicht über Prismical-Server übertragen.',
+      useModel: 'Dieses Modell verwenden',
+      active: 'Aktiv',
     },
     tray: {
       open: 'Prismical öffnen',

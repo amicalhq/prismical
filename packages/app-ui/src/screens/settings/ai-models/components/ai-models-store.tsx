@@ -51,7 +51,7 @@ interface AIModelsContextValue {
   defaults: ModelDefaults;
 
   getInstance: (id: string) => Instance | undefined;
-  setDefault: (useCase: UseCase, selection: ModelSelection) => void;
+  setDefault: (useCase: UseCase, selection: ModelSelection) => Promise<void>;
   createInstance: (
     provider: ProviderType,
     label: string,
@@ -90,13 +90,13 @@ export function AIModelsProvider({ children }: { children: ReactNode }) {
   );
 
   const setDefault = useCallback(
-    (useCase: UseCase, selection: ModelSelection) => {
+    async (useCase: UseCase, selection: ModelSelection) => {
       // Picking Auto CLEARS the row (revert to inherit / managed Auto) rather than writing an
       // explicit-Auto row — so a future org default isn't silently pinned. A real instance ⇒ BYOK PUT.
       if (selection.instanceId === PRISMICAL_CLOUD_INSTANCE_ID) {
-        clearDefaultM.mutate(useCase);
+        await clearDefaultM.mutateAsync(useCase);
       } else {
-        setDefaultM.mutate({ useCase, instanceId: selection.instanceId, modelId: selection.modelId });
+        await setDefaultM.mutateAsync({ useCase, instanceId: selection.instanceId, modelId: selection.modelId });
       }
     },
     [setDefaultM, clearDefaultM],

@@ -1231,6 +1231,14 @@ const en = {
           'The instance and any defaults pointing at it will be cleared. You can add it again any time.',
         removeTitle: 'Remove {{name}}?',
       },
+      deviceTranscription: {
+        title: 'On-device transcription',
+        onDevice: 'On this device',
+        manage: 'Manage local models',
+        missingTitle: 'On-device model unavailable',
+        missingDescription: 'Download this model or choose another installed model.',
+        noModels: 'No on-device models installed.',
+      },
       defaultCard: {
         change: 'Change model',
         managedBy: 'Managed by Prismical',
@@ -2862,7 +2870,7 @@ const en = {
         'The model file is removed from this device. You can download it again at any time.',
       deleteConfirmTitle: 'Delete {{name}}?',
       description:
-        'Download speech-recognition models to transcribe recordings on this device. Models are fetched from Hugging Face and verified before use.',
+        'Download speech-recognition models to transcribe on this device. When selected, audio stays on this device. Models are fetched from Hugging Face and verified before use.',
       dismiss: 'Dismiss',
       download: 'Download',
       downloading: '{{downloaded}} of {{total}} · {{percent}}%',
@@ -2875,7 +2883,6 @@ const en = {
       },
       installed: 'Installed',
       loading: 'Loading models…',
-      recommended: 'Recommended',
       retry: 'Retry',
       storageLocation: 'Stored in {{path}}',
       title: 'Local models',
@@ -3025,26 +3032,12 @@ const en = {
         modelPlaceholder: 'whisper-1',
         saveKey: 'Save key',
       },
-      description: 'Choose how recordings made on this device are transcribed.',
-      engines: {
-        byok: {
-          description:
-            'Send audio to an OpenAI-compatible transcription endpoint with your own API key.',
-          label: 'Your own API',
-        },
-        cloud: {
-          description:
-            'Transcribe with your Prismical account. In local mode, recordings use the on-device engine instead.',
-          label: 'Prismical Cloud',
-        },
-        local: {
-          description:
-            'Transcribe offline with a downloaded Whisper model. Audio never leaves this computer.',
-          label: 'On this device',
-        },
-      },
-      manageModels: 'Manage local models',
-      title: 'Transcription engine',
+    },
+    transcriptionProvider: {
+      title: 'Transcription with your own API',
+      description: 'Audio is sent directly from this device to your provider. It does not pass through Prismical servers.',
+      useModel: 'Use this model',
+      active: 'Active',
     },
     tray: {
       open: 'Open Prismical',

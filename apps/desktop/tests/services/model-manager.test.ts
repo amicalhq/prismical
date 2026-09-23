@@ -31,13 +31,13 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { assert, describe, it } from '@effect/vitest';
 import { SubscriptionRef, Context, Deferred, Effect, Exit, Fiber, Layer, Option, Scope, Stream } from 'effect';
+import { DEFAULT_LOCAL_MODEL_ID } from '@prismical/desktop-contracts';
 import type { ModelsStateView } from '@prismical/desktop-contracts';
 import { makeFakeOperationalDb } from '../helpers/fake-operational-db';
 import { makeTestLogger, testConfigLayer } from '../helpers/test-layers';
 import { OperationalDb, type LocalModelRow } from '../../src/main/infra/operational-db/service';
 import {
   MODEL_CATALOGUE,
-  RECOMMENDED_MODEL_ID,
   VAD_MODEL_ID,
 } from '../../src/main/domains/models/catalogue';
 import type { ModelCatalogueEntry } from '../../src/main/domains/models/catalogue';
@@ -173,7 +173,6 @@ const entryFor = (
   sha1: sha1(body),
   sizeBytes: body.length,
   kind: 'whisper',
-  recommended: true,
   ...overrides,
 });
 
@@ -234,7 +233,7 @@ const exists = (file: string) => fs.existsSync(file);
 const fileSha1 = (file: string) => sha1(fs.readFileSync(file));
 
 describe('ModelManager catalogue', () => {
-  it('ships six multilingual ggml entries, the recommended English base, and the Silero VAD entry', () => {
+  it('ships six multilingual ggml entries, the default English base, and the Silero VAD entry', () => {
     const hf = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main';
     const byId = Object.fromEntries(MODEL_CATALOGUE.map(entry => [entry.id, entry]));
     const pins: Array<[string, string, string]> = [
@@ -261,8 +260,7 @@ describe('ModelManager catalogue', () => {
       assert.isTrue(Number.isInteger(entry?.sizeBytes) && (entry?.sizeBytes ?? 0) > 0);
     }
     // The one VAD entry — whisper.cpp's ggml Silero conversion from the
-    // ggml-org/whisper-vad repo (NOT ggerganov/whisper.cpp), exact size,
-    // never recommended.
+    // ggml-org/whisper-vad repo (NOT ggerganov/whisper.cpp), exact size.
     const vad = byId[VAD_MODEL_ID];
     assert.isDefined(vad, VAD_MODEL_ID);
     assert.strictEqual(VAD_MODEL_ID, 'silero-vad-v5');
@@ -274,13 +272,7 @@ describe('ModelManager catalogue', () => {
     );
     assert.strictEqual(vad?.sizeBytes, 885_098);
     assert.strictEqual(vad?.kind, 'vad');
-    assert.notStrictEqual(vad?.recommended, true);
-    // Exactly one recommended default: the English base with its exact size.
-    assert.deepStrictEqual(
-      MODEL_CATALOGUE.filter(entry => entry.recommended).map(entry => entry.id),
-      [RECOMMENDED_MODEL_ID]
-    );
-    assert.strictEqual(byId[RECOMMENDED_MODEL_ID]?.sizeBytes, 147_964_211);
+    assert.strictEqual(byId[DEFAULT_LOCAL_MODEL_ID]?.sizeBytes, 147_964_211);
     assert.strictEqual(new Set(MODEL_CATALOGUE.map(entry => entry.filename)).size, pins.length + 1);
   });
 });
@@ -687,7 +679,6 @@ describe('ModelManager download', () => {
         filename: 'vad-model.bin',
         downloadUrl: `${fixture.url}/vad.bin`,
         kind: 'vad',
-        recommended: false,
       });
       const modelsDir = freshDir();
       const { layer, db, logger } = build({ catalogue: [whisper, vad], modelsDir });
@@ -734,7 +725,6 @@ describe('ModelManager download', () => {
         filename: 'vad-model.bin',
         downloadUrl: `${fixture.url}/vad.bin`,
         kind: 'vad',
-        recommended: false,
         sha1: 'da39a3ee5e6b4b0d3255bfef95601890afd80709',
       });
       const modelsDir = freshDir();
@@ -1046,7 +1036,6 @@ describe('ModelManager reconcile', () => {
       const adoptable = entryFor(fixture.url, adoptBody, {
         id: 'adoptable',
         filename: 'adoptable.bin',
-        recommended: false,
       });
       fs.writeFileSync(path.join(modelsDir, 'adoptable.bin'), adoptBody);
       const reached = yield* Deferred.make<void>();

@@ -165,7 +165,6 @@ const MODELS_STATE: ModelsStateView = {
       filename: 'ggml-base.en.bin',
       sizeBytes: 147_964_211,
       kind: 'whisper',
-      recommended: true,
       installed: false,
       installedAt: null,
       download: null,
@@ -315,12 +314,12 @@ const build = (
     appMode,
     // The models:* handlers and push fiber reach the model manager.
     models.layer,
-    // The BYOK key capability handlers reach the secure store.
+    // Local-mode key capabilities and the AI catalogue use the secure store.
     secureStore,
-    // The AI provider key/catalogue handlers reach the provider over
-    // the SAME secure store (a catalogue fetch is a network fault in tests).
+    // A catalogue fetch is a network fault in tests.
     makeAiProviderLive({ fetchFn: () => Promise.reject(new Error('offline')) }).pipe(
       Layer.provide(config),
+      Layer.provide(appMode),
       Layer.provide(settings),
       Layer.provide(secureStore),
       Layer.provide(logger.layer)
@@ -1507,6 +1506,7 @@ describe('registerMainWindowHandlers', () => {
           secureStore,
           makeAiProviderLive({ fetchFn: () => Promise.reject(new Error('offline')) }).pipe(
             Layer.provide(config),
+            Layer.provide(Layer.effect(AppModeService, makeAppMode('cloud', true))),
             Layer.provide(settings),
             Layer.provide(secureStore),
             Layer.provide(logger.layer)
@@ -2679,7 +2679,7 @@ describe('registerMainWindowHandlers', () => {
     'capability:{set,has,clear}TranscriptionByokKey keep the key in the secure store and never log it',
     () =>
       Effect.gen(function* () {
-        const { layer, logger } = build();
+        const { layer, logger } = build({}, { appMode: 'local' });
         const scope = yield* Scope.make();
         const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
         yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
@@ -2761,6 +2761,79 @@ describe('registerMainWindowHandlers', () => {
         assert.notInclude(logged, 'sk-foreign');
         yield* Scope.close(scope, Exit.void);
       })
+  );
+
+  it.effect('cloud mode rejects all direct provider-key capabilities', () =>
+    Effect.gen(function* () {
+      const { layer } = build();
+      const scope = yield* Scope.make();
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
+      yield* Context.get(ctx, WindowRegistry).openMainWindow.pipe(Scope.provide(scope));
+      const sender = fake.__windowInstances().at(-1)!.webContents;
+      const store = Context.get(ctx, SecureStore);
+      const transcriptionKey = 'transcription.byok.apiKey';
+      const providerKey = 'ai.openai.apiKey';
+      yield* store.setSecret(transcriptionKey, 'existing-transcription-key');
+      yield* store.setSecret(providerKey, 'existing-provider-key');
+      for (const [channel, payload] of [
+        [CHANNELS.capabilitySetTranscriptionByokKey, { key: 'new-key', baseUrl: 'https://api.test/v1' }],
+        [CHANNELS.capabilityClearTranscriptionByokKey, undefined],
+        [CHANNELS.capabilityHasTranscriptionByokKey, undefined],
+        [CHANNELS.capabilitySetAiProviderKey, { provider: 'openai', key: 'new-key' }],
+        [CHANNELS.capabilityClearAiProviderKey, { provider: 'openai' }],
+        [CHANNELS.capabilityHasAiProviderKey, { provider: 'openai' }],
+      ] as const) {
+        const result = yield* Effect.exit(Effect.tryPromise(() =>
+          fake.ipcMain.invoke(channel, { sender }, payload)
+        ));
+        assert.isTrue(Exit.isFailure(result), `cloud mode rejected ${channel}`);
+      }
+      assert.strictEqual(yield* store.getSecret(transcriptionKey), 'existing-transcription-key');
+      assert.strictEqual(yield* store.getSecret(providerKey), 'existing-provider-key');
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+
+  it.effect('local mode can save, check, and clear an AI provider key without exposing it', () =>
+    Effect.gen(function* () {
+      const { layer, logger } = build({}, { appMode: 'local' });
+      const scope = yield* Scope.make();
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
+      yield* Context.get(ctx, WindowRegistry).openMainWindow.pipe(Scope.provide(scope));
+      const sender = fake.__windowInstances().at(-1)!.webContents;
+      const invoke = (channel: string, payload: unknown) => Effect.promise(() =>
+        fake.ipcMain.invoke(channel, { sender }, payload)
+      );
+      const key = 'sk-local-provider-sentinel';
+      yield* invoke(CHANNELS.capabilitySetAiProviderKey, { provider: 'openai', key });
+      assert.strictEqual(yield* invoke(CHANNELS.capabilityHasAiProviderKey, { provider: 'openai' }), true);
+      assert.strictEqual(yield* Context.get(ctx, SecureStore).getSecret('ai.openai.apiKey'), key);
+      yield* invoke(CHANNELS.capabilityClearAiProviderKey, { provider: 'openai' });
+      assert.strictEqual(yield* invoke(CHANNELS.capabilityHasAiProviderKey, { provider: 'openai' }), false);
+      assert.notInclude(JSON.stringify(logger.entries), key);
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+
+  it.effect('capability:listAiModels exposes only the local catalogue', () =>
+    Effect.gen(function* () {
+      const { layer } = build();
+      const scope = yield* Scope.make();
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
+      const registry = Context.get(ctx, WindowRegistry);
+      yield* registry.openMainWindow.pipe(Scope.provide(scope));
+      const wc = fake.__windowInstances().at(-1)?.webContents;
+
+      const hosted = yield* Effect.promise(() =>
+        fake.ipcMain.invoke(CHANNELS.capabilityListAiModels, { sender: wc }, { provider: 'openai' })
+      );
+      assert.deepStrictEqual(hosted, { models: [], error: 'unsupported' });
+
+      yield* Scope.close(scope, Exit.void);
+    })
   );
 
   it.effect('capability:getPermissions serves mic + system-audio status, sender-validated', () =>

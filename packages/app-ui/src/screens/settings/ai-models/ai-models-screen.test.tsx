@@ -5,6 +5,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { I18nextProvider } from 'react-i18next';
 import { createApplicationI18n } from '@prismical/app-i18n';
 import { AiModelsScreen } from './ai-models-screen';
+import type { DeviceTranscription } from './components/device-transcription';
 
 const plan = vi.hoisted(() => ({ byok: false, enabled: true, resolved: true, planExternalId: 'plan_free' }));
 vi.mock('@prismical/app-client', () => ({
@@ -48,9 +49,9 @@ vi.mock('./components/instance-form-dialog', () => ({
 }));
 afterEach(() => { cleanup(); Object.assign(plan, { byok: false, enabled: true, resolved: true, planExternalId: 'plan_free' }); });
 
-async function mount() {
+async function mount(deviceTranscription?: DeviceTranscription) {
   const i18n = await createApplicationI18n('en');
-  return render(<I18nextProvider i18n={i18n}><AiModelsScreen providerSettings={<p>Device provider settings</p>} /></I18nextProvider>);
+  return render(<I18nextProvider i18n={i18n}><AiModelsScreen providerSettings={<p>Device provider settings</p>} deviceTranscription={deviceTranscription} /></I18nextProvider>);
 }
 
 it('keeps the page usable on a plan without BYOK and locks only connecting a provider', async () => {
@@ -84,7 +85,7 @@ it('keeps the page usable on a plan without BYOK and locks only connecting a pro
   expect(dialog.isConnected).toBe(false);
 });
 
-it('keeps paid-plan controls open without an upsell', async () => {
+it('opens provider controls when the BYOK entitlement is enabled', async () => {
   plan.byok = true;
   await mount();
   expect(screen.queryByText('Bring your own key is in Pro')).toBeNull();
@@ -117,4 +118,33 @@ it('sends a lifetime-deal tier to its listing with tier copy instead of Pro bill
   expect(link.getAttribute('href')).toBe('https://appsumo.com/products/prismical/');
   expect(link.getAttribute('target')).toBe('_blank');
   expect(screen.queryByRole('link', { name: 'Upgrade to Pro' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Force add' }));
+  expect(screen.queryByText(/Form for/)).toBeNull();
+  expect(screen.getByText('Connected list: locked')).toBeTruthy();
+});
+
+
+it('offers installed models in the local workspace without cloud controls or download management', async () => {
+  plan.enabled = false;
+  const onSelect = vi.fn();
+  await mount({
+    models: [{ id: 'base-en', name: 'Whisper Base (English)', installed: true }],
+    active: false,
+    loading: false,
+    selectedModelId: null,
+    onSelect,
+  });
+  fireEvent.click(screen.getByRole('button', { name: /Whisper Base \(English\)/ }));
+  expect(onSelect).toHaveBeenCalledWith('base-en');
+  expect(screen.getByRole('link', { name: 'Manage local models' }).getAttribute('href')).toBe('/settings/local-models');
+  expect(screen.queryByText('Add a provider')).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Download' })).toBeNull();
+});
+
+
+it('waits for the device catalogue before declaring no models installed', async () => {
+  plan.enabled = false;
+  await mount({ models: [], active: false, loading: true, selectedModelId: null, onSelect: vi.fn() });
+  expect(screen.getByText('Loading…')).toBeTruthy();
+  expect(screen.queryByText('No on-device models installed.')).toBeNull();
 });

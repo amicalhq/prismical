@@ -24,7 +24,7 @@ import {
 } from '@tanstack/react-router';
 import { useLocation, useParams, useSearch } from '@tanstack/react-router';
 import { AccountLanguageProvider, usePorts, useSessionView } from '@prismical/app-client';
-import type { AppModeValue } from '@prismical/desktop-contracts';
+import { DEFAULT_LOCAL_MODEL_ID, type AppModeValue } from '@prismical/desktop-contracts';
 import { useDesktopEnv } from './desktop-env';
 import { useGleapSupportAction } from './support/gleap';
 import { FloatErrorFallback, FloatNoteView } from './float-note-view';
@@ -33,9 +33,11 @@ import { DesktopAccountDetails } from './settings/account-details';
 import { AppModeSetting } from './settings/app-mode-setting';
 import { TelemetrySetting } from './settings/telemetry-setting';
 import { captureRendererException } from '../../telemetry';
+import { TranscriptionSettingsProvider, useTranscriptionSetting } from './settings/use-transcription-setting';
+import { useLocalModels } from './settings/use-local-models';
 import { LocalModelsScreen } from './settings/local-models-screen';
+import { TranscriptionProviderSetting } from './settings/transcription-provider-setting';
 import { AiProviderSetting } from './settings/ai-provider-setting';
-import { TranscriptionEngineSetting } from './settings/transcription-engine-setting';
 import { AppShell } from '@prismical/app-ui/shell/app-shell';
 import { FeatureGate } from '@prismical/app-ui/shell/feature-gate';
 import { HomeScreen } from '@prismical/app-ui/screens/home-screen';
@@ -112,7 +114,9 @@ function RootLayout() {
         )
       }
     >
-      <Outlet />
+      <TranscriptionSettingsProvider>
+        <Outlet />
+      </TranscriptionSettingsProvider>
     </AppShell>
   );
 }
@@ -198,17 +202,43 @@ function SkillEditorRoute() {
   return <SkillEditorScreen skillId={skillId} />;
 }
 
-// The shared TranscriptionScreen renders the
-// desktop-owned engine card through its named `engineSettings` slot — web
-// passes nothing and keeps its own controls.
 function TranscriptionRoute() {
-  return <TranscriptionScreen engineSettings={<TranscriptionEngineSetting />} />;
+  return <TranscriptionScreen />;
 }
 
-// The shared AI-models screen renders the desktop-owned
-// provider card (BYO key / Ollama) through its named `providerSettings` slot.
+// Model selection lives on AI Models; downloads stay on Local models.
 function AiModelsRoute() {
-  return <AiModelsScreen providerSettings={<AiProviderSetting />} />;
+  const localMode = useDesktopEnv().appMode === 'local';
+  const { transcription, patch } = useTranscriptionSetting();
+  const state = useLocalModels();
+  const models = state?.models.filter(model => model.kind === 'whisper') ?? [];
+  const onDevice = transcription.engine === 'local' || (localMode && transcription.engine === 'cloud');
+  const selectedModelId = onDevice
+    ? transcription.modelId ?? DEFAULT_LOCAL_MODEL_ID
+    : null;
+  return (
+    <AiModelsScreen
+      deviceTranscription={{
+        active: onDevice,
+        loading: state === null,
+        models,
+        selectedModelId,
+        onSelect: modelId => patch({ engine: 'local', modelId }),
+      }}
+      onAccountTranscriptionSelected={() => patch({ engine: 'cloud' })}
+      providerSettings={localMode ? (
+        <div className="space-y-6">
+          <TranscriptionProviderSetting transcription={transcription} onPatch={patch} />
+          <AiProviderSetting />
+        </div>
+      ) : undefined}
+    />
+  );
+}
+
+function LocalModelsRoute() {
+  const { transcription, patch } = useTranscriptionSetting();
+  return <LocalModelsScreen transcription={transcription} onPatch={patch} />;
 }
 
 // The shared Advanced screen renders the desktop-owned
@@ -367,8 +397,7 @@ const routeTree = rootRoute.addChildren([
   cloudOnly('settings/billing', 'billing', BillingHandoffScreen),
   child('settings/transcription', TranscriptionRoute),
   child('settings/dictation', TranscriptionRoute),
-  // Desktop-owned; its nav entry is gated on the 'local-models' capability.
-  child('settings/local-models', LocalModelsScreen),
+  child('settings/local-models', LocalModelsRoute),
   cloudOnly('settings/integrations', 'automations', IntegrationsScreen),
   cloudOnly('settings/integrations/automations/$id', 'automations', AutomationDetailRoute),
   cloudOnly('settings/integrations/$id', 'automations', IntegrationDetailRoute),

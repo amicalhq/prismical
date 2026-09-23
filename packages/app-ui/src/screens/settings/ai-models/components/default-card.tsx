@@ -17,6 +17,7 @@ import { useAIModels } from './ai-models-store';
 import { useTranslation } from 'react-i18next';
 
 import type { ByokAccess } from './byok-upgrade';
+import { DeviceTranscriptionSummary, type DeviceTranscription } from './device-transcription';
 
 interface DefaultCardProps {
   useCase: UseCase;
@@ -27,6 +28,7 @@ interface DefaultCardProps {
   /** A saved BYOK default outlives a downgrade; its runs go to Prismical Cloud until an upgrade. */
   byokAccess: ByokAccess;
   onChange: () => void;
+  deviceTranscription?: DeviceTranscription;
 }
 
 // Hero card for one model-default use case. Three vertical bands:
@@ -42,6 +44,7 @@ export default function DefaultCard({
   Icon,
   byokAccess,
   onChange,
+  deviceTranscription,
 }: DefaultCardProps) {
   const { t } = useTranslation();
   const { defaults, getInstance } = useAIModels();
@@ -62,9 +65,12 @@ export default function DefaultCard({
             {title}
           </h3>
           <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{description}</p>
+
         </div>
 
-        {isManaged ? (
+        {useCase === 'transcription' && deviceTranscription?.active ? (
+          <DeviceTranscriptionSummary device={deviceTranscription} />
+        ) : isManaged ? (
           <div className="rounded-md border bg-muted p-3">
             <div className="flex items-center gap-2.5 min-w-0">
               <Sparkles className="size-5 shrink-0 text-muted-foreground" />
@@ -101,8 +107,6 @@ export default function DefaultCard({
                   {t('settings.aiModels.planGate.notInPlan')}
                 </span>
                 {' - '}
-                {/* Text generation falls back to Prismical Cloud on its own; a recording does not
-                    switch lanes behind the owner's back, so transcription asks for the change. */}
                 {t(
                   useCase === 'transcription'
                     ? 'settings.aiModels.planGate.switchToCloudNote'

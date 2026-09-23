@@ -1,26 +1,25 @@
 /**
- * The local models settings screen is desktop-owned: the
- * on-device whisper model manager reaches the shared shell only through the
- * 'local-models' capability (nav entry + route), never as an app-mode branch
- * inside app-ui. Built from app-ui primitives over
+ * The on-device Whisper model manager downloads and removes local models.
+ * Built from app-ui primitives over
  * DesktopCapabilityPort.localModels (window.desktop.models in the adapter).
  *
  * Per row, local model states are: not installed → Download;
  * downloading → progress + Cancel; verifying/cancelling → status; error →
  * message + Retry + Dismiss (cancel clears an error entry); installed → Delete
- * behind a confirm. The ACTIVE model is a device preference
- * (DeviceSettings.transcription.modelId; null = the recommended entry) and is
- * only selectable among installed models.
+ * behind a confirm. Selecting an installed model makes it the transcription
+ * engine for this desktop (null modelId means the default model).
  */
 import * as React from 'react';
+import { DEFAULT_LOCAL_MODEL_ID } from '@prismical/desktop-contracts';
+import type { TranscriptionSetting } from '@prismical/app-contracts';
 import { useTranslation } from 'react-i18next';
 import type {
   LocalModel,
   LocalModelDownload,
   LocalModelDownloadError,
-  LocalModelsState,
 } from '@prismical/app-contracts';
-import { useDesktopCapabilities, useDeviceSettings } from '@prismical/app-client';
+import { useDesktopCapabilities } from '@prismical/app-client';
+import { useDesktopEnv } from '../desktop-env';
 import {
   formatApplicationBytes,
   useApplicationLocale,
@@ -40,6 +39,7 @@ import {
 import { Badge } from '@prismical/app-ui/ui/badge';
 import { Button } from '@prismical/app-ui/ui/button';
 import { Card, CardContent } from '@prismical/app-ui/ui/card';
+import { useLocalModels } from './use-local-models';
 
 // The wire error set → catalog keys (hyphenated ids are not catalog keys).
 const ERROR_KEYS = {
@@ -49,13 +49,6 @@ const ERROR_KEYS = {
   io: 'io',
 } as const satisfies Record<LocalModelDownloadError, string>;
 
-/** The live model-manager snapshot; null until the first snapshot lands. */
-function useLocalModels(): LocalModelsState | null {
-  const caps = useDesktopCapabilities();
-  const [state, setState] = React.useState<LocalModelsState | null>(null);
-  React.useEffect(() => caps.localModels.subscribe(setState), [caps]);
-  return state;
-}
 
 function DownloadStatus({
   download,
@@ -188,11 +181,6 @@ function ModelRow({
       <div className="min-w-0 space-y-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm font-medium text-foreground">{model.name}</span>
-          {model.recommended ? (
-            <Badge variant="secondary" data-testid="local-model-recommended">
-              {t('desktop.localModels.recommended')}
-            </Badge>
-          ) : null}
           {model.installed ? (
             <Badge variant="outline">{t('desktop.localModels.installed')}</Badge>
           ) : null}
@@ -210,37 +198,42 @@ function ModelRow({
   );
 }
 
-export function LocalModelsScreen() {
+export function LocalModelsScreen({ transcription, onPatch }: {
+  transcription: TranscriptionSetting;
+  onPatch: (fields: Partial<TranscriptionSetting>) => void;
+}) {
   const { t } = useTranslation();
   const { resolvedLocale } = useApplicationLocale();
   const caps = useDesktopCapabilities();
+  const localMode = useDesktopEnv().appMode === 'local';
   const state = useLocalModels();
-  const { settings, set } = useDeviceSettings();
-  const transcription = settings.transcription;
 
   // Whisper weights only — the VAD entry is managed beside the first
   // whisper download, not chosen by the user.
   const models = state?.models.filter(model => model.kind === 'whisper') ?? [];
-  // The EFFECTIVE active id mirrors main's resolution (modelId ?? recommended).
+  // The EFFECTIVE active id mirrors main's resolution (modelId ?? DEFAULT_LOCAL_MODEL_ID).
   // The Active badge renders only when that model is actually INSTALLED (a
   // badge on missing weights would be a lie); the delete handler keys on the
   // same effective id.
-  const activeId = transcription.modelId ?? models.find(model => model.recommended)?.id ?? null;
+  const preferredId = transcription.modelId ?? DEFAULT_LOCAL_MODEL_ID;
+  const onDevice = transcription.engine === 'local' || (localMode && transcription.engine === 'cloud');
+  const activeId = onDevice ? preferredId : null;
 
-  // A patch replaces the whole record — always spread the current one.
+  // The page merges field patches with pending edits from the other model cards.
   const setActiveModel = (modelId: string | null): void => {
-    void set({ transcription: { ...transcription, modelId } });
+    onPatch({ engine: 'local', modelId });
   };
   const deleteModel = (model: LocalModel): void => {
     void caps.localModels.delete(model.id);
     // Never leave the EFFECTIVE choice pointing at deleted weights: this row
     // can be active through the explicit preference OR as the null-default
-    // recommended fallback. Move the preference to another installed whisper
+    // default fallback. Move the preference to another installed whisper
     // model when one exists, else back to null.
-    if (model.id === activeId) {
+    if (model.id === preferredId) {
       const fallback =
         models.find(candidate => candidate.installed && candidate.id !== model.id)?.id ?? null;
-      if (fallback !== transcription.modelId) setActiveModel(fallback);
+      if (fallback !== transcription.modelId)
+        onPatch({ modelId: fallback });
     }
   };
 

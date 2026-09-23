@@ -2,6 +2,7 @@ import { desktopFetch } from '../../infra/http/client';
 import { Clock, Effect, Layer, Ref } from 'effect';
 import type { LanguageModel } from 'ai';
 import type { AiModelListing, AiProviderKind, AiProviderSetting } from '@prismical/desktop-contracts';
+import { AppModeService } from '../app-mode/service';
 import { AppConfig } from '../../infra/config/service';
 import { MainLogger } from '../../infra/logging/service';
 import { SecureStore } from '../../infra/secure-store/service';
@@ -57,11 +58,12 @@ interface MemoEntry {
 
 export const makeAiProviderLive = (
   options: AiProviderLiveOptions = {}
-): Layer.Layer<AiProvider, never, AppConfig | SettingsService | SecureStore | MainLogger> =>
+): Layer.Layer<AiProvider, never, AppConfig | AppModeService | SettingsService | SecureStore | MainLogger> =>
   Layer.effect(
     AiProvider,
     Effect.gen(function* () {
       const config = yield* AppConfig;
+      const localMode = (yield* AppModeService).mode === 'local';
       const settings = yield* SettingsService;
       const secrets = yield* SecureStore;
       const log = (yield* MainLogger).scoped('ai-provider');
@@ -72,6 +74,12 @@ export const makeAiProviderLive = (
       // is the one fake id, keys are irrelevant. e2e-only by AppConfig gate.
       const fakeModel = options.fakeModel ?? (config.e2eFakeAi ? createE2EFakeModel : undefined);
       if (fakeModel !== undefined) yield* log.warn('AiProvider is serving the scripted fake model');
+
+      const available = (provider: AiProviderKind): boolean => localMode || provider === 'ollama';
+      const currentSetting = (setting: AiProviderSetting): AiProviderSetting =>
+        !available(setting.provider)
+          ? { provider: 'ollama', model: null, baseUrl: null }
+          : setting;
 
       const catalogues = yield* Ref.make(new Map<AiProviderKind, CachedListing>());
       const toolSupport = yield* Ref.make(new Map<string, MemoEntry>());
@@ -103,8 +111,9 @@ export const makeAiProviderLive = (
 
       const listModels: AiProviderApi['listModels'] = (provider, force = false) =>
         Effect.gen(function* () {
+          if (!available(provider)) return { models: [], error: 'unsupported' };
           if (fakeModel !== undefined) return { models: [E2E_FAKE_MODEL_ID], error: null };
-          const setting = (yield* settings.get).ai;
+          const setting = currentSetting((yield* settings.get).ai);
           const { baseUrl } = settingFor(provider, setting);
           const now = yield* Clock.currentTimeMillis;
           const cached = force ? undefined : (yield* Ref.get(catalogues)).get(provider);
@@ -155,9 +164,10 @@ export const makeAiProviderLive = (
         });
 
       const instances: AiProviderApi['instances'] = Effect.gen(function* () {
-        const setting = (yield* settings.get).ai;
+        const setting = currentSetting((yield* settings.get).ai);
         const rows: AiInstanceView[] = [];
         for (const provider of AI_PROVIDER_KINDS) {
+          if (!available(provider)) continue;
           const active = provider === setting.provider;
           if (!active && (fakeModel !== undefined || !(yield* configured(provider, setting)))) continue;
           const listing = yield* listModels(provider);
@@ -177,7 +187,7 @@ export const makeAiProviderLive = (
       });
 
       const defaultSelection: AiProviderApi['defaultSelection'] = Effect.gen(function* () {
-        const setting = (yield* settings.get).ai;
+        const setting = currentSetting((yield* settings.get).ai);
         const modelId =
           fakeModel !== undefined ? E2E_FAKE_MODEL_ID : yield* effectiveModel(setting.provider, setting);
         return modelId === null ? null : { instanceId: localInstanceId(setting.provider), modelId };
@@ -186,7 +196,7 @@ export const makeAiProviderLive = (
       const setDefault: AiProviderApi['setDefault'] = selection =>
         Effect.gen(function* () {
           const provider = providerOfInstanceId(selection.instanceId);
-          if (provider === null) return false;
+          if (provider === null || !available(provider)) return false;
           const current = (yield* settings.get).ai;
           yield* settings.set({
             ai: {
@@ -219,7 +229,7 @@ export const makeAiProviderLive = (
 
       const resolve: AiProviderApi['resolve'] = (selection = {}) =>
         Effect.gen(function* () {
-          const setting = (yield* settings.get).ai;
+          const setting = currentSetting((yield* settings.get).ai);
           let provider: AiProviderKind = setting.provider;
           if (selection.instanceId !== undefined) {
             const named = providerOfInstanceId(selection.instanceId);
@@ -229,6 +239,11 @@ export const makeAiProviderLive = (
               );
             }
             provider = named;
+          }
+          if (!available(provider)) {
+            return yield* Effect.fail(
+              new AiProviderError({ reason: 'unknown-instance', provider })
+            );
           }
           if (fakeModel !== undefined) {
             const modelId = selection.modelId ?? E2E_FAKE_MODEL_ID;

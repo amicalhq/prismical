@@ -247,19 +247,16 @@ test.describe('local mode (seeded app:mode profile, no servers)', () => {
     launched = opened.launch;
     const page = opened.page;
 
-    // The desktop-owned screen hangs off the 'local-models' capability:
-    // a nav entry in the shared sidebar, a route in desktop's router.
+    // Downloads and deletion stay in the Local models manager.
     await page.getByRole('link', { name: 'Settings', exact: true }).click();
     await page.getByRole('link', { name: 'Local models', exact: true }).click();
     await expect(page.getByTestId('local-models-list')).toBeVisible();
 
-    // The whole linked catalogue, recommended entry first, nothing installed,
+    // The whole linked catalogue, English base first, nothing installed,
     // nothing in flight — and NOTHING is downloaded here (no network in e2e).
     const rows = page.getByTestId('local-model-row');
     await expect(rows).toHaveCount(7);
     await expect(rows.first()).toHaveAttribute('data-model-id', 'whisper-base-en');
-    await expect(page.getByTestId('local-model-recommended')).toHaveCount(1);
-    await expect(rows.first().getByTestId('local-model-recommended')).toBeVisible();
     await expect(rows.filter({ has: page.getByRole('button', { name: 'Download' }) })).toHaveCount(
       7
     );
@@ -268,13 +265,41 @@ test.describe('local mode (seeded app:mode profile, no servers)', () => {
     // The weights dir lives inside the (isolated) profile.
     await expect(page.getByTestId('local-models-dir')).toHaveText(/models$/);
 
-    // The engine card is slotted into the shared Transcription screen here too.
-    // Local mode has no Prismical Cloud engine to offer: the stored
-    // default 'cloud' is shown as the on-device engine main coerces it to.
+    // Transcription has no duplicate model controls.
     await page.getByRole('link', { name: 'Transcription', exact: true }).click();
-    await expect(page.getByTestId('transcription-engine')).toBeVisible();
+    await expect(page.getByTestId('transcription-engine')).toHaveCount(0);
     await expect(page.getByRole('radio', { name: 'Prismical Cloud' })).toHaveCount(0);
-    await expect(page.getByRole('radio', { name: 'On this device' })).toBeChecked();
+    await expect(page.getByRole('radio', { name: 'On this device' })).toHaveCount(0);
+  });
+
+  test('direct transcription is configured and selected in AI Models without an account', async () => {
+    const profileDir = await createLocalModeProfile();
+    const opened = await openLocalApp(profileDir);
+    launched = opened.launch;
+    const page = opened.page;
+    await page.evaluate(() => { window.location.hash = '#/settings/ai-models'; });
+    const provider = page.getByTestId('transcription-provider');
+    await expect(provider).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Add a provider' })).toHaveCount(0);
+    await provider.getByLabel('Base URL', { exact: true }).fill('https://transcription.example/v1');
+    await provider.getByLabel('Base URL', { exact: true }).press('Tab');
+    await provider.getByLabel('Model', { exact: true }).fill('whisper-1');
+    await provider.getByLabel('Model', { exact: true }).press('Enter');
+    await provider.getByLabel('API key', { exact: true }).fill(AI_KEY);
+    await provider.getByRole('button', { name: 'Save key', exact: true }).click();
+    await expect(provider.getByTestId('byok-key-status')).toHaveAttribute('data-has-key', 'true');
+    await provider.getByRole('button', { name: 'Use this model', exact: true }).click();
+    await expect(provider.getByTestId('transcription-provider-active')).toBeVisible();
+    await expect.poll(() => page.evaluate(() => window.desktop.settings.get().then(value => value.transcription)))
+      .toEqual({ engine: 'byok', modelId: null, byokBaseUrl: 'https://transcription.example/v1', byokModel: 'whisper-1' });
+    expect(await deviceSettingsJson(page)).not.toContain(AI_KEY);
+    await page.reload();
+    await expect(page.getByTestId('transcription-provider-active')).toBeVisible();
+    await expect(page.getByTestId('byok-key-status')).toHaveAttribute('data-has-key', 'true');
+    await expect(page.getByTestId('transcription-provider').getByLabel('API key', { exact: true })).toHaveValue('');
+    await page.getByRole('link', { name: 'Transcription', exact: true }).click();
+    await expect(page.getByTestId('transcription-engine')).toHaveCount(0);
+    await expect(page.getByTestId('byok-fields')).toHaveCount(0);
   });
 
   test('two windows converge through the main relay with no server (main ↔ float)', async () => {
@@ -349,8 +374,8 @@ test.describe('local mode (seeded app:mode profile, no servers)', () => {
       }
       await page.getByRole('radio', { name: label, exact: true }).click();
       await expect.poll(() => aiSetting(page)).toEqual({ provider, model: null, baseUrl: null });
-      await page.getByLabel('Model', { exact: true }).fill('test-model');
-      await page.getByLabel('Model', { exact: true }).press('Enter');
+      await page.getByTestId('ai-provider').getByLabel('Model', { exact: true }).fill('test-model');
+      await page.getByTestId('ai-provider').getByLabel('Model', { exact: true }).press('Enter');
       await expect
         .poll(() => aiSetting(page))
         .toEqual({ provider, model: 'test-model', baseUrl: null });
@@ -361,13 +386,13 @@ test.describe('local mode (seeded app:mode profile, no servers)', () => {
         'data-has-key',
         'false'
       );
-      await page.getByLabel('API key', { exact: true }).fill(AI_KEY);
-      await page.getByRole('button', { name: 'Save key' }).click();
+      await page.getByTestId('ai-provider').getByLabel('API key', { exact: true }).fill(AI_KEY);
+      await page.getByTestId('ai-provider').getByRole('button', { name: 'Save key' }).click();
       await expect(page.getByTestId('ai-provider-key-status')).toHaveAttribute(
         'data-has-key',
         'true'
       );
-      await expect(page.getByLabel('API key', { exact: true })).toHaveValue('');
+      await expect(page.getByTestId('ai-provider').getByLabel('API key', { exact: true })).toHaveValue('');
       expect(await deviceSettingsJson(page)).not.toContain(AI_KEY);
       // Public catalogues may load with a bogus key; otherwise the card shows
       // a reason. Either result must let the user save their configuration.
@@ -422,7 +447,7 @@ test.describe('local mode (seeded app:mode profile, no servers)', () => {
         'data-has-key',
         'true'
       );
-      await expect(page2.getByLabel('API key', { exact: true })).toHaveValue('');
+      await expect(page2.getByTestId('ai-provider').getByLabel('API key', { exact: true })).toHaveValue('');
 
       // Each provider keeps a separate key slot after restart.
       await page2
@@ -448,8 +473,8 @@ test.describe('local mode (seeded app:mode profile, no servers)', () => {
       window.location.hash = '#/settings/ai-models';
     });
     await expect(page.getByTestId('ai-provider')).toBeVisible();
-    await page.getByLabel('Model', { exact: true }).fill('test-model');
-    await page.getByLabel('Model', { exact: true }).press('Enter');
+    await page.getByTestId('ai-provider').getByLabel('Model', { exact: true }).fill('test-model');
+    await page.getByTestId('ai-provider').getByLabel('Model', { exact: true }).press('Enter');
     await expect.poll(() => aiSetting(page)).toMatchObject({ model: 'test-model' });
     await expect(page.getByTestId('ai-provider-key-status')).toHaveAttribute(
       'data-has-key',
@@ -539,6 +564,7 @@ test.describe('local mode (seeded app:mode profile, no servers)', () => {
     await page.evaluate(() => {
       window.location.hash = '#/settings/preferences';
     });
+    await expect(page.getByRole('link', { name: 'AI Models', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Local models', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Advanced', exact: true })).toBeVisible();
     for (const entry of [
@@ -579,22 +605,24 @@ test.describe('local mode (seeded app:mode profile, no servers)', () => {
     await editorSurface(page);
     await expect(page.getByRole('button', { name: 'Share note', exact: true })).toHaveCount(0);
 
-    // AI models: the provider card stands alone — no managed defaults, no
-    // instance CRUD, no add-a-provider tiles.
+    // AI Models offers local provider controls and model choices; downloads
+    // remain on the separate Local models page.
     await page.evaluate(() => {
       window.location.hash = '#/settings/ai-models';
     });
     await expect(page.getByTestId('ai-provider')).toBeVisible();
+    await expect(page.getByTestId('local-models-list')).toHaveCount(0);
+    await expect(page.getByTestId('transcription-provider')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Change model', exact: true })).toHaveCount(0);
     await expect(page.getByRole('heading', { name: 'Add a provider' })).toHaveCount(0);
 
-    // Transcription: no Prismical Cloud engine to pick; on-device is the choice.
+    // Transcription has no duplicate model controls.
     await page.evaluate(() => {
       window.location.hash = '#/settings/transcription';
     });
-    await expect(page.getByTestId('transcription-engine')).toBeVisible();
+    await expect(page.getByTestId('transcription-engine')).toHaveCount(0);
     await expect(page.getByRole('radio', { name: 'Prismical Cloud' })).toHaveCount(0);
-    await expect(page.getByRole('radio', { name: 'On this device' })).toBeChecked();
+    await expect(page.getByRole('radio', { name: 'On this device' })).toHaveCount(0);
 
     // The footer leads to the mode switch on the Advanced screen.
     await page.getByTestId('desktop-workspace-footer').click();
@@ -622,8 +650,8 @@ test.describe('local mode (seeded app:mode profile, no servers)', () => {
     });
     await expect(page.getByTestId('ai-provider')).toBeVisible();
     await expect(page.getByRole('radio', { name: 'OpenAI', exact: true })).toBeChecked();
-    await page.getByLabel('Model', { exact: true }).fill('test-model');
-    await page.getByLabel('Model', { exact: true }).press('Enter');
+    await page.getByTestId('ai-provider').getByLabel('Model', { exact: true }).fill('test-model');
+    await page.getByTestId('ai-provider').getByLabel('Model', { exact: true }).press('Enter');
     await expect
       .poll(() => aiSetting(page))
       .toMatchObject({ provider: 'openai', model: 'test-model' });
@@ -631,8 +659,8 @@ test.describe('local mode (seeded app:mode profile, no servers)', () => {
       'data-has-key',
       'false'
     );
-    await page.getByLabel('API key', { exact: true }).fill(AI_KEY);
-    await page.getByRole('button', { name: 'Save key' }).click();
+    await page.getByTestId('ai-provider').getByLabel('API key', { exact: true }).fill(AI_KEY);
+    await page.getByTestId('ai-provider').getByRole('button', { name: 'Save key' }).click();
     await expect(page.getByTestId('ai-provider-key-status')).toHaveAttribute(
       'data-has-key',
       'true'

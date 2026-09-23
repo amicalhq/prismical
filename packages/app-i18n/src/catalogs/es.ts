@@ -1215,6 +1215,14 @@ const es = {
           'Se borrarán la instancia y los valores predeterminados que apunten a ella. Puedes volver a añadirla cuando quieras.',
         removeTitle: '¿Quitar {{name}}?',
       },
+      deviceTranscription: {
+        title: 'Transcripción en este dispositivo',
+        onDevice: 'En este dispositivo',
+        manage: 'Gestionar modelos locales',
+        missingTitle: 'Modelo local no disponible',
+        missingDescription: 'Descarga este modelo o elige otro modelo instalado.',
+        noModels: 'No hay modelos locales instalados.',
+      },
       defaultCard: {
         change: 'Cambiar modelo',
         managedBy: 'Administrado por Prismical',
@@ -2888,7 +2896,7 @@ const es = {
         'El archivo del modelo se elimina de este dispositivo. Puedes volver a descargarlo cuando quieras.',
       deleteConfirmTitle: '¿Eliminar {{name}}?',
       description:
-        'Descarga modelos de reconocimiento de voz para transcribir grabaciones en este dispositivo. Los modelos se obtienen de Hugging Face y se verifican antes de usarse.',
+        'Descarga modelos de reconocimiento de voz para transcribir en este dispositivo. Al seleccionar uno, el audio permanece aquí. Los modelos se obtienen de Hugging Face y se verifican antes de usarse.',
       dismiss: 'Descartar',
       download: 'Descargar',
       downloading: '{{downloaded}} de {{total}} · {{percent}} %',
@@ -2901,7 +2909,6 @@ const es = {
       },
       installed: 'Instalado',
       loading: 'Cargando modelos…',
-      recommended: 'Recomendado',
       retry: 'Reintentar',
       storageLocation: 'Guardado en {{path}}',
       title: 'Modelos locales',
@@ -3051,26 +3058,12 @@ const es = {
         modelPlaceholder: 'whisper-1',
         saveKey: 'Guardar clave',
       },
-      description: 'Elige cómo se transcriben las grabaciones hechas en este dispositivo.',
-      engines: {
-        byok: {
-          description:
-            'Envía el audio a un endpoint de transcripción compatible con OpenAI con tu propia clave de API.',
-          label: 'Tu propia API',
-        },
-        cloud: {
-          description:
-            'Transcribe con tu cuenta de Prismical. En modo local, las grabaciones usan el motor de este dispositivo.',
-          label: 'Prismical Cloud',
-        },
-        local: {
-          description:
-            'Transcribe sin conexión con un modelo Whisper descargado. El audio nunca sale de este equipo.',
-          label: 'En este dispositivo',
-        },
-      },
-      manageModels: 'Gestionar modelos locales',
-      title: 'Motor de transcripción',
+    },
+    transcriptionProvider: {
+      title: 'Transcripción con tu propia API',
+      description: 'El audio se envía directamente desde este dispositivo a tu proveedor. No pasa por los servidores de Prismical.',
+      useModel: 'Usar este modelo',
+      active: 'Activo',
     },
     tray: {
       open: 'Abrir Prismical',

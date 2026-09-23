@@ -1131,6 +1131,14 @@ const zhTW = {
         removeDescription: '此執行個體及所有指向它的預設值都會被清除。你可以隨時重新新增。',
         removeTitle: '要移除 {{name}} 嗎？',
       },
+      deviceTranscription: {
+        title: '裝置端轉錄',
+        onDevice: '在此裝置上',
+        manage: '管理本機模型',
+        missingTitle: '本機模型無法使用',
+        missingDescription: '請下載此模型，或選擇其他已安裝的模型。',
+        noModels: '尚未安裝本機模型。',
+      },
       defaultCard: {
         change: '變更模型',
         managedBy: '由 Prismical 管理',
@@ -2714,7 +2722,7 @@ const zhTW = {
       deleteConfirm: '模型檔案將從此裝置移除。你隨時可以再次下載。',
       deleteConfirmTitle: '要刪除 {{name}} 嗎？',
       description:
-        '下載語音辨識模型，在此裝置上轉錄錄音。模型從 Hugging Face 取得，並在使用前進行驗證。',
+        '下載語音辨識模型，在此裝置上轉錄錄音。選用本機模型時，音訊會留在此裝置。模型從 Hugging Face 取得，並在使用前進行驗證。',
       dismiss: '關閉',
       download: '下載',
       downloading: '{{downloaded}} / {{total}} · {{percent}}%',
@@ -2726,7 +2734,6 @@ const zhTW = {
       },
       installed: '已安裝',
       loading: '正在載入模型…',
-      recommended: '推薦',
       retry: '重試',
       storageLocation: '儲存於 {{path}}',
       title: '本機模型',
@@ -2872,23 +2879,12 @@ const zhTW = {
         modelPlaceholder: 'whisper-1',
         saveKey: '儲存金鑰',
       },
-      description: '選擇在此裝置上錄製的錄音要如何轉錄。',
-      engines: {
-        byok: {
-          description: '使用你自己的 API 金鑰，將音訊傳送到 OpenAI 相容的轉錄端點。',
-          label: '自己的 API',
-        },
-        cloud: {
-          description: '使用你的 Prismical 帳號轉錄。在本機模式下，錄音改用裝置端引擎。',
-          label: 'Prismical Cloud',
-        },
-        local: {
-          description: '使用已下載的 Whisper 模型離線轉錄。音訊不會離開這台電腦。',
-          label: '在此裝置上',
-        },
-      },
-      manageModels: '管理本機模型',
-      title: '轉錄引擎',
+    },
+    transcriptionProvider: {
+      title: '使用自己的 API 轉錄',
+      description: '音訊會從此裝置直接傳送至你的供應商，不會經過 Prismical 伺服器。',
+      useModel: '使用此模型',
+      active: '使用中',
     },
     tray: {
       open: '開啟 Prismical',

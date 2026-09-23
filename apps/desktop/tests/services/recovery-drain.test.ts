@@ -43,7 +43,7 @@ import { SyncTranscriptSegmentCreateRequestSchema } from '@prismical/api-contrac
 import { WorkspaceIdentity, type RecoveryOwner } from '../../src/main/runtime/workspace-identity';
 import { AppModeService, makeAppMode, type AppMode } from '../../src/main/domains/app-mode/service';
 import { TRANSCRIPT_SEGMENTS_PATH } from '../../src/main/domains/recording/segment-mirror';
-import { RECOMMENDED_MODEL_ID } from '../../src/main/domains/models/catalogue';
+import { DEFAULT_LOCAL_MODEL_ID } from '@prismical/desktop-contracts';
 import { resolveRecordingEngine } from '../../src/main/domains/transcriber/engine';
 import { mintChunkSegment } from '../../src/main/domains/transcriber/segment';
 import {
@@ -1056,7 +1056,7 @@ describe('RecoveryDrain — transcription engine at drain time', () => {
       const recordingId = 'rec_local_mode';
       const dir = h.recoveryDir(recordingId);
       yield* writeWav(dir, 'mic', seconds(5));
-      yield* installModel(h, RECOMMENDED_MODEL_ID);
+      yield* installModel(h, DEFAULT_LOCAL_MODEL_ID);
       // Engine NULL (legacy): local mode re-applies the cloud→local coercion.
       yield* h.insertRecovery({ recordingId, captureMode: 'mic', wavPath: dir });
       yield* h.db.updateRecoveryOutbox(recordingId, { status: 'interrupted' });
@@ -1115,7 +1115,7 @@ describe('RecoveryDrain — transcription engine at drain time', () => {
 
         // Pass 2: a DB row whose FILE is gone is still missing → parks again.
         yield* h.db.upsertLocalModel({
-          modelId: RECOMMENDED_MODEL_ID,
+          modelId: DEFAULT_LOCAL_MODEL_ID,
           filename: 'ghost.bin',
           path: path.join(h.userDataDir, 'ghost.bin'),
           sizeBytes: 4,
@@ -1131,7 +1131,7 @@ describe('RecoveryDrain — transcription engine at drain time', () => {
         assert.isTrue(fs.existsSync(dir));
 
         // Pass 3: the model is installed for real → the row resolves on-device.
-        yield* installModel(h, RECOMMENDED_MODEL_ID);
+        yield* installModel(h, DEFAULT_LOCAL_MODEL_ID);
         yield* TestClock.adjust(Duration.minutes(2));
         const third = yield* h.drain();
         assert.strictEqual(third.resolved, 1);
@@ -1185,7 +1185,7 @@ describe('RecoveryDrain — engine follows the row and yields to live capture', 
           transcription: { engine: 'cloud' },
           localLane: mintingLocalLane(() => 'on-device'),
         });
-        yield* installModel(h, RECOMMENDED_MODEL_ID);
+        yield* installModel(h, DEFAULT_LOCAL_MODEL_ID);
         const recordingId = 'rec_row_local';
         const dir = h.recoveryDir(recordingId);
         yield* writeWav(dir, 'mic', seconds(5));
@@ -1256,7 +1256,7 @@ describe('RecoveryDrain durability and row isolation', () => {
         mode: 'local',
         localLane: mintingLocalLane(() => 'retained speech'),
       });
-      yield* installModel(h, RECOMMENDED_MODEL_ID);
+      yield* installModel(h, DEFAULT_LOCAL_MODEL_ID);
       const recordingId = 'rec_store_unavailable';
       const dir = h.recoveryDir(recordingId);
       yield* h.store.recordingStarted({
@@ -1770,7 +1770,7 @@ describe('RecoveryDrain finalized data and frozen engine', () => {
       const dir = h.recoveryDir(recordingId);
       const engineConfig = {
         engine: 'byok' as const,
-        modelId: RECOMMENDED_MODEL_ID,
+        modelId: DEFAULT_LOCAL_MODEL_ID,
         byokBaseUrl: 'https://original-provider.invalid',
         byokModel: 'original-model',
       };
@@ -1838,7 +1838,7 @@ describe('RecoveryDrain spoken language', () => {
       yield* h.insertRecovery({
         recordingId, captureMode: 'mic', wavPath: dir,
         createInput: { recordingId, captureMode: 'mic', title: 'Recovered', startedAt: 0, transcriptionConfig },
-        engineConfig: { engine: 'cloud', modelId: RECOMMENDED_MODEL_ID, byokBaseUrl: null, byokModel: null, language: 'ja' },
+        engineConfig: { engine: 'cloud', modelId: DEFAULT_LOCAL_MODEL_ID, byokBaseUrl: null, byokModel: null, language: 'ja' },
       });
       h.fakeCloud.setRequestResponder(() => ({ ok: true, status: 503, bodyJson: null }));
       yield* h.drain();

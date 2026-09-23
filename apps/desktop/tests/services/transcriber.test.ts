@@ -18,7 +18,7 @@ import { isValidPrefixedId } from '@prismical/id';
 import { makeTestLogger } from '../helpers/test-layers';
 import { fakeSegment, makeFakeWorkspaceBackend } from '../helpers/fake-recording';
 import { makeTranscriberStack } from '../helpers/fake-workspace-env';
-import { RECOMMENDED_MODEL_ID } from '../../src/main/domains/models/catalogue';
+import { DEFAULT_LOCAL_MODEL_ID } from '@prismical/desktop-contracts';
 import { CAPTURE_SAMPLE_RATE } from '../../src/main/domains/recording/chunker';
 import {
   TRANSCRIPT_SEGMENTS_PATH,
@@ -54,7 +54,7 @@ import { MainLogger } from '../../src/main/infra/logging/service';
 const PARAMS: TranscribeChunkParams = { chunkIndex: 3, chunkStartMs: 15_000, source: 'mic' };
 const CLOUD: RecordingEngine = {
   engine: 'cloud',
-  modelId: RECOMMENDED_MODEL_ID,
+  modelId: DEFAULT_LOCAL_MODEL_ID,
   byokBaseUrl: null,
   byokModel: null,
 };
@@ -197,24 +197,28 @@ describe('resolveRecordingEngine (mode × preference; model presence is the lane
     assert.deepStrictEqual(resolveRecordingEngine('cloud', pref()), {
       engine: 'cloud',
       language: 'en',
-      modelId: RECOMMENDED_MODEL_ID,
+      modelId: DEFAULT_LOCAL_MODEL_ID,
       byokBaseUrl: null,
       byokModel: null,
     });
     assert.strictEqual(resolveRecordingEngine('local', pref()).engine, 'local');
     assert.strictEqual(resolveRecordingEngine('cloud', pref({ engine: 'local' })).engine, 'local');
     assert.strictEqual(resolveRecordingEngine('local', pref({ engine: 'local' })).engine, 'local');
-    assert.strictEqual(resolveRecordingEngine('cloud', pref({ engine: 'byok' })).engine, 'byok');
+    assert.strictEqual(resolveRecordingEngine('cloud', pref({ engine: 'byok' })).engine, 'cloud');
     assert.strictEqual(resolveRecordingEngine('local', pref({ engine: 'byok' })).engine, 'byok');
   });
 
-  it('keeps the chosen engine configuration when resolving a non-English recording', () => {
+  it('allows direct BYOK only in local mode and keeps the spoken language', () => {
     const setting = pref({
       engine: 'byok', modelId: 'whisper-small',
       byokBaseUrl: 'https://byok.test/v1', byokModel: 'whisper-1',
     });
-    assert.deepStrictEqual(resolveRecordingEngine('cloud', setting, 'ja'), {
+    assert.deepStrictEqual(resolveRecordingEngine('local', setting, 'ja'), {
       ...setting, modelId: 'whisper-small', language: 'ja',
+    });
+    assert.deepStrictEqual(resolveRecordingEngine('cloud', setting, 'ja'), {
+      ...setting, engine: 'cloud', modelId: 'whisper-small', language: 'ja',
+      byokBaseUrl: null, byokModel: null,
     });
   });
 
@@ -228,27 +232,16 @@ describe('resolveRecordingEngine (mode × preference; model presence is the lane
     assert.isTrue(supportsRecordingLanguage({ ...englishOnly, engine: 'byok' }, 'ja'));
   });
 
-  it('modelId falls back to the recommended model; an explicit id and the BYOK knobs pass through', () => {
+  it('modelId falls back to the default model and an explicit id passes through', () => {
     assert.strictEqual(
       resolveRecordingEngine('cloud', pref({ engine: 'local' })).modelId,
-      RECOMMENDED_MODEL_ID
+      DEFAULT_LOCAL_MODEL_ID
     );
     const explicit = resolveRecordingEngine(
       'local',
       pref({ engine: 'local', modelId: 'whisper-tiny' })
     );
     assert.strictEqual(explicit.modelId, 'whisper-tiny');
-    const byok = resolveRecordingEngine(
-      'cloud',
-      pref({ engine: 'byok', byokBaseUrl: 'https://byok.test/v1', byokModel: 'whisper-1' })
-    );
-    assert.deepStrictEqual(byok, {
-      engine: 'byok',
-      language: 'en',
-      modelId: RECOMMENDED_MODEL_ID,
-      byokBaseUrl: 'https://byok.test/v1',
-      byokModel: 'whisper-1',
-    });
   });
 });
 

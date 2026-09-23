@@ -158,7 +158,7 @@ const SETTINGS_NAV_DEFINITIONS: SidebarNavDefinition[] = [
     url: '/settings/ai-models',
     icon: Brain,
     descriptionKey: 'navigation.settingsSections.aiModels.description',
-    searchTerms: ['providers', 'openai', 'openrouter', 'gemini', 'text generation'],
+    searchTerms: ['providers', 'openai', 'openrouter', 'gemini', 'text generation', 'whisper', 'offline', 'on-device', 'transcription'],
   },
   {
     titleKey: 'navigation.settingsSections.skills.title',

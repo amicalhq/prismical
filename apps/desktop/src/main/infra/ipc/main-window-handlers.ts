@@ -1262,6 +1262,12 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
       runPromise(validateMainSender(event).pipe(Effect.andThen(eventkit.refresh)))
     );
 
+    // Direct provider keys belong to local mode. Account mode uses server-owned
+    // instances and their plan checks, even if a renderer invokes these channels.
+    const requireLocalKeys = appMode.mode === 'local'
+      ? Effect.void
+      : Effect.fail(new PayloadRejected('INVALID_REQUEST'));
+
     // capability:{set,clear,has}TranscriptionByokKey — the BYOK
     // API key's only home is the secure store. Nothing here logs or echoes the
     // key: a rejected payload logs no issues (they could describe the value),
@@ -1270,6 +1276,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
     yield* acquireHandle(CHANNELS.capabilitySetTranscriptionByokKey, (event, payload) =>
       runPromise(
         validateMainSender(event).pipe(
+          Effect.andThen(requireLocalKeys),
           Effect.flatMap((): Effect.Effect<void, PayloadRejected> => {
             const parsed = parseTranscriptionByokKeyRequest(payload);
             if (!parsed.success) {
@@ -1305,6 +1312,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
     yield* acquireHandle(CHANNELS.capabilityClearTranscriptionByokKey, event =>
       runPromise(
         validateMainSender(event).pipe(
+          Effect.andThen(requireLocalKeys),
           Effect.andThen(
             secureStore.deleteSecret(BYOK_API_KEY_SECRET).pipe(
               Effect.catchTag('DbError', error =>
@@ -1322,6 +1330,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
     yield* acquireHandle(CHANNELS.capabilityHasTranscriptionByokKey, event =>
       runPromise(
         validateMainSender(event).pipe(
+          Effect.andThen(requireLocalKeys),
           Effect.andThen(
             secureStore.getSecret(BYOK_API_KEY_SECRET).pipe(
               Effect.flatMap(secret =>
@@ -1363,6 +1372,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
     yield* acquireHandle(CHANNELS.capabilitySetAiProviderKey, (event, payload) =>
       runPromise(
         validateMainSender(event).pipe(
+          Effect.andThen(requireLocalKeys),
           Effect.flatMap((): Effect.Effect<void, PayloadRejected> => {
             const parsed = parseAiProviderKeyRequest(payload);
             if (!parsed.success) {
@@ -1400,6 +1410,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
     yield* acquireHandle(CHANNELS.capabilityClearAiProviderKey, (event, payload) =>
       runPromise(
         validateMainSender(event).pipe(
+          Effect.andThen(requireLocalKeys),
           Effect.flatMap((): Effect.Effect<void, PayloadRejected> => {
             const parsed = parseAiProviderRequest(payload);
             if (!parsed.success) {
@@ -1425,6 +1436,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
     yield* acquireHandle(CHANNELS.capabilityHasAiProviderKey, (event, payload) =>
       runPromise(
         validateMainSender(event).pipe(
+          Effect.andThen(requireLocalKeys),
           Effect.flatMap((): Effect.Effect<boolean, PayloadRejected> => {
             const parsed = parseAiProviderRequest(payload);
             if (!parsed.success) {

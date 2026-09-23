@@ -1,5 +1,5 @@
-import { readFile, rm } from 'node:fs/promises';
-import path from 'node:path';
+import { rm } from 'node:fs/promises';
+import type { ModelsStateView } from '@prismical/desktop-contracts';
 import { test, expect, type ElectronApplication, type Page } from '@playwright/test';
 import { startFakeOAuthServer, type FakeOAuthServer } from './helpers/fake-oauth';
 import {
@@ -102,21 +102,6 @@ const transcriptionSetting = (page: Page): Promise<TranscriptionSettingSnapshot>
       .get()
       .then(settings => settings.transcription)
   );
-
-const hasByokKey = (page: Page): Promise<boolean> =>
-  page.evaluate(() =>
-    (
-      window as never as {
-        desktop: { capabilities: { hasTranscriptionByokKey: () => Promise<boolean> } };
-      }
-    ).desktop.capabilities.hasTranscriptionByokKey()
-  );
-
-const readOptional = (file: string): Promise<Buffer> =>
-  readFile(file).catch(() => Buffer.alloc(0));
-
-/** A key that could only be in the DB/log because THIS test put it there. */
-const BYOK_KEY = 'e2e-byok-sentinel-4c9d21';
 
 test.describe('native settings UI', () => {
   let server: FakeOAuthServer | undefined;
@@ -279,7 +264,7 @@ test.describe('native settings UI', () => {
     expect(server.refreshRequests()).toHaveLength(1);
   });
 
-  test('transcription engine + BYOK key round-trip through IPC and persist across restart', async () => {
+  test('AI Models and Local models keep selection and downloads separate from Transcription', async () => {
     server = await startFakeOAuthServer();
     const opened = await openApp(server);
     launched = opened.launch;
@@ -287,115 +272,89 @@ test.describe('native settings UI', () => {
     await signIn(page, launched.app);
     await openPreferences(page);
 
-    // The desktop-owned engine card renders through the
-    // shared TranscriptionScreen's named slot; the stored default is cloud.
     await page.getByRole('link', { name: 'Transcription', exact: true }).click();
-    await expect(page.getByTestId('transcription-engine')).toBeVisible();
-    await expect(page.getByRole('radio', { name: 'Prismical Cloud' })).toBeChecked();
+    await expect(page.getByTestId('transcription-engine')).toHaveCount(0);
+    await expect(page.getByRole('radio', { name: 'Your own API' })).toHaveCount(0);
+    await expect(page.getByTestId('byok-fields')).toHaveCount(0);
 
-    await page.getByRole('radio', { name: 'On this device' }).click();
-    await expect(page.getByRole('radio', { name: 'On this device' })).toBeChecked();
-    await expect(page.getByRole('link', { name: 'Manage local models' })).toBeVisible();
+    await page.getByRole('link', { name: 'AI Models', exact: true }).click();
+    await expect(page.getByTestId('local-models-list')).toHaveCount(0);
+    await expect(page.getByTestId('transcription-provider')).toHaveCount(0);
+    await expect(page.getByTestId('ai-provider')).toHaveCount(0);
+    await page.getByRole('link', { name: 'Local models', exact: true }).click();
+    await expect(page.getByTestId('local-models-list')).toBeVisible();
+    await expect(page.getByTestId('local-model-row')).toHaveCount(7);
+    await expect(page.getByRole('button', { name: 'Download' })).toHaveCount(7);
     await expect
       .poll(() => transcriptionSetting(page))
-      .toEqual({ engine: 'local', modelId: null, byokBaseUrl: null, byokModel: null });
+      .toEqual({ engine: 'cloud', modelId: null, byokBaseUrl: null, byokModel: null });
+  });
 
-    // BYOK: the non-secret fields ride DeviceSettings (one record, replaced
-    // whole); the key rides the capability channel into the secure store.
-    await page.getByRole('radio', { name: 'Your own API' }).click();
-    await expect(page.getByTestId('byok-fields')).toBeVisible();
-    await page.getByLabel('Base URL', { exact: true }).fill('https://byok.example/v1');
-    await page.getByLabel('Base URL', { exact: true }).press('Enter');
-    await page.getByLabel('Model', { exact: true }).fill('whisper-1');
-    await page.getByLabel('Model', { exact: true }).press('Enter');
-    await expect
-      .poll(() => transcriptionSetting(page))
-      .toEqual({
-        engine: 'byok',
-        modelId: null,
-        byokBaseUrl: 'https://byok.example/v1',
-        byokModel: 'whisper-1',
-      });
-    await expect(page.getByTestId('byok-key-status')).toHaveAttribute('data-has-key', 'false');
-    await page.getByLabel('API key', { exact: true }).fill(BYOK_KEY);
-    await page.getByRole('button', { name: 'Save key' }).click();
-    await expect(page.getByTestId('byok-key-status')).toHaveAttribute('data-has-key', 'true');
-    // The input is never pre-filled and the key never rides device settings.
-    await expect(page.getByLabel('API key', { exact: true })).toHaveValue('');
-    expect(await hasByokKey(page)).toBe(true);
-    expect(JSON.stringify(await deviceSettings(page))).not.toContain(BYOK_KEY);
+  test('AI Models reflects a manager selection and switches between installed and account models', async () => {
+    server = await startFakeOAuthServer({
+      appResponse: url => url.pathname === '/apps/v1/me/model-defaults'
+        ? { status: 200, body: { transcription: null, formatting: null } }
+        : undefined,
+    });
+    const opened = await openApp(server);
+    launched = opened.launch;
+    const page = opened.page;
+    await signIn(page, launched.app);
 
-    const profileDir = launched.userDataDir;
-    keptProfile = profileDir;
-    await closePrismical(launched, { keepProfile: true });
-    launched = undefined;
+    // Inject installed metadata at the model IPC boundary. This checks model
+    // selection and persisted settings without downloading or running weights.
+    const catalogue = await page.evaluate(() => (
+      window as never as { desktop: { models: { getState: () => Promise<ModelsStateView> } } }
+    ).desktop.models.getState());
+    const installed = {
+      ...catalogue,
+      models: catalogue.models.map(model => model.id === 'whisper-tiny'
+        ? { ...model, installed: true, installedAt: '2026-01-01T00:00:00Z' }
+        : model),
+    };
+    await launched.app.evaluate(({ ipcMain, BrowserWindow }, snapshot) => {
+      ipcMain.removeHandler('models:getState');
+      ipcMain.handle('models:getState', () => snapshot);
+      for (const window of BrowserWindow.getAllWindows()) {
+        window.webContents.send('models:stateChanged', snapshot);
+      }
+    }, installed);
 
-    // On disk (same discipline as auth-sentinel): the raw key is absent from the
-    // operational DB and the main log, while the e2e-fake secure-store custody
-    // payload IS present — the scan reads the very file that holds the secret.
-    const dbBytes = Buffer.concat(
-      await Promise.all([
-        readFile(path.join(profileDir, 'operational.db')),
-        readOptional(path.join(profileDir, 'operational.db-wal')),
-        readOptional(path.join(profileDir, 'operational.db-shm')),
-      ])
-    );
-    expect(dbBytes.length).toBeGreaterThan(0);
-    expect(dbBytes.includes(BYOK_KEY, 0, 'utf8')).toBe(false);
-    const credential = JSON.stringify({ baseUrl: 'https://byok.example/v1', key: BYOK_KEY });
-    const custody = Buffer.from(`e2e:${credential}`, 'utf8').toString('base64');
-    expect(dbBytes.includes(custody, 0, 'utf8')).toBe(true);
-    const mainLog = await readFile(path.join(profileDir, 'logs', 'main.jsonl'), 'utf8');
-    expect(mainLog.length).toBeGreaterThan(0);
-    expect(mainLog).not.toContain(BYOK_KEY);
+    await openPreferences(page);
+    await page.getByRole('link', { name: 'Local models', exact: true }).click();
+    const tiny = page.getByTestId('local-model-row').filter({ hasText: 'Whisper Tiny' });
+    await tiny.getByRole('button', { name: 'Use this model', exact: true }).click();
+    await expect.poll(() => transcriptionSetting(page)).toMatchObject({
+      engine: 'local', modelId: 'whisper-tiny',
+    });
+    await expect(tiny.getByTestId('local-model-active')).toBeVisible();
 
-    const second = await openApp(server, profileDir);
-    reopened = second.launch;
-    const page2 = second.page;
-    await expect(page2.getByTestId('auth-gate')).toHaveAttribute('data-gate-state', 'signed-in');
-    await expect(page2.getByTestId('desktop-shell')).toBeVisible();
-    await expect
-      .poll(() => transcriptionSetting(page2))
-      .toEqual({
-        engine: 'byok',
-        modelId: null,
-        byokBaseUrl: 'https://byok.example/v1',
-        byokModel: 'whisper-1',
-      });
-    expect(await hasByokKey(page2)).toBe(true);
+    await page.getByRole('link', { name: 'AI Models', exact: true }).click();
+    await expect(page.getByTestId('local-models-list')).toHaveCount(0);
+    const transcription = page.locator('[data-slot="card"]').filter({
+      has: page.getByRole('heading', { name: 'Transcription', exact: true }),
+    });
+    await expect(transcription.getByText('Whisper Tiny', { exact: true })).toBeVisible();
+    await expect(transcription.getByText('On this device', { exact: true })).toBeVisible();
+    await transcription.getByRole('button', { name: 'Change model', exact: true }).click();
+    const picker = page.getByRole('dialog');
+    await expect(picker.getByRole('button', { name: /Whisper Tiny/ })).toBeVisible();
+    await expect(picker.getByRole('button', { name: /Whisper Base/ })).toHaveCount(0);
+    await picker.getByRole('button', { name: /Prismical Cloud.*Auto/ }).click();
+    await expect(picker).toHaveCount(0);
+    await expect.poll(() => transcriptionSetting(page)).toMatchObject({ engine: 'cloud' });
+    await expect(transcription.getByText('Prismical Cloud · Auto', { exact: true })).toBeVisible();
+    await expect(transcription.getByText('Whisper Tiny', { exact: true })).toHaveCount(0);
 
-    await openPreferences(page2);
-    await page2.getByRole('link', { name: 'Transcription', exact: true }).click();
-    await expect(page2.getByRole('radio', { name: 'Your own API' })).toBeChecked();
-    await expect(page2.getByLabel('Base URL', { exact: true })).toHaveValue(
-      'https://byok.example/v1'
-    );
-    await expect(page2.getByLabel('Model', { exact: true })).toHaveValue('whisper-1');
-    await expect(page2.getByTestId('byok-key-status')).toHaveAttribute('data-has-key', 'true');
-
-    // The port-level settings seed ensures that a renderer reload
-    // recreates the preload push-buffer empty and main pushes settings:changed
-    // only on a CHANGE, so without the subscribe-time get() seed the screen
-    // would sit on DEFAULT settings and the next whole-record patch would wipe
-    // the stored BYOK record. Reload, patch ONE field, assert the rest survive.
-    await page2.reload();
-    await expect(page2.getByTestId('desktop-shell')).toBeVisible();
-    await expect(page2.getByTestId('transcription-engine')).toBeVisible();
-    await expect(page2.getByRole('radio', { name: 'Your own API' })).toBeChecked();
-    await page2.getByLabel('Model', { exact: true }).fill('whisper-2');
-    await page2.getByLabel('Model', { exact: true }).press('Enter');
-    await expect
-      .poll(() => transcriptionSetting(page2))
-      .toEqual({
-        engine: 'byok',
-        modelId: null,
-        byokBaseUrl: 'https://byok.example/v1',
-        byokModel: 'whisper-2',
-      });
-
-    await page2.getByRole('button', { name: 'Clear key' }).click();
-    await expect(page2.getByTestId('byok-key-status')).toHaveAttribute('data-has-key', 'false');
-    expect(await hasByokKey(page2)).toBe(false);
+    await transcription.getByRole('button', { name: 'Change model', exact: true }).click();
+    await picker.getByRole('button', { name: /Whisper Tiny/ }).click();
+    await expect(picker).toHaveCount(0);
+    await expect.poll(() => transcriptionSetting(page)).toMatchObject({
+      engine: 'local', modelId: 'whisper-tiny',
+    });
+    await expect(transcription.getByText('Whisper Tiny', { exact: true })).toBeVisible();
+    await page.getByRole('link', { name: 'Local models', exact: true }).click();
+    await expect(tiny.getByTestId('local-model-active')).toBeVisible();
   });
 
   test('an owner can open billing on web with the active desktop organization', async () => {

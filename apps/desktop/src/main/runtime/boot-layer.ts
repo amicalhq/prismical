@@ -244,6 +244,7 @@ export const makeBootLayer = (
   // workspace rebuild. Nothing is fetched at build.
   const aiProvider = AiProviderLive.pipe(
     Layer.provide(appConfigLayer),
+    Layer.provide(appMode),
     Layer.provide(settings),
     Layer.provide(secureStore),
     Layer.provide(logging)

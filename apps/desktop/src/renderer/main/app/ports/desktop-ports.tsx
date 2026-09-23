@@ -364,8 +364,7 @@ const recordingPort: RecordingPort = {
 };
 
 // Desktop owns these capabilities. `has` answers true for every settings
-// capability (including the 'local-models' / 'transcription-engine' pair —
-// the model manager and the engine setting exist in both app modes); the two
+// capability; the two
 // window-chrome capabilities are per-OS (they key the shared shell's
 // traffic-light spacer / overlay clearances) and answer from the
 // preload-exposed platform. `settings` is the first real per-capability
@@ -384,14 +383,13 @@ const createDesktopCapabilityPort = (appMode: 'local' | 'cloud'): DesktopCapabil
     switch (capability) {
       // The AI provider card drives the local lanes only — in cloud mode
       // the server serves Ask/Skills and the card would be a dead control.
-      // (BYOK in cloud mode) flips this to true for both modes; the shared
-      // screen keeps a named slot either way, never a mode branch.
       case 'ai-provider':
         return appMode === 'local';
       // The app-mode switch card exists in both modes (it names the current
       // mode and offers the other); explicit so the mode-scoped cases above it
       // stay the only per-mode answers.
       case 'app-mode':
+      case 'local-models':
         return true;
       case 'window-chrome-mac':
         return window.desktop.platform === 'darwin';
@@ -516,8 +514,6 @@ const createDesktopCapabilityPort = (appMode: 'local' | 'cloud'): DesktopCapabil
       };
     },
   },
-  // The BYOK transcription key: set crosses the key once into main's
-  // secure store; has answers a boolean (a failed invoke reads as "no key").
   transcriptionByok: {
     setKey: (key, baseUrl) =>
       window.desktop.capabilities

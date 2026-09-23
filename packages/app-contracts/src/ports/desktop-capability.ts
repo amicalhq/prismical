@@ -28,9 +28,6 @@ export type DesktopCapability =
   // Local whisper model manager: gates the Local models
   // settings entry + screen. Web answers false; the screen is desktop-owned.
   | 'local-models'
-  // Transcription engine choice: gates the engine card the
-  // desktop router slots into the shared TranscriptionScreen.
-  | 'transcription-engine'
   // AI provider choice + key custody: gates the provider card
   // the desktop router slots into the shared AI models screen.
   | 'ai-provider'
@@ -64,14 +61,14 @@ export type InterfaceLanguagePreference = '' | InterfaceLanguage;
 
 /**
  * Which engine transcribes desktop recordings —
- * orthogonal to the app mode: cloud mode may run local whisper.
+ * Cloud mode may run local Whisper; direct BYOK is available in local mode.
  */
 export type TranscriptionEngine = 'cloud' | 'local' | 'byok';
 
 /**
  * The transcription-engine preference. ONE record so the
  * knobs move together. `modelId` is a local-model catalogue id (null = the
- * recommended default); `byokBaseUrl`/`byokModel` describe an OpenAI-compatible
+ * default model); `byokBaseUrl`/`byokModel` describe an OpenAI-compatible
  * endpoint. The BYOK API key NEVER rides device settings (it crosses to the
  * renderer on every push) — it lives in main's secure store.
  */
@@ -138,7 +135,6 @@ export interface LocalModel {
   readonly filename: string;
   readonly sizeBytes: number;
   readonly kind: LocalModelKind;
-  readonly recommended: boolean;
   readonly installed: boolean;
   readonly installedAt: string | null;
   readonly download: LocalModelDownload | null;
@@ -418,9 +414,9 @@ export interface DesktopCapabilityPort {
     subscribe(listener: (state: LocalModelsState) => void): () => void;
   };
   /**
-   * The BYOK transcription API key (gated on
-   * `has('transcription-engine')`). The key lives ONLY in main's secure store —
-   * it never rides DeviceSettings and is never read back: `hasKey` answers a
+   * The direct BYOK transcription API key, available only in local mode.
+   * The key lives ONLY in main's secure store — it never rides DeviceSettings
+   * and is never read back: `hasKey` answers a
    * boolean. Web: no-ops, `hasKey` → false.
    */
   readonly transcriptionByok: {
@@ -429,7 +425,7 @@ export interface DesktopCapabilityPort {
     hasKey(): Promise<boolean>;
   };
   /**
-   * The AI provider API keys and live model catalogue (gated on
+   * Local-mode AI provider API keys and live model catalogue (gated on
    * `has('ai-provider')`). One key slot per provider kind, same custody as
    * `transcriptionByok`: never read back, `hasKey` answers a boolean.
    * `listModels` is best-effort (an unreachable provider yields an empty list

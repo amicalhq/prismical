@@ -97,13 +97,7 @@ export function LanguageCombobox({
   );
 }
 
-/**
- * `engineSettings`: the platform's transcription-engine
- * controls, rendered in the desktop branch in place of the placeholder card.
- * A named slot, not an environment branch — desktop's router passes its
- * desktop-owned engine card; web passes nothing and is unchanged.
- */
-export function TranscriptionScreen({ engineSettings }: { engineSettings?: React.ReactNode } = {}) {
+export function TranscriptionScreen() {
   const { t } = useTranslation();
   const isDesktop = useDesktopCapabilities().has('global-shortcuts');
   const [preferences, setPreferences] = useRecordingPreferences();
@@ -214,19 +208,6 @@ export function TranscriptionScreen({ engineSettings }: { engineSettings?: React
             </p>
           </CardContent>
         </Card>
-        {isDesktop && (
-          <div className="mt-6">
-            {engineSettings ?? (
-              <Card>
-                <CardContent>
-                  <p className="text-sm text-muted-foreground">
-                    {t('settings.transcription.desktopNotice')}
-                  </p>
-                </CardContent>
-              </Card>
-            )}
-          </div>
-        )}
       </div>
     </TooltipProvider>
   );

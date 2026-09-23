@@ -1,5 +1,7 @@
 'use client';
 
+import { useDialogSession } from './use-dialog-session';
+
 import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Loader2, Lock, RefreshCw, Search, Sparkles } from 'lucide-react';
 
@@ -16,7 +18,7 @@ import { Input } from '../../../../ui/input';
 import { Label } from '../../../../ui/label';
 import { Badge } from '../../../../ui/badge';
 import { RadioGroup, RadioGroupItem } from '../../../../ui/radio-group';
-import type { CatalogEntry, Instance, UseCase } from '../../mock-data';
+import type { CatalogEntry, Instance, ModelSelection, UseCase } from '../../mock-data';
 import {
   CLOUD_CATALOG_PROVIDERS,
   isProviderType,
@@ -36,6 +38,7 @@ import { useAIModels } from './ai-models-store';
 import { useTranslation } from 'react-i18next';
 
 import { useUpgradeTarget, type ByokAccess } from './byok-upgrade';
+import { DeviceTranscriptionChoices, type DeviceTranscription } from './device-transcription';
 
 const USE_CASE_TO_MODEL_TYPE: Record<UseCase, ModelType> = {
   transcription: 'transcription',
@@ -50,6 +53,8 @@ interface ChangeDefaultDialogProps {
   byokAccess: ByokAccess;
   /** A locked instance hands off to the upgrade explanation instead of its catalog. */
   onLocked: () => void;
+  onTranscriptionSelected?: () => void;
+  deviceTranscription?: DeviceTranscription;
 }
 
 // Two-step picker for setting a model default.
@@ -62,17 +67,23 @@ export default function ChangeDefaultDialog({
   useCase,
   byokAccess,
   onLocked,
+  onTranscriptionSelected,
+  deviceTranscription,
 }: ChangeDefaultDialogProps) {
+  const { captureSession, changeOpen } = useDialogSession(open, onOpenChange, useCase);
   const { t } = useTranslation();
   const { keys: upgradeKeys } = useUpgradeTarget();
   const { instances, defaults, setDefault } = useAIModels();
   const { isEnabled } = useFeatureFlags();
   const modelType = USE_CASE_TO_MODEL_TYPE[useCase];
+  const device = useCase === 'transcription' ? deviceTranscription : undefined;
+  const deviceActive = device?.active === true;
 
   const [chosenInstanceId, setChosenInstanceId] = useState<string | null>(null);
   const [pendingModelId, setPendingModelId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Reset to step 1 each time the dialog opens.
   useEffect(() => {
@@ -81,6 +92,7 @@ export default function ChangeDefaultDialog({
       setPendingModelId(null);
       setSearchQuery('');
       setIsRefreshing(false);
+      setIsSaving(false);
     }
   }, [open]);
 
@@ -147,19 +159,25 @@ export default function ChangeDefaultDialog({
     void liveModels.refetch();
   };
 
-  // Pick managed Auto (Prismical Cloud) directly from step 1 — no model to choose.
-  const handleSelectAuto = () => {
-    setDefault(useCase, AUTO_SELECTION);
-    onOpenChange(false);
+  const selectModel = async (selection: ModelSelection) => {
+    if (isSaving) return;
+    const isCurrent = captureSession();
+    setIsSaving(true);
+    try {
+      await setDefault(useCase, selection);
+      if (!isCurrent()) return;
+      if (useCase === 'transcription') onTranscriptionSelected?.();
+      changeOpen(false);
+    } catch {
+      // The model-default mutation reports the failure; keep the picker open.
+    } finally {
+      if (isCurrent()) setIsSaving(false);
+    }
   };
 
   const handleSave = () => {
     if (!chosenInstance || !pendingModelId) return;
-    setDefault(useCase, {
-      instanceId: chosenInstance.id,
-      modelId: pendingModelId,
-    });
-    onOpenChange(false);
+    void selectModel({ instanceId: chosenInstance.id, modelId: pendingModelId });
   };
 
   const useCaseTitle = t(
@@ -171,7 +189,7 @@ export default function ChangeDefaultDialog({
   // Step 1 view
   if (!chosenInstance) {
     return (
-      <Dialog open={open} onOpenChange={onOpenChange}>
+      <Dialog open={open} onOpenChange={changeOpen}>
         <DialogContent className="max-w-2xl sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>
@@ -184,14 +202,15 @@ export default function ChangeDefaultDialog({
             {/* Managed Auto is always available — no key, no model to pick. */}
             <button
               type="button"
-              onClick={handleSelectAuto}
+              onClick={() => void selectModel(AUTO_SELECTION)}
+              disabled={isSaving}
               className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-accent text-left transition-colors"
             >
               <Sparkles className="size-4 shrink-0 text-muted-foreground" />
               <span className="text-sm font-medium truncate flex-1 min-w-0">
                 {t('settings.aiModels.managedAuto')}
               </span>
-              {defaults[useCase]?.instanceId === PRISMICAL_CLOUD_INSTANCE_ID && (
+              {!deviceActive && defaults[useCase]?.instanceId === PRISMICAL_CLOUD_INSTANCE_ID && (
                 <Badge variant="secondary" className="text-xs shrink-0">
                   {t('settings.aiModels.current')}
                 </Badge>
@@ -206,7 +225,7 @@ export default function ChangeDefaultDialog({
               eligibleInstances.map(instance => {
                 if (!isProviderType(instance.provider)) return null;
                 const meta = PROVIDER_META[instance.provider];
-                const isCurrent = defaults[useCase]?.instanceId === instance.id;
+                const isCurrent = !deviceActive && defaults[useCase]?.instanceId === instance.id;
                 const showInstanceLabel = PROVIDER_TYPE_MULTI_INSTANCE[instance.provider];
                 const locked = byokAccess === 'locked';
                 return (
@@ -247,8 +266,10 @@ export default function ChangeDefaultDialog({
             )}
           </div>
 
+          {device && <DeviceTranscriptionChoices device={device} onSelected={() => changeOpen(false)} />}
+
           <DialogFooter>
-            <Button variant="outline" onClick={() => onOpenChange(false)}>
+            <Button variant="outline" onClick={() => changeOpen(false)}>
               {t('common.actions.cancel')}
             </Button>
           </DialogFooter>
@@ -264,7 +285,7 @@ export default function ChangeDefaultDialog({
       : undefined;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={changeOpen}>
       <DialogContent className="max-w-2xl sm:max-w-2xl">
         <DialogHeader>
           <div className="flex items-center gap-2">
@@ -355,10 +376,10 @@ export default function ChangeDefaultDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" onClick={() => changeOpen(false)}>
             {t('common.actions.cancel')}
           </Button>
-          <Button onClick={handleSave} disabled={!pendingModelId}>
+          <Button onClick={handleSave} disabled={!pendingModelId || isSaving}>
             {t('common.actions.save')}
           </Button>
         </DialogFooter>

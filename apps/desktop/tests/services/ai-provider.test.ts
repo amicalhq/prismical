@@ -7,6 +7,7 @@ import { assert, describe, it } from '@effect/vitest';
 import { Context, Effect, Layer } from 'effect';
 import { expect } from 'vitest';
 import { generateText } from 'ai';
+import { AppModeService, makeAppMode, type AppMode } from '../../src/main/domains/app-mode/service';
 import {
   fetchModelListing,
   isOpenAiChatModel,
@@ -40,13 +41,15 @@ const makeFetch = (routes: Record<string, (init?: RequestInit) => Response | Pro
   return { fetchFn, calls };
 };
 
-const build = (fetchFn: FetchLike, options: { toolSupportTtlMs?: number } = {}) => {
+const build = (fetchFn: FetchLike, options: { toolSupportTtlMs?: number; mode?: AppMode } = {}) => {
   const logger = makeTestLogger();
   const db = makeFakeOperationalDb();
   const settings = SettingsServiceLive.pipe(Layer.provide(db.layer), Layer.provide(logger.layer));
   const secureStore = fakeSecureStoreLayer();
-  const provider = makeAiProviderLive({ fetchFn, ...options }).pipe(
+  const mode = Layer.effect(AppModeService, makeAppMode(options.mode ?? 'local', true));
+  const provider = makeAiProviderLive({ fetchFn, toolSupportTtlMs: options.toolSupportTtlMs }).pipe(
     Layer.provide(testConfigLayer()),
+    Layer.provide(mode),
     Layer.provide(settings),
     Layer.provide(secureStore),
     Layer.provide(logger.layer)
@@ -172,6 +175,30 @@ describe('local instance ids', () => {
 });
 
 describe('AiProviderLive', () => {
+  it.effect('cloud mode excludes saved device keys and resolves Ollama instead', () =>
+    Effect.gen(function* () {
+      const { fetchFn, calls } = makeFetch({
+        '/api/tags': () => json({ models: [{ name: 'llama3.2:3b' }] }),
+      });
+      const { layer } = build(fetchFn, { mode: 'cloud' });
+      const ctx = yield* Layer.build(layer);
+      const ai = Context.get(ctx, AiProvider);
+      const settings = Context.get(ctx, SettingsService);
+      const secrets = Context.get(ctx, SecureStore);
+      yield* settings.set({ ai: { provider: 'openai', model: 'gpt-5', baseUrl: null } });
+      yield* secrets.setSecret(aiProviderSecretKey('openai'), 'old-key');
+
+      assert.deepStrictEqual(yield* ai.listModels('openai'), { models: [], error: 'unsupported' });
+      assert.strictEqual((yield* Effect.flip(ai.resolve({ instanceId: localInstanceId('openai'), modelId: 'gpt-5' }))).reason, 'unknown-instance');
+      assert.isFalse(yield* ai.setDefault({ instanceId: localInstanceId('openai'), modelId: 'gpt-5' }));
+      assert.deepStrictEqual(yield* ai.defaultSelection, {
+        instanceId: localInstanceId('ollama'), modelId: 'llama3.2:3b',
+      });
+      assert.deepStrictEqual((yield* ai.instances).map(row => row.provider), ['ollama']);
+      assert.isFalse(calls.some(call => call.url.includes('openai.com')));
+    }).pipe(Effect.scoped)
+  );
+
   it.effect('OpenRouter requires its own key and sends chat requests to its default endpoint', () =>
     Effect.gen(function* () {
       const { fetchFn, calls } = makeFetch({
@@ -395,7 +422,7 @@ describe('AiProviderLive', () => {
     }).pipe(Effect.scoped)
   );
 
-  it.effect('the tool memo is keyed by endpoint, ages out downgrades, and is dropped by forget', () =>
+  it.effect('the tool memo is keyed by endpoint and ages out downgrades', () =>
     Effect.gen(function* () {
       const { fetchFn } = makeFetch({});
       const { layer } = build(fetchFn, { toolSupportTtlMs: 0 });
@@ -416,17 +443,15 @@ describe('AiProviderLive', () => {
       // A downgrade ages out (ttl 0 → immediately) so the ladder re-probes.
       yield* ai.rememberToolSupport('openai-compatible', 'local-model', 'none');
       assert.strictEqual((yield* ai.resolve()).toolSupport, 'unknown');
-      // forget drops the provider's entries entirely.
+      // Switching back retains the original endpoint's verdict.
       yield* settings.set({
         ai: { provider: 'openai-compatible', model: 'local-model', baseUrl: 'http://a.local/v1' },
       });
       assert.strictEqual((yield* ai.resolve()).toolSupport, 'native');
-      yield* ai.forget('openai-compatible');
-      assert.strictEqual((yield* ai.resolve()).toolSupport, 'unknown');
     }).pipe(Effect.scoped)
   );
 
-  it.effect('listModels(force) bypasses the cache; forget drops a cached listing', () =>
+  it.effect('listModels(force) bypasses the cache', () =>
     Effect.gen(function* () {
       const { fetchFn, calls } = makeFetch({
         'api.anthropic.com': () => json({ data: [{ id: 'claude-opus-5' }] }),
@@ -441,9 +466,6 @@ describe('AiProviderLive', () => {
       assert.lengthOf(calls, 1);
       yield* ai.listModels('anthropic', true);
       assert.lengthOf(calls, 2);
-      yield* ai.forget('anthropic');
-      yield* ai.listModels('anthropic');
-      assert.lengthOf(calls, 3);
     }).pipe(Effect.scoped)
   );
 

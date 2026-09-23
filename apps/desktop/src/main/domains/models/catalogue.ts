@@ -8,7 +8,7 @@
  * filename / URL / SHA-1 / approximate size — their sizes are UI
  * figures, rounded here to whole bytes; the downloader prefers the response's
  * content-length and only falls back to `sizeBytes`). `whisper-base-en` is the
- * English-only model verified end to end and the desktop's recommended
+ * English-only model verified end to end and the desktop's
  * default; other spoken languages require a multilingual model. Its size is exact.
  *
  * The one `kind: 'vad'` entry is whisper.cpp's own ggml Silero conversion
@@ -34,15 +34,10 @@ export interface ModelCatalogueEntry {
   /** Approximate or exact size — progress fallback + free-space check. */
   readonly sizeBytes: number;
   readonly kind: ModelKind;
-  /** The one the settings screen suggests when nothing is installed. */
-  readonly recommended?: boolean;
 }
 
 const HF_WHISPER_CPP = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main';
 const HF_WHISPER_VAD = 'https://huggingface.co/ggml-org/whisper-vad/resolve/main';
-
-/** The desktop's suggested first download (English-only base). */
-export const RECOMMENDED_MODEL_ID = 'whisper-base-en';
 
 /** The one VAD entry — what the local lane resolves to enable whisper.cpp's VAD. */
 export const VAD_MODEL_ID = 'silero-vad-v5';
@@ -56,7 +51,6 @@ export const MODEL_CATALOGUE: ReadonlyArray<ModelCatalogueEntry> = [
     sha1: '137c40403d78fd54d454da0f9bd998f78703390c',
     sizeBytes: 147_964_211,
     kind: 'whisper',
-    recommended: true,
   },
   {
     id: 'whisper-tiny',

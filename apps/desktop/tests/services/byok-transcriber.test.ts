@@ -10,8 +10,7 @@
  *  - 200 → one server-shaped segment; 429 / 5xx → retryable http; 4xx → not;
  *    network / timeout → retryable;
  *  - the deterministic replacement pass runs on the provider text over
- *    the workspace VocabularySource (local mode: ProductDb + usage bump;
- *    cloud mode: the server's /me/vocabulary + /me/team-vocabulary, no bump);
+ *    local vocabulary with usage bumps; cloud mode rejects the direct lane;
  *  - the key and the base URL never reach a log line.
  */
 import { assert, describe, it } from '@effect/vitest';
@@ -425,23 +424,8 @@ describe('ByokTranscriberLive', () => {
     'removes provider NULs before replacements and keeps tabs/newlines in mirrored segments',
     () =>
       Effect.gen(function* () {
-        const h = yield* build({ mode: 'cloud' });
-        h.fakeCloud.setRequestResponder(req => ({
-          ok: true,
-          status: 200,
-          bodyJson: {
-            results: req.path.endsWith('/team-vocabulary')
-              ? []
-              : [
-                  {
-                    id: 'voc_nul',
-                    word: 'road map',
-                    replacementWord: 'roadmap',
-                    isReplacement: true,
-                  },
-                ],
-          },
-        }));
+        const h = yield* build();
+        yield* h.seedVocabulary([{ id: 'voc_nul', word: 'road map', replacementWord: 'roadmap' }]);
         for (const byokModel of ['whisper-1', 'gpt-4o-transcribe']) {
           h.setResponder(() =>
             Promise.resolve(jsonResponse({ text: '\u0000road\u0000 map\tready\nnext\u0000' }))
@@ -486,39 +470,18 @@ describe('ByokTranscriberLive', () => {
     })
   );
 
-  it.effect('cloud mode: terms fetched from the server once per recording, applied to provider text, no local bump', () =>
+  it.effect('cloud mode refuses direct BYOK even for frozen recovery configuration', () =>
     Effect.gen(function* () {
       const h = yield* build({ mode: 'cloud' });
-      h.fakeCloud.setRequestResponder(req => ({
-        ok: true,
-        status: 200,
-        bodyJson: {
-          success: true,
-          results: req.path.endsWith('/team-vocabulary')
-            ? []
-            : [{ id: 'voc_c', word: 'road map', replacementWord: 'roadmap', isReplacement: true }],
-        },
-      }));
-      h.setResponder(() => Promise.resolve(jsonResponse({ text: ' The road map twice. ' })));
-      const first = yield* h.lane.transcribeChunk(
-        'rec_c',
-        { ...PARAMS, chunkIndex: 0 },
-        chunk(tone(240_000)),
-        BYOK
-      );
-      yield* h.lane.transcribeChunk('rec_c', { ...PARAMS, chunkIndex: 1 }, chunk(tone(240_000)), BYOK);
-      assert.isTrue(first.ok);
-      if (first.ok) assert.strictEqual(first.value[0]?.text, 'The roadmap twice.');
-      assert.deepStrictEqual(
-        h.fakeCloud.requestCalls.map(call => [call.method, call.path]),
-        [
-          ['GET', '/apps/v1/me/vocabulary'],
-          ['GET', '/apps/v1/me/team-vocabulary'],
-        ],
-        'fetched once for the recording, then frozen'
-      );
-      // No local bump — the cloud cache table holds no such row to touch.
-      assert.isUndefined(yield* h.usageCount('voc_c'));
+      h.setResponder(() => Promise.resolve(jsonResponse({ text: 'Should not be requested.' })));
+      const result = yield* h.lane.transcribeChunk('rec_old', PARAMS, chunk(tone(240_000)), BYOK);
+      assert.deepStrictEqual(result, {
+        ok: false,
+        retryable: false,
+        failure: { kind: 'engine', reason: 'not-configured' },
+      });
+      assert.isEmpty(h.calls, 'no audio goes directly to a provider');
+      assert.isEmpty(h.fakeCloud.requestCalls);
       yield* Scope.close(h.scope, Exit.void);
     })
   );
