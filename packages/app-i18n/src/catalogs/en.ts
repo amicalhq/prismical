@@ -1175,7 +1175,22 @@ const en = {
         description:
           'Bring Your Own Key is not included in your current plan. Upgrade to Pro to connect your own AI providers and choose the models you use.',
         upgrade: 'Upgrade to Pro',
-        back: 'Back to settings',
+        notNow: 'Not now',
+        bannerTitle: 'Bring your own key is in Pro',
+        bannerDescription: 'Upgrade to connect your own AI providers and choose the models you use.',
+        lockedBadge: 'Pro',
+        lockedAria: '{{provider}} - available in Pro',
+        notInPlan: 'Not in your plan',
+        fallbackNote: 'using Prismical Cloud until you upgrade.',
+        switchToCloudNote: 'switch to Prismical Cloud to keep recording.',
+        tier: {
+          availability: 'Available on higher tiers',
+          description: 'Bring Your Own Key is not included in your current tier. Upgrade your tier to connect your own AI providers and choose the models you use.',
+          upgrade: 'Upgrade your tier',
+          bannerTitle: 'Bring your own key is on higher tiers',
+          lockedBadge: 'Higher tier',
+          lockedAria: '{{provider}} - available on higher tiers',
+        },
       },
       addProvider: 'Add a provider',
       available: {

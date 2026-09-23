@@ -37,9 +37,16 @@ import { ListRowsSkeleton } from '../../../../components/skeletons';
 import { useAIModels } from './ai-models-store';
 import { useTranslation } from 'react-i18next';
 
+import type { ByokAccess } from './byok-upgrade';
+
 interface ConnectedListProps {
   /** Open the Edit form dialog for this instance id (cloud only). */
   onEdit: (id: string) => void;
+  /**
+   * Instances survive a downgrade: without BYOK they are marked, their runs fall back to
+   * Prismical Cloud, and they can still be removed - but not edited.
+   */
+  byokAccess: ByokAccess;
 }
 
 // Display rank for connected rows. Cloud sits in the middle, Mock is pinned to
@@ -81,7 +88,7 @@ function configPreview(
 
 type RemoveTarget = { kind: 'cloud'; instance: Instance };
 
-export default function ConnectedList({ onEdit }: ConnectedListProps) {
+export default function ConnectedList({ onEdit, byokAccess }: ConnectedListProps) {
   const { t } = useTranslation();
   const { isEnabled } = useFeatureFlags();
   const { instances, loading, removeInstance } = useAIModels();
@@ -138,6 +145,8 @@ export default function ConnectedList({ onEdit }: ConnectedListProps) {
               key={instance.id}
               instance={instance}
               comingSoon={PROVIDER_TYPE_COMING_SOON[instance.provider]}
+              notInPlan={byokAccess === 'locked'}
+              canEdit={byokAccess === 'allowed'}
               onEditClick={() => onEdit(instance.id)}
               onDeleteClick={() => setRemoveTarget({ kind: 'cloud', instance })}
             />
@@ -184,11 +193,20 @@ export default function ConnectedList({ onEdit }: ConnectedListProps) {
 interface RowProps {
   instance: Instance;
   comingSoon?: boolean;
+  notInPlan?: boolean;
+  canEdit?: boolean;
   onEditClick: () => void;
   onDeleteClick: () => void;
 }
 
-function Row({ instance, comingSoon = false, onEditClick, onDeleteClick }: RowProps) {
+function Row({
+  instance,
+  comingSoon = false,
+  notInPlan = false,
+  canEdit = true,
+  onEditClick,
+  onDeleteClick,
+}: RowProps) {
   const { t } = useTranslation();
   if (!isProviderType(instance.provider)) return null;
   const meta = PROVIDER_META[instance.provider];
@@ -198,6 +216,7 @@ function Row({ instance, comingSoon = false, onEditClick, onDeleteClick }: RowPr
     count => t('settings.aiModels.connectedList.modelCount', { count }),
     t('settings.aiModels.connectedList.devOnly')
   );
+  const editable = canEdit && !comingSoon;
   return (
     <div className="flex items-center gap-3 px-3 py-2.5 hover:bg-accent">
       <meta.Logo className={`size-4 shrink-0 ${meta.tint ?? ''}`} />
@@ -208,6 +227,11 @@ function Row({ instance, comingSoon = false, onEditClick, onDeleteClick }: RowPr
       {comingSoon && (
         <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
           {t('settings.aiModels.available.comingSoon')}
+        </span>
+      )}
+      {notInPlan && !comingSoon && (
+        <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground shrink-0">
+          {t('settings.aiModels.planGate.notInPlan')}
         </span>
       )}
       <span className="text-xs text-muted-foreground truncate font-mono shrink-0 max-w-[40%]">
@@ -223,11 +247,11 @@ function Row({ instance, comingSoon = false, onEditClick, onDeleteClick }: RowPr
               name: instance.label,
             })}
           >
-            {comingSoon ? <MoreHorizontal className="size-3.5" /> : <Pencil className="size-3.5" />}
+            {editable ? <Pencil className="size-3.5" /> : <MoreHorizontal className="size-3.5" />}
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-40">
-          {!comingSoon && (
+          {editable && (
             <>
               <DropdownMenuItem onClick={onEditClick}>
                 <Pencil className="mr-2 size-3.5" />

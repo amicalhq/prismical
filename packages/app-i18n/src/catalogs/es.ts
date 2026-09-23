@@ -1157,7 +1157,22 @@ const es = {
         description:
           'Tu plan actual no incluye el uso de claves propias. Mejora a Pro para conectar tus propios proveedores de IA y elegir los modelos que utilizas.',
         upgrade: 'Mejorar a Pro',
-        back: 'Volver a ajustes',
+        notNow: 'Ahora no',
+        bannerTitle: 'Usar tu propia clave es parte de Pro',
+        bannerDescription: 'Mejora tu plan para conectar tus propios proveedores de IA y elegir los modelos que utilizas.',
+        lockedBadge: 'Pro',
+        lockedAria: '{{provider}} - disponible en Pro',
+        notInPlan: 'No incluido en tu plan',
+        fallbackNote: 'se usa Prismical Cloud hasta que mejores tu plan.',
+        switchToCloudNote: 'cambia a Prismical Cloud para seguir grabando.',
+        tier: {
+          availability: 'Disponible en niveles superiores',
+          description: 'Tu nivel actual no incluye el uso de claves propias. Sube de nivel para conectar tus propios proveedores de IA y elegir los modelos que utilizas.',
+          upgrade: 'Subir de nivel',
+          bannerTitle: 'Usar tu propia clave está disponible en niveles superiores',
+          lockedBadge: 'Nivel superior',
+          lockedAria: '{{provider}} - disponible en niveles superiores',
+        },
       },
       addProvider: 'Añadir proveedor',
       available: {

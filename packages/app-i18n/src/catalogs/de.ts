@@ -1168,7 +1168,22 @@ const de = {
         description:
           'Bring Your Own Key ist in deinem aktuellen Plan nicht enthalten. Mit Pro kannst du eigene KI-Anbieter verbinden und deine Modelle auswählen.',
         upgrade: 'Auf Pro upgraden',
-        back: 'Zurück zu den Einstellungen',
+        notNow: 'Nicht jetzt',
+        bannerTitle: 'Eigene API-Schlüssel gibt es mit Pro',
+        bannerDescription: 'Upgrade, um eigene KI-Anbieter zu verbinden und deine Modelle auszuwählen.',
+        lockedBadge: 'Pro',
+        lockedAria: '{{provider}} - in Pro verfügbar',
+        notInPlan: 'Nicht in deinem Plan',
+        fallbackNote: 'bis zum Upgrade wird Prismical Cloud verwendet.',
+        switchToCloudNote: 'wechsle zu Prismical Cloud, um weiter aufzunehmen.',
+        tier: {
+          availability: 'In höheren Stufen verfügbar',
+          description: 'Bring Your Own Key ist in deiner aktuellen Stufe nicht enthalten. Wechsle in eine höhere Stufe, um eigene KI-Anbieter zu verbinden und deine Modelle auszuwählen.',
+          upgrade: 'Stufe upgraden',
+          bannerTitle: 'Eigene API-Schlüssel gibt es in höheren Stufen',
+          lockedBadge: 'Höhere Stufe',
+          lockedAria: '{{provider}} - in höheren Stufen verfügbar',
+        },
       },
       addProvider: 'Anbieter hinzufügen',
       available: {

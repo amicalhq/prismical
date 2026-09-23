@@ -1076,7 +1076,22 @@ const zhTW = {
         description:
           '你目前的方案不包含自備金鑰功能。升級至 Pro，即可連接自己的 AI 供應商並選擇要使用的模型。',
         upgrade: '升級至 Pro',
-        back: '返回設定',
+        notNow: '暫時不要',
+        bannerTitle: '自備金鑰為 Pro 方案功能',
+        bannerDescription: '升級即可連接自己的 AI 供應商並選擇要使用的模型。',
+        lockedBadge: 'Pro',
+        lockedAria: '{{provider}} - Pro 方案提供',
+        notInPlan: '不包含在你的方案中',
+        fallbackNote: '升級前將使用 Prismical Cloud。',
+        switchToCloudNote: '請切換至 Prismical Cloud 以繼續錄音。',
+        tier: {
+          availability: '較高等級方案提供',
+          description: '你目前的等級不包含自備金鑰功能。升級等級即可連接自己的 AI 供應商並選擇要使用的模型。',
+          upgrade: '升級等級',
+          bannerTitle: '自備金鑰為較高等級方案功能',
+          lockedBadge: '較高等級',
+          lockedAria: '{{provider}} - 較高等級方案提供',
+        },
       },
       addProvider: '新增供應商',
       available: {

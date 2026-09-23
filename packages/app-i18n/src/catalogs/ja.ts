@@ -1116,7 +1116,22 @@ const ja = {
         description:
           '現在のプランでは自分のAPIキーを使用できません。Proにアップグレードすると、独自のAIプロバイダーを接続し、使用するモデルを選択できます。',
         upgrade: 'Proにアップグレード',
-        back: '設定に戻る',
+        notNow: '後で',
+        bannerTitle: '自分のAPIキーの使用はProで利用できます',
+        bannerDescription: 'アップグレードすると、独自のAIプロバイダーを接続し、使用するモデルを選択できます。',
+        lockedBadge: 'Pro',
+        lockedAria: '{{provider}} - Proで利用可能',
+        notInPlan: '現在のプランに含まれていません',
+        fallbackNote: 'アップグレードするまでPrismical Cloudを使用します。',
+        switchToCloudNote: '録音を続けるにはPrismical Cloudに切り替えてください。',
+        tier: {
+          availability: '上位ティアで利用可能',
+          description: '現在のティアでは自分のAPIキーを使用できません。ティアをアップグレードすると、独自のAIプロバイダーを接続し、使用するモデルを選択できます。',
+          upgrade: 'ティアをアップグレード',
+          bannerTitle: '自分のAPIキーの使用は上位ティアで利用できます',
+          lockedBadge: '上位ティア',
+          lockedAria: '{{provider}} - 上位ティアで利用可能',
+        },
       },
       addProvider: 'プロバイダーを追加',
       available: {

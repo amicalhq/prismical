@@ -10,6 +10,7 @@ import InstanceFormDialog from './instance-form-dialog';
 
 const mocks = vi.hoisted(() => ({
   enabled: true,
+  plan: 'plan_free',
   flags: {} as Record<string, boolean>,
   update: vi.fn(),
   setDefault: vi.fn(),
@@ -21,7 +22,10 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@prismical/app-client', () => ({
   useFeatureFlags: () => ({ isEnabled: (key: string) => mocks.flags[key] ?? mocks.enabled }),
   useFeatureFlag: () => ({ enabled: true }),
-  useEntitlements: () => ({ entitlements: { features: { byok: true } }, isResolved: true }),
+  useEntitlements: () => ({
+    entitlements: { planExternalId: mocks.plan, features: { byok: true } },
+    isResolved: true,
+  }),
   useInstanceModels: (...args: unknown[]) => mocks.models(...args),
   useCreateInstance: () => ({}),
   useUpdateInstance: () => ({ mutateAsync: mocks.update }),
@@ -65,6 +69,7 @@ afterEach(() => {
   cleanup();
   mocks.enabled = true;
   mocks.flags = {};
+  mocks.plan = 'plan_free';
   vi.clearAllMocks();
 });
 
@@ -77,7 +82,15 @@ async function mount(element: React.ReactElement) {
 }
 
 it('drops a selected model source when its provider flag is revoked', async () => {
-  const dialog = <ChangeDefaultDialog open onOpenChange={vi.fn()} useCase="formatting" />;
+  const dialog = (
+    <ChangeDefaultDialog
+      open
+      onOpenChange={vi.fn()}
+      useCase="formatting"
+      byokAccess="allowed"
+      onLocked={vi.fn()}
+    />
+  );
   const { rerender, view } = await mount(dialog);
   fireEvent.click(screen.getByRole('button', { name: /Saved OpenAI/ }));
   expect(mocks.models).toHaveBeenLastCalledWith('inst_saved', true);
@@ -135,4 +148,63 @@ it('keeps a newer provider dialog open when a revoked form finishes saving', asy
   const current = screen.getByRole('dialog');
   await act(async () => finishSave());
   expect(screen.getByRole('dialog')).toBe(current);
+});
+
+it('keeps Auto selectable and routes a locked instance to the upgrade explanation', async () => {
+  const onLocked = vi.fn();
+  const onOpenChange = vi.fn();
+  await mount(
+    <ChangeDefaultDialog
+      open
+      onOpenChange={onOpenChange}
+      useCase="formatting"
+      byokAccess="locked"
+      onLocked={onLocked}
+    />
+  );
+  const row = screen.getByRole('button', { name: /Saved OpenAI/ });
+  expect(row.textContent).toContain('Pro');
+  fireEvent.click(row);
+  expect(onLocked).toHaveBeenCalledTimes(1);
+  expect(mocks.models).toHaveBeenLastCalledWith(undefined, false);
+  expect(screen.queryByText('GPT 5')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: /Prismical Cloud/ }));
+  expect(mocks.setDefault).toHaveBeenCalledWith('formatting', {
+    instanceId: 'prismical-cloud',
+    modelId: 'auto',
+  });
+});
+
+it('holds instance rows inert without upselling while the plan is still loading', async () => {
+  const onLocked = vi.fn();
+  await mount(
+    <ChangeDefaultDialog
+      open
+      onOpenChange={vi.fn()}
+      useCase="formatting"
+      byokAccess="pending"
+      onLocked={onLocked}
+    />
+  );
+  const row = screen.getByRole('button', { name: /Saved OpenAI/ });
+  expect((row as HTMLButtonElement).disabled).toBe(true);
+  expect(row.textContent).not.toContain('Pro');
+  fireEvent.click(row);
+  expect(onLocked).not.toHaveBeenCalled();
+});
+
+it('badges a locked instance with the tier on a lifetime-deal plan', async () => {
+  mocks.plan = 'plan_appsumo_tier_1';
+  await mount(
+    <ChangeDefaultDialog
+      open
+      onOpenChange={vi.fn()}
+      useCase="formatting"
+      byokAccess="locked"
+      onLocked={vi.fn()}
+    />
+  );
+  const row = screen.getByRole('button', { name: /Saved OpenAI/ });
+  expect(row.textContent).toContain('Higher tier');
+  expect(row.textContent).not.toContain('Pro');
 });

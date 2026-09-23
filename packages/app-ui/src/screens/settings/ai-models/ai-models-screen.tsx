@@ -3,7 +3,7 @@
 import { useState, type ReactNode } from 'react';
 import { AudioLines, FileText } from 'lucide-react';
 import { useEntitlements, useFeatureFlag } from '@prismical/app-client';
-import ByokPlanGate from './components/byok-plan-gate';
+import { ByokUpgradeBanner, ByokUpgradeDialog, type ByokAccess } from './components/byok-upgrade';
 
 import { type ProviderType } from '../../../lib/providers';
 
@@ -32,10 +32,17 @@ function AIModelsSettingsContent({ providerSettings }: { providerSettings?: Reac
   // feature — off in the desktop local workspace, whose providers live
   // in the `providerSettings` slot above instead.
   const { enabled: byokInstances } = useFeatureFlag('byokInstances');
-  // The server still enforces BYOK_NOT_IN_PLAN. Keep the UI inert until the plan resolves.
+  // BYOK is gated per control, not per page: Auto, the defaults, and removing an instance stay open
+  // on every plan; only connecting and choosing your own provider need it. The server still
+  // enforces BYOK_NOT_IN_PLAN - this is the same decision rendered.
   const { entitlements, isResolved } = useEntitlements();
-  const byokInPlan = entitlements.features.byok;
-  const planBlocked = isResolved && !byokInPlan;
+  const byokAccess: ByokAccess = !isResolved
+    ? 'pending'
+    : entitlements.features.byok
+      ? 'allowed'
+      : 'locked';
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
+  const showUpgrade = () => setUpgradeOpen(true);
 
   return (
     <div>
@@ -44,7 +51,7 @@ function AIModelsSettingsContent({ providerSettings }: { providerSettings?: Reac
       {providerSettings ? <section className="mb-6">{providerSettings}</section> : null}
 
       {byokInstances && (
-        <ByokPlanGate blocked={planBlocked} pending={!isResolved}>
+        <>
           <section className="mb-6">
             <h2 className="text-sm font-semibold text-muted-foreground mb-2">
               {t('settings.aiModels.defaults')}
@@ -55,6 +62,7 @@ function AIModelsSettingsContent({ providerSettings }: { providerSettings?: Reac
                 title={t('settings.aiModels.useCases.transcription.title')}
                 description={t('settings.aiModels.useCases.transcription.description')}
                 Icon={AudioLines}
+                byokAccess={byokAccess}
                 onChange={() => setChangeTarget('transcription')}
               />
               <DefaultCard
@@ -62,6 +70,7 @@ function AIModelsSettingsContent({ providerSettings }: { providerSettings?: Reac
                 title={t('settings.aiModels.useCases.formatting.title')}
                 description={t('settings.aiModels.useCases.formatting.description')}
                 Icon={FileText}
+                byokAccess={byokAccess}
                 onChange={() => setChangeTarget('formatting')}
               />
             </div>
@@ -71,29 +80,40 @@ function AIModelsSettingsContent({ providerSettings }: { providerSettings?: Reac
             <h2 className="text-sm font-semibold text-muted-foreground mb-2">
               {t('settings.aiModels.connected')}
             </h2>
-            <ConnectedList onEdit={id => setFormMode({ kind: 'edit', id })} />
+            <ConnectedList
+              byokAccess={byokAccess}
+              onEdit={id => setFormMode({ kind: 'edit', id })}
+            />
           </section>
 
           <section>
             <h2 className="text-sm font-semibold text-muted-foreground mb-2">
               {t('settings.aiModels.addProvider')}
             </h2>
+            {byokAccess === 'locked' && <ByokUpgradeBanner />}
             <AvailableTiles
+              byokAccess={byokAccess}
+              onLocked={showUpgrade}
               onAddCloud={(provider: ProviderType) => setFormMode({ kind: 'create', provider })}
             />
           </section>
 
-          {byokInPlan && isResolved && changeTarget && (
+          {changeTarget && (
             <ChangeDefaultDialog
               open={!!changeTarget}
               onOpenChange={open => {
                 if (!open) setChangeTarget(null);
               }}
               useCase={changeTarget}
+              byokAccess={byokAccess}
+              onLocked={() => {
+                setChangeTarget(null);
+                showUpgrade();
+              }}
             />
           )}
 
-          {byokInPlan && isResolved && (
+          {byokAccess === 'allowed' && (
             <InstanceFormDialog
               open={!!formMode}
               onOpenChange={open => {
@@ -102,7 +122,9 @@ function AIModelsSettingsContent({ providerSettings }: { providerSettings?: Reac
               mode={formMode}
             />
           )}
-        </ByokPlanGate>
+
+          <ByokUpgradeDialog open={upgradeOpen} onOpenChange={setUpgradeOpen} />
+        </>
       )}
 
     </div>

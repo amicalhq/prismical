@@ -1,7 +1,7 @@
 'use client';
 
 import { useFeatureFlags } from '@prismical/app-client';
-import { Plus } from 'lucide-react';
+import { Lock, Plus } from 'lucide-react';
 
 import { Button } from '../../../../ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../../../ui/tooltip';
@@ -16,9 +16,15 @@ import {
 } from '../../../../lib/providers';
 import { useTranslation } from 'react-i18next';
 
+import { useUpgradeTarget, type ByokAccess } from './byok-upgrade';
+
 interface AvailableTilesProps {
   /** Open the credential form for a brand-new cloud instance. */
   onAddCloud: (type: ProviderType) => void;
+  /** Every tile here connects the org's own key, so the plan decides whether it opens. */
+  byokAccess: ByokAccess;
+  /** A locked tile explains the plan instead of opening the credential form. */
+  onLocked: () => void;
 }
 
 // Display order for the Available tiles. Two bands:
@@ -45,8 +51,9 @@ const TILE_ORDER: ProviderType[] = [
 
 // Slim icon + name + plus tiles. Implemented cloud types route the click to
 // InstanceFormDialog; coming-soon types are visible only to enabled organizations/accounts.
-export default function AvailableTiles({ onAddCloud }: AvailableTilesProps) {
+export default function AvailableTiles({ onAddCloud, byokAccess, onLocked }: AvailableTilesProps) {
   const { t } = useTranslation();
+  const { keys: upgradeKeys } = useUpgradeTarget();
   const { isEnabled } = useFeatureFlags();
   const isDev = process.env.NODE_ENV !== 'production';
 
@@ -65,24 +72,35 @@ export default function AvailableTiles({ onAddCloud }: AvailableTilesProps) {
           const isMulti = PROVIDER_TYPE_MULTI_INSTANCE[type];
           const isComingSoon = PROVIDER_TYPE_COMING_SOON[type];
 
+          const isInteractive = !isComingSoon && isMulti;
+          // Locked tiles stay clickable so the click can say why. While the plan loads they are
+          // only inert - no lock, no upsell - so a paid org never sees one flash.
+          const isLocked = isInteractive && byokAccess === 'locked';
+          const isPending = isInteractive && byokAccess === 'pending';
+
           const handleClick = () => {
             if (isComingSoon) return;
             if (type === PROVIDER_TYPES.mock) {
               // Mock has no config to set.
               return;
-            } else {
+            } else if (isLocked) {
+              onLocked();
+            } else if (!isPending) {
               onAddCloud(type);
             }
           };
-
-          const isInteractive = !isComingSoon && isMulti;
 
           const tile = (
             <Button
               type="button"
               variant="outline"
               onClick={handleClick}
-              disabled={!isInteractive}
+              disabled={!isInteractive || isPending}
+              aria-label={
+                isLocked
+                  ? t(upgradeKeys.lockedAria, { provider: meta.label })
+                  : undefined
+              }
               className="h-auto w-full justify-between gap-2 px-3 py-2"
             >
               <div className="flex items-center gap-2 min-w-0">
@@ -91,7 +109,11 @@ export default function AvailableTiles({ onAddCloud }: AvailableTilesProps) {
                 </span>
                 <span className="text-sm truncate">{meta.label}</span>
               </div>
-              <Plus className="size-3.5 shrink-0 text-muted-foreground" />
+              {isLocked ? (
+                <Lock aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
+              ) : (
+                <Plus className="size-3.5 shrink-0 text-muted-foreground" />
+              )}
             </Button>
           );
 

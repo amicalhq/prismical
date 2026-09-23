@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Loader2, RefreshCw, Search, Sparkles } from 'lucide-react';
+import { ArrowLeft, Loader2, Lock, RefreshCw, Search, Sparkles } from 'lucide-react';
 
 import { Button } from '../../../../ui/button';
 import {
@@ -35,6 +35,8 @@ import { AUTO_SELECTION, PRISMICAL_CLOUD_INSTANCE_ID } from '@prismical/app-clie
 import { useAIModels } from './ai-models-store';
 import { useTranslation } from 'react-i18next';
 
+import { useUpgradeTarget, type ByokAccess } from './byok-upgrade';
+
 const USE_CASE_TO_MODEL_TYPE: Record<UseCase, ModelType> = {
   transcription: 'transcription',
   formatting: 'language',
@@ -44,14 +46,25 @@ interface ChangeDefaultDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   useCase: UseCase;
+  /** Auto is open on every plan; the org's own instances need BYOK. */
+  byokAccess: ByokAccess;
+  /** A locked instance hands off to the upgrade explanation instead of its catalog. */
+  onLocked: () => void;
 }
 
 // Two-step picker for setting a model default.
 //   Step 1 — choose a connected instance, filtered by capability map.
 //     Auto-skips when only one instance is eligible.
 //   Step 2 — pick a model from the chosen instance's catalog (searchable).
-export default function ChangeDefaultDialog({ open, onOpenChange, useCase }: ChangeDefaultDialogProps) {
+export default function ChangeDefaultDialog({
+  open,
+  onOpenChange,
+  useCase,
+  byokAccess,
+  onLocked,
+}: ChangeDefaultDialogProps) {
   const { t } = useTranslation();
+  const { keys: upgradeKeys } = useUpgradeTarget();
   const { instances, defaults, setDefault } = useAIModels();
   const { isEnabled } = useFeatureFlags();
   const modelType = USE_CASE_TO_MODEL_TYPE[useCase];
@@ -195,12 +208,17 @@ export default function ChangeDefaultDialog({ open, onOpenChange, useCase }: Cha
                 const meta = PROVIDER_META[instance.provider];
                 const isCurrent = defaults[useCase]?.instanceId === instance.id;
                 const showInstanceLabel = PROVIDER_TYPE_MULTI_INSTANCE[instance.provider];
+                const locked = byokAccess === 'locked';
                 return (
                   <button
                     key={instance.id}
                     type="button"
-                    onClick={() => setChosenInstanceId(instance.id)}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-accent text-left transition-colors"
+                    disabled={byokAccess === 'pending'}
+                    onClick={() => {
+                      if (locked) onLocked();
+                      else if (byokAccess === 'allowed') setChosenInstanceId(instance.id);
+                    }}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-accent text-left transition-colors disabled:opacity-60"
                   >
                     <meta.Logo className={`size-4 shrink-0 ${meta.tint ?? ''}`} />
                     <span className="text-sm font-medium truncate flex-1 min-w-0">
@@ -215,6 +233,12 @@ export default function ChangeDefaultDialog({ open, onOpenChange, useCase }: Cha
                     {isCurrent && (
                       <Badge variant="secondary" className="text-xs shrink-0">
                         {t('settings.aiModels.current')}
+                      </Badge>
+                    )}
+                    {locked && (
+                      <Badge variant="outline" className="text-xs shrink-0">
+                        <Lock aria-hidden="true" />
+                        {t(upgradeKeys.lockedBadge)}
                       </Badge>
                     )}
                   </button>

@@ -16,12 +16,16 @@ import { PRISMICAL_CLOUD_INSTANCE_ID } from '@prismical/app-client';
 import { useAIModels } from './ai-models-store';
 import { useTranslation } from 'react-i18next';
 
+import type { ByokAccess } from './byok-upgrade';
+
 interface DefaultCardProps {
   useCase: UseCase;
   title: string;
   /** One-line explanation of what this default model is used for. */
   description: string;
   Icon: ComponentType<{ className?: string }>;
+  /** A saved BYOK default outlives a downgrade; its runs go to Prismical Cloud until an upgrade. */
+  byokAccess: ByokAccess;
   onChange: () => void;
 }
 
@@ -36,6 +40,7 @@ export default function DefaultCard({
   title,
   description,
   Icon,
+  byokAccess,
   onChange,
 }: DefaultCardProps) {
   const { t } = useTranslation();
@@ -90,6 +95,21 @@ export default function DefaultCard({
                 </div>
               </div>
             </div>
+            {byokAccess === 'locked' && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">
+                  {t('settings.aiModels.planGate.notInPlan')}
+                </span>
+                {' - '}
+                {/* Text generation falls back to Prismical Cloud on its own; a recording does not
+                    switch lanes behind the owner's back, so transcription asks for the change. */}
+                {t(
+                  useCase === 'transcription'
+                    ? 'settings.aiModels.planGate.switchToCloudNote'
+                    : 'settings.aiModels.planGate.fallbackNote'
+                )}
+              </p>
+            )}
           </div>
         ) : (
           <div className="rounded-md border border-warning/30 bg-warning/5 p-3">
