@@ -184,7 +184,7 @@ export const DragHandle = forwardRef<HTMLButtonElement, DragHandleProps>(functio
       data-hit-zone="true"
       aria-label={t('desktop.widget.drag')}
       {...props}
-      className={`flex h-[34px] w-[18px] flex-none touch-none items-center justify-center rounded-full border border-[var(--dock-line)] bg-[var(--dock-surface)] text-[var(--dock-ink-3)] [box-shadow:var(--dock-shadow-raised)] transition-all duration-150 ease-out hover:text-[var(--dock-ink-2)] ${
+      className={`flex h-[34px] w-[18px] flex-none touch-none items-center justify-center rounded-full border border-[var(--dock-line)] bg-[var(--dock-surface)] text-[var(--dock-ink-3)] backdrop-blur-md [box-shadow:var(--dock-shadow-raised)] transition-all duration-150 ease-out hover:text-[var(--dock-ink-2)] ${
         shown
           ? 'pointer-events-auto translate-x-0 opacity-100'
           : 'pointer-events-none translate-x-1.5 opacity-0'

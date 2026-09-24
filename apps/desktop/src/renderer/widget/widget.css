@@ -4,23 +4,21 @@
  * app theme. This bundle deliberately imports no app CSS. */
 :root {
   color-scheme: dark;
-  --dock-surface: #1c1c1f;
+  --dock-surface: rgba(0, 0, 0, 0.7);
   --dock-field: #28282c;
   --dock-hover: rgba(255, 255, 255, 0.09);
-  --dock-line: #2e2e33;
+  --dock-line: rgba(255, 255, 255, 0.15);
   --dock-ink: #f4f4f5;
   --dock-ink-2: #b0b0b6;
   --dock-ink-3: #77777d;
-  --dock-shadow-raised:
-    0 0 0 1px rgba(255, 255, 255, 0.09), 0 4px 10px rgba(0, 0, 0, 0.55),
-    0 16px 36px -8px rgba(0, 0, 0, 0.7);
+  --dock-shadow-raised: 0 0 0 1px rgba(0, 0, 0, 0.6), 0 0 15px rgba(0, 0, 0, 0.4);
   --rec: #ff6369;
   --rec-soft: rgba(255, 99, 105, 0.14);
   --warning: #fbbf24;
 }
 
 /* The floating widget paints over other apps, so its document must be fully
- * transparent — only the pills (which carry their own bg-black/80 etc.) are
+ * transparent — only the pills (which carry their own translucent surface) are
  * visible. The panel is click-through until the renderer toggles interactivity
  * on hit-zone hover (window.widget.setInteractive).
  *
