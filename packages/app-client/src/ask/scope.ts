@@ -121,6 +121,23 @@ function stripStreamingTrailers(text: string): string {
     .trimEnd();
 }
 
+// A server-side note citation handle, with any code or emphasis wrapper. It only means something
+// to the server that issued it.
+const CITATION_HANDLE = / ?(`|\*\*?)?\[\[note:[0-9a-f]+:\d+\]\]\1/g;
+// The unfinished end of such a handle while it is still streaming in.
+const PARTIAL_CITATION_HANDLE =
+  / ?(?:`|\*\*?)?\[\[(?:n(?:o(?:t(?:e(?::[0-9a-f]*(?::\d*\]?)?)?)?)?)?)?$/;
+
+/**
+ * Citation handles belong in the `Sources:` line, where the server turns them into note ids. One
+ * copied into the answer text is never readable, so drop it (older answers and servers can still
+ * contain one); the answer's sources come from the trailer.
+ */
+function stripCitationHandles(body: string, streaming: boolean): string {
+  const out = body.replace(CITATION_HANDLE, '');
+  return streaming ? out.replace(PARTIAL_CITATION_HANDLE, '') : out;
+}
+
 /**
  * The one-stop answer parse for Ask renderers: body + cited noteIds + follow-up suggestions.
  * Order-tolerant — the prompt demands `Follow-ups:` directly above the final `Sources:` line, but
@@ -137,7 +154,7 @@ export function parseAskAnswer(
   const fu = parseFollowups(first.body);
   const second = parseSources(fu.body);
   return {
-    body: second.body,
+    body: stripCitationHandles(second.body, opts?.streaming ?? false),
     noteIds: [...new Set([...first.noteIds, ...second.noteIds])],
     followups: fu.followups,
   };

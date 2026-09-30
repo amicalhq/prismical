@@ -160,7 +160,7 @@ export async function searchNotes(
                  ${RANK} AS rank
           FROM note_fts f JOIN note n ON n.id = f.note_id
           WHERE note_fts MATCH ? AND ${live}${scope.where}
-          ORDER BY rank, n.updated_at DESC LIMIT ? OFFSET ?`
+          ORDER BY rank, n.updated_at DESC, n.id LIMIT ? OFFSET ?`
     )
     .all(match, ...scope.args, Math.min(args.limit, SNIPPET_ROW_LIMIT), offset) as SearchRow[];
   const total = client

@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next';
 type RecordingPillFaceProps = {
   recState: RecState;
   startBlockedReason?: string;
+  importLabel?: string;
   /** Pause/resume is available for this capture path when supported.
    * False hides the pause button entirely — the pill keeps its two-control layout. */
   canPause?: boolean;
@@ -56,6 +57,7 @@ export function formatSessionTimer(totalSeconds: number): string {
 export function RecordingPillFace({
   recState,
   startBlockedReason,
+  importLabel,
   canPause = false,
   isPanelOpen,
   onTogglePanel,
@@ -89,6 +91,9 @@ export function RecordingPillFace({
       ? t('recording.actions.showTranscription')
       : t('recording.actions.recordAndTranscribe');
 
+  if (importLabel) return <button type="button" onClick={onTogglePanel} className="flex h-full w-full items-center justify-center gap-2 px-3 text-xs text-dock-ink" aria-label={importLabel}>
+    <Loader2 className="size-4 shrink-0 animate-spin" /><span>{importLabel}</span>
+  </button>;
   return (
     <TooltipProvider>
       <div className="relative h-full w-full">

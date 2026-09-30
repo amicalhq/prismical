@@ -167,7 +167,7 @@ export function SidebarUsageControl() {
         {/* Like the ring, the bar shows what is LEFT and empties as it goes. A
             filling bar next to "15m left" says the opposite of the label. */}
         <div
-          className="mt-2 h-1.5 overflow-hidden rounded-full bg-sidebar-foreground/20"
+          className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted"
           role="progressbar"
           aria-valuemin={0}
           aria-valuemax={100}
@@ -177,7 +177,7 @@ export function SidebarUsageControl() {
           <div
             className={cn(
               'h-full rounded-full transition-[width]',
-              exhausted ? 'bg-destructive' : low ? 'bg-warning' : 'bg-primary'
+              exhausted ? 'bg-destructive' : low ? 'bg-warning' : 'bg-foreground/60'
             )}
             style={{ width: `${(limit === 0 ? 0 : remaining / limit) * 100}%` }}
           />

@@ -21,20 +21,23 @@ function NavRowSkeleton({ width }: { width: string }) {
 
 /**
  * Full-viewport shell skeleton: real brand mark + skeleton chrome. Shown while the
- * auth gate resolves (token hydrate / refresh), replacing the bare "Loading…" text.
+ * auth gate resolves (token hydrate / refresh) and while a sign-in completes on the
+ * way into the app, replacing the bare "Loading…" text. `label` is the status read to
+ * assistive tech (defaults to loading the app).
  * The brand img is served from /public on web (the only consumer today); desktop
  * boots through its own pipeline and never mounts this.
  */
-export function ShellSkeleton() {
+export function ShellSkeleton({ label }: { label?: string } = {}) {
   const { t } = useTranslation();
+  const status = label ?? t("common.status.loadingPrismical");
   return (
     <div
       className="flex h-svh w-full bg-sidebar"
       role="status"
       aria-busy="true"
-      aria-label={t("common.status.loadingPrismical")}
+      aria-label={status}
     >
-      <span className="sr-only">{t("common.status.loadingPrismical")}</span>
+      <span className="sr-only">{status}</span>
       {/* Sidebar rail — hidden on mobile, like the real inset sidebar. */}
       <div className="hidden w-[16rem] shrink-0 flex-col gap-2 p-4 pr-2 md:flex">
         <div className="flex items-center gap-2.5 p-1.5">
@@ -105,14 +108,23 @@ export function ShellSkeleton() {
 }
 
 /**
- * Minimal branded splash for the boot states that immediately leave the app
- * (redirecting to sign-in, completing the OAuth callback) — flashing app chrome
- * at someone about to be bounced to the login app would be dishonest.
+ * Minimal branded splash for the boot states that leave the app for the login app
+ * (redirecting to sign-in, restarting sign-in from a handoff link) — flashing app
+ * chrome at someone who may land on the login page would be dishonest. Only the OAuth
+ * callback, whose next stop IS the app, shows ShellSkeleton instead. The mark sits in a slow prism halo (tokens.css
+ * `.brand-splash-*`), and the whole splash fades in after a beat so a fast
+ * redirect never flashes it.
  */
 export function BrandSplash({ caption }: { caption: string }) {
   return (
-    <div className="flex min-h-svh flex-col items-center justify-center gap-4 bg-background">
-      <img src="/prismical-icon.svg" alt="Prismical" className="size-12" />
+    <div
+      role="status"
+      className="brand-splash flex min-h-svh flex-col items-center justify-center gap-5 bg-background"
+    >
+      <div className="relative flex size-20 items-center justify-center">
+        <span aria-hidden className="brand-splash-halo absolute inset-1 rounded-full" />
+        <img src="/prismical-icon.svg" alt="Prismical" className="brand-splash-mark relative size-14" />
+      </div>
       <p className="text-sm text-muted-foreground">{caption}</p>
     </div>
   );

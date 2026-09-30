@@ -244,6 +244,37 @@ describe('parseAskAnswer', () => {
   });
 });
 
+describe('parseAskAnswer citation handles', () => {
+  const token = '[[note:1f58dea86d7a26d110a13d5a:1]]';
+
+  it('never renders a citation handle copied into the answer', () => {
+    expect(
+      parseAskAnswer(
+        `We decided to ship v1 on Friday. ${token}\nSources: nt_abcdefghijklmnopqrstuvwx`
+      )
+    ).toEqual({
+      body: 'We decided to ship v1 on Friday.',
+      noteIds: ['nt_abcdefghijklmnopqrstuvwx'],
+      followups: [],
+    });
+    expect(parseAskAnswer(`Ship v1 ${token}.\nSources: ${token}`)).toEqual({
+      body: 'Ship v1.',
+      noteIds: [],
+      followups: [],
+    });
+  });
+
+  it('hides a handle that is still streaming in, but only while streaming', () => {
+    for (let i = 3; i < token.length; i++) {
+      const partial = `We decided to ship v1. ${token.slice(0, i)}`;
+      expect(parseAskAnswer(partial, { streaming: true }).body).toBe('We decided to ship v1.');
+    }
+    expect(parseAskAnswer('Read [[notes]] and [1].').body).toBe('Read [[notes]] and [1].');
+    expect(parseAskAnswer(`Ship v1 \`${token}\` and **${token}**.`).body).toBe('Ship v1 and.');
+    expect(parseAskAnswer(`Keep **bold ${token}**.`).body).toBe('Keep **bold**.');
+  });
+});
+
 describe('uiMessageText', () => {
   it('concatenates text parts and ignores non-text parts', () => {
     const msg = {

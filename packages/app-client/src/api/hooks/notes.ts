@@ -31,6 +31,7 @@ import {
 } from "../../recording/recording-preferences";
 import { currentAccountExperience } from "../../settings/account-experience-store";
 import { formatDefaultNoteTitle } from "../../notes/default-note-title";
+import { markNoteFresh } from "../../notes/fresh-notes";
 
 /** Read-result shape shared by the synchronized Legend-State hooks ({data,isLoading,error,refetch}). */
 export interface SyncListResult<T> {
@@ -191,6 +192,7 @@ export function useCreateNote(): SyncMutationResult<
       from_folder: !!vars?.folderId,
       from_event: !!vars?.eventId,
     });
+    markNoteFresh(id);
     if (!recording.control && currentAccountExperience()?.getSnapshot().data?.experience.autoTranscribeNewNotes) {
       markPendingAutoTranscribe(id);
     }

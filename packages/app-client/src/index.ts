@@ -73,6 +73,7 @@ export * from './notes/diff/skill-diff-editor-lock';
 export * from './notes/diff/skill-diff-store';
 export * from './notes/diff/use-skill-diff-decorations';
 export * from './notes/editor-extensions';
+export * from './notes/fresh-notes';
 export * from './notes/inline-run-store';
 export * from './notes/skill-run-activity-store';
 export * from './notes/skill-run-retry';
@@ -123,3 +124,5 @@ export { useNoteCreatedNotice } from "./notes/note-created-notice";
 export { subscribeEditorHistory, withEditorHistoryBoundary } from './notes/editor-history';
 
 export * from './notes/skill-run-feedback';
+
+export * from './api/recording-import';

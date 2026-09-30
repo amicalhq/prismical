@@ -67,6 +67,9 @@ export const DOCK_MENU_SURFACE =
 /** The hover-revealed floating action cluster inside a panel face: ONE bordered
  * container, top-right, elevated a step off the surface (ink-tinted fill +
  * button shadow + drop) so it stays legible over panel content. Reveal is
- * driven by the panel face's group (`group/panel`). */
+ * driven by hovering the panel face's group (`group/panel`), or by keyboard
+ * focus on the cluster itself. Focus elsewhere in the panel (the composer)
+ * does not reveal it, so it never sits over the first message while typing.
+ * Touch screens cannot hover, so there it always shows. */
 export const DOCK_PANEL_ACTIONS_CHROME =
-  'absolute right-2.5 top-2.5 z-30 flex items-center gap-0.5 rounded-[10px] border border-dock-line bg-[color-mix(in_srgb,var(--dock-ink)_4%,var(--dock-surface))] p-0.5 shadow-[var(--dock-shadow-btn),0_4px_14px_rgba(0,0,0,0.16)] opacity-0 transition-opacity duration-150 pointer-events-none group-hover/panel:pointer-events-auto group-hover/panel:opacity-100 group-focus-within/panel:pointer-events-auto group-focus-within/panel:opacity-100';
+  'absolute right-2.5 top-2.5 z-30 flex items-center gap-0.5 rounded-[10px] border border-dock-line bg-[color-mix(in_srgb,var(--dock-ink)_4%,var(--dock-surface))] p-0.5 shadow-[var(--dock-shadow-btn),0_4px_14px_rgba(0,0,0,0.16)] opacity-0 transition-opacity duration-150 pointer-events-none group-hover/panel:pointer-events-auto group-hover/panel:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100';

@@ -1,4 +1,49 @@
 const en = {
+  audioImport: {
+    formatsHint: 'Supported formats: MP3, WAV, M4A/MP4 and <more>more</more>',
+    moreFormats: 'more',
+    supportedFormats: 'Supported formats',
+    formatDetails:
+      'MP3, PCM WAV, FLAC, AAC; M4A/MP4 with AAC audio; OGG/OGA/OPUS and WebM with Opus or Vorbis audio. Files must contain exactly one audio track.',
+    imported: 'Imported recording',
+    durationExceeded: 'This file exceeds your plan’s recording duration limit.',
+    unreadableFile:
+      'This file does not appear to be a supported audio or video file. Check the supported formats.',
+    openTranscript: 'Open transcript',
+    fileSize: '{{size}} MB',
+    languages: { en: 'English', es: 'Spanish', fr: 'French', de: 'German', hi: 'Hindi' },
+    title: 'Import recording',
+    description:
+      'Transcribe a file into this note using Prismical Cloud. Your note text stays unchanged.',
+    file: 'Audio or video file',
+    invalidFile: 'Choose a supported, non-empty audio or video file up to 250 MB.',
+    limits:
+      'Audio or video · 250 MB maximum. Up to {{minutes}} minutes per file, subject to your remaining transcription time.',
+    language: 'Spoken language',
+    detect: 'Detect language',
+    retention:
+      'Audio is deleted after successful transcription. Failed uploads may be retained for up to 7 days for retry. Video is uploaded as a file; only its audio is transcribed.',
+    submit: 'Import with Prismical Cloud',
+    uploading: 'Uploading audio',
+    checking: 'Checking file',
+    transcribing: 'Transcribing audio',
+    ready: 'Transcript ready',
+    cancelled: 'Import cancelled',
+    cancel: 'Cancel',
+    cancelUpload: 'Cancel upload',
+    retry: 'Retry transcription',
+    retryComplete: 'Retry processing',
+    chooseAgain: 'Choose file again',
+    openNote: 'Open the note being imported',
+    busy: 'Finish or cancel the audio import first.',
+    loading: 'Workspace is still loading. Please try again.',
+    signIn: 'Please sign in again to import audio.',
+    sessionUnavailable: 'Upload session unavailable.',
+    uploadFailed: 'Audio upload failed. Cancel and try again.',
+    interrupted: 'Upload connection was interrupted. Cancel and try again.',
+    failed: 'Import failed.',
+    reconnect: 'Unable to check this import. Refresh to reconnect.',
+  },
   workflow: {
     noteChanged:
       'The note changed after this suggestion was generated. Decline it and run the skill again.',

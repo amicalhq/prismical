@@ -5,16 +5,38 @@ import { act, cleanup, render, screen, fireEvent } from '@testing-library/react'
 
 const state = vi.hoisted(() => ({
   note: { noteId: 'note_old', title: 'Old' } as { noteId: string; title: string } | null,
+  queryEnabled: [] as boolean[],
   queriedNote: undefined as { title: string; titleSource?: string } | undefined,
   rec: {} as Record<string, unknown>,
   panel: {} as Record<string, unknown>,
   askPanel: {} as Record<string, unknown>,
   candidates: new Map<string, unknown>(),
   activeRun: null as unknown,
-  workflow: { kind: 'idle' } as { kind: string; phase?: string; workflowId?: string; noteId?: string; attempt?: number; proposalId?: string },
+  workflow: { kind: 'idle' } as {
+    kind: string;
+    phase?: string;
+    workflowId?: string;
+    noteId?: string;
+    attempt?: number;
+    proposalId?: string;
+  },
   shared: false,
   autoTranscribe: false,
+  importEnabled: false,
+  platform: 'web',
+  importState: null as null | {
+    busy: boolean;
+    noteId: string;
+    record: null | { status: string; phase?: string; recordingId?: string; fileName?: string };
+    ownerKey?: string;
+    orgId?: string;
+    canCancel?: boolean;
+    observedOnly?: boolean;
+    error?: string | null;
+    progress?: number;
+  },
   pendingAutoStart: false,
+  glowEnabled: [] as boolean[],
   syncStore: null as { whenNoteCreateAcked: (id: string) => Promise<void> } | null,
   recordings: [] as Array<Record<string, unknown>>,
   transcripts: {} as Record<string, unknown[]>,
@@ -24,10 +46,10 @@ const state = vi.hoisted(() => ({
   push: vi.fn(),
   toast: vi.fn(),
   dismiss: vi.fn(),
-  t: (key: string, params?: { name?: string }) => params?.name ? `${key}:${params.name}` : key,
+  t: (key: string, params?: { name?: string }) => (params?.name ? `${key}:${params.name}` : key),
 }));
 vi.mock('sonner', () => ({
-  toast: { info: state.toast, warning: state.toast, dismiss: state.dismiss },
+  toast: { success: state.toast, info: state.toast, warning: state.toast, dismiss: state.dismiss },
 }));
 vi.mock('../shell/current-note-context', () => ({
   useCurrentNote: () => ({ currentNote: state.note }),
@@ -37,7 +59,10 @@ vi.mock('../onboarding/context', () => ({
   useWalkthroughEvent: () => state.noop,
 }));
 vi.mock('../hooks/use-recording-document-title', () => ({ useRecordingDocumentTitle: () => {} }));
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: state.t }) }));
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: state.t, i18n: { language: 'en' } }),
+  Trans: () => null,
+}));
 vi.mock('@prismical/app-i18n', () => ({
   useApplicationLocale: () => ({ resolvedLocale: 'en' }),
   formatApplicationRelativeDay: () => 'Today',
@@ -48,11 +73,15 @@ vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({ invalidateQueries: state.noop }),
   // One entry per recording, keyed off the recording id inside the query key; transcript and
   // speaker queries both resolve to the same fixture rows (the panel is mocked).
-  useQueries: ({ queries }: { queries: Array<{ queryKey: unknown[] }> }) =>
-    queries.map(({ queryKey }) => {
-      const id = queryKey.find(part => typeof part === 'string' && part.startsWith('rec_')) as string | undefined;
+  useQueries: ({ queries }: { queries: Array<{ queryKey: unknown[]; enabled?: boolean }> }) => {
+    state.queryEnabled.push(...queries.map(q => q.enabled ?? true));
+    return queries.map(({ queryKey }) => {
+      const id = queryKey.find(part => typeof part === 'string' && part.startsWith('rec_')) as
+        | string
+        | undefined;
       return { data: id ? (state.transcripts[id] ?? []) : [], isSuccess: true };
-    }),
+    });
+  },
 }));
 vi.mock('@prismical/app-client', async () => {
   const { canAsk } = await import('@prismical/app-workflow');
@@ -63,6 +92,11 @@ vi.mock('@prismical/app-client', async () => {
   );
   return {
     canAsk,
+    useAudioImport: (enabled: boolean) => ({ state: enabled ? state.importState : null }),
+    useTranscriptionPreference: () => ({ language: 'en' }),
+    currentTranscriptionLanguage: () => 'en',
+    TRANSCRIPTION_LANGUAGE_CODES: ['en'],
+    useFeatureFlag: () => ({ enabled: state.importEnabled }),
     useWorkflowSnapshot: () => state.workflow,
     useRecording: () => state.rec,
     usePorts: () => ({
@@ -70,7 +104,7 @@ vi.mock('@prismical/app-client', async () => {
       workflow: state.shared ? { getSnapshot: () => state.workflow } : undefined,
       recording: {},
       desktopCapabilities: state.capabilities,
-      env: { getEnv: () => ({ platform: 'web' }) },
+      env: { getEnv: () => ({ platform: state.platform }) },
       auth: {},
     }),
     useNavigation: () => ({ push: state.push }),
@@ -104,8 +138,11 @@ vi.mock('@prismical/app-client', async () => {
     segmentToLine: (s: unknown) => s,
     EVENTS: {},
     currentAccountExperience: () => ({
-      getSnapshot: () => ({ data: { experience: { autoTranscribeNewNotes: state.autoTranscribe } } }),
+      getSnapshot: () => ({
+        data: { experience: { autoTranscribeNewNotes: state.autoTranscribe } },
+      }),
     }),
+    consumeFreshNote: () => false,
     consumePendingAutoTranscribe: () => {
       const pending = state.pendingAutoStart;
       state.pendingAutoStart = false;
@@ -120,7 +157,15 @@ vi.mock('./transcript-panel', () => ({
   },
 }));
 vi.mock('./dock-unit', () => ({
-  DockUnit: ({ pill, panel, collapsed }: { pill: React.ReactNode; panel: React.ReactNode; collapsed?: boolean }) => (
+  DockUnit: ({
+    pill,
+    panel,
+    collapsed,
+  }: {
+    pill: React.ReactNode;
+    panel: React.ReactNode;
+    collapsed?: boolean;
+  }) => (
     <div hidden={collapsed}>
       {pill}
       {panel}
@@ -132,27 +177,52 @@ vi.mock('./animated-width', () => ({
   AnimatedWidth: ({ children }: { children: React.ReactNode }) => children,
 }));
 vi.mock('./note-recording-dock', () => ({
-  RecordingPillFace: () => null,
+  RecordingPillFace: ({ isPanelOpen }: { isPanelOpen: boolean }) => (
+    <span data-testid="record-panel-state">{isPanelOpen ? 'open' : 'closed'}</span>
+  ),
   recordingPillWidth: () => 100,
 }));
-vi.mock('./skill-note-created', () => ({ SkillNoteCreated: ({ active }: { active: boolean }) => active ? <div role="status">Note created<button>Undo creation</button></div> : null }));
+vi.mock('./skill-note-created', () => ({
+  SkillNoteCreated: ({ active }: { active: boolean }) =>
+    active ? (
+      <div role="status">
+        Note created<button>Undo creation</button>
+      </div>
+    ) : null,
+}));
 vi.mock('./skill-dock-slot', () => ({ SkillDockSlot: () => null }));
 vi.mock('./new-note-dock', () => ({ NewNoteDock: () => null }));
+vi.mock('./dock-glow', () => ({
+  useDockArrivalGlow: (_noteId: string | null, enabled = true) => {
+    state.glowEnabled.push(enabled);
+    return { active: false, scope: 'dock', stop: () => {} };
+  },
+}));
 vi.mock('./auto-pause-prompt', () => ({ AutoPausePrompt: () => null }));
 vi.mock('./recording-notice-card', () => ({ RecordingNoticeCard: () => null }));
 vi.mock('./ask/ask-dock-pill', () => ({
-  AskPillFace: ({ onClick, recordingSuggestion }: { onClick: () => void; recordingSuggestion?: { label: string } | null }) => (
+  AskPillFace: ({
+    onClick,
+    recordingSuggestion,
+  }: {
+    onClick: () => void;
+    recordingSuggestion?: { label: string } | null;
+  }) => (
     <>
       <button onClick={onClick}>Ask AI</button>
-      {recordingSuggestion ? <span data-testid="recording-chip">{recordingSuggestion.label}</span> : null}
+      {recordingSuggestion ? (
+        <span data-testid="recording-chip">{recordingSuggestion.label}</span>
+      ) : null}
     </>
   ),
   ASK_PILL_WIDTH: 100,
 }));
-vi.mock('./ask/ask-panel', () => ({ AskPanel: (props: Record<string, unknown>) => {
-  state.askPanel = props;
-  return null;
-} }));
+vi.mock('./ask/ask-panel', () => ({
+  AskPanel: (props: Record<string, unknown>) => {
+    state.askPanel = props;
+    return null;
+  },
+}));
 
 const { RecordingBottomCluster } = await import('./recording-bottom-cluster');
 afterEach(cleanup);
@@ -168,7 +238,11 @@ beforeEach(() => {
   state.activeRun = null;
   state.shared = false;
   state.autoTranscribe = false;
+  state.importState = null;
+  state.importEnabled = false;
+  state.platform = 'web';
   state.pendingAutoStart = false;
+  state.glowEnabled = [];
   state.syncStore = null;
   state.recordings = [];
   state.transcripts = {};
@@ -188,15 +262,214 @@ beforeEach(() => {
   };
 });
 describe('recording dock note ownership', () => {
+  it('keeps import hidden on desktop even when the organization is opted in', () => {
+    state.importEnabled = true;
+    state.platform = 'desktop';
+    render(<RecordingBottomCluster />);
+    expect(state.panel.importAction).toBeNull();
+  });
+  it.each(['desktop', 'flag-off'])('allows capture with a web import when %s', async mode => {
+    state.candidates.clear();
+    state.importEnabled = mode !== 'flag-off';
+    state.platform = mode === 'desktop' ? 'desktop' : 'web';
+    state.syncStore = { whenNoteCreateAcked: async () => {} };
+    state.importState = { busy: true, noteId: 'note_other', record: null };
+    state.autoTranscribe = true;
+    state.pendingAutoStart = true;
+    render(<RecordingBottomCluster />);
+    await act(async () => {});
+    expect(state.noop).toHaveBeenCalledWith('note_old', 'Old');
+  });
+  it.each([false, true])(
+    'allows capture while observing an abandoned upload, cancellable=%s',
+    async canCancel => {
+      state.candidates.clear();
+      state.importEnabled = true;
+      state.importState = {
+        busy: true,
+        noteId: 'note_old',
+        record: { status: 'uploading', phase: 'uploading' },
+        canCancel,
+        observedOnly: true,
+        progress: 0,
+      };
+      state.autoTranscribe = true;
+      state.pendingAutoStart = true;
+      state.syncStore = { whenNoteCreateAcked: async () => {} };
+      render(<RecordingBottomCluster />);
+      await act(async () => {});
+      expect(state.noop).toHaveBeenCalledWith('note_old', 'Old');
+      expect(state.panel.startBlockedReason).toBeUndefined();
+      state.noop.mockClear();
+      await act(async () => {
+        (state.panel.onStartRecording as () => void)();
+      });
+      expect(state.noop).toHaveBeenCalledWith('note_old', 'Old');
+    }
+  );
+  it('shows a dismissible import error above the collapsed dock instead of in its controls', () => {
+    state.importEnabled = true;
+    state.importState = {
+      busy: false, noteId: 'note_old', error: 'Unsupported audio',
+      record: { status: 'failed', recordingId: 'rec_failed' },
+    };
+    render(<RecordingBottomCluster />);
+    expect(state.panel.importStatus).toBeNull();
+    expect(screen.getByText('Unsupported audio')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'audioImport.chooseAgain' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'common.actions.close' }));
+    expect(screen.queryByText('Unsupported audio')).toBeNull();
+  });
+  it('does not offer transcription retry on cancelled history rows', () => {
+    state.importEnabled = true;
+    state.recordings = [
+      {
+        id: 'rec_cancelled',
+        noteId: 'note_old',
+        status: 'cancelled',
+        startedAt: null,
+        endedAt: null,
+        durationMs: null,
+        meta: { import: { phase: 'cancelled' } },
+      },
+    ];
+    render(<RecordingBottomCluster />);
+    const logs = state.panel.recordings as Array<{ imported: boolean; retryImport?: unknown }>;
+    expect(logs[0]!.imported).toBe(true);
+    expect(logs[0]!.retryImport).toBeUndefined();
+  });
+  it('allows automatic capture while another note is importing', async () => {
+    state.candidates.clear();
+    state.syncStore = { whenNoteCreateAcked: async () => {} };
+    state.importEnabled = true;
+    state.importState = { busy: true, noteId: 'note_other', record: null };
+    state.autoTranscribe = true;
+    state.pendingAutoStart = true;
+    render(<RecordingBottomCluster />);
+    await act(async () => {});
+    expect(state.noop).toHaveBeenCalledWith('note_old', 'Old');
+  });
+  it.each(['uploading', 'pending', 'running'])('blocks same-note capture during %s', status => {
+    state.candidates.clear();
+    state.importEnabled = true;
+    state.importState = { busy: true, noteId: 'note_old', canCancel: true, record: { status } };
+    render(<RecordingBottomCluster />);
+    expect(state.panel.startBlockedReason).toBe('audioImport.busy');
+    expect(state.panel.importStatus).toBeTruthy();
+  });
+  it.each([true, false])(
+    'opens the completed import from a persistent toast, same note=%s',
+    sameNote => {
+      state.candidates.clear();
+      state.importEnabled = true;
+      state.importState = {
+        busy: false,
+        noteId: sameNote ? 'note_old' : 'note_new',
+        ownerKey: 'user',
+        orgId: 'org',
+        record: {
+          status: 'done',
+          phase: 'ready',
+          recordingId: 'rec_import',
+          fileName: 'meeting.mp3',
+        },
+      };
+      const view = render(<RecordingBottomCluster />);
+      expect(state.toast).toHaveBeenCalledTimes(1);
+      const options = state.toast.mock.calls[0]![1];
+      expect(options).toMatchObject({
+        duration: Infinity,
+        closeButton: true,
+        description: 'meeting.mp3',
+      });
+      view.rerender(<RecordingBottomCluster />);
+      expect(state.toast).toHaveBeenCalledTimes(1);
+      act(() => options.action.onClick());
+      expect(state.push.mock.calls).toEqual(sameNote ? [] : [['/notes/note_new']]);
+      state.note = { noteId: state.importState.noteId, title: 'Imported note' };
+      view.rerender(<RecordingBottomCluster />);
+      expect(state.panel.finishedRecordingId).toBe('rec_import');
+      expect(state.panel.importStatus).toBeNull();
+      expect(screen.getByTestId('record-panel-state').textContent).toBe('open');
+    }
+  );
+  it('opens an imported transcript without stopping a recording in another note', () => {
+    state.candidates.clear();
+    state.importEnabled = true;
+    state.importState = {
+      busy: false,
+      noteId: 'note_new',
+      ownerKey: 'user',
+      orgId: 'org',
+      record: {
+        status: 'done',
+        phase: 'ready',
+        recordingId: 'rec_import',
+        fileName: 'meeting.mp3',
+      },
+    };
+    state.rec = { ...state.rec, state: 'recording', isRecording: true };
+    const view = render(<RecordingBottomCluster />);
+    act(() => state.toast.mock.calls[0]![1].action.onClick());
+    state.note = null;
+    view.rerender(<RecordingBottomCluster />);
+    state.note = { noteId: 'note_new', title: 'Imported note' };
+    state.recordings = [
+      {
+        id: 'rec_import',
+        noteId: 'note_new',
+        status: 'completed',
+        durationMs: 1000,
+        meta: { import: { phase: 'ready' } },
+      },
+    ];
+    state.queryEnabled = [];
+    view.rerender(<RecordingBottomCluster />);
+    expect(screen.getByTestId('record-panel-state').textContent).toBe('open');
+    expect(state.queryEnabled.length).toBeGreaterThan(0);
+    expect(state.queryEnabled.slice(-2)).toEqual([true, true]);
+    expect(state.panel.isRecording).toBe(false);
+    expect(state.panel.liveLines).toEqual([]);
+    expect(state.panel.recState).toBe('recording');
+    expect(state.stop).not.toHaveBeenCalled();
+    expect(state.panel.onOpenNote).toBeTypeOf('function');
+  });
+  it('dismisses import notifications when the feature becomes unavailable', () => {
+    state.candidates.clear();
+    state.importEnabled = true;
+    state.importState = {
+      busy: false,
+      noteId: 'note_old',
+      ownerKey: 'user',
+      orgId: 'org',
+      record: {
+        status: 'done',
+        phase: 'ready',
+        recordingId: 'rec_import',
+        fileName: 'meeting.mp3',
+      },
+    };
+    const view = render(<RecordingBottomCluster />);
+    state.importEnabled = false;
+    view.rerender(<RecordingBottomCluster />);
+    expect(state.dismiss).toHaveBeenCalledWith('audio-import:user:org:rec_import');
+  });
   it('starts a new note using the saved account preference after creation is acknowledged', async () => {
     state.candidates.clear();
     state.autoTranscribe = true;
     state.pendingAutoStart = true;
     let acknowledge!: () => void;
-    state.syncStore = { whenNoteCreateAcked: () => new Promise<void>((resolve) => { acknowledge = resolve; }) };
+    state.syncStore = {
+      whenNoteCreateAcked: () =>
+        new Promise<void>(resolve => {
+          acknowledge = resolve;
+        }),
+    };
     render(<RecordingBottomCluster />);
     expect(state.noop).not.toHaveBeenCalledWith('note_old', 'Old');
-    await act(async () => { acknowledge(); });
+    await act(async () => {
+      acknowledge();
+    });
     expect(state.noop).toHaveBeenCalledWith('note_old', 'Old');
   });
 
@@ -205,10 +478,17 @@ describe('recording dock note ownership', () => {
     state.autoTranscribe = true;
     state.pendingAutoStart = true;
     let acknowledge!: () => void;
-    state.syncStore = { whenNoteCreateAcked: () => new Promise<void>((resolve) => { acknowledge = resolve; }) };
+    state.syncStore = {
+      whenNoteCreateAcked: () =>
+        new Promise<void>(resolve => {
+          acknowledge = resolve;
+        }),
+    };
     render(<RecordingBottomCluster />);
     state.autoTranscribe = false;
-    await act(async () => { acknowledge(); });
+    await act(async () => {
+      acknowledge();
+    });
     expect(state.noop).not.toHaveBeenCalledWith('note_old', 'Old');
   });
 
@@ -331,12 +611,17 @@ describe('recording across navigation', () => {
   });
 });
 
-
 describe('shared workflow dock admission', () => {
   it('names the original note in review and routes its status action there', () => {
     state.shared = true;
     state.queriedNote = { title: '  Project notes  ', titleSource: 'manual' };
-    state.workflow = { kind: 'skill', phase: 'review', workflowId: 'active', noteId: 'note_other', attempt: 1 };
+    state.workflow = {
+      kind: 'skill',
+      phase: 'review',
+      workflowId: 'active',
+      noteId: 'note_other',
+      attempt: 1,
+    };
     render(<RecordingBottomCluster />);
     expect(screen.getByRole('status').textContent).toContain('workflow.reviewNamed:Project notes');
     fireEvent.click(screen.getByRole('button', { name: 'workflow.openNamedNote:Project notes' }));
@@ -347,42 +632,73 @@ describe('shared workflow dock admission', () => {
   it('uses the generic open action for placeholder titles', () => {
     state.shared = true;
     state.queriedNote = { title: 'Untitled note', titleSource: 'placeholder' };
-    state.workflow = { kind: 'recording', phase: 'finalizing', workflowId: 'active', noteId: 'note_other', attempt: 1 };
+    state.workflow = {
+      kind: 'recording',
+      phase: 'finalizing',
+      workflowId: 'active',
+      noteId: 'note_other',
+      attempt: 1,
+    };
     render(<RecordingBottomCluster />);
     expect(screen.getByRole('button', { name: 'workflow.openNote' })).toBeTruthy();
     expect(state.panel.onOpenNote).toBeTypeOf('function');
     expect(state.panel.openNoteLabel).toBe('workflow.openNote');
   });
 
-  it.each(['running', 'review', 'applying'])('blocks recording while another note has skill %s', phase => {
-    state.shared = true;
-    state.candidates.clear();
-    state.workflow = { kind: 'skill', phase, workflowId: 'active', noteId: 'note_other', attempt: 1 };
-    render(<RecordingBottomCluster />);
-    state.noop.mockClear();
-    (state.panel.onStartRecording as () => void)();
-    expect(state.noop).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'workflow.openNote' }));
-    expect(state.push).toHaveBeenCalledWith('/notes/note_other');
-  });
+  it.each(['running', 'review', 'applying'])(
+    'blocks recording while another note has skill %s',
+    phase => {
+      state.shared = true;
+      state.candidates.clear();
+      state.workflow = {
+        kind: 'skill',
+        phase,
+        workflowId: 'active',
+        noteId: 'note_other',
+        attempt: 1,
+      };
+      render(<RecordingBottomCluster />);
+      state.noop.mockClear();
+      (state.panel.onStartRecording as () => void)();
+      expect(state.noop).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole('button', { name: 'workflow.openNote' }));
+      expect(state.push).toHaveBeenCalledWith('/notes/note_other');
+    }
+  );
 
-  it.each(['review', 'applying', 'running'])('replaces Ask with the proposal controls during %s', phase => {
-    state.shared = true;
-    state.workflow = { kind: 'skill', phase, proposalId: 'proposal', workflowId: 'active', noteId: 'note_old', attempt: 1 };
-    const view = render(<RecordingBottomCluster />);
-    expect(screen.queryByRole('button', { name: 'Ask AI' })).toBeNull();
-    (state.panel.onStartRecording as () => void)();
-    expect(state.noop).not.toHaveBeenCalledWith('note_old', 'Old');
+  it.each(['review', 'applying', 'running'])(
+    'replaces Ask with the proposal controls during %s',
+    phase => {
+      state.shared = true;
+      state.workflow = {
+        kind: 'skill',
+        phase,
+        proposalId: 'proposal',
+        workflowId: 'active',
+        noteId: 'note_old',
+        attempt: 1,
+      };
+      const view = render(<RecordingBottomCluster />);
+      expect(screen.queryByRole('button', { name: 'Ask AI' })).toBeNull();
+      (state.panel.onStartRecording as () => void)();
+      expect(state.noop).not.toHaveBeenCalledWith('note_old', 'Old');
 
-    state.candidates.clear();
-    state.workflow = { kind: 'idle' };
-    view.rerender(<RecordingBottomCluster />);
-    expect(screen.getByRole('button', { name: 'Ask AI' })).toBeTruthy();
-  });
+      state.candidates.clear();
+      state.workflow = { kind: 'idle' };
+      view.rerender(<RecordingBottomCluster />);
+      expect(screen.getByRole('button', { name: 'Ask AI' })).toBeTruthy();
+    }
+  );
 
   it('keeps Ask blocked when leaving a note with a pending review', () => {
     state.shared = true;
-    state.workflow = { kind: 'skill', phase: 'review', workflowId: 'active', noteId: 'note_old', attempt: 1 };
+    state.workflow = {
+      kind: 'skill',
+      phase: 'review',
+      workflowId: 'active',
+      noteId: 'note_old',
+      attempt: 1,
+    };
     const view = render(<RecordingBottomCluster />);
     state.note = { noteId: 'note_new', title: 'New' };
     view.rerender(<RecordingBottomCluster />);
@@ -402,22 +718,36 @@ describe('shared workflow dock admission', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Ask AI' }));
     expect(state.askPanel.open).toBe(true);
 
-    state.workflow = { kind: 'skill', phase: 'review', workflowId: 'active', noteId: 'note_other', attempt: 1 };
+    state.workflow = {
+      kind: 'skill',
+      phase: 'review',
+      workflowId: 'active',
+      noteId: 'note_other',
+      attempt: 1,
+    };
     view.rerender(<RecordingBottomCluster />);
     expect(state.askPanel.open).toBe(false);
     expect(screen.queryByRole('button', { name: 'Ask AI' })).toBeNull();
   });
 
-  it.each(['capturing', 'paused', 'draining', 'finalizing'])('keeps Ask available while recording is %s', phase => {
-    state.shared = true;
-    state.candidates.clear();
-    state.workflow = { kind: 'recording', phase, workflowId: 'active', noteId: 'note_old', attempt: 1 };
-    render(<RecordingBottomCluster />);
-    fireEvent.click(screen.getByRole('button', { name: 'Ask AI' }));
-    expect(state.askPanel.open).toBe(true);
-  });
+  it.each(['capturing', 'paused', 'draining', 'finalizing'])(
+    'keeps Ask available while recording is %s',
+    phase => {
+      state.shared = true;
+      state.candidates.clear();
+      state.workflow = {
+        kind: 'recording',
+        phase,
+        workflowId: 'active',
+        noteId: 'note_old',
+        attempt: 1,
+      };
+      render(<RecordingBottomCluster />);
+      fireEvent.click(screen.getByRole('button', { name: 'Ask AI' }));
+      expect(state.askPanel.open).toBe(true);
+    }
+  );
 });
-
 
 describe('recording language ownership', () => {
   it.each(['idle', 'starting', 'recording', 'paused', 'stopping'])(
@@ -447,30 +777,61 @@ it('keeps creation Undo visible alongside the instruction dock after review ends
 const { useNoteDockActions } = await import('./note-dock-actions');
 function DockActionsProbe({ noteId }: { noteId: string }) {
   const actions = useNoteDockActions(noteId);
-  return <>
-    <button disabled={!actions?.startRecording} onClick={actions?.startRecording}>Start from editor</button>
-    <button disabled={!actions?.askAi} onClick={actions?.askAi}>Ask from editor</button>
-  </>;
+  return (
+    <>
+      <button disabled={!actions?.startRecording} onClick={actions?.startRecording}>
+        Start from editor
+      </button>
+      <button disabled={!actions?.askAi} onClick={actions?.askAi}>
+        Ask from editor
+      </button>
+    </>
+  );
 }
 it('shares recording guards and current-note ownership with editor actions', () => {
   state.candidates.clear();
-  const view = render(<><RecordingBottomCluster /><DockActionsProbe noteId="note_old" /></>);
+  const view = render(
+    <>
+      <RecordingBottomCluster />
+      <DockActionsProbe noteId="note_old" />
+    </>
+  );
   fireEvent.click(screen.getByText('Start from editor'));
   expect(state.noop).toHaveBeenCalledWith('note_old', 'Old');
   state.rec.state = 'recording';
-  view.rerender(<><RecordingBottomCluster /><DockActionsProbe noteId="note_old" /></>);
+  view.rerender(
+    <>
+      <RecordingBottomCluster />
+      <DockActionsProbe noteId="note_old" />
+    </>
+  );
   expect((screen.getByText('Start from editor') as HTMLButtonElement).disabled).toBe(true);
   state.note = { noteId: 'note_new', title: 'New' };
-  view.rerender(<><RecordingBottomCluster /><DockActionsProbe noteId="note_old" /></>);
+  view.rerender(
+    <>
+      <RecordingBottomCluster />
+      <DockActionsProbe noteId="note_old" />
+    </>
+  );
   expect((screen.getByText('Ask from editor') as HTMLButtonElement).disabled).toBe(true);
 });
 it('opens Ask through the same dock handler and blocks it during review', () => {
   state.candidates.clear();
-  const view = render(<><RecordingBottomCluster /><DockActionsProbe noteId="note_old" /></>);
+  const view = render(
+    <>
+      <RecordingBottomCluster />
+      <DockActionsProbe noteId="note_old" />
+    </>
+  );
   fireEvent.click(screen.getByText('Ask from editor'));
   expect(state.askPanel.open).toBe(true);
   state.candidates.set('note_old', { skillName: 'Cleanup' });
-  view.rerender(<><RecordingBottomCluster /><DockActionsProbe noteId="note_old" /></>);
+  view.rerender(
+    <>
+      <RecordingBottomCluster />
+      <DockActionsProbe noteId="note_old" />
+    </>
+  );
   expect((screen.getByText('Ask from editor') as HTMLButtonElement).disabled).toBe(true);
 });
 
@@ -596,7 +957,10 @@ describe('Ask pill recording chip', () => {
   it('offers the newest ready recording on a revisit', () => {
     state.candidates.clear();
     state.rec = { ...state.rec, recordingId: null };
-    state.recordings = [ready('rec_b', '2026-09-17T01:00:00.000Z'), ready('rec_a', '2026-09-17T00:00:00.000Z')];
+    state.recordings = [
+      ready('rec_b', '2026-09-17T01:00:00.000Z'),
+      ready('rec_a', '2026-09-17T00:00:00.000Z'),
+    ];
     state.transcripts = { rec_a: [line('rec_a')], rec_b: [line('rec_b')] };
     render(<RecordingBottomCluster />);
     expect(screen.getByTestId('recording-chip').textContent).toBe('recording.skill.enhanceLabel');
@@ -644,5 +1008,15 @@ describe('Ask pill recording chip', () => {
     expect(state.candidates.has('note_old')).toBe(true);
     expect(state.panel.startBlockedReason).toBe('recording.actions.reviewBeforeRecording');
     expect(screen.getByTestId('recording-chip')).toBeTruthy();
+  });
+});
+
+describe('dock arrival glow', () => {
+  it.each([
+    ['off in the compact float dock', true, false],
+    ['on in the main dock', false, true],
+  ])('is %s', (_label, compact, enabled) => {
+    render(<RecordingBottomCluster compact={compact} />);
+    expect(new Set(state.glowEnabled)).toEqual(new Set([enabled]));
   });
 });

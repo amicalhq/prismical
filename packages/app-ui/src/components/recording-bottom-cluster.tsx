@@ -12,8 +12,13 @@ import { useCurrentNote } from '../shell/current-note-context';
 import { RECORDING_TROUBLESHOOTING_URL } from '../lib/docs-links';
 import { recordingErrorHintKey } from '../lib/recording-error-help';
 import { X } from 'lucide-react';
+import { PxOrbitLoader } from './px-orbit-loader';
+import { Button } from '../ui/button';
+import { AudioImportDialog } from './audio-import-dialog';
+import { useAudioImport, useFeatureFlag } from '@prismical/app-client';
 import { RecordingPillFace, recordingPillWidth } from './note-recording-dock';
 import { DockUnit, DockRowmate } from './dock-unit';
+import { useDockArrivalGlow } from './dock-glow';
 import { SkillNoteCreated } from './skill-note-created';
 import { SkillDockSlot } from './skill-dock-slot';
 import {
@@ -116,6 +121,8 @@ export function RecordingBottomCluster(props: ClusterProps) {
   );
 }
 
+const IMPORT_RECOVERY_BUTTON = 'h-auto min-h-7 max-w-full whitespace-normal text-left';
+
 function WorkflowRecordingCluster({
   client,
   ...props
@@ -144,6 +151,7 @@ function RecordingBottomClusterView({
    * floating-compare). Only the full-width review pill still leaves the row
    * while a recording is engaged — it is inert then anyway, and it would
    * overflow the window. Default false keeps the web/app layout unchanged.
+   * Compact also keeps the arrival glow off.
    */
   rec: UseRecording & {
     retryAvailable?: boolean;
@@ -214,12 +222,255 @@ function RecordingBottomClusterView({
   // parked (no partial-data refetch mid-stop) and the live lines keep showing.
   const liveActive = sessionActive || rec.state === 'stopping';
   const noteId = currentNote?.noteId ?? null;
+  const importEnabled = useFeatureFlag('audioImport').enabled && env.getEnv().platform === 'web';
+  const audioImport = useAudioImport(importEnabled);
+  const [importOpen, setImportOpen] = React.useState(false);
+  const importDestination = React.useRef<string | null>(null);
+  const importRestart = React.useRef<string | undefined>(undefined);
+  const importBusy = importEnabled && Boolean(audioImport.state?.busy);
+  // Observing another tab's transfer must not take over this browser's capture controls.
+  const importBlocksCapture =
+    importBusy &&
+    audioImport.state?.noteId === noteId &&
+    (audioImport.state?.record?.status !== 'uploading' ||
+      Boolean(audioImport.state?.canCancel && !audioImport.state?.observedOnly));
+  const visibleImport =
+    importEnabled && audioImport.state?.noteId === noteId ? audioImport.state : null;
+  const importLabel =
+    visibleImport?.busy && !visibleImport.error && !liveActive && rec.state !== 'starting'
+      ? visibleImport.record?.phase === 'transcribing'
+        ? t('audioImport.transcribing')
+        : visibleImport.record?.phase === 'checking'
+          ? t('audioImport.checking')
+          : t('audioImport.uploading')
+      : undefined;
+  const importedNoteId = audioImport.state?.noteId;
+  const importedRecordingId = audioImport.state?.record?.recordingId;
+  const importedPhase = audioImport.state?.record?.phase;
+  const importNoticeScope =
+    importEnabled && audioImport.state
+      ? `${audioImport.state.ownerKey}:${audioImport.state.orgId}`
+      : null;
+  const importNotices = React.useRef(new Set<string>());
+  const importOpenIntent = React.useRef<{ noteId: string; recordingId: string } | null>(null);
+  const [importPreviewNote, setImportPreviewNote] = React.useState<string | null>(null);
+  const currentNoteIdRef = React.useRef(noteId);
+  currentNoteIdRef.current = noteId;
+  React.useEffect(() => {
+    const notices = importNotices.current;
+    return () => {
+      for (const id of notices) toast.dismiss(id);
+      notices.clear();
+      importOpenIntent.current = null;
+    };
+  }, [importNoticeScope]);
+  React.useEffect(() => {
+    const record = audioImport.state?.record;
+    if (!importNoticeScope || record?.status !== 'done' || !importedNoteId) return;
+    const id = `audio-import:${importNoticeScope}:${record.recordingId}`;
+    if (importNotices.current.has(id)) return;
+    importNotices.current.add(id);
+    if (currentNoteIdRef.current === importedNoteId)
+      setRecentlyFinished({ id: record.recordingId, at: Date.now() });
+    toast.success(t('audioImport.ready'), {
+      id,
+      description: record.fileName,
+      duration: Infinity,
+      closeButton: true,
+      action: {
+        label: t('audioImport.openTranscript'),
+        onClick: () => {
+          toast.dismiss(id);
+          setImportPreviewNote(importedNoteId);
+          if (currentNoteIdRef.current === importedNoteId) {
+            setRecentlyFinished({ id: record.recordingId, at: Date.now() });
+            setExpandedUnit('rec');
+          } else {
+            importOpenIntent.current = { noteId: importedNoteId, recordingId: record.recordingId };
+            router.push(`/notes/${importedNoteId}`);
+          }
+        },
+      },
+    });
+  }, [importNoticeScope, importedPhase, importedNoteId, audioImport.state?.record, router, t]);
+
+  React.useEffect(() => {
+    if (!importedRecordingId || !importedNoteId) return;
+    void qc.invalidateQueries({ queryKey: ['note-recordings', importedNoteId] });
+    if (!importBusy) {
+      void qc.invalidateQueries({ queryKey: ['transcript', importedRecordingId] });
+      void qc.invalidateQueries({ queryKey: speakersKey(importedRecordingId) });
+    }
+  }, [importedPhase, importedRecordingId, importedNoteId, importBusy, qc]);
+  const importAction = importEnabled ? (
+    <Button
+      variant="secondary"
+      size="sm"
+      type="button"
+      className="w-full"
+      disabled={
+        liveActive ||
+        rec.state === 'starting' ||
+        importBusy ||
+        rec.isFinalizing ||
+        workflowState.kind !== 'idle'
+      }
+      onClick={() => {
+        importDestination.current = noteId;
+        importRestart.current = undefined;
+        setImportOpen(true);
+      }}
+    >
+      {t('audioImport.title')}
+    </Button>
+  ) : null;
   const captureActive = liveActive || rec.state === 'starting';
-  useCtaRecordingGuard(captureActive || rec.isFinalizing || workflowState.kind !== 'idle');
-  const transcriptNoteId =
-    workflowState.kind !== 'idle' ? workflowState.noteId : captureActive ? rec.noteId : noteId;
+  const [dismissedImportError, setDismissedImportError] = React.useState<string | null>(null);
+  const importErrorKey = visibleImport?.error
+    ? `${visibleImport.record?.recordingId}:${visibleImport.error}`
+    : null;
+  React.useEffect(() => {
+    if (!importErrorKey) setDismissedImportError(null);
+  }, [importErrorKey]);
+  const importErrorContent =
+    importErrorKey && dismissedImportError !== importErrorKey ? (
+      <div className="flex min-w-0 flex-1 flex-col gap-2 text-left">
+        <div className="flex items-start gap-2">
+          <span className="min-w-0 flex-1 break-words">{visibleImport?.error}</span>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            aria-label={t('common.actions.close')}
+            onClick={() => setDismissedImportError(importErrorKey)}
+          >
+            <X />
+          </Button>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {visibleImport?.canCancel && (
+            <Button
+              variant="outline"
+              size="xs"
+              onClick={() => void audioImport.cancel().catch(e => toast.error(e.message))}
+            >
+              {t('audioImport.cancelUpload')}
+            </Button>
+          )}
+          {visibleImport?.canComplete && (
+            <Button
+              variant="outline"
+              size="xs"
+              onClick={() => void audioImport.complete().catch(e => toast.error(e.message))}
+            >
+              {t('audioImport.retryComplete')}
+            </Button>
+          )}
+          {visibleImport?.record?.status === 'failed' && (
+            <>
+              <Button
+                variant="outline"
+                size="xs"
+                disabled={captureActive}
+                onClick={() =>
+                  void audioImport
+                    .retry(visibleImport.record!.recordingId)
+                    .catch(e => toast.error(e.message))
+                }
+              >
+                {t('audioImport.retry')}
+              </Button>
+              <Button
+                variant="outline"
+                size="xs"
+                disabled={captureActive}
+                onClick={() => {
+                  importDestination.current = visibleImport.noteId;
+                  importRestart.current = visibleImport.record!.recordingId;
+                  setImportOpen(true);
+                }}
+              >
+                {t('audioImport.chooseAgain')}
+              </Button>
+            </>
+          )}
+        </div>
+      </div>
+    ) : null;
+  const importStatus =
+    visibleImport && !visibleImport.error && visibleImport.record?.status !== 'done' ? (
+      <div
+        role="status"
+        className="flex w-full min-w-0 flex-wrap items-center gap-2 px-1 py-1 text-xs text-dock-ink"
+      >
+        {importLabel && <PxOrbitLoader />}
+        <p className="min-w-0 flex-1 basis-40 break-words leading-snug">
+          {visibleImport.error ?? importLabel ?? t('audioImport.cancelled')}
+        </p>
+        {visibleImport.canCancel && visibleImport.record?.status === 'uploading' && (
+          <Button
+            variant="outline"
+            size="xs"
+            type="button"
+            className={IMPORT_RECOVERY_BUTTON}
+            onClick={() => void audioImport.cancel().catch(e => toast.error(e.message))}
+          >
+            {t('audioImport.cancelUpload')}
+          </Button>
+        )}
+        {visibleImport.busy &&
+          visibleImport.canCancel &&
+          !visibleImport.observedOnly &&
+          visibleImport.record?.status === 'uploading' && (
+            <span aria-hidden="true">{visibleImport.progress}%</span>
+          )}
+        {visibleImport.canComplete && visibleImport.error && (
+          <Button
+            variant="outline"
+            size="xs"
+            type="button"
+            className={IMPORT_RECOVERY_BUTTON}
+            onClick={() => void audioImport.complete().catch(e => toast.error(e.message))}
+          >
+            {t('audioImport.retryComplete')}
+          </Button>
+        )}
+        {visibleImport.record?.status === 'failed' && (
+          <Button
+            variant="outline"
+            size="xs"
+            type="button"
+            className={IMPORT_RECOVERY_BUTTON}
+            onClick={() =>
+              void audioImport
+                .retry(visibleImport.record!.recordingId)
+                .catch(e => toast.error(e.message))
+            }
+          >
+            {t('audioImport.retry')}
+          </Button>
+        )}
+      </div>
+    ) : null;
+  useCtaRecordingGuard(
+    importBlocksCapture || captureActive || rec.isFinalizing || workflowState.kind !== 'idle'
+  );
+  // A notification may open an imported transcript while capture continues in another note.
+  // Only the transcript content switches; the existing live pause/stop controls stay intact.
+  const viewingImportedTranscript = !!importNoticeScope && importPreviewNote === noteId && !!noteId;
+  const transcriptNoteId = viewingImportedTranscript
+    ? noteId
+    : workflowState.kind !== 'idle'
+      ? workflowState.noteId
+      : captureActive
+        ? rec.noteId
+        : noteId;
   const recordingAway = !!transcriptNoteId && transcriptNoteId !== noteId;
-  const recPillWidth = recordingPillWidth(rec.state, rec.canPause, compact);
+  // The compact float dock stays quiet: it opens often and often straight into a recording.
+  const arrivalGlow = useDockArrivalGlow(noteId, !compact);
+  // The app-load glow runs one band across the whole row; a new note's glow stays on Record alone.
+  const dockRowRef = React.useRef<HTMLDivElement>(null);
+  const glowFrame = arrivalGlow.scope === 'dock' ? dockRowRef : undefined;
+  const recPillWidth = importLabel ? 220 : recordingPillWidth(rec.state, rec.canPause, compact);
   const { data: transcriptNote } = useNote(transcriptNoteId ?? '');
   // Who the transcript's "You" is. Registry identity says WHICH speaker is the owner; this says
   // who the owner IS as the viewer sees them, by comparing the recording's owner with the
@@ -229,6 +480,9 @@ function RecordingBottomClusterView({
   // viewer - the common case - without ever guessing another person's name.
   const sessionView = useSessionView();
   const activeOrgId = activeOrgIdOf(sessionView);
+  React.useEffect(() => {
+    setImportOpen(false);
+  }, [activeOrgId, sessionView.activeSessionKey, sessionView.activeSub]);
   const me = sessionView.accounts.find(
     a => (a.sessionKey ?? a.sub) === (sessionView.activeSessionKey ?? sessionView.activeSub)
   );
@@ -299,8 +553,11 @@ function RecordingBottomClusterView({
     let withdrawnByMachine = false;
     // Keep the warning brief and offer the appropriate recovery action for the host.
     const id = toast.warning(t('recording.errors.deadMicTitle'), {
-      description: t(nativeMicSettings
-        ? 'recording.errors.deadMicNativeDescription' : 'recording.errors.deadMicDescription'),
+      description: t(
+        nativeMicSettings
+          ? 'recording.errors.deadMicNativeDescription'
+          : 'recording.errors.deadMicDescription'
+      ),
       duration: Infinity,
       closeButton: true,
       onDismiss: () => {
@@ -308,15 +565,19 @@ function RecordingBottomClusterView({
         deadMicDismissedRef.current = deadMicRecordingId;
       },
       action: {
-        label: t(nativeMicSettings
-          ? 'settings.permissions.openSystemSettings' : 'recording.errors.deadMicHelp'),
-        onClick: () => nativeMicSettings
-          ? void desktopCapabilities.openSystemSettings('microphone')
-          : window.open(
-            'https://prismical.ai/docs/troubleshooting#recording-runs-but-nothing-is-transcribed',
-            '_blank',
-            'noopener'
-          ),
+        label: t(
+          nativeMicSettings
+            ? 'settings.permissions.openSystemSettings'
+            : 'recording.errors.deadMicHelp'
+        ),
+        onClick: () =>
+          nativeMicSettings
+            ? void desktopCapabilities.openSystemSettings('microphone')
+            : window.open(
+                'https://prismical.ai/docs/troubleshooting#recording-runs-but-nothing-is-transcribed',
+                '_blank',
+                'noopener'
+              ),
       },
     });
     return () => {
@@ -439,8 +700,12 @@ function RecordingBottomClusterView({
   // the "N recordings" picker, and each row's wand vs "in note" state. The noteId stays in the
   // query key during a live recording (only fetching pauses) so the cached logs survive the
   // start/stop flips — nulling the key used to empty the panel and flash it back after finalize.
-  const recordings = useNoteRecordings(transcriptNoteId, { enabled: !liveActive });
-  const folded = useEnhancedRecordings(transcriptNoteId, { enabled: !liveActive });
+  const recordings = useNoteRecordings(transcriptNoteId, {
+    enabled: !liveActive || viewingImportedTranscript,
+  });
+  const folded = useEnhancedRecordings(transcriptNoteId, {
+    enabled: !liveActive || viewingImportedTranscript,
+  });
   const recs = recordings.data ?? [];
 
   const transcriptPresentation = React.useMemo<TranscriptPresentationOptions>(
@@ -474,7 +739,7 @@ function RecordingBottomClusterView({
   const transcriptQueries = useQueries({
     queries: recs.map(r => ({
       queryKey: [...transcriptKey(r.id), resolvedLocale],
-      enabled: !liveActive,
+      enabled: !liveActive || viewingImportedTranscript,
       queryFn: async () =>
         (await listTranscriptSegments(r.id))
           .sort(byTranscriptTime)
@@ -486,7 +751,7 @@ function RecordingBottomClusterView({
   const speakerQueries = useQueries({
     queries: recs.map(r => ({
       queryKey: speakersKey(r.id),
-      enabled: !liveActive,
+      enabled: !liveActive || viewingImportedTranscript,
       queryFn: () => listRecordingSpeakers(r.id),
     })),
   });
@@ -507,6 +772,14 @@ function RecordingBottomClusterView({
     canTag: canTagSpeakers,
     processing: recordingIsProcessing(finalizePhase(r)),
     finalizeStatus: finalizePhase(r),
+    imported: Boolean(r.meta?.import),
+    retryImport:
+      importEnabled && r.meta?.import && r.status === 'failed'
+        ? {
+            disabled: importBusy || captureActive,
+            onClick: () => void audioImport.retry(r.id).catch(e => toast.error(e.message)),
+          }
+        : undefined,
   }));
 
   // While any recording is being diarized, poll the whole surface (recordings → meta flips,
@@ -691,11 +964,13 @@ function RecordingBottomClusterView({
   // wand, auto-enhance, inline, refine). Shown on the collapsed Ask pill (with
   // Stop) and as a turn in the Ask thread — never as a third pill.
   const activeRun = useActiveSkillRun(noteId);
-  const recordingStartBlockedReason = hasStagedCandidate
-    ? t('recording.actions.reviewBeforeRecording')
-    : workflowState.kind === 'skill' || activeRun
-      ? t('workflow.busy')
-      : undefined;
+  const recordingStartBlockedReason = importBlocksCapture
+    ? t('audioImport.busy')
+    : hasStagedCandidate
+      ? t('recording.actions.reviewBeforeRecording')
+      : workflowState.kind === 'skill' || activeRun
+        ? t('workflow.busy')
+        : undefined;
   const workflowRun = useActiveSkillRun(
     workflowState.kind === 'skill' ? workflowState.noteId : null
   );
@@ -778,7 +1053,10 @@ function RecordingBottomClusterView({
     return (skill: ComposerSkill) => onAskRunSkill(skill, '', 'chip');
   }, [onAskRunSkill]);
 
-  const toggleTranscription = () => setExpandedUnit(p => (p === 'rec' ? null : 'rec'));
+  const toggleTranscription = () => {
+    setImportPreviewNote(null);
+    setExpandedUnit(p => (p === 'rec' ? null : 'rec'));
+  };
 
   // Keep the dock's original note through recording, enhancement and review.
   const [recordingNote, setRecordingNote] = React.useState<{
@@ -788,6 +1066,7 @@ function RecordingBottomClusterView({
   /** Set right before the stop-triggered navigation back to the recording's note. */
   const autoNavNoteIdRef = React.useRef<string | null>(null);
   React.useEffect(() => {
+    if (viewingImportedTranscript && captureActive) return;
     if (!transcriptNoteId) {
       setRecordingNote(null);
       return;
@@ -805,7 +1084,7 @@ function RecordingBottomClusterView({
     if (currentNote && currentNote.noteId === transcriptNoteId) {
       setRecordingNote({ noteId: currentNote.noteId, title: currentNote.title });
     }
-  }, [transcriptNoteId, currentNote, t]);
+  }, [transcriptNoteId, currentNote, t, viewingImportedTranscript, captureActive]);
 
   // The tab title carries the session for anyone who has tabbed away. Reads
   // off `recordingNote` rather than `currentNote` so it keeps naming the RECORDING's note after
@@ -832,14 +1111,22 @@ function RecordingBottomClusterView({
     setRecMaxi(false);
     setRecentlyFinished(null);
     setSettleUntil(null);
-    setExpandedUnit(p => (p === 'rec' ? null : p));
+    const openImport = importOpenIntent.current?.noteId === noteId && !!noteId;
+    if (openImport) {
+      setImportPreviewNote(noteId);
+      setRecentlyFinished({ id: importOpenIntent.current!.recordingId, at: Date.now() });
+      importOpenIntent.current = null;
+    } else setImportPreviewNote(null);
+    setExpandedUnit(p => (openImport ? 'rec' : p === 'rec' ? null : p));
     // Ask gestures belong to the page being left. Recording enhancement keeps
     // its immutable owner and waits until that note editor is available.
     useAskSkillRunStore.getState().clear();
   }, [noteId]);
 
   // Live session lines while recording (the rolling log takes over once stopped).
-  const sessionVisible = captureActive || rec.noteId === transcriptNoteId;
+  const sessionVisible =
+    (!viewingImportedTranscript || rec.noteId === transcriptNoteId) &&
+    (captureActive || rec.noteId === transcriptNoteId);
   const liveLines = (sessionVisible ? rec.liveSegments : []).map(s =>
     segmentToLine(s, rec.startedAt, undefined, transcriptPresentation)
   );
@@ -879,6 +1166,7 @@ function RecordingBottomClusterView({
   React.useEffect(() => {
     if (!autoStartNoteId || !currentNote || currentNote.noteId !== autoStartNoteId) return;
     if (
+      importBlocksCapture ||
       rec.state !== 'idle' ||
       useSkillDiffStore.getState().candidatesByNote.has(currentNote.noteId)
     ) {
@@ -895,9 +1183,10 @@ function RecordingBottomClusterView({
       automatic: true,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoStartNoteId, currentNote?.noteId, rec.state]);
+  }, [importBlocksCapture, autoStartNoteId, currentNote?.noteId, rec.state]);
   React.useEffect(() => {
     if (
+      importBlocksCapture ||
       recording.control ||
       !syncStore ||
       !noteId ||
@@ -914,6 +1203,7 @@ function RecordingBottomClusterView({
         const note = currentNoteRef.current;
         if (
           cancelled ||
+          importBlocksCapture ||
           note?.noteId !== noteId ||
           useSkillDiffStore.getState().candidatesByNote.has(noteId) ||
           !currentAccountExperience()?.getSnapshot().data?.experience.autoTranscribeNewNotes
@@ -938,28 +1228,46 @@ function RecordingBottomClusterView({
     return () => {
       cancelled = true;
     };
-  }, [noteId, rec.state, recording.control, syncStore, t]);
+  }, [importBlocksCapture, noteId, rec.state, recording.control, syncStore, t]);
 
   const onStart = React.useCallback(() => {
     if (
+      importBlocksCapture ||
       rec.state !== 'idle' ||
       workflowState.kind !== 'idle' ||
       !currentNote ||
       useSkillDiffStore.getState().candidatesByNote.has(currentNote.noteId)
     )
       return;
+    setImportPreviewNote(null);
     void rec.start(currentNote.noteId, currentNote.title || t('recording.untitledRecording'));
     setExpandedUnit('rec');
     analytics.capture(EVENTS.RECORDING_STARTED, { note_id: currentNote.noteId });
-  }, [rec, workflowState.kind, currentNote, t, analytics]);
+  }, [rec, workflowState.kind, currentNote, t, analytics, importBlocksCapture]);
   const onOpenAsk = React.useCallback(() => {
     if (!askBlocked) setExpandedUnit('ask');
   }, [askBlocked]);
-  const noteDockActions = React.useMemo(() => ({
-    startRecording: rec.state === 'idle' && workflowState.kind === 'idle' && !hasStagedCandidate
-      ? onStart : undefined,
-    askAi: !askBlocked ? onOpenAsk : undefined,
-  }), [rec.state, workflowState.kind, hasStagedCandidate, onStart, askBlocked, onOpenAsk]);
+  const noteDockActions = React.useMemo(
+    () => ({
+      startRecording:
+        !importBlocksCapture &&
+        rec.state === 'idle' &&
+        workflowState.kind === 'idle' &&
+        !hasStagedCandidate
+          ? onStart
+          : undefined,
+      askAi: !askBlocked ? onOpenAsk : undefined,
+    }),
+    [
+      importBlocksCapture,
+      rec.state,
+      workflowState.kind,
+      hasStagedCandidate,
+      onStart,
+      askBlocked,
+      onOpenAsk,
+    ]
+  );
   useRegisterNoteDockActions(currentNote?.noteId, noteDockActions);
   // Both captures gate on the resolved outcome: a guard-rejected double-click or a failed
   // resume must not inflate the pause/resume counts.
@@ -1134,10 +1442,18 @@ function RecordingBottomClusterView({
   // borrow width from Ask within the fixed resting row. Container units
   // keep every footprint inside the content pane, including with the sidebar open.
   const dockWidth = 'min(600px, calc(100cqw - 24px))';
-  const normalPanelWidth = 'min(620px, calc(100cqw - 24px))';
-  const maximizedWidth = 'min(820px, calc(100cqw - 24px))';
-  const recPanelWidth = compact ? 'calc(100vw - 16px)' : recMaxi ? maximizedWidth : normalPanelWidth;
-  const askPanelWidth = compact ? 'calc(100vw - 16px)' : askMaxi ? maximizedWidth : normalPanelWidth;
+  const normalPanelWidth = 'min(620px, calc(100cqw - 24px), calc(100dvw - 24px))';
+  const maximizedWidth = 'min(820px, calc(100cqw - 24px), calc(100dvw - 24px))';
+  const recPanelWidth = compact
+    ? 'calc(100vw - 16px)'
+    : recMaxi
+      ? maximizedWidth
+      : normalPanelWidth;
+  const askPanelWidth = compact
+    ? 'calc(100vw - 16px)'
+    : askMaxi
+      ? maximizedWidth
+      : normalPanelWidth;
   const restingNeighborWidth = currentNote || recordingAway ? recPillWidth : 52;
   // Compact normal heights differ per unit and are svh-capped so a short
   // window still fits.
@@ -1155,7 +1471,8 @@ function RecordingBottomClusterView({
   // The rec panel shows its own error banner while expanded — the floating pill
   // is the collapsed-dock notice (anchored to the dock baseline, NOT the row,
   // whose height is the expanded panel's).
-  const showErrorPill = Boolean(rec.error && currentNote) && !isTranscriptionOpen;
+  const showErrorPill =
+    Boolean((rec.error && currentNote) || importErrorContent) && !isTranscriptionOpen;
   // Known-cause errors carry their concrete fix (e.g. the mic-permission path
   // for this platform) next to the generic troubleshooting link.
   const recErrorHint = React.useMemo(() => {
@@ -1229,6 +1546,21 @@ function RecordingBottomClusterView({
     <div
       className={`dock-narrow-panels pointer-events-none absolute inset-x-0 z-40 ${compact ? 'bottom-[10px]' : 'bottom-4'}`}
     >
+      <AudioImportDialog
+        isRestart={Boolean(importRestart.current)}
+        maxRecordingSeconds={maxRecordingSeconds}
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        onImport={(file, language) => {
+          const destination = importDestination.current;
+          if (destination && !captureActive && !importBusy) {
+            setExpandedUnit('rec');
+            void audioImport
+              .start(destination, file, language, importRestart.current)
+              .catch(e => toast.error(e.message));
+          }
+        }}
+      />
       {/* Error notice for the COLLAPSED dock (rec.error persists until the next
           start; note-scoped so a stale mic error never floats over other pages).
           Anchored just above the 42px dock baseline regardless of any expanded
@@ -1251,6 +1583,7 @@ function RecordingBottomClusterView({
         {/* Text renders ONLY while the pill is actually shown: an always-mounted copy
             would double every error string with the panel banner (and read as visible
             to the a11y tree / test tooling even at opacity 0). */}
+        {showErrorPill && !rec.error && importErrorContent}
         {showErrorPill && rec.error ? (
           <span className="flex flex-col items-center gap-0.5">
             <span className="inline-flex items-center gap-1">
@@ -1312,8 +1645,12 @@ function RecordingBottomClusterView({
               )}
             </div>
           )}
-        {currentNote && <SkillNoteCreated noteId={currentNote.noteId}
-          active={workflowState.kind === 'idle' && !hasStagedCandidate && rec.state === 'idle'} />}
+        {currentNote && (
+          <SkillNoteCreated
+            noteId={currentNote.noteId}
+            active={workflowState.kind === 'idle' && !hasStagedCandidate && rec.state === 'idle'}
+          />
+        )}
         {/* Dock row (v3): two morphing units — Record and Ask — that expand IN PLACE into
             their panels (the sibling collapses out of the row), plus the transient skill
             slot. items-end so an expanding unit grows upward off the shared baseline; the
@@ -1323,9 +1660,13 @@ function RecordingBottomClusterView({
             of snapping it. The skill slot stays mounted outside that page morph so
             navigating does not replace the active proposal's controls. */}
         <div
+          ref={dockRowRef}
           data-toast-obstacle=""
           data-toast-anchor=""
           className={`pointer-events-auto relative flex items-end ${compact ? 'gap-1.5' : 'gap-2'}`}
+          // The glow has done its job once the user reaches for the dock.
+          onPointerDownCapture={arrivalGlow.stop}
+          onFocusCapture={arrivalGlow.stop}
           style={{ '--skill-review-neighbor-width': `${recPillWidth}px` } as React.CSSProperties}
         >
           <AnimatedWidth
@@ -1334,6 +1675,8 @@ function RecordingBottomClusterView({
             {currentNote && !recordingAway ? (
               <div className="flex items-end gap-2">
                 <DockUnit
+                  glow={arrivalGlow.active}
+                  glowFrame={glowFrame}
                   compact={compact}
                   expanded={isTranscriptionOpen}
                   collapsed={isAskOpen}
@@ -1342,6 +1685,7 @@ function RecordingBottomClusterView({
                   panelHeight={panelHeight(recMaxi, 'rec')}
                   pill={
                     <RecordingPillFace
+                      importLabel={importLabel}
                       startBlockedReason={recordingStartBlockedReason}
                       recState={rec.state}
                       canPause={rec.canPause}
@@ -1355,7 +1699,17 @@ function RecordingBottomClusterView({
                   }
                   panel={
                     <TranscriptPanel
+                      importAction={importAction}
+                      importStatus={importStatus}
                       key={currentNote.noteId}
+                      onOpenNote={
+                        viewingImportedTranscript && captureActive && rec.noteId !== noteId
+                          ? () => {
+                              setImportPreviewNote(null);
+                              router.push(`/notes/${rec.noteId}`);
+                            }
+                          : undefined
+                      }
                       isRecording={showLiveTranscript}
                       isPaused={rec.isPaused}
                       pauseReason={rec.pauseReason}
@@ -1374,7 +1728,7 @@ function RecordingBottomClusterView({
                       )}
                       recordings={recordingLogs}
                       onEnhanceRecording={onEnhanceRecording}
-                    noteBodyEmpty={noteBodyEmpty}
+                      noteBodyEmpty={noteBodyEmpty}
                       onTagSpeaker={onTagSpeaker}
                       isExpanded={recMaxi}
                       onToggleExpanded={() => setRecMaxi(v => !v)}
@@ -1389,6 +1743,9 @@ function RecordingBottomClusterView({
                       activeLanguage={sessionActive ? rec.language : undefined}
                       onChangeLanguage={rec.setLanguage}
                       onResumeRecording={onResume}
+                      errorContent={
+                        isTranscriptionOpen && !recErrorTitle ? importErrorContent : null
+                      }
                       errorText={isTranscriptionOpen ? recErrorTitle : null}
                       errorHint={isTranscriptionOpen ? recErrorBody : null}
                       errorAction={isTranscriptionOpen ? recErrorAction : null}
@@ -1416,6 +1773,8 @@ function RecordingBottomClusterView({
               // Both faces stay attached to the original note through processing
               // and review, including after capture controls return to idle.
               <DockUnit
+                glow={arrivalGlow.active}
+                glowFrame={glowFrame}
                 compact={compact}
                 expanded={isTranscriptionOpen}
                 collapsed={isAskOpen}
@@ -1424,6 +1783,7 @@ function RecordingBottomClusterView({
                 panelHeight={panelHeight(recMaxi, 'rec')}
                 pill={
                   <RecordingPillFace
+                    importLabel={importLabel}
                     recState={rec.state}
                     startBlockedReason={recordingStartBlockedReason}
                     canPause={rec.canPause}
@@ -1437,6 +1797,8 @@ function RecordingBottomClusterView({
                 }
                 panel={
                   <TranscriptPanel
+                    importAction={importAction}
+                    importStatus={importStatus}
                     key={`away-${transcriptNoteId}`}
                     recordingNoteTitle={recordingNote.title}
                     openNoteLabel={openNoteLabel}
@@ -1463,6 +1825,7 @@ function RecordingBottomClusterView({
                     activeLanguage={sessionActive ? rec.language : undefined}
                     onChangeLanguage={rec.setLanguage}
                     onResumeRecording={onResume}
+                    errorContent={isTranscriptionOpen && !recErrorTitle ? importErrorContent : null}
                     errorText={isTranscriptionOpen ? recErrorTitle : null}
                     errorHint={isTranscriptionOpen ? recErrorBody : null}
                     errorAction={isTranscriptionOpen ? recErrorAction : null}
@@ -1474,7 +1837,7 @@ function RecordingBottomClusterView({
               />
             ) : (
               <DockRowmate collapsed={isAskOpen}>
-                <NewNoteDock />
+                <NewNoteDock glow={arrivalGlow.active} glowFrame={glowFrame} />
               </DockRowmate>
             )}
           </AnimatedWidth>
@@ -1494,6 +1857,9 @@ function RecordingBottomClusterView({
             </div>
           </DockRowmate>
           <DockUnit
+            // A new note points at Record; only the app-load glow covers Ask too.
+            glow={arrivalGlow.active && arrivalGlow.scope === 'dock'}
+            glowFrame={glowFrame}
             compact={compact}
             expanded={isAskOpen}
             // Review replaces Ask in the dock and blocks it across notes until

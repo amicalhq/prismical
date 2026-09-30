@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { useCreateNote } from '@prismical/app-client';
 import { DOCK_PILL_CHROME } from './dock-chrome';
+import { DockGlow } from './dock-glow';
 import { useTranslation } from 'react-i18next';
 
 // The "New note" face of the bottom dock, shown on every page that ISN'T a note
@@ -26,7 +27,14 @@ import { useTranslation } from 'react-i18next';
  */
 const CREATE_LATCH_MS = 8000;
 
-export function NewNoteDock() {
+export function NewNoteDock({
+  glow = false,
+  glowFrame,
+}: {
+  glow?: boolean;
+  /** Run the glow on one loop shared across this element (the dock row). */
+  glowFrame?: React.RefObject<HTMLElement | null>;
+}) {
   const { t } = useTranslation();
   const router = useNavigation();
   const createNote = useCreateNote();
@@ -138,9 +146,10 @@ export function NewNoteDock() {
                 face (note-recording-dock.tsx). `--dock-hover` is translucent by design — it is
                 meant to tint an opaque surface, not to be that surface. Setting it directly on
                 this pill replaced `bg-dock-surface` and the pill went see-through on hover. */}
+            <DockGlow active={glow} radius={14} frame={glowFrame} />
             <span
               className="
-                flex h-full w-full items-center justify-center text-dock-ink-2
+                relative flex h-full w-full items-center justify-center text-dock-ink-2
                 transition-[background-color,color] group-hover:bg-dock-hover
                 group-hover:text-dock-ink
               "

@@ -14,6 +14,36 @@ const recording: CoreRecording = {
 };
 
 describe('recording processing phase', () => {
+  it('does not poll transcript data while the file is still uploading', () => {
+    const phase = recordingFinalizePhase(
+      { ...recording, meta: { import: { phase: 'uploading' } } },
+      now
+    );
+    expect(phase).toBe('uploading');
+    expect(recordingIsProcessing(phase)).toBe(false);
+  });
+  it('bounds stalled import processing using the latest status timestamp', () => {
+    expect(
+      recordingFinalizePhase(
+        {
+          ...recording,
+          updatedAt: new Date(now - 31 * 60_000).toISOString(),
+          meta: { import: { phase: 'transcribing' } },
+        },
+        now
+      )
+    ).toBe('stalled');
+    expect(
+      recordingFinalizePhase(
+        {
+          ...recording,
+          updatedAt: new Date(now - 1000).toISOString(),
+          meta: { import: { phase: 'checking' } },
+        },
+        now
+      )
+    ).toBe('pending');
+  });
   it('keeps a newly stopped hour-long recording waiting for server stitching', () => {
     const phase = recordingFinalizePhase(
       { ...recording, meta: { finalize: { status: 'pending' } } },

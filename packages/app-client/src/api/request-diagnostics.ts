@@ -1,6 +1,7 @@
 // Only known static route segments may enter telemetry. Unknown segments (including
 // resource IDs, emails and encoded values) are redacted; queries never leave here.
 const staticSegments = new Set([
+  "recording-imports", "active", "complete", "cancel", "restart-upload",
   "apps", "v1", "me", "notes", "folders", "tags", "note-tags", "note-events",
   "recordings", "enhanced-recordings", "skill-runs", "pending", "accept", "resolve",
   "restore", "skills", "run", "title-runs", "apply", "undo", "profile", "usage",

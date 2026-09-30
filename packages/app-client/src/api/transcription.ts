@@ -16,6 +16,7 @@ export type CoreRecording = {
   status: string;
   startedAt: string | null;
   endedAt: string | null;
+  updatedAt?: string;
   durationMs: number | null;
   /** Server bookkeeping: `meta.staging` (staged lanes) + `meta.finalize` (finalization lifecycle). */
   meta?: Record<string, unknown> | null;

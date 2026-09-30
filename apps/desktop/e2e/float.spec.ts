@@ -41,6 +41,11 @@ const signIn = async (page: Page, app: ElectronApplication): Promise<void> => {
   await expect(page.getByTestId('desktop-shell')).toBeVisible();
 };
 
+interface GlowLatch {
+  __sawDockGlow?: boolean;
+  __glowObserver?: MutationObserver;
+}
+
 const latestFloatState = (page: Page): Promise<FloatState | null> =>
   page.evaluate(
     () => (window as never as { __floatStates?: FloatState[] }).__floatStates?.at(-1) ?? null
@@ -70,6 +75,8 @@ test.describe('floating note window', () => {
     assertNotStaleDevBundle(page.url());
     await page.waitForLoadState('domcontentloaded');
     await signIn(page, launched!.app);
+    // The main dock plays its one-lap load glow.
+    await expect(page.locator('.dock-glow').first()).toBeAttached();
 
     await page.evaluate(() => {
       const target = window as never as {
@@ -91,10 +98,22 @@ test.describe('floating note window', () => {
       .find(candidate => candidate.url().includes('#/float'));
     expect(floatPage, 'floating note renderer').toBeDefined();
     await floatPage!.waitForLoadState('domcontentloaded');
+    // Latch any dock glow from the start: a glow removes itself after about 3.5 s, so a
+    // retrying "count is 0" check would pass once it had faded.
+    await floatPage!.evaluate(() => {
+      const target = window as never as GlowLatch;
+      target.__sawDockGlow = document.querySelector('.dock-glow') !== null;
+      target.__glowObserver = new MutationObserver(() => {
+        if (document.querySelector('.dock-glow')) target.__sawDockGlow = true;
+      });
+      target.__glowObserver.observe(document.documentElement, { childList: true, subtree: true });
+    });
     await expect(floatPage!.getByTestId('desktop-shell')).toHaveCount(0);
     await expect(floatPage!.getByRole('button', { name: 'Dock back into app' })).toBeVisible();
     await expect(floatPage!.getByRole('button', { name: 'New quick note' })).toBeVisible();
     await expect(floatPage!.getByRole('button', { name: 'Collapse to the pill' })).toBeVisible();
+    // The dock row, whose first mount would start a glow.
+    await expect(floatPage!.locator('[data-toast-anchor]')).toBeVisible();
 
     await floatPage!.getByRole('button', { name: 'Collapse to the pill' }).click();
     await expect.poll(() => latestFloatState(page)).toEqual({ open: false, noteId: NOTE_ID });
@@ -104,6 +123,14 @@ test.describe('floating note window', () => {
     await page.evaluate(() => window.desktop.float.open(null));
     await expect.poll(() => latestFloatState(page)).toEqual({ open: true, noteId: NOTE_ID });
     expect(launched!.app.windows()).toHaveLength(4);
+
+    // The compact float dock never glowed: not on its first mount, nor after collapse and reopen.
+    const sawDockGlow = await floatPage!.evaluate(() => {
+      const target = window as never as GlowLatch;
+      target.__glowObserver?.disconnect();
+      return target.__sawDockGlow;
+    });
+    expect(sawDockGlow, 'the float dock must never mount .dock-glow').toBe(false);
 
     await floatPage!.getByRole('button', { name: 'Dock back into app' }).click();
     await expect.poll(() => launched!.app.windows().length).toBe(3);

@@ -9,7 +9,7 @@ import { useTranslation } from 'react-i18next';
 /**
  * The hover-revealed floating action cluster of a dock panel: one bordered,
  * slightly-elevated container pinned top-right INSIDE the panel face, visible
- * only while the panel is hovered or holds focus. Callers put panel-specific actions first;
+ * only while the panel is hovered or one of these controls holds focus. Callers put panel-specific actions first;
  * maximize + collapse are appended here so every panel gets them in the same
  * place with the same copy.
  */

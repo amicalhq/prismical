@@ -2,6 +2,56 @@ import type { TranslationShape } from '../catalog-shape';
 import type en from './en';
 
 const ja = {
+  audioImport: {
+    formatsHint: '対応形式：MP3、WAV、M4A/MP4、<more>その他</more>',
+    moreFormats: 'その他',
+    supportedFormats: '対応形式',
+    formatDetails:
+      'MP3、PCM WAV、FLAC、AAC、AAC 音声の M4A/MP4、Opus または Vorbis 音声の OGG/OGA/OPUS と WebM。音声トラックが 1 つだけ含まれている必要があります。',
+    imported: 'インポートした録音',
+    durationExceeded: 'このファイルはプランの録音時間上限を超えています。',
+    unreadableFile: '対応する音声または動画ファイルではないようです。対応形式を確認してください。',
+    openTranscript: '文字起こしを開く',
+    fileSize: '{{size}} MB',
+    languages: {
+      en: '英語',
+      es: 'スペイン語',
+      fr: 'フランス語',
+      de: 'ドイツ語',
+      hi: 'ヒンディー語',
+    },
+    title: '録音をインポート',
+    description:
+      'Prismical Cloud でファイルをこのノートに文字起こしします。ノートの本文は変更されません。',
+    file: '音声または動画ファイル',
+    invalidFile: '250 MB 以下の、空でない対応音声または動画ファイルを選択してください。',
+    limits:
+      '音声または動画 · 最大 250 MB。1 ファイル最大 {{minutes}} 分。残りの文字起こし時間も適用されます。',
+    language: '音声の言語',
+    detect: '言語を検出',
+    retention:
+      '文字起こし完了後に音声は削除されます。失敗したアップロードは再試行のため最大 7 日間保持される場合があります。動画はファイルとしてアップロードされ、音声のみ文字起こしされます。',
+    submit: 'Prismical Cloud でインポート',
+    uploading: '音声をアップロード中',
+    checking: 'ファイルを確認中',
+    transcribing: '音声を文字起こし中',
+    ready: '文字起こし完了',
+    cancelled: 'インポートをキャンセルしました',
+    cancel: 'キャンセル',
+    cancelUpload: 'アップロードをキャンセル',
+    retry: '文字起こしを再試行',
+    retryComplete: '処理を再試行',
+    chooseAgain: 'ファイルを選び直す',
+    openNote: 'インポート先のノートを開く',
+    busy: '先に音声のインポートを完了またはキャンセルしてください。',
+    loading: 'ワークスペースを読み込み中です。再試行してください。',
+    signIn: '音声をインポートするには再度ログインしてください。',
+    sessionUnavailable: 'アップロードセッションを利用できません。',
+    uploadFailed: '音声のアップロードに失敗しました。キャンセルして再試行してください。',
+    interrupted: 'アップロード接続が中断されました。キャンセルして再試行してください。',
+    failed: 'インポートに失敗しました。',
+    reconnect: 'インポート状態を確認できません。再読み込みして接続してください。',
+  },
   workflow: {
     noteChanged:
       'この提案の生成後にノートが変更されました。提案を破棄してスキルを再実行してください。',

@@ -6,3 +6,5 @@ export {
 export { markdownToChildren, markdownToInlineChildren } from "./markdown-to-children.js";
 
 export { firstNoteLine } from './note-title.js';
+
+export { documentSyncProblem, markdownSyncProblem } from './sync-safety.js';

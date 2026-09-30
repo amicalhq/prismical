@@ -2,6 +2,51 @@ import type { TranslationShape } from '../catalog-shape';
 import type en from './en';
 
 const de = {
+  audioImport: {
+    formatsHint: 'Unterstützte Formate: MP3, WAV, M4A/MP4 und <more>mehr</more>',
+    moreFormats: 'mehr',
+    supportedFormats: 'Unterstützte Formate',
+    formatDetails:
+      'MP3, PCM WAV, FLAC, AAC; M4A/MP4 mit AAC-Audio; OGG/OGA/OPUS und WebM mit Opus- oder Vorbis-Audio. Dateien müssen genau eine Audiospur enthalten.',
+    imported: 'Importierte Aufnahme',
+    durationExceeded: 'Diese Datei überschreitet die Aufnahmedauer deines Tarifs.',
+    unreadableFile:
+      'Diese Datei scheint kein unterstütztes Audio- oder Videoformat zu haben. Prüfe die unterstützten Formate.',
+    openTranscript: 'Transkript öffnen',
+    fileSize: '{{size}} MB',
+    languages: { en: 'Englisch', es: 'Spanisch', fr: 'Französisch', de: 'Deutsch', hi: 'Hindi' },
+    title: 'Aufnahme importieren',
+    description:
+      'Eine Datei mit Prismical Cloud in diese Notiz transkribieren. Der Notiztext bleibt unverändert.',
+    file: 'Audio- oder Videodatei',
+    invalidFile: 'Wähle eine unterstützte, nicht leere Audio- oder Videodatei bis 250 MB.',
+    limits:
+      'Audio oder Video · Maximal 250 MB. Bis zu {{minutes}} Minuten pro Datei, abhängig von der verbleibenden Transkriptionszeit.',
+    language: 'Gesprochene Sprache',
+    detect: 'Sprache erkennen',
+    retention:
+      'Audio wird nach erfolgreicher Transkription gelöscht. Fehlgeschlagene Uploads können für Wiederholungen bis zu 7 Tage gespeichert werden. Videos werden als Datei hochgeladen; nur das Audio wird transkribiert.',
+    submit: 'Mit Prismical Cloud importieren',
+    uploading: 'Audio wird hochgeladen',
+    checking: 'Datei wird geprüft',
+    transcribing: 'Audio wird transkribiert',
+    ready: 'Transkript fertig',
+    cancelled: 'Import abgebrochen',
+    cancel: 'Abbrechen',
+    cancelUpload: 'Upload abbrechen',
+    retry: 'Transkription wiederholen',
+    retryComplete: 'Verarbeitung wiederholen',
+    chooseAgain: 'Datei erneut auswählen',
+    openNote: 'Notiz des Imports öffnen',
+    busy: 'Zuerst den Audioimport abschließen oder abbrechen.',
+    loading: 'Arbeitsbereich wird noch geladen. Bitte erneut versuchen.',
+    signIn: 'Bitte erneut anmelden, um Audio zu importieren.',
+    sessionUnavailable: 'Uploadsitzung nicht verfügbar.',
+    uploadFailed: 'Audio-Upload fehlgeschlagen. Abbrechen und erneut versuchen.',
+    interrupted: 'Upload-Verbindung unterbrochen. Abbrechen und erneut versuchen.',
+    failed: 'Import fehlgeschlagen.',
+    reconnect: 'Importstatus nicht verfügbar. Zum erneuten Verbinden aktualisieren.',
+  },
   workflow: {
     noteChanged:
       'Die Notiz wurde nach diesem Vorschlag geändert. Verwirf ihn und führe die Aktion erneut aus.',
@@ -875,7 +920,8 @@ const de = {
       currentSuggestion: 'Prüfe oder verwirf zuerst den aktuellen Vorschlag.',
       deadMicDescription:
         'Dein System blockiert möglicherweise den Mikrofonzugriff dieses Browsers.',
-      deadMicNativeDescription: 'Prüfe dein Mikrofon, den Stummschalter und die Systemberechtigungen.',
+      deadMicNativeDescription:
+        'Prüfe dein Mikrofon, den Stummschalter und die Systemberechtigungen.',
       deadMicHelp: 'Problem beheben',
       deadMicTitle: 'Dein Mikrofon liefert kein Audiosignal',
       limitSoon: 'Weniger als {{minutes}} Minuten für diese Aufnahme',

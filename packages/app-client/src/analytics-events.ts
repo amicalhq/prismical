@@ -4,6 +4,7 @@
 // port implementation on each platform owns the actual transport.
 
 export const EVENTS = {
+  AUDIO_IMPORT_UPLOAD: "audio_import_upload",
   CTA_SHOWN: "cta_shown",
   CTA_OPENED: "cta_opened",
   CTA_CLICKED: "cta_clicked",

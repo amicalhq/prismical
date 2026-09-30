@@ -797,6 +797,85 @@ ul[data-type="taskList"] li[data-checked="true"] > div {
   [data-review-shine] > .skill-review-shine::after { animation: none; }
 }
 
+/* The prism palette the dock glow and the brand splash halo draw from, left to right. Same in
+ * both themes: it is light, not surface color. */
+:root {
+  --prism-hue-1: #ff5a7a;
+  --prism-hue-2: #ffae45;
+  --prism-hue-3: #5ee39a;
+  --prism-hue-4: #46c4f2;
+  --prism-hue-5: #7c83ff;
+  --prism-hue-6: #d77aff;
+}
+
+/* Dock arrival glow (components/dock-glow.tsx): one lap of the rim per animation cycle. Fades in
+ * from its starting style and out via [data-fading] on ONE opacity transition, so a glow stopped
+ * mid-fade-in reverses smoothly instead of snapping off. */
+.dock-glow {
+  opacity: 1;
+  transition: opacity 450ms ease;
+}
+.dock-glow[data-fading] {
+  opacity: 0;
+}
+@starting-style {
+  .dock-glow { opacity: 0; }
+}
+@keyframes dock-glow-lap {
+  to { stroke-dashoffset: -100; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dock-glow { display: none; }
+}
+
+/* Brand splash (components/shell-skeleton.tsx): the prism mark breathing inside a slowly turning
+ * halo of the prism palette. The splash fades in after a beat so a quick redirect passes
+ * without a flash. */
+.brand-splash {
+  animation: brand-splash-in 300ms ease 150ms both;
+}
+.brand-splash-halo {
+  background: conic-gradient(
+    var(--prism-hue-1), var(--prism-hue-2), var(--prism-hue-3), var(--prism-hue-4),
+    var(--prism-hue-5), var(--prism-hue-6), var(--prism-hue-1)
+  );
+  filter: blur(16px);
+  /* Blurred color washes out on white, so light mode needs a stronger halo than dark. */
+  opacity: 0.6;
+  animation: brand-splash-spin 6s linear infinite, brand-splash-breathe 2.4s ease-in-out infinite;
+}
+.dark .brand-splash-halo {
+  opacity: 0.35;
+  animation-name: brand-splash-spin, brand-splash-breathe-dark;
+}
+.brand-splash-mark {
+  animation: brand-splash-float 2.4s ease-in-out infinite;
+}
+@keyframes brand-splash-in {
+  from { opacity: 0; }
+}
+@keyframes brand-splash-spin {
+  to { rotate: 360deg; }
+}
+@keyframes brand-splash-breathe {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 0.8; }
+}
+@keyframes brand-splash-breathe-dark {
+  0%, 100% { opacity: 0.25; }
+  50% { opacity: 0.5; }
+}
+@keyframes brand-splash-float {
+  0%, 100% { scale: 1; }
+  50% { scale: 1.04; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .brand-splash,
+  .brand-splash-halo,
+  .dark .brand-splash-halo,
+  .brand-splash-mark { animation: none; }
+}
+
 /* Let toast actions move as a whole below long text on narrow surfaces. */
 [data-dock-aware-toaster] [data-sonner-toast] {
   flex-wrap: wrap;

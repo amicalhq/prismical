@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { DOCK_MORPH_TRANSITION, DOCK_SURFACE_CHROME } from './dock-chrome';
+import { DockGlow } from './dock-glow';
 
 /**
  * One morphing dock unit: a single raised surface that is a 42px pill
@@ -24,6 +25,8 @@ export function DockUnit({
   panel,
   className = '',
   compact = false,
+  glow = false,
+  glowFrame,
 }: {
   /** This unit is showing its panel face. */
   expanded: boolean;
@@ -44,6 +47,10 @@ export function DockUnit({
   /** Narrow-surface scale for the floating note window: 36px pills on a 12px
    * radius instead of 42px/14px. */
   compact?: boolean;
+  /** Play the arrival glow around the pill face (hidden while expanded or collapsed). */
+  glow?: boolean;
+  /** Run the glow on one loop shared across this element (the dock row). */
+  glowFrame?: React.RefObject<HTMLElement | null>;
 }) {
   const width = collapsed
     ? '0px'
@@ -70,6 +77,11 @@ export function DockUnit({
       {...(collapsed ? { inert: true } : {})}
       aria-hidden={collapsed}
     >
+      <DockGlow
+        active={glow && !expanded && !collapsed}
+        radius={compact ? 12 : 14}
+        frame={glowFrame}
+      />
       {/* Hidden faces remain mounted, but do not paint outside the morphing unit. */}
       <div
         className={`absolute inset-0 transition-opacity duration-[120ms] ease-out ${

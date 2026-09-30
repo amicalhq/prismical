@@ -4,6 +4,8 @@ import { useWalkthroughStage } from '../onboarding/context';
 import * as React from 'react';
 import {
   AudioLines,
+  FileUp,
+  RotateCcw,
   Check,
   Copy,
   Eye,
@@ -38,7 +40,12 @@ import { DockMicMenu } from './dock-mic-menu';
 import type { TranscriptionLanguage } from '@prismical/app-client';
 import { PxOrbitLoader } from './px-orbit-loader';
 import { Waveform } from './waveform';
-import { DOCK_CHIP_ACCENT, DOCK_CHIP_ACCENT_BADGE, DOCK_CTL, DOCK_SCROLL_BUTTON } from './dock-chrome';
+import {
+  DOCK_CHIP_ACCENT,
+  DOCK_CHIP_ACCENT_BADGE,
+  DOCK_CTL,
+  DOCK_SCROLL_BUTTON,
+} from './dock-chrome';
 import { formatSessionTimer } from './note-recording-dock';
 import { Avatar, AvatarFallback } from '../ui/avatar';
 import { UserAvatar } from '../ui/user-avatar';
@@ -50,7 +57,12 @@ import {
 } from '../ui/dropdown-menu';
 import { isOwnerSpeaker, needsOwnerChoice, resolveSpeakerLabel } from '../lib/speaker-identity';
 import { SpeakerPersonPicker } from './speaker-person-picker';
-import { useAutoEnhanceStore, useSessionView, useViewerProfile, useDesktopCapabilities } from '@prismical/app-client';
+import {
+  useAutoEnhanceStore,
+  useSessionView,
+  useViewerProfile,
+  useDesktopCapabilities,
+} from '@prismical/app-client';
 import { pendingRecording, recordingSkillCopy } from '../lib/recording-skill';
 import type { RecState, SpeakerTagPatch } from '@prismical/app-client';
 import type { TranscriptLine } from '@prismical/app-contracts';
@@ -78,6 +90,8 @@ export interface TranscriptOwner {
 
 // One recording's contribution to the rolling log + its picker metadata.
 export interface RecordingLog {
+  imported?: boolean;
+  retryImport?: { disabled: boolean; onClick: () => void };
   id: string;
   /** Display number, chronological (oldest = 1). */
   number: number;
@@ -148,6 +162,7 @@ type TranscriptPanelProps = {
   onChangeLanguage?: (language: TranscriptionLanguage) => void | Promise<void>;
   /** Translated recording error, shown as an in-panel banner just above the bar. */
   errorText?: string | null;
+  errorContent?: React.ReactNode;
   /** Concrete per-error fix (e.g. the platform's mic-permission path), shown
    * before the docs link. Null when the cause has no specific remedy. */
   errorHint?: string | null;
@@ -156,6 +171,8 @@ type TranscriptPanelProps = {
   /** Dismiss the surfaced error (the banner's X). */
   onDismissError?: () => void;
   recoveryActions?: React.ReactNode;
+  importAction?: React.ReactNode;
+  importStatus?: React.ReactNode;
   /** Off the recording's note, the live bar offers a jump back. */
   onOpenNote?: () => void;
   openNoteLabel?: string;
@@ -174,7 +191,9 @@ function linesToText(
 ): string {
   const registry = new Map((speakers ?? []).map(s => [s.speakerKey, s]));
   return lines
-    .map(l => `${resolveSpeakerLabel(l.speakerKey, l.speaker, registry, owner, strings)}: ${l.text}`)
+    .map(
+      l => `${resolveSpeakerLabel(l.speakerKey, l.speaker, registry, owner, strings)}: ${l.text}`
+    )
     .join('\n');
 }
 
@@ -219,10 +238,13 @@ function TranscriptPanelContent({
   activeLanguage,
   onChangeLanguage,
   errorText = null,
+  errorContent,
   errorHint = null,
   errorAction = null,
   onDismissError,
   recoveryActions,
+  importAction,
+  importStatus,
   onOpenNote,
   openNoteLabel,
   recordingNoteTitle,
@@ -452,7 +474,7 @@ function TranscriptPanelContent({
             side="bottom"
             align="end"
             sideOffset={6}
-            className="w-[308px] rounded-[10px] border-dock-line bg-dock-surface p-1 shadow-(--dock-shadow-raised)"
+            className="flex max-h-[min(420px,var(--radix-popover-content-available-height))] w-[308px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-[10px] border-dock-line bg-dock-surface p-1 shadow-(--dock-shadow-raised)"
           >
             <div className="mx-0.5 mb-1 flex h-7 items-center gap-1.5 rounded-[7px] bg-dock-field px-2">
               <Search className="size-[13px] text-dock-ink-3" />
@@ -463,63 +485,98 @@ function TranscriptPanelContent({
                 className="min-w-0 flex-1 bg-transparent text-[12.5px] text-dock-ink outline-none placeholder:text-dock-ink-3"
               />
             </div>
-            {filteredHistory.length === 0 ? (
-              <div className="px-2 py-2 text-xs text-dock-ink-3">{t('recording.panel.empty')}</div>
-            ) : (
-              filteredHistory.map(rec => (
-                <div
-                  key={rec.id}
-                  className="group/row flex h-[34px] w-full items-center gap-2 rounded-md px-2 hover:bg-dock-hover"
-                >
-                  <AudioLines className="size-[13px] shrink-0 text-dock-ink-2" />
-                  <button
-                    type="button"
-                    onClick={() => scrollToRecording(rec.id)}
-                    className="flex min-w-0 flex-1 items-baseline gap-2 text-left"
-                  >
-                    <span className="shrink-0 whitespace-nowrap text-[12.5px] font-medium text-dock-ink">
-                      {t('recording.panel.recordingNumber', { number: rec.number })}
-                    </span>
-                    <span className="min-w-0 truncate text-xs text-dock-ink-3">
-                      {[rec.day, rec.time].filter(Boolean).join(' · ')}
-                    </span>
-                  </button>
-                  {rec.folded ? (
-                    <span className="shrink-0 text-[11px] text-dock-ink-3 group-hover/row:hidden">
-                      {t('recording.panel.addedToNote')}
-                    </span>
-                  ) : null}
-                  <span className="shrink-0 text-xs tabular-nums text-dock-ink-3 group-hover/row:hidden">
-                    {formatApplicationDuration(rec.durationMs, resolvedLocale, t)}
-                  </span>
-                  <span className="hidden shrink-0 items-center gap-0.5 group-hover/row:flex">
-                    <MiniAction
-                      label={t('recording.actions.copyTranscript')}
-                      onClick={() => void copyRecording(rec)}
-                    >
-                      <Copy className="size-3" />
-                    </MiniAction>
-                    <MiniAction
-                      label={t('recording.actions.viewInLog')}
-                      onClick={() => scrollToRecording(rec.id)}
-                    >
-                      <Eye className="size-3.5" />
-                    </MiniAction>
-                    {!rec.folded && rec.lines.length > 0 && (
-                      <MiniAction
-                        label={rec.processing ? t('recording.panel.waitingFinal') : skillCopy.hint}
-                        disabled={rec.processing}
-                        onClick={() => {
-                          setHistOpen(false);
-                          onEnhanceRecording(rec.id);
-                        }}
-                      >
-                        <Wand2 className="size-3.5" />
-                      </MiniAction>
-                    )}
-                  </span>
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {filteredHistory.length === 0 ? (
+                <div className="px-2 py-2 text-xs text-dock-ink-3">
+                  {t('recording.panel.empty')}
                 </div>
-              ))
+              ) : (
+                filteredHistory.map(rec => (
+                  <div
+                    key={rec.id}
+                    className="group/row flex h-[34px] w-full items-center gap-2 rounded-md px-2 hover:bg-dock-hover"
+                  >
+                    {rec.imported ? (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span
+                            className="shrink-0"
+                            role="img"
+                            aria-label={t('audioImport.imported')}
+                          >
+                            <FileUp className="size-[13px] text-dock-ink-2" />
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent>{t('audioImport.imported')}</TooltipContent>
+                      </Tooltip>
+                    ) : (
+                      <AudioLines className="size-[13px] shrink-0 text-dock-ink-2" />
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => scrollToRecording(rec.id)}
+                      className="flex min-w-0 flex-1 items-baseline gap-2 text-left"
+                    >
+                      <span className="shrink-0 whitespace-nowrap text-[12.5px] font-medium text-dock-ink">
+                        {t('recording.panel.recordingNumber', { number: rec.number })}
+                      </span>
+                      <span className="min-w-0 truncate text-xs text-dock-ink-3">
+                        {[rec.day, rec.time].filter(Boolean).join(' · ')}
+                      </span>
+                    </button>
+                    {rec.folded ? (
+                      <span className="shrink-0 text-[11px] text-dock-ink-3 group-hover/row:hidden group-focus-within/row:hidden">
+                        {t('recording.panel.addedToNote')}
+                      </span>
+                    ) : null}
+                    <span className="shrink-0 text-xs tabular-nums text-dock-ink-3 group-hover/row:hidden group-focus-within/row:hidden">
+                      {formatApplicationDuration(rec.durationMs, resolvedLocale, t)}
+                    </span>
+                    <span className="hidden shrink-0 items-center gap-0.5 group-hover/row:flex group-focus-within/row:flex">
+                      {rec.retryImport && (
+                        <MiniAction
+                          label={t('audioImport.retry')}
+                          disabled={rec.retryImport.disabled}
+                          onClick={rec.retryImport.onClick}
+                        >
+                          <RotateCcw className="size-3" />
+                        </MiniAction>
+                      )}
+                      <MiniAction
+                        label={t('recording.actions.copyTranscript')}
+                        onClick={() => void copyRecording(rec)}
+                      >
+                        <Copy className="size-3" />
+                      </MiniAction>
+                      <MiniAction
+                        label={t('recording.actions.viewInLog')}
+                        onClick={() => scrollToRecording(rec.id)}
+                      >
+                        <Eye className="size-3.5" />
+                      </MiniAction>
+                      {!rec.folded && rec.lines.length > 0 && (
+                        <MiniAction
+                          label={
+                            rec.processing ? t('recording.panel.waitingFinal') : skillCopy.hint
+                          }
+                          disabled={rec.processing}
+                          onClick={() => {
+                            setHistOpen(false);
+                            onEnhanceRecording(rec.id);
+                          }}
+                        >
+                          <Wand2 className="size-3.5" />
+                        </MiniAction>
+                      )}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+            {importAction && (
+              <div className="shrink-0 border-t border-dock-line bg-dock-surface pt-1">
+                {importAction}
+              </div>
             )}
           </PopoverContent>
         </Popover>
@@ -580,9 +637,7 @@ function TranscriptPanelContent({
                       <button
                         type="button"
                         aria-label={t('recording.panel.dismissHint')}
-                        onClick={() =>
-                          setOwnerHintDismissed(prev => new Set([...prev, rec.id]))
-                        }
+                        onClick={() => setOwnerHintDismissed(prev => new Set([...prev, rec.id]))}
                         className="flex size-5 shrink-0 items-center justify-center rounded-md text-dock-ink-3 hover:text-dock-ink"
                       >
                         <X className="size-3.5" />
@@ -664,44 +719,48 @@ function TranscriptPanelContent({
       {/* In-panel error banner, pinned just above the control bar. An expanded
           panel shows its own errors; the pill notice is for the
           collapsed dock). */}
-      {errorText ? (
+      {errorText || errorContent ? (
         <div
           role="alert"
-          className="absolute inset-x-0 bottom-[41px] z-20 flex items-start gap-2 border-t border-dock-line bg-[color-mix(in_srgb,var(--destructive)_12%,var(--dock-surface))] px-3.5 py-2 text-[12.5px] font-medium text-[color-mix(in_srgb,var(--destructive)_65%,var(--dock-ink))]"
+          className="relative shrink-0 flex items-start gap-2 border-t border-dock-line bg-[color-mix(in_srgb,var(--destructive)_12%,var(--dock-surface))] px-3.5 py-2 text-[12.5px] font-medium text-[color-mix(in_srgb,var(--destructive)_65%,var(--dock-ink))]"
         >
-          <span className="min-w-0 flex-1">
-            {errorText}
-            <span className="mt-0.5 block text-[12px] font-normal opacity-90">
-              {errorHint ? <>{errorHint} </> : null}
-              {errorAction ? (
+          {errorContent ?? (
+            <>
+              <span className="min-w-0 flex-1">
+                {errorText}
+                <span className="mt-0.5 block text-[12px] font-normal opacity-90">
+                  {errorHint ? <>{errorHint} </> : null}
+                  {errorAction ? (
+                    <button
+                      type="button"
+                      onClick={errorAction.onClick}
+                      className="mr-1 whitespace-nowrap underline underline-offset-2"
+                    >
+                      {errorAction.label}
+                    </button>
+                  ) : null}
+                  <a
+                    href={RECORDING_TROUBLESHOOTING_URL}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="whitespace-nowrap underline underline-offset-2"
+                  >
+                    {t('recording.errors.troubleshoot')}
+                  </a>
+                </span>
+              </span>
+              {onDismissError ? (
                 <button
                   type="button"
-                  onClick={errorAction.onClick}
-                  className="mr-1 whitespace-nowrap underline underline-offset-2"
+                  onClick={onDismissError}
+                  aria-label={t('common.actions.close')}
+                  className="-mr-1 mt-0.5 inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md opacity-70 transition-opacity hover:opacity-100"
                 >
-                  {errorAction.label}
+                  <X className="size-3.5" />
                 </button>
               ) : null}
-              <a
-                href={RECORDING_TROUBLESHOOTING_URL}
-                target="_blank"
-                rel="noreferrer"
-                className="whitespace-nowrap underline underline-offset-2"
-              >
-                {t('recording.errors.troubleshoot')}
-              </a>
-            </span>
-          </span>
-          {onDismissError ? (
-            <button
-              type="button"
-              onClick={onDismissError}
-              aria-label={t('common.actions.close')}
-              className="-mr-1 mt-0.5 inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md opacity-70 transition-opacity hover:opacity-100"
-            >
-              <X className="size-3.5" />
-            </button>
-          ) : null}
+            </>
+          )}
         </div>
       ) : null}
 
@@ -724,10 +783,12 @@ function TranscriptPanelContent({
                   ? 'record-retry'
                   : undefined
         }
-        className="flex min-h-[41px] shrink-0 items-center gap-2 border-t border-dock-line p-1.5"
+        className="flex min-h-[41px] shrink-0 flex-wrap items-center gap-2 border-t border-dock-line p-1.5"
       >
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          {engaged && recState !== 'stopping' ? (
+        <div className="flex min-w-0 flex-1 basis-40 flex-wrap items-center gap-2">
+          {!engaged && importStatus && startBlockedReason ? (
+            importStatus
+          ) : engaged && recState !== 'stopping' ? (
             <>
               {canPause ? (
                 <button
@@ -848,7 +909,7 @@ function TranscriptPanelContent({
                     data-onboarding="record-start"
                     aria-disabled={!!startBlockedReason}
                     onClick={startBlockedReason ? undefined : onStartRecording}
-                    className="group flex h-7 cursor-pointer aria-disabled:cursor-not-allowed aria-disabled:text-dock-ink-3 items-center gap-2 rounded-lg px-2.5 text-[12.5px] font-medium text-dock-ink transition-[background-color,scale] hover:bg-dock-hover active:scale-[0.97]"
+                    className="group flex h-7 shrink-0 cursor-pointer whitespace-nowrap aria-disabled:cursor-not-allowed aria-disabled:text-dock-ink-3 items-center gap-2 rounded-lg px-2.5 text-[12.5px] font-medium text-dock-ink transition-[background-color,scale] hover:bg-dock-hover active:scale-[0.97]"
                   >
                     <span className="size-2 shrink-0 rounded-full bg-rec group-aria-disabled:bg-dock-ink-3" />
                     {t('recording.actions.start')}
@@ -863,6 +924,9 @@ function TranscriptPanelContent({
             </>
           )}
         </div>
+        {!engaged && !startBlockedReason && importStatus ? (
+          <div className="order-first w-full min-w-0">{importStatus}</div>
+        ) : null}
         <div className="ml-auto min-w-0 max-w-[50%] shrink-0">
           {onOpenNote ? (
             <button
@@ -1030,7 +1094,9 @@ function TranscriptBubbles({
               isOwner ? 'items-end self-end' : 'items-start self-start'
             }`}
           >
-            <div className={`flex items-center gap-1.5 px-0.5 ${isOwner ? 'flex-row-reverse' : ''}`}>
+            <div
+              className={`flex items-center gap-1.5 px-0.5 ${isOwner ? 'flex-row-reverse' : ''}`}
+            >
               {isOwner ? (
                 <UserAvatar
                   name={ownerProfile.name}
@@ -1116,7 +1182,9 @@ function TranscriptBubbles({
                       )
                     ) : null}
                     {directoryEnabled && (
-                      <DropdownMenuItem onSelect={() => setPicking({ turnId: turn.id, key: turn.key })}>
+                      <DropdownMenuItem
+                        onSelect={() => setPicking({ turnId: turn.id, key: turn.key })}
+                      >
                         {t('recording.panel.tagPerson')}
                       </DropdownMenuItem>
                     )}

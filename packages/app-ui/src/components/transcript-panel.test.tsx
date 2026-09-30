@@ -422,3 +422,34 @@ it('says Generate notes on an empty body and hides while a suggestion blocks rec
     startBlockedReason="Apply or discard the suggested changes before recording." />);
   expect(screen.queryByRole('button', { name: /recording.skill/ })).toBeNull();
 });
+
+it('uses the capture bar for import progress instead of a separate status row', () => {
+  render(
+    <TranscriptPanel
+      {...base}
+      startBlockedReason="Import in progress"
+      importStatus={<span role="status">Uploading audio 64%</span>}
+    />
+  );
+  const progress = screen.getByRole('status');
+  expect(screen.queryByRole('button', { name: 'recording.actions.start' })).toBeNull();
+  expect(progress.parentElement?.className).toContain('flex-1');
+});
+it('keeps capture available alongside an observed upload recovery action', () => {
+  render(<TranscriptPanel {...base} importStatus={<button>Cancel abandoned upload</button>} />);
+  expect(screen.getByRole('button', { name: 'Cancel abandoned upload' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: /recording.actions.start/ })).toBeTruthy();
+});
+
+it('marks imported rows and keeps retry inline without replacement buttons', () => {
+  const retry = vi.fn();
+  render(<TranscriptPanel {...base} recordings={[
+    { ...recording('imported', 2), imported: true, retryImport: { disabled: false, onClick: retry } },
+    recording('live', 1),
+  ]} />);
+  fireEvent.click(screen.getByRole('button', { name: 'recording.actions.pastRecordings' }));
+  expect(screen.getAllByRole('img', { name: 'audioImport.imported' })).toHaveLength(1);
+  expect(screen.queryByRole('button', { name: 'audioImport.chooseAgain' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'audioImport.retry' }));
+  expect(retry).toHaveBeenCalledOnce();
+});

@@ -2,6 +2,51 @@ import type { TranslationShape } from '../catalog-shape';
 import type en from './en';
 
 const es = {
+  audioImport: {
+    formatsHint: 'Formatos admitidos: MP3, WAV, M4A/MP4 y <more>más</more>',
+    moreFormats: 'más',
+    supportedFormats: 'Formatos admitidos',
+    formatDetails:
+      'MP3, WAV PCM, FLAC, AAC; M4A/MP4 con audio AAC; OGG/OGA/OPUS y WebM con audio Opus o Vorbis. El archivo debe contener exactamente una pista de audio.',
+    imported: 'Grabación importada',
+    durationExceeded: 'Este archivo supera la duración de grabación de tu plan.',
+    unreadableFile:
+      'Este archivo no parece ser un archivo de audio o vídeo compatible. Consulta los formatos admitidos.',
+    openTranscript: 'Abrir transcripción',
+    fileSize: '{{size}} MB',
+    languages: { en: 'Inglés', es: 'Español', fr: 'Francés', de: 'Alemán', hi: 'Hindi' },
+    title: 'Importar grabación',
+    description:
+      'Transcribe un archivo en esta nota con Prismical Cloud. El texto de la nota no cambia.',
+    file: 'Archivo de audio o vídeo',
+    invalidFile: 'Elige un archivo de audio o vídeo compatible, no vacío y de hasta 250 MB.',
+    limits:
+      'Audio o vídeo · Máximo 250 MB. Hasta {{minutes}} minutos por archivo, según tu tiempo de transcripción restante.',
+    language: 'Idioma hablado',
+    detect: 'Detectar idioma',
+    retention:
+      'El audio se elimina tras la transcripción. Las cargas fallidas pueden conservarse hasta 7 días para reintentar. El vídeo se carga completo, pero solo se transcribe el audio.',
+    submit: 'Importar con Prismical Cloud',
+    uploading: 'Subiendo audio',
+    checking: 'Comprobando archivo',
+    transcribing: 'Transcribiendo audio',
+    ready: 'Transcripción lista',
+    cancelled: 'Importación cancelada',
+    cancel: 'Cancelar',
+    cancelUpload: 'Cancelar carga',
+    retry: 'Reintentar transcripción',
+    retryComplete: 'Reintentar procesamiento',
+    chooseAgain: 'Elegir archivo de nuevo',
+    openNote: 'Abrir la nota de la importación',
+    busy: 'Finaliza o cancela primero la importación de audio.',
+    loading: 'El espacio de trabajo sigue cargando. Inténtalo de nuevo.',
+    signIn: 'Vuelve a iniciar sesión para importar audio.',
+    sessionUnavailable: 'Sesión de carga no disponible.',
+    uploadFailed: 'La carga de audio falló. Cancela e inténtalo de nuevo.',
+    interrupted: 'La conexión de carga se interrumpió. Cancela e inténtalo de nuevo.',
+    failed: 'La importación falló.',
+    reconnect: 'No se puede consultar la importación. Actualiza para volver a conectar.',
+  },
   workflow: {
     noteChanged:
       'La nota cambió después de generar esta sugerencia. Descártala y ejecuta la acción de nuevo.',
@@ -866,7 +911,8 @@ const es = {
       currentSuggestion: 'Revisa o descarta primero la sugerencia actual.',
       deadMicDescription:
         'Es posible que el sistema esté bloqueando el acceso del navegador al micrófono.',
-      deadMicNativeDescription: 'Comprueba el micrófono, el interruptor de silencio y los permisos del sistema.',
+      deadMicNativeDescription:
+        'Comprueba el micrófono, el interruptor de silencio y los permisos del sistema.',
       deadMicHelp: 'Cómo solucionarlo',
       deadMicTitle: 'El micrófono no recibe audio',
       limitSoon: 'Quedan menos de {{minutes}} minutos en esta grabación',

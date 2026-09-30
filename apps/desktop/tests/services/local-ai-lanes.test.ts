@@ -354,6 +354,26 @@ describe('FTS5 search', () => {
     })
   );
 
+  it.effect('pages equally ranked, equally recent hits in a stable note id order', () =>
+    Effect.gen(function* () {
+      const { api, product, scope } = yield* build();
+      // Inserted in reverse id order, so row order alone would page them the other way.
+      yield* insertNote(product, { id: 'note_tie_b', title: 'Roadmap', markdown: 'Same body.' });
+      yield* insertNote(product, { id: 'note_tie_a', title: 'Roadmap', markdown: 'Same body.' });
+      const pages = [];
+      for (const offset of ['0', '1']) {
+        const res = expectOk(
+          yield* get(api, '/apps/v1/me/search', { query: 'roadmap', limit: '1', offset }),
+          200
+        );
+        assert.strictEqual(res.bodyJson.total, 2);
+        pages.push(...res.bodyJson.results.map((r: Any) => r.noteId));
+      }
+      assert.deepStrictEqual(pages, ['note_tie_a', 'note_tie_b']);
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+
   it.effect('stems and drops stop-words like the cloud lane; a quote-only query matches nothing', () =>
     Effect.gen(function* () {
       const { api, product, scope } = yield* build();

@@ -41,6 +41,7 @@ export const LOCAL_WORKSPACE = {
  */
 export const LOCAL_FEATURE_FLAGS: Readonly<Record<string, boolean>> = {
   account: false,
+  audioImport: false,
   automations: false,
   autoPauseOnSilence: false,
   billing: false,
