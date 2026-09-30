@@ -20,6 +20,7 @@ import type {
   EnvDescriptor,
   EnvPort,
   ExternalPort,
+  FileUploadPort,
   NavigationActions,
   NavigationPort,
   RecordingPort,
@@ -62,6 +63,8 @@ export interface AppPorts {
   /** Optional until each platform adopts the shared workflow owner. */
   readonly workflow?: WorkflowRuntime;
   readonly recordingSession?: RecordingSessionClient;
+  /** Absent means the shared in-page upload (web); desktop sends files from main. */
+  readonly fileUpload?: FileUploadPort;
 }
 
 const PortsContext = React.createContext<AppPorts | null>(null);

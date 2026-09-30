@@ -40,7 +40,7 @@ const state = vi.hoisted(() => ({
   syncStore: null as { whenNoteCreateAcked: (id: string) => Promise<void> } | null,
   recordings: [] as Array<Record<string, unknown>>,
   transcripts: {} as Record<string, unknown[]>,
-  capabilities: { has: vi.fn(() => false), openSystemSettings: vi.fn() },
+  capabilities: { featureFlags: null as Record<string, boolean> | null, has: vi.fn(() => false), openSystemSettings: vi.fn() },
   noop: vi.fn(),
   stop: vi.fn(),
   push: vi.fn(),
@@ -240,6 +240,7 @@ beforeEach(() => {
   state.importState = null;
   state.importEnabled = false;
   state.platform = 'web';
+  state.capabilities.featureFlags = null;
   state.pendingAutoStart = false;
   state.glowEnabled = [];
   state.syncStore = null;
@@ -261,16 +262,34 @@ beforeEach(() => {
   };
 });
 describe('recording dock note ownership', () => {
-  it('keeps import hidden on desktop even when the organization is opted in', () => {
+  it.each(['web', 'darwin', 'win32', 'linux'])('offers opted-in cloud import on %s', platform => {
     state.importEnabled = true;
-    state.platform = 'desktop';
+    state.platform = platform;
+    render(<RecordingBottomCluster />);
+    expect(state.panel.importAction).not.toBeNull();
+  });
+  it.each(['darwin', 'win32', 'linux'])('keeps import hidden in local mode on %s', platform => {
+    state.importEnabled = true;
+    state.platform = platform;
+    state.capabilities.featureFlags = { audioImport: false };
+    render(<RecordingBottomCluster />);
+    expect(state.panel.importAction).toBeNull();
+  });
+  it.each(['web', 'darwin', 'win32', 'linux', 'ios', 'android'])('keeps import hidden without the flag on %s', platform => {
+    state.platform = platform;
+    render(<RecordingBottomCluster />);
+    expect(state.panel.importAction).toBeNull();
+  });
+  it.each(['ios', 'android'])('keeps mobile import hidden even when opted in on %s', platform => {
+    state.importEnabled = true;
+    state.platform = platform;
     render(<RecordingBottomCluster />);
     expect(state.panel.importAction).toBeNull();
   });
   it.each(['desktop', 'flag-off'])('allows capture with a web import when %s', async mode => {
     state.candidates.clear();
     state.importEnabled = mode !== 'flag-off';
-    state.platform = mode === 'desktop' ? 'desktop' : 'web';
+    state.platform = mode === 'desktop' ? 'darwin' : 'web';
     state.syncStore = { whenNoteCreateAcked: async () => {} };
     state.importState = { busy: true, noteId: 'note_other', record: null };
     state.autoTranscribe = true;

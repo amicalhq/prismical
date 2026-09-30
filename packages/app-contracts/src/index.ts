@@ -56,6 +56,12 @@ export {
 } from './ports/desktop-capability';
 export type { AnalyticsEventProperties, AnalyticsPort } from './ports/analytics';
 export type {
+  FileUploadFailure,
+  FileUploadPort,
+  FileUploadRequest,
+  FileUploadResult,
+} from './ports/file-upload';
+export type {
   NativeCaptureMode,
   NativeRecordingControl,
   NativeRecordingState,

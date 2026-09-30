@@ -222,7 +222,10 @@ function RecordingBottomClusterView({
   // parked (no partial-data refetch mid-stop) and the live lines keep showing.
   const liveActive = sessionActive || rec.state === 'stopping';
   const noteId = currentNote?.noteId ?? null;
-  const importEnabled = useFeatureFlag('audioImport').enabled && env.getEnv().platform === 'web';
+  const importEnabled =
+    useFeatureFlag('audioImport').enabled &&
+    desktopCapabilities.featureFlags === null &&
+    ['web', 'darwin', 'win32', 'linux'].includes(env.getEnv().platform);
   const audioImport = useAudioImport(importEnabled);
   const [importOpen, setImportOpen] = React.useState(false);
   const importDestination = React.useRef<string | null>(null);

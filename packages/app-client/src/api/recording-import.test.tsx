@@ -1,7 +1,10 @@
 // @vitest-environment jsdom
 import { act, cleanup, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import type { FileUploadPort, FileUploadRequest, FileUploadResult } from '@prismical/app-contracts';
 const mocks = vi.hoisted(() => ({
+  platform: 'web',
+  fileUpload: undefined as FileUploadPort | undefined,
   capture: vi.fn(),
   get: vi.fn(),
   post: vi.fn(),
@@ -31,7 +34,7 @@ vi.mock('../ports-context', () => {
       return () => {};
     },
   };
-  return { useSessionView: () => mocks.session, usePorts: () => ({ auth, analytics: { capture: mocks.capture } }) };
+  return { useSessionView: () => mocks.session, usePorts: () => ({ auth, env: { getEnv: () => ({ platform: mocks.platform }) }, analytics: { capture: mocks.capture }, fileUpload: mocks.fileUpload }) };
 });
 let requests: FakeXHR[];
 class FakeXHR {
@@ -61,6 +64,8 @@ const record = {
 let useAudioImport: (typeof import('./recording-import'))['useAudioImport'];
 const file = () => new File(['audio'], 'audio.wav');
 beforeEach(async () => {
+  mocks.platform = 'web';
+  mocks.fileUpload = undefined;
   vi.resetModules();
   vi.clearAllMocks();
   vi.useFakeTimers();
@@ -126,8 +131,11 @@ it('guards a double click before asynchronous authentication resolves', async ()
     await first;
   });
 });
-it('reuses the request key after an ambiguous create response', async () => {
-  mocks.post.mockRejectedValueOnce(new Error('network')).mockResolvedValue(record);
+it.each([
+  ['a network failure', new Error('network')],
+  ['a desktop transport failure', Object.assign(new Error('INTERNAL'), { status: 0 })],
+])('reuses the request key after an ambiguous create response (%s)', async (_name, failure) => {
+  mocks.post.mockRejectedValueOnce(failure).mockResolvedValue(record);
   const { result } = renderHook(() => useAudioImport(true));
   let start!: Promise<void>;
   await act(async () => {
@@ -367,4 +375,89 @@ it('times out stalled uploads with private-safe telemetry and a cancellable erro
   expect(captured).not.toContain('audio.wav');
   expect(captured).not.toContain('storage.test');
   expect(captured).not.toContain('test-token');
+});
+
+it('cancels an abandoned desktop upload through the active account transport', async () => {
+  mocks.platform = 'darwin';
+  const { result } = renderHook(() => useAudioImport(true));
+  let pending!: Promise<unknown>;
+  await act(async () => { pending = result.current.start('note', file(), 'en').catch(() => {}); });
+  expect(requests).toHaveLength(1);
+  await act(async () => { window.dispatchEvent(new Event('pagehide')); });
+  expect(mocks.fetch).not.toHaveBeenCalled();
+  expect(mocks.post).toHaveBeenCalledWith('/apps/v1/me/recording-imports/rec/cancel', { uploadAttempt: 'attempt' }, { activeOrgId: 'org', authToken: 'test-token' });
+  await act(async () => { requests[0]!.abort(); await pending; });
+});
+
+it('does not send desktop abandonment cancellation under a switched account', async () => {
+  mocks.platform = 'darwin';
+  const { result } = renderHook(() => useAudioImport(true));
+  let pending!: Promise<unknown>;
+  await act(async () => { pending = result.current.start('note', file(), 'en').catch(() => {}); });
+  expect(requests).toHaveLength(1);
+  mocks.post.mockClear();
+  mocks.session = { activeSessionKey: 'other', accounts: [{ sessionKey: 'other', activeOrgId: 'other-org' }] };
+  await act(async () => { mocks.changed(); await pending; });
+  expect(mocks.post).not.toHaveBeenCalled();
+  expect(mocks.fetch).not.toHaveBeenCalled();
+  expect(requests[0]!.abort).toHaveBeenCalledOnce();
+});
+
+it('sends the file through the platform upload port instead of the page', async () => {
+  let request!: FileUploadRequest;
+  let finish!: (result: FileUploadResult) => void;
+  mocks.fileUpload = {
+    put: vi.fn(next => {
+      request = next;
+      return new Promise<FileUploadResult>(done => { finish = done; });
+    }),
+  };
+  const { result } = renderHook(() => useAudioImport(true));
+  let pending!: Promise<void>;
+  await act(async () => { pending = result.current.start('note', new File(['audio'], 'audio.wav', { type: 'audio/wav' }), 'en'); });
+  expect(requests).toHaveLength(0);
+  expect(request).toMatchObject({ url: 'https://storage.test', contentType: 'audio/wav' });
+  act(() => request.onProgress(40));
+  expect(result.current.state?.progress).toBe(40);
+  await act(async () => { finish({ ok: true }); await pending; });
+  expect(mocks.post).toHaveBeenLastCalledWith('/apps/v1/me/recording-imports/rec/complete', { uploadAttempt: 'attempt' }, { activeOrgId: 'org', authToken: 'test-token' });
+});
+
+it.each([
+  ['rejected', 'audioImport.uploadFailed'],
+  ['interrupted', 'audioImport.interrupted'],
+] as const)('shows a %s port upload as its upload error', async (reason, message) => {
+  mocks.fileUpload = { put: vi.fn(async () => ({ ok: false as const, reason })) };
+  const { result } = renderHook(() => useAudioImport(true));
+  await act(async () => { await result.current.start('note', file(), 'en'); });
+  expect(result.current.state?.error).toBe(message);
+  expect(result.current.state?.canCancel).toBe(true);
+});
+
+it('aborts a port upload when the user cancels', async () => {
+  let signal!: AbortSignal;
+  mocks.fileUpload = {
+    put: vi.fn(next => {
+      signal = next.signal;
+      return new Promise<FileUploadResult>(done => {
+        next.signal.addEventListener('abort', () => done({ ok: false, reason: 'cancelled' }));
+      });
+    }),
+  };
+  const { result } = renderHook(() => useAudioImport(true));
+  let pending!: Promise<void>;
+  await act(async () => { pending = result.current.start('note', file(), 'en'); });
+  expect(signal.aborted).toBe(false);
+  mocks.post.mockResolvedValue({ ...record, status: 'cancelled' });
+  await act(async () => { await result.current.cancel(); await pending; });
+  expect(signal.aborted).toBe(true);
+  expect(result.current.state?.record?.status).toBe('cancelled');
+});
+
+it('does not retry a create that core refused', async () => {
+  mocks.post.mockRejectedValueOnce(Object.assign(new Error('conflict'), { status: 409 }));
+  const { result } = renderHook(() => useAudioImport(true));
+  await act(async () => { await result.current.start('note', file(), 'en'); });
+  expect(mocks.post).toHaveBeenCalledTimes(1);
+  expect(result.current.state?.error).toBe('conflict');
 });

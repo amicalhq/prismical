@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { RecordingImportResponse } from '@prismical/api-contracts/apps/v1';
+import type { FileUploadFailure, FileUploadPort } from '@prismical/app-contracts';
 import { EVENTS } from '../analytics-events';
 import { useOrganizations } from './hooks/organizations';
 import { usePorts } from '../ports-context';
@@ -24,7 +25,7 @@ export type AudioImportState = {
   canComplete?: boolean;
 };
 let state: AudioImportState | null = null;
-let xhr: XMLHttpRequest | null = null;
+let transfer: AbortController | null = null;
 let revision = 0;
 let abandonUpload: (() => void) | null = null;
 const listeners = new Set<() => void>();
@@ -40,11 +41,40 @@ const subscribe = (fn: () => void) => {
 };
 const root = `${ME_PREFIX}/recording-imports`;
 const terminal = (r: RecordingImportResponse) => ['done', 'failed', 'cancelled'].includes(r.status);
+const uploadErrors = {
+  cancelled: 'audioImport.cancelled',
+  interrupted: 'audioImport.interrupted',
+  rejected: 'audioImport.uploadFailed',
+} as const satisfies Record<FileUploadFailure, string>;
+/** The in-page upload, used when the platform supplies no FileUploadPort. */
+const xhrUpload: FileUploadPort = {
+  put: ({ url, file, contentType, onProgress, signal }) =>
+    new Promise(resolve => {
+      const request = new XMLHttpRequest();
+      request.open('PUT', url);
+      request.timeout = 30 * 60_000;
+      request.ontimeout = () => resolve({ ok: false, reason: 'interrupted' });
+      request.setRequestHeader('Content-Type', contentType);
+      request.upload.onprogress = e => {
+        if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+      };
+      request.onload = () =>
+        resolve(
+          request.status >= 200 && request.status < 300
+            ? { ok: true }
+            : { ok: false, reason: 'rejected' }
+        );
+      request.onerror = () => resolve({ ok: false, reason: 'interrupted' });
+      request.onabort = () => resolve({ ok: false, reason: 'cancelled' });
+      signal.addEventListener('abort', () => request.abort(), { once: true });
+      request.send(file);
+    }),
+};
 
 /** One shell transfer, independent of the note panel's mount/navigation lifecycle. */
 export function useAudioImport(enabled = false) {
   const { t } = useTranslation();
-  const { auth, analytics } = usePorts();
+  const { auth, analytics, env, fileUpload = xhrUpload } = usePorts();
   const organizations = useOrganizations();
   const session = useSessionView();
   const ownerKey = session.activeSessionKey ?? session.activeSub ?? '';
@@ -71,8 +101,8 @@ export function useAudioImport(enabled = false) {
       abandonUpload?.();
       abandonUpload = null;
       revision++;
-      xhr?.abort();
-      xhr = null;
+      transfer?.abort();
+      transfer = null;
       emit(null);
     }
     const abandon = () => {
@@ -84,8 +114,8 @@ export function useAudioImport(enabled = false) {
         abandonUpload?.();
         abandonUpload = null;
         revision++;
-        xhr?.abort();
-        xhr = null;
+        transfer?.abort();
+        transfer = null;
         emit(null);
       }
     });
@@ -221,17 +251,23 @@ export function useAudioImport(enabled = false) {
               bound
             );
       // Retry only the idempotent create, using the same request key after an ambiguous response.
+      // No status (a web network failure) or 0 (a desktop transport failure) is ambiguous too.
       const record = await create().catch(error => {
-        if (
-          restartId ||
-          ((error as { status?: number }).status ?? 500) < 500 ||
-          version !== revision ||
-          !matches()
-        )
+        const status = (error as { status?: number }).status ?? 0;
+        if (restartId || (status > 0 && status < 500) || version !== revision || !matches())
           throw error;
         return create();
       });
       const cancelBound = () => {
+        if (env.getEnv().platform !== 'web') {
+          // IPC uses main's active account, not the web token override. Do not send
+          // an old account's cancellation after a switch; upload expiry is the backstop.
+          if (!matches()) return;
+          void apiClient.post(`${root}/${record.recordingId}/cancel`, {
+            uploadAttempt: record.uploadAttempt,
+          }, bound).catch(() => {});
+          return;
+        }
         void fetch(`${coreApiBaseUrl()}${root}/${record.recordingId}/cancel`, {
           method: 'POST',
           keepalive: true,
@@ -260,26 +296,19 @@ export function useAudioImport(enabled = false) {
       if (!record.uploadUrl) throw new Error(t('audioImport.sessionUnavailable'));
       stage = 'upload';
       track('started');
-      await new Promise<void>((resolve, reject) => {
-        const request = new XMLHttpRequest();
-        xhr = request;
-        request.open('PUT', record.uploadUrl!);
-        request.timeout = 30 * 60_000;
-        request.ontimeout = () => reject(new Error(t('audioImport.interrupted')));
-        request.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
-        request.upload.onprogress = e => {
-          if (e.lengthComputable && version === revision && state)
-            emit({ ...state, progress: Math.round((e.loaded / e.total) * 100) });
-        };
-        request.onload = () =>
-          request.status >= 200 && request.status < 300
-            ? resolve()
-            : reject(new Error(t('audioImport.uploadFailed')));
-        request.onerror = () => reject(new Error(t('audioImport.interrupted')));
-        request.onabort = () => reject(new Error(t('audioImport.cancelled')));
-        request.send(file);
+      const controller = new AbortController();
+      transfer = controller;
+      const uploaded = await fileUpload.put({
+        url: record.uploadUrl,
+        file,
+        contentType: file.type || 'application/octet-stream',
+        signal: controller.signal,
+        onProgress: progress => {
+          if (version === revision && state) emit({ ...state, progress });
+        },
       });
-      xhr = null;
+      if (transfer === controller) transfer = null;
+      if (!uploaded.ok) throw new Error(t(uploadErrors[uploaded.reason]));
       if (version !== revision || !matches()) return;
       track('completed');
       stage = 'complete';
@@ -337,8 +366,8 @@ export function useAudioImport(enabled = false) {
   const cancel = async () => {
     const record = state?.record;
     if (!enabled || !record || !matches() || !state?.canCancel) return;
-    xhr?.abort();
-    xhr = null;
+    transfer?.abort();
+    transfer = null;
     const version = ++revision;
     abandonUpload = null;
     try {
