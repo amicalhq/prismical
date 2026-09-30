@@ -32,6 +32,7 @@ import type {
   EnvDescriptor,
   EnvPort,
   ExternalPort,
+  FileUploadPort,
   NativeRecordingState,
   NavigationActions,
   RecordingPort,
@@ -211,6 +212,17 @@ const askFetch: AskFetch = (_input, init) => {
 // Root-absolute public paths already resolve against the rooted prismical-app://
 // document origin, so resolution is identity (same as web's /public).
 const assetPort: AssetPort = { resolve: path => path };
+
+// Imported files go through main: the CSP keeps storage unreachable from the
+// renderer, and main sends only to an upload URL that an import response granted.
+export const fileUploadPort: FileUploadPort = {
+  put: ({ url, file, contentType, onProgress, signal }) => {
+    if (signal.aborted) return Promise.resolve({ ok: false, reason: 'cancelled' });
+    const upload = window.desktop.fileUpload.put({ url, file, contentType }, onProgress);
+    signal.addEventListener('abort', () => upload.cancel(), { once: true });
+    return upload.done;
+  },
+};
 
 // Web-app destinations ask main to mint an authenticated handoff for the active
 // desktop account. Other external URLs ride window.open → main's
@@ -687,6 +699,7 @@ export function createDesktopPorts(desktopEnv: DesktopEnvDescriptor): DesktopPor
     recording: recordingPort,
     workflow,
     recordingSession,
+    fileUpload: fileUploadPort,
   };
   return {
     appPorts,

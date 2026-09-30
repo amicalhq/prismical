@@ -9,6 +9,7 @@ import {
   parseSessionView,
   collabPortChannel,
   streamPortChannel,
+  fileUploadPortChannel,
   parseModelsStateView,
   type DeviceSettings,
   type ModelsStateView,
@@ -32,6 +33,9 @@ import { makeAiProviderLive } from '../../src/main/domains/ai-provider/live';
 import { SecureStore } from '../../src/main/infra/secure-store/service';
 import { SecureStoreLive } from '../../src/main/infra/secure-store/live';
 import { tmpdir } from 'node:os';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:http';
+import type { AddressInfo, Socket } from 'node:net';
 import path from 'node:path';
 import { ElectronAppLive } from '../../src/main/infra/electron/live';
 import { UpdaterServiceLive } from '../../src/main/domains/updater/live';
@@ -66,6 +70,7 @@ import { CollabBrokerLive } from '../../src/main/domains/collab/live';
 import { CollabBridgeLive } from '../../src/main/domains/collab/store-live';
 import { CollabBridge, type NoteBodyStoreApi } from '../../src/main/domains/collab/store';
 import { StreamBrokerLive } from '../../src/main/domains/streams/live';
+import { FileUploadBrokerLive } from '../../src/main/domains/file-upload/live';
 import { WorkspaceTransportLive } from '../../src/main/domains/transport/live';
 import { WorkspaceTransport } from '../../src/main/domains/transport/service';
 import { WindowRegistry, type WindowRegistryService } from '../../src/main/domains/windows/service';
@@ -293,6 +298,7 @@ const build = (
       Layer.provide(logger.layer)
     ),
     StreamBrokerLive.pipe(Layer.provide(logger.layer), Layer.provide(WorkspaceTransportLive)),
+    FileUploadBrokerLive.pipe(Layer.provide(logger.layer)),
     WorkspaceTransportLive,
     CollabBrokerLive.pipe(Layer.provide(logger.layer), Layer.provide(CollabBridgeLive)),
     CollabBridgeLive,
@@ -336,6 +342,7 @@ const ALL_HANDLER_CHANNELS = [
   CHANNELS.transportRequest,
   CHANNELS.transportOpenStream,
   CHANNELS.collabOpen,
+  CHANNELS.fileUploadStart,
   CHANNELS.authGetSession,
   CHANNELS.authSignIn,
   CHANNELS.authOpenWebSession,
@@ -905,6 +912,100 @@ describe('registerMainWindowHandlers', () => {
       );
       assert.deepStrictEqual(foreign, { error: { code: 'UNKNOWN_SENDER' } });
       yield* Scope.close(scope, Exit.void);
+    })
+  );
+
+  it.effect('fileUpload:start sends only to the URL an import response granted, once', () =>
+    Effect.gen(function* () {
+      const { layer } = build({}, { appMode: 'local' });
+      const scope = yield* Scope.make();
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
+      // Storage that accepts the upload and never answers, so it stays in flight.
+      const held: Socket[] = [];
+      const storage = createServer(() => {});
+      const reached = new Promise<void>(resolve =>
+        storage.on('connection', socket => {
+          held.push(socket);
+          resolve();
+        })
+      );
+      yield* Effect.promise(() => new Promise<void>(resolve => storage.listen(0, '127.0.0.1', resolve)));
+      const uploadUrl = `http://127.0.0.1:${(storage.address() as AddressInfo).port}/upload?upload_id=granted`;
+      const filePath = path.join(mkdtempSync(path.join(tmpdir(), 'file-upload-')), 'audio.wav');
+      writeFileSync(filePath, new Uint8Array(1024));
+      const sent: Array<{ method: string; path: string; body?: unknown }> = [];
+      let cancelSent!: () => void;
+      const cancelled = new Promise<void>(resolve => {
+        cancelSent = resolve;
+      });
+      yield* Context.get(ctx, WorkspaceTransport)
+        .register({
+          request: req => {
+            sent.push({ method: req.method, path: req.path, body: req.body });
+            if (req.path.endsWith('/cancel')) cancelSent();
+            return Effect.succeed<TransportResponse>({
+              ok: true,
+              status: 201,
+              bodyJson: { recordingId: 'rec_1', uploadAttempt: 'attempt-1', uploadUrl },
+            });
+          },
+          openAskStream: () => Effect.succeed(new Response(null)),
+          collabToken: Effect.succeed('STUB-ID-TOKEN'),
+          ...recordingLaneStub,
+        })
+        .pipe(Scope.provide(scope));
+      const registry = Context.get(ctx, WindowRegistry);
+      yield* registry.openMainWindow.pipe(Scope.provide(scope));
+      const wc = fake.__windowInstances().at(-1)!.webContents;
+      const invoke = (channel: string, payload: unknown, sender: unknown = wc) =>
+        Effect.promise(() => fake.ipcMain.invoke(channel, { sender }, payload));
+      const start = (uploadId: string) =>
+        invoke(CHANNELS.fileUploadStart, {
+          uploadId,
+          url: uploadUrl,
+          filePath,
+          contentType: 'audio/wav',
+        });
+      const ID_A = '11111111-1111-4111-8111-111111111111';
+      const ID_B = '22222222-2222-4222-8222-222222222222';
+      const notGranted = { error: { code: 'NOT_GRANTED' } };
+
+      assert.deepStrictEqual(yield* start(ID_A), notGranted);
+      // Another endpoint's response grants nothing, even with an uploadUrl field.
+      yield* invoke(CHANNELS.transportRequest, { method: 'POST', path: '/apps/v1/me/notes', body: {} });
+      assert.deepStrictEqual(yield* start(ID_A), notGranted);
+
+      yield* invoke(CHANNELS.transportRequest, {
+        method: 'POST',
+        path: '/apps/v1/me/recording-imports',
+        body: {},
+      });
+      assert.deepStrictEqual(yield* start(ID_A), { ok: true });
+      const port = wc.posted.find(p => p.channel === fileUploadPortChannel(ID_A))?.transfer[0];
+      assert.isDefined(port);
+      // One grant, one upload.
+      assert.deepStrictEqual(yield* start(ID_B), notGranted);
+
+      // The page goes away mid-upload (no pagehide): main cancels the import on core.
+      yield* Effect.promise(() => reached);
+      port!.close();
+      yield* Effect.promise(() => cancelled);
+      assert.deepStrictEqual(sent.at(-1), {
+        method: 'POST',
+        path: '/apps/v1/me/recording-imports/rec_1/cancel',
+        body: { uploadAttempt: 'attempt-1' },
+      });
+
+      assert.deepStrictEqual(yield* invoke(CHANNELS.fileUploadStart, { uploadId: 'x' }), {
+        error: { code: 'INVALID_REQUEST' },
+      });
+      assert.deepStrictEqual(yield* invoke(CHANNELS.fileUploadStart, {}, { id: 4242 }), {
+        error: { code: 'UNKNOWN_SENDER' },
+      });
+      yield* Scope.close(scope, Exit.void);
+      for (const socket of held) socket.destroy();
+      yield* Effect.promise(() => new Promise(resolve => storage.close(resolve)));
     })
   );
 
@@ -1480,6 +1581,7 @@ describe('registerMainWindowHandlers', () => {
             Layer.provide(logger.layer)
           ),
           StreamBrokerLive.pipe(Layer.provide(logger.layer), Layer.provide(WorkspaceTransportLive)),
+          FileUploadBrokerLive.pipe(Layer.provide(logger.layer)),
           WorkspaceTransportLive,
           CollabBrokerLive.pipe(Layer.provide(logger.layer), Layer.provide(CollabBridgeLive)),
           CollabBridgeLive,

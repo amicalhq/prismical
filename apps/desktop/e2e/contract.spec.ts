@@ -36,6 +36,7 @@ test.describe('main-window preload contract', () => {
         env: Object.keys(desktop.env as object).sort(),
         transport: Object.keys(desktop.transport as object).sort(),
         collab: Object.keys(desktop.collab as object).sort(),
+        fileUpload: Object.keys(desktop.fileUpload as object).sort(),
         nav: Object.keys(desktop.nav as object).sort(),
         auth: Object.keys(desktop.auth as object).sort(),
         recording: Object.keys(desktop.recording as object).sort(),
@@ -54,6 +55,7 @@ test.describe('main-window preload contract', () => {
       'collab',
       'e2e',
       'env',
+      'fileUpload',
       'float',
       'logging',
       'models',
@@ -71,6 +73,8 @@ test.describe('main-window preload contract', () => {
     expect(shape.transport).toEqual(['openStream', 'request']);
     // The note-body log lane, exactly.
     expect(shape.collab).toEqual(['open']);
+    // The imported-file upload lane, exactly.
+    expect(shape.fileUpload).toEqual(['put']);
     expect(shape.nav).toEqual(['onPush']);
     expect(shape.auth).toEqual([
       'getCollabToken',

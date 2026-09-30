@@ -4,6 +4,9 @@ import {
   isAllowedTransportPath,
   parseCollabOpenRequest,
   parseCollabTokenResult,
+  parseFileUploadStartRequest,
+  parseInboundFileUploadMessage,
+  fileUploadPortChannel,
   parseInboundCollabMessage,
   parseInboundStreamMessage,
   parseModelRequest,
@@ -640,6 +643,26 @@ describe('AI provider key and catalogue requests', () => {
   });
 });
 
+describe('file upload lane', () => {
+  const valid = {
+    uploadId: '11111111-1111-4111-8111-111111111111',
+    url: 'https://storage.test/upload?upload_id=abc',
+    filePath: '/picked/audio.wav',
+    contentType: 'audio/wav',
+  };
+  it('accepts a start request and rejects malformed fields', () => {
+    expect(parseFileUploadStartRequest(valid).success).toBe(true);
+    expect(parseFileUploadStartRequest({ ...valid, uploadId: 'x' }).success).toBe(false);
+    expect(parseFileUploadStartRequest({ ...valid, url: 'not a url' }).success).toBe(false);
+    expect(parseFileUploadStartRequest({ ...valid, filePath: '' }).success).toBe(false);
+    expect(parseFileUploadStartRequest({ ...valid, contentType: 'a'.repeat(256) }).success).toBe(false);
+  });
+  it('admits only cancel from the preload', () => {
+    expect(parseInboundFileUploadMessage({ type: 'cancel' }).success).toBe(true);
+    expect(parseInboundFileUploadMessage({ type: 'abort' }).success).toBe(false);
+  });
+});
+
 describe('channel names', () => {
   it('are stable (renderer + main both compile against these)', () => {
     expect(CHANNELS).toEqual({
@@ -647,6 +670,7 @@ describe('channel names', () => {
       transportRequest: 'transport:request',
       transportOpenStream: 'transport:openStream',
       collabOpen: 'collab:open',
+      fileUploadStart: 'fileUpload:start',
       navPush: 'nav:push',
       floatOpen: 'float:open',
       floatCollapse: 'float:collapse',
@@ -718,5 +742,6 @@ describe('channel names', () => {
       e2eRecording: 'e2e:recording',
     });
     expect(streamPortChannel('abc')).toBe('transport:stream:abc');
+    expect(fileUploadPortChannel('abc')).toBe('fileUpload:port:abc');
   });
 });

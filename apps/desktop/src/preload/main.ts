@@ -12,7 +12,7 @@ import type { UpdateAccessView } from '@prismical/desktop-contracts';
  * Electron-documented pattern); the renderer's stream helper picks it up by
  * streamId (STREAM_PORT_WINDOW_MESSAGE marker).
  */
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import {
   CHANNELS,
   COLLAB_PORT_WINDOW_MESSAGE,
@@ -20,6 +20,7 @@ import {
   type CollabOpenResponse,
   type DeviceSettings,
   type DeviceSettingsPatch,
+  type FileUploadStartResponse,
   type ThemeSource,
   type MainWindowDesktopApi,
   type FloatStateView,
@@ -50,6 +51,7 @@ import {
   type TelemetryState,
 } from '@prismical/desktop-contracts';
 import { makeE2ESurface } from './e2e-surface';
+import { makeFileUpload } from './file-upload';
 import { makeNavBuffer } from './nav-buffer';
 import { makeOpenCollab } from './open-collab';
 import { makeOpenStream } from './open-stream';
@@ -203,6 +205,26 @@ const openCollab = makeOpenCollab(
   }
 );
 
+// Same listener discipline for the file upload lane; its port stays in this
+// preload (only the result promise and cancel cross into the page).
+const putFile = makeFileUpload(
+  {
+    once: (channel, portListener) =>
+      ipcRenderer.once(channel, portListener as (event: Electron.IpcRendererEvent) => void),
+    removeListener: (channel, portListener) =>
+      ipcRenderer.removeListener(
+        channel,
+        portListener as (event: Electron.IpcRendererEvent) => void
+      ),
+    invoke: (channel, payload) =>
+      ipcRenderer.invoke(channel, payload) as Promise<FileUploadStartResponse>,
+  },
+  {
+    randomUUID: () => crypto.randomUUID(),
+    getPathForFile: file => webUtils.getPathForFile(file),
+  }
+);
+
 const api: MainWindowDesktopApi = {
   platform: process.platform,
 
@@ -219,6 +241,10 @@ const api: MainWindowDesktopApi = {
   // the main world by openCollab's port marker (like openStream's).
   collab: {
     open: openCollab,
+  },
+
+  fileUpload: {
+    put: putFile,
   },
 
   nav: {

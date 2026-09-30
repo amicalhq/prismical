@@ -20,6 +20,7 @@
  *   ├─ ModelManager         ← AppConfig, OperationalDb, MainLogger (local whisper weights)
  *   ├─ WhisperEngine        ← AppConfig, MainLogger (the whisper.cpp worker host)
  *   ├─ StreamBroker         ← MainLogger
+ *   ├─ FileUploadBroker     ← MainLogger (imported-file upload lane)
  *   ├─ CollabBridge         (leaf: boot-scoped note-body-store accessor)
  *   ├─ CollabBroker         ← MainLogger, CollabBridge (note-body log relay)
  *   ├─ ShutdownCoordinator  ← AppConfig, ElectronApp, MainLogger
@@ -62,6 +63,8 @@ import { makeTelemetryServiceLive } from '../domains/telemetry/live';
 import { makePostHogNodeSink } from '../domains/telemetry/posthog-sink';
 import type { TelemetryService } from '../domains/telemetry/service';
 import { StreamBrokerLive } from '../domains/streams/live';
+import { FileUploadBrokerLive } from '../domains/file-upload/live';
+import type { FileUploadBroker } from '../domains/file-upload/service';
 import type { StreamBroker } from '../domains/streams/service';
 import { WorkspaceTransportLive } from '../domains/transport/live';
 import type { WorkspaceTransport } from '../domains/transport/service';
@@ -108,6 +111,7 @@ export type BootServices =
   | ModelManager
   | WhisperEngine
   | StreamBroker
+  | FileUploadBroker
   | ShutdownCoordinator
   | SettingsService
   | DesktopI18n
@@ -258,6 +262,7 @@ export const makeBootLayer = (
     Layer.provide(logging)
   );
   const streamBroker = StreamBrokerLive.pipe(Layer.provide(logging), Layer.provide(coreTransport));
+  const fileUploadBroker = FileUploadBrokerLive.pipe(Layer.provide(logging));
   // One CollabBridge reference (the boot-scoped note-body-store accessor):
   // shared here with the CollabBroker AND merged as a top-level service so the
   // workspace-scoped NoteBodyStore registers into the SAME instance the broker
@@ -286,6 +291,7 @@ export const makeBootLayer = (
     whisperEngine,
     aiProvider,
     streamBroker,
+    fileUploadBroker,
     shutdown,
     // Device-local preferences: a SubscriptionRef over the KV table read
     // by the settings IPC surface and the widget-visibility policy.

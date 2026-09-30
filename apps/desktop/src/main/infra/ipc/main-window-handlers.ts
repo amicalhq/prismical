@@ -33,6 +33,7 @@ import {
   parseCollabOpenRequest,
   parseDeviceSettings,
   parseDeviceSettingsPatch,
+  parseFileUploadStartRequest,
   parseFloatOpenRequest,
   parseFloatState,
   parseModelRequest,
@@ -69,6 +70,7 @@ import {
   type CollabOpenResponse,
   type DeviceSettings,
   type EnvDescriptor,
+  type FileUploadStartResponse,
   type OpenStreamResponse,
   type PermissionStatuses,
   type SignInResult,
@@ -81,6 +83,8 @@ import { Cause, Effect, Option, Ref, FiberSet, Stream, SubscriptionRef, type Sco
 import { toSessionView } from '../../domains/auth/policy';
 import { AuthService } from '../../domains/auth/service';
 import { CollabBroker } from '../../domains/collab/service';
+import { importUploadGrant } from '../../domains/file-upload/policy';
+import { FileUploadBroker } from '../../domains/file-upload/service';
 import { EventKitBridge } from '../../domains/eventkit/bridge';
 import { APP_MODE_KEY } from '../../domains/app-mode/live';
 import { AppModeService } from '../../domains/app-mode/service';
@@ -124,6 +128,7 @@ type HandlerEnv =
   | FloatBridge
   | StreamBroker
   | CollabBroker
+  | FileUploadBroker
   | WorkspaceTransport
   | AuthService
   | EventKitBridge
@@ -178,6 +183,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
     const windows = yield* WindowRegistry;
     const broker = yield* StreamBroker;
     const collabBroker = yield* CollabBroker;
+    const fileUploads = yield* FileUploadBroker;
     const coreTransport = yield* WorkspaceTransport;
     const auth = yield* AuthService;
     const eventkit = yield* EventKitBridge;
@@ -293,10 +299,16 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
             // Wait for the selected cloud workspace during a swap. The backend
             // stamps Bearer + x-active-org-id in MAIN; no live session settles
             // INTERNAL through the transport envelope (never throws).
-            return coreTransport.request(parsed.data, {
-              mode: appMode.mode,
-              sessionState: auth.sessionState,
-            });
+            const context = { mode: appMode.mode, sessionState: auth.sessionState };
+            return coreTransport.request(parsed.data, context).pipe(
+              // An import create/restart returns the one URL fileUpload:start may send to.
+              Effect.tap(response => {
+                const grant = importUploadGrant(parsed.data, response);
+                return grant === null
+                  ? Effect.void
+                  : fileUploads.grant(grant.url, coreTransport.request(grant.cancel, context).pipe(Effect.asVoid));
+              })
+            );
           }),
           Effect.catch(rejected =>
             Effect.succeed<TransportResponse>({ error: { code: rejected.code } })
@@ -337,6 +349,35 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
           }),
           Effect.catch(rejected =>
             Effect.succeed<OpenStreamResponse>({ error: { code: rejected.code } })
+          )
+        )
+      )
+    );
+
+    // fileUpload:start — the imported-file upload lane. Same membrane as the
+    // stream lane (sender + strict schema); the broker sends only to a URL that
+    // an import response granted, and replies with the port on the per-upload channel.
+    yield* acquireHandle(CHANNELS.fileUploadStart, (event, payload) =>
+      runPromise(
+        validateMainSender(event).pipe(
+          Effect.flatMap((): Effect.Effect<FileUploadStartResponse> => {
+            const parsed = parseFileUploadStartRequest(payload);
+            if (!parsed.success) {
+              return log
+                .warn('fileUpload:start rejected: invalid payload', {
+                  context: { issues: parsed.issues },
+                })
+                .pipe(Effect.as<FileUploadStartResponse>({ error: { code: 'INVALID_REQUEST' } }));
+            }
+            return fileUploads.start({ ...parsed.data, sender: event.sender }).pipe(
+              Effect.as<FileUploadStartResponse>({ ok: true }),
+              Effect.catchTag('FileUploadError', error =>
+                Effect.succeed<FileUploadStartResponse>({ error: { code: error.code } })
+              )
+            );
+          }),
+          Effect.catch(rejected =>
+            Effect.succeed<FileUploadStartResponse>({ error: { code: rejected.code } })
           )
         )
       )
