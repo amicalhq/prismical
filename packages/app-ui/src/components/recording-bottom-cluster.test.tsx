@@ -142,7 +142,6 @@ vi.mock('@prismical/app-client', async () => {
         data: { experience: { autoTranscribeNewNotes: state.autoTranscribe } },
       }),
     }),
-    consumeFreshNote: () => false,
     consumePendingAutoTranscribe: () => {
       const pending = state.pendingAutoStart;
       state.pendingAutoStart = false;
