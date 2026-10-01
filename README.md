@@ -1,29 +1,135 @@
-# Prismical Desktop
+<!-- Markdown with HTML -->
+<div align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://prismical.ai/github-readme-header-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="https://prismical.ai/github-readme-header-light.png">
+  <img alt="Prismical" src="https://prismical.ai/github-readme-header-light.png">
+</picture>
+</div>
 
-The open-source desktop app for [Prismical](https://prismical.ai): meeting notes with live
-transcription, a rich-text editor and AI skills, for macOS (Apple silicon and Intel) and
-Windows (x64). Built with Electron, React and Effect.
+<p align="center">
+  <a href='http://makeapullrequest.com'>
+    <img alt='PRs Welcome' src='https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=shields'/>
+  </a>
+  <a href="https://opensource.org/license/MIT/">
+    <img src="https://img.shields.io/github/license/amicalhq/prismical?logo=opensourceinitiative&logoColor=white&label=License&color=8A2BE2" alt="license">
+  </a>
+  <br>
+  <a href="https://prismical.ai/community">
+    <img src="https://img.shields.io/badge/discord-7289da.svg?style=flat-square&logo=discord" alt="discord" style="height: 20px;">
+  </a>
+</p>
 
-It runs in one of two modes, chosen on first launch:
+<p align="center">
+  <a href="https://prismical.ai">Website</a> - <a href="https://prismical.ai/docs">Docs</a> - <a href="https://prismical.ai/community">Community</a> - <a href="https://github.com/amicalhq/prismical/issues/new?assignees=&labels=bug&template=bug_report.md">Bug reports</a>
+</p>
 
-- **Local mode** — no account. Notes live in a SQLite file on the machine, recording and
-  transcription run on-device with [whisper.cpp](https://github.com/ggerganov/whisper.cpp)
-  (Metal on Apple silicon), meeting detection watches which app holds the microphone, and the
-  AI skills (Enhance, Cleanup, Name note, Ask, custom skills) use a key you bring (OpenAI,
-  Anthropic, OpenAI-compatible) or a local runtime such as Ollama. Nothing leaves the
-  machine unless you configure a provider.
-- **Cloud mode** — sign in to Prismical for sync across devices, sharing, organizations,
-  calendar, managed models and true speaker diarization. Local transcription is available in
-  cloud mode too.
+## Table of Contents
 
-Switching mode resets local data (there is no migration between the two).
+- [⬇️ Download](#️-download)
+- [🔮 Overview](#-overview)
+- [✨ Features](#-features)
+- [🔰 Tech Stack](#-tech-stack)
+- [🛠 Development](#-development)
+- [🤗 Contributing](#-contributing)
+- [🎗 License](#-license)
 
-## Download
+## ⬇️ Download
 
-Installers are attached to each [release](https://github.com/amicalhq/prismical/releases):
-a `.dmg` for macOS and an `.exe` installer for Windows. Packaged builds update themselves.
+<p>
+  <a href="https://github.com/amicalhq/prismical/releases/latest">
+    <img src="https://prismical.ai/download_button_macos.png" alt="Download for macOS" height="60">
+  </a>
+  <a href="https://github.com/amicalhq/prismical/releases/latest">
+    <img src="https://prismical.ai/download_button_windows.png" alt="Download for Windows" height="60">
+  </a>
+</p>
 
-## Repository layout
+<p>
+  <a href="https://apps.apple.com/us/app/prismical-ai-note-taker/id6780624498">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://prismical.ai/badges/app-store-on-dark.svg">
+      <source media="(prefers-color-scheme: light)" srcset="https://prismical.ai/badges/app-store-on-light.svg">
+      <img alt="Download on the App Store" src="https://prismical.ai/badges/app-store-on-light.svg" height="60">
+    </picture>
+  </a>
+  <a href="https://play.google.com/store/apps/details?id=ai.prismical.app">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://prismical.ai/badges/google-play-on-dark.svg">
+      <source media="(prefers-color-scheme: light)" srcset="https://prismical.ai/badges/google-play-on-light.svg">
+      <img alt="Get it on Google Play" src="https://prismical.ai/badges/google-play-on-light.svg" height="60">
+    </picture>
+  </a>
+</p>
+
+Desktop installers are attached to each [release](https://github.com/amicalhq/prismical/releases):
+[macOS (Apple silicon)](https://github.com/amicalhq/prismical/releases/latest/download/Prismical-macos-arm64.dmg),
+[macOS (Intel)](https://github.com/amicalhq/prismical/releases/latest/download/Prismical-macos-x64.dmg) and
+[Windows (x64)](https://github.com/amicalhq/prismical/releases/latest/download/Prismical-windows-x64.exe).
+Packaged builds update themselves.
+
+## 🔮 Overview
+
+Open-source AI note taker.
+
+Prismical is a free, open-source AI note taker that transcribes meetings, lectures and voice notes — without a bot joining your call. It captures system audio in the background, transcribes it with local or cloud AI, and turns it into structured notes with key decisions and action items.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://prismical.ai/screenshots/hero-dark.webp">
+  <source media="(prefers-color-scheme: light)" srcset="https://prismical.ai/screenshots/hero-light.webp">
+  <img alt="Prismical desktop app home screen with upcoming meetings and recent notes" src="https://prismical.ai/screenshots/hero-light.webp">
+</picture>
+
+Works with Zoom, Google Meet, Microsoft Teams, Slack, WebEx — anything that plays audio. Not in a meeting? Just talk or type. Prismical captures and enhances your voice notes too.
+
+This repository is the Prismical desktop app for macOS (Apple silicon and Intel) and Windows (x64).
+
+## ✨ Features
+
+🎙️ Real-time meeting transcription — system audio capture, no bot joins your call
+
+🧠 AI summaries & action items — structured notes with key decisions and follow-ups
+
+🗣️ Voice notes — talk or type, AI structures and organizes your thoughts
+
+🪄 AI skills — Enhance, Cleanup and Ask across your notes, or write your own custom skills
+
+🔐 Local-first AI — on-device transcription with whisper.cpp
+
+🔑 Bring your own model — OpenAI, Anthropic, OpenRouter, any OpenAI-compatible endpoint, or local models with Ollama
+
+📅 Meeting detection — Prismical notices when a meeting app starts using the microphone
+
+🪟 Floating widget — always-on-top compact window for live transcripts and quick notes
+
+🔍 Full-text search across all meetings, notes and transcripts
+
+☁️ Prismical cloud (optional) — sync across devices, sharing, organizations, calendar and speaker diarization
+
+🔌 MCP server — connect your notes to Claude, ChatGPT, Gemini and more (with a Prismical account)
+
+📱 iOS & Android apps — on the App Store and Google Play
+
+## 🔰 Tech Stack
+
+- 🖥️ [Electron](https://electronjs.org/)
+- ⚛️ [React](https://react.dev/)
+- 🧑‍💻 [TypeScript](https://www.typescriptlang.org/)
+- 🌊 [Effect](https://effect.website/)
+- 🎤 [whisper.cpp](https://github.com/ggerganov/whisper.cpp)
+- 🦙 [Ollama](https://ollama.ai)
+- 🧭 [TanStack Router](https://tanstack.com/router) & [Query](https://tanstack.com/query)
+- ✍️ [Tiptap](https://tiptap.dev/)
+- 🗄️ [SQLite](https://sqlite.org/) & [Drizzle](https://orm.drizzle.team/)
+- 🎨 [Tailwind CSS](https://tailwindcss.com/)
+- 🧑🏼‍🎨 [shadcn/ui](https://ui.shadcn.com/)
+- 🧘‍♂️ [Zod](https://zod.dev/)
+- 🧪 [Vitest](https://vitest.dev/) & [Playwright](https://playwright.dev/)
+- 🌀 [Turborepo](https://turbo.build/)
+
+## 🛠 Development
+
+### Repository layout
 
 ```
 apps/desktop                      the Electron app (@prismical/desktop)
@@ -35,16 +141,11 @@ packages/config-eslint, config-typescript   shared lint / tsconfig presets
 packages/{app-ui,app-client,app-i18n,api-contracts,app-contracts,silence,
           editor-markdown,editor-schema,id,note-derive,ai-prompts}
                                   the screens, data layer, i18n catalogues and contracts
-                                  shared with the Prismical web app
 ```
 
-The desktop renders the same screens (`@prismical/app-ui`) over the same data layer
-(`@prismical/app-client`) as the Prismical web app; platform differences go through the ports
-seam in `apps/desktop/src/renderer/main/app/ports/`.
+### Local development
 
-## Local development
-
-### Prerequisites
+#### Prerequisites
 
 - Node.js 24 and pnpm 10.27.0 (`corepack enable` picks the pinned version)
 - Portless 0.5 or later (`npm install -g portless`), with its HTTPS proxy on port 443
@@ -56,7 +157,7 @@ seam in `apps/desktop/src/renderer/main/app/ports/`.
 - **Windows:** Visual Studio 2022 Build Tools with the *Desktop development with C++*
   workload, and the .NET 8 SDK for the recording helpers.
 
-### Set up
+#### Set up
 
 Clone with the whisper.cpp submodule so the local-transcription addon can build:
 
@@ -73,7 +174,7 @@ addon; run `pnpm --filter @prismical/whisper-wrapper dev:prepare` (initializes t
 applies the patches) and then `pnpm install` again. Seeing the submodule marked as modified in
 `git status` afterwards is expected — that is the applied patch.
 
-### Run the app
+#### Run the app
 
 ```bash
 cd apps/desktop
@@ -97,7 +198,7 @@ adds a trusted dev-proxy CA (`~/.portless/ca.pem`) to Node only when that file e
 `NODE_EXTRA_CA_CERTS` yourself for any other self-signed dev stack. At startup, the app also
 adds OS-trusted certificates to Node's defaults, excluding expired or invalid certificates.
 
-### Environment variables
+#### Environment variables
 
 | Variable | Where | Purpose |
 | --- | --- | --- |
@@ -111,7 +212,7 @@ adds OS-trusted certificates to Node's defaults, excluding expired or invalid ce
 | `PRISMICAL_E2E*`, `PRISMICAL_E2E_TARGET`, `PRISMICAL_E2E_PACKAGE` | tests | Playwright harness switches; scrubbed from production packages. |
 | `PRISMICAL_MODEL_CACHE` | scripts | Where `pnpm --filter @prismical/desktop fetch-eval-model` caches verified weights (default `~/.cache/prismical/models`). |
 
-### Checks
+#### Checks
 
 ```bash
 pnpm lint
@@ -122,7 +223,7 @@ pnpm --filter @prismical/desktop exec vitest run tests/native   # helper golden 
 pnpm --filter @prismical/desktop test:local-asr  # whisper end to end; first: pnpm --filter @prismical/desktop fetch-eval-model --model whisper-base-en (and --model silero-vad-v5)
 ```
 
-### Packaging
+#### Packaging
 
 ```bash
 cd apps/desktop
@@ -136,7 +237,7 @@ and downloads the Node sidecar the transcription worker runs under. The prebuilt
 bundle is committed; rebuilding it is optional
 (`packages/webrtc-aec3-builder/README.md`).
 
-## Releasing
+### Releasing
 
 Maintainers release with the bumpp flow: `pnpm --filter @prismical/desktop exec bumpp <version>`
 bumps `apps/desktop/package.json`, commits `chore: release v<version>` and pushes the
@@ -146,12 +247,20 @@ auto-update payloads to a **draft** GitHub Release with a generated changelog. A
 `preview/**` branch produces an unsigned rolling pre-release instead. The workflow header lists
 the repository secrets a signed release needs.
 
-## Contributing
+## 🤗 Contributing
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md). Bugs and ideas go to the
-[issue tracker](https://github.com/amicalhq/prismical/issues).
+Contributions are welcome! See [CONTRIBUTING.md](./CONTRIBUTING.md) for how the repository is put together and what a pull request needs, or reach out to the team in our [Discord server](https://prismical.ai/community).
 
-## License
+- **🐛 [Report an Issue][issues]**: Found a bug? Let us know!
+- **💬 [Start a Discussion][discussions]**: Have ideas or suggestions? We'd love to hear from you.
 
-[MIT](./LICENSE). Third-party components and model weights are listed in
-[NOTICE.md](./NOTICE.md).
+## 🎗 License
+
+Released under [MIT][license]. Third-party components and model weights are listed in [NOTICE.md](./NOTICE.md).
+
+<!-- REFERENCE LINKS -->
+
+[license]: https://github.com/amicalhq/prismical/blob/main/LICENSE
+[discussions]: https://prismical.ai/community
+[issues]: https://github.com/amicalhq/prismical/issues
+[pulls]: https://github.com/amicalhq/prismical/pulls "submit a pull request"
