@@ -1,8 +1,8 @@
 <!-- Markdown with HTML -->
 <div align="center">
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://prismical.ai/github-readme-header-dark.webp 1x, https://prismical.ai/github-readme-header-dark-retina.webp 2x">
-  <source media="(prefers-color-scheme: light)" srcset="https://prismical.ai/github-readme-header-light.webp 1x, https://prismical.ai/github-readme-header-light-retina.webp 2x">
+  <source media="(prefers-color-scheme: dark)" srcset="https://prismical.ai/github-readme-header-dark.webp">
+  <source media="(prefers-color-scheme: light)" srcset="https://prismical.ai/github-readme-header-light.webp">
   <img alt="Prismical" src="https://prismical.ai/github-readme-header-light.webp">
 </picture>
 </div>
@@ -75,9 +75,9 @@ Open-source AI note taker.
 Prismical is a free, open-source AI note taker that transcribes meetings, lectures and voice notes — without a bot joining your call. It captures system audio in the background, transcribes it with local or cloud AI, and turns it into structured notes with key decisions and action items.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://prismical.ai/screenshots/hero-dark.webp">
-  <source media="(prefers-color-scheme: light)" srcset="https://prismical.ai/screenshots/hero-light.webp">
-  <img alt="Prismical desktop app home screen with upcoming meetings and recent notes" src="https://prismical.ai/screenshots/hero-light.webp">
+  <source media="(prefers-color-scheme: dark)" srcset="https://prismical.ai/screenshots/readme-home-dark.webp">
+  <source media="(prefers-color-scheme: light)" srcset="https://prismical.ai/screenshots/readme-home-light.webp">
+  <img alt="Prismical app Home screen" src="https://prismical.ai/screenshots/readme-home-light.webp">
 </picture>
 
 Works with Zoom, Google Meet, Microsoft Teams, Slack, WebEx — anything that plays audio. Not in a meeting? Just talk or type. Prismical captures and enhances your voice notes too.
