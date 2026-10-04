@@ -327,10 +327,13 @@ const recordingPort: RecordingPort = {
     );
   },
   control: {
-    start: async ({ noteId, title, language, autoPause, quotaRemainingAtStartSeconds }) => {
+    start: async (request) => {
+      const { noteId, title, language, autoPause, quotaRemainingAtStartSeconds } = request;
+      const { launcherIntent } = request as typeof request & { launcherIntent?: string };
       try {
         return await window.desktop.recording.start({
           captureMode: DESKTOP_CAPTURE_MODE,
+          launcherIntent,
           noteId,
           title,
           language:

@@ -68,6 +68,9 @@ Desktop installers are attached to each [release](https://github.com/amicalhq/pr
 [Windows (x64)](https://github.com/amicalhq/prismical/releases/latest/download/Prismical-windows-x64.exe).
 Packaged builds update themselves.
 
+[Prismical for Raycast](https://raycast.com/nch/prismical) lets you find meeting notes,
+read transcripts, and capture text from your keyboard. [Setup guide](https://prismical.ai/docs/raycast).
+
 ## 🔮 Overview
 
 Open-source AI note taker.

@@ -2,7 +2,8 @@ import { QueryClient } from '@tanstack/react-query';
 import { createWorkflowRuntime } from '@prismical/app-workflow';
 import { resolveTranscriptionLanguage } from '@prismical/app-client';
 import type { AuthPort, NativeRecordingControl, NativeRecordingState, SessionView } from '@prismical/app-contracts';
-import { describe, expect, it, vi } from 'vitest';
+import { setLauncherIntent, currentLauncherIntent } from '../../src/renderer/main/app/launcher-intent';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createNativeRecordingController } from '../../src/renderer/main/app/ports/native-recording-controller';
 
 vi.mock('@prismical/app-client', async importOriginal => ({
@@ -414,4 +415,35 @@ it('adopts pending recovery after reload until main resolves completion', async 
   expect(f.client.getSnapshot().isFinalizing).toBe(true);
   completion.resolve(false);
   await vi.waitFor(() => expect(f.workflow.getSnapshot()).toEqual({ kind: 'idle' }));
+});
+
+afterEach(() => { setLauncherIntent(undefined); vi.unstubAllGlobals(); });
+it('does not dispatch a stale launcher start after delayed validation', async () => {
+  const validation = deferred<boolean>();
+  const validate = vi.fn(() => validation.promise);
+  vi.stubGlobal('window', { desktop: { float: { validateLauncherIntent: validate } } });
+  setLauncherIntent('first');
+  const f = fixture(); const starting = f.client.start('note_1', 'Meeting');
+  await vi.waitFor(() => expect(validate).toHaveBeenCalled());
+  setLauncherIntent('replacement');
+  validation.resolve(true); await starting;
+  expect(f.control.start).not.toHaveBeenCalled();
+  expect(currentLauncherIntent()).toBe('replacement');
+});
+it('rechecks workflow ownership after launcher validation resolves', async () => {
+  const validation = deferred<boolean>();
+  const validate = vi.fn(() => validation.promise);
+  vi.stubGlobal('window', { desktop: { float: { validateLauncherIntent: validate } } });
+  setLauncherIntent('first');
+  const f = fixture(); const starting = f.client.start('note_1', 'Meeting');
+  await vi.waitFor(() => expect(validate).toHaveBeenCalled());
+  await f.client.stop(); validation.resolve(true); await starting;
+  expect(f.control.start).not.toHaveBeenCalled();
+});
+it('carries the captured launcher token into native dispatch', async () => {
+  vi.stubGlobal('window', { desktop: { float: { validateLauncherIntent: vi.fn(async () => true) } } });
+  setLauncherIntent('captured');
+  const f = fixture(); await f.client.start('note_1', 'Meeting');
+  expect(f.control.start).toHaveBeenCalledWith(expect.objectContaining({ launcherIntent: 'captured' }));
+  expect(currentLauncherIntent()).toBeUndefined();
 });

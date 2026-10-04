@@ -78,6 +78,9 @@ let nextWindowId = 1;
 type WindowOpenHandler = (details: { url: string }) => { action: 'allow' | 'deny' };
 
 export class FakeWebContents extends EventEmitter {
+  private destroyed = false;
+  isDestroyed(): boolean { return this.destroyed; }
+  destroy(): void { this.destroyed = true; this.emit('destroyed'); }
   getOSProcessId(): number { return this.id + 1000; }
   readonly id = nextWebContentsId++;
   windowOpenHandler: WindowOpenHandler | null = null;
@@ -145,6 +148,7 @@ export class FakeBrowserWindow extends EventEmitter {
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
+    this.webContents.destroy();
     this.emit('closed');
   }
   /** Simulates the user closing the window (destroy + closed event). */

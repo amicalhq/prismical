@@ -1,3 +1,4 @@
+import { currentLauncherIntent, clearLauncherIntent, validateLauncher } from '../launcher-intent';
 import {
   activeOrgIdOf,
   ensureAutoPausePolicy,
@@ -42,7 +43,9 @@ const emptySnapshot = (): RecordingSessionSnapshot => ({
 /** Native capture and durable finalization remain in main; the shared workflow owns UI admission. */
 export function createNativeRecordingController(options: {
   auth: AuthPort;
-  control: NativeRecordingControl;
+  control: Omit<NativeRecordingControl, 'start'> & {
+    start(request: Parameters<NativeRecordingControl['start']>[0] & { launcherIntent?: string }): ReturnType<NativeRecordingControl['start']>;
+  };
   workflow: WorkflowRuntime;
 }): RecordingSessionClient {
   const { auth, control, workflow } = options;
@@ -224,6 +227,7 @@ export function createNativeRecordingController(options: {
     disconnect = () => { offWorkflow(); offAuth(); offNative(); };
   }
   async function start(noteId: string, title: string) {
+    const launcherIntent = currentLauncherIntent();
     connect();
     if (disposed || !queryClient) return;
     const s = admit(noteId);
@@ -235,9 +239,11 @@ export function createNativeRecordingController(options: {
       ]);
       if (!owns(s) || scope(s)?.phase !== 'starting') return;
       const quota = queryClient.getQueryData<Usage>(usageKey(s.ownerOrgId))?.quota?.cloudTranscription;
+      if (!(await validateLauncher(launcherIntent, noteId)) || currentLauncherIntent() !== launcherIntent) { fail(s, null); return; }
+      if (!owns(s) || scope(s)?.phase !== 'starting') return;
       s.startingNative = true;
       const result = await control.start({
-        noteId, title, language,
+        noteId, title, language, launcherIntent,
         quotaRemainingAtStartSeconds: quota?.limitSeconds == null ? null : Math.max(0, quota.limitSeconds - quota.usedSeconds),
         ...(policy.enabled ? { autoPause: {
           silenceSeconds: policy.silenceSeconds, graceSeconds: policy.graceSeconds,
@@ -270,6 +276,8 @@ export function createNativeRecordingController(options: {
       if (scope(s)?.phase === 'draining') await control.stop(result.recordingId);
     } catch {
       if (owns(s)) fail(s, 'recording.errors.couldNotStart');
+    } finally {
+      clearLauncherIntent(launcherIntent);
     }
   }
   async function changePause(paused: boolean) {

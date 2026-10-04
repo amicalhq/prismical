@@ -673,6 +673,7 @@ describe('channel names', () => {
       fileUploadStart: 'fileUpload:start',
       navPush: 'nav:push',
       floatOpen: 'float:open',
+      launcherValidate: 'launcher:validate',
       floatCollapse: 'float:collapse',
       floatDockBack: 'float:dockBack',
       floatStateChanged: 'float:state',

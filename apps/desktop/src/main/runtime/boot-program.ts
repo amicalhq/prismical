@@ -15,6 +15,7 @@ import {
   runSecondInstanceConsumer,
 } from '../domains/deep-link/consumer';
 import { runDevLoopbackOAuthServer } from '../domains/deep-link/dev-loopback';
+import { runLauncherServer } from '../domains/launcher/server';
 import { runOsSync } from '../domains/settings/os-sync';
 import { ShutdownCoordinator } from '../domains/shutdown/service';
 import { TelemetryService } from '../domains/telemetry/service';
@@ -76,6 +77,7 @@ export const bootProgram: Effect.Effect<void, WindowError, BootServices | Scope.
     yield* windows.openNotifyWindow;
     // The floating-note global hotkey uses settings-reactive registration.
     yield* runDockHotkey;
+    yield* runLauncherServer;
 
     // OS-preference sync: project launchAtLogin/dockVisible onto the OS
     // reactively, reconciling the current persisted values once on boot. Forks
