@@ -116,6 +116,7 @@ export const CHANNELS = {
    * rejected invoke; the mic-only degrade surfaces through the state push below.
    */
   recordingStart: 'recording:start',
+  launcherValidate: 'launcher:validate',
   /** invoke(StopRecordingRequest) → void. Gracefully stop + finalize a recording. */
   recordingStop: 'recording:stop',
   /** Claim completion once across main and floating windows. */
@@ -699,6 +700,7 @@ export type CaptureMode = z.infer<typeof captureModeSchema>;
 export const startRecordingRequestSchema = z
   .object({
     captureMode: captureModeSchema,
+    launcherIntent: z.string().uuid().optional(),
     language: TranscriptionLanguageSchema.optional(),
     noteId: z.string().min(1).nullable().optional(),
     title: z.string().optional(),
@@ -1789,6 +1791,7 @@ export interface MainWindowDesktopApi {
   readonly capabilities: MainWindowCapabilitiesApi;
   /** The floating note: open/collapse/dock-back + slot state. */
   readonly float: {
+    readonly validateLauncherIntent: (id: string, noteId: string | null) => Promise<boolean>;
     /** Open/focus the float on a note; null = the slot (last floated / fresh). */
     readonly open: (noteId: string | null) => void;
     /** Collapse back to the pill — the slot survives. */

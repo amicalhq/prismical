@@ -13,7 +13,7 @@
  * they settle gracefully (no-session / idle), never a throw. (The wire literal
  * stays 'no-session' — the renderer folds on it.)
  */
-import { Context, Effect, Layer, Option, Semaphore, Stream, SubscriptionRef, type Scope } from 'effect';
+import { Context, Deferred, Effect, Exit, Layer, Option, Semaphore, Stream, SubscriptionRef, type Scope } from 'effect';
 import {
   idleRecordingState,
   type RecordingServiceApi,
@@ -68,6 +68,7 @@ export interface RecordingBridgeApi {
    * is mounted or nothing is in flight.
    */
   readonly stopActive: Effect.Effect<void>;
+  readonly launcherContext: Effect.Effect<{ generation: number; ready: boolean }>;
   /**
    * Pause / resume the active recording for the id-less widget surface.
    */
@@ -115,17 +116,29 @@ export const makeRecordingBridgeLive = (
       Option.none()
     );
 
+    let generation = 0;
+    const pending = new Set<Deferred.Deferred<void>>();
+    const cancelPending = Effect.gen(function* () {
+      generation += 1;
+      for (const signal of pending) yield* Deferred.succeed(signal, undefined);
+    });
     const skillOwners = new Set<number>();
     const admission = yield* Semaphore.make(1);
 
     const api: RecordingBridgeApi = {
+      launcherContext: Effect.gen(function* () {
+        const current = yield* SubscriptionRef.get(currentRef);
+        return { generation, ready: Option.isSome(current) };
+      }),
       register: service =>
         Effect.acquireRelease(
-          Effect.sync(() => skillOwners.clear()).pipe(
+          cancelPending.pipe(Effect.andThen(Effect.sync(() => skillOwners.clear())),
             Effect.andThen(SubscriptionRef.set(currentRef, Option.some(service)))
           ), () =>
           SubscriptionRef.update(currentRef, cur => {
             if (!Option.exists(cur, s => s === service)) return cur;
+            generation += 1;
+            for (const signal of pending) Deferred.doneUnsafe(signal, Exit.succeed(undefined));
             skillOwners.clear();
             return Option.none();
           })
@@ -147,14 +160,20 @@ export const makeRecordingBridgeLive = (
           return true;
         })),
 
-      start: input =>
-        admission.withPermits(1)(Effect.gen(function* () {
+      start: input => Effect.gen(function* () {
+        // Bind before waiting for admission so an old call never reaches a new workspace.
+        const current = yield* SubscriptionRef.get(currentRef);
+        const epoch = generation;
+        const canceled = yield* Deferred.make<void>();
+        pending.add(canceled);
+        return yield* admission.withPermits(1)(Effect.gen(function* () {
+          if (epoch !== generation) return { ok: false, reason: 'no-session' } as const;
           if (yield* isUpdateRequired) {
             yield* onUpdateRequired;
             return { ok: false, reason: 'update-required' } as const;
           }
           if (skillOwners.size > 0) return { ok: false, reason: 'suggestion-pending' } as const;
-          return yield* SubscriptionRef.get(currentRef).pipe(
+          return yield* Effect.succeed(current).pipe(
             Effect.flatMap(
               Option.match({
                 onNone: () =>
@@ -180,7 +199,11 @@ export const makeRecordingBridgeLive = (
               })
             )
           );
-        })),
+        })).pipe(
+          Effect.raceFirst(Deferred.await(canceled).pipe(Effect.as<StartRecordingOutcome>({ ok: false, reason: 'busy' }))),
+          Effect.ensuring(Effect.sync(() => pending.delete(canceled)))
+        );
+      }),
 
       stop: recordingId =>
         SubscriptionRef.get(currentRef).pipe(
@@ -230,7 +253,7 @@ export const makeRecordingBridgeLive = (
           )
         ),
 
-      stopActive: SubscriptionRef.get(currentRef).pipe(
+      stopActive: cancelPending.pipe(Effect.andThen(SubscriptionRef.get(currentRef)),
         Effect.flatMap(
           Option.match({
             onNone: () => Effect.void,

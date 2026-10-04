@@ -1,3 +1,4 @@
+import { currentLauncherIntent, clearLauncherIntent, setLauncherIntent, validateLauncher } from './launcher-intent';
 /**
  * The floating note view — the dock's expanded mode, rendered
  * by the float-note window at #/float[/:noteId] over the SAME renderer bundle
@@ -140,6 +141,7 @@ function FloatSlotResolver({ fresh }: { fresh: boolean }) {
   const createNoteRef = React.useRef(createNote);
   createNoteRef.current = createNote;
   const startedRef = React.useRef(false);
+  const [unavailable, setUnavailable] = React.useState(false);
   // isPending is exactly "the sync store hasn't published yet" — create()
   // THROWS before then, and a fresh float window mounts this resolver before
   // the SyncStoreProvider's async build settles. The effect re-runs on the
@@ -151,7 +153,20 @@ function FloatSlotResolver({ fresh }: { fresh: boolean }) {
     // ONE navigation source: float.open updates MAIN's slot, and main's
     // navPush retargets this window through the nav drain — a local
     // history.push too would double the history entry.
-    const goTo = (noteId: string) => {
+    const intent = currentLauncherIntent();
+    let active = true;
+    const owns = () => active && currentLauncherIntent() === intent;
+    const abandon = () => {
+      if (!owns()) return;
+      autoStartIntent.armed = false;
+      autoStartIntent.noteId = null;
+      clearLauncherIntent(intent);
+      setUnavailable(true);
+    };
+    const goTo = async (noteId: string) => {
+      try {
+        if (!(await validateLauncher(intent, noteId)) || !owns()) { abandon(); return; }
+      } catch { abandon(); return; }
       // Hand the parked intent its note before the nav: the body consumes it
       // only when ITS noteId matches.
       if (autoStartIntent.armed) {
@@ -160,32 +175,33 @@ function FloatSlotResolver({ fresh }: { fresh: boolean }) {
       }
       window.desktop.float.open(noteId);
     };
-    const beginCreate = () => {
+    const beginCreate = async () => {
       startedRef.current = true;
       try {
+        if (!(await validateLauncher(intent, null)) || !owns()) { abandon(); return; }
         createNoteRef.current.mutate(undefined, {
-          onSuccess: note => goTo(note.id),
+          onSuccess: note => { if (owns()) void goTo(note.id); },
         });
       } catch {
         // The store vanished between the readiness check and the create (a
         // sign-out race) — allow a later effect re-run to retry rather than
         // letting the throw feed the route error boundary (which would strip
         // the ✕/⇱ chrome from an always-on-top window).
-        startedRef.current = false;
+        if (owns()) startedRef.current = false;
       }
     };
     // A dock-initiated start (?fresh=1) bypasses the live-recording lookup:
     // the fresh recording gets its OWN new note, always.
     if (fresh) {
       if (storeReady) beginCreate();
-      return; // not ready yet — the storeReady re-run creates
+      return () => { active = false; }; // readiness or a replacement navigation invalidates callbacks
     }
     // The preload buffer replays the LATEST recording state synchronously when
     // one was ever pushed — a live recording's note wins the slot. If nothing
     // replays (no recording this session), the microtask falls through to a
     // fresh quick note (deferred until the store publishes).
     const resolve = (liveNoteId: string | null) => {
-      if (startedRef.current) return;
+      if (!active || startedRef.current) return;
       if (liveNoteId !== null) {
         startedRef.current = true;
         goTo(liveNoteId);
@@ -197,13 +213,20 @@ function FloatSlotResolver({ fresh }: { fresh: boolean }) {
       resolve(state.status !== 'idle' && state.noteId ? state.noteId : null);
     });
     queueMicrotask(() => resolve(null));
-    return unsubscribe;
+    return () => { active = false; unsubscribe(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fresh, storeReady]);
 
   return (
     <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-      {t('desktop.float.opening')}
+      {unavailable ? (
+        <div className="flex flex-col items-center gap-3 p-6">
+          <p>{t('recording.errors.couldNotStart')}</p>
+          <button type="button" className="rounded-md bg-foreground/10 px-3 py-2" onClick={() => window.desktop.float.collapse()}>
+            {t('desktop.float.close')}
+          </button>
+        </div>
+      ) : t('desktop.float.opening')}
     </div>
   );
 }
@@ -247,11 +270,13 @@ function FloatNoteBody({ noteId }: { noteId: string }) {
     if (autoStartIntent.noteId === null) return;
     if (autoStartIntent.noteId !== noteId) {
       autoStartIntent.noteId = null;
+      clearLauncherIntent(currentLauncherIntent());
       return;
     }
     if (!noteReady) return; // bound note, data not loaded yet — keep waiting
     autoStartIntent.noteId = null;
     if (recIdle) setPendingAutoStart(noteReady);
+    else clearLauncherIntent(currentLauncherIntent());
   }, [noteId, noteReady, recIdle]);
 
   // The in-window note switcher (⌘K).
@@ -498,10 +523,12 @@ export function FloatNoteView({
   noteId,
   fresh = false,
   autoStart = false,
+  launcherIntent,
 }: {
   noteId?: string;
   fresh?: boolean;
   autoStart?: boolean;
+  launcherIntent?: string;
 }) {
   // Park the autostart intent BEFORE the body can consume it (render-phase,
   // not an effect: FloatNoteBody's consuming effect may run first otherwise).
@@ -509,7 +536,15 @@ export function FloatNoteView({
   // route (?autostart on /float/:id — the future ambient auto-expand shape)
   // the intent binds immediately; slot-less it stays armed until the resolver
   // hands it the note it creates/resolves.
-  if (autoStart) {
+  const navigation = `${noteId ?? ''}:${autoStart}:${launcherIntent ?? ''}`;
+  const lastNavigation = React.useRef<string | null>(null);
+  const changedNavigation = lastNavigation.current !== navigation;
+  lastNavigation.current = navigation;
+  if (changedNavigation && !autoStart && noteId !== autoStartIntent.noteId) {
+    clearLauncherIntent(currentLauncherIntent());
+  }
+  if (autoStart && changedNavigation) {
+    setLauncherIntent(launcherIntent);
     if (noteId) {
       autoStartIntent.noteId = noteId;
       autoStartIntent.armed = false;
@@ -538,7 +573,7 @@ export function FloatNoteView({
             {noteId ? (
               <FloatNoteBody key={noteId} noteId={noteId} />
             ) : (
-              <FloatSlotResolver fresh={fresh} />
+              <FloatSlotResolver key={launcherIntent ?? `manual-${fresh}`} fresh={fresh} />
             )}
           </div>
         </div>

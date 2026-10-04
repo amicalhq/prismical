@@ -19,7 +19,7 @@
  * OS-initiated close the verbs never saw.
  */
 import { OrganizationsResponseSchema } from '@prismical/api-contracts/apps/v1';
-import { Context, Effect, Layer, SubscriptionRef } from 'effect';
+import { Context, Effect, Layer, Option, SubscriptionRef } from 'effect';
 import { CHANNELS, type FloatStateView, type NavPush } from '@prismical/desktop-contracts';
 import { AppModeService } from '../app-mode/service';
 import { AuthService } from '../auth/service';
@@ -42,6 +42,10 @@ import { WindowRegistry } from './service';
 export interface FloatOpenOptions {
   readonly fresh?: boolean;
   readonly autoStart?: boolean;
+  /** Recheck launcher expiry/session after asynchronous entitlement lookup. */
+  readonly canOpen?: Effect.Effect<boolean>;
+  readonly launcherIntent?: string;
+  readonly onWindow?: (webContents: { id: number; once: (event: 'destroyed', listener: () => void) => unknown }) => void;
 }
 
 export interface FloatBridgeApi {
@@ -141,6 +145,7 @@ export const FloatBridgeLive: Layer.Layer<
                 }
               }
             }
+            if (options?.canOpen && !(yield* options.canOpen)) return false;
             const fresh = options?.fresh === true;
             const autoStart = options?.autoStart === true;
             const current = yield* SubscriptionRef.get(state);
@@ -152,7 +157,7 @@ export const FloatBridgeLive: Layer.Layer<
             const slot = fresh ? null : noteId ?? current.noteId ?? (yield* recording.activeNoteId);
             const search =
               fresh || autoStart
-                ? `?${[fresh ? 'fresh=1' : null, autoStart ? 'autostart=1' : null]
+                ? `?${[fresh ? 'fresh=1' : null, autoStart ? 'autostart=1' : null, options?.launcherIntent ? `launcher=${encodeURIComponent(options.launcherIntent)}` : null]
                     .filter(Boolean)
                     .join('&')}`
                 : '';
@@ -168,6 +173,8 @@ export const FloatBridgeLive: Layer.Layer<
             // (A retarget racing a NEW window's INITIAL load can drop this
             // push — the nav buffer attaches at preload eval; rare enough to
             // accept, revisit in a hardening pass.)
+            const existingWindow = yield* windows.floatNoteWindow;
+            if (options?.onWindow && Option.isSome(existingWindow)) options.onWindow(existingWindow.value.webContents);
             if (fresh) {
               const payload: NavPush = { path: `/float${search}` };
               yield* windows.sendToFloatNoteWindow(CHANNELS.navPush, payload);
@@ -185,7 +192,11 @@ export const FloatBridgeLive: Layer.Layer<
               );
             // `fresh` transiently clears the slot; the float view reports the
             // created note back through open(id), which restores it.
-            if (opened) yield* SubscriptionRef.set(state, { open: true, noteId: slot });
+            if (opened) {
+              const live = yield* windows.floatNoteWindow;
+              if (options?.onWindow && Option.isSome(live)) options.onWindow(live.value.webContents);
+              yield* SubscriptionRef.set(state, { open: true, noteId: slot });
+            }
             return opened;
           }),
         // Collapse HIDES (keep-alive): the renderer stays mounted — live Yjs

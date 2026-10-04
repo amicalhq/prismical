@@ -392,6 +392,7 @@ const ALL_HANDLER_CHANNELS = [
   CHANNELS.capabilityListAiModels,
   CHANNELS.themeSetSource,
   CHANNELS.floatOpen,
+  CHANNELS.launcherValidate,
   CHANNELS.floatCollapse,
   CHANNELS.floatDockBack,
   CHANNELS.modelsGetState,

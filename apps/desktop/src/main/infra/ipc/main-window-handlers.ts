@@ -1,3 +1,4 @@
+import { guardLauncherStart, forgetLauncherWindow, validateLauncherIntent } from '../../domains/launcher/intent';
 import { RemoteConfig } from '../../domains/remote-config/service';
 import type { UpdateAccessView } from '@prismical/desktop-contracts';
 import { LIMITS } from '@desktop/logging/wire';
@@ -598,6 +599,15 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
       )
     );
 
+    yield* acquireHandle(CHANNELS.launcherValidate, (event, payload) => runPromise(
+      validateMainSender(event).pipe(Effect.andThen(Effect.gen(function* () {
+        const value = payload as { id?: unknown; noteId?: unknown } | null;
+        if (!value || typeof value.id !== 'string' || (value.noteId !== null && typeof value.noteId !== 'string')) return false;
+        const context = yield* recording.launcherContext;
+        return validateLauncherIntent(event.sender.id, context.generation, value.id, value.noteId as string | null);
+      })))
+    ));
+
     // recording:start — route the shared record button to the current session's
     // RecordingService. Sender + payload validated (a malformed/foreign
     // sender rejects, like the auth mutations). A valid call folds every business
@@ -624,8 +634,16 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
             return forced.pipe(
               Effect.flatMap(
                 Option.match({
-                  onNone: () =>
-                    recording.start({
+                  onNone: () => Effect.gen(function* () {
+                    const context = yield* recording.launcherContext;
+                    const destroyed = Effect.callback<StartRecordingResult>(resume => {
+                      const end = () => { forgetLauncherWindow(event.sender.id); resume(Effect.succeed({ ok: false, reason: 'no-session' })); };
+                      if (event.sender.isDestroyed()) { end(); return; }
+                      event.sender.once('destroyed', end);
+                      return Effect.sync(() => event.sender.removeListener('destroyed', end));
+                    });
+                    if (event.sender.isDestroyed()) return { ok: false, reason: 'no-session' } as const;
+                    return yield* guardLauncherStart(event.sender.id, context.generation, parsed.data.launcherIntent, parsed.data.noteId ?? null, recording.start({
                       captureMode: parsed.data.captureMode,
                       ...(parsed.data.language !== undefined ? { language: parsed.data.language } : {}),
                       noteId: parsed.data.noteId ?? null,
@@ -634,7 +652,8 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
                       ...(parsed.data.autoPause !== undefined
                         ? { autoPause: parsed.data.autoPause }
                         : {}),
-                    }),
+                    })).pipe(Effect.raceFirst(destroyed));
+                  }),
                   onSome: result => Effect.succeed<StartRecordingResult>(result),
                 })
               )

@@ -324,6 +324,7 @@ const api: MainWindowDesktopApi = {
   // fire-and-forget verbs (the float:state push is the feedback); onState
   // replays the latest slot state to a late subscriber.
   float: {
+    validateLauncherIntent: (id: string, noteId: string | null) => ipcRenderer.invoke(CHANNELS.launcherValidate, { id, noteId }),
     open: (noteId: string | null) => void ipcRenderer.invoke(CHANNELS.floatOpen, { noteId }),
     collapse: () => void ipcRenderer.invoke(CHANNELS.floatCollapse),
     dockBack: () => void ipcRenderer.invoke(CHANNELS.floatDockBack),

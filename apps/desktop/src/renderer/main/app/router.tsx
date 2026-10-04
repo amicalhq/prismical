@@ -162,12 +162,13 @@ function FloatRoute() {
   const { noteId } = useParams({ strict: false }) as { noteId?: string };
   // Dock-initiated starts ride ?fresh=1&autostart=1 (the expansion rule) — set
   // only by main's FloatBridge, consumed once here.
-  const search = useSearch({ strict: false }) as { fresh?: unknown; autostart?: unknown };
+  const search = useSearch({ strict: false }) as { fresh?: unknown; autostart?: unknown; launcher?: unknown };
   return (
     <FloatNoteView
       noteId={noteId}
       fresh={Boolean(search.fresh)}
       autoStart={Boolean(search.autostart)}
+      launcherIntent={typeof search.launcher === 'string' ? search.launcher : undefined}
     />
   );
 }
