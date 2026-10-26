@@ -23,6 +23,10 @@ import {
 } from '@prismical/ai-prompts';
 import type { TransportResponse } from '@prismical/desktop-contracts';
 import { parseAskStreamError } from '@prismical/api-contracts';
+import {
+  AskConversationHistoryResponseSchema,
+  AskConversationResponseSchema,
+} from '@prismical/api-contracts/apps/v1';
 import type { SupportedLocale } from '@prismical/app-i18n';
 import { createId } from '@prismical/id';
 import { LocalBackendLive } from '../../src/main/domains/local-backend/live';
@@ -2009,6 +2013,101 @@ describe('Ask stream', () => {
       assert.include(sse, '"type":"error"');
       assert.strictEqual(failureOf(sse).code, 'ASK_REQUEST_FAILED');
       assert.strictEqual(failureOf(sse).details?.retryable, false);
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+});
+
+describe('Ask conversation history', () => {
+  const seedConversations = (
+    product: ProductDbService,
+    rows: ReadonlyArray<{ id: string; title: string | null; updatedAt: string }>
+  ) =>
+    Effect.sync(() =>
+      product.db
+        .insert(schema.askConversation)
+        .values(
+          rows.map(row => ({
+            ...row,
+            messages: [{ role: 'user', content: `Question ${row.id}` }],
+            createdAt: row.updatedAt,
+          }))
+        )
+        .run()
+    );
+  const history = (api: WorkspaceBackendApi, query: Record<string, string> = {}) =>
+    get(api, '/apps/v1/me/ask/conversations/history', query).pipe(
+      Effect.map(res => AskConversationHistoryResponseSchema.parse(expectOk(res, 200).bodyJson))
+    );
+
+  it.effect('pages summaries newest first, breaking time ties by id', () =>
+    Effect.gen(function* () {
+      const { api, product, scope } = yield* build();
+      yield* seedConversations(
+        product,
+        Array.from({ length: 31 }, (_, i) => ({
+          id: `cnv_${String(i).padStart(2, '0')}`,
+          title: `Chat ${i}`,
+          updatedAt: i < 2 ? NOW : new Date(Date.parse(NOW) - i * 60_000).toISOString(),
+        }))
+      );
+      const first = yield* history(api);
+      assert.strictEqual(first.conversations.length, 30);
+      assert.deepStrictEqual(
+        first.conversations.slice(0, 3).map(c => c.id),
+        ['cnv_01', 'cnv_00', 'cnv_02']
+      );
+      assert.deepStrictEqual(first.conversations[0], {
+        id: 'cnv_01',
+        title: 'Chat 1',
+        updatedAt: NOW,
+      });
+      assert.strictEqual(first.nextOffset, 30);
+      const second = yield* history(api, { offset: '30' });
+      assert.deepStrictEqual(second.conversations.map(c => c.id), ['cnv_30']);
+      assert.isNull(second.nextOffset);
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+
+  it.effect('searches titles literally and case-insensitively', () =>
+    Effect.gen(function* () {
+      const { api, product, scope } = yield* build();
+      yield* seedConversations(product, [
+        { id: 'cnv_plan', title: 'Q4 Planning', updatedAt: NOW },
+        { id: 'cnv_pct', title: '100% done', updatedAt: NOW },
+        { id: 'cnv_under', title: 'snake_case names', updatedAt: NOW },
+        { id: 'cnv_untitled', title: null, updatedAt: NOW },
+      ]);
+      const ids = (search: string) =>
+        history(api, { search }).pipe(Effect.map(page => page.conversations.map(c => c.id)));
+      assert.deepStrictEqual(yield* ids('  planning '), ['cnv_plan']);
+      assert.deepStrictEqual(yield* ids('%'), ['cnv_pct']);
+      assert.deepStrictEqual(yield* ids('e_c'), ['cnv_under']);
+      assert.deepStrictEqual(yield* ids('missing'), []);
+      assert.strictEqual((yield* ids('')).length, 4);
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+
+  it.effect('loads one conversation by id and rejects unknown or invalid input', () =>
+    Effect.gen(function* () {
+      const { api, product, scope } = yield* build();
+      yield* seedConversations(product, [
+        { id: 'cnv_old', title: 'Old', updatedAt: '2029-01-01T00:00:00.000Z' },
+        { id: 'cnv_new', title: 'New', updatedAt: NOW },
+      ]);
+      const old = expectOk(yield* get(api, '/apps/v1/me/ask/conversations/cnv_old'), 200);
+      assert.deepStrictEqual(AskConversationResponseSchema.parse(old.bodyJson), {
+        id: 'cnv_old',
+        messages: [{ role: 'user', content: 'Question cnv_old' }],
+      });
+      const latest = expectOk(yield* get(api, '/apps/v1/me/ask/conversations'), 200);
+      assert.strictEqual(latest.bodyJson.id, 'cnv_new');
+      expectOk(yield* get(api, '/apps/v1/me/ask/conversations/cnv_none'), 404);
+      expectOk(yield* get(api, `/apps/v1/me/ask/conversations/${'x'.repeat(65)}`), 400);
+      expectOk(yield* get(api, '/apps/v1/me/ask/conversations/history', { offset: '-1' }), 400);
+      expectOk(yield* get(api, '/apps/v1/me/ask/conversations/cnv_old/extra'), 404);
       yield* Scope.close(scope, Exit.void);
     })
   );

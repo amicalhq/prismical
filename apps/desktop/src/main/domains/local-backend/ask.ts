@@ -26,6 +26,8 @@ import {
 } from 'ai';
 import {
   AskAppRequestSchema,
+  AskConversationHistoryQuerySchema,
+  AskConversationParamsSchema,
   AskStoredMessageSchema,
   type AskStoredMessage,
 } from '@prismical/api-contracts/apps/v1';
@@ -50,7 +52,7 @@ import * as schema from '../../infra/product-db/schema';
 import type { LocalAiPort } from './ai-port';
 import { searchNotes, type SearchScope } from './search';
 import { loadSpeakerLabeler } from './speakers';
-import { describeDbError, ok, type LocalDb, type RouteResult } from './wire';
+import { describeDbError, invalidRequest, notFound, ok, type LocalDb, type RouteResult } from './wire';
 
 export interface AskDeps {
   readonly locale: string;
@@ -60,9 +62,10 @@ export interface AskDeps {
   readonly log: (message: string, data?: LogMetadata['context']) => void;
 }
 
-// ── GET /me/ask/conversations ──────────────────────────────────────────────
+// ── GET /me/ask/conversations (+ /history, /:id) ───────────────────────────
 
 const MAX_STORED_MESSAGES = 100;
+const HISTORY_PAGE_SIZE = 30;
 
 const storedMessages = (raw: unknown): AskStoredMessage[] =>
   Array.isArray(raw)
@@ -72,15 +75,52 @@ const storedMessages = (raw: unknown): AskStoredMessage[] =>
       })
     : [];
 
-/** The most recently updated conversation, or null (core's `loadConversation`). */
-export async function askConversations(db: LocalDb): Promise<RouteResult> {
+/**
+ * The most recently updated conversation, or null; with an id, that
+ * conversation or 404 (core's `loadConversation`).
+ */
+export async function askConversations(db: LocalDb, id?: string): Promise<RouteResult> {
+  if (id !== undefined && !AskConversationParamsSchema.safeParse({ id }).success) {
+    return invalidRequest();
+  }
   const rows = await db
     .select()
     .from(schema.askConversation)
+    .where(id === undefined ? undefined : eq(schema.askConversation.id, id))
     .orderBy(desc(schema.askConversation.updatedAt))
     .limit(1);
   const row = rows[0];
-  return ok(row === undefined ? null : { id: row.id, messages: storedMessages(row.messages) });
+  if (row === undefined) return id === undefined ? ok(null) : notFound();
+  return ok({ id: row.id, messages: storedMessages(row.messages) });
+}
+
+/** Summaries newest first, with a literal title search (core's `listConversations`). */
+export async function askConversationHistory(
+  db: LocalDb,
+  query: Record<string, string>
+): Promise<RouteResult> {
+  const parsed = AskConversationHistoryQuerySchema.safeParse(query);
+  if (!parsed.success) return invalidRequest();
+  const { search, offset } = parsed.data;
+  const rows = await db
+    .select({
+      id: schema.askConversation.id,
+      title: schema.askConversation.title,
+      updatedAt: schema.askConversation.updatedAt,
+    })
+    .from(schema.askConversation)
+    .where(
+      search
+        ? sql`instr(lower(${schema.askConversation.title}), lower(${search})) > 0`
+        : undefined
+    )
+    .orderBy(desc(schema.askConversation.updatedAt), desc(schema.askConversation.id))
+    .limit(HISTORY_PAGE_SIZE + 1)
+    .offset(offset);
+  return ok({
+    conversations: rows.slice(0, HISTORY_PAGE_SIZE),
+    nextOffset: rows.length > HISTORY_PAGE_SIZE ? offset + HISTORY_PAGE_SIZE : null,
+  });
 }
 
 const deriveTitle = (content: string): string => {

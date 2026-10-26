@@ -8,9 +8,10 @@
  *    seeded, user skills over the same 4-route dialect);
  *  - the AI lanes: /search (FTS5), /skills/:id/run, /skill-runs/accept
  *    + /restore, /enhanced-recordings, /title-runs/apply + /undo,
- *    /ask/conversations, /instances (+ /:id/models), /model-defaults —
- *    served from the product store + AiProvider; POST /ask itself is the
- *    stream lane (LocalBackendLive.openAskStream), never a unary request;
+ *    /ask/conversations (+ /history, /:id), /instances (+ /:id/models),
+ *    /model-defaults — served from the product store + AiProvider; POST /ask
+ *    itself is the stream lane (LocalBackendLive.openAskStream), never a
+ *    unary request;
  *  - GET-empty lists for the cloud-only/deferred lanes the shell polls
  *    (calendars, events, note-generation-audits,
  *    team-vocabulary) — `{results:[]}` keeps their consumers in
@@ -34,7 +35,7 @@ import {
 import type { TransportRequest } from '@prismical/desktop-contracts';
 import type { LocalAiPort } from './ai-port';
 import { getModelDefaults, instanceModels, listInstances, setModelDefault } from './ai-routes';
-import { askConversations } from './ask';
+import { askConversationHistory, askConversations } from './ask';
 import { createNoteTag, deleteNoteTag, listNoteTags } from './junctions';
 import { createNote, listNotes, removeNote, updateNote } from './notes';
 import { getLocalPreferences, writeLocalPreferences } from './preferences';
@@ -239,9 +240,9 @@ export const handleLocalRequest = async (
     return notFound();
   }
   if (route === 'ask') {
-    return method === 'GET' && rest.length === 1 && rest[0] === 'conversations'
-      ? askConversations(db)
-      : notFound();
+    if (method !== 'GET' || rest[0] !== 'conversations' || rest.length > 2) return notFound();
+    if (rest.length === 1) return askConversations(db);
+    return rest[1] === 'history' ? askConversationHistory(db, query) : askConversations(db, rest[1]);
   }
   if (route === 'instances') {
     if (method === 'GET' && rest.length === 0) return listInstances(ai);
