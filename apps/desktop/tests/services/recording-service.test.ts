@@ -120,7 +120,7 @@ const streamBackend = (peer: ReturnType<typeof makeFakeRecordingStream>, enabled
 /** The stream backend plus core's retry-finalization route; null answers with a transport error. */
 const retryBackend = (
   peer: ReturnType<typeof makeFakeRecordingStream>,
-  retry: { status: number | null; calls: string[] }
+  retry: { status: number | null; calls: string[]; hold?: Promise<void> }
 ) =>
   (api: WorkspaceBackendApi): WorkspaceBackendApi => {
     const base = streamBackend(peer)(api);
@@ -129,10 +129,12 @@ const retryBackend = (
       request: req => {
         if (req.method !== 'POST' || !req.path.endsWith('/retry-finalization')) return base.request(req);
         retry.calls.push(req.path);
-        return Effect.succeed(
-          retry.status === null
-            ? { error: { code: 'INTERNAL' as const } }
-            : { ok: true as const, status: retry.status, bodyJson: { status: 'pending' } }
+        return Effect.promise(() => retry.hold ?? Promise.resolve()).pipe(
+          Effect.as(
+            retry.status === null
+              ? { error: { code: 'INTERNAL' as const } }
+              : { ok: true as const, status: retry.status, bodyJson: { status: 'pending' } }
+          )
         );
       },
     };
@@ -3927,7 +3929,10 @@ describe('RecordingService WSS', () => {
   );
 
   describe('a finalization core reported failed', () => {
-    const failFinalization = (reason: string, retry: { status: number | null; calls: string[] }) =>
+    const failFinalization = (
+      reason: string,
+      retry: { status: number | null; calls: string[]; hold?: Promise<void> }
+    ) =>
       Effect.gen(function* () {
         const peer = makeFakeRecordingStream();
         peer.autoFinalize = false;
@@ -3997,10 +4002,34 @@ describe('RecordingService WSS', () => {
         assert.deepStrictEqual((yield* SubscriptionRef.get(h.service.state)).failure, {
           recordingId: id, reason: 'processing-failed',
         });
+        // The refusal is stored: replaying the failed row keeps it final.
+        yield* h.drain;
+        assert.deepStrictEqual((yield* SubscriptionRef.get(h.service.state)).failure, {
+          recordingId: id, reason: 'processing-failed',
+        });
         // No longer retryable: a later request never reaches core.
         assert.isFalse(yield* h.service.retryFinalization(id));
         assert.lengthOf(retry.calls, 3);
         assert.strictEqual((yield* h.db.getRecoveryOutbox(id))!.status, 'failed');
+        yield* Scope.close(h.sessionScope, Exit.void);
+      }).pipe(Effect.scoped)
+    );
+
+    it.live('accepts one retry at a time', () =>
+      Effect.gen(function* () {
+        let release!: () => void;
+        const retry = {
+          status: 202 as number | null,
+          calls: [] as string[],
+          hold: new Promise<void>(resolve => { release = resolve; }),
+        };
+        const { h, id } = yield* failFinalization('provider_error', retry);
+        const first = yield* Effect.forkChild(h.service.retryFinalization(id));
+        yield* poll(Effect.sync(() => retry.calls.length === 1), 'first retry sent');
+        assert.isFalse(yield* h.service.retryFinalization(id));
+        release();
+        assert.isTrue(yield* Fiber.join(first));
+        assert.lengthOf(retry.calls, 1);
         yield* Scope.close(h.sessionScope, Exit.void);
       }).pipe(Effect.scoped)
     );

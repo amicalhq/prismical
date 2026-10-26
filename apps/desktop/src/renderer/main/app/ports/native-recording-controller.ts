@@ -148,8 +148,9 @@ export function createNativeRecordingController(options: {
     const completed = state.completedRecordings?.find(row => row.noteId !== null);
     // A settled failure can be replayed while recovery or another window updates state.
     // Report it once per controller, and do not attach an old result to a pending Start.
+    // A parked session still takes every push: its failure can become final, or fail again.
     if (!active && state.failure?.recordingId === state.recordingId &&
-      ((reportedFailureId === state.recordingId && !completed) ||
+      ((reportedFailureId === state.recordingId && !completed && !session?.parked) ||
         (session && !session.recordingId && !session.startingNative))) return;
     const recordingId = active ? state.recordingId : completed?.recordingId ?? state.recordingId;
     const noteId = active ? state.noteId : completed?.noteId ?? state.noteId;
@@ -177,6 +178,7 @@ export function createNativeRecordingController(options: {
     if (s.parked && state.failure?.recordingId !== s.recordingId) {
       s.parked = false;
       s.claiming = undefined;
+      reportedFailureId = undefined;
       publish({ retryAvailable: false });
     }
     let current = scope(s);

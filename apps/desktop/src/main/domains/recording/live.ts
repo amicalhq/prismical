@@ -1871,8 +1871,18 @@ export const RecordingServiceLive: Layer.Layer<
 
     // The owner asks core to rerun a finalization it reported failed. Once core queues it, the
     // durable job goes back to the recovery worker, which reopens the stream and waits for the
-    // new result like any stopped recording. 404/409 are core's final refusals.
+    // new result like any stopped recording. 404/409 are core's final refusals. One request per
+    // recording at a time: a second 202 would replace the completion a claim already waits on.
+    const retrying = new Set<string>();
     const retryFinalization: RecordingServiceApi['retryFinalization'] = recordingId =>
+      Effect.suspend(() => {
+        if (retrying.has(recordingId)) return Effect.succeed(false);
+        retrying.add(recordingId);
+        return requestFinalizationRetry(recordingId).pipe(
+          Effect.ensuring(Effect.sync(() => retrying.delete(recordingId)))
+        );
+      });
+    const requestFinalizationRetry = (recordingId: string) =>
       Effect.gen(function* () {
         const current = yield* SubscriptionRef.get(state);
         if (
@@ -1888,11 +1898,18 @@ export const RecordingServiceLive: Layer.Layer<
           return false;
         const response = yield* coreClient.request({
           method: 'POST',
-          path: `/apps/v1/me/recordings/${recordingId}/retry-finalization`,
+          path: `/apps/v1/me/recordings/${encodeURIComponent(recordingId)}/retry-finalization`,
           body: {},
         });
         const status = 'ok' in response ? response.status : null;
         if (status === 404 || status === 409) {
+          // Store the refusal: a `stream:` reason never becomes retryable when recovery replays it.
+          const code = row.lastError?.startsWith(FINALIZED_FAILURE)
+            ? row.lastError.slice(FINALIZED_FAILURE.length)
+            : 'finalization-failed';
+          yield* db
+            .updateRecoveryOutbox(recordingId, { lastError: `stream:${code}` })
+            .pipe(Effect.catch(() => Effect.void));
           yield* SubscriptionRef.updateSome(state, latest =>
             latest.failure?.recordingId === recordingId && latest.failure.retryable
               ? Option.some({ ...latest, failure: { recordingId, reason: latest.failure.reason } })

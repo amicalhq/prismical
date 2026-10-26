@@ -87,7 +87,7 @@ test.describe('main-window preload contract', () => {
       'switchOrg',
     ]);
     // The native record button + live transcript surface, exactly.
-    expect(shape.recording).toEqual(['claimCompletion', 'onStateChanged', 'pause', 'resume', 'setLanguage', 'setSkillWorkflow', 'start', 'stop']);
+    expect(shape.recording).toEqual(['claimCompletion', 'onStateChanged', 'pause', 'resume', 'retryFinalization', 'setLanguage', 'setSkillWorkflow', 'start', 'stop']);
     // The device-settings read/write/observe surface, exactly.
     expect(shape.settings).toEqual(['get', 'onChanged', 'set']);
     // The local whisper model manager surface, exactly.

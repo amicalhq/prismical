@@ -292,6 +292,35 @@ describe('native recording workflow', () => {
       await vi.waitFor(() => expect(f.workflow.getSnapshot()).toMatchObject({ kind: 'skill', recordingId: 'rec_1' }));
     });
 
+    it('parks again when the retried finalization fails again', async () => {
+      const f = fixture(failed);
+      const claim = deferred<boolean>();
+      vi.mocked(f.control.claimCompletion).mockReturnValueOnce(claim.promise);
+      await f.client.retry();
+      f.push({ ...capturing, status: 'idle', finalizingRecordingIds: ['rec_1'] });
+      expect(f.control.claimCompletion).toHaveBeenCalledOnce();
+      f.push(failed);
+      claim.resolve(false);
+      await claim.promise;
+      await Promise.resolve();
+      expect(f.workflow.getSnapshot()).toMatchObject({ kind: 'recording', phase: 'finalizing' });
+      expect(f.client.getSnapshot()).toMatchObject({
+        error: 'recording.errors.someAudioNotTranscribed', retryAvailable: true,
+      });
+    });
+
+    it('fails when a refusal arrives after the retry reply, in every parked window', async () => {
+      const f = fixture(failed);
+      vi.mocked(f.control.retryFinalization!).mockResolvedValueOnce(false);
+      await f.client.retry();
+      expect(f.client.getSnapshot().retryAvailable).toBe(true);
+      f.push(refused);
+      expect(f.client.getSnapshot()).toMatchObject({
+        error: 'recording.errors.endedUnexpectedly', retryAvailable: false,
+      });
+      expect(f.workflow.getSnapshot()).toEqual({ kind: 'idle' });
+    });
+
     it('offers Retry again after a transient refusal and fails once core refuses it', async () => {
       const f = fixture(failed);
       vi.mocked(f.control.retryFinalization!).mockResolvedValueOnce(false);
