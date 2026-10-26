@@ -58,6 +58,8 @@ export interface NativeRecordingState {
   readonly failure?: {
     readonly recordingId: string;
     readonly reason: 'transcription-incomplete' | 'processing-failed';
+    /** The server reported a failed finalization that `retryFinalization` may run again. */
+    readonly retryable?: boolean;
   };
   readonly finalizingRecordingIds: readonly string[];
   readonly completedRecordings: readonly {
@@ -143,6 +145,11 @@ export interface NativeRecordingControl {
   /** Pause/resume without ending or replacing the native recording. */
   pause(recordingId: string): Promise<boolean>;
   resume(recordingId: string): Promise<boolean>;
+  /**
+   * Ask the server to run a retryable failed finalization again. True once it is queued; the
+   * outcome arrives through `subscribe`. False leaves the failure in place.
+   */
+  retryFinalization?(recordingId: string): Promise<boolean>;
   /**
    * Subscribe to main's RecordingState pushes; the latest state is replayed
    * immediately (so a late subscriber never renders from nothing). Returns an
