@@ -26,7 +26,12 @@ import {
   type PendingChunk,
 } from './chunker';
 import { wavFileName } from './recovery-writer';
-import { RecordingService, type RecordingServiceApi, type RecordingState } from './service';
+import {
+  FINALIZED_FAILURE,
+  RecordingService,
+  type RecordingServiceApi,
+  type RecordingState,
+} from './service';
 import { saveRecordingTranscriptionConfig } from './language';
 import { WorkspaceIdentity, sameWorkspace } from '../../runtime/workspace-identity';
 import { RecordingStore } from './store';
@@ -257,6 +262,11 @@ export const drainRecoveries = (
     const drainRow = (original: RecoveryOutboxRow): Effect.Effect<DrainOutcome> =>
       Effect.gen(function* () {
         if (original.status === 'failed') {
+          // A retry can requeue the row after this pass listed it; replay only a current failure.
+          const current = yield* db.getRecoveryOutbox(original.recordingId).pipe(
+            Effect.catch(() => Effect.succeed(original))
+          );
+          if (current?.status !== 'failed') return 'skipped' as const;
           yield* resolveCompletion(
             original.recordingId, original.phase === 'cleanup', undefined,
             original.streamConfig ? original.lastError?.replace(/^stream:/, '') : undefined
@@ -418,10 +428,9 @@ export const drainRecoveries = (
             yield* update({ durationMs: receipt.durationMs });
             finalSegments = receipt.segments;
             if (receipt.status === 'failed') {
-              yield* resolveCompletion(
-                row.recordingId, false, finalSegments, receipt.reason ?? 'finalization-failed'
-              );
-              return yield* fail(row, `stream:${receipt.reason ?? 'finalization-failed'}`);
+              const reason = `${FINALIZED_FAILURE}${receipt.reason ?? 'finalization-failed'}`;
+              yield* resolveCompletion(row.recordingId, false, finalSegments, reason);
+              return yield* fail(row, reason);
             }
           }
 

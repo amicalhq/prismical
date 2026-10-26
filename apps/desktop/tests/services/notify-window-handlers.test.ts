@@ -342,6 +342,7 @@ describe('notify-window IPC handlers', () => {
       const recApi: RecordingServiceApi = {
         setLanguage: () => Effect.succeed(false),
         claimCompletion: () => Effect.succeed(false),
+        retryFinalization: () => Effect.succeed(false),
         resolveCompletion: () => Effect.void,
         state: yield* SubscriptionRef.make<RecordingState>(idleRecordingState),
         level: yield* SubscriptionRef.make(0),
@@ -429,6 +430,7 @@ describe('notify-window IPC handlers', () => {
         const recApi: RecordingServiceApi = {
           setLanguage: () => Effect.succeed(false),
           claimCompletion: () => Effect.succeed(false),
+          retryFinalization: () => Effect.succeed(false),
         resolveCompletion: () => Effect.void,
           state: recState,
           level: yield* SubscriptionRef.make(0),
@@ -486,6 +488,7 @@ describe('notify-window IPC handlers', () => {
       const recApi: RecordingServiceApi = {
         setLanguage: () => Effect.succeed(false),
         claimCompletion: () => Effect.succeed(false),
+        retryFinalization: () => Effect.succeed(false),
         resolveCompletion: () => Effect.void,
         state: recState,
         level: yield* SubscriptionRef.make(0),

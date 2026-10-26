@@ -370,6 +370,11 @@ const recordingPort: RecordingPort = {
         log('recording.resume invoke failed', error);
         return false;
       }),
+    retryFinalization: recordingId =>
+      window.desktop.recording.retryFinalization({ recordingId }).catch(error => {
+        log('recording.retryFinalization invoke failed', error);
+        return false;
+      }),
     subscribe: listener =>
       window.desktop.recording.onStateChanged(state => listener(toNativeState(state))),
   },

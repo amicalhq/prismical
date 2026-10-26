@@ -357,6 +357,7 @@ const ALL_HANDLER_CHANNELS = [
   CHANNELS.recordingPause,
   CHANNELS.recordingSetLanguage,
   CHANNELS.recordingResume,
+  CHANNELS.recordingRetryFinalization,
   CHANNELS.loggingGetConfig,
   CHANNELS.loggingWrite,
   CHANNELS.telemetryGetState,
@@ -417,6 +418,7 @@ const makeFakeRecordingService = () =>
     const languageCalls: Array<{ recordingId: string; language: string }> = [];
     const claimCalls: string[] = [];
     let claimResult = false;
+    const retryCalls: string[] = [];
     let startResult: Effect.Effect<string, RecordingBusyError | PermissionError> =
       Effect.succeed('rec_fake');
     const api: RecordingServiceApi = {
@@ -428,6 +430,10 @@ const makeFakeRecordingService = () =>
       claimCompletion: id => Effect.sync(() => {
         claimCalls.push(id);
         return claimResult;
+      }),
+      retryFinalization: id => Effect.sync(() => {
+        retryCalls.push(id);
+        return id === 'rec_failed';
       }),
       keepRecording: () => Effect.succeed(true),
       pauseFromPrompt: () => Effect.succeed(true),
@@ -462,6 +468,7 @@ const makeFakeRecordingService = () =>
       resumeCalls,
       languageCalls,
       claimCalls,
+      retryCalls,
       setClaim: (accepted: boolean) => { claimResult = accepted; },
       setStart: (effect: Effect.Effect<string, RecordingBusyError | PermissionError>) => {
         startResult = effect;
@@ -1814,6 +1821,33 @@ describe('registerMainWindowHandlers', () => {
         assert.isTrue(Exit.isFailure(rejected));
       }
       assert.deepStrictEqual(rec.claimCalls, ['rec_stale', 'rec_1', 'rec_1']);
+      yield* Scope.close(scope, Exit.void);
+    })
+  );
+
+  it.effect('recording:retryFinalization forwards to the workspace and rejects malformed or foreign requests', () =>
+    Effect.gen(function* () {
+      const { layer } = build();
+      const scope = yield* Scope.make();
+      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
+      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
+      yield* Context.get(ctx, WindowRegistry).openMainWindow.pipe(Scope.provide(scope));
+      const wc = fake.__windowInstances().at(-1)?.webContents;
+      const retry = (recordingId: string) => Effect.promise(() => fake.ipcMain.invoke(
+        CHANNELS.recordingRetryFinalization, { sender: wc }, { recordingId }
+      ));
+      assert.isFalse(yield* retry('rec_failed'), 'no workspace owns the recording');
+      const rec = yield* makeFakeRecordingService();
+      yield* Context.get(ctx, RecordingBridge).register(rec.api).pipe(Scope.provide(scope));
+      assert.isTrue(yield* retry('rec_failed'));
+      assert.isFalse(yield* retry('rec_other'));
+      for (const [sender, payload] of [[wc, {}], [{ id: 9999 }, { recordingId: 'rec_failed' }]]) {
+        const rejected = yield* Effect.exit(Effect.tryPromise(() => fake.ipcMain.invoke(
+          CHANNELS.recordingRetryFinalization, { sender }, payload
+        )));
+        assert.isTrue(Exit.isFailure(rejected));
+      }
+      assert.deepStrictEqual(rec.retryCalls, ['rec_failed', 'rec_other']);
       yield* Scope.close(scope, Exit.void);
     })
   );

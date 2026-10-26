@@ -47,6 +47,7 @@ function fixture(initial = idle) {
     setLanguage: vi.fn(async () => true),
     pause: vi.fn(async () => true), resume: vi.fn(async () => true),
     stop: vi.fn(async () => {}), claimCompletion: vi.fn(async () => true),
+    retryFinalization: vi.fn(async () => true),
     subscribe: fn => { listener = fn; fn(state); return offNative; },
   };
   const workflow = createWorkflowRuntime();
@@ -243,6 +244,81 @@ describe('native recording workflow', () => {
     expect(f.client.getSnapshot()).toMatchObject({ error, completedRecording: null, liveSegments: [segment] });
     expect(f.control.claimCompletion).not.toHaveBeenCalled();
     expect(f.workflow.getSnapshot()).toEqual({ kind: 'idle' });
+  });
+
+  describe('a retryable failed finalization', () => {
+    const failed: NativeRecordingState = { ...capturing, status: 'idle',
+      failure: { recordingId: 'rec_1', reason: 'processing-failed', retryable: true } };
+    const refused: NativeRecordingState = { ...failed,
+      failure: { recordingId: 'rec_1', reason: 'processing-failed' } };
+
+    it('holds the stopped workflow with Retry, then completes once main requeues it', async () => {
+      const f = fixture(capturing);
+      await f.client.stop();
+      f.push(failed);
+      f.push(failed);
+      expect(f.client.getSnapshot()).toMatchObject({
+        error: 'recording.errors.someAudioNotTranscribed', retryAvailable: true, completedRecording: null,
+      });
+      expect(f.workflow.getSnapshot()).toMatchObject({ kind: 'recording', phase: 'finalizing' });
+      expect(f.control.claimCompletion).not.toHaveBeenCalled();
+
+      await f.client.retry();
+      expect(f.control.retryFinalization).toHaveBeenCalledExactlyOnceWith('rec_1');
+      expect(f.client.getSnapshot().retryAvailable).toBe(false);
+      f.push({ ...capturing, status: 'idle', finalizingRecordingIds: ['rec_1'] });
+      expect(f.control.claimCompletion).toHaveBeenCalledExactlyOnceWith('rec_1');
+      await vi.waitFor(() => expect(f.workflow.getSnapshot()).toMatchObject({ kind: 'skill', recordingId: 'rec_1' }));
+      expect(f.client.getSnapshot().completedRecording).toMatchObject({ recordingId: 'rec_1' });
+    });
+
+    it('stays parked when an earlier claim is refused, and claims again after a retry', async () => {
+      const f = fixture(capturing);
+      const claim = deferred<boolean>();
+      vi.mocked(f.control.claimCompletion).mockReturnValueOnce(claim.promise);
+      await f.client.stop();
+      f.push({ ...capturing, status: 'idle', finalizingRecordingIds: ['rec_1'] });
+      expect(f.control.claimCompletion).toHaveBeenCalledOnce();
+      f.push(failed);
+      claim.resolve(false);
+      await claim.promise;
+      await Promise.resolve();
+      expect(f.workflow.getSnapshot()).toMatchObject({ kind: 'recording', phase: 'finalizing' });
+      expect(f.client.getSnapshot().retryAvailable).toBe(true);
+
+      await f.client.retry();
+      f.push({ ...capturing, status: 'idle', finalizingRecordingIds: ['rec_1'] });
+      expect(f.control.claimCompletion).toHaveBeenCalledTimes(2);
+      await vi.waitFor(() => expect(f.workflow.getSnapshot()).toMatchObject({ kind: 'skill', recordingId: 'rec_1' }));
+    });
+
+    it('offers Retry again after a transient refusal and fails once core refuses it', async () => {
+      const f = fixture(failed);
+      vi.mocked(f.control.retryFinalization!).mockResolvedValueOnce(false);
+      await f.client.retry();
+      expect(f.client.getSnapshot()).toMatchObject({ retryAvailable: true });
+      expect(f.workflow.getSnapshot()).toMatchObject({ kind: 'recording', phase: 'finalizing' });
+
+      vi.mocked(f.control.retryFinalization!).mockImplementationOnce(async () => {
+        f.push(refused);
+        return false;
+      });
+      await f.client.retry();
+      expect(f.client.getSnapshot()).toMatchObject({
+        error: 'recording.errors.endedUnexpectedly', retryAvailable: false,
+      });
+      expect(f.workflow.getSnapshot()).toEqual({ kind: 'idle' });
+    });
+
+    it('ends the held workflow on request without asking main to retry', async () => {
+      const f = fixture(failed);
+      await f.client.abandon();
+      expect(f.workflow.getSnapshot()).toEqual({ kind: 'idle' });
+      expect(f.client.getSnapshot()).toMatchObject({ error: null, retryAvailable: false });
+      f.push(failed);
+      expect(f.workflow.getSnapshot()).toEqual({ kind: 'idle' });
+      expect(f.control.retryFinalization).not.toHaveBeenCalled();
+    });
   });
 
   it('restores a terminal failure after renderer reload', () => {

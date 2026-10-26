@@ -38,6 +38,7 @@ it.effect(
         pauseFromPrompt: () => Effect.succeed(true),
         keepRecording: () => Effect.succeed(true),
         claimCompletion: () => Effect.succeed(true),
+        retryFinalization: () => Effect.succeed(false),
         resolveCompletion: () => Effect.void,
       };
       const bridge = Context.get(

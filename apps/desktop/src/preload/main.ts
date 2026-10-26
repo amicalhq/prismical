@@ -285,6 +285,8 @@ const api: MainWindowDesktopApi = {
       ipcRenderer.invoke(CHANNELS.recordingResume, request),
     setLanguage: (request: RecordingLanguageRequest) =>
       ipcRenderer.invoke(CHANNELS.recordingSetLanguage, request),
+    retryFinalization: (request: RecordingControlRequest) =>
+      ipcRenderer.invoke(CHANNELS.recordingRetryFinalization, request),
     onStateChanged: recordingBuffer.onStateChanged,
   },
 

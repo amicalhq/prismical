@@ -29,6 +29,8 @@ interface Session {
   claiming?: Promise<void>;
   startingNative?: boolean;
   finalSegmentCount?: number;
+  /** A retryable failed finalization holds the stopped workflow open with Retry. */
+  parked?: boolean;
 }
 
 const emptySnapshot = (): RecordingSessionSnapshot => ({
@@ -76,7 +78,24 @@ export function createNativeRecordingController(options: {
     const current = scope(s);
     if (session === s) session = undefined;
     if (current) workflow.dispatch({ type: 'recordingFailed', ...current, captureClosed: true });
-    publish({ error, autoStopRequested: false, micSilent: false });
+    publish({ error, autoStopRequested: false, micSilent: false, retryAvailable: false });
+  }
+  function settle(s: Session, failure: NonNullable<NativeRecordingState['failure']>) {
+    reportedFailureId = s.recordingId;
+    if (failure.retryable && control.retryFinalization) {
+      // Like web: keep the stopped workflow open with Retry until main reruns it or it is ended.
+      s.parked = true;
+      drained(s);
+      publish({
+        error: 'recording.errors.someAudioNotTranscribed',
+        retryAvailable: true,
+        autoStopRequested: false,
+        micSilent: false,
+      });
+      return;
+    }
+    fail(s, failure.reason === 'transcription-incomplete'
+      ? 'recording.errors.someAudioNotTranscribed' : 'recording.errors.endedUnexpectedly');
   }
   function admit(noteId: string, recordingId?: string): Session | undefined {
     const view = auth.getSession();
@@ -105,7 +124,7 @@ export function createNativeRecordingController(options: {
     if (s.claiming || !s.recordingId) return;
     drained(s);
     s.claiming = control.claimCompletion(s.recordingId).then(claimed => {
-      if (!owns(s)) return;
+      if (!owns(s) || s.parked) return;
       const current = scope(s);
       if (!current || current.phase !== 'finalizing') return;
       const autoSkill = claimed && getAutoEnhanceEnabled() && s.noteId !== skipAutoEnhanceForNote
@@ -154,6 +173,12 @@ export function createNativeRecordingController(options: {
       return;
     }
     if (state.recordingId) s.recordingId = state.recordingId;
+    // Main cleared the failure (a retry was queued here or in another window): claim again below.
+    if (s.parked && state.failure?.recordingId !== s.recordingId) {
+      s.parked = false;
+      s.claiming = undefined;
+      publish({ retryAvailable: false });
+    }
     let current = scope(s);
     if (!current) return;
     if (s.recordingId && current.phase === 'starting' && state.status !== 'starting') {
@@ -185,9 +210,7 @@ export function createNativeRecordingController(options: {
     // Main's notify window owns the prompt actions; the app only projects pause attribution.
     hadAutoPausePrompt = state.autoPausePrompt != null;
     if (state.failure && state.failure.recordingId === s.recordingId) {
-      reportedFailureId = s.recordingId;
-      fail(s, state.failure.reason === 'transcription-incomplete'
-        ? 'recording.errors.someAudioNotTranscribed' : 'recording.errors.endedUnexpectedly');
+      settle(s, state.failure);
       return;
     }
     if ((state.status === 'idle' || state.status === 'error') && s.recordingId) {
@@ -309,12 +332,26 @@ export function createNativeRecordingController(options: {
     }
     return { segments: snapshot.liveSegments.length };
   }
+  async function retry() {
+    const s = session;
+    if (!s?.recordingId || !s.parked || !owns(s) || !control.retryFinalization) return;
+    publish({ retryAvailable: false });
+    const queued = await control.retryFinalization(s.recordingId).catch(() => false);
+    // Once queued, main's push clears the failure and `receive` resumes the completion claim.
+    const failure = nativeState?.failure;
+    if (!queued && owns(s) && s.parked && failure?.recordingId === s.recordingId) settle(s, failure);
+  }
   return {
     getSnapshot: () => snapshot,
     subscribe(listener) { connect(); listeners.add(listener); return () => { listeners.delete(listener); }; },
     start, pause: () => changePause(true), resume: () => changePause(false), stop, setLanguage,
-    // Durable native jobs retry in main. There is no renderer-owned audio to abandon.
-    retry: async () => {}, abandon: async () => {},
+    // Durable native jobs retry in main; Retry only reruns a finalization core reported failed.
+    // Ending that parked workflow leaves main's retained audio in place.
+    retry,
+    abandon: async () => {
+      const s = session;
+      if (s?.parked && owns(s)) fail(s, null);
+    },
     clearError: () => publish({ error: null, errorUser: null }),
     keepRecording: () => {}, pauseFromPrompt: () => { void changePause(true); },
     configure(value) {

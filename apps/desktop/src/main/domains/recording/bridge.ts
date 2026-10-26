@@ -61,6 +61,8 @@ export interface RecordingBridgeApi {
   readonly pause: (recordingId: string) => Effect.Effect<boolean>;
   readonly resume: (recordingId: string) => Effect.Effect<boolean>;
   readonly setLanguage: RecordingServiceApi['setLanguage'];
+  /** Retry a failed finalization through the current workspace; false when none accepts it. */
+  readonly retryFinalization: (recordingId: string) => Effect.Effect<boolean>;
   /**
    * Stop whatever recording is currently active, without the caller knowing its
    * id (the widget's no-arg Stop): reads the live workspace's state and stops the
@@ -226,6 +228,16 @@ export const makeRecordingBridgeLive = (
             Option.match({
               onNone: () => Effect.succeed(false),
               onSome: service => service.resume(recordingId),
+            })
+          )
+        ),
+
+      retryFinalization: recordingId =>
+        SubscriptionRef.get(currentRef).pipe(
+          Effect.flatMap(
+            Option.match({
+              onNone: () => Effect.succeed(false),
+              onSome: service => service.retryFinalization(recordingId),
             })
           )
         ),

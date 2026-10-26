@@ -117,6 +117,27 @@ const streamBackend = (peer: ReturnType<typeof makeFakeRecordingStream>, enabled
       : api.request(req),
   });
 
+/** The stream backend plus core's retry-finalization route; null answers with a transport error. */
+const retryBackend = (
+  peer: ReturnType<typeof makeFakeRecordingStream>,
+  retry: { status: number | null; calls: string[] }
+) =>
+  (api: WorkspaceBackendApi): WorkspaceBackendApi => {
+    const base = streamBackend(peer)(api);
+    return {
+      ...base,
+      request: req => {
+        if (req.method !== 'POST' || !req.path.endsWith('/retry-finalization')) return base.request(req);
+        retry.calls.push(req.path);
+        return Effect.succeed(
+          retry.status === null
+            ? { error: { code: 'INTERNAL' as const } }
+            : { ok: true as const, status: retry.status, bodyJson: { status: 'pending' } }
+        );
+      },
+    };
+  };
+
 /** Poll a boolean Effect while letting real async (fs writes, the frame fiber)
  * settle — WITHOUT advancing the (Test) Clock. The budget is WALL-CLOCK time
  * (real timers are untouched by TestClock), not a tick count: a hosted CI
@@ -3905,6 +3926,99 @@ describe('RecordingService WSS', () => {
     }).pipe(Effect.scoped)
   );
 
+  describe('a finalization core reported failed', () => {
+    const failFinalization = (reason: string, retry: { status: number | null; calls: string[] }) =>
+      Effect.gen(function* () {
+        const peer = makeFakeRecordingStream();
+        peer.autoFinalize = false;
+        const h = yield* setup({}, undefined, { backendTransform: retryBackend(peer, retry) });
+        const id = yield* h.service.start({ captureMode: 'mic' });
+        yield* poll(
+          SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')),
+          'capture ready'
+        );
+        yield* Queue.offer(h.fakeCapture.current().frames, fakeFrame('mic_raw', oneSecond()));
+        yield* poll(Effect.sync(() => peer.checkpoints.mic === 48_000), 'audio saved');
+        const stop = yield* Effect.forkChild(h.service.stop(id));
+        yield* poll(
+          Effect.sync(() => peer.sockets[0]!.commands.some(command => command.type === 'stop')),
+          'stop sent'
+        );
+        peer.reply(0, { type: 'stopped', checkpoints: peer.checkpoints, durationMs: 1000 });
+        peer.reply(0, { type: 'finalized', status: 'failed', reason, results: [] });
+        yield* Fiber.join(stop);
+        return { h, id, peer };
+      });
+
+    it.live('is retryable, and a queued retry finishes through recovery', () =>
+      Effect.gen(function* () {
+        const retry = { status: 202 as number | null, calls: [] as string[] };
+        const { h, id, peer } = yield* failFinalization('provider_error', retry);
+        assert.isFalse(yield* h.service.claimCompletion(id));
+        assert.deepStrictEqual((yield* SubscriptionRef.get(h.service.state)).failure, {
+          recordingId: id, reason: 'processing-failed', retryable: true,
+        });
+        const failed = (yield* h.db.getRecoveryOutbox(id))!;
+        assert.strictEqual(failed.status, 'failed');
+        assert.strictEqual(failed.lastError, 'finalized:provider_error');
+        // A replay of the stored failure keeps it retryable.
+        yield* h.drain;
+        assert.isTrue((yield* SubscriptionRef.get(h.service.state)).failure?.retryable);
+
+        peer.status = 'completed';
+        peer.autoFinalize = true;
+        assert.isTrue(yield* h.service.retryFinalization(id));
+        assert.deepStrictEqual(retry.calls, [`/apps/v1/me/recordings/${id}/retry-finalization`]);
+        const queued = yield* SubscriptionRef.get(h.service.state);
+        assert.isUndefined(queued.failure);
+        assert.include(queued.finalizingRecordingIds, id);
+        assert.strictEqual((yield* h.db.getRecoveryOutbox(id))!.status, 'finalizing');
+        const claim = yield* Effect.forkChild(h.service.claimCompletion(id));
+        assert.strictEqual((yield* h.drain).resolved, 1);
+        assert.isTrue(yield* Fiber.join(claim));
+        assert.isNull(yield* h.db.getRecoveryOutbox(id));
+        assert.isFalse(fs.existsSync(h.recoveryDir(id)));
+        yield* Scope.close(h.sessionScope, Exit.void);
+      }).pipe(Effect.scoped)
+    );
+
+    it.live("keeps the failure when core refuses the retry or cannot be reached", () =>
+      Effect.gen(function* () {
+        const retry = { status: null as number | null, calls: [] as string[] };
+        const { h, id } = yield* failFinalization('provider_error', retry);
+        assert.isFalse(yield* h.service.retryFinalization(id));
+        retry.status = 503;
+        assert.isFalse(yield* h.service.retryFinalization(id));
+        assert.isTrue((yield* SubscriptionRef.get(h.service.state)).failure?.retryable);
+        assert.strictEqual((yield* h.db.getRecoveryOutbox(id))!.status, 'failed');
+
+        retry.status = 409;
+        assert.isFalse(yield* h.service.retryFinalization(id));
+        assert.deepStrictEqual((yield* SubscriptionRef.get(h.service.state)).failure, {
+          recordingId: id, reason: 'processing-failed',
+        });
+        // No longer retryable: a later request never reaches core.
+        assert.isFalse(yield* h.service.retryFinalization(id));
+        assert.lengthOf(retry.calls, 3);
+        assert.strictEqual((yield* h.db.getRecoveryOutbox(id))!.status, 'failed');
+        yield* Scope.close(h.sessionScope, Exit.void);
+      }).pipe(Effect.scoped)
+    );
+
+    it.live('is not retryable when transcription was incomplete', () =>
+      Effect.gen(function* () {
+        const retry = { status: 202 as number | null, calls: [] as string[] };
+        const { h, id } = yield* failFinalization('transcription_incomplete', retry);
+        assert.deepStrictEqual((yield* SubscriptionRef.get(h.service.state)).failure, {
+          recordingId: id, reason: 'transcription-incomplete',
+        });
+        assert.isFalse(yield* h.service.retryFinalization(id));
+        assert.isEmpty(retry.calls);
+        yield* Scope.close(h.sessionScope, Exit.void);
+      }).pipe(Effect.scoped)
+    );
+  });
+
   it.live('retains a quota-truncated tail after server completion and recovery', () =>
     Effect.gen(function* () {
       const peer = makeFakeRecordingStream();
@@ -3924,7 +4038,7 @@ describe('RecordingService WSS', () => {
       assert.isFalse(yield* h.service.claimCompletion(id));
       const row = (yield* h.db.getRecoveryOutbox(id))!;
       assert.strictEqual(row.status, 'failed');
-      assert.strictEqual(row.lastError, 'stream:unsaved-audio');
+      assert.strictEqual(row.lastError, 'finalized:unsaved-audio');
       assert.deepStrictEqual(row.streamFinalSamples, { mic: 48_000, system: 0 });
       assert.deepStrictEqual((yield* SubscriptionRef.get(h.service.state)).failure, {
         recordingId: id, reason: 'transcription-incomplete',

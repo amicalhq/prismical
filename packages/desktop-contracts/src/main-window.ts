@@ -128,6 +128,8 @@ export const CHANNELS = {
   recordingResume: 'recording:resume',
   /** Update the active recording's spoken language after durable persistence succeeds. */
   recordingSetLanguage: 'recording:setLanguage',
+  /** invoke(RecordingControlRequest) → boolean. Ask core to run a retryable failed finalization again. */
+  recordingRetryFinalization: 'recording:retryFinalization',
   /**
    * push main→renderer: the sanitized RecordingState — status, effective +
    * requested capture mode, live transcript segments, elapsedMs, recording/note
@@ -800,6 +802,7 @@ export const recordingStateViewSchema = z
     failure: z.object({
       recordingId: z.string(),
       reason: z.enum(['transcription-incomplete', 'processing-failed']),
+      retryable: z.boolean().optional(),
     }).strict().optional(),
     finalizingRecordingIds: z.array(z.string()),
     completedRecordings: z.array(
@@ -1658,6 +1661,7 @@ export interface MainWindowRecordingApi {
   readonly pause: (request: RecordingControlRequest) => Promise<boolean>;
   readonly resume: (request: RecordingControlRequest) => Promise<boolean>;
   readonly setLanguage: (request: RecordingLanguageRequest) => Promise<boolean>;
+  readonly retryFinalization: (request: RecordingControlRequest) => Promise<boolean>;
   readonly onStateChanged: (listener: (state: RecordingStateView) => void) => () => void;
 }
 

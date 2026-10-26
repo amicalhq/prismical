@@ -53,7 +53,7 @@ import type { RecoveryPauseCutPoint, RecoveryStreamConfig } from '../../infra/op
 import { makeRecordingStreamControl, runRecordingStream, useRecordingStream } from './stream';
 import type { ProductDbError } from '../../infra/product-db/service';
 import { RecordingBridge } from './bridge';
-import { WorkspaceIdentity } from '../../runtime/workspace-identity';
+import { WorkspaceIdentity, sameWorkspace } from '../../runtime/workspace-identity';
 import { ModelManager } from '../models/service';
 import {
   Capture,
@@ -90,6 +90,7 @@ import {
 } from './chunker';
 import { makeRecoveryWavSet, type RecoveryWriteError } from './recovery-writer';
 import {
+  FINALIZED_FAILURE,
   RecordingBusyError,
   RecordingStartError,
   RecordingService,
@@ -229,13 +230,17 @@ export const RecordingServiceLive: Layer.Layer<
     ) =>
       Effect.gen(function* () {
         if (finalSegments !== undefined || (!ready && failureReason !== undefined)) {
-          const reason = ready || failureReason === undefined ? undefined
-            : failureReason === 'transcription_incomplete' || failureReason === 'unsaved-audio'
+          const finalized = failureReason?.startsWith(FINALIZED_FAILURE) ?? false;
+          const code = finalized ? failureReason!.slice(FINALIZED_FAILURE.length) : failureReason;
+          const reason = ready || code === undefined ? undefined
+            : code === 'transcription_incomplete' || code === 'unsaved-audio'
               ? 'transcription-incomplete' as const : 'processing-failed' as const;
+          const retryable = finalized && reason === 'processing-failed';
           yield* SubscriptionRef.updateSome(state, current => {
             if (current.recordingId !== recordingId) return Option.none();
             const changedFailure = reason !== undefined &&
-              (current.failure?.recordingId !== recordingId || current.failure.reason !== reason);
+              (current.failure?.recordingId !== recordingId || current.failure.reason !== reason ||
+                (current.failure.retryable ?? false) !== retryable);
             const changedSegments = finalSegments !== undefined && current.segments !== finalSegments;
             // Retained failed jobs are revisited by recovery. Publishing the same idle
             // state would wake that worker again, so unchanged results must not emit.
@@ -243,7 +248,9 @@ export const RecordingServiceLive: Layer.Layer<
             return Option.some({
               ...current,
               ...(changedSegments ? { segments: finalSegments } : {}),
-              ...(changedFailure ? { failure: { recordingId, reason } } : {}),
+              ...(changedFailure
+                ? { failure: { recordingId, reason, ...(retryable ? { retryable } : {}) } }
+                : {}),
             });
           });
         }
@@ -1408,18 +1415,18 @@ export const RecordingServiceLive: Layer.Layer<
               if (persisted) {
                 const ready = receipt.status !== 'failed';
                 if (!ready) failedStage = 'stream';
+                const failure = ready
+                  ? undefined
+                  : `${FINALIZED_FAILURE}${receipt.reason ?? 'finalization-failed'}`;
                 yield* db
                   .updateRecoveryOutbox(recordingId, {
                     status: ready ? 'finalizing' : 'failed',
                     phase: ready ? 'cleanup' : 'chunks',
                     durationMs: receipt.durationMs,
-                    lastError: ready ? null : `stream:${receipt.reason ?? 'finalization-failed'}`,
+                    lastError: failure ?? null,
                   })
                   .pipe(
-                    Effect.andThen(resolveCompletion(
-                      recordingId, ready, receipt.segments,
-                      ready ? undefined : receipt.reason ?? 'finalization-failed'
-                    )),
+                    Effect.andThen(resolveCompletion(recordingId, ready, receipt.segments, failure)),
                     Effect.tap(() =>
                       Effect.sync(() => {
                         completed = ready;
@@ -1862,9 +1869,77 @@ export const RecordingServiceLive: Layer.Layer<
     const setLanguage: RecordingServiceApi['setLanguage'] = (recordingId, language) =>
       runControl(recordingId, controls => controls.setLanguage(language), 'language');
 
+    // The owner asks core to rerun a finalization it reported failed. Once core queues it, the
+    // durable job goes back to the recovery worker, which reopens the stream and waits for the
+    // new result like any stopped recording. 404/409 are core's final refusals.
+    const retryFinalization: RecordingServiceApi['retryFinalization'] = recordingId =>
+      Effect.gen(function* () {
+        const current = yield* SubscriptionRef.get(state);
+        if (
+          current.failure?.recordingId !== recordingId ||
+          !current.failure.retryable ||
+          (current.status !== 'idle' && current.status !== 'error')
+        )
+          return false;
+        const row = yield* db
+          .getRecoveryOutbox(recordingId)
+          .pipe(Effect.catch(() => Effect.succeed(null)));
+        if (row?.status !== 'failed' || !row.streamConfig || !sameWorkspace(row.owner, owner))
+          return false;
+        const response = yield* coreClient.request({
+          method: 'POST',
+          path: `/apps/v1/me/recordings/${recordingId}/retry-finalization`,
+          body: {},
+        });
+        const status = 'ok' in response ? response.status : null;
+        if (status === 404 || status === 409) {
+          yield* SubscriptionRef.updateSome(state, latest =>
+            latest.failure?.recordingId === recordingId && latest.failure.retryable
+              ? Option.some({ ...latest, failure: { recordingId, reason: latest.failure.reason } })
+              : Option.none()
+          );
+          yield* log.warn('finalization retry refused', { context: { recordingId, status } });
+          return false;
+        }
+        if (status !== 202) {
+          yield* log.warn('finalization retry not queued', { context: { recordingId, status } });
+          return false;
+        }
+        const requeued = yield* db
+          .updateRecoveryOutbox(recordingId, {
+            status: 'finalizing',
+            attemptCount: 0,
+            nextAttemptAt: null,
+            lastError: null,
+          })
+          .pipe(
+            Effect.as(true),
+            Effect.catch(() => Effect.succeed(false))
+          );
+        if (!requeued) return false;
+        completions.set(recordingId, {
+          ready: yield* Deferred.make<boolean>(),
+          stopped: true,
+          noteId: row.createInput?.noteId ?? null,
+          segments: 0,
+        });
+        // Clearing the failure while idle also wakes the recovery worker.
+        yield* SubscriptionRef.update(state, latest => ({
+          ...latest,
+          failure: undefined,
+          finalizingRecordingIds: [
+            ...latest.finalizingRecordingIds.filter(id => id !== recordingId),
+            recordingId,
+          ],
+        }));
+        yield* log.info('finalization retry queued', { context: { recordingId } });
+        return true;
+      });
+
     const api: RecordingServiceApi = {
       start,
       stop,
+      retryFinalization,
       resolveCompletion,
       claimCompletion: recordingId =>
         Effect.gen(function* () {

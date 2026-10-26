@@ -694,6 +694,7 @@ describe('channel names', () => {
       recordingSetSkillWorkflow: 'recording:setSkillWorkflow',
       recordingPause: 'recording:pause',
       recordingSetLanguage: 'recording:setLanguage',
+      recordingRetryFinalization: 'recording:retryFinalization',
       recordingResume: 'recording:resume',
       recordingStateChanged: 'recording:stateChanged',
       settingsGet: 'settings:get',

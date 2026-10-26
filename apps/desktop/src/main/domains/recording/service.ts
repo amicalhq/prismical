@@ -33,6 +33,12 @@ export class RecordingStartError extends Data.TaggedError('RecordingStartError')
     | 'suggestion-pending';
 }> {}
 
+/**
+ * Prefix of a stored failure reason that core reported in its finalization result. Only these
+ * may run again through `retryFinalization`; other stream failures never reached a core result.
+ */
+export const FINALIZED_FAILURE = 'finalized:';
+
 export type RecordingStatus = 'idle' | 'starting' | 'recording' | 'paused' | 'stopping' | 'error';
 
 /**
@@ -49,6 +55,8 @@ export interface RecordingState {
   readonly failure?: {
     readonly recordingId: string;
     readonly reason: 'transcription-incomplete' | 'processing-failed';
+    /** Core reported this finalization failed; `retryFinalization` may queue it again. */
+    readonly retryable?: boolean;
   };
   /** Live pipelines that still own their audio, including uploads after capture closes. */
   readonly processingRecordingIds: readonly string[];
@@ -174,7 +182,16 @@ export interface RecordingServiceApi {
   readonly stop: (recordingId: string) => Effect.Effect<void>;
   /** Wait for a stopped recording's required work, then claim completion once across windows. */
   readonly claimCompletion: (recordingId: string) => Effect.Effect<boolean>;
-  /** Main-only recovery handoff; false refuses completion after a terminal processing failure. */
+  /**
+   * Ask core to run a retryable failed finalization again, then hand the durable job back to
+   * recovery. True once core queued it; false leaves the failure (no longer retryable if core
+   * refused it).
+   */
+  readonly retryFinalization: (recordingId: string) => Effect.Effect<boolean>;
+  /**
+   * Main-only recovery handoff; false refuses completion after a terminal processing failure.
+   * A `finalized:` failure reason marks a failure that core reported (see FINALIZED_FAILURE).
+   */
   readonly resolveCompletion: (
     recordingId: string,
     ready: boolean,

@@ -670,7 +670,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
 
     const registerRecordingControl = (
       channel: string,
-      operation: 'pause' | 'resume' | 'claimCompletion'
+      operation: 'pause' | 'resume' | 'claimCompletion' | 'retryFinalization'
     ): Effect.Effect<void, never, Scope.Scope> =>
       acquireHandle(channel, (event, payload) =>
         runPromise(
@@ -737,6 +737,7 @@ export const registerMainWindowHandlers: Effect.Effect<void, never, HandlerEnv |
     yield* registerRecordingControl(CHANNELS.recordingClaimCompletion, 'claimCompletion');
     yield* registerRecordingControl(CHANNELS.recordingPause, 'pause');
     yield* registerRecordingControl(CHANNELS.recordingResume, 'resume');
+    yield* registerRecordingControl(CHANNELS.recordingRetryFinalization, 'retryFinalization');
 
     yield* acquireHandle(CHANNELS.recordingSetLanguage, (event, payload) =>
       runPromise(validateMainSender(event).pipe(Effect.flatMap(() => {

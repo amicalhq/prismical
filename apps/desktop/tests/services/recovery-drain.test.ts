@@ -1250,6 +1250,34 @@ describe('RecoveryDrain — engine follows the row and yields to live capture', 
 });
 
 describe('RecoveryDrain durability and row isolation', () => {
+  it.effect('does not replay a failure that a retry requeued after the pass listed it', () =>
+    Effect.gen(function* () {
+      const h = yield* setup;
+      const ids = ['rec_failed_a', 'rec_failed_b'];
+      for (const recordingId of ids) {
+        yield* h.insertRecovery({
+          recordingId,
+          captureMode: 'mic',
+          wavPath: h.recoveryDir(recordingId),
+          status: 'failed',
+        });
+      }
+      const replayed: string[] = [];
+      yield* drainRecoveries(Effect.succeed(null), id =>
+        Effect.gen(function* () {
+          replayed.push(id);
+          // A retry lands during the pass and requeues the row this pass has not reached yet.
+          if (replayed.length === 1) {
+            const other = ids.find(candidate => candidate !== id)!;
+            yield* h.db.updateRecoveryOutbox(other, { status: 'finalizing' }).pipe(Effect.orDie);
+          }
+        })
+      ).pipe(Effect.provide(h.ctx));
+      assert.lengthOf(replayed, 1);
+      yield* Scope.close(h.scope, Exit.void);
+    })
+  );
+
   it.effect('retains local audio and cursor when the transcript cannot be saved', () =>
     Effect.gen(function* () {
       const h = yield* setupWith({
