@@ -93,7 +93,9 @@ export interface FakeOAuthOptions {
   /** Optional app API fixtures, served through the real desktop transport. */
   readonly appResponse?: (
     url: URL,
-    request: IncomingMessage
+    request: IncomingMessage,
+    /** The parsed JSON request body (null when empty or not JSON). */
+    body: Record<string, unknown> | null
   ) => { status: number; body: unknown } | undefined;
 }
 
@@ -426,7 +428,7 @@ export async function startFakeOAuthServer(
       // desktop transport lane can be exercised end-to-end after a fake sign-in.
       // A generic list envelope — no sentinel material ever enters this body.
       if (url.pathname === ME_PATH || url.pathname.startsWith(`${ME_PATH}/`)) {
-        const fixture = options.appResponse?.(url, request);
+        const fixture = options.appResponse?.(url, request, body);
         if (fixture) {
           sendJson(response, fixture.status, fixture.body);
           return;
