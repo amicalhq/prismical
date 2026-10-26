@@ -69,13 +69,7 @@ const calendarEvents = () => {
 };
 
 const pendingState = (page: Page): Promise<string | null> =>
-  page.evaluate(() =>
-    (
-      window as never as {
-        desktop: { e2e: { authPendingState: () => Promise<string | null> } };
-      }
-    ).desktop.e2e.authPendingState()
-  );
+  page.evaluate(() => window.desktop.e2e!.authPendingState());
 
 const deliverOpenUrl = (app: ElectronApplication, url: string): Promise<void> =>
   app.evaluate(({ app: electronApp }, callbackUrl) => {

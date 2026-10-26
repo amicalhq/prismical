@@ -90,7 +90,8 @@ import {
 } from './chunker';
 import { makeRecoveryWavSet, type RecoveryWriteError } from './recovery-writer';
 import {
-  FINALIZED_FAILURE,
+  decodeRecordingFailure,
+  encodeRecordingFailure,
   RecordingBusyError,
   RecordingStartError,
   RecordingService,
@@ -226,16 +227,14 @@ export const RecordingServiceLive: Layer.Layer<
       recordingId,
       ready,
       finalSegments,
-      failureReason
+      failure
     ) =>
       Effect.gen(function* () {
-        if (finalSegments !== undefined || (!ready && failureReason !== undefined)) {
-          const finalized = failureReason?.startsWith(FINALIZED_FAILURE) ?? false;
-          const code = finalized ? failureReason!.slice(FINALIZED_FAILURE.length) : failureReason;
-          const reason = ready || code === undefined ? undefined
-            : code === 'transcription_incomplete' || code === 'unsaved-audio'
+        if (finalSegments !== undefined || (!ready && failure !== undefined)) {
+          const reason = ready || failure === undefined ? undefined
+            : failure.code === 'transcription_incomplete' || failure.code === 'unsaved-audio'
               ? 'transcription-incomplete' as const : 'processing-failed' as const;
-          const retryable = finalized && reason === 'processing-failed';
+          const retryable = (failure?.retryable ?? false) && reason === 'processing-failed';
           yield* SubscriptionRef.updateSome(state, current => {
             if (current.recordingId !== recordingId) return Option.none();
             const changedFailure = reason !== undefined &&
@@ -1417,13 +1416,13 @@ export const RecordingServiceLive: Layer.Layer<
                 if (!ready) failedStage = 'stream';
                 const failure = ready
                   ? undefined
-                  : `${FINALIZED_FAILURE}${receipt.reason ?? 'finalization-failed'}`;
+                  : { code: receipt.reason ?? 'finalization-failed', retryable: true };
                 yield* db
                   .updateRecoveryOutbox(recordingId, {
                     status: ready ? 'finalizing' : 'failed',
                     phase: ready ? 'cleanup' : 'chunks',
                     durationMs: receipt.durationMs,
-                    lastError: failure ?? null,
+                    lastError: failure ? encodeRecordingFailure(failure) : null,
                   })
                   .pipe(
                     Effect.andThen(resolveCompletion(recordingId, ready, receipt.segments, failure)),
@@ -1440,12 +1439,12 @@ export const RecordingServiceLive: Layer.Layer<
               yield* db
                 .updateRecoveryOutbox(recordingId, {
                   ...(!result.failure.retryable ? { status: 'failed' as const } : {}),
-                  lastError: `stream:${result.failure.code}`,
+                  lastError: encodeRecordingFailure({ code: result.failure.code }),
                 })
                 .pipe(Effect.catch(() => Effect.void));
               if (!result.failure.retryable) {
                 yield* persistBestEffort(recordingId, store.recordingFailed(recordingId));
-                yield* resolveCompletion(recordingId, false, undefined, result.failure.code);
+                yield* resolveCompletion(recordingId, false, undefined, { code: result.failure.code });
               }
             }
           }
@@ -1903,18 +1902,12 @@ export const RecordingServiceLive: Layer.Layer<
         });
         const status = 'ok' in response ? response.status : null;
         if (status === 404 || status === 409) {
-          // Store the refusal: a `stream:` reason never becomes retryable when recovery replays it.
-          const code = row.lastError?.startsWith(FINALIZED_FAILURE)
-            ? row.lastError.slice(FINALIZED_FAILURE.length)
-            : 'finalization-failed';
+          // Store the refusal too, so a recovery replay of the row stays final.
+          const refused = { code: decodeRecordingFailure(row.lastError)?.code ?? 'finalization-failed' };
           yield* db
-            .updateRecoveryOutbox(recordingId, { lastError: `stream:${code}` })
+            .updateRecoveryOutbox(recordingId, { lastError: encodeRecordingFailure(refused) })
             .pipe(Effect.catch(() => Effect.void));
-          yield* SubscriptionRef.updateSome(state, latest =>
-            latest.failure?.recordingId === recordingId && latest.failure.retryable
-              ? Option.some({ ...latest, failure: { recordingId, reason: latest.failure.reason } })
-              : Option.none()
-          );
+          yield* resolveCompletion(recordingId, false, undefined, refused);
           yield* log.warn('finalization retry refused', { context: { recordingId, status } });
           return false;
         }

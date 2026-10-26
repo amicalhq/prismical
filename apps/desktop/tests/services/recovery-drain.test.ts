@@ -74,7 +74,11 @@ import {
   type NewRecoveryOutbox,
 } from '../../src/main/infra/operational-db/service';
 import { OperationalDbLive } from '../../src/main/infra/operational-db/live';
-import { idleRecordingState, type RecordingState } from '../../src/main/domains/recording/service';
+import {
+  idleRecordingState,
+  type RecordingFailure,
+  type RecordingState,
+} from '../../src/main/domains/recording/service';
 import * as operationalSchema from '../../src/main/infra/operational-db/schema';
 import { RecordingStore } from '../../src/main/domains/recording/store';
 import { RecordingStoreLive } from '../../src/main/domains/recording/store-live';
@@ -1250,7 +1254,8 @@ describe('RecoveryDrain — engine follows the row and yields to live capture', 
 });
 
 describe('RecoveryDrain durability and row isolation', () => {
-  it.effect('does not replay a failure that a retry requeued after the pass listed it', () =>
+  // A retry changes a retryable failed row while a pass that already listed it is running.
+  const replayAfterRetry = (change: Parameters<OperationalDbService['updateRecoveryOutbox']>[1]) =>
     Effect.gen(function* () {
       const h = yield* setup;
       const ids = ['rec_failed_a', 'rec_failed_b'];
@@ -1261,21 +1266,42 @@ describe('RecoveryDrain durability and row isolation', () => {
           wavPath: h.recoveryDir(recordingId),
           status: 'failed',
         });
+        yield* h.db
+          .updateRecoveryOutbox(recordingId, {
+            streamConfig: { captureId: recordingId, connectionAttempt: 0 },
+            lastError: 'finalized:provider_error',
+          })
+          .pipe(Effect.orDie);
       }
-      const replayed: string[] = [];
-      yield* drainRecoveries(Effect.succeed(null), id =>
+      const replayed: (RecordingFailure | undefined)[] = [];
+      yield* drainRecoveries(Effect.succeed(null), (id, _ready, _segments, failure) =>
         Effect.gen(function* () {
-          replayed.push(id);
-          // A retry lands during the pass and requeues the row this pass has not reached yet.
+          replayed.push(failure);
           if (replayed.length === 1) {
             const other = ids.find(candidate => candidate !== id)!;
-            yield* h.db.updateRecoveryOutbox(other, { status: 'finalizing' }).pipe(Effect.orDie);
+            yield* h.db.updateRecoveryOutbox(other, change).pipe(Effect.orDie);
           }
         })
       ).pipe(Effect.provide(h.ctx));
-      assert.lengthOf(replayed, 1);
       yield* Scope.close(h.scope, Exit.void);
-    })
+      return replayed;
+    });
+
+  it.effect('does not replay a failure that a retry requeued after the pass listed it', () =>
+    replayAfterRetry({ status: 'finalizing' }).pipe(
+      Effect.map(replayed => assert.deepStrictEqual(replayed, [{ code: 'provider_error', retryable: true }]))
+    )
+  );
+
+  it.effect('replays a refusal stored after the pass listed the row as final', () =>
+    replayAfterRetry({ lastError: 'stream:provider_error' }).pipe(
+      Effect.map(replayed =>
+        assert.deepStrictEqual(replayed, [
+          { code: 'provider_error', retryable: true },
+          { code: 'provider_error' },
+        ])
+      )
+    )
   );
 
   it.effect('retains local audio and cursor when the transcript cannot be saved', () =>

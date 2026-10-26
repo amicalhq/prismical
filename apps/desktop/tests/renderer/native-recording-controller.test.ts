@@ -251,6 +251,7 @@ describe('native recording workflow', () => {
       failure: { recordingId: 'rec_1', reason: 'processing-failed', retryable: true } };
     const refused: NativeRecordingState = { ...failed,
       failure: { recordingId: 'rec_1', reason: 'processing-failed' } };
+    const requeued: NativeRecordingState = { ...capturing, status: 'idle', finalizingRecordingIds: ['rec_1'] };
 
     it('holds the stopped workflow with Retry, then completes once main requeues it', async () => {
       const f = fixture(capturing);
@@ -266,7 +267,7 @@ describe('native recording workflow', () => {
       await f.client.retry();
       expect(f.control.retryFinalization).toHaveBeenCalledExactlyOnceWith('rec_1');
       expect(f.client.getSnapshot().retryAvailable).toBe(false);
-      f.push({ ...capturing, status: 'idle', finalizingRecordingIds: ['rec_1'] });
+      f.push(requeued);
       expect(f.control.claimCompletion).toHaveBeenCalledExactlyOnceWith('rec_1');
       await vi.waitFor(() => expect(f.workflow.getSnapshot()).toMatchObject({ kind: 'skill', recordingId: 'rec_1' }));
       expect(f.client.getSnapshot().completedRecording).toMatchObject({ recordingId: 'rec_1' });
@@ -277,7 +278,7 @@ describe('native recording workflow', () => {
       const claim = deferred<boolean>();
       vi.mocked(f.control.claimCompletion).mockReturnValueOnce(claim.promise);
       await f.client.stop();
-      f.push({ ...capturing, status: 'idle', finalizingRecordingIds: ['rec_1'] });
+      f.push(requeued);
       expect(f.control.claimCompletion).toHaveBeenCalledOnce();
       f.push(failed);
       claim.resolve(false);
@@ -287,7 +288,7 @@ describe('native recording workflow', () => {
       expect(f.client.getSnapshot().retryAvailable).toBe(true);
 
       await f.client.retry();
-      f.push({ ...capturing, status: 'idle', finalizingRecordingIds: ['rec_1'] });
+      f.push(requeued);
       expect(f.control.claimCompletion).toHaveBeenCalledTimes(2);
       await vi.waitFor(() => expect(f.workflow.getSnapshot()).toMatchObject({ kind: 'skill', recordingId: 'rec_1' }));
     });
@@ -297,7 +298,7 @@ describe('native recording workflow', () => {
       const claim = deferred<boolean>();
       vi.mocked(f.control.claimCompletion).mockReturnValueOnce(claim.promise);
       await f.client.retry();
-      f.push({ ...capturing, status: 'idle', finalizingRecordingIds: ['rec_1'] });
+      f.push(requeued);
       expect(f.control.claimCompletion).toHaveBeenCalledOnce();
       f.push(failed);
       claim.resolve(false);

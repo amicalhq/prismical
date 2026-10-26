@@ -27,7 +27,8 @@ import {
 } from './chunker';
 import { wavFileName } from './recovery-writer';
 import {
-  FINALIZED_FAILURE,
+  decodeRecordingFailure,
+  encodeRecordingFailure,
   RecordingService,
   type RecordingServiceApi,
   type RecordingState,
@@ -248,7 +249,7 @@ export const drainRecoveries = (
         Effect.andThen(
           row.phase === 'cleanup' ? Effect.void : resolveCompletion(
             row.recordingId, false, undefined,
-            row.streamConfig ? reason.replace(/^stream:/, '') : undefined
+            row.streamConfig ? decodeRecordingFailure(reason) : undefined
           )
         ),
         Effect.andThen(
@@ -262,14 +263,17 @@ export const drainRecoveries = (
     const drainRow = (original: RecoveryOutboxRow): Effect.Effect<DrainOutcome> =>
       Effect.gen(function* () {
         if (original.status === 'failed') {
-          // A retry can requeue the row after this pass listed it; replay only a current failure.
-          const current = yield* db.getRecoveryOutbox(original.recordingId).pipe(
-            Effect.catch(() => Effect.succeed(original))
-          );
-          if (current?.status !== 'failed') return 'skipped' as const;
+          // A retry can requeue or refuse a retryable row after this pass listed it: replay
+          // the row as it is now.
+          const failed = original.streamConfig && decodeRecordingFailure(original.lastError)?.retryable
+            ? yield* db
+                .getRecoveryOutbox(original.recordingId)
+                .pipe(Effect.catch(() => Effect.succeed(original)))
+            : original;
+          if (failed?.status !== 'failed') return 'skipped' as const;
           yield* resolveCompletion(
-            original.recordingId, original.phase === 'cleanup', undefined,
-            original.streamConfig ? original.lastError?.replace(/^stream:/, '') : undefined
+            failed.recordingId, failed.phase === 'cleanup', undefined,
+            failed.streamConfig ? decodeRecordingFailure(failed.lastError) : undefined
           );
           return 'skipped' as const;
         }
@@ -413,7 +417,7 @@ export const drainRecoveries = (
             if (Result.isFailure(result)) {
               if (result.failure.retryable) return yield* park(row, `stream:${result.failure.code}`);
               yield* bestEffort(store.recordingFailed(row.recordingId));
-              return yield* fail(row, `stream:${result.failure.code}`);
+              return yield* fail(row, encodeRecordingFailure({ code: result.failure.code }));
             }
             const receipt = result.success;
             // Commit the authoritative replacement before cleanup or a terminal failure.
@@ -428,9 +432,9 @@ export const drainRecoveries = (
             yield* update({ durationMs: receipt.durationMs });
             finalSegments = receipt.segments;
             if (receipt.status === 'failed') {
-              const reason = `${FINALIZED_FAILURE}${receipt.reason ?? 'finalization-failed'}`;
-              yield* resolveCompletion(row.recordingId, false, finalSegments, reason);
-              return yield* fail(row, reason);
+              const failure = { code: receipt.reason ?? 'finalization-failed', retryable: true };
+              yield* resolveCompletion(row.recordingId, false, finalSegments, failure);
+              return yield* fail(row, encodeRecordingFailure(failure));
             }
           }
 

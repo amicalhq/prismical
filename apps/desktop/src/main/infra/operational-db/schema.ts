@@ -109,7 +109,10 @@ export const recoveryOutbox = sqliteTable('recovery_outbox', {
     .$type<readonly RecoveryPauseCutPoint[]>()
     .notNull()
     .default(sql`'[]'`),
-  /** Last failure reason (why parked/failed) — operational diagnostics only. */
+  /**
+   * Last failure reason (why parked/failed). Recovery replays a failed stream row's reason
+   * (`encodeRecordingFailure` in the recording service): `finalized:` marks a retryable one.
+   */
   lastError: text('last_error'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),

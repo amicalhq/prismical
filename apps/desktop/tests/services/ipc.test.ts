@@ -1795,7 +1795,7 @@ describe('registerMainWindowHandlers', () => {
       })
   );
 
-  it.effect('recording:claimCompletion preserves acceptance and rejects malformed or foreign requests', () =>
+  it.effect('recording:claimCompletion and retryFinalization preserve the workspace answer and reject malformed or foreign requests', () =>
     Effect.gen(function* () {
       const { layer } = build();
       const scope = yield* Scope.make();
@@ -1806,7 +1806,11 @@ describe('registerMainWindowHandlers', () => {
       const claim = (recordingId: string) => Effect.promise(() => fake.ipcMain.invoke(
         CHANNELS.recordingClaimCompletion, { sender: wc }, { recordingId }
       ));
+      const retry = (recordingId: string) => Effect.promise(() => fake.ipcMain.invoke(
+        CHANNELS.recordingRetryFinalization, { sender: wc }, { recordingId }
+      ));
       assert.isFalse(yield* claim('rec_1'), 'no workspace owns a completion');
+      assert.isFalse(yield* retry('rec_failed'), 'no workspace owns a recording');
       const rec = yield* makeFakeRecordingService();
       yield* Context.get(ctx, RecordingBridge).register(rec.api).pipe(Scope.provide(scope));
       assert.isFalse(yield* claim('rec_stale'));
@@ -1814,39 +1818,17 @@ describe('registerMainWindowHandlers', () => {
       assert.isTrue(yield* claim('rec_1'));
       rec.setClaim(false);
       assert.isFalse(yield* claim('rec_1'));
-      for (const [sender, payload] of [[wc, {}], [{ id: 9999 }, { recordingId: 'rec_1' }]]) {
-        const rejected = yield* Effect.exit(Effect.tryPromise(() => fake.ipcMain.invoke(
-          CHANNELS.recordingClaimCompletion, { sender }, payload
-        )));
-        assert.isTrue(Exit.isFailure(rejected));
-      }
-      assert.deepStrictEqual(rec.claimCalls, ['rec_stale', 'rec_1', 'rec_1']);
-      yield* Scope.close(scope, Exit.void);
-    })
-  );
-
-  it.effect('recording:retryFinalization forwards to the workspace and rejects malformed or foreign requests', () =>
-    Effect.gen(function* () {
-      const { layer } = build();
-      const scope = yield* Scope.make();
-      const ctx = yield* Layer.build(layer).pipe(Scope.provide(scope));
-      yield* registerMainWindowHandlers.pipe(Effect.provide(ctx), Scope.provide(scope));
-      yield* Context.get(ctx, WindowRegistry).openMainWindow.pipe(Scope.provide(scope));
-      const wc = fake.__windowInstances().at(-1)?.webContents;
-      const retry = (recordingId: string) => Effect.promise(() => fake.ipcMain.invoke(
-        CHANNELS.recordingRetryFinalization, { sender: wc }, { recordingId }
-      ));
-      assert.isFalse(yield* retry('rec_failed'), 'no workspace owns the recording');
-      const rec = yield* makeFakeRecordingService();
-      yield* Context.get(ctx, RecordingBridge).register(rec.api).pipe(Scope.provide(scope));
       assert.isTrue(yield* retry('rec_failed'));
       assert.isFalse(yield* retry('rec_other'));
-      for (const [sender, payload] of [[wc, {}], [{ id: 9999 }, { recordingId: 'rec_failed' }]]) {
-        const rejected = yield* Effect.exit(Effect.tryPromise(() => fake.ipcMain.invoke(
-          CHANNELS.recordingRetryFinalization, { sender }, payload
-        )));
-        assert.isTrue(Exit.isFailure(rejected));
+      for (const channel of [CHANNELS.recordingClaimCompletion, CHANNELS.recordingRetryFinalization]) {
+        for (const [sender, payload] of [[wc, {}], [{ id: 9999 }, { recordingId: 'rec_1' }]]) {
+          const rejected = yield* Effect.exit(Effect.tryPromise(() => fake.ipcMain.invoke(
+            channel, { sender }, payload
+          )));
+          assert.isTrue(Exit.isFailure(rejected));
+        }
       }
+      assert.deepStrictEqual(rec.claimCalls, ['rec_stale', 'rec_1', 'rec_1']);
       assert.deepStrictEqual(rec.retryCalls, ['rec_failed', 'rec_other']);
       yield* Scope.close(scope, Exit.void);
     })

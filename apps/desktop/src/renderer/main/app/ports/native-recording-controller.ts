@@ -51,7 +51,7 @@ export function createNativeRecordingController(options: {
   const listeners = new Set<() => void>();
   let snapshot = emptySnapshot();
   let snapshotOwner: Pick<Session, 'ownerSessionKey' | 'ownerOrgId'> | undefined;
-  let reportedFailureId: string | undefined;
+  let reportedFailure: { recordingId: string; retryable: boolean } | undefined;
   let session: Session | undefined;
   let nativeState: NativeRecordingState | undefined;
   let queryClient: QueryClient | undefined;
@@ -81,10 +81,12 @@ export function createNativeRecordingController(options: {
     publish({ error, autoStopRequested: false, micSilent: false, retryAvailable: false });
   }
   function settle(s: Session, failure: NonNullable<NativeRecordingState['failure']>) {
-    reportedFailureId = s.recordingId;
+    reportedFailure = { recordingId: failure.recordingId, retryable: failure.retryable ?? false };
     if (failure.retryable && control.retryFinalization) {
       // Like web: keep the stopped workflow open with Retry until main reruns it or it is ended.
+      // Parking drops a claim still in flight; it can only report this failure.
       s.parked = true;
+      s.claiming = undefined;
       drained(s);
       publish({
         error: 'recording.errors.someAudioNotTranscribed',
@@ -123,8 +125,8 @@ export function createNativeRecordingController(options: {
     if (finalSegmentCount !== undefined) s.finalSegmentCount = finalSegmentCount;
     if (s.claiming || !s.recordingId) return;
     drained(s);
-    s.claiming = control.claimCompletion(s.recordingId).then(claimed => {
-      if (!owns(s) || s.parked) return;
+    const claim: Promise<void> = control.claimCompletion(s.recordingId).then(claimed => {
+      if (!owns(s) || s.claiming !== claim) return;
       const current = scope(s);
       if (!current || current.phase !== 'finalizing') return;
       const autoSkill = claimed && getAutoEnhanceEnabled() && s.noteId !== skipAutoEnhanceForNote
@@ -138,8 +140,9 @@ export function createNativeRecordingController(options: {
       } });
       workflow.dispatch({ type: 'finalizationSucceeded', ...current, recordingId: s.recordingId, autoSkill });
     }).catch(() => {
-      if (owns(s)) fail(s, 'recording.errors.endedUnexpectedly');
+      if (owns(s) && s.claiming === claim) fail(s, 'recording.errors.endedUnexpectedly');
     });
+    s.claiming = claim;
   }
   function receive(state: NativeRecordingState) {
     if (disposed) return;
@@ -147,10 +150,11 @@ export function createNativeRecordingController(options: {
     const active = state.status !== 'idle' && state.status !== 'error';
     const completed = state.completedRecordings?.find(row => row.noteId !== null);
     // A settled failure can be replayed while recovery or another window updates state.
-    // Report it once per controller, and do not attach an old result to a pending Start.
-    // A parked session still takes every push: its failure can become final, or fail again.
+    // Report it once per controller (again only if it stops being retryable), and do not
+    // attach an old result to a pending Start.
     if (!active && state.failure?.recordingId === state.recordingId &&
-      ((reportedFailureId === state.recordingId && !completed && !session?.parked) ||
+      ((reportedFailure?.recordingId === state.recordingId &&
+        reportedFailure.retryable === (state.failure.retryable ?? false) && !completed) ||
         (session && !session.recordingId && !session.startingNative))) return;
     const recordingId = active ? state.recordingId : completed?.recordingId ?? state.recordingId;
     const noteId = active ? state.noteId : completed?.noteId ?? state.noteId;
@@ -177,8 +181,7 @@ export function createNativeRecordingController(options: {
     // Main cleared the failure (a retry was queued here or in another window): claim again below.
     if (s.parked && state.failure?.recordingId !== s.recordingId) {
       s.parked = false;
-      s.claiming = undefined;
-      reportedFailureId = undefined;
+      reportedFailure = undefined;
       publish({ retryAvailable: false });
     }
     let current = scope(s);
@@ -240,7 +243,7 @@ export function createNativeRecordingController(options: {
           activeOrgIdOf(view) !== snapshotOwner.ownerOrgId)) {
         if (session) fail(session, null);
         snapshotOwner = undefined;
-        reportedFailureId = undefined;
+        reportedFailure = undefined;
         nativeState = undefined;
         publish(emptySnapshot());
       }

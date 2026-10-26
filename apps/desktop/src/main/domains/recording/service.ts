@@ -33,11 +33,27 @@ export class RecordingStartError extends Data.TaggedError('RecordingStartError')
     | 'suggestion-pending';
 }> {}
 
-/**
- * Prefix of a stored failure reason that core reported in its finalization result. Only these
- * may run again through `retryFinalization`; other stream failures never reached a core result.
- */
-export const FINALIZED_FAILURE = 'finalized:';
+/** A terminal stream failure; `retryable` when core reported it for a stored recording. */
+export interface RecordingFailure {
+  readonly code: string;
+  readonly retryable?: boolean;
+}
+
+// The recovery outbox stores a failure as `lastError`. A `finalized:` reason is one core
+// reported in its finalization result, so `retryFinalization` may run it again; `stream:` and
+// unprefixed reasons never reached a core result (or core refused to rerun them).
+const FINALIZED = 'finalized:';
+const STREAM = 'stream:';
+
+export const encodeRecordingFailure = (failure: RecordingFailure): string =>
+  `${failure.retryable ? FINALIZED : STREAM}${failure.code}`;
+
+export const decodeRecordingFailure = (lastError: string | null): RecordingFailure | undefined =>
+  lastError === null
+    ? undefined
+    : lastError.startsWith(FINALIZED)
+      ? { code: lastError.slice(FINALIZED.length), retryable: true }
+      : { code: lastError.startsWith(STREAM) ? lastError.slice(STREAM.length) : lastError };
 
 export type RecordingStatus = 'idle' | 'starting' | 'recording' | 'paused' | 'stopping' | 'error';
 
@@ -188,15 +204,12 @@ export interface RecordingServiceApi {
    * refused it).
    */
   readonly retryFinalization: (recordingId: string) => Effect.Effect<boolean>;
-  /**
-   * Main-only recovery handoff; false refuses completion after a terminal processing failure.
-   * A `finalized:` failure reason marks a failure that core reported (see FINALIZED_FAILURE).
-   */
+  /** Main-only recovery handoff; false refuses completion after a terminal processing failure. */
   readonly resolveCompletion: (
     recordingId: string,
     ready: boolean,
     finalSegments?: readonly RecordingSegment[],
-    failureReason?: string
+    failure?: RecordingFailure
   ) => Effect.Effect<void>;
   /** Pause the matching active recording without finalizing it. */
   readonly pause: (recordingId: string) => Effect.Effect<boolean>;
