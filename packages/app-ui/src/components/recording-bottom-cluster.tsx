@@ -28,6 +28,7 @@ import {
 } from '@prismical/app-client';
 import {
   consumePendingAutoTranscribe,
+  consumePendingMeetingRecording,
   currentAccountExperience,
   useSyncStore,
 } from '@prismical/app-client';
@@ -1187,6 +1188,47 @@ function RecordingBottomClusterView({
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [importBlocksCapture, autoStartNoteId, currentNote?.noteId, rec.state]);
+  // Join on a meeting row opened this note and asked for a recording. The press is the request, so
+  // unlike the auto-transcribe lane below this ignores that preference and runs on every platform.
+  // The marker is consumed on arrival either way: a note that is busy (already recording, a skill
+  // running or staged) drops it rather than starting a surprise recording later.
+  React.useEffect(() => {
+    if (!noteId || !consumePendingMeetingRecording(noteId)) return;
+    // A note created by Join may also carry the auto-transcribe marker; this lane is the one start.
+    consumePendingAutoTranscribe(noteId);
+    if (
+      importBlocksCapture ||
+      rec.state !== 'idle' ||
+      workflowState.kind !== 'idle' ||
+      useSkillDiffStore.getState().candidatesByNote.has(noteId)
+    ) {
+      return;
+    }
+
+    // No cleanup cancel: the marker is already consumed, so a StrictMode re-run could not retry.
+    // The current-note check below is what stops a start after the person has moved on.
+    void (syncStore ? syncStore.whenNoteCreateAcked(noteId) : Promise.resolve())
+      .then(() => {
+        const note = currentNoteRef.current;
+        if (note?.noteId !== noteId) return;
+        void startRef.current(note.noteId, note.title || t('recording.untitledRecording'));
+        setExpandedUnit('rec');
+        analyticsRef.current.capture(EVENTS.RECORDING_STARTED, {
+          note_id: note.noteId,
+          automatic: true,
+          trigger: 'meeting_join',
+        });
+      })
+      .catch(() => {
+        if (currentNoteRef.current?.noteId !== noteId) return;
+        toast.error(t('recording.errors.autoStartTitle'), {
+          description: t('recording.errors.autoStartDescription'),
+        });
+      });
+    // Runs on arrival at a note only; the one-shot marker makes re-runs no-ops.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [noteId]);
+
   React.useEffect(() => {
     if (
       importBlocksCapture ||
@@ -1232,6 +1274,7 @@ function RecordingBottomClusterView({
       cancelled = true;
     };
   }, [importBlocksCapture, noteId, rec.state, recording.control, syncStore, t]);
+
 
   const onStart = React.useCallback(() => {
     if (

@@ -14,7 +14,7 @@ import {
   formatApplicationEventTimeRange,
   useApplicationLocale,
 } from '@prismical/app-i18n';
-import { useCalendarEvents, useUpcomingMeetings } from '@prismical/app-client';
+import { recordsOnJoin, useCalendarEvents, useUpcomingMeetings } from '@prismical/app-client';
 import { useAutoSyncConnections, useConnections } from '@prismical/app-client';
 import { useOpenNoteForEvent } from '@prismical/app-client';
 import { useTranslation } from 'react-i18next';
@@ -210,7 +210,15 @@ export function UpcomingMeetings({ limit = 3 }: { limit?: number }) {
                       asChild
                       className="h-7 cursor-pointer bg-primary px-2.5 text-xs text-primary-foreground hover:bg-primary/80"
                     >
-                      <a href={meeting.meetingUrl} target="_blank" rel="noopener noreferrer">
+                      <a
+                        href={meeting.meetingUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={() => {
+                          if (!noteForEvent.disabled && recordsOnJoin(meeting.startAt, meeting.endAt, meeting.isAllDay))
+                            noteForEvent.open(meeting.id, { record: true });
+                        }}
+                      >
                         {t('calendar.upcoming.join')}
                       </a>
                     </Button>

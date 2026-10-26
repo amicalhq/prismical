@@ -131,7 +131,19 @@ vi.mock('../../ui/message-scroller', () => {
 });
 vi.mock('../dock-panel-actions', () => ({
   DockPanelActions: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  DockPanelAction: () => null,
+  DockPanelAction: ({
+    label,
+    disabled,
+    onClick,
+  }: {
+    label: string;
+    disabled?: boolean;
+    onClick?: () => void;
+  }) => (
+    <button disabled={disabled} onClick={onClick}>
+      {label}
+    </button>
+  ),
 }));
 vi.mock('../note-recording-dock', () => ({ formatSessionTimer: () => '' }));
 vi.mock('./ask-composer', () => ({
@@ -322,11 +334,21 @@ it('blocks a saved provider until its catalog has successfully loaded', () => {
 });
 
 it('suppresses feedback only for runs in the open conversation and releases it when closed', () => {
-  const run = { noteId: 'current-note', skillId: 'cleanup', skillName: 'Cleanup', source: 'chip' as const,
-    status: 'error' as const, startedAt: 1 };
+  const run = {
+    noteId: 'current-note',
+    skillId: 'cleanup',
+    skillName: 'Cleanup',
+    source: 'chip' as const,
+    status: 'error' as const,
+    startedAt: 1,
+  };
   mocks.runs = [
     { ...run, id: 'visible', anchor: { conversationId: 'conversation', afterMessageId: '' } },
-    { ...run, id: 'elsewhere', anchor: { conversationId: 'other-conversation', afterMessageId: '' } },
+    {
+      ...run,
+      id: 'elsewhere',
+      anchor: { conversationId: 'other-conversation', afterMessageId: '' },
+    },
   ];
   const view = render(panel());
   expect(mocks.registerFeedback).toHaveBeenLastCalledWith(['visible']);
@@ -335,4 +357,19 @@ it('suppresses feedback only for runs in the open conversation and releases it w
   mocks.registerFeedback.mockClear();
   view.rerender(panel(false));
   expect(mocks.registerFeedback).not.toHaveBeenCalled();
+});
+
+it.each(['submitted', 'streaming'])('prevents switching conversations while %s', status => {
+  mocks.status = status;
+  const view = render(panel());
+  expect(screen.getByRole('button', { name: 'ask.newChat' }).hasAttribute('disabled')).toBe(true);
+  expect(screen.getByRole('button', { name: 'ask.history.title' }).hasAttribute('disabled')).toBe(
+    true
+  );
+  mocks.status = 'ready';
+  view.rerender(panel());
+  expect(screen.getByRole('button', { name: 'ask.newChat' }).hasAttribute('disabled')).toBe(false);
+  expect(screen.getByRole('button', { name: 'ask.history.title' }).hasAttribute('disabled')).toBe(
+    false
+  );
 });

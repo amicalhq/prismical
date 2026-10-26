@@ -27,6 +27,46 @@ describe("tiptap-markdown", () => {
     expect(back).toContain("- Second key point");
   });
 
+  describe("list spacing", () => {
+    it.each([
+      "- first\n- second",
+      "1. first\n2. second",
+      "- [ ] first\n- [x] second",
+      "- parent\n  - child\n- sibling",
+    ])("keeps simple lists compact through a round-trip: %s", (markdown) => {
+      const document = markdownToTiptapJson(markdown) as object;
+      expect(tiptapJsonToMarkdown(document).trim()).toBe(markdown);
+    });
+
+    it("keeps multi-paragraph items loose and separates surrounding paragraphs", () => {
+      const markdown = "Before\n\n- first paragraph\n\n  second paragraph\n\n- second item\n\nAfter";
+      const document = markdownToTiptapJson(markdown) as object;
+      expect(tiptapJsonToMarkdown(document).trim()).toBe(markdown);
+    });
+
+    it("keeps a stored task item with two paragraphs loose", () => {
+      const document = { type: "doc", content: [{ type: "taskList", content: [
+        { type: "taskItem", attrs: { checked: false }, content: [
+          { type: "paragraph", content: [{ type: "text", text: "first paragraph" }] },
+          { type: "paragraph", content: [{ type: "text", text: "second paragraph" }] },
+        ] },
+        { type: "taskItem", attrs: { checked: true }, content: [
+          { type: "paragraph", content: [{ type: "text", text: "next" }] },
+        ] },
+      ] }] };
+      expect(tiptapJsonToMarkdown(document).trim()).toBe(
+        "- [ ] first paragraph\n\n  second paragraph\n\n- [x] next",
+      );
+    });
+
+    it("honors explicit loose and tight list attributes in stored documents", () => {
+      const item = (text: string) => ({ type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text }] }] });
+      const document = (tight: boolean) => ({ type: "doc", content: [{ type: "bulletList", attrs: { tight }, content: [item("first"), item("second")] }] });
+      expect(tiptapJsonToMarkdown(document(false)).trim()).toBe("- first\n\n- second");
+      expect(tiptapJsonToMarkdown(document(true)).trim()).toBe("- first\n- second");
+    });
+  });
+
   it("markdownToTiptapChildren returns the top-level block children", () => {
     const children = markdownToTiptapChildren("# Title\n\nA paragraph.");
     expect(children).toHaveLength(2);

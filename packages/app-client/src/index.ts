@@ -79,6 +79,7 @@ export * from './notes/skill-run-activity-store';
 export * from './notes/skill-run-retry';
 export * from './notes/use-note-collab';
 export * from './notes/use-open-note-for-event';
+export * from './notes/meeting-join';
 export * from './notes/use-run-skill';
 
 // recording

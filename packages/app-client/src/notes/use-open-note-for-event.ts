@@ -6,6 +6,7 @@ import { useNotes, useCreateNote } from "../api/hooks/notes";
 import { useAllNoteEvents } from "../api/hooks/note-events";
 import { useCalendarEvents } from "../api/hooks/events";
 import { useSyncStore } from "../sync/provider";
+import { markPendingMeetingRecording } from "../recording/recording-preferences";
 
 /**
  * Open the note for a calendar event (the "Create note" / "Notes" action on a meeting row).
@@ -19,6 +20,8 @@ import { useSyncStore } from "../sync/provider";
  * would miss an existing note and create a duplicate. So `open` no-ops until the notes query has
  * succeeded, and `disabled` keeps the button un-clickable while the list is loading or errored (as
  * well as while a create is in flight). Callers should spread `disabled` onto their button.
+ *
+ * `record: true` (the meeting row's Join) also marks the note to start recording once it opens.
  */
 export function useOpenNoteForEvent() {
   const router = useNavigation();
@@ -29,7 +32,7 @@ export function useOpenNoteForEvent() {
   const createNote = useCreateNote();
 
   const open = React.useCallback(
-    (eventId: string) => {
+    (eventId: string, options: { record?: boolean } = {}) => {
       // Don't create against an unknown cache (unloaded/errored) — we couldn't dedup and would risk
       // a second note for the same event. `disabled` normally prevents reaching here in that state.
       if (!isSuccess || createNote.isPending) return;
@@ -44,6 +47,7 @@ export function useOpenNoteForEvent() {
         ? notes.find((n) => n.id === linked.noteId)
         : notes.find((n) => n.eventId === eventId);
       if (existing) {
+        if (options.record) markPendingMeetingRecording(existing.id);
         router.push(`/notes/${existing.id}`);
         return;
       }
@@ -56,6 +60,7 @@ export function useOpenNoteForEvent() {
             // upsert on the same pair, gated on the note's create ack).
             const event = events.find((e) => e.id === eventId);
             if (event?.key && store) store.linkNoteEvent({ noteId: note.id, event: { ...event, key: event.key }, isPrimary: true });
+            if (options.record) markPendingMeetingRecording(note.id);
             router.push(`/notes/${note.id}`);
           },
         },

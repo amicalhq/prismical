@@ -2,7 +2,7 @@ import MarkdownIt from 'markdown-it';
 import { markdownToTiptapJson, tiptapJsonToMarkdown } from './tiptap-markdown.js';
 
 function stable(value: unknown): string {
-  return JSON.stringify(value, (key, v) => {
+  const serialized = JSON.stringify(value, (key, v) => {
     if (key === 'attrs' && v && typeof v === 'object') {
       const attributes = Object.entries(v).filter(([, attribute]) => attribute !== null);
       return attributes.length ? Object.fromEntries(attributes.sort(([a], [b]) => a.localeCompare(b))) : undefined;
@@ -11,6 +11,19 @@ function stable(value: unknown): string {
       ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.localeCompare(b)))
       : v;
   });
+  const doc = JSON.parse(serialized);
+  // The editor adds one plain typing paragraph after a terminal non-paragraph block.
+  // Markdown omits it. Never normalize interior blanks, rich attributes, or text.
+  if (doc?.type === 'doc' && Array.isArray(doc.content) && doc.content.length > 1) {
+    const last = doc.content.at(-1);
+    const previous = doc.content.at(-2);
+    if (previous.type !== 'paragraph' && last.type === 'paragraph' &&
+      Object.keys(last).every(key => key === 'type' ||
+        ((key === 'content' || key === 'marks') && Array.isArray(last[key]) && last[key].length === 0))) {
+      doc.content.pop();
+    }
+  }
+  return JSON.stringify(doc);
 }
 
 /** Conservative boundary: no lossy replacement of existing rich content. */

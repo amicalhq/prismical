@@ -6,19 +6,20 @@
  * CLOUD_FEATURE_DEFAULTS. useEnsureActiveOrg is a no-op without 'organization'.
  */
 import * as React from 'react';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   getRaw: vi.fn(),
+  postRaw: vi.fn(),
   switchOrg: vi.fn(),
   featureFlags: null as Readonly<Record<string, boolean>> | null,
   activeOrgId: null as string | null,
 }));
 vi.mock('../client', () => ({
   ME_PREFIX: '/apps/v1/me',
-  apiClient: { getRaw: mocks.getRaw },
+  apiClient: { getRaw: mocks.getRaw, postRaw: mocks.postRaw },
 }));
 vi.mock('../../ports-context', () => ({
   usePorts: () => ({
@@ -28,7 +29,7 @@ vi.mock('../../ports-context', () => ({
   useActiveOrgId: () => mocks.activeOrgId,
 }));
 
-const { useEnsureActiveOrg, useFeatureFlag } = await import('./organizations');
+const { useEnsureActiveOrg, useFeatureFlag, useAcceptInvitation } = await import('./organizations');
 
 const org = (orgId: string, features: Record<string, boolean>) => ({
   orgUserId: `ou_${orgId}`,
@@ -50,7 +51,7 @@ function render<T>(hook: () => T) {
 }
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  vi.resetAllMocks();
   mocks.featureFlags = null;
   mocks.activeOrgId = null;
   mocks.getRaw.mockResolvedValue({ results: [] });
@@ -121,5 +122,96 @@ describe('useEnsureActiveOrg', () => {
     const { result } = render(() => useEnsureActiveOrg());
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(mocks.switchOrg).not.toHaveBeenCalled();
+  });
+});
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: Error) => void;
+  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+
+describe('useAcceptInvitation', () => {
+  it('waits for memberships before switching, so the workspace guard retains the joined workspace', async () => {
+    const personal = org('personal', {});
+    const team = org('team', {});
+    const refresh = deferred<{ results: ReturnType<typeof org>[] }>();
+    mocks.activeOrgId = personal.orgId;
+    mocks.getRaw.mockResolvedValueOnce({ results: [personal] }).mockReturnValue(refresh.promise);
+    mocks.postRaw.mockResolvedValue({ orgId: team.orgId, role: 'member' });
+    mocks.switchOrg.mockImplementation((id: string) => { mocks.activeOrgId = id; });
+    const { result, rerender } = render(() => ({
+      organizations: useEnsureActiveOrg({ required: true }),
+      accept: useAcceptInvitation(),
+    }));
+    await waitFor(() => expect(result.current.organizations.isSuccess).toBe(true));
+    act(() => result.current.accept.mutate('invite'));
+    await waitFor(() => expect(mocks.getRaw).toHaveBeenCalledTimes(2));
+    rerender();
+    expect(mocks.switchOrg).not.toHaveBeenCalled();
+    expect(result.current.accept.isPending).toBe(true);
+    await act(async () => refresh.resolve({ results: [personal, team] }));
+    await waitFor(() => expect(result.current.accept.isSuccess).toBe(true));
+    rerender();
+    expect(mocks.switchOrg.mock.calls).toEqual([[team.orgId]]);
+    expect(mocks.activeOrgId).toBe(team.orgId);
+  });
+
+  it('loads memberships even without an organization-list observer', async () => {
+    mocks.postRaw.mockResolvedValue({ orgId: 'team', role: 'member' });
+    mocks.getRaw.mockResolvedValue({ results: [org('team', {})] });
+    const { result } = render(() => useAcceptInvitation());
+    await act(async () => { await result.current.mutateAsync('invite'); });
+    expect(mocks.switchOrg).toHaveBeenCalledExactlyOnceWith('team');
+  });
+
+  it('does not switch if the refreshed list omits the joined workspace', async () => {
+    mocks.postRaw.mockResolvedValue({ orgId: 'team', role: 'member' });
+    mocks.getRaw.mockResolvedValue({ results: [org('personal', {})] });
+    const { result } = render(() => useAcceptInvitation());
+    act(() => result.current.mutate('invite'));
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(mocks.switchOrg).not.toHaveBeenCalled();
+  });
+
+  it('recovers on retry when acceptance succeeded but the first membership refresh failed', async () => {
+    mocks.postRaw.mockResolvedValueOnce({ orgId: 'team', role: 'member' })
+      .mockRejectedValue(new Error('Already accepted'));
+    mocks.getRaw.mockRejectedValueOnce(new Error('Offline')).mockResolvedValueOnce({
+      id: 'invite', email: 'teammate@example.com', role: 'member', status: 'accepted',
+      expiresAt: '2030-01-01T00:00:00Z', organizationId: 'team', organizationName: 'Team',
+      inviterName: 'Owner', canAccept: false, reason: 'already-accepted',
+    }).mockResolvedValue({ results: [org('team', {})] });
+    const { result } = render(() => useAcceptInvitation());
+    act(() => result.current.mutate('invite'));
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(mocks.switchOrg).not.toHaveBeenCalled();
+    await act(async () => { await result.current.mutateAsync('invite'); });
+    expect(mocks.switchOrg).toHaveBeenCalledExactlyOnceWith('team');
+  });
+
+  it.each(['wrong-account', 'canceled', 'expired'])('does not recover a %s invitation', async (reason) => {
+    mocks.postRaw.mockRejectedValue(new Error('Cannot accept'));
+    mocks.getRaw.mockResolvedValue({
+      id: 'invite', email: 'teammate@example.com', role: 'member', status: 'accepted',
+      expiresAt: '2030-01-01T00:00:00Z', organizationId: 'team', organizationName: 'Team',
+      inviterName: 'Owner', canAccept: false, reason,
+    });
+    const { result } = render(() => useAcceptInvitation());
+    act(() => result.current.mutate('invite'));
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(mocks.switchOrg).not.toHaveBeenCalled();
+  });
+
+  it('does not switch or report success when the membership refresh fails', async () => {
+    mocks.activeOrgId = 'personal';
+    mocks.postRaw.mockResolvedValue({ orgId: 'team', role: 'member' });
+    mocks.getRaw.mockRejectedValue(new Error('Offline'));
+    const { result } = render(() => useAcceptInvitation());
+    act(() => result.current.mutate('invite'));
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(mocks.switchOrg).not.toHaveBeenCalled();
+    expect(mocks.activeOrgId).toBe('personal');
   });
 });

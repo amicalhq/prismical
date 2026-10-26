@@ -8,6 +8,7 @@ import {
   useAutoSyncConnections,
   useConnections,
   useOpenNoteForEvent,
+  recordsOnJoin,
 } from '@prismical/app-client';
 import type { CalendarEvent } from '@prismical/app-contracts';
 import { allDayStillCurrent, eventDayKey } from '../lib/utils';
@@ -215,7 +216,15 @@ export function EventsScreen() {
                           className="h-7 text-xs px-2.5 bg-primary text-primary-foreground hover:bg-primary/80 cursor-pointer"
                           asChild
                         >
-                          <a href={meeting.joinUrl} target="_blank" rel="noopener noreferrer">
+                          <a
+                            href={meeting.joinUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={() => {
+                              if (!noteForEvent.disabled && recordsOnJoin(meeting.start, meeting.end, meeting.isAllDay))
+                                noteForEvent.open(meeting.id, { record: true });
+                            }}
+                          >
                             {t('calendar.events.join')}
                           </a>
                         </Button>

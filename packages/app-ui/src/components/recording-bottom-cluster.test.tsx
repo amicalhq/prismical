@@ -36,6 +36,8 @@ const state = vi.hoisted(() => ({
     progress?: number;
   },
   pendingAutoStart: false,
+  pendingMeetingRecording: false,
+  recordingControl: false,
   glowEnabled: [] as boolean[],
   syncStore: null as { whenNoteCreateAcked: (id: string) => Promise<void> } | null,
   recordings: [] as Array<Record<string, unknown>>,
@@ -102,7 +104,7 @@ vi.mock('@prismical/app-client', async () => {
     usePorts: () => ({
       analytics: { capture: state.noop },
       workflow: state.shared ? { getSnapshot: () => state.workflow } : undefined,
-      recording: {},
+      recording: state.recordingControl ? { control: {} } : {},
       desktopCapabilities: state.capabilities,
       env: { getEnv: () => ({ platform: state.platform }) },
       auth: {},
@@ -145,6 +147,11 @@ vi.mock('@prismical/app-client', async () => {
     consumePendingAutoTranscribe: () => {
       const pending = state.pendingAutoStart;
       state.pendingAutoStart = false;
+      return pending;
+    },
+    consumePendingMeetingRecording: () => {
+      const pending = state.pendingMeetingRecording;
+      state.pendingMeetingRecording = false;
       return pending;
     },
   };
@@ -242,6 +249,8 @@ beforeEach(() => {
   state.platform = 'web';
   state.capabilities.featureFlags = null;
   state.pendingAutoStart = false;
+  state.pendingMeetingRecording = false;
+  state.recordingControl = false;
   state.glowEnabled = [];
   state.syncStore = null;
   state.recordings = [];
@@ -508,6 +517,60 @@ describe('recording dock note ownership', () => {
       acknowledge();
     });
     expect(state.noop).not.toHaveBeenCalledWith('note_old', 'Old');
+  });
+
+  it('starts recording a note opened by Join without the auto-transcribe preference', async () => {
+    state.candidates.clear();
+    state.pendingMeetingRecording = true;
+    let acknowledge!: () => void;
+    state.syncStore = {
+      whenNoteCreateAcked: () =>
+        new Promise<void>(resolve => {
+          acknowledge = resolve;
+        }),
+    };
+    render(<RecordingBottomCluster />);
+    expect(state.noop).not.toHaveBeenCalledWith('note_old', 'Old');
+    await act(async () => {
+      acknowledge();
+    });
+    expect(state.noop).toHaveBeenCalledWith('note_old', 'Old');
+  });
+
+  it('starts a Join recording on desktop, where the auto-transcribe lane never runs', async () => {
+    state.candidates.clear();
+    state.pendingMeetingRecording = true;
+    state.recordingControl = true;
+    await act(async () => {
+      render(<RecordingBottomCluster />);
+    });
+    expect(state.noop).toHaveBeenCalledWith('note_old', 'Old');
+  });
+
+  it('starts once when a note created by Join also carries the auto-transcribe marker', async () => {
+    state.candidates.clear();
+    state.autoTranscribe = true;
+    state.pendingAutoStart = true;
+    state.pendingMeetingRecording = true;
+    state.syncStore = { whenNoteCreateAcked: async () => {} };
+    await act(async () => {
+      render(<RecordingBottomCluster />);
+    });
+    const starts = state.noop.mock.calls.filter(
+      call => call[0] === 'note_old' && call[1] === 'Old'
+    );
+    expect(starts).toHaveLength(1);
+  });
+
+  it('drops a Join request for a note that is already recording', async () => {
+    state.candidates.clear();
+    state.pendingMeetingRecording = true;
+    state.rec = { ...state.rec, state: 'recording', isRecording: true };
+    await act(async () => {
+      render(<RecordingBottomCluster />);
+    });
+    expect(state.noop).not.toHaveBeenCalledWith('note_old', 'Old');
+    expect(state.pendingMeetingRecording).toBe(false);
   });
 
   it('disables the footer Start control during a skill run', () => {

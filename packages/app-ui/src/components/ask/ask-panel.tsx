@@ -19,10 +19,16 @@ import { DockPanelAction, DockPanelActions } from '../dock-panel-actions';
 import { DOCK_SCROLL_BUTTON } from '../dock-chrome';
 import { formatSessionTimer } from '../note-recording-dock';
 import { AskComposer, type AskComposerHandle, type ComposerSkill } from './ask-composer';
+import { AskHistory } from './ask-history';
 import { AskMessage } from './ask-message';
 import { AskSkillRunTurn } from './ask-skill-run-turn';
 import { AskSuggestions } from './ask-suggestions';
-import { useSkillRunActivityStore, useSkillRuns, registerSkillFeedbackSurface, type SkillRunRecord } from '@prismical/app-client';
+import {
+  useSkillRunActivityStore,
+  useSkillRuns,
+  registerSkillFeedbackSurface,
+  type SkillRunRecord,
+} from '@prismical/app-client';
 import { useLatestConversation } from '@prismical/app-client';
 import { useActiveOrgId, useActiveSessionKey } from '@prismical/app-client';
 import { askHeadersForPlatform, createAskTransport } from '@prismical/app-client';
@@ -201,6 +207,7 @@ export function AskPanel({
 
   // The active conversation: id + the messages to seed the chat with. Null until the latest thread
   // resolves (or we mint a fresh id for a first-time user).
+  const [chatBusy, setChatBusy] = React.useState(false);
   const [chatId, setChatId] = React.useState<string | null>(null);
   const [seed, setSeed] = React.useState<AskStoredMessage[]>([]);
   const [chatSessionKey, setChatSessionKey] = React.useState<string | null>(null);
@@ -291,7 +298,18 @@ export function AskPanel({
             {formatSessionTimer(recordingSeconds)}
           </button>
         ) : null}
-        <DockPanelAction label={t('ask.newChat')} onClick={newChat}>
+        <AskHistory
+          key={`${activeSessionKey}:${activeOrgId}`}
+          currentId={chatId}
+          disabled={chatBusy || !activeSessionKey || !chatId}
+          onSelect={conversation => {
+            setChatId(conversation.id);
+            setSeed(conversation.messages);
+            setChatSessionKey(activeSessionKey);
+            setChatOrgId(activeOrgId);
+          }}
+        />
+        <DockPanelAction label={t('ask.newChat')} onClick={newChat} disabled={chatBusy}>
           <SquarePen className="size-[15px]" />
         </DockPanelAction>
       </DockPanelActions>
@@ -305,6 +323,7 @@ export function AskPanel({
           key={`${activeSessionKey}:${activeOrgId ?? ''}:${chatId}`}
           conversationId={chatId}
           initialMessages={seed}
+          onBusyChange={setChatBusy}
           ownerSessionKey={activeSessionKey}
           ownerOrgId={activeOrgId}
           onRunSkill={onRunSkill}
@@ -341,6 +360,7 @@ function AskScrollerItem(props: React.ComponentProps<typeof MessageScrollerItem>
  * changes, so the hook state never bleeds between threads.
  */
 function AskChat({
+  onBusyChange,
   open,
   conversationId,
   initialMessages,
@@ -355,6 +375,7 @@ function AskChat({
 }: {
   open: boolean;
   conversationId: string;
+  onBusyChange: (busy: boolean) => void;
   backgroundNote: AskNoteContext | null;
   noteContext: ReturnType<typeof useAskNoteContext>;
   initialMessages: AskStoredMessage[];
@@ -499,6 +520,10 @@ function AskChat({
   }, [isAskAdmitted]);
 
   const busy = status === 'submitted' || status === 'streaming';
+  React.useEffect(() => {
+    onBusyChange(busy);
+    return () => onBusyChange(false);
+  }, [busy, onBusyChange]);
 
   // In-flight + failure UX. While a request is in flight the assistant turn can have NO text yet
   // (request sent, or stream open before the first token) — show a "Thinking…" indicator instead of

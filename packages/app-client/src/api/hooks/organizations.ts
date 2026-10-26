@@ -49,15 +49,18 @@ export const invitationKey = (id: string) => ["invitation", id] as const;
  * org is stale — making it the reliable source for (re)selection. Ordered by
  * the server (oldest membership first), matching the backend's no-header default.
  */
+async function fetchOrganizations(): Promise<Organization[]> {
+  return OrganizationsResponseSchema.parse(
+    await apiClient.getRaw<unknown>(`${ME_PREFIX}/organizations`, undefined, {
+      activeOrgId: null,
+    }),
+  ).results;
+}
+
 export function useOrganizations(options: { enabled?: boolean } = {}) {
   return useQuery<Organization[]>({
     queryKey: organizationsKey,
-    queryFn: async () =>
-      OrganizationsResponseSchema.parse(
-        await apiClient.getRaw<unknown>(`${ME_PREFIX}/organizations`, undefined, {
-          activeOrgId: null,
-        }),
-      ).results,
+    queryFn: fetchOrganizations,
     staleTime: 5 * 60_000,
     enabled: options.enabled ?? true,
   });
@@ -456,17 +459,39 @@ export function useAcceptInvitation() {
   const { switchOrg } = usePorts().auth;
   return useMutation({
     meta: { suppressErrorToast: true },
-    mutationFn: async (id: string) =>
-      AcceptInvitationResponseSchema.parse(
-        await apiClient.postRaw<unknown>(
-          `${ME_PREFIX}/invitations/${id}/accept`,
-          {},
-          { activeOrgId: null },
-        ),
-      ),
-    onSuccess: ({ orgId }) => {
-      // Join landed — refresh the organization list and switch into the new one.
-      void qc.invalidateQueries({ queryKey: organizationsKey });
+    mutationFn: async (id: string) => {
+      try {
+        return AcceptInvitationResponseSchema.parse(
+          await apiClient.postRaw<unknown>(
+            `${ME_PREFIX}/invitations/${id}/accept`,
+            {},
+            { activeOrgId: null },
+          ),
+        );
+      } catch (error) {
+        // Acceptance may already have succeeded before a refresh/network failure.
+        // Verify that status for the signed-in invitee before retrying the switch;
+        // never treat an arbitrary failed acceptance as permission to join.
+        const invite = await apiClient.getRaw<unknown>(
+          `${ME_PREFIX}/invitations/${id}`, undefined, { activeOrgId: null },
+        ).then(value => InvitationDetailResponseSchema.parse(value)).catch(() => null);
+        if (invite?.reason !== "already-accepted") throw error;
+        return { orgId: invite.organizationId, role: invite.role };
+      }
+    },
+    onSuccess: async ({ orgId }) => {
+      // A pre-accept request may still be in flight. Replace it with a fresh read,
+      // including when no org-list observer is mounted. The guard must see the
+      // joined membership before switching or it sends us back to the old org.
+      await qc.cancelQueries({ queryKey: organizationsKey });
+      const organizations = await qc.fetchQuery({
+        queryKey: organizationsKey,
+        queryFn: fetchOrganizations,
+        staleTime: 0,
+      });
+      if (!organizations.some((organization) => organization.orgId === orgId)) {
+        throw new Error("Joined workspace is missing from refreshed memberships");
+      }
       switchOrg(orgId);
     },
   });

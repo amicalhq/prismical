@@ -25,6 +25,7 @@ export interface MicrophonePriorityEntry {
 
 const STORAGE_KEY = 'prismical:recording-preferences:v1';
 const PENDING_AUTO_TRANSCRIBE_KEY = 'prismical:pending-auto-transcribe-note';
+const PENDING_MEETING_RECORDING_KEY = 'prismical:pending-meeting-recording-note';
 export const DEFAULT_MICROPHONE_DEVICE_ID = 'default';
 
 export const DEFAULT_RECORDING_PREFERENCES: RecordingPreferences = {
@@ -169,28 +170,47 @@ export function promoteMicrophone(
   ];
 }
 
-/** Mark the newly created note that should start recording after navigation + server ack. */
-export function markPendingAutoTranscribe(noteId: string): void {
+function markPendingNote(key: string, noteId: string): void {
   if (typeof window === 'undefined') return;
   try {
-    window.sessionStorage.setItem(PENDING_AUTO_TRANSCRIBE_KEY, noteId);
+    window.sessionStorage.setItem(key, noteId);
   } catch {
-    // Auto-start is a convenience; note creation must still succeed without storage.
+    // Auto-start is a convenience; opening the note must still succeed without storage.
   }
 }
 
-/** One-shot consume. A marker for another note remains available for its own route. */
-export function consumePendingAutoTranscribe(noteId: string): boolean {
+function consumePendingNote(key: string, noteId: string): boolean {
   if (typeof window === 'undefined') return false;
   try {
-    if (window.sessionStorage.getItem(PENDING_AUTO_TRANSCRIBE_KEY) !== noteId) {
-      return false;
-    }
-    window.sessionStorage.removeItem(PENDING_AUTO_TRANSCRIBE_KEY);
+    if (window.sessionStorage.getItem(key) !== noteId) return false;
+    window.sessionStorage.removeItem(key);
     return true;
   } catch {
     return false;
   }
+}
+
+/** Mark the newly created note that should start recording after navigation + server ack. */
+export function markPendingAutoTranscribe(noteId: string): void {
+  markPendingNote(PENDING_AUTO_TRANSCRIBE_KEY, noteId);
+}
+
+/** One-shot consume. A marker for another note remains available for its own route. */
+export function consumePendingAutoTranscribe(noteId: string): boolean {
+  return consumePendingNote(PENDING_AUTO_TRANSCRIBE_KEY, noteId);
+}
+
+/**
+ * Mark the note a meeting's Join button opened, so it starts recording once it is on screen. Unlike
+ * the auto-transcribe marker this is not gated on a preference: pressing Join is the request.
+ */
+export function markPendingMeetingRecording(noteId: string): void {
+  markPendingNote(PENDING_MEETING_RECORDING_KEY, noteId);
+}
+
+/** One-shot consume of {@link markPendingMeetingRecording}. */
+export function consumePendingMeetingRecording(noteId: string): boolean {
+  return consumePendingNote(PENDING_MEETING_RECORDING_KEY, noteId);
 }
 
 /** Enumerate real browser microphones and refresh when devices change. */

@@ -153,7 +153,7 @@ function ConnectionRow({ connection }: { connection: CalendarConnection }) {
   const connect = useConnectFlow();
   const [confirmOpen, setConfirmOpen] = React.useState(false);
 
-  // The server flips status='error' on a revoked token (the drain or any sync path hits it);
+  // The server flips status='error' when calendar authentication cannot be recovered (the drain or any sync path hits it);
   // the connections poll delivers it here — no client-side sync error to inspect anymore.
   const needsReconnect = connection.status === 'error';
   // Account not discovered yet: the OAuth callback's reconcile is still settling which lineage
@@ -173,10 +173,12 @@ function ConnectionRow({ connection }: { connection: CalendarConnection }) {
       <CalendarDays className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden="true" />
 
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <p className="text-sm font-medium leading-tight">{providerLabel(connection.provider)}</p>
           {needsReconnect ? (
-            <Badge variant="destructive">{t('settings.calendar.status.reconnectNeeded')}</Badge>
+            <Badge variant="outline" className="border-warning/35 bg-warning/10 text-warning">
+              {t('settings.calendar.status.reconnectNeeded')}
+            </Badge>
           ) : isConnecting ? (
             <Badge variant="secondary" className="text-muted-foreground">
               <Loader2 className="animate-spin" />
@@ -193,30 +195,34 @@ function ConnectionRow({ connection }: { connection: CalendarConnection }) {
             </Badge>
           )}
         </div>
-        <p className="text-xs text-muted-foreground">
+        <p className="break-words text-xs text-muted-foreground">
           {isConnecting ? (
             t('settings.calendar.status.finishing')
           ) : (
             <>
               {connection.accountEmail ?? '—'}
               <span className="mx-1.5">·</span>
-              {isSyncing
-                ? t('settings.calendar.status.syncingCalendars')
-                : !connection.lastSyncedAt
-                  ? t('settings.calendar.status.neverSynced')
-                  : Date.now() - new Date(connection.lastSyncedAt).getTime() < UP_TO_DATE_MS
-                    ? t('settings.calendar.status.upToDate')
-                    : t('settings.calendar.status.synced', {
-                        time: relativeTimeLabel(
-                          connection.lastSyncedAt,
-                          i18n.resolvedLanguage ?? 'en'
-                        ),
-                      })}
+              {needsReconnect
+                ? t('settings.calendar.status.syncPaused')
+                : isSyncing
+                  ? t('settings.calendar.status.syncingCalendars')
+                  : !connection.lastSyncedAt
+                    ? t('settings.calendar.status.neverSynced')
+                    : Date.now() - new Date(connection.lastSyncedAt).getTime() < UP_TO_DATE_MS
+                      ? t('settings.calendar.status.upToDate')
+                      : t('settings.calendar.status.synced', {
+                          time: relativeTimeLabel(
+                            connection.lastSyncedAt,
+                            i18n.resolvedLanguage ?? 'en'
+                          ),
+                        })}
             </>
           )}
         </p>
         {needsReconnect && (
-          <p className="mt-0.5 text-xs text-destructive">{t('settings.calendar.status.revoked')}</p>
+          <p role="status" className="mt-1 text-xs text-warning">
+            {t('settings.calendar.status.reconnectDescription')}
+          </p>
         )}
       </div>
 

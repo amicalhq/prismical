@@ -7,6 +7,7 @@
 import {
   MarkdownParser,
   MarkdownSerializer,
+  MarkdownSerializerState,
   defaultMarkdownSerializer,
 } from "prosemirror-markdown";
 import MarkdownIt from "markdown-it";
@@ -198,24 +199,45 @@ const parser = new MarkdownParser(
 
 // defaultSerializer for built-ins + our custom node serializers. Artifact wrappers are UNWRAPPED on
 // export (children render as native content) so sharing/copy never leaks that AI generated parts.
+function renderListWithSpacing(
+  state: MarkdownSerializerState,
+  node: Parameters<MarkdownSerializerState["renderList"]>[0],
+  indent: string,
+  marker: (index: number) => string,
+) {
+  // `renderList` treats tight: null as loose, overriding its global option. Preserve explicit
+  // spacing, and infer compact spacing only when no item contains multiple paragraphs.
+  const tight = typeof node.attrs.tight === "boolean"
+    ? node.attrs.tight
+    : !node.content.content.some((item) =>
+        item.content.content.filter((child) => child.type.name === "paragraph").length > 1
+      );
+  // A serialization-only view also works for task lists, whose schema has no `tight` attribute.
+  // Do not add an attribute to the stored node or change the shared schema.
+  const view = Object.assign(Object.create(Object.getPrototypeOf(node)), node, {
+    attrs: { ...node.attrs, tight },
+  }) as typeof node;
+  state.renderList(view, indent, marker);
+}
+
 const serializerNodes: MarkdownSerializer["nodes"] = {
   paragraph: defaultMarkdownSerializer.nodes.paragraph!,
   blockquote: defaultMarkdownSerializer.nodes.blockquote!,
   bulletList: (state, node) => {
-    state.renderList(node, "  ", () => "- ");
+    renderListWithSpacing(state, node, "  ", () => "- ");
   },
   orderedList: (state, node) => {
     const start = (node.attrs.start as number | null) ?? 1;
     const maxW = String(start + node.childCount - 1).length;
     const pad = " ".repeat(maxW + 2);
-    state.renderList(node, pad, (i) => {
+    renderListWithSpacing(state, node, pad, (i) => {
       const nStr = String(start + i);
       return `${" ".repeat(maxW - nStr.length)}${nStr}. `;
     });
   },
   listItem: (state, node) => state.renderContent(node),
   taskList: (state, node) => {
-    state.renderList(node, "  ", () => "- ");
+    renderListWithSpacing(state, node, "  ", () => "- ");
   },
   taskItem: (state, node) => {
     const box = node.attrs.checked ? "[x]" : "[ ]";

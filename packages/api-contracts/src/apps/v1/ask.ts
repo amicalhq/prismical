@@ -58,3 +58,21 @@ export const AskConversationResponseSchema = StoredConversationSchema.nullable()
 
 /** POST /me/ask uses the AI SDK UI-message SSE protocol, not a JSON body. */
 export const ASK_STREAM_MEDIA_TYPE = 'text/event-stream' as const;
+
+/** History summaries keep message bodies out of list responses. */
+export const AskConversationHistoryQuerySchema = z.object({
+  search: z.string().trim().max(200).default(''),
+  offset: z.coerce.number().int().min(0).max(1_000_000).default(0),
+});
+export const AskConversationParamsSchema = z.object({ id: z.string().min(1).max(64) });
+export const AskConversationHistoryResponseSchema = z.object({
+  conversations: z.array(
+    z.object({
+      id: z.string(),
+      title: z.string().nullable(),
+      updatedAt: z.string().datetime(),
+    })
+  ),
+  nextOffset: z.number().nullable(),
+});
+export type AskConversationHistory = z.output<typeof AskConversationHistoryResponseSchema>;
