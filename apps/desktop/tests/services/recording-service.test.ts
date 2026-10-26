@@ -4019,6 +4019,41 @@ describe('RecordingService WSS', () => {
       }).pipe(Effect.scoped)
     );
 
+    it.live("does not clear a newer recording's failure when a late retry is queued", () =>
+      Effect.gen(function* () {
+        const { h, id, peer, retry } = yield* failFinalization();
+        const hold = (retry.hold = yield* Deferred.make<void>());
+        const late = yield* Effect.forkChild(h.service.retryFinalization(id));
+        yield* poll(Effect.sync(() => retry.calls.length === 1), 'retry sent');
+
+        // The fake peer keeps one checkpoint pair; the next recording starts from zero.
+        Object.assign(peer.checkpoints, { mic: 0, system: 0 });
+        const next = yield* h.service.start({ captureMode: 'mic' });
+        yield* poll(
+          SubscriptionRef.get(h.service.state).pipe(Effect.map(s => s.status === 'recording')),
+          'next capture ready'
+        );
+        yield* Queue.offer(h.fakeCapture.current().frames, fakeFrame('mic_raw', oneSecond()));
+        yield* poll(Effect.sync(() => peer.checkpoints.mic === 48_000), 'next audio saved');
+        const stop = yield* Effect.forkChild(h.service.stop(next));
+        yield* poll(
+          Effect.sync(() => peer.sockets[1]?.commands.some(command => command.type === 'stop') ?? false),
+          'next stop sent'
+        );
+        peer.reply(1, { type: 'stopped', checkpoints: peer.checkpoints, durationMs: 1000 });
+        peer.reply(1, { type: 'finalized', status: 'failed', reason: 'provider_error', results: [] });
+        yield* Fiber.join(stop);
+        assert.strictEqual((yield* SubscriptionRef.get(h.service.state)).failure?.recordingId, next);
+
+        yield* Deferred.succeed(hold, undefined);
+        assert.isTrue(yield* Fiber.join(late));
+        assert.deepStrictEqual((yield* SubscriptionRef.get(h.service.state)).failure, {
+          recordingId: next, reason: 'processing-failed', retryable: true,
+        });
+        yield* Scope.close(h.sessionScope, Exit.void);
+      }).pipe(Effect.scoped)
+    );
+
     it.live('accepts one retry at a time', () =>
       Effect.gen(function* () {
         const { h, id, retry } = yield* failFinalization();

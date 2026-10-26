@@ -1933,10 +1933,11 @@ export const RecordingServiceLive: Layer.Layer<
           noteId: row.createInput?.noteId ?? null,
           segments: 0,
         });
-        // Clearing the failure while idle also wakes the recovery worker.
+        // Clearing the failure while idle also wakes the recovery worker. A recording started
+        // during the request may own the failure now; keep that one.
         yield* SubscriptionRef.update(state, latest => ({
           ...latest,
-          failure: undefined,
+          failure: latest.failure?.recordingId === recordingId ? undefined : latest.failure,
           finalizingRecordingIds: [
             ...latest.finalizingRecordingIds.filter(id => id !== recordingId),
             recordingId,

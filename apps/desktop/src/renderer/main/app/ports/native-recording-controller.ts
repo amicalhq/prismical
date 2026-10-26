@@ -147,6 +147,11 @@ export function createNativeRecordingController(options: {
   function receive(state: NativeRecordingState) {
     if (disposed) return;
     nativeState = state;
+    // Forget a reported failure once main no longer holds it (a retry was queued), so a later
+    // failure of the same recording is reported again.
+    if (reportedFailure && state.failure?.recordingId !== reportedFailure.recordingId) {
+      reportedFailure = undefined;
+    }
     const active = state.status !== 'idle' && state.status !== 'error';
     const completed = state.completedRecordings?.find(row => row.noteId !== null);
     // A settled failure can be replayed while recovery or another window updates state.
@@ -181,7 +186,6 @@ export function createNativeRecordingController(options: {
     // Main cleared the failure (a retry was queued here or in another window): claim again below.
     if (s.parked && state.failure?.recordingId !== s.recordingId) {
       s.parked = false;
-      reportedFailure = undefined;
       publish({ retryAvailable: false });
     }
     let current = scope(s);

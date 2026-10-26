@@ -340,6 +340,22 @@ describe('native recording workflow', () => {
       expect(f.workflow.getSnapshot()).toEqual({ kind: 'idle' });
     });
 
+    it('reports a retry that fails again after the held workflow was ended', async () => {
+      const f = fixture(failed);
+      await f.client.abandon();
+      const claim = deferred<boolean>();
+      vi.mocked(f.control.claimCompletion).mockReturnValueOnce(claim.promise);
+      // Another window retried: main requeued it, and this window adopts the finalization again.
+      f.push(requeued);
+      expect(f.control.claimCompletion).toHaveBeenCalledOnce();
+      f.push(failed);
+      claim.resolve(false);
+      await claim.promise;
+      await Promise.resolve();
+      expect(f.workflow.getSnapshot()).toMatchObject({ kind: 'recording', phase: 'finalizing' });
+      expect(f.client.getSnapshot().retryAvailable).toBe(true);
+    });
+
     it('ends the held workflow on request without asking main to retry', async () => {
       const f = fixture(failed);
       await f.client.abandon();
